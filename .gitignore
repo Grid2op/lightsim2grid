@@ -127,3 +127,22 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# custom
+.idea/
+F_1.npy
+F_2.npy
+F_3.npy
+F_4.npy
+J_1.npy
+J_2.npy
+J_3.npy
+J_4.npy
+dx_1.npy
+dx_2.npy
+dx_3.npy
+dx_4.npy
+tmp/
+pandapower/
+eigen/
+

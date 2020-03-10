@@ -17,7 +17,7 @@ Detailed usage:
 n, Ap, Ai, Ax, b are numpy.ndarray object in this statement.
 
 More details about these inputs are in the Manual of KLU Library
-in SuiteSparse(http://faculty.cse.tamu.edu/davis/suitesparse.html)
+in SuiteSparse(http://faculty.cse.tamu.edu/davis/suitesparse_path.html)
 '''
 
 import ctypes

@@ -1,6 +1,12 @@
 [submodule "pandapower"]
 	path = pandapower
 	url = https://github.com/e2nIEE/pandapower
+	ignore = dirty
 [submodule "SuiteSparse"]
 	path = SuiteSparse
 	url = https://github.com/DrTimothyAldenDavis/SuiteSparse
+	ignore = dirty
+[submodule "eigen"]
+	path = eigen
+	url = https://gitlab.com/libeigen/eigen.git
+	ignore = dirty
