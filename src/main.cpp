@@ -15,7 +15,10 @@ PYBIND11_MODULE(pyklu_package, m) {
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
         .def("analyze", &KLUSolver::analyze)
-        .def("solve", &KLUSolver::solve);
+        .def("solve", &KLUSolver::solve)
+        .def("_evaluate_Fx", &KLUSolver::_evaluate_Fx)
+        .def("one_iter", &KLUSolver::one_iter)
+        .def("_check_for_convergence", &KLUSolver::_check_for_convergence);
 //    py::class_<Dog>(m, "Dog")
 //        .def(py::init<>())
 //        .def("bark", &Dog::bark);

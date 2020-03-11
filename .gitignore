@@ -145,4 +145,10 @@ dx_4.npy
 tmp/
 pandapower/
 eigen/
+Sbus.npy
+V0.npy
+Ybus.npy
+pq.npy
+pv.npy
+*.asm
 

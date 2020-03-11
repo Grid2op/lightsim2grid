@@ -2,12 +2,148 @@ import numpy as np
 import sys
 from scipy import sparse
 from pyklu_package import KLUSolver
+from pandapower.pf.create_jacobian import create_jacobian_matrix, get_fastest_jacobian_function
+import pdb
 
 it_num = 0
 
 solver = KLUSolver()
 is_init = False
-# sys.exit()
+# check for the whole stuff
+
+
+# check the one_iter function
+tol = 1e-08
+Ybus = np.load("Ybus.npy")
+Ybus = sparse.csc_matrix(Ybus)
+Sbus = np.load("Sbus.npy")
+V0 = np.load("V0.npy")
+pv = np.load("pv.npy")
+pq = np.load("pq.npy")
+
+# other variable initialized from above
+iwamoto = False
+numba = False
+max_it = 10
+i = 0
+V = V0
+Va = np.angle(V)
+Vm = abs(V)
+pvpq = np.r_[pv, pq]
+pvpq_lookup = np.zeros(max(Ybus.indices) + 1, dtype=int)
+pvpq_lookup[pvpq] = np.arange(len(pvpq))
+npv = len(pv)
+npq = len(pq)
+j1 = 0
+j2 = npv  # j1:j2 - V angle of pv buses
+j3 = j2
+j4 = j2 + npq  # j3:j4 - V angle of pq buses
+j5 = j4
+j6 = j4 + npq  # j5:j6 - V mag of pq buses
+createJ = get_fastest_jacobian_function(pvpq, pq, numba)
+
+# mimic the code
+F = solver._evaluate_Fx(Ybus, V, Sbus, pv, pq)
+converged = solver._check_for_convergence(F, tol)
+while (not converged and i < max_it):
+    i = i + 1
+    J = create_jacobian_matrix(Ybus, V, pvpq, pq, createJ, pvpq_lookup, npv, npq, numba)
+    J = sparse.csc_matrix(J)
+    if not is_init:
+        is_init = True
+        solver.analyze(J)
+
+    J_pp = np.load("J_{}.npy".format(i))
+    F_pp = np.load("F_{}.npy".format(i))
+    print("assertion is equal to pandapower for iteration {}".format(i))
+    print("\tJ: {}".format(np.all(np.abs(J - J_pp) <= 1e-5)))
+    same_as_pp = np.all(np.abs(F - F_pp) <= 1e-5)
+    print("\tF: {}".format(same_as_pp))
+    if not same_as_pp:
+        pdb.set_trace()
+
+    F, V = solver.one_iter(J, F, pv, pq,
+                           V, #Va.astype(np.float), Vm.astype(np.float),
+                           Ybus, Sbus)
+    converged = solver._check_for_convergence(F, tol)
+
+sys.exit()
+
+
+# check evaluate function and norm
+tol = 1e-08
+Ybus = np.load("Ybus.npy")
+Ybus = sparse.csc_matrix(Ybus)
+Sbus = np.load("Sbus.npy")
+V0 = np.load("V0.npy")
+pv = np.load("pv.npy")
+pq = np.load("pq.npy")
+
+# other variable initialized from above
+iwamoto = False
+numba = False
+max_it = 10
+i = 0
+V = V0
+Va = np.angle(V)
+Vm = abs(V)
+pvpq = np.r_[pv, pq]
+pvpq_lookup = np.zeros(max(Ybus.indices) + 1, dtype=int)
+pvpq_lookup[pvpq] = np.arange(len(pvpq))
+npv = len(pv)
+npq = len(pq)
+j1 = 0
+j2 = npv  # j1:j2 - V angle of pv buses
+j3 = j2
+j4 = j2 + npq  # j3:j4 - V angle of pq buses
+j5 = j4
+j6 = j4 + npq  # j5:j6 - V mag of pq buses
+createJ = get_fastest_jacobian_function(pvpq, pq, numba)
+
+# mimic the code
+F = solver._evaluate_Fx(Ybus, V, Sbus, pv, pq)
+converged = solver._check_for_convergence(F, tol)
+while (not converged and i < max_it):
+    i = i + 1
+    J = create_jacobian_matrix(Ybus, V, pvpq, pq, createJ, pvpq_lookup, npv, npq, numba)
+    J = sparse.csc_matrix(J)
+    if not is_init:
+        is_init = True
+        solver.analyze(J)
+
+    # solve the system
+    dx = 1.0 * F
+    solver.solve(J, dx)
+    dx *= -1.0
+
+    # update voltage
+    if npv and not iwamoto:
+        Va[pv] = Va[pv] + dx[j1:j2]
+    if npq and not iwamoto:
+        Va[pq] = Va[pq] + dx[j3:j4]
+        Vm[pq] = Vm[pq] + dx[j5:j6]
+
+    V = Vm * np.exp(1j * Va)
+    Vm = abs(V)  # update Vm and Va again in case
+    Va = np.angle(V)  # we wrapped around with a negative Vm
+
+    J_pp = np.load("J_{}.npy".format(i))
+    dx_pp = np.load("dx_{}.npy".format(i))
+    F_pp = np.load("F_{}.npy".format(i))
+
+    print("assertion is equal to pandapower for iteration {}".format(i))
+    print("\tJ: {}".format(np.all(np.abs(J - J_pp) <= 1e-5)))
+    print("\tdx: {}".format(np.all(np.abs(dx - dx_pp) <= 1e-5)))
+    print("\tF: {}".format(np.all(np.abs(F - F_pp) <= 1e-5)))
+
+    F = solver._evaluate_Fx(Ybus, V, Sbus, pv, pq)
+    converged = solver._check_for_convergence(F, tol)
+
+
+
+
+sys.exit()
+# check the invert solver
 for it_num in [1, 2, 3, 4]:
     J = np.load("J_{}.npy".format(it_num))
     dx = np.load("dx_{}.npy".format(it_num))
@@ -15,23 +151,26 @@ for it_num in [1, 2, 3, 4]:
 
     F_klu = 1.0 * F
 
+    # need to be in csc matrix
     compress_A = sparse.csc_matrix(J)
     if not is_init:
         is_init = True
-        Ap = compress_A.indptr
-        Ai = compress_A.indices
-        n = Ap.size - 1
-        solver.analyze(int(n), Ap, Ai)
+        # Ap = compress_A.indptr
+        # Ai = compress_A.indices
+        # n = Ap.size - 1
+        # solver.analyze(int(n), Ap, Ai)
+        solver.analyze(compress_A)  #int(n), Ap, Ai)
 
     # print(F_klu[:5])
-    solver.solve(Ap, Ai, compress_A.data, F_klu)
+    ## solver.solve(Ap, Ai, compress_A.data, F_klu)
+    solver.solve(compress_A, F_klu)
     dx_klu = -1.0 * F_klu
     # print(F_klu[:5])
 
-    res_klu = np.matmul(J, -1.0 * dx_klu) - F
-    res = np.matmul(J, -1.0 * dx) - F
-    print("res_klu: {}".format(np.sum(np.abs(res_klu))))
-    print("res: {}".format(np.sum(np.abs(res))))
+    # res_klu = np.matmul(J, -1.0 * dx_klu) - F
+    # res = np.matmul(J, -1.0 * dx) - F
+    # print("res_klu: {}".format(np.sum(np.abs(res_klu))))
+    # print("res: {}".format(np.sum(np.abs(res))))
     # print(F_klu[:5])
 sys.exit()
 

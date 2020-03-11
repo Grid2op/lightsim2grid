@@ -2,6 +2,8 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import sys
 import setuptools
+import os
+import sysconfig
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
@@ -51,7 +53,8 @@ def cpp_flag(compiler):
     raise RuntimeError('Unsupported compiler -- at least C++11 support '
                        'is needed!')
 
-
+# import pdb
+# pdb.set_trace()
 class BuildExt(build_ext):
     """A custom build extension for adding compiler-specific options."""
     c_opts = {
@@ -84,7 +87,7 @@ class BuildExt(build_ext):
             ext.extra_link_args = link_opts
         build_ext.build_extensions(self)
 
-import os
+
 suitesparse_path = os.path.abspath("./SuiteSparse")
 eigen_path = os.path.abspath(".")
 
@@ -101,12 +104,12 @@ LIBS = [el.format(suitesparse_path) for el in LIBS]
 
 # include directory
 INCLUDE_suitesparse = ["{}/SuiteSparse_config",
-           "{}/CXSparse/Include",
-           "{}/AMD/Include",
-           "{}/BTF/Include",
-           "{}/COLAMD/Include",
-           "{}/KLU/Include"
-           ]
+                       "{}/CXSparse/Include",
+                       "{}/AMD/Include",
+                       "{}/BTF/Include",
+                       "{}/COLAMD/Include",
+                       "{}/KLU/Include"
+                       ]
 
 INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
 INCLUDE = INCLUDE_suitesparse
@@ -114,19 +117,23 @@ INCLUDE.append("{}/eigen".format(eigen_path))
 INCLUDE.append(os.path.abspath("."))
 
 include_dirs = [
-            # Path to pybind11 headers
-            get_pybind_include(),
-            get_pybind_include(user=True)
-        ]
+                # Path to pybind11 headers
+                get_pybind_include(),
+                get_pybind_include(user=True)
+]
 include_dirs += INCLUDE
 
+# compiler options
+extra_compile_args = ["-march=native"]
+# extra_compile_args = []
 ext_modules = [
     Extension(
         'pyklu_package',
         ['src/main.cpp'],
         include_dirs=include_dirs,
         language='c++',
-        extra_objects=LIBS
+        extra_objects=LIBS,
+        extra_compile_args=extra_compile_args
     ),
 ]
 
@@ -141,6 +148,6 @@ setup(
     ext_modules=ext_modules,
     install_requires=['pybind11>=2.4'],
     setup_requires=['pybind11>=2.4'],
-    cmdclass={'build_ext': BuildExt},
+    # cmdclass={'build_ext': BuildExt},  # if used, then the extra compiler flag won't work
     zip_safe=False,
 )
