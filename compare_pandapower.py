@@ -9,8 +9,47 @@ it_num = 0
 
 solver = KLUSolver()
 is_init = False
-# check for the whole stuff
+# check the "create jacobian" stuff
+tol = 1e-08
+Ybus = np.load("Ybus.npy")
+Ybus = sparse.csc_matrix(Ybus)
+Sbus = np.load("Sbus.npy")
+V0 = np.load("V0.npy")
+pv = np.load("pv.npy")
+pq = np.load("pq.npy")
 
+# other variable initialized from above
+iwamoto = False
+numba = False
+max_it = 10
+i = 0
+V = V0
+Va = np.angle(V)
+Vm = abs(V)
+pvpq = np.r_[pv, pq]
+pvpq_lookup = np.zeros(max(Ybus.indices) + 1, dtype=int)
+pvpq_lookup[pvpq] = np.arange(len(pvpq))
+npv = len(pv)
+npq = len(pq)
+j1 = 0
+j2 = npv  # j1:j2 - V angle of pv buses
+j3 = j2
+j4 = j2 + npq  # j3:j4 - V angle of pq buses
+j5 = j4
+j6 = j4 + npq  # j5:j6 - V mag of pq buses
+createJ = get_fastest_jacobian_function(pvpq, pq, numba)
+
+# mimic the code
+F = solver._evaluate_Fx(Ybus, V, Sbus, pv, pq)
+converged = solver._check_for_convergence(F, tol)
+while (not converged and i < max_it):
+    i = i + 1
+    J = solver.create_jacobian_matrix(Ybus, V, pq, pvpq)
+    J_pp = np.load("J_{}.npy".format(i))
+    pdb.set_trace()
+    # J = sparse.csc_matrix(J)
+
+sys.exit()
 
 # check the one_iter function
 tol = 1e-08

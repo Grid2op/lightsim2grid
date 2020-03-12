@@ -18,6 +18,7 @@ PYBIND11_MODULE(pyklu_package, m) {
         .def("solve", &KLUSolver::solve)
         .def("_evaluate_Fx", &KLUSolver::_evaluate_Fx)
         .def("one_iter", &KLUSolver::one_iter)
+        .def("create_jacobian_matrix", &KLUSolver::create_jacobian_matrix)
         .def("_check_for_convergence", &KLUSolver::_check_for_convergence);
 //    py::class_<Dog>(m, "Dog")
 //        .def(py::init<>())
