@@ -5,16 +5,26 @@
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
-#include "cs.h"
-#include "klu.h"
+extern "C" {
+    #include "cs.h"
+    #include "klu.h"
+}
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 
-// class to handle the memory of the system
+/**
+class to handle the solver using newton-raphson method, using KLU algorithm and sparse matrices.
+
+As long as the admittance matrix of the sytem does not change, you can reuse the same solver.
+Reusing the same solver is possible, but "reset" method must be called.
+
+Otherwise, unexpected behaviour might follow, including "segfault".
+
+**/
 class KLUSolver
 {
     public:
-        KLUSolver():symbolic_(),numeric_(),common_(),n_(-1){
+        KLUSolver():symbolic_(),numeric_(),common_(),n_(-1),need_factorize_(true),err_(-1){
             klu_defaults(&common_);
         }
 
@@ -24,37 +34,130 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
-         void analyze_old(int n,
-                      Eigen::Ref<Eigen::VectorXi> Ap,
-                      Eigen::Ref<Eigen::VectorXi> Ai){
-            n_ = n;
-            symbolic_ = klu_analyze(n, &Ap(0), &Ai(0), &common_);
-         }
+        void do_newton(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+                       Eigen::Ref<Eigen::VectorXcd> & V,
+                       const Eigen::Ref<Eigen::VectorXcd> & Sbus,
+                       const Eigen::Ref<Eigen::VectorXi> & pv,
+                       const Eigen::Ref<Eigen::VectorXi> & pq,
+                       int max_iter,
+                       double tol
+                       ){
+            // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
+            // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
+            if(err_ > 0) return; // i don't do anything if there were a problem at the initialization
 
-         void analyze(Eigen::SparseMatrix<double> & J){
+            // initialize once and for all the "inverse" of these vector
+            int n_pv = pv.size();
+            int n_pq = pq.size();
+            Eigen::VectorXi pvpq(n_pv + n_pq);
+            pvpq << pv, pq;
+            int n_pvpq = pvpq.size();
+            std::vector<int> pvpq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
+            std::vector<int> pq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+
+            // first check, if the problem is already solved, i stop there
+            Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+            bool converged = _check_for_convergence(F, tol);
+            nr_iter_ = 0; //current step
+            while ((!converged) & (nr_iter_ < max_iter)){
+                nr_iter_++;
+                fill_jacobian_matrix(Ybus, V, pq, pvpq);
+                if(need_factorize_){
+                    initialize();
+                }
+                solve(F);
+                if(err_ != 0){
+                    // I got an error during the solving of the linear system, i need to stop here
+                    return;
+                }
+                auto dx = -1.0*F;
+
+                // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
+                Vm_ = V.array().abs();  // update Vm and Va again in case
+                Va_ = V.array().arg();  // we wrapped around with a negative Vm
+
+                if (n_pv > 0) Va_(pv) += dx.segment(0,n_pv);
+                if (n_pq > 0){
+                    Va_(pq) += dx.segment(n_pv,n_pq);
+                    Vm_(pq) += dx.segment(n_pv+n_pq, n_pq);
+                }
+
+                // TODO change here for not having to cast all the time ... maybe
+                V = Vm_.array() * (Va_.array().cos().cast<std::complex< double > >() + 1.0i * Va_.array().sin().cast<std::complex< double > >() );
+
+                F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+                converged = _check_for_convergence(F, tol);
+            }
+            if(nr_iter_ > max_iter){
+                err_ = 4;
+            }
+        }
+
+        Eigen::SparseMatrix<double> get_J(){
+            return J_;
+        }
+        Eigen::Ref<Eigen::VectorXd> get_Va(){
+            return Va_;
+        }
+        Eigen::Ref<Eigen::VectorXd> get_Vm(){
+            return Vm_;
+        }
+        int get_error(){
+            return err_;
+        }
+        int get_nb_iter(){
+            return nr_iter_;
+        }
+        void reset(){
+            klu_free_symbolic(&symbolic_, &common_);
+            klu_free_numeric(&numeric_, &common_);
+            n_ = -1;
+            common_ = klu_common();
+
+            Vm_ = Eigen::VectorXd();  // voltage magnitude
+            Va_ =Eigen::VectorXd();  // voltage angle
+            J_ =Eigen::SparseMatrix<double>();  // the jacobian matrix
+            need_factorize_ = true;
+            nr_iter_ = 0;  // number of iteration performs by the Newton Raphson algorithm
+            err_ = -1; //error message:
+        }
+        bool converged(){
+            return err_ == 0;
+        }
+
+    protected:
+        void initialize(){
             // default Eigen representation: column major, which is good for klu !
             // J is const here, even if it's not said in klu_analyze
-            n_ = J.cols(); // should be equal to
-            symbolic_ = klu_analyze(n_, J.outerIndexPtr(), J.innerIndexPtr(), &common_);
-         }
-         void solve_old(Eigen::Ref<Eigen::VectorXi> Ap,
-                    Eigen::Ref<Eigen::VectorXi> Ai,
-                    Eigen::Ref<Eigen::VectorXd> Ax,
-                    Eigen::Ref<Eigen::VectorXd> b){
-            numeric_ = klu_factor(&Ap(0), &Ai(0), &Ax(0), symbolic_, &common_);
-            klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
-          }
-         void solve(Eigen::SparseMatrix<double> & J,
-                    Eigen::Ref<Eigen::VectorXd> b
-                    ){
+            n_ = J_.cols(); // should be equal to J_.nrows()
+            err_ = 0; // reset error message
+            symbolic_ = klu_analyze(n_, J_.outerIndexPtr(), J_.innerIndexPtr(), &common_);
+            numeric_ = klu_factor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, &common_);
+            if (common_.status != KLU_OK) {
+                err_ = 1;
+            }
+            need_factorize_ = false;
+        }
+
+        void solve(Eigen::VectorXd & b){
             // solves (for x) the linear system J.x = b
             // supposes that the solver has been initialized (call klu_solver.analyze(M) before calling that)
             // J is const even if it does not compile if said const
-            numeric_ = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic_, &common_);
-            klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
-         }
+            int ok = klu_refactor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, numeric_, &common_);
+            if (ok != 1) {
+                err_ = 2;
+                return;
+            }
+            ok = klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
+            if (ok != 0) {
+                err_ = 3;
+            }
+        }
 
-        Eigen::SparseMatrix<std::complex< double > > _make_diagonal_matrix(Eigen::Ref<const Eigen::VectorXcd > diag_val){
+        Eigen::SparseMatrix<std::complex< double > >
+            _make_diagonal_matrix(const Eigen::Ref<const Eigen::VectorXcd > & diag_val){
             // TODO their might be a more efficient way to do that
             auto n = diag_val.size();
             Eigen::SparseMatrix<std::complex< double > > res(n,n);
@@ -105,58 +208,44 @@ class KLUSolver
                            std::vector<int> & inner_index,
                            std::vector<double> & values,
                            const Eigen::SparseMatrix<double> & mat,  // ex. dS_dVa_r
-                           const std::vector<int> & index_inv_row, // ex. pvpq_inv
-//                           const Eigen::VectorXi & index_row, // ex. pvpq
-//                           const std::vector<int> & index_inv_col,  // ex. pvpq_inv
+                           const std::vector<int> & index_row_inv, // ex. pvpq_inv
                            const Eigen::VectorXi & index_col, // ex. pvpq
                            int col_id,
                            int row_lag  // 0 for J11 for example, n_pvpq for J12
                            )
         {
-//                std::cout << "\toriginal id " << col_id << std::endl;
-//                int col_id_mat = index_inv_col[col_id];
-//                std::cout << "\ttreated id " << col_id_mat << std::endl;
-//                if (col_id_mat < 0) return;
+            /**
+            This function will fill the "inner_index" and "values" with the non zero values
+            present in the matrix "mat" for the column of the J matrix with id "col_id"
+            which corresponds to the column "index_col(col_id)" of the matrix mat.
 
-                int col_id_mat = index_col(col_id);
+            The rows need to be converted using another vector too. For example, row "j" of J
+            need to be filled with element k of matrix "mat" with k such that "index_row[j] = k"
+            Hence, we pass as the argument of this function the "inverse" of index_row, which is such
+            that : "j = index_row_inv[k]" is easily computable given k.
+            **/
+            int col_id_mat = index_col(col_id);
 
-                int start_id = mat.outerIndexPtr()[col_id_mat];
-                int end_id = mat.outerIndexPtr()[col_id_mat+1];
-                for(int obj_id = start_id; obj_id < end_id; ++obj_id)
+            int start_id = mat.outerIndexPtr()[col_id_mat];
+            int end_id = mat.outerIndexPtr()[col_id_mat+1];
+            for(int obj_id = start_id; obj_id < end_id; ++obj_id)
+            {
+                int row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
+                // I add the value only if the rows was selected in the indexes
+                int row_id = index_row_inv[row_id_dS_dVa];
+                if(row_id >= 0)
                 {
-                    int row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
-//                    std::cout << "\trow_id_dS_dVa  "<< row_id_dS_dVa << std::endl;
-                    // I add the value only if the rows was selected in the indexes
-                    int row_id = index_inv_row[row_id_dS_dVa];
-//                    int row_id = index_row(row_id_dS_dVa);
-//                    std::cout << "\trow_id  "<< row_id << std::endl;
-                    if(row_id >= 0)
-                    {
-//                        std::cout << "\tinserting object at row "<< row_id+row_lag << " row_lag " << row_lag << std::endl;
-                        inner_index.push_back(row_id+row_lag);
-                        values.push_back(mat.valuePtr()[obj_id]);
-                        nb_obj_this_col++;
-                    }
+                    inner_index.push_back(row_id+row_lag);
+                    values.push_back(mat.valuePtr()[obj_id]);
+                    nb_obj_this_col++;
                 }
+            }
         }
-        Eigen::SparseMatrix<double>
-             create_jacobian_matrix(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
-                                    const Eigen::VectorXcd & V,
-                                    const Eigen::VectorXi & pq,
-                                    const Eigen::VectorXi & pvpq
-//                                    const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
-//                                    const Eigen::Ref<const Eigen::VectorXcd > & V,
-//                                    const Eigen::Ref<const Eigen::VectorXi > & pq,
-//                                    const Eigen::Ref<const Eigen::VectorXi > & pvpq
-                                    ){
-            // might also be accelerated in some cases, it's one of the "slow" implementation of pandapower
-            // TODO apparently, following matrix have also a fixed shape, so i can be faster !
-            Eigen::SparseMatrix<std::complex< double > > dS_dVm;
-            Eigen::SparseMatrix<std::complex< double > > dS_dVa;
-            _dSbus_dV(dS_dVm, dS_dVa, Ybus, V);
-            const int n_pvpq = pvpq.size();
-            const int n_pq = pq.size();
 
+        void fill_jacobian_matrix(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+                                  const Eigen::VectorXcd & V,
+                                  const Eigen::VectorXi & pq,
+                                  const Eigen::VectorXi & pvpq){
             /**
             J has the shape
             | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
@@ -169,25 +258,30 @@ class KLUSolver
             J22 = dS_dVm[array([pq]).T, pq].imag
             **/
 
+
+            // might also be accelerated in some cases, it's one of the "slow" implementation of pandapower
+            // TODO apparently, following matrix have also a fixed shape, so i can be faster !
+            Eigen::SparseMatrix<std::complex< double > > dS_dVm;
+            Eigen::SparseMatrix<std::complex< double > > dS_dVa;
+            _dSbus_dV(dS_dVm, dS_dVa, Ybus, V);
+            const int n_pvpq = pvpq.size();
+            const int n_pq = pq.size();
+
             const int size_j = n_pvpq + n_pq;
             // TODO here: don't start from scratch each time, reuse the former J to replace it's coefficient
             // TODO this is rather slow, see if i cannot be smarter than this! (look at pandapower code)
-            Eigen::SparseMatrix<double> J(size_j,size_j);
+            Eigen::SparseMatrix<double> J_(size_j,size_j);
             // pre allocate a large enough matrix
-            J.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
+            J_.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
             // from an experiment, outerIndexPtr is inialized, with the number of columns
             // innerIndexPtr and valuePtr are not.
-
-            // i fill the buffer columns per columns
-            int nb_obj_this_col = 0;
-            std::vector<int> inner_index;
-            std::vector<double> values;
 
             dS_dVa.makeCompressed();
             Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa.real();
             Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa.imag();
             Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm.real();
             Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm.imag();
+            // TODO not sure it's mandatory
             dS_dVa_r.makeCompressed();
             dS_dVa_i.makeCompressed();
             dS_dVm_r.makeCompressed();
@@ -200,8 +294,12 @@ class KLUSolver
             std::vector<int> pq_inv(dS_dVm.size(), -1);
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
 
+            // i fill the buffer columns per columns
+            int nb_obj_this_col = 0;
+            std::vector<int> inner_index;
+            std::vector<double> values;
+
             for(int col_id=0; col_id < n_pvpq; ++col_id){
-//                std::cout << "start column " << col_id << std::endl;
                 // reset from the previous column
                 nb_obj_this_col = 0;
                 inner_index.clear();
@@ -213,8 +311,7 @@ class KLUSolver
                               dS_dVa_r,
                               pvpq_inv, pvpq,
                               col_id, 0);
-//
-//                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
+                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
                 _get_values_J(nb_obj_this_col, inner_index, values,
                               dS_dVa_i,
                               pq_inv, pvpq,
@@ -222,17 +319,15 @@ class KLUSolver
                               );
 
                 // "efficient" insert of the element in the matrix
-                J.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
+                J_.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
                 for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
                     int row_id = inner_index[in_ind];
-                    J.insert(row_id, col_id) = values[in_ind];
+                    J_.insert(row_id, col_id) = values[in_ind];
                 }
             }
-//            std::cout << "done for the loop" <<std::endl;
 
             //TODO make same for the second part (have a funciton for previous loop)
             for(int col_id=0; col_id < n_pq; ++col_id){
-//                std::cout << "start column " << col_id << std::endl;
                 // reset from the previous column
                 nb_obj_this_col = 0;
                 inner_index.clear();
@@ -244,8 +339,8 @@ class KLUSolver
                               dS_dVm_r,
                               pvpq_inv, pq,
                               col_id, 0);
-//
-//                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
+
+                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
                 _get_values_J(nb_obj_this_col, inner_index, values,
                               dS_dVm_i,
                               pq_inv, pq,
@@ -253,92 +348,19 @@ class KLUSolver
                               );
 
                 // "efficient" insert of the element in the matrix
-                J.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
+                J_.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
                 for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
                     int row_id = inner_index[in_ind];
-                    J.insert(row_id, col_id + n_pvpq) = values[in_ind];
+                    J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
                 }
             }
-
-            // and now set the value computed in J
-//            std::cout << "before "<<std::endl;
-//            double * valuePtr = new double[values.size()];  // deletion is ensured by the J sparse matrix
-//            memcpy(valuePtr, &values[0], values.size());
-//            std::cout << "valuePtr " << valuePtr <<std::endl;
-//            J.valuePtr() = valuePtr;
-//
-////            int * innerIndexPtr = new int[values.size()]; // deletion is ensured by the J sparse matrix
-////            memcpy(innerIndexPtr, &inner_index[0], inner_index.size());
-////            J.innerIndexPtr() = innerIndexPtr;
-//            std::cout << "after "<<std::endl;
-
-
-//            J.setIdentity();
-//            std::cout << "J.valuePtr() " << J.valuePtr() << std::endl;
-//            std::cout << "J.innerIndexPtr() " << J.innerIndexPtr() << std::endl;
-//            std::cout << "J.outerIndexPtr() " << J.outerIndexPtr() << std::endl;
-            // this is returned to check that i got the same results as pandapower
-            return J;
-            // Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic> permforJ11(pvpq);
-            // Eigen::SparseMatrix<double> J11 = dS_dVm.real() * permforJ11;
-            //reorder the row / coumn of the matrix
-
-//            Eigen::Block<Eigen::SparseMatrix<double>, Eigen::Dynamic, Eigen::Dynamic > J11 = J.block(0,0, n_pvpq, n_pvpq);
-
-//            auto & J12 = J.block(0,n_pvpq, n_pvpq, n_pq);
-//            auto & J21 = J.block(n_pvpq, 0, n_pq, n_pvpq);
-//            auto & J22 = J.block(n_pvpq, n_pvpq, n_pq, n_pq);
-
-//            for(unsigned int i_ = 0; i_ < n_pvpq; ++i_){
-//                int i = pvpq(i_);
-//                J.block(0,0, n_pvpq, n_pvpq).col(i) = dS_dVa.col(i).real();
-//                J.coeffRef(i,i) = dS_dVa(i,i).real();
-//                J.coeffRef(i,i + n_pvpq) = dS_dVm(i,i).imag(i);
-//            }
         }
 
-         // TODO re add the references here for the last stuff
-         std::tuple<Eigen::VectorXd, Eigen::VectorXcd> one_iter(Eigen::SparseMatrix<double> J,
-                                  Eigen::Ref<Eigen::VectorXd> F,
-                                  Eigen::VectorXi pv,
-                                  Eigen::VectorXi pq,
-                                  Eigen::VectorXcd V,
-                                  Eigen::SparseMatrix<std::complex< double > >  Ybus,
-                                  Eigen::VectorXcd Sbus
-                                  ){
-            //TODO do not use, for DEBUG only!!!
-            // get the sizes for convenience
-            auto npv = pv.size();
-            auto npq = pq.size();
-
-            // supposes that "klu_analyze" has been already called ! klu_solver.analyze(J) should have been called
-            numeric_ = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic_, &common_);
-            klu_solve(symbolic_, numeric_, n_, 1, &F(0), &common_);
-            auto dx = -1.0*F;
-
-            // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
-            // TODO init Va and Vm only once at the end
-            Eigen::VectorXd Vm = V.array().abs();  // update Vm and Va again in case
-            Eigen::VectorXd Va = V.array().arg();  // we wrapped around with a negative Vm
-            if (npv > 0) Va(pv) += dx.segment(0,npv);
-            if (npq > 0){
-                Va(pq) += dx.segment(npv,npq);
-                Vm(pq) += dx.segment(npv+npq, npq);
-            }
-
-            // TODO change here for not having to cast all the time ...
-            V = Vm.array() * (Va.array().cos().cast<std::complex< double > >() + 1.0i * Va.array().sin().cast<std::complex< double > >() );
-
-            F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
-            return std::tuple<Eigen::VectorXd, Eigen::VectorXcd>(F, V);
-          }
-
-        // TODO re add the references here for the last stuff
-        Eigen::VectorXd _evaluate_Fx(Eigen::SparseMatrix<std::complex< double > > &  Ybus,
-                                        Eigen::VectorXcd V,
-                                        Eigen::VectorXcd Sbus,
-                                        Eigen::VectorXi pv,
-                                        Eigen::VectorXi pq){
+        Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<std::complex< double > > &  Ybus,
+                                     const Eigen::VectorXcd & V,
+                                     const Eigen::VectorXcd & Sbus,
+                                     const Eigen::VectorXi & pv,
+                                     const Eigen::VectorXi & pq){
 
             auto npv = pv.size();
             auto npq = pq.size();
@@ -356,26 +378,100 @@ class KLUSolver
             res.segment(npv,npq) = real_(pq);
             res.segment(npv+npq, npq) = imag_(pq);
             return res;
-          }
-
-         bool _check_for_convergence( Eigen::Ref<Eigen::VectorXd> F, double tol){
-            return F.lpNorm<Eigen::Infinity>()  < tol;
         }
 
+         bool _check_for_convergence(const Eigen::VectorXd & F,
+                                     double tol){
+            return F.lpNorm<Eigen::Infinity>()  < tol;
+         }
+
     private:
+        // solver initialization
         klu_symbolic* symbolic_;
         klu_numeric* numeric_;
         klu_common common_;
         int n_;
 
+        // solution of the problem
+        Eigen::VectorXd Vm_;  // voltage magnitude
+        Eigen::VectorXd Va_;  // voltage angle
+        Eigen::SparseMatrix<double> J_;  // the jacobian matrix
+        bool need_factorize_;
+        int nr_iter_;  // number of iteration performs by the Newton Raphson algorithm
+        int err_; //error message:
+        // -1 : the solver has not been initialized (call initialize in this case)
+        // 0 everything ok
+        // 1: i can't factorize the matrix (klu_factor)
+        // 2: i can't refactorize the matrix (klu_refactor)
+        // 3: i can't solve the system (klu_solve)
+        // 4: end of possible iterations (divergence because nr_iter_ >= max_iter
+
         // no copy allowed
         KLUSolver( const KLUSolver & ) ;
         KLUSolver & operator=( const KLUSolver & ) ;
-};
 
-class Dog{
-    public:
-        Dog(){};
-        void bark(){};
+        // debug func i don't want to remove yet
+        void analyze_old(int n,
+                      Eigen::Ref<Eigen::VectorXi> Ap,
+                      Eigen::Ref<Eigen::VectorXi> Ai){
+            n_ = n;
+            symbolic_ = klu_analyze(n, &Ap(0), &Ai(0), &common_);
+        }
+        void solve_old(Eigen::Ref<Eigen::VectorXi> Ap,
+                    Eigen::Ref<Eigen::VectorXi> Ai,
+                    Eigen::Ref<Eigen::VectorXd> Ax,
+                    Eigen::Ref<Eigen::VectorXd> b){
+            numeric_ = klu_factor(&Ap(0), &Ai(0), &Ax(0), symbolic_, &common_);
+            klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
+        }
+
+                 // TODO re add the references here for the last stuff
+        std::tuple<Eigen::VectorXd, Eigen::VectorXcd> one_iter_test(Eigen::SparseMatrix<double> J,
+                              Eigen::Ref<Eigen::VectorXd> F,
+                              Eigen::VectorXi pv,
+                              Eigen::VectorXi pq,
+                              Eigen::VectorXcd V,
+                              Eigen::SparseMatrix<std::complex< double > >  Ybus,
+                              Eigen::VectorXcd Sbus
+                              ){
+            //TODO do not use, for DEBUG only!!!
+            // get the sizes for convenience
+            auto npv = pv.size();
+            auto npq = pq.size();
+
+            // supposes that "klu_analyze" has been already called ! klu_solver.analyze(J) should have been called
+            numeric_ = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic_, &common_);
+            klu_solve(symbolic_, numeric_, n_, 1, &F(0), &common_);
+            auto dx = -1.0*F;
+
+            // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
+            Vm_ = V.array().abs();  // update Vm and Va again in case
+            Va_ = V.array().arg();  // we wrapped around with a negative Vm
+
+            if (npv > 0) Va_(pv) += dx.segment(0,npv);
+            if (npq > 0){
+                Va_(pq) += dx.segment(npv,npq);
+                Vm_(pq) += dx.segment(npv+npq, npq);
+            }
+
+            // TODO change here for not having to cast all the time ...
+            V = Vm_.array() * (Va_.array().cos().cast<std::complex< double > >() + 1.0i * Va_.array().sin().cast<std::complex< double > >() );
+
+            F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+            return std::tuple<Eigen::VectorXd, Eigen::VectorXcd>(F, V);
+        }
+
+        Eigen::SparseMatrix<double>
+             create_jacobian_matrix_test(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+                                         const Eigen::VectorXcd & V,
+                                         const Eigen::VectorXi & pq,
+                                         const Eigen::VectorXi & pvpq
+                                         ){
+
+            // DO NOT USE, FOR DEBUG ONLY!
+            fill_jacobian_matrix(Ybus, V, pq, pvpq);
+            return J_;
+        }
+
 };
 

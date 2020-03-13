@@ -14,13 +14,13 @@ PYBIND11_MODULE(pyklu_package, m) {
 //    py::bind_vector<std::vector<double> >(m, "VectorDouble");
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
-        .def("analyze", &KLUSolver::analyze)
-        .def("solve", &KLUSolver::solve)
-        .def("_evaluate_Fx", &KLUSolver::_evaluate_Fx)
-        .def("one_iter", &KLUSolver::one_iter)
-        .def("create_jacobian_matrix", &KLUSolver::create_jacobian_matrix)
-        .def("_check_for_convergence", &KLUSolver::_check_for_convergence);
-//    py::class_<Dog>(m, "Dog")
-//        .def(py::init<>())
-//        .def("bark", &Dog::bark);
+//        .def("initialize", &KLUSolver::initialize)  // initialize the solver (DO NOT USE)
+        .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &KLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &KLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &KLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &KLUSolver::converged)  // whether the solver has converged
+        .def("do_newton", &KLUSolver::do_newton);  // perform the newton raphson optimization
 }
