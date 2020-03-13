@@ -59,7 +59,7 @@ class KLUSolver
             auto n = diag_val.size();
             Eigen::SparseMatrix<std::complex< double > > res(n,n);
             // first method, without a loop of mine
-            res.setIdentity();  // segfault if attempt to use it
+            res.setIdentity();  // segfault if attempt to use this function without this
             res.diagonal() = diag_val;
 
             // second method, with an "optimized" loop
@@ -70,11 +70,80 @@ class KLUSolver
             return res;
         }
 
+        void _dSbus_dV(Eigen::SparseMatrix<std::complex< double > > & dS_dVm,
+                       Eigen::SparseMatrix<std::complex< double > > & dS_dVa,
+                       const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
+                       const Eigen::Ref<const Eigen::VectorXcd > & V)
+        {
+            // "slow" implementation close to pypower, but with sparse matrix
+            // TODO check i cannot optimize that with numba code in pandapower instead
+            Eigen::VectorXcd Ibus = Ybus * V;
+            Eigen::SparseMatrix<std::complex< double > > diagV = _make_diagonal_matrix(V);
+
+            Eigen::VectorXcd Ibus_conj = Ibus.conjugate();
+            Eigen::SparseMatrix<std::complex< double > > diagIbus_conj = _make_diagonal_matrix(Ibus_conj);
+
+            Eigen::VectorXcd Vnorm = V.array() / V.array().abs();
+            Eigen::SparseMatrix<std::complex< double > > diagVnorm = _make_diagonal_matrix(Vnorm);
+
+            Eigen::SparseMatrix<std::complex< double > > tmp = Ybus * diagVnorm;
+            tmp = tmp.conjugate();
+            dS_dVm = diagV * tmp + diagIbus_conj * diagVnorm;
+
+            // TODO this is the same code for this "tmp" and the previous one, except for "diagV" and "diagVnorm"
+            tmp = Ybus * diagV;
+            tmp = tmp.conjugate();
+            auto tmp2 = diagIbus_conj - tmp;  // conj(diagIbus - Ybus * diagV)
+            dS_dVa = 1.0i * diagV * tmp2;
+
+            // python implementation
+            // dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+            // dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
+        }
+
+        void _get_values_J(int & nb_obj_this_col,
+                           std::vector<int> & inner_index,
+                           std::vector<double> & values,
+                           const Eigen::SparseMatrix<double> & mat,  // ex. dS_dVa_r
+                           const std::vector<int> & index_inv_row, // ex. pvpq_inv
+//                           const Eigen::VectorXi & index_row, // ex. pvpq
+//                           const std::vector<int> & index_inv_col,  // ex. pvpq_inv
+                           const Eigen::VectorXi & index_col, // ex. pvpq
+                           int col_id,
+                           int row_lag  // 0 for J11 for example, n_pvpq for J12
+                           )
+        {
+//                std::cout << "\toriginal id " << col_id << std::endl;
+//                int col_id_mat = index_inv_col[col_id];
+//                std::cout << "\ttreated id " << col_id_mat << std::endl;
+//                if (col_id_mat < 0) return;
+
+                int col_id_mat = index_col(col_id);
+
+                int start_id = mat.outerIndexPtr()[col_id_mat];
+                int end_id = mat.outerIndexPtr()[col_id_mat+1];
+                for(int obj_id = start_id; obj_id < end_id; ++obj_id)
+                {
+                    int row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
+//                    std::cout << "\trow_id_dS_dVa  "<< row_id_dS_dVa << std::endl;
+                    // I add the value only if the rows was selected in the indexes
+                    int row_id = index_inv_row[row_id_dS_dVa];
+//                    int row_id = index_row(row_id_dS_dVa);
+//                    std::cout << "\trow_id  "<< row_id << std::endl;
+                    if(row_id >= 0)
+                    {
+//                        std::cout << "\tinserting object at row "<< row_id+row_lag << " row_lag " << row_lag << std::endl;
+                        inner_index.push_back(row_id+row_lag);
+                        values.push_back(mat.valuePtr()[obj_id]);
+                        nb_obj_this_col++;
+                    }
+                }
+        }
         Eigen::SparseMatrix<double>
-             create_jacobian_matrix(const Eigen::SparseMatrix<std::complex< double > > Ybus,
-                                    const Eigen::VectorXcd V,
-                                    const Eigen::VectorXi pq,
-                                    const Eigen::VectorXi pvpq
+             create_jacobian_matrix(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+                                    const Eigen::VectorXcd & V,
+                                    const Eigen::VectorXi & pq,
+                                    const Eigen::VectorXi & pvpq
 //                                    const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
 //                                    const Eigen::Ref<const Eigen::VectorXcd > & V,
 //                                    const Eigen::Ref<const Eigen::VectorXi > & pq,
@@ -85,8 +154,9 @@ class KLUSolver
             Eigen::SparseMatrix<std::complex< double > > dS_dVm;
             Eigen::SparseMatrix<std::complex< double > > dS_dVa;
             _dSbus_dV(dS_dVm, dS_dVa, Ybus, V);
-            auto n_pvpq = pvpq.size();
-            auto n_pq = pq.size();
+            const int n_pvpq = pvpq.size();
+            const int n_pq = pq.size();
+
             /**
             J has the shape
             | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
@@ -99,79 +169,96 @@ class KLUSolver
             J22 = dS_dVm[array([pq]).T, pq].imag
             **/
 
-            int size_j = n_pvpq + n_pq;
+            const int size_j = n_pvpq + n_pq;
             // TODO here: don't start from scratch each time, reuse the former J to replace it's coefficient
             // TODO this is rather slow, see if i cannot be smarter than this! (look at pandapower code)
             Eigen::SparseMatrix<double> J(size_j,size_j);
+            // pre allocate a large enough matrix
+            J.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
             // from an experiment, outerIndexPtr is inialized, with the number of columns
             // innerIndexPtr and valuePtr are not.
 
             // i fill the buffer columns per columns
             int nb_obj_this_col = 0;
-            int start_id, end_id;
             std::vector<int> inner_index;
             std::vector<double> values;
 
+            dS_dVa.makeCompressed();
             Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa.real();
             Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa.imag();
             Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm.real();
             Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm.imag();
             dS_dVa_r.makeCompressed();
             dS_dVa_i.makeCompressed();
-            dS_dVa.makeCompressed();
             dS_dVm_r.makeCompressed();
             dS_dVm_i.makeCompressed();
+
             //TODO Check the stuff bellow, and execute it once and for all only for all iterations!
-            std::vector<int> pvpq_inv(n_pvpq, -1);
+            std::vector<int> pvpq_inv(dS_dVm.size(), -1);
             for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
-            std::vector<int> pq_inv(n_pq, -1);
+
+            std::vector<int> pq_inv(dS_dVm.size(), -1);
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
 
-//            double test = J.coeffRef(size_j -1 , size_j -1);
-//            test = test + 1;
-//            int toto = J.outerIndexPtr()[size_j-1];
-//            std::cout << "test " << toto << std::endl;
             for(int col_id=0; col_id < n_pvpq; ++col_id){
+//                std::cout << "start column " << col_id << std::endl;
+                // reset from the previous column
                 nb_obj_this_col = 0;
                 inner_index.clear();
                 values.clear();
+
                 // fill with the first column with the column of dS_dVa[:,pvpq[col_id]]
                 // and check the row order !
-                int col_id_dS_dVa = pvpq[col_id];
-                start_id = dS_dVa_r.outerIndexPtr()[col_id_dS_dVa];
-                end_id = dS_dVa_r.outerIndexPtr()[col_id_dS_dVa+1];
-//                std::cout << "\tstart_id " << start_id << " end_id " << end_id <<std::endl;
-                // TODO try to optimize that here push back is meeeeh
-                for(int obj_id = start_id; obj_id < end_id; ++obj_id)
-                {
-//                    std::cout << "check " << obj_id << std::endl;
-                    int row_id_dS_dVa = dS_dVa_r.valuePtr()[obj_id];
-                    // I add the value only if the rows was selected in the indexes
-                    int row_id = pvpq_inv[row_id_dS_dVa];
-                    if(row_id > 0)
-                    {
-                        inner_index.push_back(pvpq_inv[row_id_dS_dVa]);
-                        values.push_back(dS_dVa_r.valuePtr()[obj_id]);
-                        nb_obj_this_col++;
-                    }
-                }
-
-                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
-                // TODO refactor with previous loop
+                _get_values_J(nb_obj_this_col, inner_index, values,
+                              dS_dVa_r,
+                              pvpq_inv, pvpq,
+                              col_id, 0);
+//
+//                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
+                _get_values_J(nb_obj_this_col, inner_index, values,
+                              dS_dVa_i,
+                              pq_inv, pvpq,
+                              col_id, n_pvpq
+                              );
 
                 // "efficient" insert of the element in the matrix
-                J.reserve(Eigen::VectorXi::Constant(n,nb_obj_this_col))
+                J.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
                 for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
-                    int row_id = inner_index[in_ind]
-                    J.coeffRef(row_id, col_id) = values[in_ind];
+                    int row_id = inner_index[in_ind];
+                    J.insert(row_id, col_id) = values[in_ind];
                 }
-
-                // indicate number of elements put in the matrix
-//                std::cout << "col_id " << col_id << " size_j " << size_j <<std::endl;
-//                J.outerIndexPtr()[col_id] = nb_obj_this_col;
             }
+//            std::cout << "done for the loop" <<std::endl;
 
             //TODO make same for the second part (have a funciton for previous loop)
+            for(int col_id=0; col_id < n_pq; ++col_id){
+//                std::cout << "start column " << col_id << std::endl;
+                // reset from the previous column
+                nb_obj_this_col = 0;
+                inner_index.clear();
+                values.clear();
+
+                // fill with the first column with the column of dS_dVa[:,pvpq[col_id]]
+                // and check the row order !
+                _get_values_J(nb_obj_this_col, inner_index, values,
+                              dS_dVm_r,
+                              pvpq_inv, pq,
+                              col_id, 0);
+//
+//                // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
+                _get_values_J(nb_obj_this_col, inner_index, values,
+                              dS_dVm_i,
+                              pq_inv, pq,
+                              col_id, n_pvpq
+                              );
+
+                // "efficient" insert of the element in the matrix
+                J.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
+                for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
+                    int row_id = inner_index[in_ind];
+                    J.insert(row_id, col_id + n_pvpq) = values[in_ind];
+                }
+            }
 
             // and now set the value computed in J
 //            std::cout << "before "<<std::endl;
@@ -209,36 +296,6 @@ class KLUSolver
 //                J.coeffRef(i,i + n_pvpq) = dS_dVm(i,i).imag(i);
 //            }
         }
-        void _dSbus_dV(Eigen::SparseMatrix<std::complex< double > > & dS_dVm,
-                       Eigen::SparseMatrix<std::complex< double > > & dS_dVa,
-                       const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
-                       const Eigen::Ref<const Eigen::VectorXcd > & V)
-        {
-            // "slow" implementation close to pypower, but with sparse matrix
-            // TODO check i cannot optimize that with numba code in pandapower
-            Eigen::VectorXcd Ibus = Ybus * V;  // vector
-            Eigen::VectorXcd _1_vabs = 1. / V.array().abs();
-
-            Eigen::SparseMatrix<std::complex< double > > diagV = _make_diagonal_matrix(V);
-            auto Ibus_conj = Ibus.conjugate();
-            Eigen::SparseMatrix<std::complex< double > > diagIbus_conj = _make_diagonal_matrix(Ibus_conj);
-            auto Vnorm = V * _1_vabs;
-            Eigen::SparseMatrix<std::complex< double > > diagVnorm = _make_diagonal_matrix(Vnorm);
-
-            Eigen::SparseMatrix<std::complex< double > > tmp = Ybus * diagVnorm;
-            tmp = tmp.conjugate();
-            dS_dVm = diagV * tmp + Ibus_conj * diagVnorm;  //diagIbus_conj * diagVnorm;
-
-            Eigen::SparseMatrix<std::complex< double > > tmp2 = diagIbus_conj - tmp;  // conj(diagIbus - Ybus * diagV)
-            dS_dVa = 1.0i * diagV * tmp2;
-
-            // python implementation
-            // dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-            // dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
-//            return std::tuple<Eigen::SparseMatrix<std::complex< double > >,
-//                              Eigen::SparseMatrix<std::complex< double > > >(dS_dVm, dS_dVa);
-        }
-
 
          // TODO re add the references here for the last stuff
          std::tuple<Eigen::VectorXd, Eigen::VectorXcd> one_iter(Eigen::SparseMatrix<double> J,

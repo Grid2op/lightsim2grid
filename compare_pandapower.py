@@ -45,7 +45,28 @@ converged = solver._check_for_convergence(F, tol)
 while (not converged and i < max_it):
     i = i + 1
     J = solver.create_jacobian_matrix(Ybus, V, pq, pvpq)
-    J_pp = np.load("J_{}.npy".format(i))
+    # to test
+    J2_ = create_jacobian_matrix(Ybus, V, pvpq, pq, createJ, pvpq_lookup, npv, npq, numba)
+    J2 = sparse.csc_matrix(J2_)
+
+    J_pp_ = np.load("J_{}.npy".format(i))
+    J_pp = sparse.csc_matrix(J_pp_)
+
+    test2 = np.where(J2.toarray() != 0)
+    test = np.where(J.toarray() != 0)
+
+    print("Are the non null values identical: ")
+    print("\t for rows: {}".format(np.all(test[0] == test2[0])))
+    print("\t for columns: {}".format(np.all(test[1] == test2[1])))
+
+
+    comp_val = np.abs(J - J2)
+    comp_val = comp_val.toarray()
+    print("Is J the same:")
+    print("\t for J11 (dS_dVa_r): {}".format(np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)]))))
+    print("\t for J21 (dS_dVa_i): {}".format(np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)]))))
+    print("\t for J12 (dS_dVm_r): {}".format(np.sum(np.abs(comp_val[:len(pvpq), len(pvpq):]))))
+    print("\t for J22 (dS_dVm_i): {}".format(np.sum(np.abs(comp_val[len(pvpq):, len(pvpq):]))))
     pdb.set_trace()
     # J = sparse.csc_matrix(J)
 
