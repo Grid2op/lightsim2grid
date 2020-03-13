@@ -8,6 +8,22 @@ import pdb
 it_num = 0
 
 solver = KLUSolver()
+# test the Newton Raphson solver
+tol = 1e-08
+Ybus = np.load("Ybus.npy")
+Ybus = sparse.csc_matrix(Ybus)
+Sbus = np.load("Sbus.npy")
+V0 = np.load("V0.npy")
+pv = np.load("pv.npy")
+pq = np.load("pq.npy")
+max_it = 10
+tol = 1e-08
+
+V = 1.0 * V0
+solver.do_newton(Ybus, V, Sbus, pv, pq, max_it, tol)
+pdb.set_trace()
+
+sys.exit()
 is_init = False
 # check the "create jacobian" stuff
 tol = 1e-08

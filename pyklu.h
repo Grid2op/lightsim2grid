@@ -34,23 +34,26 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
-        void do_newton(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
-                       Eigen::Ref<Eigen::VectorXcd> & V,
-                       const Eigen::Ref<Eigen::VectorXcd> & Sbus,
-                       const Eigen::Ref<Eigen::VectorXi> & pv,
-                       const Eigen::Ref<Eigen::VectorXi> & pq,
+        bool do_newton(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+                       Eigen::VectorXcd & V,
+                       const Eigen::VectorXcd & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
                        int max_iter,
                        double tol
                        ){
             // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
             // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
-            if(err_ > 0) return; // i don't do anything if there were a problem at the initialization
+            if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
 
             // initialize once and for all the "inverse" of these vector
             int n_pv = pv.size();
             int n_pq = pq.size();
             Eigen::VectorXi pvpq(n_pv + n_pq);
             pvpq << pv, pq;
+//            std::cout << "pvpq size" << pvpq.size() << std::endl;
+//            std::cout << "pv size" << pv.size() << std::endl;
+//            std::cout << "pq size" << pq.size() << std::endl;
             int n_pvpq = pvpq.size();
             std::vector<int> pvpq_inv(V.size(), -1);
             for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
@@ -61,16 +64,24 @@ class KLUSolver
             Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
             bool converged = _check_for_convergence(F, tol);
             nr_iter_ = 0; //current step
+            bool res = true;
             while ((!converged) & (nr_iter_ < max_iter)){
                 nr_iter_++;
-                fill_jacobian_matrix(Ybus, V, pq, pvpq);
+                fill_jacobian_matrix(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
                 if(need_factorize_){
                     initialize();
+                    if(err_ != 0){
+                        // I got an error during the initialization of the linear system, i need to stop here
+                        res = false;
+                        break;
+                    }
                 }
+                //TODO refactorize is called uselessly at the first iteration
                 solve(F);
                 if(err_ != 0){
                     // I got an error during the solving of the linear system, i need to stop here
-                    return;
+                    res = false;
+                    break;
                 }
                 auto dx = -1.0*F;
 
@@ -92,7 +103,9 @@ class KLUSolver
             }
             if(nr_iter_ > max_iter){
                 err_ = 4;
+                res = false;
             }
+            return res;
         }
 
         Eigen::SparseMatrix<double> get_J(){
@@ -117,8 +130,8 @@ class KLUSolver
             common_ = klu_common();
 
             Vm_ = Eigen::VectorXd();  // voltage magnitude
-            Va_ =Eigen::VectorXd();  // voltage angle
-            J_ =Eigen::SparseMatrix<double>();  // the jacobian matrix
+            Va_= Eigen::VectorXd();  // voltage angle
+            J_ = Eigen::SparseMatrix<double>();  // the jacobian matrix
             need_factorize_ = true;
             nr_iter_ = 0;  // number of iteration performs by the Newton Raphson algorithm
             err_ = -1; //error message:
@@ -245,7 +258,10 @@ class KLUSolver
         void fill_jacobian_matrix(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
                                   const Eigen::VectorXcd & V,
                                   const Eigen::VectorXi & pq,
-                                  const Eigen::VectorXi & pvpq){
+                                  const Eigen::VectorXi & pvpq,
+                                  const std::vector<int> & pq_inv,
+                                  const std::vector<int> & pvpq_inv
+                                  ){
             /**
             J has the shape
             | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
@@ -269,8 +285,7 @@ class KLUSolver
 
             const int size_j = n_pvpq + n_pq;
             // TODO here: don't start from scratch each time, reuse the former J to replace it's coefficient
-            // TODO this is rather slow, see if i cannot be smarter than this! (look at pandapower code)
-            Eigen::SparseMatrix<double> J_(size_j,size_j);
+            J_ = Eigen::SparseMatrix<double>(size_j,size_j);
             // pre allocate a large enough matrix
             J_.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
             // from an experiment, outerIndexPtr is inialized, with the number of columns
@@ -286,13 +301,6 @@ class KLUSolver
             dS_dVa_i.makeCompressed();
             dS_dVm_r.makeCompressed();
             dS_dVm_i.makeCompressed();
-
-            //TODO Check the stuff bellow, and execute it once and for all only for all iterations!
-            std::vector<int> pvpq_inv(dS_dVm.size(), -1);
-            for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
-
-            std::vector<int> pq_inv(dS_dVm.size(), -1);
-            for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
 
             // i fill the buffer columns per columns
             int nb_obj_this_col = 0;
@@ -469,7 +477,13 @@ class KLUSolver
                                          ){
 
             // DO NOT USE, FOR DEBUG ONLY!
-            fill_jacobian_matrix(Ybus, V, pq, pvpq);
+            int n_pvpq = pvpq.size();
+            int n_pq = pvpq.size();
+            std::vector<int> pvpq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
+            std::vector<int> pq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+            fill_jacobian_matrix(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
             return J_;
         }
 
