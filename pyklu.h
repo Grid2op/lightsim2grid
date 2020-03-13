@@ -133,7 +133,8 @@ class KLUSolver
 //            std::cout << "test " << toto << std::endl;
             for(int col_id=0; col_id < n_pvpq; ++col_id){
                 nb_obj_this_col = 0;
-
+                inner_index.clear();
+                values.clear();
                 // fill with the first column with the column of dS_dVa[:,pvpq[col_id]]
                 // and check the row order !
                 int col_id_dS_dVa = pvpq[col_id];
@@ -158,24 +159,31 @@ class KLUSolver
                 // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
                 // TODO refactor with previous loop
 
+                // "efficient" insert of the element in the matrix
+                J.reserve(Eigen::VectorXi::Constant(n,nb_obj_this_col))
+                for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
+                    int row_id = inner_index[in_ind]
+                    J.coeffRef(row_id, col_id) = values[in_ind];
+                }
+
                 // indicate number of elements put in the matrix
 //                std::cout << "col_id " << col_id << " size_j " << size_j <<std::endl;
-                J.outerIndexPtr()[col_id] = nb_obj_this_col;
+//                J.outerIndexPtr()[col_id] = nb_obj_this_col;
             }
 
             //TODO make same for the second part (have a funciton for previous loop)
 
             // and now set the value computed in J
-            std::cout << "before "<<std::endl;
-            double * valuePtr = new double[values.size()];  // deletion is ensured by the J sparse matrix
-            memcpy(valuePtr, &values[0], values.size());
-            std::cout << "valuePtr " << valuePtr <<std::endl;
-            J.valuePtr() = valuePtr;
-
-//            int * innerIndexPtr = new int[values.size()]; // deletion is ensured by the J sparse matrix
-//            memcpy(innerIndexPtr, &inner_index[0], inner_index.size());
-//            J.innerIndexPtr() = innerIndexPtr;
-            std::cout << "after "<<std::endl;
+//            std::cout << "before "<<std::endl;
+//            double * valuePtr = new double[values.size()];  // deletion is ensured by the J sparse matrix
+//            memcpy(valuePtr, &values[0], values.size());
+//            std::cout << "valuePtr " << valuePtr <<std::endl;
+//            J.valuePtr() = valuePtr;
+//
+////            int * innerIndexPtr = new int[values.size()]; // deletion is ensured by the J sparse matrix
+////            memcpy(innerIndexPtr, &inner_index[0], inner_index.size());
+////            J.innerIndexPtr() = innerIndexPtr;
+//            std::cout << "after "<<std::endl;
 
 
 //            J.setIdentity();
