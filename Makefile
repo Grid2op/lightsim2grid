@@ -7,6 +7,7 @@ CXX = g++
 
 LIBPATH_REL = ./SuiteSparse
 LIBPATH = $(realpath $(LIBPATH_REL))
+PATHOUT = old
 
 INCLUDE = -I$(LIBPATH)/SuiteSparse_config \
           -I$(LIBPATH)/CXSparse/Include \
@@ -29,7 +30,7 @@ clean:
 	(cd $(LIBPATH)/BTF/Lib/ && make clean)
 	(cd $(LIBPATH)/COLAMD/Lib/ && make clean)
 	(cd $(LIBPATH)/KLU/Lib/ && make clean)
-	rm libpyklu.so
+	rm $(PATHOUT)/libpyklu.so
 
 purge:
 	(cd $(LIBPATH)/SuiteSparse_config/ && make purge)
@@ -38,7 +39,7 @@ purge:
 	(cd $(LIBPATH)/BTF/Lib/ && make purge)
 	(cd $(LIBPATH)/COLAMD/Lib/ && make purge)
 	(cd $(LIBPATH)/KLU/Lib/ && make purge)
-	rm libpyklu.so
+	rm $(PATHOUT)/libpyklu.so
 
 distclean: purge
 
@@ -52,7 +53,7 @@ prelude:
 	(cd $(LIBPATH)/COLAMD/Lib/ && make CC=gcc)
 	(cd $(LIBPATH)/KLU/Lib/ && make CC=gcc)
 
-pyKLU: pyklu.c $(LIB)
-	$(CC) $(INCLUDE) -fPIC -shared -o libpyklu.so pyklu.c $(LIB)
-	# $(CXX) $(INCLUDE) -fPIC -shared -o libpyklu_cpp.so pyklu.cpp $(LIB)
+pyKLU: $(PATHOUT)/pyklu.c $(LIB)
+	$(CC) $(INCLUDE) -fPIC -shared -o $(PATHOUT)/libpyklu.so $(PATHOUT)/pyklu.c $(LIB)
+	# $(CXX) $(INCLUDE) -fPIC -shared -o $(PATHOUT)/libpyklu_cpp.so $(PATHOUT)/pyklu.cpp $(LIB)
 

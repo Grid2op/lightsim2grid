@@ -150,5 +150,9 @@ V0.npy
 Ybus.npy
 pq.npy
 pv.npy
+V_1.npy
+V_2.npy
+V_3.npy
+V_4.npy
 *.asm
 

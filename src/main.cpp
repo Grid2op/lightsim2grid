@@ -9,7 +9,7 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(pyklu_package, m) {
+PYBIND11_MODULE(pyklu_cpp, m) {
 //    py::bind_vector<std::vector<int> >(m, "VectorInt");
 //    py::bind_vector<std::vector<double> >(m, "VectorDouble");
     py::class_<KLUSolver>(m, "KLUSolver")

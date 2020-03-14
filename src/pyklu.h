@@ -34,23 +34,6 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
-        bool initialize_test(Eigen::SparseMatrix<double > & J){
-            // default Eigen representation: column major, which is good for klu !
-            // J is const here, even if it's not said in klu_analyze
-            int n = J.cols(); // should be equal to J_.nrows()
-            err_ = 0; // reset error message
-            klu_common common = klu_common();
-            bool res = true;
-            klu_symbolic* symbolic = klu_analyze(n, J.outerIndexPtr(), J.innerIndexPtr(), &common);
-//            auto numeric = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic, &common);
-            klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic, &common);
-            if (common_.status != KLU_OK) {
-                err_ = 1;
-                res = false;
-            }
-            return res;
-        }
-
         bool do_newton(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
@@ -515,6 +498,23 @@ class KLUSolver
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
             fill_jacobian_matrix(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
             return J_;
+        }
+
+        bool initialize_test(Eigen::SparseMatrix<double > & J){
+            // default Eigen representation: column major, which is good for klu !
+            // J is const here, even if it's not said in klu_analyze
+            int n = J.cols(); // should be equal to J_.nrows()
+            err_ = 0; // reset error message
+            klu_common common = klu_common();
+            bool res = true;
+            klu_symbolic* symbolic = klu_analyze(n, J.outerIndexPtr(), J.innerIndexPtr(), &common);
+//            auto numeric = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic, &common);
+            klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic, &common);
+            if (common_.status != KLU_OK) {
+                err_ = 1;
+                res = false;
+            }
+            return res;
         }
 
 };

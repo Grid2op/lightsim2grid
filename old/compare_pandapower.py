@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from scipy import sparse
-from pyklu_package import KLUSolver
+from pyklu import KLUSolver
 from pandapower.pf.create_jacobian import create_jacobian_matrix, get_fastest_jacobian_function
 import pdb
 

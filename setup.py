@@ -113,7 +113,7 @@ INCLUDE_suitesparse = ["{}/SuiteSparse_config",
 INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
 INCLUDE = INCLUDE_suitesparse
 INCLUDE.append("{}/eigen".format(eigen_path))
-INCLUDE.append(os.path.abspath("."))
+# INCLUDE.append(os.path.abspath("."))
 
 include_dirs = [
                 # Path to pybind11 headers
@@ -128,7 +128,7 @@ extra_compile_args = ["-march=native", "-fext-numeric-literals"]
 # extra_compile_args = []
 ext_modules = [
     Extension(
-        'pyklu_package',
+        'pyklu_cpp',
         ['src/main.cpp'],
         include_dirs=include_dirs,
         language='c++',
@@ -138,15 +138,16 @@ ext_modules = [
 ]
 
 setup(
-    name='pyklu_package',
+    name='pyklu',
     version=__version__,
     author='Benjamin Donnot',
     author_email='benjamin.donnot@rte-france.com',
     url='TODO',
-    description='A test project for pyklu using pybind11',
-    long_description='',
+    description='A powerflow solver for pandapower written in c++ (using Eigen and klu) for pandapower',
+    long_description='This fast powerflow can be used instead of the "pp.runpp()" function of pandapower under some '
+                     'circumstances TODO',
     ext_modules=ext_modules,
-    install_requires=['pybind11>=2.4'],
+    install_requires=['pybind11>=2.4', "pandapower"],
     setup_requires=['pybind11>=2.4'],
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
