@@ -8,6 +8,8 @@ import pdb
 it_num = 0
 
 solver = KLUSolver()
+solver2 = KLUSolver()
+solver3 = KLUSolver()
 # test the Newton Raphson solver
 tol = 1e-08
 Ybus = np.load("Ybus.npy")
@@ -16,14 +18,38 @@ Sbus = np.load("Sbus.npy")
 V0 = np.load("V0.npy")
 pv = np.load("pv.npy")
 pq = np.load("pq.npy")
+pvpq = np.r_[pv, pq]
 max_it = 10
 tol = 1e-08
 
 V = 1.0 * V0
-solver.do_newton(Ybus, V, Sbus, pv, pq, max_it, tol)
-pdb.set_trace()
+F = np.zeros(181)
+has_conv = solver.do_newton(Ybus, V, Sbus, pv, pq, max_it, tol)
+error_status = solver.get_error()
+J = solver.get_J()
+J_pp_ = np.load("J_{}.npy".format(4))
+# F_pp = np.load("F_{}.npy".format(4))
+J_pp = sparse.csc_matrix(J_pp_)
+# has_conv_pandapower = solver2.initialize_test(J_pp)
+print("Has the solver converged: {}".format(has_conv))
+print("In how many iteration: {}".format(solver.get_nb_iter()))
 
+test2 = np.where(J_pp.toarray() != 0)
+test = np.where(J.toarray() != 0)
+
+print("Are the non null values identical to what they should be?")
+print("\t for rows: {}".format(np.all(test[0] == test2[0])))
+print("\t for columns: {}".format(np.all(test[1] == test2[1])))
+
+comp_val = np.abs(J - J_pp)
+comp_val = comp_val.toarray()
+print("Is the jacobian the same?")
+print("\t for J11 (dS_dVa_r): {}".format(np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)]))))
+print("\t for J21 (dS_dVa_i): {}".format(np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)]))))
+print("\t for J12 (dS_dVm_r): {}".format(np.sum(np.abs(comp_val[:len(pvpq), len(pvpq):]))))
+print("\t for J22 (dS_dVm_i): {}".format(np.sum(np.abs(comp_val[len(pvpq):, len(pvpq):]))))
 sys.exit()
+
 is_init = False
 # check the "create jacobian" stuff
 tol = 1e-08

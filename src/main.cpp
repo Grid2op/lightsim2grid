@@ -14,7 +14,7 @@ PYBIND11_MODULE(pyklu_package, m) {
 //    py::bind_vector<std::vector<double> >(m, "VectorDouble");
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
-//        .def("initialize", &KLUSolver::initialize)  // initialize the solver (DO NOT USE)
+//        .def("initialize_test", &KLUSolver::initialize_test)  // initialize the solver (DO NOT USE)
         .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)

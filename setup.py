@@ -83,10 +83,9 @@ class BuildExt(build_ext):
         elif ct == 'msvc':
             opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
         for ext in self.extensions:
-            ext.extra_compile_args = opts
-            ext.extra_link_args = link_opts
+            ext.extra_compile_args += opts
+            ext.extra_link_args += link_opts
         build_ext.build_extensions(self)
-
 
 suitesparse_path = os.path.abspath("./SuiteSparse")
 eigen_path = os.path.abspath(".")
@@ -124,7 +123,8 @@ include_dirs = [
 include_dirs += INCLUDE
 
 # compiler options
-extra_compile_args = ["-march=native"]
+extra_compile_args = ["-march=native", "-fext-numeric-literals"]
+# -fext-numeric-literals is used for definition of complex number by some version of gcc
 # extra_compile_args = []
 ext_modules = [
     Extension(
@@ -134,7 +134,7 @@ ext_modules = [
         language='c++',
         extra_objects=LIBS,
         extra_compile_args=extra_compile_args
-    ),
+    )
 ]
 
 setup(
@@ -148,6 +148,6 @@ setup(
     ext_modules=ext_modules,
     install_requires=['pybind11>=2.4'],
     setup_requires=['pybind11>=2.4'],
-    # cmdclass={'build_ext': BuildExt},  # if used, then the extra compiler flag won't work
+    cmdclass={'build_ext': BuildExt},
     zip_safe=False,
 )

@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <stdio.h>
-
+#include <cstdint> // for int32
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
@@ -34,6 +34,23 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
+        bool initialize_test(Eigen::SparseMatrix<double > & J){
+            // default Eigen representation: column major, which is good for klu !
+            // J is const here, even if it's not said in klu_analyze
+            int n = J.cols(); // should be equal to J_.nrows()
+            err_ = 0; // reset error message
+            klu_common common = klu_common();
+            bool res = true;
+            klu_symbolic* symbolic = klu_analyze(n, J.outerIndexPtr(), J.innerIndexPtr(), &common);
+//            auto numeric = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic, &common);
+            klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic, &common);
+            if (common_.status != KLU_OK) {
+                err_ = 1;
+                res = false;
+            }
+            return res;
+        }
+
         bool do_newton(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
@@ -46,14 +63,11 @@ class KLUSolver
             // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
             if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
 
-            // initialize once and for all the "inverse" of these vector
+            // initialize once and for all the "inverse" of these vectors
             int n_pv = pv.size();
             int n_pq = pq.size();
             Eigen::VectorXi pvpq(n_pv + n_pq);
             pvpq << pv, pq;
-//            std::cout << "pvpq size" << pvpq.size() << std::endl;
-//            std::cout << "pv size" << pv.size() << std::endl;
-//            std::cout << "pq size" << pq.size() << std::endl;
             int n_pvpq = pvpq.size();
             std::vector<int> pvpq_inv(V.size(), -1);
             for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
@@ -64,7 +78,8 @@ class KLUSolver
             Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
             bool converged = _check_for_convergence(F, tol);
             nr_iter_ = 0; //current step
-            bool res = true;
+            bool res = true;  // have i converged or not
+            bool has_just_been_inialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
             while ((!converged) & (nr_iter_ < max_iter)){
                 nr_iter_++;
                 fill_jacobian_matrix(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
@@ -75,9 +90,11 @@ class KLUSolver
                         res = false;
                         break;
                     }
+                    has_just_been_inialized = true;
                 }
                 //TODO refactorize is called uselessly at the first iteration
-                solve(F);
+                solve(F, has_just_been_inialized);
+                has_just_been_inialized = false;
                 if(err_ != 0){
                     // I got an error during the solving of the linear system, i need to stop here
                     res = false;
@@ -146,6 +163,7 @@ class KLUSolver
             // J is const here, even if it's not said in klu_analyze
             n_ = J_.cols(); // should be equal to J_.nrows()
             err_ = 0; // reset error message
+            common_ = klu_common();
             symbolic_ = klu_analyze(n_, J_.outerIndexPtr(), J_.innerIndexPtr(), &common_);
             numeric_ = klu_factor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, &common_);
             if (common_.status != KLU_OK) {
@@ -154,17 +172,23 @@ class KLUSolver
             need_factorize_ = false;
         }
 
-        void solve(Eigen::VectorXd & b){
+        void solve(Eigen::VectorXd & b, bool has_just_been_inialized){
             // solves (for x) the linear system J.x = b
-            // supposes that the solver has been initialized (call klu_solver.analyze(M) before calling that)
+            // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
             // J is const even if it does not compile if said const
-            int ok = klu_refactor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, numeric_, &common_);
-            if (ok != 1) {
-                err_ = 2;
-                return;
+            int ok;
+            if(!has_just_been_inialized){
+                // if the call to "klu_factor" has been made this iteration, there is no need
+                // to re factor again the matrix
+                // i'm in the case where it has not
+                ok = klu_refactor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, numeric_, &common_);
+                if (ok != 1) {
+                    err_ = 2;
+                    return;
+                }
             }
             ok = klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
-            if (ok != 0) {
+            if (ok != 1) {
                 err_ = 3;
             }
         }
@@ -284,7 +308,10 @@ class KLUSolver
             const int n_pq = pq.size();
 
             const int size_j = n_pvpq + n_pq;
-            // TODO here: don't start from scratch each time, reuse the former J to replace it's coefficient
+
+            bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
+            if(J_.cols() != size_j) need_insert = true;
+
             J_ = Eigen::SparseMatrix<double>(size_j,size_j);
             // pre allocate a large enough matrix
             J_.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
@@ -307,6 +334,7 @@ class KLUSolver
             std::vector<int> inner_index;
             std::vector<double> values;
 
+            // fill n_pvpq leftmost columns
             for(int col_id=0; col_id < n_pvpq; ++col_id){
                 // reset from the previous column
                 nb_obj_this_col = 0;
@@ -327,14 +355,15 @@ class KLUSolver
                               );
 
                 // "efficient" insert of the element in the matrix
-                J_.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
                 for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
                     int row_id = inner_index[in_ind];
-                    J_.insert(row_id, col_id) = values[in_ind];
+                    if(need_insert) J_.insert(row_id, col_id) = values[in_ind];
+                    else J_.coeffRef(row_id, col_id) = values[in_ind];
                 }
             }
 
             //TODO make same for the second part (have a funciton for previous loop)
+            // fill the remaining n_pq columns
             for(int col_id=0; col_id < n_pq; ++col_id){
                 // reset from the previous column
                 nb_obj_this_col = 0;
@@ -356,12 +385,13 @@ class KLUSolver
                               );
 
                 // "efficient" insert of the element in the matrix
-                J_.reserve(Eigen::VectorXi::Constant(size_j,nb_obj_this_col));
                 for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
                     int row_id = inner_index[in_ind];
-                    J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
+                    if(need_insert) J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
+                    else J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];
                 }
             }
+            J_.makeCompressed();
         }
 
         Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<std::complex< double > > &  Ybus,
