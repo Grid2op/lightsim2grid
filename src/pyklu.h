@@ -293,13 +293,18 @@ class KLUSolver
             const int size_j = n_pvpq + n_pq;
 
             bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
-            if(J_.cols() != size_j) need_insert = true;
-
-            J_ = Eigen::SparseMatrix<double>(size_j,size_j);
-            // pre allocate a large enough matrix
-            J_.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
-            // from an experiment, outerIndexPtr is inialized, with the number of columns
-            // innerIndexPtr and valuePtr are not.
+            if(J_.cols() != size_j)
+            {
+                // optim : if the matrix was already computed, i don't initalize it, i instead reuse as much as i can
+                // i can do that because the matrix will ALWAYS have the same non zero coefficients.
+                // in this if, i allocate it in a "large enough" place to avoid copy when first filling it
+                need_insert = true;
+                J_ = Eigen::SparseMatrix<double>(size_j,size_j);
+                // pre allocate a large enough matrix
+                J_.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
+                // from an experiment, outerIndexPtr is inialized, with the number of columns
+                // innerIndexPtr and valuePtr are not.
+            }
 
             dS_dVa.makeCompressed();
             Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa.real();
