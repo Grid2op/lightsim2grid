@@ -2,6 +2,8 @@
 #include <vector>
 #include <stdio.h>
 #include <cstdint> // for int32
+#include <chrono>
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
@@ -11,6 +13,30 @@ extern "C" {
 }
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
+
+
+class CustTimer{
+    public:
+        CustTimer():start_(std::chrono::system_clock::now()){
+            end_ = start_;
+        };
+
+        double duration(){
+            end_ = std::chrono::system_clock::now();
+            std::chrono::duration<double> res = end_ - start_;
+            return res.count();
+        }
+    private:
+        std::chrono::time_point<std::chrono::system_clock> start_;
+        std::chrono::time_point<std::chrono::system_clock> end_;
+//        void start(){
+//            start_ = std::chrono::system_clock::now();
+//        }
+//        void end(){
+//            end_ = std::chrono::system_clock::now();
+//        }
+
+};
 
 /**
 class to handle the solver using newton-raphson method, using KLU algorithm and sparse matrices.
@@ -24,8 +50,16 @@ Otherwise, unexpected behaviour might follow, including "segfault".
 class KLUSolver
 {
     public:
-        KLUSolver():symbolic_(),numeric_(),common_(),n_(-1),need_factorize_(true),err_(-1){
+        KLUSolver():symbolic_(),numeric_(),common_(),n_(-1),need_factorize_(true),err_(-1),
+                    timer_Fx_(0.){
             klu_defaults(&common_);
+            timer_Fx_ = 0.;
+            timer_solve_ = 0.;
+            timer_initialize_ = 0.;
+            timer_check_ = 0.;
+            timer_dSbus_ = 0.;
+            timer_fillJ_ = 0.;
+            timer_total_nr_ = 0.;
         }
 
         ~KLUSolver()
@@ -45,7 +79,7 @@ class KLUSolver
             // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
             // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
             if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
-
+            auto timer = CustTimer();
             // initialize once and for all the "inverse" of these vectors
             int n_pv = pv.size();
             int n_pq = pq.size();
@@ -101,10 +135,11 @@ class KLUSolver
                 F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
                 converged = _check_for_convergence(F, tol);
             }
-            if(nr_iter_ > max_iter){
+            if(!converged){
                 err_ = 4;
                 res = false;
             }
+            timer_total_nr_ += timer.duration();
             return res;
         }
 
@@ -135,15 +170,32 @@ class KLUSolver
             need_factorize_ = true;
             nr_iter_ = 0;  // number of iteration performs by the Newton Raphson algorithm
             err_ = -1; //error message:
+
+            // reset timers
+            timer_Fx_ = 0.;
+            timer_solve_ = 0.;
+            timer_initialize_ = 0.;
+            timer_check_ = 0.;
+            timer_dSbus_ = 0.;
+            timer_fillJ_ = 0.;
+            timer_total_nr_ = 0.;
+
         }
         bool converged(){
             return err_ == 0;
         }
+         std::tuple<double, double, double, double, double, double, double> get_timers()
+         {
+            auto res = std::tuple<double, double, double, double, double, double, double>(
+              timer_Fx_, timer_solve_, timer_initialize_, timer_check_, timer_dSbus_, timer_fillJ_, timer_total_nr_);
+            return res;
+         }
 
     protected:
         void initialize(){
             // default Eigen representation: column major, which is good for klu !
             // J is const here, even if it's not said in klu_analyze
+            auto timer = CustTimer();
             n_ = J_.cols(); // should be equal to J_.nrows()
             err_ = 0; // reset error message
             common_ = klu_common();
@@ -153,13 +205,16 @@ class KLUSolver
                 err_ = 1;
             }
             need_factorize_ = false;
+            timer_solve_ += timer.duration();
         }
 
         void solve(Eigen::VectorXd & b, bool has_just_been_inialized){
             // solves (for x) the linear system J.x = b
             // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
             // J is const even if it does not compile if said const
+            auto timer = CustTimer();
             int ok;
+            bool stop = false;
             if(!has_just_been_inialized){
                 // if the call to "klu_factor" has been made this iteration, there is no need
                 // to re factor again the matrix
@@ -167,13 +222,16 @@ class KLUSolver
                 ok = klu_refactor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, numeric_, &common_);
                 if (ok != 1) {
                     err_ = 2;
-                    return;
+                    stop = true;
                 }
             }
-            ok = klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
-            if (ok != 1) {
-                err_ = 3;
+            if(!stop){
+                ok = klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
+                if (ok != 1) {
+                    err_ = 3;
+                }
             }
+            timer_solve_ += timer.duration();
         }
 
         Eigen::SparseMatrix<std::complex< double > >
@@ -200,6 +258,7 @@ class KLUSolver
         {
             // "slow" implementation close to pypower, but with sparse matrix
             // TODO check i cannot optimize that with numba code in pandapower instead
+            auto timer = CustTimer();
             Eigen::VectorXcd Ibus = Ybus * V;
             Eigen::SparseMatrix<std::complex< double > > diagV = _make_diagonal_matrix(V);
 
@@ -222,6 +281,7 @@ class KLUSolver
             // python implementation
             // dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
             // dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
+            timer_dSbus_ += timer.duration();
         }
 
         void _get_values_J(int & nb_obj_this_col,
@@ -281,7 +341,7 @@ class KLUSolver
             J22 = dS_dVm[array([pq]).T, pq].imag
             **/
 
-
+            auto timer = CustTimer();
             // might also be accelerated in some cases, it's one of the "slow" implementation of pandapower
             // TODO apparently, following matrix have also a fixed shape, so i can be faster !
             Eigen::SparseMatrix<std::complex< double > > dS_dVm;
@@ -312,10 +372,10 @@ class KLUSolver
             Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm.real();
             Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm.imag();
             // TODO not sure it's mandatory
-            dS_dVa_r.makeCompressed();
-            dS_dVa_i.makeCompressed();
-            dS_dVm_r.makeCompressed();
-            dS_dVm_i.makeCompressed();
+//            dS_dVa_r.makeCompressed();
+//            dS_dVa_i.makeCompressed();
+//            dS_dVm_r.makeCompressed();
+//            dS_dVm_i.makeCompressed();
 
             // i fill the buffer columns per columns
             int nb_obj_this_col = 0;
@@ -380,6 +440,7 @@ class KLUSolver
                 }
             }
             J_.makeCompressed();
+            timer_fillJ_ += timer.duration();
         }
 
         Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<std::complex< double > > &  Ybus,
@@ -387,7 +448,7 @@ class KLUSolver
                                      const Eigen::VectorXcd & Sbus,
                                      const Eigen::VectorXi & pv,
                                      const Eigen::VectorXi & pq){
-
+            auto timer = CustTimer();
             auto npv = pv.size();
             auto npq = pq.size();
 
@@ -403,12 +464,15 @@ class KLUSolver
             res.segment(0,npv) = real_(pv);
             res.segment(npv,npq) = real_(pq);
             res.segment(npv+npq, npq) = imag_(pq);
+            timer_Fx_ += timer.duration();
             return res;
         }
 
          bool _check_for_convergence(const Eigen::VectorXd & F,
                                      double tol){
+            auto timer = CustTimer();
             return F.lpNorm<Eigen::Infinity>()  < tol;
+            timer_check_ += timer.duration();
          }
 
     private:
@@ -431,6 +495,15 @@ class KLUSolver
         // 2: i can't refactorize the matrix (klu_refactor)
         // 3: i can't solve the system (klu_solve)
         // 4: end of possible iterations (divergence because nr_iter_ >= max_iter
+
+        // timers
+         double timer_Fx_;
+         double timer_solve_;
+         double timer_initialize_;
+         double timer_check_;
+         double timer_dSbus_;
+         double timer_fillJ_;
+         double timer_total_nr_;
 
         // no copy allowed
         KLUSolver( const KLUSolver & ) ;
