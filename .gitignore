@@ -130,29 +130,24 @@ dmypy.json
 
 # custom
 .idea/
-F_1.npy
-F_2.npy
-F_3.npy
-F_4.npy
-J_1.npy
-J_2.npy
-J_3.npy
-J_4.npy
-dx_1.npy
-dx_2.npy
-dx_3.npy
-dx_4.npy
+old/F_*.npy
+old/J_*.npy
+old/dx_*.npy
 tmp/
 pandapower/
 eigen/
 Sbus.npy
-V0.npy
-Ybus.npy
-pq.npy
-pv.npy
-V_1.npy
-V_2.npy
-V_3.npy
-V_4.npy
+old/V0.npy
+old/Ybus.npy
+old/pq.npy
+old/pv.npy
+old/V_*.npy
 *.asm
+pyklu/tests/case14
+pyklu/tests/case30
+pyklu/tests/case118
+pyklu/tests/case300
+pyklu/tests/case1888
+
+
 

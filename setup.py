@@ -125,7 +125,7 @@ include_dirs += INCLUDE
 # compiler options
 extra_compile_args = ["-march=native", "-fext-numeric-literals"]
 # -fext-numeric-literals is used for definition of complex number by some version of gcc
-# extra_compile_args = []
+# -march=native is here to use the vectorization of the code offered by Eigen
 ext_modules = [
     Extension(
         'pyklu_cpp',
@@ -137,18 +137,29 @@ ext_modules = [
     )
 ]
 
-setup(
-    name='pyklu',
-    version=__version__,
-    author='Benjamin Donnot',
-    author_email='benjamin.donnot@rte-france.com',
-    url='TODO',
-    description='A powerflow solver for pandapower written in c++ (using Eigen and klu) for pandapower',
-    long_description='This fast powerflow can be used instead of the "pp.runpp()" function of pandapower under some '
-                     'circumstances TODO',
-    ext_modules=ext_modules,
-    install_requires=['pybind11>=2.4', "pandapower"],
-    setup_requires=['pybind11>=2.4'],
-    cmdclass={'build_ext': BuildExt},
-    zip_safe=False,
+setup(name='pyklu',
+      version=__version__,
+      author='Benjamin Donnot',
+      author_email='benjamin.donnot@rte-france.com',
+      url='TODO',
+      description='A powerflow solver for pandapower written in c++ (using Eigen and klu) for pandapower',
+      long_description='This fast powerflow can be used instead of the "pp.runpp()" function of pandapower under some '
+                         'circumstances TODO',
+      ext_modules=ext_modules,
+      install_requires=['pybind11>=2.4', "pandapower"],
+      setup_requires=['pybind11>=2.4'],
+      cmdclass={'build_ext': BuildExt},
+      zip_safe=False,
+      packages=['pyklu'],
+      keywords='powergrid optmization power-systems KLU sparse-matrix',
+      classifiers=[
+            'Development Status :: 4 - Beta',
+            'Programming Language :: Python :: 3.6',
+            'Programming Language :: Python :: 3.7',
+            "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+            "Intended Audience :: Developers",
+            "Intended Audience :: Education",
+            "Intended Audience :: Science/Research",
+            "Natural Language :: English"
+      ]
 )
