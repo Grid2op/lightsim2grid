@@ -108,11 +108,8 @@ class MakeTests(unittest.TestCase):
         self.compare_sparse_mat(J, J_pp, self.pv, self.pq)
         Va_pp = np.angle(V_pp)
         Vm_pp = np.abs(V_pp)
-        try:
-            assert np.sum(np.abs(Va - Va_pp)) <= self.tol_test, "voltages angles are not the same"
-            assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
-        except:
-            pdb.set_trace()
+        assert np.sum(np.abs(Va - Va_pp)) <= self.tol_test, "voltages angles are not the same"
+        assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
 
     def test_dir(self):
         nb_tested = 0
