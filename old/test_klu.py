@@ -10,8 +10,8 @@ tol = 1e-5
 grid1 = pn.case118()
 grid2 = pn.case118()
 
-grid1 = pn.case1888rte()
-grid2 = pn.case1888rte()
+grid1 = pn.case6515rte()
+grid2 = pn.case6515rte()
 nb_iteration = 100  # number of powerflow run
 nb_max_newton_it = 10  # maximum number of iteration for the solver
 
@@ -20,6 +20,7 @@ powerflow_time_pp = 0
 powerflow_time_cpp = 0
 sucees_cpp = False
 sucees_pp = False
+timers_cpp = np.zeros(7)
 
 # remove the first call with numba, that compiles the code
 pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
@@ -35,7 +36,8 @@ for i in range(nb_iteration):
     runpp(grid2, max_iteration=nb_max_newton_it)
     powerflow_time_cpp += grid2._ppc['et']
     sucees_cpp = grid2._ppc['success']
-    timers = grid2._ppc["internal"]['timers']
+    timers_cpp += np.array(grid2._ppc["internal"]['timers'])
+
 end_time_cpp = time.time()
 print("Is there a solution:\n\tpandapower: {}\n\tcustom implementation: {}".format(sucees_pp, sucees_pp))
 print("Total time:\n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s [results for {} iteration(s)]".format(
@@ -43,7 +45,13 @@ print("Total time:\n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s 
 
 print("Powerflow time: \n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s [results for {} iteration(s)]".format(
     powerflow_time_pp, powerflow_time_cpp, nb_iteration))
-pdb.set_trace()
+
+print("Detail timers for c++ implementations are:")
+for time_, nm_var in zip(timers_cpp,
+                         ["timer_Fx_", "timer_solve_", "timer_initialize_", "timer_check_",
+                          "timer_dSbus_", "timer_fillJ_", "timer_total_nr_"]):
+    print("\t {}: {:.4f}s".format(nm_var, time_))
+
 # check the results are the same for buses
 for colname in ["vm_pu", "va_degree", "p_mw", "q_mvar"]:
         if np.sum(np.abs(grid1.res_bus[colname] - grid2.res_bus[colname])) > tol:

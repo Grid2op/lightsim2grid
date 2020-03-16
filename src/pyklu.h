@@ -282,6 +282,59 @@ class KLUSolver
             // dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
             // dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
             timer_dSbus_ += timer.duration();
+
+            def dSbus_dV_numba_sparse(Yx, Yp, Yj, V, Vnorm, Ibus): # pragma: no cover
+            /**
+            """Computes partial derivatives of power injection w.r.t. voltage.
+
+            Calculates faster with numba and sparse matrices.
+
+            Input: Ybus in CSR sparse form (Yx = data, Yp = indptr, Yj = indices), V and Vnorm (= V / abs(V))
+
+            OUTPUT: data from CSR form of dS_dVm, dS_dVa
+            (index pointer and indices are the same as the ones from Ybus)
+
+            Translation of: dS_dVm = dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+                                     dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
+            """
+            **/
+
+        //    # transform input
+        //
+        //    # init buffer vector
+        //    buffer = zeros(len(V), dtype=complex128)
+        //    dS_dVm = Yx.copy()
+        //    dS_dVa = Yx.copy()
+        //
+        //    # iterate through sparse matrix
+        //    for r in range(len(Yp) - 1):
+        //        for k in range(Yp[r], Yp[r + 1]):
+        //            # Ibus = Ybus * V
+        //            buffer[r] += Yx[k] * V[Yj[k]]
+        //            # Ybus * diag(Vnorm)
+        //            dS_dVm[k] *= Vnorm[Yj[k]]
+        //            # Ybus * diag(V)
+        //            dS_dVa[k] *= V[Yj[k]]
+        //
+        //        Ibus[r] += buffer[r]
+        //
+        //        # conj(diagIbus) * diagVnorm
+        //        buffer[r] = conj(buffer[r]) * Vnorm[r]
+        //
+        //    for r in range(len(Yp) - 1):
+        //        for k in range(Yp[r], Yp[r + 1]):
+        //            # diag(V) * conj(Ybus * diagVnorm)
+        //            dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+        //
+        //            if r == Yj[k]:
+        //                # diagonal elements
+        //                dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+        //                dS_dVm[k] += buffer[r]
+        //
+        //            # 1j * diagV * conj(diagIbus - Ybus * diagV)
+        //            dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
+        //
+        //    return dS_dVm, dS_dVa
         }
 
         void _get_values_J(int & nb_obj_this_col,

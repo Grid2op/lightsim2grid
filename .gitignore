@@ -148,6 +148,10 @@ pyklu/tests/case30
 pyklu/tests/case118
 pyklu/tests/case300
 pyklu/tests/case1888
-
-
-
+J*.npy
+F*.npy
+V*.npy
+dx*.npy
+pq.npy
+pv.npy
+Ybus.npy
