@@ -10,8 +10,11 @@ tol = 1e-5
 grid1 = pn.case118()
 grid2 = pn.case118()
 
-grid1 = pn.case6515rte()
-grid2 = pn.case6515rte()
+# grid1 = pn.case6515rte()
+# grid2 = pn.case6515rte()
+
+grid1 = pn.case1888rte()
+grid2 = pn.case1888rte()
 nb_iteration = 100  # number of powerflow run
 nb_max_newton_it = 10  # maximum number of iteration for the solver
 
@@ -26,14 +29,22 @@ timers_cpp = np.zeros(7)
 pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
 start_time_pp = time.time()
 for i in range(nb_iteration):
-    pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
+    try:
+        pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
+    except pp.powerflow.LoadflowNotConverged:
+        pass
     powerflow_time_pp += grid1._ppc['et']
     sucees_pp = grid1._ppc['success']
 end_time_pp = time.time()
 
 start_time_cpp = time.time()
 for i in range(nb_iteration):
-    runpp(grid2, max_iteration=nb_max_newton_it)
+    try:
+        runpp(grid2, max_iteration=nb_max_newton_it)
+    except pp.powerflow.LoadflowNotConverged:
+        if i == 0:
+            print("I didn't converge for c++")
+        pass
     powerflow_time_cpp += grid2._ppc['et']
     sucees_cpp = grid2._ppc['success']
     timers_cpp += np.array(grid2._ppc["internal"]['timers'])

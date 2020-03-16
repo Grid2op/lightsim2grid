@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
+#include <complex>      // std::complex, std::conj
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -167,6 +168,8 @@ class KLUSolver
             Vm_ = Eigen::VectorXd();  // voltage magnitude
             Va_= Eigen::VectorXd();  // voltage angle
             J_ = Eigen::SparseMatrix<double>();  // the jacobian matrix
+            dS_dVm_ = Eigen::SparseMatrix<std::complex< double > >();
+            dS_dVa_ = Eigen::SparseMatrix<std::complex< double > >();
             need_factorize_ = true;
             nr_iter_ = 0;  // number of iteration performs by the Newton Raphson algorithm
             err_ = -1; //error message:
@@ -251,10 +254,10 @@ class KLUSolver
             return res;
         }
 
-        void _dSbus_dV(Eigen::SparseMatrix<std::complex< double > > & dS_dVm,
-                       Eigen::SparseMatrix<std::complex< double > > & dS_dVa,
-                       const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
-                       const Eigen::Ref<const Eigen::VectorXcd > & V)
+        void _dSbus_dV_old(Eigen::SparseMatrix<std::complex< double > > & dS_dVm,
+                           Eigen::SparseMatrix<std::complex< double > > & dS_dVa,
+                           const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
+                           const Eigen::Ref<const Eigen::VectorXcd > & V)
         {
             // "slow" implementation close to pypower, but with sparse matrix
             // TODO check i cannot optimize that with numba code in pandapower instead
@@ -282,9 +285,51 @@ class KLUSolver
             // dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
             // dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
             timer_dSbus_ += timer.duration();
+        }
 
-            def dSbus_dV_numba_sparse(Yx, Yp, Yj, V, Vnorm, Ibus): # pragma: no cover
+        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
+                       const Eigen::Ref<const Eigen::VectorXcd > & V){
+            auto timer = CustTimer();
+            auto size_dS = V.size();
+            Eigen::VectorXcd Vnorm = V.array() / V.array().abs();
+            Eigen::VectorXcd Ibus = Ybus * V;
+
+            // TODO see if i can reuse previous values, i am not sure
+            dS_dVm_ = Ybus;
+            dS_dVa_ = Ybus;
+
+            // i fill the buffer columns per columns
+            for (int k=0; k < size_dS; ++k){
+                for (Eigen::SparseMatrix<std::complex<double> >::InnerIterator it(dS_dVm_,k); it; ++it)
+                {
+                    it.valueRef() *= Vnorm(it.col());  // dS_dVm[k] *= Vnorm[Yj[k]]
+                    it.valueRef() = std::conj(it.valueRef()) * V(it.row());  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+                    if(it.col() == it.row()){
+                        // diagonal element
+                        it.valueRef() += std::conj(Ibus(it.row()) * Vnorm(it.row())); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus * Vnorm)
+                    }
+                }
+            }
+
+            for (int k=0; k < size_dS; ++k){
+                for (Eigen::SparseMatrix<std::complex<double> >::InnerIterator it(dS_dVa_,k); it; ++it)
+                {
+                    it.valueRef() *= V(it.col());  // dS_dVa[k] *= V[Yj[k]]
+                    if(it.col() == it.row()){
+                        // diagonal element
+                        it.valueRef() -= Ibus(it.row());  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+                    }
+                    std::complex<double> tmp = static_cast<std::complex<double> >(1.0i) * V(it.row());
+//                    tmp *= static_cast<std::complex<double> >(1.0i);
+                    it.valueRef() = std::conj(-it.valueRef()) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
+                }
+            }
+            dS_dVa_.makeCompressed();
+            dS_dVm_.makeCompressed();
+            timer_dSbus_ += timer.duration();
             /**
+            def dSbus_dV_numba_sparse(Yx, Yp, Yj, V, Vnorm, Ibus): # pragma: no cover
+
             """Computes partial derivatives of power injection w.r.t. voltage.
 
             Calculates faster with numba and sparse matrices.
@@ -297,44 +342,44 @@ class KLUSolver
             Translation of: dS_dVm = dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
                                      dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
             """
-            **/
 
-        //    # transform input
-        //
-        //    # init buffer vector
-        //    buffer = zeros(len(V), dtype=complex128)
-        //    dS_dVm = Yx.copy()
-        //    dS_dVa = Yx.copy()
-        //
-        //    # iterate through sparse matrix
-        //    for r in range(len(Yp) - 1):
-        //        for k in range(Yp[r], Yp[r + 1]):
-        //            # Ibus = Ybus * V
-        //            buffer[r] += Yx[k] * V[Yj[k]]
-        //            # Ybus * diag(Vnorm)
-        //            dS_dVm[k] *= Vnorm[Yj[k]]
-        //            # Ybus * diag(V)
-        //            dS_dVa[k] *= V[Yj[k]]
-        //
-        //        Ibus[r] += buffer[r]
-        //
-        //        # conj(diagIbus) * diagVnorm
-        //        buffer[r] = conj(buffer[r]) * Vnorm[r]
-        //
-        //    for r in range(len(Yp) - 1):
-        //        for k in range(Yp[r], Yp[r + 1]):
-        //            # diag(V) * conj(Ybus * diagVnorm)
-        //            dS_dVm[k] = conj(dS_dVm[k]) * V[r]
-        //
-        //            if r == Yj[k]:
-        //                # diagonal elements
-        //                dS_dVa[k] = -Ibus[r] + dS_dVa[k]
-        //                dS_dVm[k] += buffer[r]
-        //
-        //            # 1j * diagV * conj(diagIbus - Ybus * diagV)
-        //            dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
-        //
-        //    return dS_dVm, dS_dVa
+            # transform input
+
+            # init buffer vector
+            buffer = zeros(len(V), dtype=complex128)
+            dS_dVm = Yx.copy()
+            dS_dVa = Yx.copy()
+
+            # iterate through sparse matrix
+            for r in range(len(Yp) - 1):
+                for k in range(Yp[r], Yp[r + 1]):
+                    # Ibus = Ybus * V
+                    buffer[r] += Yx[k] * V[Yj[k]]
+                    # Ybus * diag(Vnorm)
+                    dS_dVm[k] *= Vnorm[Yj[k]]
+                    # Ybus * diag(V)
+                    dS_dVa[k] *= V[Yj[k]]
+
+                Ibus[r] += buffer[r]
+
+                # conj(diagIbus) * diagVnorm
+                buffer[r] = conj(buffer[r]) * Vnorm[r]
+
+            for r in range(len(Yp) - 1):
+                for k in range(Yp[r], Yp[r + 1]):
+                    # diag(V) * conj(Ybus * diagVnorm)
+                    dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+
+                    if r == Yj[k]:
+                        # diagonal elements
+                        dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+                        dS_dVm[k] += buffer[r]
+
+                    # 1j * diagV * conj(diagIbus - Ybus * diagV)
+                    dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
+
+            return dS_dVm, dS_dVa
+            **/
         }
 
         void _get_values_J(int & nb_obj_this_col,
@@ -397,9 +442,10 @@ class KLUSolver
             auto timer = CustTimer();
             // might also be accelerated in some cases, it's one of the "slow" implementation of pandapower
             // TODO apparently, following matrix have also a fixed shape, so i can be faster !
-            Eigen::SparseMatrix<std::complex< double > > dS_dVm;
-            Eigen::SparseMatrix<std::complex< double > > dS_dVa;
-            _dSbus_dV(dS_dVm, dS_dVa, Ybus, V);
+//            Eigen::SparseMatrix<std::complex< double > > dS_dVm;
+//            Eigen::SparseMatrix<std::complex< double > > dS_dVa;
+//            _dSbus_dV(dS_dVm, dS_dVa, Ybus, V);
+            _dSbus_dV(Ybus, V);
             const int n_pvpq = pvpq.size();
             const int n_pq = pq.size();
 
@@ -414,16 +460,15 @@ class KLUSolver
                 need_insert = true;
                 J_ = Eigen::SparseMatrix<double>(size_j,size_j);
                 // pre allocate a large enough matrix
-                J_.reserve(2*(dS_dVa.nonZeros()+dS_dVm.nonZeros()));
+                J_.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros()));
                 // from an experiment, outerIndexPtr is inialized, with the number of columns
                 // innerIndexPtr and valuePtr are not.
             }
 
-            dS_dVa.makeCompressed();
-            Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa.real();
-            Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa.imag();
-            Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm.real();
-            Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm.imag();
+            Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa_.real();
+            Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa_.imag();
+            Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm_.real();
+            Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm_.imag();
             // TODO not sure it's mandatory
 //            dS_dVa_r.makeCompressed();
 //            dS_dVa_i.makeCompressed();
@@ -435,6 +480,7 @@ class KLUSolver
             std::vector<int> inner_index;
             std::vector<double> values;
 
+            // TODO use the loop provided above (in dS) if J is already initialized
             // fill n_pvpq leftmost columns
             for(int col_id=0; col_id < n_pvpq; ++col_id){
                 // reset from the previous column
@@ -539,6 +585,8 @@ class KLUSolver
         Eigen::VectorXd Vm_;  // voltage magnitude
         Eigen::VectorXd Va_;  // voltage angle
         Eigen::SparseMatrix<double> J_;  // the jacobian matrix
+        Eigen::SparseMatrix<std::complex< double > > dS_dVm_;
+        Eigen::SparseMatrix<std::complex< double > > dS_dVa_;
         bool need_factorize_;
         int nr_iter_;  // number of iteration performs by the Newton Raphson algorithm
         int err_; //error message:
