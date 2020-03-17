@@ -85,6 +85,7 @@ class KLUSolver
                        ){
             // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
             // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
+            reset_timer();
             if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
             auto timer = CustTimer();
             // initialize once and for all the "inverse" of these vectors
@@ -181,14 +182,7 @@ class KLUSolver
             err_ = -1; //error message:
 
             // reset timers
-            timer_Fx_ = 0.;
-            timer_solve_ = 0.;
-            timer_initialize_ = 0.;
-            timer_check_ = 0.;
-            timer_dSbus_ = 0.;
-            timer_fillJ_ = 0.;
-            timer_total_nr_ = 0.;
-
+            reset_timer();
         }
         bool converged(){
             return err_ == 0;
@@ -209,6 +203,15 @@ class KLUSolver
         }
 
     protected:
+        void reset_timer(){
+            timer_Fx_ = 0.;
+            timer_solve_ = 0.;
+            timer_initialize_ = 0.;
+            timer_check_ = 0.;
+            timer_dSbus_ = 0.;
+            timer_fillJ_ = 0.;
+            timer_total_nr_ = 0.;
+        }
         void initialize(){
             // default Eigen representation: column major, which is good for klu !
             // J is const here, even if it's not said in klu_analyze
