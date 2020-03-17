@@ -309,8 +309,8 @@ class KLUSolver
             Eigen::VectorXcd Ibus = Ybus * V;
 
             // TODO see if i can reuse previous values, i am not sure
-            dS_dVm_ = 1.0 * Ybus;
-            dS_dVa_ = 1.0 * Ybus;
+            dS_dVm_ = Ybus;
+            dS_dVa_ = Ybus;
 
             // i fill the buffer columns per columns
             for (int k=0; k < size_dS; ++k){
@@ -320,7 +320,7 @@ class KLUSolver
                     it.valueRef() = std::conj(it.valueRef()) * V(it.row());  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
                     if(it.col() == it.row()){
                         // diagonal element
-                        it.valueRef() += std::conj(Ibus(it.row())) * Vnorm(it.row()); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus * Vnorm)
+                        it.valueRef() += std::conj(Ibus(it.row())) * Vnorm(it.row()); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus) * Vnorm
                     }
                 }
             }
@@ -467,6 +467,20 @@ class KLUSolver
                     if(need_insert) J_.insert(row_id, col_id) = values[in_ind];
                     else J_.coeffRef(row_id, col_id) = values[in_ind];
                 }
+//                if(need_insert){
+//                    for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
+//                        int row_id = inner_index[in_ind];
+//                        J_.insert(row_id, col_id) = values[in_ind];
+//                        // else J_.coeffRef(row_id, col_id) = values[in_ind];
+//                    }
+//                }else{
+//                    int in_ind=0;
+//                    for (Eigen::SparseMatrix<double>::InnerIterator it(J_,col_id); it; ++it, ++in_ind)
+//                    {
+////                        int row_id = inner_index[it.row()];
+//                        it.valueRef() = values[it.row()];
+//                    }
+//                }
             }
 
             //TODO make same for the second part (have a funciton for previous loop)
@@ -497,6 +511,20 @@ class KLUSolver
                     if(need_insert) J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
                     else J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];
                 }
+//                if(need_insert){
+//                    for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
+//                        int row_id = inner_index[in_ind];
+//                        J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
+//                        // else J_.coeffRef(row_id, col_id) = values[in_ind];
+//                    }
+//                }else{
+//                    int in_ind=0;
+//                    for (Eigen::SparseMatrix<double>::InnerIterator it(J_, col_id + n_pvpq); it; ++it, ++in_ind)
+//                    {
+//                        int row_id = inner_index[it.row()];
+//                        it.valueRef() = values[row_id];
+//                    }
+//                }
             }
             J_.makeCompressed();
             timer_fillJ_ += timer.duration();

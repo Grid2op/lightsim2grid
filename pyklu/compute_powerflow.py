@@ -30,7 +30,7 @@ def runpp(net, max_iteration=10, **kwargs):
                         enforce_q_lims=False, check_connectivity=True,
                         voltage_depend_loads=True,
                         consider_line_temperature=False,
-                        passed_parameters=passed_parameters, numba=False, **kwargs)
+                        passed_parameters=passed_parameters, numba=True, **kwargs)
     _check_bus_index_and_print_warning_if_high(net)
     _check_gen_index_and_print_warning_if_high(net)
 
@@ -92,24 +92,28 @@ def runpp(net, max_iteration=10, **kwargs):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
     Ybus = sparse.csc_matrix(Ybus)
+
     # t0 = time()
     solver = KLUSolver()
     solver.solve(Ybus, V0, Sbus, pv, pq, max_it, tol)
     # et = time() - t0
 
+    t0_ = time()
     Va = solver.get_Va()
     Vm = solver.get_Vm()
     V = Vm * np.exp(1j * Va)
     J = solver.get_J()
     success = solver.converged()
     iterations = solver.get_nb_iter()
+    et_ = time() - t0_
     # timer_Fx_, timer_solve_, timer_initialize_, timer_check_, timer_dSbus_, timer_fillJ_, timer_total_nr_
     timers = solver.get_timers()
     # ---------------------- pp.pypower.newtonpf ---------------------
 
     ppci = _store_internal(ppci, {"J": J, "Vm_it": None, "Va_it": None, "bus": bus, "gen": gen, "branch": branch,
                                   "baseMVA": baseMVA, "V": V, "pv": pv, "pq": pq, "ref": ref, "Sbus": Sbus,
-                                  "ref_gens": ref_gens, "Ybus": Ybus, "Yf": Yf, "Yt": Yt, "timers": timers})
+                                  "ref_gens": ref_gens, "Ybus": Ybus, "Yf": Yf, "Yt": Yt,
+                                  "timers": timers, "time_get_res": et_})
 
     # update data matrices with solution store in ppci
     # ---------- pp.pf.run_newton_raphson_pf._run_ac_pf_without_qlims_enforced ----------
