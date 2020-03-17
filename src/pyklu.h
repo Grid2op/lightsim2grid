@@ -5,15 +5,21 @@
 #include <chrono>
 #include <complex>      // std::complex, std::conj
 
+// eigen is necessary to easily pass data from numpy to c++ without any copy.
+// and to optimize the matrix operations
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
+
+// import klu package
 extern "C" {
     #include "cs.h"
     #include "klu.h"
 }
 
-// eigen is necessary to easily pass data from numpy to c++ without any copy.
+typedef std::complex<double> cdouble;
+
+
 
 
 class CustTimer{
@@ -69,7 +75,7 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
-        bool do_newton(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+        bool do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
@@ -131,7 +137,7 @@ class KLUSolver
                 }
 
                 // TODO change here for not having to cast all the time ... maybe
-                V = Vm_.array() * (Va_.array().cos().cast<std::complex< double > >() + 1.0i * Va_.array().sin().cast<std::complex< double > >() );
+                V = Vm_.array() * (Va_.array().cos().cast<cdouble>() + 1.0i * Va_.array().sin().cast<cdouble>() );
 
                 F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
                 converged = _check_for_convergence(F, tol);
@@ -168,8 +174,8 @@ class KLUSolver
             Vm_ = Eigen::VectorXd();  // voltage magnitude
             Va_= Eigen::VectorXd();  // voltage angle
             J_ = Eigen::SparseMatrix<double>();  // the jacobian matrix
-            dS_dVm_ = Eigen::SparseMatrix<std::complex< double > >();
-            dS_dVa_ = Eigen::SparseMatrix<std::complex< double > >();
+            dS_dVm_ = Eigen::SparseMatrix<cdouble>();
+            dS_dVa_ = Eigen::SparseMatrix<cdouble>();
             need_factorize_ = true;
             nr_iter_ = 0;  // number of iteration performs by the Newton Raphson algorithm
             err_ = -1; //error message:
@@ -193,6 +199,14 @@ class KLUSolver
               timer_Fx_, timer_solve_, timer_initialize_, timer_check_, timer_dSbus_, timer_fillJ_, timer_total_nr_);
             return res;
          }
+
+        std::tuple<Eigen::SparseMatrix<cdouble> , Eigen::SparseMatrix<cdouble> >
+                    _get_ds_test(Eigen::SparseMatrix<cdouble> & Ybus,
+                                Eigen::VectorXcd & V){
+            _dSbus_dV(Ybus, V);
+            auto res = std::tuple<Eigen::SparseMatrix<cdouble> , Eigen::SparseMatrix<cdouble> >(dS_dVm_, dS_dVa_);
+            return res;
+        }
 
     protected:
         void initialize(){
@@ -237,11 +251,11 @@ class KLUSolver
             timer_solve_ += timer.duration();
         }
 
-        Eigen::SparseMatrix<std::complex< double > >
+        Eigen::SparseMatrix<cdouble>
             _make_diagonal_matrix(const Eigen::Ref<const Eigen::VectorXcd > & diag_val){
             // TODO their might be a more efficient way to do that
             auto n = diag_val.size();
-            Eigen::SparseMatrix<std::complex< double > > res(n,n);
+            Eigen::SparseMatrix<cdouble> res(n,n);
             // first method, without a loop of mine
             res.setIdentity();  // segfault if attempt to use this function without this
             res.diagonal() = diag_val;
@@ -254,24 +268,24 @@ class KLUSolver
             return res;
         }
 
-        void _dSbus_dV_old(Eigen::SparseMatrix<std::complex< double > > & dS_dVm,
-                           Eigen::SparseMatrix<std::complex< double > > & dS_dVa,
-                           const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
+        void _dSbus_dV(Eigen::SparseMatrix<cdouble> & dS_dVm,
+                           Eigen::SparseMatrix<cdouble> & dS_dVa,
+                           const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
                            const Eigen::Ref<const Eigen::VectorXcd > & V)
         {
             // "slow" implementation close to pypower, but with sparse matrix
             // TODO check i cannot optimize that with numba code in pandapower instead
             auto timer = CustTimer();
             Eigen::VectorXcd Ibus = Ybus * V;
-            Eigen::SparseMatrix<std::complex< double > > diagV = _make_diagonal_matrix(V);
+            Eigen::SparseMatrix<cdouble> diagV = _make_diagonal_matrix(V);
 
             Eigen::VectorXcd Ibus_conj = Ibus.conjugate();
-            Eigen::SparseMatrix<std::complex< double > > diagIbus_conj = _make_diagonal_matrix(Ibus_conj);
+            Eigen::SparseMatrix<cdouble> diagIbus_conj = _make_diagonal_matrix(Ibus_conj);
 
             Eigen::VectorXcd Vnorm = V.array() / V.array().abs();
-            Eigen::SparseMatrix<std::complex< double > > diagVnorm = _make_diagonal_matrix(Vnorm);
+            Eigen::SparseMatrix<cdouble> diagVnorm = _make_diagonal_matrix(Vnorm);
 
-            Eigen::SparseMatrix<std::complex< double > > tmp = Ybus * diagVnorm;
+            Eigen::SparseMatrix<cdouble> tmp = Ybus * diagVnorm;
             tmp = tmp.conjugate();
             dS_dVm = diagV * tmp + diagIbus_conj * diagVnorm;
 
@@ -287,7 +301,7 @@ class KLUSolver
             timer_dSbus_ += timer.duration();
         }
 
-        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<std::complex< double > > > & Ybus,
+        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
                        const Eigen::Ref<const Eigen::VectorXcd > & V){
             auto timer = CustTimer();
             auto size_dS = V.size();
@@ -295,91 +309,37 @@ class KLUSolver
             Eigen::VectorXcd Ibus = Ybus * V;
 
             // TODO see if i can reuse previous values, i am not sure
-            dS_dVm_ = Ybus;
-            dS_dVa_ = Ybus;
+            dS_dVm_ = 1.0 * Ybus;
+            dS_dVa_ = 1.0 * Ybus;
 
             // i fill the buffer columns per columns
             for (int k=0; k < size_dS; ++k){
-                for (Eigen::SparseMatrix<std::complex<double> >::InnerIterator it(dS_dVm_,k); it; ++it)
+                for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dS_dVm_,k); it; ++it)
                 {
                     it.valueRef() *= Vnorm(it.col());  // dS_dVm[k] *= Vnorm[Yj[k]]
                     it.valueRef() = std::conj(it.valueRef()) * V(it.row());  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
                     if(it.col() == it.row()){
                         // diagonal element
-                        it.valueRef() += std::conj(Ibus(it.row()) * Vnorm(it.row())); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus * Vnorm)
+                        it.valueRef() += std::conj(Ibus(it.row())) * Vnorm(it.row()); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus * Vnorm)
                     }
                 }
             }
 
             for (int k=0; k < size_dS; ++k){
-                for (Eigen::SparseMatrix<std::complex<double> >::InnerIterator it(dS_dVa_,k); it; ++it)
+                for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dS_dVa_,k); it; ++it)
                 {
                     it.valueRef() *= V(it.col());  // dS_dVa[k] *= V[Yj[k]]
                     if(it.col() == it.row()){
                         // diagonal element
                         it.valueRef() -= Ibus(it.row());  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
                     }
-                    std::complex<double> tmp = static_cast<std::complex<double> >(1.0i) * V(it.row());
-//                    tmp *= static_cast<std::complex<double> >(1.0i);
+                    cdouble tmp = static_cast<cdouble>(1.0i) * V(it.row());
                     it.valueRef() = std::conj(-it.valueRef()) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
                 }
             }
             dS_dVa_.makeCompressed();
             dS_dVm_.makeCompressed();
             timer_dSbus_ += timer.duration();
-            /**
-            def dSbus_dV_numba_sparse(Yx, Yp, Yj, V, Vnorm, Ibus): # pragma: no cover
-
-            """Computes partial derivatives of power injection w.r.t. voltage.
-
-            Calculates faster with numba and sparse matrices.
-
-            Input: Ybus in CSR sparse form (Yx = data, Yp = indptr, Yj = indices), V and Vnorm (= V / abs(V))
-
-            OUTPUT: data from CSR form of dS_dVm, dS_dVa
-            (index pointer and indices are the same as the ones from Ybus)
-
-            Translation of: dS_dVm = dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-                                     dS_dVa = 1j * diagV * conj(diagIbus - Ybus * diagV)
-            """
-
-            # transform input
-
-            # init buffer vector
-            buffer = zeros(len(V), dtype=complex128)
-            dS_dVm = Yx.copy()
-            dS_dVa = Yx.copy()
-
-            # iterate through sparse matrix
-            for r in range(len(Yp) - 1):
-                for k in range(Yp[r], Yp[r + 1]):
-                    # Ibus = Ybus * V
-                    buffer[r] += Yx[k] * V[Yj[k]]
-                    # Ybus * diag(Vnorm)
-                    dS_dVm[k] *= Vnorm[Yj[k]]
-                    # Ybus * diag(V)
-                    dS_dVa[k] *= V[Yj[k]]
-
-                Ibus[r] += buffer[r]
-
-                # conj(diagIbus) * diagVnorm
-                buffer[r] = conj(buffer[r]) * Vnorm[r]
-
-            for r in range(len(Yp) - 1):
-                for k in range(Yp[r], Yp[r + 1]):
-                    # diag(V) * conj(Ybus * diagVnorm)
-                    dS_dVm[k] = conj(dS_dVm[k]) * V[r]
-
-                    if r == Yj[k]:
-                        # diagonal elements
-                        dS_dVa[k] = -Ibus[r] + dS_dVa[k]
-                        dS_dVm[k] += buffer[r]
-
-                    # 1j * diagV * conj(diagIbus - Ybus * diagV)
-                    dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
-
-            return dS_dVm, dS_dVa
-            **/
         }
 
         void _get_values_J(int & nb_obj_this_col,
@@ -420,7 +380,7 @@ class KLUSolver
             }
         }
 
-        void fill_jacobian_matrix(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+        void fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybus,
                                   const Eigen::VectorXcd & V,
                                   const Eigen::VectorXi & pq,
                                   const Eigen::VectorXi & pvpq,
@@ -444,8 +404,18 @@ class KLUSolver
             // TODO apparently, following matrix have also a fixed shape, so i can be faster !
 //            Eigen::SparseMatrix<std::complex< double > > dS_dVm;
 //            Eigen::SparseMatrix<std::complex< double > > dS_dVa;
-//            _dSbus_dV(dS_dVm, dS_dVa, Ybus, V);
+//            _dSbus_dV(dS_dVm_, dS_dVa_, Ybus, V);
             _dSbus_dV(Ybus, V);
+            Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa_.real();
+            Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa_.imag();
+            Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm_.real();
+            Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm_.imag();
+            // TODO not sure it's mandatory
+//            dS_dVa_r.makeCompressed();
+//            dS_dVa_i.makeCompressed();
+//            dS_dVm_r.makeCompressed();
+//            dS_dVm_i.makeCompressed();
+
             const int n_pvpq = pvpq.size();
             const int n_pq = pq.size();
 
@@ -464,16 +434,6 @@ class KLUSolver
                 // from an experiment, outerIndexPtr is inialized, with the number of columns
                 // innerIndexPtr and valuePtr are not.
             }
-
-            Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa_.real();
-            Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa_.imag();
-            Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm_.real();
-            Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm_.imag();
-            // TODO not sure it's mandatory
-//            dS_dVa_r.makeCompressed();
-//            dS_dVa_i.makeCompressed();
-//            dS_dVm_r.makeCompressed();
-//            dS_dVm_i.makeCompressed();
 
             // i fill the buffer columns per columns
             int nb_obj_this_col = 0;
@@ -542,7 +502,7 @@ class KLUSolver
             timer_fillJ_ += timer.duration();
         }
 
-        Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<std::complex< double > > &  Ybus,
+        Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Ybus,
                                      const Eigen::VectorXcd & V,
                                      const Eigen::VectorXcd & Sbus,
                                      const Eigen::VectorXi & pv,
@@ -585,8 +545,8 @@ class KLUSolver
         Eigen::VectorXd Vm_;  // voltage magnitude
         Eigen::VectorXd Va_;  // voltage angle
         Eigen::SparseMatrix<double> J_;  // the jacobian matrix
-        Eigen::SparseMatrix<std::complex< double > > dS_dVm_;
-        Eigen::SparseMatrix<std::complex< double > > dS_dVa_;
+        Eigen::SparseMatrix<cdouble> dS_dVm_;
+        Eigen::SparseMatrix<cdouble> dS_dVa_;
         bool need_factorize_;
         int nr_iter_;  // number of iteration performs by the Newton Raphson algorithm
         int err_; //error message:
@@ -631,7 +591,7 @@ class KLUSolver
                               Eigen::VectorXi pv,
                               Eigen::VectorXi pq,
                               Eigen::VectorXcd V,
-                              Eigen::SparseMatrix<std::complex< double > >  Ybus,
+                              Eigen::SparseMatrix<cdouble>  Ybus,
                               Eigen::VectorXcd Sbus
                               ){
             //TODO do not use, for DEBUG only!!!
@@ -655,14 +615,14 @@ class KLUSolver
             }
 
             // TODO change here for not having to cast all the time ...
-            V = Vm_.array() * (Va_.array().cos().cast<std::complex< double > >() + 1.0i * Va_.array().sin().cast<std::complex< double > >() );
+            V = Vm_.array() * (Va_.array().cos().cast<cdouble>() + 1.0i * Va_.array().sin().cast<cdouble>() );
 
             F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
             return std::tuple<Eigen::VectorXd, Eigen::VectorXcd>(F, V);
         }
 
         Eigen::SparseMatrix<double>
-             create_jacobian_matrix_test(const Eigen::SparseMatrix<std::complex< double > > & Ybus,
+             create_jacobian_matrix_test(const Eigen::SparseMatrix<cdouble> & Ybus,
                                          const Eigen::VectorXcd & V,
                                          const Eigen::VectorXi & pq,
                                          const Eigen::VectorXi & pvpq

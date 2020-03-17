@@ -49,22 +49,18 @@ class MakeTests(unittest.TestCase):
         except:
             return False
 
-    def _load_vect(self, iter_max, nm):
-        # path = os.path.join(self.path, "{}_{}.npy".format(nm, iter_max))
-        # if not os.path.exists(path):
-        #     raise RuntimeError("{} is not defined for iteration {}".format(nm, iter_max))
-        # res = np.load(path)
+    def _load_vect(self, myzip, iter_max, nm):
         try:
-            with zipfile.ZipFile(self.path) as myzip:
-                # res = np.load(myzip.extract("{}_{}.npy".format(nm, iter_max)))
-                res = self.load_array(myzip, "{}_{}.npy".format(nm, iter_max))
+            res = self.load_array(myzip, "{}_{}.npy".format(nm, iter_max))
         except:
-            raise RuntimeError("{} is not defined for iteration {}".format(nm, iter_max))
+            pdb.set_trace()
+            raise RuntimeError("{} is not defined for iteration {} for case {}".format(nm, iter_max, self.path))
         return res
 
     def load_res(self, iter_max):
-        J = self._load_vect(iter_max, "J")
-        V = self._load_vect(iter_max, "V")
+        with zipfile.ZipFile(self.path) as myzip:
+            J = self._load_vect(myzip, iter_max, "J")
+            V = self._load_vect(myzip, iter_max, "V")
         return J, V
 
     def compare_sparse_mat(self, J, J_pp, pv, pq):
@@ -77,12 +73,6 @@ class MakeTests(unittest.TestCase):
         :return:
         """
         pvpq = np.r_[pv, pq]
-        # test2 = np.where(J_pp != 0)
-        # test = np.where(J.toarray() != 0)
-        # assert test[0].shape == test2[0].shape, "different number of non zero coefficients (rows)"
-        # assert np.all(test[0].reshape(-1) == test2[0].reshape(-1))
-        # assert test[1].shape == test2[1].shape, "different number of non zero coefficients (columns)"
-        # assert np.all(test[1].reshape(-1) == test2[1].reshape(-1))
 
         comp_val = np.abs(J - J_pp)
         comp_val = comp_val
@@ -90,12 +80,6 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)])) <= self.tol_test, "J21 (dS_dVa_i) are not equal"
         assert np.sum(np.abs(comp_val[:len(pvpq), len(pvpq):])) <= self.tol_test, "J12 (dS_dVm_r) are not equal"
         assert np.sum(np.abs(comp_val[len(pvpq):, len(pvpq):])) <= self.tol_test, "J22 (dS_dVm_i) are not equal"
-
-        # print("Is the jacobian the same?")
-        # print("\t for J11 (dS_dVa_r): {}".format(np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)]))))
-        # print("\t for J21 (dS_dVa_i): {}".format(np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)]))))
-        # print("\t for J12 (dS_dVm_r): {}".format(np.sum(np.abs(comp_val[:len(pvpq), len(pvpq):]))))
-        # print("\t for J22 (dS_dVm_i): {}".format(np.sum(np.abs(comp_val[len(pvpq):, len(pvpq):]))))
 
     def solver_aux(self):
         self.solver.reset()

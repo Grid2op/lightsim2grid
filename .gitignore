@@ -155,3 +155,8 @@ dx*.npy
 pq.npy
 pv.npy
 Ybus.npy
+Ybus*.npy
+dS_dVa*.npy
+dS_dVm*.npy
+dVa_x*.npy
+dVm_x*.npy

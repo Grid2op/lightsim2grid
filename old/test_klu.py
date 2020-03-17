@@ -13,9 +13,9 @@ grid2 = pn.case118()
 # grid1 = pn.case6515rte()
 # grid2 = pn.case6515rte()
 
-grid1 = pn.case1888rte()
-grid2 = pn.case1888rte()
-nb_iteration = 100  # number of powerflow run
+# grid1 = pn.case1888rte()
+# grid2 = pn.case1888rte()
+nb_iteration = 1  # number of powerflow run
 nb_max_newton_it = 10  # maximum number of iteration for the solver
 
 ### code begins here
@@ -24,6 +24,8 @@ powerflow_time_cpp = 0
 sucees_cpp = False
 sucees_pp = False
 timers_cpp = np.zeros(7)
+nb_it_pp = -1
+nb_it_cpp = -1
 
 # remove the first call with numba, that compiles the code
 pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
@@ -34,6 +36,7 @@ for i in range(nb_iteration):
     except pp.powerflow.LoadflowNotConverged:
         pass
     powerflow_time_pp += grid1._ppc['et']
+    nb_it_pp = grid1._ppc['iterations']
     sucees_pp = grid1._ppc['success']
 end_time_pp = time.time()
 
@@ -48,13 +51,17 @@ for i in range(nb_iteration):
     powerflow_time_cpp += grid2._ppc['et']
     sucees_cpp = grid2._ppc['success']
     timers_cpp += np.array(grid2._ppc["internal"]['timers'])
+    nb_it_cpp = grid2._ppc['iterations']
 
 end_time_cpp = time.time()
 print("Is there a solution:\n\tpandapower: {}\n\tcustom implementation: {}".format(sucees_pp, sucees_pp))
-print("Total time:\n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s [results for {} iteration(s)]".format(
+print("Total time:\n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s [results for {} repeat(s)]".format(
     end_time_pp-start_time_pp, end_time_cpp-start_time_cpp, nb_iteration))
 
-print("Powerflow time: \n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s [results for {} iteration(s)]".format(
+print("Number of newton iteration (per cases): \n\tpandapower: {}\n\tc++ custom implementation: {}".format(
+    nb_it_pp, nb_it_cpp))
+
+print("Powerflow time: \n\tpandapower: {:.3f}s\n\tc++ custom implementation: {:.3f}s [results for {} repeat(s)]".format(
     powerflow_time_pp, powerflow_time_cpp, nb_iteration))
 
 print("Detail timers for c++ implementations are:")

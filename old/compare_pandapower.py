@@ -1,10 +1,30 @@
 import numpy as np
 import sys
 from scipy import sparse
-from pyklu import KLUSolver
+from pyklu.compute_powerflow import KLUSolver
 from pandapower.pf.create_jacobian import create_jacobian_matrix, get_fastest_jacobian_function
 import pdb
+for it in range(1,5):
+    Ybus = np.load("Ybus_{}.npy".format(it))
+    Ybus = sparse.csc_matrix(Ybus)
+    V = np.load("V_{}.npy".format(it))
+    dS_dVm_pp_ = np.load("dS_dVm_{}.npy".format(it))
+    dS_dVm_pp = sparse.csc_matrix(dS_dVm_pp_)
+    dS_dVa_pp_ = np.load("dS_dVa_{}.npy".format(it))
+    dS_dVa_pp = sparse.csc_matrix(dS_dVa_pp_)
 
+    solver = KLUSolver()
+    dS_dVm, dS_dVa = solver.get_ds_test(Ybus, V)
+
+    comp_val_Vm = np.abs(dS_dVm - dS_dVm_pp)
+    comp_val_Va = np.abs(dS_dVa - dS_dVa_pp)
+    print("Results for iteration {}".format(it))
+    print("\tMaximum difference (absolute value) for dS_dVm: {}".format(np.max(np.abs(comp_val_Vm))))
+    print("\tMaximum difference (absolute value) for dS_dVa: {}".format(np.max(np.abs(comp_val_Va))))
+pdb.set_trace()
+
+sys.exit()
+# test the full newton raphson (use test_pyklu instead now)
 it_num = 0
 
 solver = KLUSolver()

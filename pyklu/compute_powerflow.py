@@ -71,7 +71,7 @@ def runpp(net, max_iteration=10, **kwargs):
     options = net["_options"]
     # ---------- pp.powerflow._run_pf_algorithm() ----------------
     # ---------- pp.pf.run_newton_raphson_pf.run_newton_raphson_pf() ----------------
-    # t0 = time()
+    t0 = time()
     if isinstance(options["init_va_degree"], str) and options["init_va_degree"] == "dc":
         ppci = _run_dc_pf(ppci)
     if options["enforce_q_lims"]:
@@ -92,10 +92,10 @@ def runpp(net, max_iteration=10, **kwargs):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
     Ybus = sparse.csc_matrix(Ybus)
-    t0 = time()
+    # t0 = time()
     solver = KLUSolver()
     solver.solve(Ybus, V0, Sbus, pv, pq, max_it, tol)
-    et = time() - t0
+    # et = time() - t0
 
     Va = solver.get_Va()
     Vm = solver.get_Vm()
@@ -114,7 +114,7 @@ def runpp(net, max_iteration=10, **kwargs):
     # update data matrices with solution store in ppci
     # ---------- pp.pf.run_newton_raphson_pf._run_ac_pf_without_qlims_enforced ----------
     bus, gen, branch = ppci_to_pfsoln(ppci, options)
-    # et = time() - t0
+    et = time() - t0
     result = _store_results_from_pf_in_ppci(ppci, bus, gen, branch, success, iterations, et)
     # ---------- pp.pf.run_newton_raphson_pf.run_newton_raphson_pf() ----------------
     # ---------- pp.powerflow._run_pf_algorithm() ----------------
