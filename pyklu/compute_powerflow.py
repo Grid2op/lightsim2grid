@@ -21,6 +21,27 @@ import pdb
 # especially, i don't re create a solver etc.
 # TODO just i want to test
 
+
+def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
+
+    max_it = options["max_iteration"]
+    tol = options['tolerance_mva']
+    # initialize the solver
+    solver = KLUSolver()
+    Ybus = sparse.csc_matrix(Ybus)
+    # do the newton raphson algorithm
+    solver.solve(Ybus, V, Sbus, pv, pq, max_it, tol)
+
+    # extract the results
+    Va = solver.get_Va()
+    Vm = solver.get_Vm()
+    V = Vm * np.exp(1j * Va)
+    J = solver.get_J()
+    converged = solver.converged()
+    iterations = solver.get_nb_iter()
+    return V, converged, iterations, J
+
+
 class KLU4Pandapower():
     def __init__(self):
         self.solver = KLUSolver()
