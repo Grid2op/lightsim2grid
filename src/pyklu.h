@@ -4,6 +4,7 @@
 #include <cstdint> // for int32
 #include <chrono>
 #include <complex>      // std::complex, std::conj
+#include <cmath>  // for PI
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -75,6 +76,80 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
+        Eigen::SparseMatrix<cdouble> get_Ybus(double sn_mva,  // access with net.sn_mva
+                                              double f_hz,
+                                              const Eigen::VectorXd & bus_vn_kv,
+                                              const Eigen::VectorXd & branch_r,
+                                              const Eigen::VectorXd & branch_x,
+                                              const Eigen::VectorXd & branch_c,
+                                              const Eigen::VectorXd & branch_g,
+                                              const Eigen::VectorXi & branch_from_id,
+                                              const Eigen::VectorXi & branch_to_id
+                                              ){
+            /**
+            This method initialize the Ybus matrix from the branch matrix.
+            It has to be called once when the solver is initialized. Afterwards, a call to
+            "updateYbus" should be made for performance optimiaztion instead. //TODO
+            **/
+
+            // TODO check what can be checked: branch_* have same size, no id in branch_to_id that are
+            // TODO not in [0, .., buv_vn_kv.size()] etc.
+
+            int nb_bus = bus_vn_kv.size();
+            int nb_line = branch_r.size();
+
+            Eigen::SparseMatrix<cdouble> res(nb_bus, nb_bus);
+            res.reserve(nb_bus + 2*nb_line);
+
+            // per unit conversion
+            Eigen::VectorXcd baseVal = Eigen::VectorXcd::Constant(nb_bus, 1.0 / sn_mva);
+            Eigen::VectorXcd diag_vect = Eigen::VectorXcd::Constant(nb_bus, 0.);
+            baseVal.array() *= bus_vn_kv.array() * bus_vn_kv.array(); // np.square(base_kv) / net.sn_mva
+
+            // stuff with half susceptance h, or b or whatever
+            // b = line["c_nf_per_km"].values * length_km * parallel *  (2 * net.f_hz * math.pi * 1e-9 * baseR)
+            // g = line["g_us_per_km"].values * length_km * parallel * 1e-6 * baseR
+            // branch[f:t, BR_B] = b - g * 1j
+            Eigen::VectorXcd branch_bb = Eigen::VectorXcd::Constant(nb_line, 2.0 * f_hz * M_PI * 1e-9);
+            branch_bb.array() *=branch_c.array();
+            Eigen::VectorXcd branch_gg = Eigen::VectorXcd::Constant(nb_line, 1e-6);
+            branch_gg.array() *= branch_g.array();
+//            Eigen::VectorXcd branch_b = branch_cc.array() - 1.0i * branch_gg.array();
+
+            // TODO save g and b here (z = g + j.b) and second "b" too :-) [I hope you realize i'm doing magic here]
+            // fill the matrix
+            for(int line_id =0; line_id < nb_line; ++line_id){
+                // compute from / to
+                int from_id = branch_from_id(line_id);
+                int to_id = branch_to_id(line_id);
+
+                cdouble base_for_pu_from = baseVal(from_id);
+                cdouble base_for_pu_to = baseVal(to_id);
+                cdouble z = branch_r(line_id) + 1.0i * branch_x(line_id);
+                cdouble y = 1.0 / z;  // y = 1/((r + 1j * x) / baseR)
+
+                // add the b, why not :-/
+                cdouble h = branch_bb(line_id); // yes it's the correct one
+                h = static_cast<cdouble>(1.0i) * 0.5 * h;
+
+                //TODO parrallel powerlines!
+                // fill non diagonal coefficient
+                res.insert(from_id, to_id) = -y * base_for_pu_from;
+                res.insert(to_id, from_id) = -y * base_for_pu_to;
+
+                // fill diagonal coefficient
+                cdouble tmp = y + h;
+                diag_vect(from_id) += tmp * base_for_pu_from;
+                diag_vect(to_id) += tmp * base_for_pu_to;
+            }
+
+            for(int bus_id=0; bus_id < nb_bus; ++bus_id){
+                // assign diagonal coefficient
+                res.insert(bus_id, bus_id) = diag_vect(bus_id);
+            }
+
+            return res;
+        }
         bool do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
@@ -83,6 +158,11 @@ class KLUSolver
                        int max_iter,
                        double tol
                        ){
+            /**
+            This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
+            of the system.
+            If the Ybus matrix changed, please uses the appropriate method to recomptue it!
+            **/
             // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
             // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
             reset_timer();

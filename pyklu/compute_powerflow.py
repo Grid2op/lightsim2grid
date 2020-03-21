@@ -17,6 +17,21 @@ from pyklu_cpp import KLUSolver
 
 import pdb
 
+# columns of ppci id to their meaning
+ID2Colname = {
+    "bus": ["bus_i", "type", "Pd", "Qd", "Gs", "Bs", "area", "Vm", "Va", "baseKV", "zone", "Vmax", "Vmin"],
+    "branch": ["fbus", "tbus", "r", "x", "b", "rateA", "rateB", "rateC", "ratio", "angle", "status", "angmin", "angmax"],
+    "gen": ["bus", "Pg", "Qg", "Qmax", "Qmin", "Vg", "mBase", "status", "Pmax", "Pmin", "Pc1", "Pc2", "Qc1min",
+            "Qc1max", "Qc2min", "Qc2max", "ramp_agc", "ramp_10", "ramp_30", "ramp_q", "apf"],
+}
+# meaning of the ppc columns to their id
+ColID2Names = {key: {col: i for i, col in enumerate(val)} for key, val in ID2Colname.items()}
+
+# baseR = np.square(base_kv) / net.sn_mva
+# branch[f:t, BR_R] = line["r_ohm_per_km"].values * length_km / baseR / parallel
+# branch[f:t, BR_X] = line["x_ohm_per_km"].values * length_km / baseR / parallel
+
+
 # TODO optim: when i reuse the powerflow, i just update Sbus and reuse V and all the other stuff
 # especially, i don't re create a solver etc.
 # TODO just i want to test
@@ -138,6 +153,19 @@ class KLU4Pandapower():
             makeYbus, pfsoln = _get_numba_functions(self.ppci, options)
             self.baseMVA, self.bus, self.gen, self.branch, self.ref, self.pv, self.pq, _, _, V0, self.ref_gens = _get_pf_variables_from_ppci(self.ppci)
             self.ppci, self.Ybus, self.Yf, self.Yt = _get_Y_bus(self.ppci, options, makeYbus, self.baseMVA, self.bus, self.branch)
+            # TODO i have a problem here for the order of the bus / id of bus
+            Ybus = self.solver.get_Ybus(net.sn_mva,
+                                        net.f_hz,
+                                        net.bus["vn_kv"].values,  #net.bus.iloc[0:net.bus.shape[0]]["vn_kv"].values,
+                                        net.line["r_ohm_per_km"].values * net.line["length_km"].values,
+                                        net.line["x_ohm_per_km"].values * net.line["length_km"].values,
+                                        net.line["c_nf_per_km"].values * net.line["length_km"].values,
+                                        net.line["g_us_per_km"].values * net.line["length_km"].values,
+                                        net.line["from_bus"].values,
+                                        net.line["to_bus"].values
+                                        )
+            tmp = np.abs(Ybus - self.Ybus) > 1e-7
+            pdb.set_trace()
         else:
             pass
             # TODO update self.ppci with new values of generation - load such that  Sbus is properly udpated

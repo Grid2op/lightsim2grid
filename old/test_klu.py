@@ -17,11 +17,20 @@ grid2 = pn.case118()
 # grid1 = pn.case6515rte()
 # grid2 = pn.case6515rte()
 
-grid1 = pn.case9241pegase()
-grid2 = pn.case9241pegase()
+# grid1 = pn.case9241pegase()
+# grid2 = pn.case9241pegase()
 # grid1 = pn.case1888rte()
 # grid2 = pn.case1888rte()
-nb_iteration = 100  # number of powerflow run
+
+grid1 = pn.case14()
+grid2 = pn.case14()
+
+grid1 = pn.case5()
+grid2 = pn.case5()
+
+grid1 = pn.case6ww()
+grid2 = pn.case6ww()
+nb_iteration = 1  # number of powerflow run
 nb_max_newton_it = 10  # maximum number of iteration for the solver
 
 ### code begins here

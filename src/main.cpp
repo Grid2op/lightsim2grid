@@ -15,7 +15,8 @@ PYBIND11_MODULE(pyklu_cpp, m) {
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
 //        .def("initialize_test", &KLUSolver::initialize_test)  // initialize the solver (DO NOT USE)
-        .def("get_ds_test", &KLUSolver::_get_ds_test)  //test function to test if the partial derivatives are properly computed
+//        .def("get_ds_test", &KLUSolver::_get_ds_test)  //test function to test if the partial derivatives are properly computed
+        .def("get_Ybus", &KLUSolver::get_Ybus)  //test function to test if the partial derivatives are properly computed
         .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
