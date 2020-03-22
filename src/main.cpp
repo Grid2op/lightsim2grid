@@ -32,6 +32,7 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def(py::init<>())
         .def("set_f_hz", &DataModel::set_f_hz)
         .def("set_sn_mva", &DataModel::set_sn_mva)
+        .def("get_trafo_param", &DataModel::get_trafo_param)
         .def("init_bus", &DataModel::init_bus)
         .def("get_Ybus", &DataModel::get_Ybus)
         .def("init_powerlines", &DataModel::init_powerlines)

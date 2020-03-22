@@ -164,7 +164,7 @@ class KLU4Pandapower():
             model.init_powerlines(net.line["r_ohm_per_km"].values * net.line["length_km"].values,
                                   net.line["x_ohm_per_km"].values * net.line["length_km"].values,
                                   net.line["c_nf_per_km"].values * net.line["length_km"].values,
-                                  net.line["g_us_per_km"].values * net.line["length_km"].values,
+                                  # net.line["g_us_per_km"].values * net.line["length_km"].values,
                                   net.line["from_bus"].values,
                                   net.line["to_bus"].values
                                   )
@@ -174,13 +174,43 @@ class KLU4Pandapower():
                              net.shunt["bus"].values
                              )
             # init trafo, should be after powerlines, order between trafo and shunt does not matter
-            trafo_with_tap =
-            model.init_trafo(net.line["r_ohm_per_km"].values * net.line["length_km"].values,)
+
+            if net.trafo.shape[0]:
+                trafo_r, trafo_x, trafo_b = model.get_trafo_param(net.trafo["vn_hv_kv"].values,
+                                                                  net.trafo["vn_lv_kv"].values,
+                                                                  net.trafo["vk_percent"].values,
+                                                                  net.trafo["vkr_percent"].values,
+                                                                  net.trafo["sn_mva"].values,
+                                                                  net.trafo["pfe_kw"].values,
+                                                                  net.trafo["i0_percent"].values,
+                                                                  net.trafo["lv_bus"].values
+                                                                  )
+
+                trafo_branch = ppc["branch"][net.line.shape[0]:, :]
+
+                tap_step_pct = net.trafo["tap_step_percent"].values
+                tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
+
+                tap_pos = net.trafo["tap_pos"].values
+                tap_pos[~np.isfinite(tap_pos)] = 0.
+
+                is_tap_hv_side = net.trafo["tap_side"].values == "hv"
+                is_tap_hv_side[~np.isfinite(tap_pos)] = True
+                model.init_trafo(trafo_r,
+                                 trafo_x,
+                                 trafo_b,
+                                 tap_step_pct,
+                                 tap_pos,
+                                 is_tap_hv_side,
+                                 net.trafo["hv_bus"].values,
+                                 net.trafo["lv_bus"].values)
 
             Ybus = model.get_Ybus()
             # be careful, the order is not the same between this and pandapower, you need to change it
             Ybus_proper_oder = Ybus[np.array([net.bus.index]).T, np.array([net.bus.index])]
             self.Ybus_proper_oder = self.Ybus
+            # Ybus_proper_oder = Ybus
+            # self.Ybus_proper_oder = self.Ybus[np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
             tmp = np.abs(Ybus_proper_oder - self.Ybus)  # > 1e-7
             pdb.set_trace()
         else:
