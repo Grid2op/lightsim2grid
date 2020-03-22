@@ -16,7 +16,7 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def(py::init<>())
 //        .def("initialize_test", &KLUSolver::initialize_test)  // initialize the solver (DO NOT USE)
 //        .def("get_ds_test", &KLUSolver::_get_ds_test)  //test function to test if the partial derivatives are properly computed
-        .def("get_Ybus", &KLUSolver::get_Ybus)  //test function to test if the partial derivatives are properly computed
+//        .def("get_Ybus", &KLUSolver::get_Ybus)  //test function to test if the partial derivatives are properly computed
         .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
@@ -27,4 +27,15 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("do_newton", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
+    py::class_<DataModel>(m, "DataModel")
+        .def(py::init<>())
+        .def("set_f_hz", &DataModel::set_f_hz)
+        .def("set_sn_mva", &DataModel::set_sn_mva)
+        .def("init_bus", &DataModel::init_bus)
+        .def("get_Ybus", &DataModel::get_Ybus)
+        .def("init_powerlines", &DataModel::init_powerlines)
+        .def("init_shunt", &DataModel::init_shunt)
+        .def("init_trafo", &DataModel::init_trafo);
+
 }

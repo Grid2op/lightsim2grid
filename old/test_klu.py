@@ -22,14 +22,23 @@ grid2 = pn.case118()
 # grid1 = pn.case1888rte()
 # grid2 = pn.case1888rte()
 
-grid1 = pn.case14()
-grid2 = pn.case14()
-
+# without trafo, ordering issue nor shunt, no parrallel line
 grid1 = pn.case5()
 grid2 = pn.case5()
 
+# without trafo, ordering issue, nor shunt, no parrallel line
 grid1 = pn.case6ww()
 grid2 = pn.case6ww()
+
+# without trafo, but ordering issue and shunt, no parrallel line
+grid1 = pn.case30()
+grid2 = pn.case30()
+
+# with trafo, ordering issue, and shunt, no parrallel line
+grid1 = pn.case14()
+grid2 = pn.case14()
+
+
 nb_iteration = 1  # number of powerflow run
 nb_max_newton_it = 10  # maximum number of iteration for the solver
 

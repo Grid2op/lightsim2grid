@@ -13,7 +13,7 @@ from pandapower.run import _passed_runpp_parameters, _init_runpp_options, _check
 from pandapower.run import _check_gen_index_and_print_warning_if_high
 # from pandapower.run_newton_raphson_pf import ppci_to_pfsoln, _get_Y_bus, _get_Sbus, _store_internal, _get_numba_functions
 
-from pyklu_cpp import KLUSolver
+from pyklu_cpp import KLUSolver, DataModel
 
 import pdb
 
@@ -154,17 +154,34 @@ class KLU4Pandapower():
             self.baseMVA, self.bus, self.gen, self.branch, self.ref, self.pv, self.pq, _, _, V0, self.ref_gens = _get_pf_variables_from_ppci(self.ppci)
             self.ppci, self.Ybus, self.Yf, self.Yt = _get_Y_bus(self.ppci, options, makeYbus, self.baseMVA, self.bus, self.branch)
             # TODO i have a problem here for the order of the bus / id of bus
-            Ybus = self.solver.get_Ybus(net.sn_mva,
-                                        net.f_hz,
-                                        net.bus["vn_kv"].values,  #net.bus.iloc[0:net.bus.shape[0]]["vn_kv"].values,
-                                        net.line["r_ohm_per_km"].values * net.line["length_km"].values,
-                                        net.line["x_ohm_per_km"].values * net.line["length_km"].values,
-                                        net.line["c_nf_per_km"].values * net.line["length_km"].values,
-                                        net.line["g_us_per_km"].values * net.line["length_km"].values,
-                                        net.line["from_bus"].values,
-                                        net.line["to_bus"].values
-                                        )
-            tmp = np.abs(Ybus - self.Ybus) > 1e-7
+            tmp_bus_ind = np.argsort(net.bus.index)
+            model = DataModel()
+            model.set_sn_mva(net.sn_mva)
+            model.set_f_hz(net.f_hz)
+            # init_but should be called first among all the rest
+            model.init_bus(net.bus.iloc[tmp_bus_ind]["vn_kv"].values, net.line.shape[0], net.line.shape[0])
+            # init powerlines should be called after init_bus, but first of all of the rest
+            model.init_powerlines(net.line["r_ohm_per_km"].values * net.line["length_km"].values,
+                                  net.line["x_ohm_per_km"].values * net.line["length_km"].values,
+                                  net.line["c_nf_per_km"].values * net.line["length_km"].values,
+                                  net.line["g_us_per_km"].values * net.line["length_km"].values,
+                                  net.line["from_bus"].values,
+                                  net.line["to_bus"].values
+                                  )
+            # init shunt should be called after init_powerlines
+            model.init_shunt(net.shunt["p_mw"].values,
+                             net.shunt["q_mvar"].values,
+                             net.shunt["bus"].values
+                             )
+            # init trafo, should be after powerlines, order between trafo and shunt does not matter
+            trafo_with_tap =
+            model.init_trafo(net.line["r_ohm_per_km"].values * net.line["length_km"].values,)
+
+            Ybus = model.get_Ybus()
+            # be careful, the order is not the same between this and pandapower, you need to change it
+            Ybus_proper_oder = Ybus[np.array([net.bus.index]).T, np.array([net.bus.index])]
+            self.Ybus_proper_oder = self.Ybus
+            tmp = np.abs(Ybus_proper_oder - self.Ybus)  # > 1e-7
             pdb.set_trace()
         else:
             pass

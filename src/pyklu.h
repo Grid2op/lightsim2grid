@@ -76,80 +76,6 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
-        Eigen::SparseMatrix<cdouble> get_Ybus(double sn_mva,  // access with net.sn_mva
-                                              double f_hz,
-                                              const Eigen::VectorXd & bus_vn_kv,
-                                              const Eigen::VectorXd & branch_r,
-                                              const Eigen::VectorXd & branch_x,
-                                              const Eigen::VectorXd & branch_c,
-                                              const Eigen::VectorXd & branch_g,
-                                              const Eigen::VectorXi & branch_from_id,
-                                              const Eigen::VectorXi & branch_to_id
-                                              ){
-            /**
-            This method initialize the Ybus matrix from the branch matrix.
-            It has to be called once when the solver is initialized. Afterwards, a call to
-            "updateYbus" should be made for performance optimiaztion instead. //TODO
-            **/
-
-            // TODO check what can be checked: branch_* have same size, no id in branch_to_id that are
-            // TODO not in [0, .., buv_vn_kv.size()] etc.
-
-            int nb_bus = bus_vn_kv.size();
-            int nb_line = branch_r.size();
-
-            Eigen::SparseMatrix<cdouble> res(nb_bus, nb_bus);
-            res.reserve(nb_bus + 2*nb_line);
-
-            // per unit conversion
-            Eigen::VectorXcd baseVal = Eigen::VectorXcd::Constant(nb_bus, 1.0 / sn_mva);
-            Eigen::VectorXcd diag_vect = Eigen::VectorXcd::Constant(nb_bus, 0.);
-            baseVal.array() *= bus_vn_kv.array() * bus_vn_kv.array(); // np.square(base_kv) / net.sn_mva
-
-            // stuff with half susceptance h, or b or whatever
-            // b = line["c_nf_per_km"].values * length_km * parallel *  (2 * net.f_hz * math.pi * 1e-9 * baseR)
-            // g = line["g_us_per_km"].values * length_km * parallel * 1e-6 * baseR
-            // branch[f:t, BR_B] = b - g * 1j
-            Eigen::VectorXcd branch_bb = Eigen::VectorXcd::Constant(nb_line, 2.0 * f_hz * M_PI * 1e-9);
-            branch_bb.array() *=branch_c.array();
-            Eigen::VectorXcd branch_gg = Eigen::VectorXcd::Constant(nb_line, 1e-6);
-            branch_gg.array() *= branch_g.array();
-//            Eigen::VectorXcd branch_b = branch_cc.array() - 1.0i * branch_gg.array();
-
-            // TODO save g and b here (z = g + j.b) and second "b" too :-) [I hope you realize i'm doing magic here]
-            // fill the matrix
-            for(int line_id =0; line_id < nb_line; ++line_id){
-                // compute from / to
-                int from_id = branch_from_id(line_id);
-                int to_id = branch_to_id(line_id);
-
-                cdouble base_for_pu_from = baseVal(from_id);
-                cdouble base_for_pu_to = baseVal(to_id);
-                cdouble z = branch_r(line_id) + 1.0i * branch_x(line_id);
-                cdouble y = 1.0 / z;  // y = 1/((r + 1j * x) / baseR)
-
-                // add the b, why not :-/
-                cdouble h = branch_bb(line_id); // yes it's the correct one
-                h = static_cast<cdouble>(1.0i) * 0.5 * h;
-
-                //TODO parrallel powerlines!
-                // fill non diagonal coefficient
-                res.insert(from_id, to_id) = -y * base_for_pu_from;
-                res.insert(to_id, from_id) = -y * base_for_pu_to;
-
-                // fill diagonal coefficient
-                cdouble tmp = y + h;
-                diag_vect(from_id) += tmp * base_for_pu_from;
-                diag_vect(to_id) += tmp * base_for_pu_to;
-            }
-
-            for(int bus_id=0; bus_id < nb_bus; ++bus_id){
-                // assign diagonal coefficient
-                res.insert(bus_id, bus_id) = diag_vect(bus_id);
-            }
-
-            return res;
-        }
         bool do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
@@ -766,6 +692,212 @@ class KLUSolver
             }
             return res;
         }
+
+};
+
+class DataModel{
+    public:
+        DataModel():sn_mva_(0.),f_hz_(0.){};
+        void set_f_hz(double f_hz) { f_hz_ = f_hz;}
+        void set_sn_mva(double sn_mva) { sn_mva_ = sn_mva;}
+
+        void init_bus(Eigen::VectorXd bus_vn_kv, int nb_line, int nb_trafo){
+            /**
+            initialize the bus_vn_kv_ member
+            and
+            initialize the Ybus_ matrix at the proper shape
+            **/
+            int nb_bus = bus_vn_kv.size();
+            bus_vn_kv_ = bus_vn_kv;
+            Ybus_ = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
+            Ybus_.reserve(nb_bus + 2*nb_line + 2*nb_trafo);
+
+            // per unit conversion
+            bus_pu_ = Eigen::VectorXd::Constant(nb_bus, 1.0 / sn_mva_);
+            bus_pu_.array() *= bus_vn_kv_.array() * bus_vn_kv_.array(); // np.square(base_kv) / net.sn_mva
+        }
+
+        Eigen::SparseMatrix<cdouble> get_Ybus(){
+            return Ybus_;
+        }
+
+        void init_powerlines(const Eigen::VectorXd & branch_r,
+                             const Eigen::VectorXd & branch_x,
+                             const Eigen::VectorXd & branch_c,
+                             const Eigen::VectorXd & branch_g,
+                             const Eigen::VectorXi & branch_from_id,
+                             const Eigen::VectorXi & branch_to_id
+                             )
+        {
+            /**
+            This method initialize the Ybus matrix from the branch matrix.
+            It has to be called once when the solver is initialized. Afterwards, a call to
+            "updateYbus" should be made for performance optimiaztion instead. //TODO
+            **/
+
+            // TODO check what can be checked: branch_* have same size, no id in branch_to_id that are
+            // TODO not in [0, .., buv_vn_kv.size()] etc.
+
+            int nb_bus = bus_vn_kv_.size();
+            int nb_line = branch_r.size();
+
+            //diagonal coefficients
+            Eigen::VectorXcd diag_vect = Eigen::VectorXcd::Constant(nb_bus, 0.);
+
+            // stuff with half susceptance h, or b or whatever
+            // b = line["c_nf_per_km"].values * length_km * parallel *  (2 * net.f_hz * math.pi * 1e-9 * baseR)
+            // g = line["g_us_per_km"].values * length_km * parallel * 1e-6 * baseR
+            // branch[f:t, BR_B] = b - g * 1j
+            Eigen::VectorXcd branch_bb = Eigen::VectorXcd::Constant(nb_line, 2.0 * f_hz_ * M_PI * 1e-9);
+            branch_bb.array() *= branch_c.array();
+            Eigen::VectorXcd branch_gg = Eigen::VectorXcd::Constant(nb_line, 1e-6);
+            branch_gg.array() *= branch_g.array();
+//            Eigen::VectorXcd branch_b = branch_cc.array() - 1.0i * branch_gg.array();
+
+            // TODO save g and b here (z = g + j.b) and second "b" too :-) [I hope you realize i'm doing magic here]
+            // fill the matrix
+            for(int line_id =0; line_id < nb_line; ++line_id){
+                // compute from / to
+                int from_id = branch_from_id(line_id);
+                int to_id = branch_to_id(line_id);
+
+                cdouble base_for_pu_from = bus_pu_(from_id);
+                cdouble base_for_pu_to = bus_pu_(to_id);
+                cdouble z = branch_r(line_id) + 1.0i * branch_x(line_id);
+                cdouble y = 1.0 / z;  // y = 1/((r + 1j * x) / baseR)
+
+                // add the b, why not :-/
+                cdouble h = branch_bb(line_id); // yes it's the correct one
+                h = static_cast<cdouble>(1.0i) * 0.5 * h;
+
+                //TODO parrallel powerlines!
+                // fill non diagonal coefficient
+                Ybus_.insert(from_id, to_id) = -y * base_for_pu_from;
+                Ybus_.insert(to_id, from_id) = -y * base_for_pu_to;
+
+                // fill diagonal coefficient
+                cdouble tmp = y + h;
+                diag_vect(from_id) += tmp * base_for_pu_from;
+                diag_vect(to_id) += tmp * base_for_pu_to;
+            }
+
+            for(int bus_id=0; bus_id < nb_bus; ++bus_id){
+                // assign diagonal coefficient
+                Ybus_.insert(bus_id, bus_id) = diag_vect(bus_id);
+            }
+        }
+
+        void init_shunt(const Eigen::VectorXd & shunt_p_mw,
+                        const Eigen::VectorXd & shunt_q_mvar,
+                        const Eigen::VectorXi & shunt_bus_id)
+        {
+            /**
+            supposes the matrix Ybus_ has already been initialized
+            //TODO move that in the Sbus vector instead, more flexible imho
+            **/
+            int nb_shunt = shunt_q_mvar.size();
+            cdouble tmp;
+            int bus_id;
+            for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+                // assign diagonal coefficient
+                tmp = shunt_p_mw(shunt_id) + 1.0i * shunt_q_mvar(shunt_id);
+                bus_id = shunt_bus_id(shunt_id);
+                Ybus_.coeffRef(bus_id, bus_id) -= tmp;
+            }
+        }
+        void init_trafo(const Eigen::VectorXd & trafo_tap_step_pct,
+                        const Eigen::VectorXd & trafo_tap_step_degree,
+                        const Eigen::VectorXd & trafo_tap_step_percent,
+                        const Eigen::VectorXd & trafo_tap_pos,
+                        const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                        const Eigen::VectorXd & trafo_vn_hv,
+                        const Eigen::VectorXd & trafo_vn_lv,
+                        const Eigen::VectorXd & trafo_vk_percent,
+                        const Eigen::VectorXd & trafo_vkr_percent,
+                        const Eigen::VectorXd & trafo_sn_trafo_mva,
+                        const Eigen::VectorXd & trafo_pfe_kw,
+                        const Eigen::VectorXd & trafo_i0_pct,
+                        const Eigen::VectorXi & trafo_hv_id,
+                        const Eigen::VectorXi & trafo_lv_id
+                        )
+        {
+            /**
+            This part is purely magical as of now
+            **/
+            //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
+
+            //TODO only for "trafo model = t"
+            //TODO supposes that the step start at 0 for "no ratio"
+            int nb_trafo = trafo_tap_step_pct.size();
+            Eigen::VectorXd ratio = 1.0 + 0.01 * trafo_tap_step_percent.array() * trafo_tap_pos.array();
+            Eigen::VectorXd vn_trafo_lv = trafo_vn_lv;
+            Eigen::VectorXd vn_lv = Eigen::VectorXd(nb_trafo);  //bus_vn_kv_[trafo_lv_id]; // TODO check if it compiles
+            for(int i = 0; i<nb_trafo; ++i) {vn_lv(i) = bus_vn_kv_(trafo_lv_id(i));}  //TODO optimize that
+
+            // compute r and x
+            Eigen::VectorXd tmp = vn_trafo_lv.array() / vn_lv.array();
+            tmp = tmp.array() * tmp.array();
+            Eigen::VectorXd tap_lv = tmp * sn_mva_;
+            Eigen::VectorXd _1_sn_trafo_mva = 1.0 / trafo_sn_trafo_mva.array();
+            Eigen::VectorXd z_sc = 0.01 * trafo_vk_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
+            Eigen::VectorXd r_sc = 0.01 * trafo_vkr_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
+            Eigen::VectorXd tmp2 = z_sc.array()*z_sc.array() - r_sc.array() * r_sc.array();
+            Eigen::VectorXd x_sc = z_sc.cwiseSign().array() * tmp2.cwiseSqrt().array();
+
+            // compute h, the subsceptance
+            Eigen::VectorXd baseR = Eigen::VectorXd(nb_trafo);
+            for(int i = 0; i<nb_trafo; ++i) {baseR(i) = bus_pu_(trafo_lv_id(i));}  //TODO optimize that
+            Eigen::VectorXd pfe =  trafo_pfe_kw.array() * 1e-3;
+
+            // Calculate subsceptance ###
+            Eigen::VectorXd vnl_squared = trafo_vn_lv.array() * trafo_vn_lv.array();
+            Eigen::VectorXd b_real = pfe.array() / vnl_squared.array() * baseR.array();
+            tmp2 = (trafo_i0_pct.array() * 0.01 * trafo_sn_trafo_mva.array());
+            Eigen::VectorXd b_img =  tmp2.array() * tmp2.array() - pfe.array() * pfe.array();
+
+            for(int i = 0; i<nb_trafo; ++i) {if (b_img(i) < 0.)  b_img(i) = 0.;}
+            b_img = b_img.cwiseSqrt();
+            b_img.array() *= baseR.array() / vnl_squared.array();
+            Eigen::VectorXcd y = - 1.0i * b_real.array().cast<cdouble>() - b_img.array().cast<cdouble>() * trafo_i0_pct.cwiseSign().array();
+            Eigen::VectorXcd h_sc = y.array() / tmp.array();
+
+            //transform trafo from t model to pi model, of course...
+            cdouble my_i = 1.0i;
+            for(int i = 0; i<nb_trafo; ++i){
+                if(h_sc(i) == 0.) continue;
+                cdouble za_star = 0.5 * (r_sc(i) +my_i * x_sc(i));
+                cdouble zc_star = - my_i / h_sc(i);
+                cdouble zSum_triangle = za_star * za_star + 2.0 * za_star * zc_star;
+                cdouble zab_triangle = zSum_triangle / zc_star;
+                cdouble zbc_triangle = zSum_triangle / za_star;
+
+                r_sc(i) = zab_triangle.real();
+                x_sc(i) = zab_triangle.imag();
+                h_sc(i) = -2.0 * my_i / zbc_triangle;
+            }
+
+
+            // add it to the admittance matrix
+            //TODO
+
+        }
+
+    protected:
+        // member of the grid
+        double sn_mva_;  // access with net.sn_mva
+        double f_hz_;
+
+        // powersystem representation
+        // 1. bus
+        Eigen::VectorXd bus_vn_kv_;
+        Eigen::VectorXd bus_pu_;
+        // 2. powerline
+
+        // as matrix, for the solver
+        Eigen::SparseMatrix<cdouble> Ybus_;
+
+        // to solve the newton raphson
+        KLUSolver _solver;
 
 };
 
