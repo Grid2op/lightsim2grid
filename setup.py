@@ -129,7 +129,7 @@ extra_compile_args = ["-march=native", "-fext-numeric-literals"]
 ext_modules = [
     Extension(
         'pyklu_cpp',
-        ['src/main.cpp'],
+        ['src/main.cpp', "src/KLUSolver.cpp"],
         include_dirs=include_dirs,
         language='c++',
         extra_objects=LIBS,

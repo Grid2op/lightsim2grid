@@ -158,9 +158,11 @@ class KLU4Pandapower():
             model = DataModel()
             model.set_sn_mva(net.sn_mva)
             model.set_f_hz(net.f_hz)
+
             # init_but should be called first among all the rest
             model.init_bus(net.bus.iloc[tmp_bus_ind]["vn_kv"].values, net.line.shape[0], net.line.shape[0])
-            # init powerlines should be called after init_bus, but first of all of the rest
+
+            # init the shunts
             model.init_powerlines(net.line["r_ohm_per_km"].values * net.line["length_km"].values,
                                   net.line["x_ohm_per_km"].values * net.line["length_km"].values,
                                   net.line["c_nf_per_km"].values * net.line["length_km"].values,
@@ -168,13 +170,13 @@ class KLU4Pandapower():
                                   net.line["from_bus"].values,
                                   net.line["to_bus"].values
                                   )
-            # init shunt should be called after init_powerlines
+
+            # init the shunts
             model.init_shunt(net.shunt["p_mw"].values,
                              net.shunt["q_mvar"].values,
                              net.shunt["bus"].values
                              )
-            # init trafo, should be after powerlines, order between trafo and shunt does not matter
-
+            # init trafo
             if net.trafo.shape[0]:
                 trafo_r, trafo_x, trafo_b = model.get_trafo_param(net.trafo["vn_hv_kv"].values,
                                                                   net.trafo["vn_lv_kv"].values,
@@ -205,13 +207,15 @@ class KLU4Pandapower():
                                  net.trafo["hv_bus"].values,
                                  net.trafo["lv_bus"].values)
 
+            model.init_Ybus()
             Ybus = model.get_Ybus()
+
             # be careful, the order is not the same between this and pandapower, you need to change it
-            Ybus_proper_oder = Ybus[np.array([net.bus.index]).T, np.array([net.bus.index])]
-            self.Ybus_proper_oder = self.Ybus
-            # Ybus_proper_oder = Ybus
-            # self.Ybus_proper_oder = self.Ybus[np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
-            tmp = np.abs(Ybus_proper_oder - self.Ybus)  # > 1e-7
+            # Ybus_proper_oder = Ybus[np.array([net.bus.index]).T, np.array([net.bus.index])]
+            # self.Ybus_proper_oder = self.Ybus
+            Ybus_proper_oder = Ybus
+            self.Ybus_proper_oder = self.Ybus[np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
+            tmp = np.abs(Ybus_proper_oder - self.Ybus_proper_oder)  # > 1e-7
             pdb.set_trace()
         else:
             pass

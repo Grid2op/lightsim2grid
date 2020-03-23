@@ -30,15 +30,15 @@ grid2 = pn.case5()
 grid1 = pn.case6ww()
 grid2 = pn.case6ww()
 
-# without trafo, but ordering issue and shunt, no parrallel line
+# # without trafo, but ordering issue and shunt, no parrallel line
 grid1 = pn.case30()
 grid2 = pn.case30()
-
-# with trafo, ordering issue, and shunt, no parrallel line
-grid1 = pn.case14()
-grid2 = pn.case14()
-
-# with trafo, ordering issue, and shunt, with parrallel line
+#
+# # with trafo, ordering issue, and shunt, no parrallel line
+# grid1 = pn.case14()
+# grid2 = pn.case14()
+#
+# # with trafo, ordering issue, and shunt, with parrallel line
 grid1 = pn.case118()
 grid2 = pn.case118()
 
