@@ -153,6 +153,8 @@ class KLU4Pandapower():
             makeYbus, pfsoln = _get_numba_functions(self.ppci, options)
             self.baseMVA, self.bus, self.gen, self.branch, self.ref, self.pv, self.pq, _, _, V0, self.ref_gens = _get_pf_variables_from_ppci(self.ppci)
             self.ppci, self.Ybus, self.Yf, self.Yt = _get_Y_bus(self.ppci, options, makeYbus, self.baseMVA, self.bus, self.branch)
+
+
             # TODO i have a problem here for the order of the bus / id of bus
             tmp_bus_ind = np.argsort(net.bus.index)
             model = DataModel()
@@ -188,7 +190,7 @@ class KLU4Pandapower():
                                                                   net.trafo["lv_bus"].values
                                                                   )
 
-                trafo_branch = ppc["branch"][net.line.shape[0]:, :]
+                # trafo_branch = ppc["branch"][net.line.shape[0]:, :]
 
                 tap_step_pct = net.trafo["tap_step_percent"].values
                 tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
@@ -207,6 +209,18 @@ class KLU4Pandapower():
                                  net.trafo["hv_bus"].values,
                                  net.trafo["lv_bus"].values)
 
+            model.init_loads(net.load["p_mw"].values,
+                             net.load["q_mvar"].values,
+                             net.load["bus"].values
+                             )
+            model.init_generators(net.gen["p_mw"].values,
+                                  net.gen["vm_pu"].values,
+                                  net.gen["bus"].values
+                                  )
+            # TODO better way here!
+            model.add_slackbus(net.ext_grid["bus"].values)
+
+
             model.init_Ybus()
             Ybus = model.get_Ybus()
 
@@ -216,7 +230,6 @@ class KLU4Pandapower():
             Ybus_proper_oder = Ybus
             self.Ybus_proper_oder = self.Ybus[np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
             tmp = np.abs(Ybus_proper_oder - self.Ybus_proper_oder)  # > 1e-7
-            pdb.set_trace()
         else:
             pass
             # TODO update self.ppci with new values of generation - load such that  Sbus is properly udpated
@@ -224,6 +237,12 @@ class KLU4Pandapower():
 
         # compute complex bus power injections [generation - load]
         Sbus = _get_Sbus(self.ppci, False)
+        Sbus_me = model.get_Sbus()
+
+        # pdb.set_trace()
+        Sbus_me_r = np.real(Sbus_me)
+        dcYbus = model.dc_pf(Sbus_me_r)
+        pdb.set_trace()
 
         # run the newton power  flow
         # ------------------- pp.pypower.newtonpf ---------------------

@@ -31,14 +31,24 @@ PYBIND11_MODULE(pyklu_cpp, m) {
 
     py::class_<DataModel>(m, "DataModel")
         .def(py::init<>())
+        // general parameters
         .def("set_f_hz", &DataModel::set_f_hz)
         .def("set_sn_mva", &DataModel::set_sn_mva)
+        // converters
         .def("get_trafo_param", &DataModel::get_trafo_param)
-        .def("init_Ybus", &DataModel::init_Ybus) // temporary
+        // init the grid
         .def("init_bus", &DataModel::init_bus)
-        .def("get_Ybus", &DataModel::get_Ybus)
         .def("init_powerlines", &DataModel::init_powerlines)
         .def("init_shunt", &DataModel::init_shunt)
-        .def("init_trafo", &DataModel::init_trafo);
+        .def("init_trafo", &DataModel::init_trafo)
+        .def("init_generators", &DataModel::init_generators)
+        .def("init_loads", &DataModel::init_loads)
+        .def("add_slackbus", &DataModel::add_slackbus)
+        // do something with the grid
+        .def("init_Ybus", &DataModel::init_Ybus) // temporary
+        .def("get_Ybus", &DataModel::get_Ybus)
+        .def("get_Sbus", &DataModel::get_Sbus)
+        .def("dc_pf", &DataModel::dc_pf)
+        ;
 
 }
