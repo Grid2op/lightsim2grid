@@ -44,6 +44,7 @@ def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
     # initialize the solver
     solver = KLUSolver()
     Ybus = sparse.csc_matrix(Ybus)
+
     # do the newton raphson algorithm
     solver.solve(Ybus, V, Sbus, pv, pq, max_it, tol)
 
@@ -220,7 +221,6 @@ class KLU4Pandapower():
             # TODO better way here!
             model.add_slackbus(net.ext_grid["bus"].values)
 
-
             model.init_Ybus()
             Ybus = model.get_Ybus()
 
@@ -241,7 +241,10 @@ class KLU4Pandapower():
 
         # pdb.set_trace()
         Sbus_me_r = np.real(Sbus_me)
-        dcYbus = model.dc_pf(Sbus_me_r)
+
+        dctheta = model.dc_pf(Sbus_me_r)
+        # self.dcYbus = self.ppci["internal"]['Bbus'][np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
+        # tmpdc = np.abs(dcYbus - self.dcYbus)
         pdb.set_trace()
 
         # run the newton power  flow

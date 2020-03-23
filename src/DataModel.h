@@ -70,7 +70,7 @@ class DataModel{
 
         // dc powerflow
         void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
-        Eigen::SparseMatrix<double> dc_pf(const Eigen::VectorXd & p);
+        Eigen::VectorXd dc_pf(const Eigen::VectorXd & p);
 
         // ac powerflows
         void compute_newton();
@@ -136,7 +136,6 @@ class DataModel{
 
         // 7. slack bus
         int slack_bus_id_;
-
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cdouble> Ybus_;

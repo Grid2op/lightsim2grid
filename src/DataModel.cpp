@@ -191,6 +191,7 @@ void DataModel::init_loads(const Eigen::VectorXd & loads_p,
 void DataModel::fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac)
 {
     // fill the matrix
+    //TODO template here instead of "if"
     int nb_line = powerlines_r_.size();
     cdouble my_i = 1.0i;
 
@@ -200,17 +201,21 @@ void DataModel::fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac)
         int from_id = powerlines_bus_or_id_(line_id);
         int to_id = powerlines_bus_ex_id_(line_id);
 
-        // compute the y
+        // convert subsceptance to half subsceptance, applied on each ends
+        cdouble h = 0.;
+        if(ac){
+            h = powerlines_h_(line_id); // yes it's the correct one
+            h = my_i * 0.5 * h;
+        }
+
+        // compute the admittance y
+        cdouble y = 0.;
         cdouble z = powerlines_x_(line_id);
         if(ac){
             z *= my_i;
             z += powerlines_r_(line_id);
         }
-        cdouble y = 1.0 / z;
-
-        // convert subsceptance to half subsceptance, applied on each ends
-        cdouble h = powerlines_h_(line_id); // yes it's the correct one
-        h = my_i * 0.5 * h;
+        if (z !=0. ) y = 1.0 / z;
 
         // fill non diagonal coefficient
         res.coeffRef(from_id, to_id) -= y; // * base_for_pu_from;
@@ -237,6 +242,7 @@ void DataModel::fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac){
 
 void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     //TODO merge that with fillYbusBranch!
+    //TODO template here instead of "if"
     int nb_trafo = transformers_bus_hv_id_.size();
     cdouble my_i = 1.0i;
     for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
@@ -247,16 +253,21 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
         // get the transformers ratio
         double r = transformers_ratio_(trafo_id);
 
+        // subsecptance
+        cdouble h = 0.;
+        if(ac){
+            h = transformers_h_(trafo_id);
+            h = my_i * 0.5 * h;
+        }
+
+        // admittance
+        cdouble y = 0.;
         cdouble z = transformers_x_(trafo_id);
         if(ac){
             z *= my_i;
             z += transformers_r_(trafo_id);
         }
-        cdouble y = 1.0 / z;
-
-        // subsecptance
-        cdouble h = transformers_h_(trafo_id);
-        h = my_i * 0.5 * h;
+        if(z != 0.) y = 1.0 / z;
 
         // fill non diagonal coefficient
         cdouble tmp = y / r;
@@ -264,22 +275,31 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
         res.coeffRef(lv_id, hv_id) -= tmp;
 
         // fill diagonal coefficient
-        res.coeffRef(hv_id, hv_id) += (tmp + h)  / r ; //TODO is it (tmp / r + h) or (tmp + h) /r ???
+        if(!ac){
+            r = 1.0; // in dc, r = 1.0 here (same voltage both side)
+        }
+        res.coeffRef(hv_id, hv_id) += (tmp + h)  / r ;
         res.coeffRef(lv_id, lv_id) += (tmp + h) * r;
     }
 }
 
-Eigen::SparseMatrix<double> DataModel::dc_pf(const Eigen::VectorXd & p){
+Eigen::VectorXd DataModel::dc_pf(const Eigen::VectorXd & p){
     // initialize the dc Ybus matrix
     Eigen::SparseMatrix<double> dcYbus;
     init_dcY(dcYbus);
+    dcYbus.makeCompressed();
 
     // solve for theta: P = dcY . theta
-//    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
-//    solver.analyzePattern(dcYbus);
-//    Eigen::VectorXd theta = solver.solve(p);
-
-    return dcYbus;
+    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
+    solver.analyzePattern(dcYbus);
+    solver.factorize(dcYbus);
+    Eigen::VectorXd theta;
+    theta = solver.solve(p);
+    if(solver.info()!=Eigen::Success) {
+        // solving failed
+        return Eigen::VectorXd();
+    }
+    return theta;
 }
 
 void DataModel::compute_newton(){
@@ -320,10 +340,17 @@ void DataModel::init_Ybus(){
 }
 
 void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
-    Eigen::SparseMatrix<cdouble> tmp;
+    int nb_bus = bus_vn_kv_.size();
+
+    // init this matrix
+    Eigen::SparseMatrix<cdouble> tmp = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
+
+    // fill it properly
     fillYbusBranch(tmp, false);
     fillYbusShunt(tmp, false);
     fillYbusTrafo(tmp, false);
+
+    // take only real part
     dcYbus  = tmp.real();
 }
 
