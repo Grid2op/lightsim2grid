@@ -283,23 +283,67 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     }
 }
 
-Eigen::VectorXd DataModel::dc_pf(const Eigen::VectorXd & p){
+Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXd Va0){
     // initialize the dc Ybus matrix
     Eigen::SparseMatrix<double> dcYbus;
     init_dcY(dcYbus);
     dcYbus.makeCompressed();
 
+    // get the correct matrix : remove the slack bus
+    int nb_bus = bus_vn_kv_.size();
+    Eigen::SparseMatrix<double> mat_to_inv = Eigen::SparseMatrix<double>(nb_bus-1, nb_bus-1);
+    mat_to_inv.reserve(dcYbus.nonZeros());
+
+    // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
+    std::vector<Eigen::Triplet<double> > tripletList;
+    for (int k=0; k < nb_bus; ++k){
+        if(k == slack_bus_id_) continue;  // I don't add anything to the slack bus
+        for (Eigen::SparseMatrix<double>::InnerIterator it(dcYbus, k); it; ++it)
+        {
+            int row_res = it.row();
+            if(row_res == slack_bus_id_) continue;
+            row_res = row_res > slack_bus_id_ ? row_res-1 : row_res;
+            int col_res = it.col();
+            col_res = col_res > slack_bus_id_ ? col_res-1 : col_res;
+            tripletList.push_back(Eigen::Triplet<double> (row_res, col_res, it.value()));
+        }
+    }
+    mat_to_inv.setFromTriplets(tripletList.begin(), tripletList.end());
+
     // solve for theta: P = dcY . theta
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
-    solver.analyzePattern(dcYbus);
-    solver.factorize(dcYbus);
-    Eigen::VectorXd theta;
-    theta = solver.solve(p);
+    solver.analyzePattern(mat_to_inv);
+    solver.factorize(mat_to_inv);
+
+    // remove the slack bus from the p
+//    Eigen::VectorXd p0_tmp = mat_to_inv.col(slack_bus_id_) * Va0(slack_bus_id_); //TODO check that in pandapower
+    Eigen::VectorXd p_tmp = Eigen::VectorXd(nb_bus-1);
+
+    // TODO vectorize like this, but be carefull to side effect
+//    theta_tmp.segment(0, slack_bus_id_-1) = p.segment(0,slack_bus_id_-1);
+//    theta_tmp.segment(slack_bus_id_-1, nb_bus-1 - (slack_bus_id_-1)) = p.segment(0,slack_bus_id_-1);
+    int index_tmp = 0;
+    for (int k=0; k < nb_bus-1; ++k, ++index_tmp){
+        if(k == slack_bus_id_) ++index_tmp;
+        p_tmp(k) = p(index_tmp); // - p0_tmp(k);
+    }
+    // solve the system
+    Eigen::VectorXd theta_tmp = solver.solve(p_tmp);
     if(solver.info()!=Eigen::Success) {
         // solving failed
         return Eigen::VectorXd();
     }
-    return theta;
+
+    // re insert everything to place
+    Eigen::VectorXd theta = Eigen::VectorXd::Constant(nb_bus, 0.);
+    index_tmp = 0;
+    for (int k=0; k < nb_bus-1; ++k, ++index_tmp){
+        if(k == slack_bus_id_) ++index_tmp;
+        theta(index_tmp) = theta_tmp(k);
+    }
+    theta.array() +=  Va0(slack_bus_id_);
+
+    return (theta.array().cos().cast<cdouble>() + 1.0i * theta.array().sin().cast<cdouble>());
 }
 
 void DataModel::compute_newton(){

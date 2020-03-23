@@ -163,7 +163,7 @@ class KLU4Pandapower():
             model.set_f_hz(net.f_hz)
 
             # init_but should be called first among all the rest
-            model.init_bus(net.bus.iloc[tmp_bus_ind]["vn_kv"].values, net.line.shape[0], net.line.shape[0])
+            model.init_bus(net.bus.iloc[tmp_bus_ind]["vn_kv"].values, net.line.shape[0], net.trafo.shape[0])
 
             # init the shunts
             model.init_powerlines(net.line["r_ohm_per_km"].values * net.line["length_km"].values,
@@ -241,8 +241,11 @@ class KLU4Pandapower():
 
         # pdb.set_trace()
         Sbus_me_r = np.real(Sbus_me)
+        Va0 = np.zeros(net.bus.shape[0])
+        Va0[net.ext_grid["bus"].values] = net.ext_grid["va_degree"].values / 360. * 2 * np.pi
+        dctheta = model.dc_pf(Sbus_me_r, Va0)
+        self.dctheta = V0[tmp_bus_ind]
 
-        dctheta = model.dc_pf(Sbus_me_r)
         # self.dcYbus = self.ppci["internal"]['Bbus'][np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
         # tmpdc = np.abs(dcYbus - self.dcYbus)
         pdb.set_trace()
