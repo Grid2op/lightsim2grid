@@ -70,7 +70,7 @@ class DataModel{
 
         // dc powerflow
         void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
-        Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXd Va0);
+        Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0);
 
         // ac powerflows
         void compute_newton();

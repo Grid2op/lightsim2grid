@@ -126,6 +126,7 @@ class KLU4Pandapower():
         # convert pandapower net to ppc
         ppc, self.ppci = _pd2ppc(net)
 
+        # pdb.set_trace()
         # store variables
         net["_ppc"] = ppc
 
@@ -241,10 +242,10 @@ class KLU4Pandapower():
 
         # pdb.set_trace()
         Sbus_me_r = np.real(Sbus_me)
-        Va0 = np.zeros(net.bus.shape[0])
-        Va0[net.ext_grid["bus"].values] = net.ext_grid["va_degree"].values / 360. * 2 * np.pi
+        Va0 = np.full(net.bus.shape[0], fill_value=net["_options"]["init_vm_pu"], dtype=np.complex_)
+        Va0[net.ext_grid["bus"].values] = net.ext_grid["vm_pu"].values * np.exp(1j * net.ext_grid["va_degree"].values / 360. * 2 * np.pi)
         dctheta = model.dc_pf(Sbus_me_r, Va0)
-        self.dctheta = V0[tmp_bus_ind]
+        # self.dctheta = V0[tmp_bus_ind]
 
         # self.dcYbus = self.ppci["internal"]['Bbus'][np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
         # tmpdc = np.abs(dcYbus - self.dcYbus)

@@ -283,7 +283,7 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     }
 }
 
-Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXd Va0){
+Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0){
     // initialize the dc Ybus matrix
     Eigen::SparseMatrix<double> dcYbus;
     init_dcY(dcYbus);
@@ -341,9 +341,15 @@ Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::Vector
         if(k == slack_bus_id_) ++index_tmp;
         theta(index_tmp) = theta_tmp(k);
     }
-    theta.array() +=  Va0(slack_bus_id_);
+    theta.array() +=  std::arg(Va0(slack_bus_id_));
+    Eigen::VectorXd Vm = Va0.array().abs();
 
-    return (theta.array().cos().cast<cdouble>() + 1.0i * theta.array().sin().cast<cdouble>());
+    int nb_gen = generators_p_.size();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        int bus_id = generators_bus_id_(gen_id);
+        Vm(bus_id) = generators_v_(gen_id);
+    }
+    return Vm.array() * (theta.array().cos().cast<cdouble>() + 1.0i * theta.array().sin().cast<cdouble>());
 }
 
 void DataModel::compute_newton(){
