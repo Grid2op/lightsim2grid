@@ -34,8 +34,10 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         // general parameters
         .def("set_f_hz", &DataModel::set_f_hz)
         .def("set_sn_mva", &DataModel::set_sn_mva)
+
         // converters
         .def("get_trafo_param", &DataModel::get_trafo_param)
+
         // init the grid
         .def("init_bus", &DataModel::init_bus)
         .def("init_powerlines", &DataModel::init_powerlines)
@@ -44,11 +46,26 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("init_generators", &DataModel::init_generators)
         .def("init_loads", &DataModel::init_loads)
         .def("add_slackbus", &DataModel::add_slackbus)
+
+        // get back the results
+        .def("get_Va", &DataModel::get_Va)
+        .def("get_Vm", &DataModel::get_Vm)
+        .def("get_loads_res", &DataModel::get_loads_res)
+        .def("get_shunts_res", &DataModel::get_shunts_res)
+        .def("get_gen_res", &DataModel::get_gen_res)
+        .def("get_lineor_res", &DataModel::get_lineor_res)
+        .def("get_lineex_res", &DataModel::get_lineex_res)
+        .def("get_trafoor_res", &DataModel::get_trafoor_res)
+        .def("get_trafoex_res", &DataModel::get_trafoex_res)
+
         // do something with the grid
         .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("get_Ybus", &DataModel::get_Ybus)
         .def("get_Sbus", &DataModel::get_Sbus)
+        .def("get_pv", &DataModel::get_pv)
+        .def("get_pq", &DataModel::get_pq)
         .def("dc_pf", &DataModel::dc_pf)
+        .def("compute_newton", &DataModel::compute_newton)
         ;
 
 }

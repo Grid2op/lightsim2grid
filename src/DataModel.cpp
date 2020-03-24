@@ -352,8 +352,20 @@ Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::Vector
     return Vm.array() * (theta.array().cos().cast<cdouble>() + 1.0i * theta.array().sin().cast<cdouble>());
 }
 
-void DataModel::compute_newton(){
+bool DataModel::compute_newton(Eigen::VectorXcd & V,
+                               int max_iter,
+                               double tol)
+{
     init_Ybus();
+    _solver.reset();
+    auto Sbus = get_Sbus();
+    auto pv = get_pv();
+    auto pq = get_pq();
+    auto Ybus = get_Ybus();
+    bool res = _solver.do_newton(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    if (res) compute_results();
+    else reset_results();
+    return res;
 };
 
 void DataModel::init_Ybus(){
@@ -370,13 +382,17 @@ void DataModel::init_Ybus(){
     // init the Sbus vector
     cdouble my_i = 1.0i;
     int bus_id;
+    int nb_bus = bus_vn_kv_.size();
     double sum_active = 0.;
     double tmp;
+
+    std::vector<bool> has_gen_conn(nb_bus, false);
     for(int gen_id = 0; gen_id < generators_p_.size(); ++gen_id){
         bus_id = generators_bus_id_(gen_id);
         tmp = generators_p_(gen_id);
         Sbus_.coeffRef(bus_id) += tmp; // + my_i * generators_p_(gen_id);
         sum_active += tmp;
+        has_gen_conn[bus_id] = true;
     }
     for(int load_id = 0; load_id < loads_p_.size(); ++load_id){
         bus_id = loads_bus_id_(load_id);
@@ -387,6 +403,18 @@ void DataModel::init_Ybus(){
 
     Sbus_.coeffRef(slack_bus_id_) -= sum_active;
     //TODO put the shunt here (but test before it can be done)
+
+    // TODO i probably need to keep track of the order here !!!!
+    std::vector<int> bus_pq;
+    std::vector<int> bus_pv;
+    for(bus_id = 0; bus_id < nb_bus; ++bus_id){
+        if(bus_id == slack_bus_id_) continue;
+        if(has_gen_conn[bus_id]) bus_pv.push_back(bus_id);
+        else bus_pq.push_back(bus_id);
+    }
+    bus_pv_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pv.data(), bus_pv.size());
+    bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
+
 }
 
 void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
@@ -404,3 +432,178 @@ void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
     dcYbus  = tmp.real();
 }
 
+void DataModel::compute_results(){
+     //TODO check it has converged!
+
+    // retrieve results from powerflow
+    const auto & Va = _solver.get_Va();
+    const auto & Vm = _solver.get_Vm();
+
+    // for powerlines
+    int nb_line = powerlines_r_.size();
+    res_powerlines(Va, Vm, nb_line,
+                   powerlines_r_,
+                   powerlines_x_,
+                   powerlines_bus_or_id_,
+                   powerlines_bus_ex_id_,
+                   res_powerline_por_,  // in MW
+                   res_powerline_qor_,  // in MVar
+                   res_powerline_vor_,  // in kV
+                   res_powerline_aor_,  // in kA
+                   res_powerline_pex_,  // in MW
+                   res_powerline_qex_,  // in MVar
+                   res_powerline_vex_,  // in kV
+                   res_powerline_aex_  // in kA
+                   );
+
+    // for trafo
+    int nb_trafo = transformers_r_.size();
+    res_powerlines(Va, Vm, nb_trafo,
+                   transformers_r_,
+                   transformers_x_,
+                   transformers_bus_hv_id_,
+                   transformers_bus_lv_id_,
+                   res_trafo_por_,  // in MW
+                   res_trafo_qor_,  // in MVar
+                   res_trafo_vor_,  // in kV
+                   res_trafo_aor_,  // in kA
+                   res_trafo_pex_,  // in MW
+                   res_trafo_qex_,  // in MVar
+                   res_trafo_vex_,  // in kV
+                   res_trafo_aex_  // in kA
+                   );
+
+    // for loads
+    int nb_load = loads_p_.size();
+    res_loads(Va, Vm, nb_load, loads_bus_id_, res_load_v_);
+    res_load_p_ = loads_p_;
+    res_load_q_ = loads_q_;
+
+    // for shunts
+    int nb_shunt = shunts_p_mw_.size();
+    res_loads(Va, Vm, nb_shunt, shunts_bus_id_, res_shunt_v_);
+    res_shunt_p_ = shunts_p_mw_;
+    res_shunt_q_ = shunts_q_mvar_;
+
+    // for prods
+    res_gen_p_ = generators_p_;
+    res_gen_v_ = generators_v_;
+    //TODO for res_gen_q_ !!!
+}
+
+void DataModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v){
+    const double _1_sqrt_3 = 1.0 / std::sqrt(3.);
+    Eigen::VectorXd p2q2 = p.array() * p.array() + q.array() * q.array();
+    p2q2 = p2q2.array().cwiseSqrt();
+    a = p2q2.array() * _1_sqrt_3 / v.array();
+}
+
+void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
+                               const Eigen::Ref<Eigen::VectorXd> & Vm,
+                               int nb_element,
+                               const Eigen::VectorXd & el_r,
+                               const Eigen::VectorXd & el_x,
+                               const Eigen::VectorXi & bus_or_id_,
+                               const Eigen::VectorXi & bus_ex_id_,
+                               Eigen::VectorXd & por,  // in MW
+                               Eigen::VectorXd & qor,  // in MVar
+                               Eigen::VectorXd & vor,  // in kV
+                               Eigen::VectorXd & aor,  // in kA
+                               Eigen::VectorXd & pex,  // in MW
+                               Eigen::VectorXd & qex,  // in MVar
+                               Eigen::VectorXd & vex,  // in kV
+                               Eigen::VectorXd & aex  // in kA
+                              ){
+    por = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MW
+    qor = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
+    vor = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
+    aor = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
+    pex = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MW
+    qex = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
+    vex = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
+    aex = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
+    cdouble my_i = 1.0i;
+    for(int line_id = 0; line_id < nb_element; ++line_id){
+        //physical properties
+        double r = el_r(line_id);
+        double x = el_x(line_id);
+        cdouble tmp = - 1.0 / (r + my_i * x);
+        double g = std::real(tmp);
+        double b = std::imag(tmp);
+        // std::cout << " for powerline " << line_id << " r " << r << " x " << x << " g " << g << " b " << b << std::endl;
+
+        // connectivity
+        int bus_or_id = bus_or_id_(line_id);
+        int bus_ex_id = bus_ex_id_(line_id);
+        // results of the powerflow
+        double theta_or = Va(bus_or_id);
+        double theta_ex = Va(bus_ex_id);
+        double v_or = Vm(bus_or_id);
+        double v_ex = Vm(bus_ex_id);
+        double bus_vn_kv_or = bus_vn_kv_(bus_or_id);
+        double bus_vn_kv_ex = bus_vn_kv_(bus_ex_id);
+
+        // std::cout << " for powerline " << line_id << " theta_or " << theta_or << " theta_ex " << theta_ex << " v_or " << v_or << " v_ex " << v_ex << std::endl;
+
+        // tmp element (be smart in computations)
+        double vkj = v_or * v_ex * sn_mva_;
+        double cos_thetakj = std::cos(theta_or - theta_ex);
+        double sin_thetakj = std::sin(theta_or - theta_ex);
+
+        // powerline equations
+        vor(line_id) = v_or * bus_vn_kv_or;
+        vex(line_id) = v_ex * bus_vn_kv_ex;
+        // TODO these are probably not the right formula, need to check
+        por(line_id) = vkj * (g * cos_thetakj + b * sin_thetakj);
+        qor(line_id) = vkj * (g * sin_thetakj - b * cos_thetakj);
+        pex(line_id) = vkj * (g * cos_thetakj - b * sin_thetakj);
+        qex(line_id) = vkj * (- g * sin_thetakj - b * cos_thetakj);
+    }
+    _get_amps(aor, por, qor, vor);
+    _get_amps(aex, pex, qex, vex);
+}
+
+void DataModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
+                          const Eigen::Ref<Eigen::VectorXd> & Vm,
+                          int nb_element,
+                          const Eigen::VectorXi & bus_id,
+                          Eigen::VectorXd & v){
+    v = Eigen::VectorXd::Constant(nb_element, 0.0);
+    for(int el_id = 0; el_id < nb_element; ++el_id){
+        int el_bus_id = bus_id(el_id);
+        double bus_pu = bus_vn_kv_(el_bus_id);
+        v(el_id) = Vm(el_id) * bus_pu;
+    }
+}
+
+void DataModel::reset_results(){
+    res_load_p_ = Eigen::VectorXd(); // in MW
+    res_load_q_ = Eigen::VectorXd(); // in MVar
+    res_load_v_ = Eigen::VectorXd(); // in kV
+
+    res_gen_p_ = Eigen::VectorXd();  // in MW
+    res_gen_q_ = Eigen::VectorXd();  // in MVar
+    res_gen_v_ = Eigen::VectorXd();  // in kV
+
+    res_powerline_por_ = Eigen::VectorXd();  // in MW
+    res_powerline_qor_ = Eigen::VectorXd();  // in MVar
+    res_powerline_vor_ = Eigen::VectorXd();  // in kV
+    res_powerline_aor_ = Eigen::VectorXd();  // in kA
+    res_powerline_pex_ = Eigen::VectorXd();  // in MW
+    res_powerline_qex_ = Eigen::VectorXd();  // in MVar
+    res_powerline_vex_ = Eigen::VectorXd();  // in kV
+    res_powerline_aex_ = Eigen::VectorXd();  // in kA
+
+    res_trafo_por_ = Eigen::VectorXd();  // in MW
+    res_trafo_qor_ = Eigen::VectorXd();  // in MVar
+    res_trafo_vor_ = Eigen::VectorXd();  // in kV
+    res_trafo_aor_ = Eigen::VectorXd();  // in kA
+    res_trafo_pex_ = Eigen::VectorXd();  // in MW
+    res_trafo_qex_ = Eigen::VectorXd();  // in MVar
+    res_trafo_vex_ = Eigen::VectorXd();  // in kV
+    res_trafo_aex_ = Eigen::VectorXd();  // in kA
+
+    res_shunt_p_ = Eigen::VectorXd();  // in MW
+    res_shunt_q_ = Eigen::VectorXd();  // in MVar
+    res_shunt_v_ = Eigen::VectorXd();  // in kV
+}

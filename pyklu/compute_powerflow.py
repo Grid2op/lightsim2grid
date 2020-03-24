@@ -249,7 +249,11 @@ class KLU4Pandapower():
 
         # self.dcYbus = self.ppci["internal"]['Bbus'][np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
         # tmpdc = np.abs(dcYbus - self.dcYbus)
-        pdb.set_trace()
+        pv_me = model.get_pv()
+        pq_me = model.get_pq()
+        np.all(sorted(pv_me) == sorted(self.pv))
+        np.all(sorted(pq_me) == sorted(self.pq))
+        # pdb.set_trace()
 
         # run the newton power  flow
         # ------------------- pp.pypower.newtonpf ---------------------
@@ -262,7 +266,7 @@ class KLU4Pandapower():
         if need_reset:
             # reset the solver
             self.solver.reset()
-            self.V = V0
+            self.V = 1.0 * V0
         else:
             # reuse previous voltages
             pass
@@ -317,3 +321,12 @@ class KLU4Pandapower():
         self.ppci = _store_internal(self.ppci, {"time_store_res": et_store_res, "time_to_net": et_to_net,
                                                 "time_all": et_start,
                                                 "time_ppci_to_pfsoln": te_ppci_to_pfsoln})
+
+        has_conv = model.compute_newton(V0, max_it, tol)
+        por, qor, vor, aor = model.get_lineor_res()
+        pex, qex, vex, aex = model.get_lineex_res()
+        load_p, load_q, load_v = model.get_loads_res()
+
+        Va_me2 = model.get_Va()
+        Vm_me2 = model.get_Vm()
+        pdb.set_trace()

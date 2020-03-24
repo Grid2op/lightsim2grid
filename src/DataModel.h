@@ -18,6 +18,8 @@
 // import klu package
 #include "KLUSolver.h"
 
+typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple3d;
+typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple4d;
 
 class DataModel{
     public:
@@ -27,13 +29,26 @@ class DataModel{
 
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
 
+        // get some internal information
         Eigen::SparseMatrix<cdouble> get_Ybus(){
             return Ybus_;
         }
         Eigen::VectorXcd get_Sbus(){
             return Sbus_;
         }
-
+        Eigen::VectorXi get_pv(){
+            return bus_pv_;
+        }
+        Eigen::VectorXi get_pq(){
+            return bus_pq_;
+        }
+        Eigen::Ref<Eigen::VectorXd> get_Va(){
+            return _solver.get_Va();
+        }
+        Eigen::Ref<Eigen::VectorXd> get_Vm(){
+            return _solver.get_Vm();
+        }
+        // All methods to init this data model
         void init_powerlines(const Eigen::VectorXd & branch_r,
                              const Eigen::VectorXd & branch_x,
                              const Eigen::VectorXd & branch_c,
@@ -65,6 +80,15 @@ class DataModel{
             slack_bus_id_ = slack_bus_id;
         }
 
+        // All results access
+        tuple3d get_loads_res() const {return tuple3d(res_load_p_, res_load_q_, res_load_v_);}
+        tuple3d get_shunts_res() const {return tuple3d(res_shunt_p_, res_shunt_q_, res_shunt_v_);}
+        tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
+        tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
+        tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
+        tuple4d get_trafoor_res() const {return tuple4d(res_trafo_por_, res_trafo_qor_, res_trafo_vor_, res_trafo_aor_);}
+        tuple4d get_trafoex_res() const {return tuple4d(res_trafo_pex_, res_trafo_qex_, res_trafo_vex_, res_trafo_aex_);}
+
         // compute admittance matrix
         void init_Ybus();
 
@@ -73,7 +97,9 @@ class DataModel{
         Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0);
 
         // ac powerflows
-        void compute_newton();
+        bool compute_newton(Eigen::VectorXcd & V,
+                            int max_iter,
+                            double tol);
 
         // data converters
         std::tuple<Eigen::VectorXd,
@@ -87,7 +113,18 @@ class DataModel{
                            const Eigen::VectorXd & trafo_pfe_kw,
                            const Eigen::VectorXd & trafo_i0_pct,
                            const Eigen::VectorXi & trafo_lv_id);
-//    protected:
+
+        // results
+        /**
+        Compute the results vector from the Va, Vm post powerflow
+        **/
+        void compute_results();
+        /**
+        reset the results in case of divergence of the powerflow.
+        **/
+        void reset_results();
+
+    protected:
     // add method to change topology, change ratio of transformers, change
 
     protected:
@@ -139,16 +176,82 @@ class DataModel{
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cdouble> Ybus_;
+        Eigen::VectorXi bus_pv_;
+        Eigen::VectorXi bus_pq_;
 
         // to solve the newton raphson
         Eigen::VectorXcd Sbus_;
         KLUSolver _solver;
+
+        // results of the powerflow
+        Eigen::VectorXd res_load_p_; // in MW
+        Eigen::VectorXd res_load_q_; // in MVar
+        Eigen::VectorXd res_load_v_; // in kV
+
+        Eigen::VectorXd res_gen_p_;  // in MW
+        Eigen::VectorXd res_gen_q_;  // in MVar
+        Eigen::VectorXd res_gen_v_;  // in kV
+
+        Eigen::VectorXd res_powerline_por_;  // in MW
+        Eigen::VectorXd res_powerline_qor_;  // in MVar
+        Eigen::VectorXd res_powerline_vor_;  // in kV
+        Eigen::VectorXd res_powerline_aor_;  // in kA
+        Eigen::VectorXd res_powerline_pex_;  // in MW
+        Eigen::VectorXd res_powerline_qex_;  // in MVar
+        Eigen::VectorXd res_powerline_vex_;  // in kV
+        Eigen::VectorXd res_powerline_aex_;  // in kA
+
+        Eigen::VectorXd res_trafo_por_;  // in MW
+        Eigen::VectorXd res_trafo_qor_;  // in MVar
+        Eigen::VectorXd res_trafo_vor_;  // in kV
+        Eigen::VectorXd res_trafo_aor_;  // in kA
+        Eigen::VectorXd res_trafo_pex_;  // in MW
+        Eigen::VectorXd res_trafo_qex_;  // in MVar
+        Eigen::VectorXd res_trafo_vex_;  // in kV
+        Eigen::VectorXd res_trafo_aex_;  // in kA
+
+        Eigen::VectorXd res_shunt_p_;  // in MW
+        Eigen::VectorXd res_shunt_q_;  // in MVar
+        Eigen::VectorXd res_shunt_v_;  // in kV
 
     protected:
 
         void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac);
+        /**
+        This method will compute the results for both the powerlines and the trafos
+        **/
+        void res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
+                            const Eigen::Ref<Eigen::VectorXd> & Vm,
+                            int nb_element,
+                            const Eigen::VectorXd & el_r,
+                            const Eigen::VectorXd & el_x,
+                            const Eigen::VectorXi & bus_or_id_,
+                            const Eigen::VectorXi & bus_ex_id_,
+                            Eigen::VectorXd & por,  // in MW
+                            Eigen::VectorXd & qor,  // in MVar
+                            Eigen::VectorXd & vor,  // in kV
+                            Eigen::VectorXd & aor,  // in kA
+                            Eigen::VectorXd & pex,  // in MW
+                            Eigen::VectorXd & qex,  // in MVar
+                            Eigen::VectorXd & vex,  // in kV
+                            Eigen::VectorXd & aex  // in kA
+                            );
+
+        /**
+        compute the amps from the p, the q and the v (v should NOT be pair unit)
+        **/
+        void _get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v);
+
+        /**
+        This method will compute the results for the shunt and the loads FOR THE VOLTAGE ONLY
+        **/
+        void res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
+                       const Eigen::Ref<Eigen::VectorXd> & Vm,
+                       int nb_element,
+                       const Eigen::VectorXi & bus_id,
+                       Eigen::VectorXd & v);
 
 };
 
