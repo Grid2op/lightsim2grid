@@ -4,6 +4,7 @@ This module provide a function that can serve as a base replacement to the funct
 
 
 """
+import numpy as np
 from scipy import sparse
 from pyklu_cpp import KLUSolver
 
@@ -69,4 +70,7 @@ def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
     J = solver.get_J()
     converged = solver.converged()
     iterations = solver.get_nb_iter()
-    return V, converged, iterations, J
+    
+    Vm_it = None
+    Va_it = None
+    return V, converged, iterations, J, Vm_it, Va_it
