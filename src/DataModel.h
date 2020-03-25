@@ -224,9 +224,11 @@ class DataModel{
         **/
         void res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                             const Eigen::Ref<Eigen::VectorXd> & Vm,
+                            const Eigen::Ref<Eigen::VectorXcd> & V,
                             int nb_element,
                             const Eigen::VectorXd & el_r,
                             const Eigen::VectorXd & el_x,
+                            const Eigen::VectorXcd & el_h,
                             const Eigen::VectorXi & bus_or_id_,
                             const Eigen::VectorXi & bus_ex_id_,
                             Eigen::VectorXd & por,  // in MW

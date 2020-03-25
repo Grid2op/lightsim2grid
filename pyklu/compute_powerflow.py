@@ -329,4 +329,22 @@ class KLU4Pandapower():
 
         Va_me2 = model.get_Va()
         Vm_me2 = model.get_Vm()
+
+
+        # reverse engineer powerline equations [line from 0 to 1 atm]
+        busor_id = 0
+        busex_id = 1
+        thetaor = Va_me2[busor_id]
+        thetaex = Va_me2[busex_id]
+        vor = Vm_me2[busor_id]
+        vex = Vm_me2[busex_id]
+
+        my_y = Ybus[0, 1]
+        g_ = np.real(my_y)
+        b_ = np.imag(my_y)
+
+        Ykm = 0
+        Eor = vor * np.exp(1j*thetaor)
+        Eex = vex * np.exp(1j*thetaex)
+
         pdb.set_trace()

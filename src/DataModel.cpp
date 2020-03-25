@@ -383,18 +383,20 @@ void DataModel::init_Ybus(){
     cdouble my_i = 1.0i;
     int bus_id;
     int nb_bus = bus_vn_kv_.size();
+    int nb_load = loads_p_.size();
+    int nb_gen = generators_p_.size();
     double sum_active = 0.;
     double tmp;
 
     std::vector<bool> has_gen_conn(nb_bus, false);
-    for(int gen_id = 0; gen_id < generators_p_.size(); ++gen_id){
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         bus_id = generators_bus_id_(gen_id);
         tmp = generators_p_(gen_id);
         Sbus_.coeffRef(bus_id) += tmp; // + my_i * generators_p_(gen_id);
         sum_active += tmp;
         has_gen_conn[bus_id] = true;
     }
-    for(int load_id = 0; load_id < loads_p_.size(); ++load_id){
+    for(int load_id = 0; load_id < nb_load; ++load_id){
         bus_id = loads_bus_id_(load_id);
         tmp = loads_p_(load_id);
         Sbus_.coeffRef(bus_id) -= tmp + my_i * loads_q_(load_id);
@@ -407,10 +409,18 @@ void DataModel::init_Ybus(){
     // TODO i probably need to keep track of the order here !!!!
     std::vector<int> bus_pq;
     std::vector<int> bus_pv;
-    for(bus_id = 0; bus_id < nb_bus; ++bus_id){
-        if(bus_id == slack_bus_id_) continue;
-        if(has_gen_conn[bus_id]) bus_pv.push_back(bus_id);
-        else bus_pq.push_back(bus_id);
+    std::vector<bool> has_bus_been_added(nb_bus, false);
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        bus_id = generators_bus_id_(gen_id);
+        if(bus_id == slack_bus_id_) continue;  // slack bus is not PV
+        if(has_bus_been_added[bus_id]) continue; // i already added this bus
+        bus_pv.push_back(bus_id);
+        has_bus_been_added[bus_id] = true;
+    }
+    for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
+        if(bus_id == slack_bus_id_) continue;  // slack bus is not PQ either
+        if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
+        bus_pq.push_back(bus_id);
     }
     bus_pv_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pv.data(), bus_pv.size());
     bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
@@ -438,12 +448,14 @@ void DataModel::compute_results(){
     // retrieve results from powerflow
     const auto & Va = _solver.get_Va();
     const auto & Vm = _solver.get_Vm();
+    const auto & V = _solver.get_V();
 
     // for powerlines
     int nb_line = powerlines_r_.size();
-    res_powerlines(Va, Vm, nb_line,
+    res_powerlines(Va, Vm, V, nb_line,
                    powerlines_r_,
                    powerlines_x_,
+                   powerlines_h_,
                    powerlines_bus_or_id_,
                    powerlines_bus_ex_id_,
                    res_powerline_por_,  // in MW
@@ -458,9 +470,10 @@ void DataModel::compute_results(){
 
     // for trafo
     int nb_trafo = transformers_r_.size();
-    res_powerlines(Va, Vm, nb_trafo,
+    res_powerlines(Va, Vm, V, nb_trafo,
                    transformers_r_,
                    transformers_x_,
+                   transformers_h_,
                    transformers_bus_hv_id_,
                    transformers_bus_lv_id_,
                    res_trafo_por_,  // in MW
@@ -500,9 +513,11 @@ void DataModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const 
 
 void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                                const Eigen::Ref<Eigen::VectorXd> & Vm,
+                               const Eigen::Ref<Eigen::VectorXcd> & V,
                                int nb_element,
                                const Eigen::VectorXd & el_r,
                                const Eigen::VectorXd & el_x,
+                               const Eigen::VectorXcd & el_h,
                                const Eigen::VectorXi & bus_or_id_,
                                const Eigen::VectorXi & bus_ex_id_,
                                Eigen::VectorXd & por,  // in MW
@@ -527,37 +542,54 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
         //physical properties
         double r = el_r(line_id);
         double x = el_x(line_id);
-        cdouble tmp = - 1.0 / (r + my_i * x);
-        double g = std::real(tmp);
-        double b = std::imag(tmp);
-        // std::cout << " for powerline " << line_id << " r " << r << " x " << x << " g " << g << " b " << b << std::endl;
+        cdouble h = my_i * 0.5 * el_h(line_id);
+        cdouble y = 1.0 / (r + my_i * x);
+
+        // double g = std::real(tmp);
+        // double b = std::imag(tmp);
+        // std::cout << " for powerline " << line_id << std::end;
+        // std::cout << "\t r " << r << " x " << x << " g " << g << " b " << b << std::endl;
 
         // connectivity
         int bus_or_id = bus_or_id_(line_id);
         int bus_ex_id = bus_ex_id_(line_id);
+
         // results of the powerflow
-        double theta_or = Va(bus_or_id);
-        double theta_ex = Va(bus_ex_id);
+        // double theta_or = Va(bus_or_id);
+        // double theta_ex = Va(bus_ex_id);
+        // double v_or = Vm(bus_or_id);
+        // double v_ex = Vm(bus_ex_id);
+        cdouble Eor = V(bus_or_id);
+        cdouble Eex = V(bus_ex_id);
+
+        //std::cout << "\t theta_or " << theta_or << " theta_ex " << theta_ex << " v_or " << v_or << " v_ex " << v_ex << std::endl;
+
+        // tmp element (be smart in computations)
+        // double vkj = v_or * v_ex * sn_mva_;
+        // double cos_thetakj = std::cos(theta_or - theta_ex);
+        // double sin_thetakj = std::sin(theta_or - theta_ex);
+
+        // powerline equations
+        cdouble I_orex = y * (Eor - Eex) + h * Eor;
+        cdouble I_exor = y * (Eex - Eor) + h * Eex;
+
+        I_orex = std::conj(I_orex);
+        I_exor = std::conj(I_exor);
+        cdouble s_orex = Eor * I_orex;
+        cdouble s_exor = Eex * I_exor;
+        // TODO these are probably not the right formula, need to check
+        por(line_id) = std::real(s_orex);
+        qor(line_id) = std::imag(s_orex);
+        pex(line_id) = std::real(s_exor);
+        qex(line_id) = std::imag(s_exor);
+
+        // retrieve voltages magnitude in kv instead of pu
         double v_or = Vm(bus_or_id);
         double v_ex = Vm(bus_ex_id);
         double bus_vn_kv_or = bus_vn_kv_(bus_or_id);
         double bus_vn_kv_ex = bus_vn_kv_(bus_ex_id);
-
-        // std::cout << " for powerline " << line_id << " theta_or " << theta_or << " theta_ex " << theta_ex << " v_or " << v_or << " v_ex " << v_ex << std::endl;
-
-        // tmp element (be smart in computations)
-        double vkj = v_or * v_ex * sn_mva_;
-        double cos_thetakj = std::cos(theta_or - theta_ex);
-        double sin_thetakj = std::sin(theta_or - theta_ex);
-
-        // powerline equations
         vor(line_id) = v_or * bus_vn_kv_or;
         vex(line_id) = v_ex * bus_vn_kv_ex;
-        // TODO these are probably not the right formula, need to check
-        por(line_id) = vkj * (g * cos_thetakj + b * sin_thetakj);
-        qor(line_id) = vkj * (g * sin_thetakj - b * cos_thetakj);
-        pex(line_id) = vkj * (g * cos_thetakj - b * sin_thetakj);
-        qex(line_id) = vkj * (- g * sin_thetakj - b * cos_thetakj);
     }
     _get_amps(aor, por, qor, vor);
     _get_amps(aex, pex, qex, vex);

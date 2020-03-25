@@ -29,6 +29,7 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+    V_ = V;
 
     // first check, if the problem is already solved, i stop there
     Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
@@ -38,7 +39,7 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
     bool has_just_been_inialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
-        fill_jacobian_matrix(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
+        fill_jacobian_matrix(Ybus, V_, pq, pvpq, pq_inv, pvpq_inv);
         if(need_factorize_){
             initialize();
             if(err_ != 0){
@@ -59,8 +60,8 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
         auto dx = -1.0*F;
 
         // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
-        Vm_ = V.array().abs();  // update Vm and Va again in case
-        Va_ = V.array().arg();  // we wrapped around with a negative Vm
+        Vm_ = V_.array().abs();  // update Vm and Va again in case
+        Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
         if (n_pv > 0) Va_(pv) += dx.segment(0,n_pv);
         if (n_pq > 0){
@@ -69,9 +70,9 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
         }
 
         // TODO change here for not having to cast all the time ... maybe
-        V = Vm_.array() * (Va_.array().cos().cast<cdouble>() + 1.0i * Va_.array().sin().cast<cdouble>() );
+        V_ = Vm_.array() * (Va_.array().cos().cast<cdouble>() + 1.0i * Va_.array().sin().cast<cdouble>() );
 
-        F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+        F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){
@@ -144,7 +145,7 @@ void KLUSolver::solve(Eigen::VectorXd & b, bool has_just_been_inialized){
 }
 
 void KLUSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
-               const Eigen::Ref<const Eigen::VectorXcd > & V){
+                          const Eigen::Ref<const Eigen::VectorXcd > & V){
     auto timer = CustTimer();
     auto size_dS = V.size();
     Eigen::VectorXcd Vnorm = V.array() / V.array().abs();

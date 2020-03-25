@@ -63,6 +63,9 @@ class KLUSolver
         Eigen::Ref<Eigen::VectorXd> get_Vm(){
             return Vm_;
         }
+        Eigen::Ref<Eigen::VectorXcd> get_V(){
+            return V_;
+        }
         int get_error(){
             return err_;
         }
@@ -151,6 +154,7 @@ class KLUSolver
         // solution of the problem
         Eigen::VectorXd Vm_;  // voltage magnitude
         Eigen::VectorXd Va_;  // voltage angle
+        Eigen::VectorXcd V_;  // voltage angle
         Eigen::SparseMatrix<double> J_;  // the jacobian matrix
         Eigen::SparseMatrix<cdouble> dS_dVm_;
         Eigen::SparseMatrix<cdouble> dS_dVa_;
