@@ -20,14 +20,10 @@
 #include "KLUSolver.h"
 #include "Utils.h"
 
-typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple3d;
-typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple4d;
 
 class DataModel{
     public:
-        DataModel(){}; //:sn_mva_(0.),f_hz_(0.){};
-        // void set_f_hz(double f_hz) { f_hz_ = f_hz;}
-        // void set_sn_mva(double sn_mva) { sn_mva_ = sn_mva;}
+        DataModel(){};
 
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
 

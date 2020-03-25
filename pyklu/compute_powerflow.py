@@ -1,3 +1,4 @@
+import copy
 from time import time
 import numpy as np
 from scipy import sparse
@@ -12,6 +13,8 @@ from pandapower.pf.run_newton_raphson_pf import _get_numba_functions, _run_dc_pf
 from pandapower.run import _passed_runpp_parameters, _init_runpp_options, _check_bus_index_and_print_warning_if_high
 from pandapower.run import _check_gen_index_and_print_warning_if_high
 # from pandapower.run_newton_raphson_pf import ppci_to_pfsoln, _get_Y_bus, _get_Sbus, _store_internal, _get_numba_functions
+
+import pandapower as pp
 
 from pyklu_cpp import KLUSolver, DataModel, PandaPowerConverter
 
@@ -37,25 +40,6 @@ ColID2Names = {key: {col: i for i, col in enumerate(val)} for key, val in ID2Col
 # TODO just i want to test
 
 
-def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
-
-    max_it = options["max_iteration"]
-    tol = options['tolerance_mva']
-    # initialize the solver
-    solver = KLUSolver()
-    Ybus = sparse.csc_matrix(Ybus)
-
-    # do the newton raphson algorithm
-    solver.solve(Ybus, V, Sbus, pv, pq, max_it, tol)
-
-    # extract the results
-    Va = solver.get_Va()
-    Vm = solver.get_Vm()
-    V = Vm * np.exp(1j * Va)
-    J = solver.get_J()
-    converged = solver.converged()
-    iterations = solver.get_nb_iter()
-    return V, converged, iterations, J
 
 
 class KLU4Pandapower():
@@ -83,6 +67,10 @@ class KLU4Pandapower():
         self.baseMVA = None
 
     def runpp(self, net, max_iteration=10,  need_reset=True, **kwargs):
+        net_orig = copy.deepcopy(net)
+        pp.runpp(net_orig)
+        V_orig = net_orig._ppc["internal"]["V"]
+
         # ---------- pp.run.runpp() -----------------
         t0_start = time()
 
@@ -231,15 +219,12 @@ class KLU4Pandapower():
             # TODO better way here!
             model.add_slackbus(net.ext_grid["bus"].values)
 
-            model.init_Ybus()
-            Ybus = model.get_Ybus()
+            # model.init_Ybus()
+            # Ybus = model.get_Ybus()
 
             # be careful, the order is not the same between this and pandapower, you need to change it
             # Ybus_proper_oder = Ybus[np.array([net.bus.index]).T, np.array([net.bus.index])]
             # self.Ybus_proper_oder = self.Ybus
-            Ybus_proper_oder = Ybus
-            self.Ybus_proper_oder = self.Ybus[np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
-            tmp = np.abs(Ybus_proper_oder - self.Ybus_proper_oder)  # > 1e-7
         else:
             pass
             # TODO update self.ppci with new values of generation - load such that  Sbus is properly udpated
@@ -275,7 +260,7 @@ class KLU4Pandapower():
         if need_reset:
             # reset the solver
             self.solver.reset()
-            self.V = 1.0 * V0
+            self.V = 1.0 * copy.deepcopy(V0)
         else:
             # reuse previous voltages
             pass
@@ -332,6 +317,15 @@ class KLU4Pandapower():
                                                 "time_ppci_to_pfsoln": te_ppci_to_pfsoln})
 
         has_conv = model.compute_newton(V0, max_it, tol)
+
+        # check the results
+        results_solver = np.max(np.abs(V_orig - self.V))
+
+        Ybus = model.get_Ybus()
+        Ybus_proper_oder = Ybus
+        self.Ybus_proper_oder = self.Ybus[np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
+
+        tmp = np.abs(Ybus_proper_oder - self.Ybus_proper_oder)  # > 1e-7
         por, qor, vor, aor = model.get_lineor_res()
         pex, qex, vex, aex = model.get_lineex_res()
         load_p, load_q, load_v = model.get_loads_res()

@@ -43,15 +43,20 @@ Suppose you somehow get:
 - `pq` list of PQ buses
 - `options` list of pandapower powerflow "options"
 
-You can define replace the pandapower.pf.newtonpf function with:
+You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
+piece of code:
 ```python
-from pyklu.compute_powerflow import newtonpf
+from pyklu.newtonpf import newtonpf
 V, converged, iterations, J = newtonpf(Ybus, V, Sbus, pv, pq, ppci, options)
 ```
+
+This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
 
 ### 2. attempt to optimize the code
 You can also use a different class, that should be able to avoid
 un necessary conversion from pandapower to the format specified above.
+
+WORK IN PROGRESS USE AT YOUR OWN RISK
 
 ```python
 from pyklu.compute_powerflow import KLU4Pandapower
@@ -73,6 +78,8 @@ cpp_solver.runpp(grid2,
 ```
 
 ## Miscelanous
+WORK IN PROGRESS USE AT YOUR OWN RISK
+
 You can run some tests with:
 ```bash
 python old/test_klu.py

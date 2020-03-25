@@ -1,1 +1,1 @@
-__all__ = ["compute_powerflow"]
+__all__ = ["compute_powerflow", "newtonpf"]
