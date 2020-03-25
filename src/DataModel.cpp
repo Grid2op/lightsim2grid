@@ -341,10 +341,10 @@ void DataModel::init_Ybus(){
         if(bus_id == slack_bus_id_) continue;  // slack bus is not PQ either
         if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
         bus_pq.push_back(bus_id);
+        has_bus_been_added[bus_id] = true;  // don't add it a second time
     }
     bus_pv_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pv.data(), bus_pv.size());
     bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
-
 }
 
 void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){

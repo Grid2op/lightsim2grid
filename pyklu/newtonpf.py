@@ -70,7 +70,7 @@ def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
     J = solver.get_J()
     converged = solver.converged()
     iterations = solver.get_nb_iter()
-    
+
     Vm_it = None
     Va_it = None
     return V, converged, iterations, J, Vm_it, Va_it

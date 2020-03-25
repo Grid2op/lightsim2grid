@@ -232,21 +232,20 @@ class KLU4Pandapower():
 
         # compute complex bus power injections [generation - load]
         Sbus = _get_Sbus(self.ppci, False)
-        Sbus_me = model.get_Sbus()
 
+
+        # Sbus_me = model.get_Sbus()
         # pdb.set_trace()
-        Sbus_me_r = np.real(Sbus_me)
-        Va0 = np.full(net.bus.shape[0], fill_value=net["_options"]["init_vm_pu"], dtype=np.complex_)
-        Va0[net.ext_grid["bus"].values] = net.ext_grid["vm_pu"].values * np.exp(1j * net.ext_grid["va_degree"].values / 360. * 2 * np.pi)
-        dctheta = model.dc_pf(Sbus_me_r, Va0)
+        # Sbus_me_r = np.real(Sbus_me)
+        # Va0 = np.full(net.bus.shape[0], fill_value=net["_options"]["init_vm_pu"], dtype=np.complex_)
+        # Va0[net.ext_grid["bus"].values] = net.ext_grid["vm_pu"].values * np.exp(1j * net.ext_grid["va_degree"].values / 360. * 2 * np.pi)
+        #dctheta = model.dc_pf(Sbus_me_r, Va0)
         # self.dctheta = V0[tmp_bus_ind]
 
         # self.dcYbus = self.ppci["internal"]['Bbus'][np.array([tmp_bus_ind]).T, np.array([tmp_bus_ind])]
         # tmpdc = np.abs(dcYbus - self.dcYbus)
-        pv_me = model.get_pv()
-        pq_me = model.get_pq()
-        np.all(sorted(pv_me) == sorted(self.pv))
-        np.all(sorted(pq_me) == sorted(self.pq))
+        # pv_me = model.get_pv()
+        # pq_me = model.get_pq()
         # pdb.set_trace()
 
         # run the newton power  flow
@@ -316,7 +315,7 @@ class KLU4Pandapower():
                                                 "time_all": et_start,
                                                 "time_ppci_to_pfsoln": te_ppci_to_pfsoln})
 
-        has_conv = model.compute_newton(V0, max_it, tol)
+        has_conv = model.compute_newton(V0[tmp_bus_ind], max_it, tol)
 
         # check the results
         results_solver = np.max(np.abs(V_orig - self.V))
@@ -330,9 +329,30 @@ class KLU4Pandapower():
         pex, qex, vex, aex = model.get_lineex_res()
         load_p, load_q, load_v = model.get_loads_res()
 
+        np.max(np.abs(por - net.res_line["p_from_mw"]))
+        np.max(np.abs(qor - net.res_line["q_from_mvar"]))
+        a_or_pp = np.sqrt(net.res_line["p_from_mw"].values ** 2 + net.res_line["q_from_mvar"].values ** 2)
+        a_or_pp /= np.sqrt(3) * net.bus.loc[net.line["from_bus"].values]["vn_kv"].values * net.res_line["vm_from_pu"].values
+        np.max(np.abs(a_or_pp - aor))
+        np.max(np.abs(a_or_pp - net.res_line["i_from_ka"]))
+        np.max(np.abs(a_or_pp - net.res_line["i_from_ka"]))
+
         Va_me2 = model.get_Va()
         Vm_me2 = model.get_Vm()
         res_vm = np.abs(Vm_me2 - Vm[tmp_bus_ind])
         res_va = np.abs(Va_me2 - Va[tmp_bus_ind])
+
+        # check that if i start the solver on the data
+        Sbus_me = model.get_Sbus()
+        pv_me = model.get_pv()
+        pq_me = model.get_pq()
+
+        np.all(sorted(pv_me) == sorted(net.gen["bus"]))
+        np.all(sorted(pq_me) == sorted(tmp_bus_ind[self.pq]))
+
+        # self.solver.reset()
+        # self.solver.solve(Ybus, V0, Sbus, pv_me, pq_me, max_it, tol)
+        # Va2 = self.solver.get_Va()
+        # Vm2 = self.solver.get_Vm()
 
         pdb.set_trace()
