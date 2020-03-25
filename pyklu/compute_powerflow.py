@@ -13,7 +13,7 @@ from pandapower.run import _passed_runpp_parameters, _init_runpp_options, _check
 from pandapower.run import _check_gen_index_and_print_warning_if_high
 # from pandapower.run_newton_raphson_pf import ppci_to_pfsoln, _get_Y_bus, _get_Sbus, _store_internal, _get_numba_functions
 
-from pyklu_cpp import KLUSolver, DataModel
+from pyklu_cpp import KLUSolver, DataModel, PandaPowerConverter
 
 import pdb
 
@@ -61,6 +61,7 @@ def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
 class KLU4Pandapower():
     def __init__(self):
         self.solver = KLUSolver()
+        self.converter = PandaPowerConverter()
         self.ppci = None
         self.V = None
         self.Ybus = None
@@ -160,17 +161,25 @@ class KLU4Pandapower():
             # TODO i have a problem here for the order of the bus / id of bus
             tmp_bus_ind = np.argsort(net.bus.index)
             model = DataModel()
-            model.set_sn_mva(net.sn_mva)
-            model.set_f_hz(net.f_hz)
+            # model.set_sn_mva(net.sn_mva)
+            # model.set_f_hz(net.f_hz)
+
+            # TODO set that elsewhere
+            self.converter.set_sn_mva(net.sn_mva)
+            self.converter.set_f_hz(net.f_hz)
 
             # init_but should be called first among all the rest
             model.init_bus(net.bus.iloc[tmp_bus_ind]["vn_kv"].values, net.line.shape[0], net.trafo.shape[0])
 
             # init the shunts
-            model.init_powerlines(net.line["r_ohm_per_km"].values * net.line["length_km"].values,
-                                  net.line["x_ohm_per_km"].values * net.line["length_km"].values,
-                                  net.line["c_nf_per_km"].values * net.line["length_km"].values,
-                                  # net.line["g_us_per_km"].values * net.line["length_km"].values,
+            line_r, line_x, line_h = self.converter.get_line_param(net.line["r_ohm_per_km"].values * net.line["length_km"].values,
+                                                                   net.line["x_ohm_per_km"].values * net.line["length_km"].values,
+                                                                   net.line["c_nf_per_km"].values * net.line["length_km"].values,
+                                                                   net.line["g_us_per_km"].values * net.line["length_km"].values,
+                                                                   net.bus.loc[net.line["from_bus"]]["vn_kv"],
+                                                                   net.bus.loc[net.line["to_bus"]]["vn_kv"]
+                                                                   )
+            model.init_powerlines(line_r, line_x, line_h,
                                   net.line["from_bus"].values,
                                   net.line["to_bus"].values
                                   )
@@ -182,15 +191,15 @@ class KLU4Pandapower():
                              )
             # init trafo
             if net.trafo.shape[0]:
-                trafo_r, trafo_x, trafo_b = model.get_trafo_param(net.trafo["vn_hv_kv"].values,
-                                                                  net.trafo["vn_lv_kv"].values,
-                                                                  net.trafo["vk_percent"].values,
-                                                                  net.trafo["vkr_percent"].values,
-                                                                  net.trafo["sn_mva"].values,
-                                                                  net.trafo["pfe_kw"].values,
-                                                                  net.trafo["i0_percent"].values,
-                                                                  net.trafo["lv_bus"].values
-                                                                  )
+                trafo_r, trafo_x, trafo_b = self.converter.get_trafo_param(net.trafo["vn_hv_kv"].values,
+                                                                           net.trafo["vn_lv_kv"].values,
+                                                                           net.trafo["vk_percent"].values,
+                                                                           net.trafo["vkr_percent"].values,
+                                                                           net.trafo["sn_mva"].values,
+                                                                           net.trafo["pfe_kw"].values,
+                                                                           net.trafo["i0_percent"].values,
+                                                                           net.bus.loc[net.trafo["lv_bus"]]["vn_kv"]
+                                                                           )
 
                 # trafo_branch = ppc["branch"][net.line.shape[0]:, :]
 
@@ -329,22 +338,7 @@ class KLU4Pandapower():
 
         Va_me2 = model.get_Va()
         Vm_me2 = model.get_Vm()
-
-
-        # reverse engineer powerline equations [line from 0 to 1 atm]
-        busor_id = 0
-        busex_id = 1
-        thetaor = Va_me2[busor_id]
-        thetaex = Va_me2[busex_id]
-        vor = Vm_me2[busor_id]
-        vex = Vm_me2[busex_id]
-
-        my_y = Ybus[0, 1]
-        g_ = np.real(my_y)
-        b_ = np.imag(my_y)
-
-        Ykm = 0
-        Eor = vor * np.exp(1j*thetaor)
-        Eex = vex * np.exp(1j*thetaex)
+        res_vm = np.abs(Vm_me2 - Vm[tmp_bus_ind])
+        res_va = np.abs(Va_me2 - Va[tmp_bus_ind])
 
         pdb.set_trace()

@@ -12,8 +12,8 @@ void DataModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
     Ybus_.reserve(nb_bus + 2*nb_line + 2*nb_trafo);
 
     // per unit conversion
-    bus_pu_ = Eigen::VectorXd::Constant(nb_bus, 1.0 / sn_mva_);
-    bus_pu_.array() *= bus_vn_kv_.array() * bus_vn_kv_.array(); // np.square(base_kv) / net.sn_mva
+    // bus_pu_ = Eigen::VectorXd::Constant(nb_bus, 1.0 / sn_mva_);
+    // bus_pu_.array() *= bus_vn_kv_.array() * bus_vn_kv_.array(); // np.square(base_kv) / net.sn_mva
 
     // init diagonal coefficients
     for(int bus_id=0; bus_id < nb_bus; ++bus_id){
@@ -25,12 +25,11 @@ void DataModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
 }
 
 void DataModel::init_powerlines(const Eigen::VectorXd & branch_r,
-                     const Eigen::VectorXd & branch_x,
-                     const Eigen::VectorXd & branch_c,
-//                             const Eigen::VectorXd & branch_g,
-                     const Eigen::VectorXi & branch_from_id,
-                     const Eigen::VectorXi & branch_to_id
-                     )
+                                const Eigen::VectorXd & branch_x,
+                                const Eigen::VectorXcd & branch_h,
+                                const Eigen::VectorXi & branch_from_id,
+                                const Eigen::VectorXi & branch_to_id
+                                )
 {
     /**
     This method initialize the Ybus matrix from the branch matrix.
@@ -44,20 +43,11 @@ void DataModel::init_powerlines(const Eigen::VectorXd & branch_r,
     //TODO consistency with trafo: have a converter methods to convert this value into pu, and store the pu
     // in this method
 
-    int nb_line = branch_r.size();
-
     powerlines_bus_or_id_ = branch_from_id;
     powerlines_bus_ex_id_ = branch_to_id;
-
-    Eigen::VectorXd bus_pu_from = Eigen::VectorXd(nb_line); // (from_id);
-    for(int i = 0; i < nb_line; ++i) {bus_pu_from(i) = bus_pu_(branch_from_id(i));}
-
-    powerlines_r_ = branch_r.array() / bus_pu_from.array();
-    powerlines_x_ = branch_x.array() / bus_pu_from.array();
-
-    powerlines_h_ = Eigen::VectorXcd::Constant(nb_line, 2.0 * f_hz_ * M_PI * 1e-9);
-    powerlines_h_.array() *= branch_c.array();
-    powerlines_h_.array() *=  bus_pu_from.cast<cdouble>().array();
+    powerlines_h_ = branch_h;
+    powerlines_r_ = branch_r;
+    powerlines_x_ = branch_x;
 }
 
 void DataModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
@@ -71,76 +61,6 @@ void DataModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
     shunts_p_mw_ = shunt_p_mw;
     shunts_q_mvar_ = shunt_q_mvar;
     shunts_bus_id_ = shunt_bus_id;
-}
-
-std::tuple<Eigen::VectorXd,
-           Eigen::VectorXd,
-           Eigen::VectorXcd>
-           DataModel::get_trafo_param(const Eigen::VectorXd & trafo_vn_hv,
-                           const Eigen::VectorXd & trafo_vn_lv,
-                           const Eigen::VectorXd & trafo_vk_percent,
-                           const Eigen::VectorXd & trafo_vkr_percent,
-                           const Eigen::VectorXd & trafo_sn_trafo_mva,
-                           const Eigen::VectorXd & trafo_pfe_kw,
-                           const Eigen::VectorXd & trafo_i0_pct,
-                           const Eigen::VectorXi & trafo_lv_id)
-{
-    //TODO only for "trafo model = t"
-    //TODO supposes that the step start at 0 for "no ratio"
-
-    //TODO consistency: move this class outside of here
-    int nb_trafo = trafo_vn_lv.size();
-
-    Eigen::VectorXd vn_trafo_lv = trafo_vn_lv;
-    Eigen::VectorXd vn_lv = Eigen::VectorXd(nb_trafo);  //bus_vn_kv_[trafo_lv_id]; // TODO check if it compiles
-    for(int i = 0; i<nb_trafo; ++i) {vn_lv(i) = bus_vn_kv_(trafo_lv_id(i));}  //TODO optimize that
-
-    // compute r and x
-    Eigen::VectorXd tmp = vn_trafo_lv.array() / vn_lv.array();
-    tmp = tmp.array() * tmp.array();
-    Eigen::VectorXd tap_lv = tmp * sn_mva_;
-    Eigen::VectorXd _1_sn_trafo_mva = 1.0 / trafo_sn_trafo_mva.array();
-    Eigen::VectorXd z_sc = 0.01 * trafo_vk_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
-    Eigen::VectorXd r_sc = 0.01 * trafo_vkr_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
-    Eigen::VectorXd tmp2 = z_sc.array()*z_sc.array() - r_sc.array() * r_sc.array();
-    Eigen::VectorXd x_sc = z_sc.cwiseSign().array() * tmp2.cwiseSqrt().array();
-
-    // compute h, the subsceptance
-    Eigen::VectorXd baseR = Eigen::VectorXd(nb_trafo);
-    for(int i = 0; i<nb_trafo; ++i) {baseR(i) = bus_pu_(trafo_lv_id(i));}  //TODO optimize that
-    Eigen::VectorXd pfe =  trafo_pfe_kw.array() * 1e-3;
-
-    // Calculate subsceptance ###
-    Eigen::VectorXd vnl_squared = trafo_vn_lv.array() * trafo_vn_lv.array();
-    Eigen::VectorXd b_real = pfe.array() / vnl_squared.array() * baseR.array();
-    tmp2 = (trafo_i0_pct.array() * 0.01 * trafo_sn_trafo_mva.array());
-    Eigen::VectorXd b_img =  tmp2.array() * tmp2.array() - pfe.array() * pfe.array();
-
-    for(int i = 0; i<nb_trafo; ++i) {if (b_img(i) < 0.)  b_img(i) = 0.;}
-    b_img = b_img.cwiseSqrt();
-    b_img.array() *= baseR.array() / vnl_squared.array();
-    Eigen::VectorXcd y = - 1.0i * b_real.array().cast<cdouble>() - b_img.array().cast<cdouble>() * trafo_i0_pct.cwiseSign().array();
-    Eigen::VectorXcd b_sc = y.array() / tmp.array();
-
-    //transform trafo from t model to pi model, of course...
-    // (remove that if trafo model is not t, but directly pi)
-    cdouble my_i = 1.0i;
-    for(int i = 0; i<nb_trafo; ++i){
-        if(b_sc(i) == 0.) continue;
-        cdouble za_star = 0.5 * (r_sc(i) + my_i * x_sc(i));
-        cdouble zc_star = - my_i / b_sc(i);
-        cdouble zSum_triangle = za_star * za_star + 2.0 * za_star * zc_star;
-        cdouble zab_triangle = zSum_triangle / zc_star;
-        cdouble zbc_triangle = zSum_triangle / za_star;
-
-        r_sc(i) = zab_triangle.real();
-        x_sc(i) = zab_triangle.imag();
-        b_sc(i) = -2.0 * my_i / zbc_triangle;
-    }
-
-    std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXcd> res =
-        std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXcd>(std::move(r_sc), std::move(x_sc), std::move(b_sc));
-    return res;
 }
 
 void DataModel::init_trafo(const Eigen::VectorXd & trafo_r,
@@ -603,8 +523,8 @@ void DataModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
     v = Eigen::VectorXd::Constant(nb_element, 0.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
         int el_bus_id = bus_id(el_id);
-        double bus_pu = bus_vn_kv_(el_bus_id);
-        v(el_id) = Vm(el_id) * bus_pu;
+        double bus_vn_kv = bus_vn_kv_(el_bus_id);
+        v(el_id) = Vm(el_id) * bus_vn_kv;
     }
 }
 

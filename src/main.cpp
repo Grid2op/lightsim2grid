@@ -6,6 +6,7 @@
 #include <pybind11/eigen.h>
 
 #include "KLUSolver.h"
+#include "DataConverter.h"
 #include "DataModel.h"
 
 namespace py = pybind11;
@@ -29,14 +30,18 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
+
+    // converters
+    py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
+        .def(py::init<>())
+        .def("set_f_hz", &PandaPowerConverter::set_f_hz)
+        .def("set_sn_mva", &PandaPowerConverter::set_sn_mva)
+        .def("get_line_param", &PandaPowerConverter::get_line_param)
+        .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
+
     py::class_<DataModel>(m, "DataModel")
         .def(py::init<>())
         // general parameters
-        .def("set_f_hz", &DataModel::set_f_hz)
-        .def("set_sn_mva", &DataModel::set_sn_mva)
-
-        // converters
-        .def("get_trafo_param", &DataModel::get_trafo_param)
 
         // init the grid
         .def("init_bus", &DataModel::init_bus)

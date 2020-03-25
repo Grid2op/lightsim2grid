@@ -15,17 +15,19 @@
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
-// import klu package
+
+// import klu solver
 #include "KLUSolver.h"
+#include "Utils.h"
 
 typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple3d;
 typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple4d;
 
 class DataModel{
     public:
-        DataModel():sn_mva_(0.),f_hz_(0.){};
-        void set_f_hz(double f_hz) { f_hz_ = f_hz;}
-        void set_sn_mva(double sn_mva) { sn_mva_ = sn_mva;}
+        DataModel(){}; //:sn_mva_(0.),f_hz_(0.){};
+        // void set_f_hz(double f_hz) { f_hz_ = f_hz;}
+        // void set_sn_mva(double sn_mva) { sn_mva_ = sn_mva;}
 
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
 
@@ -48,11 +50,14 @@ class DataModel{
         Eigen::Ref<Eigen::VectorXd> get_Vm(){
             return _solver.get_Vm();
         }
-        // All methods to init this data model
+        Eigen::SparseMatrix<double> get_J(){
+            return _solver.get_J();
+        }
+
+        // All methods to init this data model, all need to be pair unit when applicable
         void init_powerlines(const Eigen::VectorXd & branch_r,
                              const Eigen::VectorXd & branch_x,
-                             const Eigen::VectorXd & branch_c,
-//                             const Eigen::VectorXd & branch_g,
+                             const Eigen::VectorXcd & branch_c,
                              const Eigen::VectorXi & branch_from_id,
                              const Eigen::VectorXi & branch_to_id
                              );
@@ -63,7 +68,7 @@ class DataModel{
                         const Eigen::VectorXd & trafo_x,
                         const Eigen::VectorXcd & trafo_b,
                         const Eigen::VectorXd & trafo_tap_step_pct,
-//                        const Eigen::VectorXd & trafo_tap_step_degree,
+//                        const Eigen::VectorXd & trafo_tap_step_degree,  //TODO handle that too!
                         const Eigen::VectorXd & trafo_tap_pos,
                         const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & trafo_hv_id,
@@ -101,19 +106,6 @@ class DataModel{
                             int max_iter,
                             double tol);
 
-        // data converters
-        std::tuple<Eigen::VectorXd,
-           Eigen::VectorXd,
-           Eigen::VectorXcd>
-           get_trafo_param(const Eigen::VectorXd & trafo_vn_hv,
-                           const Eigen::VectorXd & trafo_vn_lv,
-                           const Eigen::VectorXd & trafo_vk_percent,
-                           const Eigen::VectorXd & trafo_vkr_percent,
-                           const Eigen::VectorXd & trafo_sn_trafo_mva,
-                           const Eigen::VectorXd & trafo_pfe_kw,
-                           const Eigen::VectorXd & trafo_i0_pct,
-                           const Eigen::VectorXi & trafo_lv_id);
-
         // results
         /**
         Compute the results vector from the Va, Vm post powerflow
@@ -129,13 +121,13 @@ class DataModel{
 
     protected:
         // member of the grid
-        double sn_mva_;  // access with net.sn_mva
-        double f_hz_;
+        // double sn_mva_;  // access with net.sn_mva
+        // double f_hz_;
 
         // powersystem representation
         // 1. bus
         Eigen::VectorXd bus_vn_kv_;
-        Eigen::VectorXd bus_pu_;
+        // Eigen::VectorXd bus_pu_;
 
         // 2. powerline
         // have the r, x, and h

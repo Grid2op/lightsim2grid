@@ -21,9 +21,8 @@ extern "C" {
     #include "klu.h"
 }
 
-typedef std::complex<double> cdouble;
-# include "CustTimer.h"
-
+#include "CustTimer.h"
+#include "Utils.h"
 /**
 class to handle the solver using newton-raphson method, using KLU algorithm and sparse matrices.
 
