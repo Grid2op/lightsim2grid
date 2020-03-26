@@ -8,20 +8,8 @@ void DataModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
     **/
     int nb_bus = bus_vn_kv.size();
     bus_vn_kv_ = bus_vn_kv;  // base_kv
-    Ybus_ = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
-    Ybus_.reserve(nb_bus + 2*nb_line + 2*nb_trafo);
 
-    // per unit conversion
-    // bus_pu_ = Eigen::VectorXd::Constant(nb_bus, 1.0 / sn_mva_);
-    // bus_pu_.array() *= bus_vn_kv_.array() * bus_vn_kv_.array(); // np.square(base_kv) / net.sn_mva
-
-    // init diagonal coefficients
-    for(int bus_id=0; bus_id < nb_bus; ++bus_id){
-        // assign diagonal coefficient
-        Ybus_.insert(bus_id, bus_id) = 0.;
-    }
-
-    Sbus_ = Eigen::VectorXcd::Constant(nb_bus, 0.);
+    bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
 }
 
 void DataModel::init_powerlines(const Eigen::VectorXd & branch_r,
@@ -48,11 +36,12 @@ void DataModel::init_powerlines(const Eigen::VectorXd & branch_r,
     powerlines_h_ = branch_h;
     powerlines_r_ = branch_r;
     powerlines_x_ = branch_x;
+    powerlines_status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
 }
 
 void DataModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
-                const Eigen::VectorXd & shunt_q_mvar,
-                const Eigen::VectorXi & shunt_bus_id)
+                           const Eigen::VectorXd & shunt_q_mvar,
+                           const Eigen::VectorXi & shunt_bus_id)
 {
     /**
     supposes the matrix Ybus_ has already been initialized
@@ -61,6 +50,7 @@ void DataModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
     shunts_p_mw_ = shunt_p_mw;
     shunts_q_mvar_ = shunt_q_mvar;
     shunts_bus_id_ = shunt_bus_id;
+    shunts_status_ = std::vector<bool>(shunt_p_mw.size(), true); // by default everything is connected
 }
 
 void DataModel::init_trafo(const Eigen::VectorXd & trafo_r,
@@ -87,6 +77,7 @@ void DataModel::init_trafo(const Eigen::VectorXd & trafo_r,
     transformers_ratio_ = ratio;
     transformers_bus_hv_id_ = trafo_hv_id;
     transformers_bus_lv_id_ = trafo_lv_id;
+    transformers_status_ = std::vector<bool>(trafo_r.size(), true);
 }
 
 
@@ -97,6 +88,7 @@ void DataModel::init_generators(const Eigen::VectorXd & generators_p,
     generators_p_ = generators_p;
     generators_v_ = generators_v;
     generators_bus_id_ = generators_bus_id;
+    generators_status_ = std::vector<bool>(generators_p.size(), true);
 }
 
 void DataModel::init_loads(const Eigen::VectorXd & loads_p,
@@ -106,17 +98,21 @@ void DataModel::init_loads(const Eigen::VectorXd & loads_p,
     loads_p_ = loads_p;
     loads_q_ = loads_q;
     loads_bus_id_ = loads_bus_id;
+    loads_status_ = std::vector<bool>(loads_p.size(), true);
 }
 
 void DataModel::fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac)
 {
     // fill the matrix
-    //TODO template here instead of "if"
+    //TODO template here instead of "if" for ac / dc
     int nb_line = powerlines_r_.size();
     cdouble my_i = 1.0i;
 
     //diagonal coefficients
     for(int line_id =0; line_id < nb_line; ++line_id){
+        // i only add this if the powerline is connected
+        if(!powerlines_status_[line_id]) continue;
+
         // get the from / to bus id
         int from_id = powerlines_bus_or_id_(line_id);
         int to_id = powerlines_bus_ex_id_(line_id);
@@ -153,6 +149,9 @@ void DataModel::fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac){
     cdouble tmp;
     int bus_id;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+        // i don't do anything if the shunt is disconnected
+        if(!shunts_status_[shunt_id]) continue;
+
         // assign diagonal coefficient
         tmp = shunts_p_mw_(shunt_id) + 1.0i * shunts_q_mvar_(shunt_id);
         bus_id = shunts_bus_id_(shunt_id);
@@ -166,6 +165,9 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     int nb_trafo = transformers_bus_hv_id_.size();
     cdouble my_i = 1.0i;
     for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
+        // i don't do anything if the trafo is disconnected
+        if(!transformers_status_[trafo_id]) continue;
+
         // compute from / to
         int hv_id = transformers_bus_hv_id_(trafo_id);
         int lv_id = transformers_bus_lv_id_(trafo_id);
@@ -236,12 +238,9 @@ Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::Vector
     solver.factorize(mat_to_inv);
 
     // remove the slack bus from the p
-//    Eigen::VectorXd p0_tmp = mat_to_inv.col(slack_bus_id_) * Va0(slack_bus_id_); //TODO check that in pandapower
     Eigen::VectorXd p_tmp = Eigen::VectorXd(nb_bus-1);
 
     // TODO vectorize like this, but be carefull to side effect
-//    theta_tmp.segment(0, slack_bus_id_-1) = p.segment(0,slack_bus_id_-1);
-//    theta_tmp.segment(slack_bus_id_-1, nb_bus-1 - (slack_bus_id_-1)) = p.segment(0,slack_bus_id_-1);
     int index_tmp = 0;
     for (int k=0; k < nb_bus-1; ++k, ++index_tmp){
         if(k == slack_bus_id_) ++index_tmp;
@@ -276,7 +275,7 @@ bool DataModel::compute_newton(Eigen::VectorXcd & V,
                                int max_iter,
                                double tol)
 {
-    init_Ybus();
+    fillYbus();
     _solver.reset();
     auto Sbus = get_Sbus();
     auto pv = get_pv();
@@ -289,10 +288,29 @@ bool DataModel::compute_newton(Eigen::VectorXcd & V,
 };
 
 void DataModel::init_Ybus(){
+    int nb_line = powerlines_r_.size();
+    int nb_trafo = transformers_r_.size();
+
+    //TODO get disconnected bus !!! (and have some conversion for it)
+    int nb_bus = bus_vn_kv_.size();
+
+    Ybus_ = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
+    Ybus_.reserve(nb_bus + 2*nb_line + 2*nb_trafo);
+
+    // init diagonal coefficients
+    for(int bus_id=0; bus_id < nb_bus; ++bus_id){
+        // assign diagonal coefficient
+        Ybus_.insert(bus_id, bus_id) = 0.;
+    }
+
+    Sbus_ = Eigen::VectorXcd::Constant(nb_bus, 0.);
+}
+void DataModel::fillYbus(){
     /**
     Supposes that the powerlines, shunt and transformers are initialized.
     And it fills the Ybus matrix.
     **/
+    init_Ybus();
 
     // init the Ybus matrix
     fillYbusBranch(Ybus_, true);
@@ -310,6 +328,9 @@ void DataModel::init_Ybus(){
 
     std::vector<bool> has_gen_conn(nb_bus, false);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        //  i don't do anything if the generator is disconnected
+        if(!generators_status_[gen_id]) continue;
+
         bus_id = generators_bus_id_(gen_id);
         tmp = generators_p_(gen_id);
         Sbus_.coeffRef(bus_id) += tmp; // + my_i * generators_p_(gen_id);
@@ -317,6 +338,9 @@ void DataModel::init_Ybus(){
         has_gen_conn[bus_id] = true;
     }
     for(int load_id = 0; load_id < nb_load; ++load_id){
+        //  i don't do anything if the load is disconnected
+        if(!loads_status_[load_id]) continue;
+
         bus_id = loads_bus_id_(load_id);
         tmp = loads_p_(load_id);
         Sbus_.coeffRef(bus_id) -= tmp + my_i * loads_q_(load_id);
@@ -331,11 +355,14 @@ void DataModel::init_Ybus(){
     std::vector<int> bus_pv;
     std::vector<bool> has_bus_been_added(nb_bus, false);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        //  i don't do anything if the generator is disconnected
+        if(!generators_status_[gen_id]) continue;
+
         bus_id = generators_bus_id_(gen_id);
         if(bus_id == slack_bus_id_) continue;  // slack bus is not PV
         if(has_bus_been_added[bus_id]) continue; // i already added this bus
         bus_pv.push_back(bus_id);
-        has_bus_been_added[bus_id] = true;
+        has_bus_been_added[bus_id] = true;  // don't add it a second time
     }
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
         if(bus_id == slack_bus_id_) continue;  // slack bus is not PQ either
@@ -372,7 +399,8 @@ void DataModel::compute_results(){
 
     // for powerlines
     int nb_line = powerlines_r_.size();
-    res_powerlines(Va, Vm, V, nb_line,
+    res_powerlines(Va, Vm, V, powerlines_status_,
+                   nb_line,
                    powerlines_r_,
                    powerlines_x_,
                    powerlines_h_,
@@ -390,7 +418,8 @@ void DataModel::compute_results(){
 
     // for trafo
     int nb_trafo = transformers_r_.size();
-    res_powerlines(Va, Vm, V, nb_trafo,
+    res_powerlines(Va, Vm, V, transformers_status_,
+                   nb_trafo,
                    transformers_r_,
                    transformers_x_,
                    transformers_h_,
@@ -406,18 +435,21 @@ void DataModel::compute_results(){
                    res_trafo_aex_  // in kA
                    );
 
+    //TODO model disconnected stuff here!
     // for loads
     int nb_load = loads_p_.size();
-    res_loads(Va, Vm, nb_load, loads_bus_id_, res_load_v_);
+    res_loads(Va, Vm, loads_status_, nb_load, loads_bus_id_, res_load_v_);
     res_load_p_ = loads_p_;
     res_load_q_ = loads_q_;
 
+    //TODO model disconnected stuff here!
     // for shunts
     int nb_shunt = shunts_p_mw_.size();
-    res_loads(Va, Vm, nb_shunt, shunts_bus_id_, res_shunt_v_);
+    res_loads(Va, Vm, shunts_status_, nb_shunt, shunts_bus_id_, res_shunt_v_);
     res_shunt_p_ = shunts_p_mw_;
     res_shunt_q_ = shunts_q_mvar_;
 
+    //TODO model disconnected stuff here!
     // for prods
     res_gen_p_ = generators_p_;
     res_gen_v_ = generators_v_;
@@ -428,12 +460,20 @@ void DataModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const 
     const double _1_sqrt_3 = 1.0 / std::sqrt(3.);
     Eigen::VectorXd p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
-    a = p2q2.array() * _1_sqrt_3 / v.array();
+
+    // modification in case of disconnected powerlines
+    // because i don't want to divide by 0. below
+    Eigen::VectorXd v_tmp = v;
+    for(auto & el: v_tmp){
+        if(el == 0.) el = 1.0;
+    }
+    a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
 void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                                const Eigen::Ref<Eigen::VectorXd> & Vm,
                                const Eigen::Ref<Eigen::VectorXcd> & V,
+                               const std::vector<bool> & status,
                                int nb_element,
                                const Eigen::VectorXd & el_r,
                                const Eigen::VectorXd & el_x,
@@ -448,7 +488,9 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                                Eigen::VectorXd & qex,  // in MVar
                                Eigen::VectorXd & vex,  // in kV
                                Eigen::VectorXd & aex  // in kA
-                              ){
+                              )
+{
+    // it needs to be initialized at 0.
     por = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MW
     qor = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
     vor = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
@@ -459,35 +501,22 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
     aex = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
     cdouble my_i = 1.0i;
     for(int line_id = 0; line_id < nb_element; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status[line_id]) continue;
+
         //physical properties
         double r = el_r(line_id);
         double x = el_x(line_id);
         cdouble h = my_i * 0.5 * el_h(line_id);
         cdouble y = 1.0 / (r + my_i * x);
 
-        // double g = std::real(tmp);
-        // double b = std::imag(tmp);
-        // std::cout << " for powerline " << line_id << std::end;
-        // std::cout << "\t r " << r << " x " << x << " g " << g << " b " << b << std::endl;
-
         // connectivity
         int bus_or_id = bus_or_id_(line_id);
         int bus_ex_id = bus_ex_id_(line_id);
 
         // results of the powerflow
-        // double theta_or = Va(bus_or_id);
-        // double theta_ex = Va(bus_ex_id);
-        // double v_or = Vm(bus_or_id);
-        // double v_ex = Vm(bus_ex_id);
         cdouble Eor = V(bus_or_id);
         cdouble Eex = V(bus_ex_id);
-
-        //std::cout << "\t theta_or " << theta_or << " theta_ex " << theta_ex << " v_or " << v_or << " v_ex " << v_ex << std::endl;
-
-        // tmp element (be smart in computations)
-        // double vkj = v_or * v_ex * sn_mva_;
-        // double cos_thetakj = std::cos(theta_or - theta_ex);
-        // double sin_thetakj = std::sin(theta_or - theta_ex);
 
         // powerline equations
         cdouble I_orex = y * (Eor - Eex) + h * Eor;
@@ -497,7 +526,7 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
         I_exor = std::conj(I_exor);
         cdouble s_orex = Eor * I_orex;
         cdouble s_exor = Eex * I_exor;
-        // TODO these are probably not the right formula, need to check
+
         por(line_id) = std::real(s_orex);
         qor(line_id) = std::imag(s_orex);
         pex(line_id) = std::real(s_exor);
@@ -517,11 +546,14 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
 
 void DataModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
                           const Eigen::Ref<Eigen::VectorXd> & Vm,
+                          const std::vector<bool> & status,
                           int nb_element,
                           const Eigen::VectorXi & bus_id,
                           Eigen::VectorXd & v){
     v = Eigen::VectorXd::Constant(nb_element, 0.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
+        // if the element is disconnected, i leave it like that
+        if(!status[el_id]) continue;
         int el_bus_id = bus_id(el_id);
         double bus_vn_kv = bus_vn_kv_(el_bus_id);
         v(el_id) = Vm(el_id) * bus_vn_kv;

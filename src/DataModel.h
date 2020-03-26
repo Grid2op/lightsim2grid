@@ -92,6 +92,7 @@ class DataModel{
 
         // compute admittance matrix
         void init_Ybus();
+        void fillYbus();
 
         // dc powerflow
         void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
@@ -123,6 +124,7 @@ class DataModel{
         // powersystem representation
         // 1. bus
         Eigen::VectorXd bus_vn_kv_;
+        std::vector<bool> bus_status_;  //TODO that is not handled at the moment
         // Eigen::VectorXd bus_pu_;
 
         // 2. powerline
@@ -132,12 +134,14 @@ class DataModel{
         Eigen::VectorXcd powerlines_h_;
         Eigen::VectorXi powerlines_bus_or_id_;
         Eigen::VectorXi powerlines_bus_ex_id_;
+        std::vector<bool> powerlines_status_;
 
         // 3. shunt
         // have the p_mw and q_mvar
         Eigen::VectorXd shunts_p_mw_;
         Eigen::VectorXd shunts_q_mvar_;
         Eigen::VectorXi shunts_bus_id_;
+        std::vector<bool> shunts_status_;
 
         // 4. transformers
         // have the r, x, h and ratio
@@ -148,16 +152,19 @@ class DataModel{
         Eigen::VectorXd transformers_ratio_;
         Eigen::VectorXi transformers_bus_hv_id_;
         Eigen::VectorXi transformers_bus_lv_id_;
+        std::vector<bool> transformers_status_;
 
         // 5. generators
         Eigen::VectorXd generators_p_;
         Eigen::VectorXd generators_v_;
         Eigen::VectorXi generators_bus_id_;
+        std::vector<bool> generators_status_;
 
         // 6. loads
         Eigen::VectorXd loads_p_;
         Eigen::VectorXd loads_q_;
         Eigen::VectorXi loads_bus_id_;
+        std::vector<bool> loads_status_;
 
         // 7. slack bus
         int slack_bus_id_;
@@ -207,12 +214,14 @@ class DataModel{
         void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac);
+
         /**
         This method will compute the results for both the powerlines and the trafos
         **/
         void res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                             const Eigen::Ref<Eigen::VectorXd> & Vm,
                             const Eigen::Ref<Eigen::VectorXcd> & V,
+                            const std::vector<bool> & status,
                             int nb_element,
                             const Eigen::VectorXd & el_r,
                             const Eigen::VectorXd & el_x,
@@ -239,6 +248,7 @@ class DataModel{
         **/
         void res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
                        const Eigen::Ref<Eigen::VectorXd> & Vm,
+                       const std::vector<bool> & status,
                        int nb_element,
                        const Eigen::VectorXi & bus_id,
                        Eigen::VectorXd & v);
