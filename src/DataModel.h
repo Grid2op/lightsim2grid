@@ -21,6 +21,7 @@
 #include "Utils.h"
 
 
+//TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class DataModel{
     public:
         DataModel(){};
@@ -35,9 +36,11 @@ class DataModel{
             return Sbus_;
         }
         Eigen::VectorXi get_pv(){
+            //TODO convert it back to real id, and not solver id
             return bus_pv_;
         }
         Eigen::VectorXi get_pq(){
+            //TODO convert it back to real id, and not solver id
             return bus_pq_;
         }
         Eigen::Ref<Eigen::VectorXd> get_Va(){
@@ -99,7 +102,7 @@ class DataModel{
         Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0);
 
         // ac powerflows
-        bool compute_newton(Eigen::VectorXcd & V,
+        bool compute_newton(const Eigen::VectorXcd & Vinit,
                             int max_iter,
                             double tol);
 
@@ -118,14 +121,20 @@ class DataModel{
 
     protected:
         // member of the grid
-        // double sn_mva_;  // access with net.sn_mva
-        // double f_hz_;
+        static const int _deactivated_bus_id;
 
         // powersystem representation
         // 1. bus
         Eigen::VectorXd bus_vn_kv_;
         std::vector<bool> bus_status_;  //TODO that is not handled at the moment
-        // Eigen::VectorXd bus_pu_;
+
+        // always have the length of the number of buses,
+        // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.
+        std::vector<int> id_me_to_solver_;
+        // convert the bus id from the model to the bus id of me.
+        // it has a variable size, that depends on the number of connected bus. if "id_model" is an id of a bus
+        // sent to the solver, then id_model_to_me_[id_model] is the bus id of this model of the grid.
+        std::vector<int> id_solver_to_me_;
 
         // 2. powerline
         // have the r, x, and h
@@ -168,14 +177,17 @@ class DataModel{
 
         // 7. slack bus
         int slack_bus_id_;
+        int slack_bus_id_solver_;
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cdouble> Ybus_;
-        Eigen::VectorXi bus_pv_;
-        Eigen::VectorXi bus_pq_;
+        Eigen::VectorXcd Sbus_;
+        Eigen::VectorXi bus_pv_;  // id are the solver internal id and NOT the initial id
+        Eigen::VectorXi bus_pq_;  // id are the solver internal id and NOT the initial id
+
+        // TODO have version of the stuff above for the public api, indexed with "me" and not "solver"
 
         // to solve the newton raphson
-        Eigen::VectorXcd Sbus_;
         KLUSolver _solver;
 
         // results of the powerflow

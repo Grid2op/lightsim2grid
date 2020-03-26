@@ -316,6 +316,7 @@ class KLU4Pandapower():
                                                 "time_ppci_to_pfsoln": te_ppci_to_pfsoln})
 
         has_conv = model.compute_newton(V0[tmp_bus_ind], max_it, tol)
+        pdb.set_trace()
 
         # check the results
         results_solver = np.max(np.abs(V_orig - self.V))
