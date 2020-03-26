@@ -52,6 +52,18 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("init_loads", &DataModel::init_loads)
         .def("add_slackbus", &DataModel::add_slackbus)
 
+        // modify the grid
+        .def("deactivate_bus", &DataModel::deactivate_bus)
+        .def("reactivate_bus", &DataModel::reactivate_bus)
+        .def("deactivate_powerline", &DataModel::deactivate_powerline)
+        .def("reactivate_powerline", &DataModel::reactivate_powerline)
+        .def("deactivate_trafo", &DataModel::deactivate_trafo)
+        .def("reactivate_trafo", &DataModel::reactivate_trafo)
+        .def("deactivate_load", &DataModel::deactivate_load)
+        .def("reactivate_load", &DataModel::reactivate_load)
+        .def("deactivate_gen", &DataModel::deactivate_gen)
+        .def("reactivate_gen", &DataModel::reactivate_gen)
+
         // get back the results
         .def("get_Va", &DataModel::get_Va)
         .def("get_Vm", &DataModel::get_Vm)
@@ -64,7 +76,7 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("get_trafoex_res", &DataModel::get_trafoex_res)
 
         // do something with the grid
-        .def("init_Ybus", &DataModel::init_Ybus) // temporary
+        // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("get_Ybus", &DataModel::get_Ybus)
         .def("get_Sbus", &DataModel::get_Sbus)
         .def("get_pv", &DataModel::get_pv)

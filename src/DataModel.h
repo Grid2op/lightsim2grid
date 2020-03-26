@@ -26,34 +26,9 @@ class DataModel{
     public:
         DataModel(){};
 
+        // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
 
-        // get some internal information
-        Eigen::SparseMatrix<cdouble> get_Ybus(){
-            return Ybus_;
-        }
-        Eigen::VectorXcd get_Sbus(){
-            return Sbus_;
-        }
-        Eigen::VectorXi get_pv(){
-            //TODO convert it back to real id, and not solver id
-            return bus_pv_;
-        }
-        Eigen::VectorXi get_pq(){
-            //TODO convert it back to real id, and not solver id
-            return bus_pq_;
-        }
-        Eigen::Ref<Eigen::VectorXd> get_Va(){
-            return _solver.get_Va();
-        }
-        Eigen::Ref<Eigen::VectorXd> get_Vm(){
-            return _solver.get_Vm();
-        }
-        Eigen::SparseMatrix<double> get_J(){
-            return _solver.get_J();
-        }
-
-        // All methods to init this data model, all need to be pair unit when applicable
         void init_powerlines(const Eigen::VectorXd & branch_r,
                              const Eigen::VectorXd & branch_x,
                              const Eigen::VectorXcd & branch_c,
@@ -83,6 +58,34 @@ class DataModel{
         void add_slackbus(int slack_bus_id){
             slack_bus_id_ = slack_bus_id;
         }
+        //powerflows
+        // dc powerflow //TODO does not work with deactivated buses
+        Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0);
+
+        // ac powerflow
+        bool compute_newton(const Eigen::VectorXcd & Vinit,
+                            int max_iter,
+                            double tol);
+
+        // deactivate a bus. Be careful, if a bus is deactivated, but an element is
+        //still connected to it, it will throw an exception
+        void deactivate_bus(int bus_id);
+        // if a bus is connected, but isolated, it will make the powerflow diverge
+        void reactivate_bus(int bus_id);
+
+        //deactivate a powerline (disconnect it)
+        void deactivate_powerline(int powerline_id);
+        void reactivate_powerline(int powerline_id);
+        //deactivate trafo
+        void deactivate_trafo(int trafo_id);
+        void reactivate_trafo(int trafo_id);
+
+        //deactivate load
+        void deactivate_load(int gen_id);
+        void reactivate_load(int gen_id);
+        //deactivate generator
+        void deactivate_gen(int gen_id);
+        void reactivate_gen(int gen_id);
 
         // All results access
         tuple3d get_loads_res() const {return tuple3d(res_load_p_, res_load_q_, res_load_v_);}
@@ -93,18 +96,41 @@ class DataModel{
         tuple4d get_trafoor_res() const {return tuple4d(res_trafo_por_, res_trafo_qor_, res_trafo_vor_, res_trafo_aor_);}
         tuple4d get_trafoex_res() const {return tuple4d(res_trafo_pex_, res_trafo_qex_, res_trafo_vex_, res_trafo_aex_);}
 
-        // compute admittance matrix
-        void init_Ybus();
-        void fillYbus();
 
+
+        // get some internal information, be cerafull the ID of the buses might not be the same
+        // TODO convert it back to this ID, that will make copies, but who really cares ?
+        Eigen::SparseMatrix<cdouble> get_Ybus(){
+            return Ybus_;
+        }
+        Eigen::VectorXcd get_Sbus(){
+            return Sbus_;
+        }
+        Eigen::VectorXi get_pv(){
+            return bus_pv_;
+        }
+        Eigen::VectorXi get_pq(){
+            return bus_pq_;
+        }
+        Eigen::Ref<Eigen::VectorXd> get_Va(){
+            return _solver.get_Va();
+        }
+        Eigen::Ref<Eigen::VectorXd> get_Vm(){
+            return _solver.get_Vm();
+        }
+        Eigen::SparseMatrix<double> get_J(){
+            return _solver.get_J();
+        }
+
+    protected:
+    // add method to change topology, change ratio of transformers, change
+
+        // compute admittance matrix
         // dc powerflow
         void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
-        Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0);
-
         // ac powerflows
-        bool compute_newton(const Eigen::VectorXcd & Vinit,
-                            int max_iter,
-                            double tol);
+        void init_Ybus();
+        void fillYbus();
 
         // results
         /**
@@ -116,8 +142,7 @@ class DataModel{
         **/
         void reset_results();
 
-    protected:
-    // add method to change topology, change ratio of transformers, change
+
 
     protected:
         // member of the grid

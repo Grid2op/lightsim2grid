@@ -1,15 +1,11 @@
+# TODO
 import os
-import sys
 import unittest
-import json
 import numpy as np
 import pdb
 import zipfile
-import tempfile
-# from pyklu.compute_powerflow import runpp
-from pyklu.compute_powerflow import KLUSolver
+from pyklu.newtonpf import newtonpf
 from scipy import sparse
-import shutil
 
 
 class MakeTests(unittest.TestCase):
@@ -20,8 +16,8 @@ class MakeTests(unittest.TestCase):
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
-        self.solver = KLUSolver()
-
+        self.options = {"max_iteration": self.max_it, "tolerance_mva": self.tol}
+        self.ppci = {}
         self.path = None
         self.V_init = None
         self.pq = None
@@ -82,13 +78,11 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(comp_val[len(pvpq):, len(pvpq):])) <= self.tol_test, "J22 (dS_dVm_i) are not equal"
 
     def solver_aux(self):
-        self.solver.reset()
-        has_conv = self.solver.do_newton(self.Ybus, self.V_init, self.Sbus, self.pv, self.pq, self.max_it, self.tol)
-        assert has_conv, "the load flow has diverged for {}".format(self.path)
-        J = self.solver.get_J()
-        Va = self.solver.get_Va()
-        Vm = self.solver.get_Vm()
-        J_pp, V_pp = self.load_res(iter_max=self.solver.get_nb_iter())
+        V, converged, iterations, J, *_ = newtonpf(self.Ybus, self.V_init, self.Sbus, self.pv, self.pq, self.ppci, self.options)
+        assert converged, "the load flow has diverged for {}".format(self.path)
+        Va = np.angle(V)
+        Vm = np.abs(V)
+        J_pp, V_pp = self.load_res(iter_max=iterations)
         self.compare_sparse_mat(J, J_pp, self.pv, self.pq)
         Va_pp = np.angle(V_pp)
         Vm_pp = np.abs(V_pp)

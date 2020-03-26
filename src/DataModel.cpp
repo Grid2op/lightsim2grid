@@ -673,3 +673,50 @@ void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
     // take only real part
     dcYbus  = tmp.real();
 }
+
+// deactivate a bus. Be careful, if a bus is deactivated, but an element is
+//still connected to it, it will throw an exception
+void DataModel::deactivate_bus(int bus_id)
+{
+    bus_status_.at(bus_id) = false;
+}
+void DataModel::reactivate_bus(int bus_id)
+{
+    bus_status_.at(bus_id) = true;
+}
+//deactivate a powerline (disconnect it)
+void DataModel::deactivate_powerline(int powerline_id)
+{
+    powerlines_status_.at(powerline_id) = false;
+}
+void DataModel::reactivate_powerline(int powerline_id)
+{
+    powerlines_status_.at(powerline_id) = true;
+}
+//deactivate trafo
+void DataModel::deactivate_trafo(int trafo_id)
+{
+    transformers_status_.at(trafo_id) = false;
+}
+void DataModel::reactivate_trafo(int trafo_id)
+{
+    transformers_status_.at(trafo_id) = true;
+}
+//deactivate load
+void DataModel::deactivate_load(int gen_id)
+{
+    generators_status_.at(gen_id) = false;
+}
+void DataModel::reactivate_load(int gen_id)
+{
+    generators_status_.at(gen_id) = true;
+}
+//deactivate generator
+void DataModel::deactivate_gen(int gen_id)
+{
+    loads_status_.at(gen_id) = false;
+}
+void DataModel::reactivate_gen(int gen_id)
+{
+    loads_status_.at(gen_id) = true;
+}
