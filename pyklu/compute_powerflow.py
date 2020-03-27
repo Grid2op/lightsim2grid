@@ -328,8 +328,8 @@ class KLU4Pandapower():
         pex, qex, vex, aex = model.get_lineex_res()
         load_p, load_q, load_v = model.get_loads_res()
 
-        np.max(np.abs(por - net.res_line["p_from_mw"]))
-        np.max(np.abs(qor - net.res_line["q_from_mvar"]))
+        np.max(np.abs(por - net_orig.res_line["p_from_mw"]))
+        np.max(np.abs(qor - net_orig.res_line["q_from_mvar"]))
         a_or_pp = np.sqrt(net.res_line["p_from_mw"].values ** 2 + net.res_line["q_from_mvar"].values ** 2)
         a_or_pp /= np.sqrt(3) * net.bus.loc[net.line["from_bus"].values]["vn_kv"].values * net.res_line["vm_from_pu"].values
         np.max(np.abs(a_or_pp - aor))
@@ -349,6 +349,11 @@ class KLU4Pandapower():
         np.all(sorted(pv_me) == sorted(net.gen["bus"]))
         np.all(sorted(pq_me) == sorted(tmp_bus_ind[self.pq]))
 
+        plv, qlv, vlv, alv = model.get_trafolv_res()
+        phv, qhv, vhv, ahv = model.get_trafohv_res()
+        res_trafo = np.abs(plv - net_orig.res_trafo["p_lv_mw"].values)
+
+        res_trafo_q = np.abs(qlv - net_orig.res_trafo["q_lv_mvar"].values)
         # self.solver.reset()
         # self.solver.solve(Ybus, V0, Sbus, pv_me, pq_me, max_it, tol)
         # Va2 = self.solver.get_Va()

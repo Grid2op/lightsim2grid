@@ -55,14 +55,28 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         // modify the grid
         .def("deactivate_bus", &DataModel::deactivate_bus)
         .def("reactivate_bus", &DataModel::reactivate_bus)
+
         .def("deactivate_powerline", &DataModel::deactivate_powerline)
         .def("reactivate_powerline", &DataModel::reactivate_powerline)
+        .def("change_bus_powerline_or", &DataModel::change_bus_powerline_or)
+        .def("change_bus_powerline_ex", &DataModel::change_bus_powerline_ex)
+
         .def("deactivate_trafo", &DataModel::deactivate_trafo)
         .def("reactivate_trafo", &DataModel::reactivate_trafo)
+        .def("change_bus_trafo_hv", &DataModel::change_bus_trafo_hv)
+        .def("change_bus_trafo_lv", &DataModel::change_bus_trafo_lv)
+
         .def("deactivate_load", &DataModel::deactivate_load)
         .def("reactivate_load", &DataModel::reactivate_load)
+        .def("change_bus_load", &DataModel::change_bus_load)
+
         .def("deactivate_gen", &DataModel::deactivate_gen)
         .def("reactivate_gen", &DataModel::reactivate_gen)
+        .def("change_bus_gen", &DataModel::change_bus_gen)
+
+        .def("deactivate_shunt", &DataModel::deactivate_shunt)
+        .def("reactivate_shunt", &DataModel::reactivate_shunt)
+        .def("change_bus_shunt", &DataModel::change_bus_shunt)
 
         // get back the results
         .def("get_Va", &DataModel::get_Va)
@@ -72,8 +86,8 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("get_gen_res", &DataModel::get_gen_res)
         .def("get_lineor_res", &DataModel::get_lineor_res)
         .def("get_lineex_res", &DataModel::get_lineex_res)
-        .def("get_trafoor_res", &DataModel::get_trafoor_res)
-        .def("get_trafoex_res", &DataModel::get_trafoex_res)
+        .def("get_trafohv_res", &DataModel::get_trafohv_res)
+        .def("get_trafolv_res", &DataModel::get_trafolv_res)
 
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary

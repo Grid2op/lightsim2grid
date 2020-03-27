@@ -24,7 +24,7 @@
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class DataModel{
     public:
-        DataModel(){};
+        DataModel():need_reset_(true){};
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
@@ -76,16 +76,29 @@ class DataModel{
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id);
         void reactivate_powerline(int powerline_id);
+        void change_bus_powerline_or(int powerline_id, int new_bus_id);
+        void change_bus_powerline_ex(int powerline_id, int new_bus_id);
+
         //deactivate trafo
         void deactivate_trafo(int trafo_id);
         void reactivate_trafo(int trafo_id);
+        void change_bus_trafo_hv(int trafo_id, int new_bus_id);
+        void change_bus_trafo_lv(int trafo_id, int new_bus_id);
 
         //deactivate load
-        void deactivate_load(int gen_id);
-        void reactivate_load(int gen_id);
+        void deactivate_load(int load_id);
+        void reactivate_load(int load_id);
+        void change_bus_load(int load_id, int new_bus_id);
+
         //deactivate generator
         void deactivate_gen(int gen_id);
         void reactivate_gen(int gen_id);
+        void change_bus_gen(int gen_id, int new_bus_id);
+
+        //deactivate generator
+        void deactivate_shunt(int shunt_id);
+        void reactivate_shunt(int shunt_id);
+        void change_bus_shunt(int shunt_id, int new_bus_id);
 
         // All results access
         tuple3d get_loads_res() const {return tuple3d(res_load_p_, res_load_q_, res_load_v_);}
@@ -93,8 +106,8 @@ class DataModel{
         tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
         tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
         tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
-        tuple4d get_trafoor_res() const {return tuple4d(res_trafo_por_, res_trafo_qor_, res_trafo_vor_, res_trafo_aor_);}
-        tuple4d get_trafoex_res() const {return tuple4d(res_trafo_pex_, res_trafo_qex_, res_trafo_vex_, res_trafo_aex_);}
+        tuple4d get_trafohv_res() const {return tuple4d(res_trafo_por_, res_trafo_qor_, res_trafo_vor_, res_trafo_aor_);}
+        tuple4d get_trafolv_res() const {return tuple4d(res_trafo_pex_, res_trafo_qex_, res_trafo_vex_, res_trafo_aex_);}
 
 
 
@@ -142,11 +155,18 @@ class DataModel{
         **/
         void reset_results();
 
+        /**
+        activation / deactivation of elements
+        **/
+        void _reactivate(int el_id, std::vector<bool> & status);
+        void _deactivate(int el_id, std::vector<bool> & status);
+        void _change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids);
 
 
     protected:
         // member of the grid
         static const int _deactivated_bus_id;
+        bool need_reset_;
 
         // powersystem representation
         // 1. bus
@@ -163,6 +183,11 @@ class DataModel{
 
         // 2. powerline
         // have the r, x, and h
+        //TODO refactor that to have a consistent class that handles each object with methods:
+        // - init
+        // - initYbus
+        // - initSbus
+        // - get_res
         Eigen::VectorXd powerlines_r_;
         Eigen::VectorXd powerlines_x_;
         Eigen::VectorXcd powerlines_h_;
@@ -263,6 +288,7 @@ class DataModel{
                             const Eigen::VectorXd & el_r,
                             const Eigen::VectorXd & el_x,
                             const Eigen::VectorXcd & el_h,
+                            const Eigen::VectorXd & el_ratio,
                             const Eigen::VectorXi & bus_or_id_,
                             const Eigen::VectorXi & bus_ex_id_,
                             Eigen::VectorXd & por,  // in MW

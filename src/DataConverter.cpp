@@ -1,5 +1,15 @@
 #include "DataConverter.h"
 
+void PandaPowerConverter::_check_init(){
+    if(sn_mva_ <= 0.){
+        throw std::runtime_error("PandaPowerConverter sn_mva has not been initialized");
+    }
+    if(f_hz_ <= 0.){
+        throw std::runtime_error("PandaPowerConverter f_hz has not been initialized");
+    }
+}
+
+
 std::tuple<Eigen::VectorXd,
            Eigen::VectorXd,
            Eigen::VectorXcd>
@@ -14,6 +24,7 @@ std::tuple<Eigen::VectorXd,
 {
     //TODO only for "trafo model = t"
     //TODO supposes that the step start at 0 for "no ratio"
+    _check_init();
 
     //TODO consistency: move this class outside of here
     int nb_trafo = trafo_vn_lv.size();
@@ -80,6 +91,7 @@ std::tuple<Eigen::VectorXd,
                                                const Eigen::VectorXd & branch_to_kv)
 {
     //TODO does not use c at the moment!
+    _check_init();
     int nb_line = branch_r.size();
     Eigen::VectorXd branch_from_pu = branch_from_kv.array() * branch_from_kv.array() / sn_mva_;
 

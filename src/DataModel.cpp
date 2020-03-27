@@ -204,7 +204,7 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
         if(!ac){
             r = 1.0; // in dc, r = 1.0 here (same voltage both side)
         }
-        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += (tmp + h)  / r ;
+        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += (tmp + h) / r ;
         res.coeffRef(bus_lv_solver_id, bus_lv_solver_id) += (tmp + h) * r;
     }
 }
@@ -234,8 +234,10 @@ bool DataModel::compute_newton(const Eigen::VectorXcd & Vinit,
 {
     // TODO optimization when it's not mandatory to start from scratch
     bool res = false;
-    fillYbus();
-    _solver.reset();
+    if(need_reset_){
+        fillYbus();
+        _solver.reset();
+    }
 
     // extract only connected bus from Vinit
     int nb_bus_solver = id_solver_to_me_.size();
@@ -248,8 +250,14 @@ bool DataModel::compute_newton(const Eigen::VectorXcd & Vinit,
     }
 
     res = _solver.do_newton(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
-    if (res) compute_results();
-    else reset_results();
+    if (res){
+        compute_results();
+        need_reset_ = false;
+    } else {
+        //powerflow diverge
+        reset_results();
+        need_reset_ = true;  // in this case, the powerflow diverge, so i need to recompute Ybus next time
+    }
     return res;
 };
 
@@ -296,6 +304,7 @@ void DataModel::fillYbus(){
     Supposes that the powerlines, shunt and transformers are initialized.
     And it fills the Ybus matrix.
     **/
+    // TODO split that between fillYbus, computeSbus and initPvPq
     init_Ybus();
 
     // init the Ybus matrix
@@ -385,11 +394,13 @@ void DataModel::compute_results(){
 
     // for powerlines
     int nb_line = powerlines_r_.size();
+    Eigen::VectorXd ratio = Eigen::VectorXd::Constant(nb_line, 1.0);
     res_powerlines(Va, Vm, V, powerlines_status_,
                    nb_line,
                    powerlines_r_,
                    powerlines_x_,
                    powerlines_h_,
+                   ratio,
                    powerlines_bus_or_id_,
                    powerlines_bus_ex_id_,
                    res_powerline_por_,  // in MW
@@ -409,6 +420,7 @@ void DataModel::compute_results(){
                    transformers_r_,
                    transformers_x_,
                    transformers_h_,
+                   transformers_ratio_,
                    transformers_bus_hv_id_,
                    transformers_bus_lv_id_,
                    res_trafo_por_,  // in MW
@@ -428,17 +440,44 @@ void DataModel::compute_results(){
     res_load_p_ = loads_p_;
     res_load_q_ = loads_q_;
 
-    //TODO model disconnected stuff here!
     // for shunts
     int nb_shunt = shunts_p_mw_.size();
     res_loads(Va, Vm, shunts_status_, nb_shunt, shunts_bus_id_, res_shunt_v_);
-    res_shunt_p_ = shunts_p_mw_;
-    res_shunt_q_ = shunts_q_mvar_;
+    res_shunt_p_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
+    res_shunt_q_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
+    const cdouble my_i = 1.0i;
+    for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
+        if(!shunts_status_[shunt_id]) continue;
+        int bus_id_me = shunts_bus_id_(shunt_id);
+        int bus_solver_id = id_me_to_solver_[bus_id_me];
+        if(bus_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataModel::compute_results: A shunt is connected to a disconnected bus.");
+        }
+        cdouble E = V(bus_solver_id);
+        cdouble y = -1.0 * (shunts_p_mw_(shunt_id) + my_i * shunts_q_mvar_(shunt_id));
+        cdouble I = y * E;
+        I = std::conj(I);
+        cdouble s = E * I;
+        res_shunt_p_(shunt_id) = std::real(s);
+        res_shunt_q_(shunt_id) = std::imag(s);
+    }
+
 
     //TODO model disconnected stuff here!
     // for prods
+    int nb_gen = generators_p_.size();
     res_gen_p_ = generators_p_;
-    res_gen_v_ = generators_v_;
+    res_gen_v_ = Eigen::VectorXd::Constant(nb_gen, -1.0);
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!generators_status_[gen_id]) continue;
+        int bus_id_me = generators_bus_id_(gen_id);
+        int bus_solver_id = id_me_to_solver_[bus_id_me];
+        if(bus_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataModel::compute_results: A generator is connected to a disconnected bus.");
+        }
+        double vm_me = Vm(bus_solver_id);
+        res_gen_v_(gen_id) = vm_me * bus_vn_kv_(bus_id_me);
+    }
     //TODO for res_gen_q_ !!!
 }
 
@@ -464,6 +503,7 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                                const Eigen::VectorXd & el_r,
                                const Eigen::VectorXd & el_x,
                                const Eigen::VectorXcd & el_h,
+                               const Eigen::VectorXd & ratio,
                                const Eigen::VectorXi & bus_or_id_,
                                const Eigen::VectorXi & bus_ex_id_,
                                Eigen::VectorXd & por,  // in MW
@@ -493,8 +533,10 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
         //physical properties
         double r = el_r(line_id);
         double x = el_x(line_id);
+        double ratio_me = ratio(line_id);
         cdouble h = my_i * 0.5 * el_h(line_id);
         cdouble y = 1.0 / (r + my_i * x);
+        y /= ratio_me;
 
         // connectivity
         int bus_or_id_me = bus_or_id_(line_id);
@@ -513,8 +555,8 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
         cdouble Eex = V(bus_ex_solver_id);
 
         // powerline equations
-        cdouble I_orex = y * (Eor - Eex) + h * Eor;
-        cdouble I_exor = y * (Eex - Eor) + h * Eex;
+        cdouble I_orex = (y + h) / ratio_me * Eor - y * Eex;
+        cdouble I_exor = (y + h) * ratio_me * Eex - y * Eor;
 
         I_orex = std::conj(I_orex);
         I_exor = std::conj(I_exor);
@@ -674,49 +716,105 @@ void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
     dcYbus  = tmp.real();
 }
 
+/**
+
+**/
+void DataModel::_reactivate(int el_id, std::vector<bool> & status){
+    bool val = status.at(el_id);
+    if(!val) need_reset_ = true;  // I need to recompute the grid, if a status has changed
+    status.at(el_id) = true;  //TODO why it's needed to do that again
+}
+void DataModel::_deactivate(int el_id, std::vector<bool> & status){
+    bool val = status.at(el_id);
+    if(val) need_reset_ = true;  // I need to recompute the grid, if a status has changed
+    status.at(el_id) = false;  //TODO why it's needed to do that again
+}
+void DataModel::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids){
+    // bus id here "me_id" and NOT "solver_id"
+    int & bus_me_id = el_bus_ids(el_id);
+    if(bus_me_id != new_bus_me_id) need_reset_ = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+    bus_me_id = new_bus_me_id;
+}
 // deactivate a bus. Be careful, if a bus is deactivated, but an element is
 //still connected to it, it will throw an exception
 void DataModel::deactivate_bus(int bus_id)
 {
-    bus_status_.at(bus_id) = false;
+    _deactivate(bus_id, bus_status_);
 }
 void DataModel::reactivate_bus(int bus_id)
 {
-    bus_status_.at(bus_id) = true;
+    _reactivate(bus_id, bus_status_);
 }
-//deactivate a powerline (disconnect it)
+// for powerline
 void DataModel::deactivate_powerline(int powerline_id)
 {
-    powerlines_status_.at(powerline_id) = false;
+    _deactivate(powerline_id, powerlines_status_);
 }
 void DataModel::reactivate_powerline(int powerline_id)
 {
-    powerlines_status_.at(powerline_id) = true;
+    _reactivate(powerline_id, powerlines_status_);
 }
-//deactivate trafo
+void DataModel::change_bus_powerline_or(int powerline_id, int new_bus_id)
+{
+    _change_bus(powerline_id, new_bus_id, powerlines_bus_or_id_);
+}
+void DataModel::change_bus_powerline_ex(int powerline_id, int new_bus_id)
+{
+    _change_bus(powerline_id, new_bus_id, powerlines_bus_ex_id_);
+}
+// for trafos
 void DataModel::deactivate_trafo(int trafo_id)
 {
-    transformers_status_.at(trafo_id) = false;
+    _deactivate(trafo_id, transformers_status_);
 }
 void DataModel::reactivate_trafo(int trafo_id)
 {
-    transformers_status_.at(trafo_id) = true;
+    _reactivate(trafo_id, transformers_status_);
 }
-//deactivate load
-void DataModel::deactivate_load(int gen_id)
+void DataModel::change_bus_trafo_hv(int trafo_id, int new_bus_id)
 {
-    generators_status_.at(gen_id) = false;
+    _change_bus(trafo_id, new_bus_id, transformers_bus_hv_id_);
 }
-void DataModel::reactivate_load(int gen_id)
+void DataModel::change_bus_trafo_lv(int trafo_id, int new_bus_id)
 {
-    generators_status_.at(gen_id) = true;
+    _change_bus(trafo_id, new_bus_id, transformers_bus_lv_id_);
 }
-//deactivate generator
+// for loads
+void DataModel::deactivate_load(int load_id)
+{
+    _deactivate(load_id, loads_status_);
+}
+void DataModel::reactivate_load(int load_id)
+{
+    _reactivate(load_id, loads_status_);
+}
+void DataModel::change_bus_load(int load_id, int new_bus_id)
+{
+    _change_bus(load_id, new_bus_id, loads_bus_id_);
+}
+// for generators
 void DataModel::deactivate_gen(int gen_id)
 {
-    loads_status_.at(gen_id) = false;
+    _deactivate(gen_id, generators_status_);
 }
 void DataModel::reactivate_gen(int gen_id)
 {
-    loads_status_.at(gen_id) = true;
+    _reactivate(gen_id, generators_status_);
+}
+void DataModel::change_bus_gen(int gen_id, int new_bus_id)
+{
+    _change_bus(gen_id, new_bus_id, generators_bus_id_);
+}
+//for shunts
+void DataModel::deactivate_shunt(int shunt_id)
+{
+    _deactivate(shunt_id, shunts_status_);
+}
+void DataModel::reactivate_shunt(int shunt_id)
+{
+     _reactivate(shunt_id, shunts_status_);
+}
+void DataModel::change_bus_shunt(int shunt_id, int new_bus_id)
+{
+    _change_bus(shunt_id, new_bus_id, shunts_bus_id_);
 }

@@ -15,7 +15,7 @@ digested by DataModel further used to compute powerflows thanks to KLUSolver.
 class PandaPowerConverter{
 
     public:
-        PandaPowerConverter():sn_mva_(0.),f_hz_(0.){};
+        PandaPowerConverter():sn_mva_(-1.0),f_hz_(-1.0){};
         void set_f_hz(double f_hz) { f_hz_ = f_hz;}
         void set_sn_mva(double sn_mva) { sn_mva_ = sn_mva;}
 
@@ -51,6 +51,8 @@ class PandaPowerConverter{
         double sn_mva_;
         double f_hz_;
 
+    private:
+        void _check_init();
 };
 
 // TODO have a converter from ppc !
