@@ -13,13 +13,10 @@ class MakeTests(unittest.TestCase):
         self.net_ref = pn.case118()
         self.net_datamodel = pn.case118()
 
-        # compute a powerflow on a net without anything
-        pp.runpp(self.net_ref)
-
         # initialize constant stuff
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
-        self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
+        self.tol_test = 1e-5  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
 
         # initialize and use converters
         self.converter = PandaPowerConverter()
@@ -92,67 +89,6 @@ class MakeTests(unittest.TestCase):
         # TODO handle that better maybe
         self.model.add_slackbus(self.net_datamodel.ext_grid["bus"].values[0])
 
-        # this should be the vector use as a starting point of the ac powerflow
-        self.V0 = np.array([0.92371316+0.24244381j, 0.95434983+0.26251308j,
-                           0.95305717+0.26716798j, 0.94099945+0.33245156j,
-                           0.93050132+0.3374374j , 0.94554411+0.29333656j,
-                           0.94747004+0.2863516j , 0.91976137+0.42925986j,
-                           0.83121514+0.53738077j, 0.79021868+0.69141481j,
-                           0.94703065+0.28780142j, 0.94922593+0.28119411j,
-                           0.95435892+0.26248003j, 0.95289026+0.26776271j,
-                           0.93678483+0.25166284j, 0.95116199+0.2738386j ,
-                           0.94299095+0.30077361j, 0.93833685+0.2573965j ,
-                           0.93034369+0.2447542j , 0.95398128+0.26384925j,
-                           0.94725669+0.28705657j, 0.9345412 +0.32608199j,
-                           0.90393663+0.40323105j, 0.91010681+0.39467656j,
-                           0.89230065+0.55344336j, 0.84467665+0.56280223j,
-                           0.91638352+0.31187377j, 0.94562819+0.29237653j,
-                           0.94991823+0.27812238j, 0.91392466+0.38005054j,
-                           0.92731294+0.27418919j, 0.91487454+0.30062198j,
-                           0.95935742+0.24357759j, 0.9517411 +0.24988972j,
-                           0.9593314 +0.24368006j, 0.94985607+0.24119171j,
-                           0.95510399+0.2597558j , 0.92958567+0.33995173j,
-                           0.96901644+0.20175195j, 0.95305256+0.18052927j,
-                           0.97415369+0.17527494j, 0.96487073+0.19811479j,
-                           0.9591693 +0.24431734j, 0.9504645 +0.27624978j,
-                           0.9427526 +0.30151989j, 0.94220104+0.34968872j,
-                           0.91500296+0.37744708j, 0.91811695+0.36980801j,
-                           0.94394221+0.39949732j, 0.92562893+0.35058208j,
-                           0.94138116+0.3057748j , 0.94629095+0.29022429j,
-                           0.9509182 +0.27468398j, 0.91317677+0.27952314j,
-                           0.91164381+0.27424363j, 0.91268579+0.27770605j,
-                           0.94061208+0.30813248j, 0.94525377+0.29358478j,
-                           0.91896615+0.35457892j, 0.89909147+0.41392179j,
-                           0.89739679+0.42977202j, 0.90439526+0.42198723j,
-                           0.90192434+0.40771215j, 0.88911864+0.43493075j,
-                           0.87693705+0.49092403j, 0.91352982+0.51765169j,
-                           0.88530602+0.44263976j, 0.86830043+0.4751327j ,
-                           0.89633629+0.5175j    , 0.90385573+0.38897405j,
-                           0.91063484+0.38786711j, 0.90471675+0.37667971j,
-                           0.91279673+0.38585378j, 0.88787865+0.35977145j,
-                           0.9093251 +0.39092784j, 0.87330985+0.35577929j,
-                           0.89103286+0.46700797j, 0.87908727+0.45486512j,
-                           0.87589698+0.46097851j, 0.89625694+0.52756373j,
-                           0.86276979+0.48510307j, 0.86964118+0.47267423j,
-                           0.85945866+0.49094554j, 0.83840965+0.52608551j,
-                           0.81982782+0.54599208j, 0.83511119+0.53130594j,
-                           0.85183707+0.55190453j, 0.79180803+0.59391645j,
-                           0.75766148+0.66028333j, 0.80798425+0.56337061j,
-                           0.80514315+0.55869895j, 0.80807875+0.5719342j ,
-                           0.8365277 +0.52907288j, 0.85506824+0.49855292j,
-                           0.86493788+0.48122674j, 0.86609865+0.47913447j,
-                           0.86312091+0.48447807j, 0.86529541+0.48058356j,
-                           0.88467666+0.48728554j, 0.87935138+0.5109111j ,
-                           0.84499803+0.51543675j, 0.82171572+0.55179704j,
-                           0.90204736+0.45432429j, 0.88815266+0.39246127j,
-                           0.88958415+0.37398535j, 0.91423777+0.37929673j,
-                           0.89432564+0.3263214j , 0.9188473 +0.3679896j ,
-                           0.92118576+0.36209598j, 0.90936353+0.34610254j,
-                           0.90609384+0.37335499j, 0.92545851+0.30684125j,
-                           0.9461778 +0.3013247j , 0.94194179+0.30404337j,
-                           0.94196023+0.30398625j, 0.88520788+0.47584873j,
-                           0.95652941+0.25445667j, 0.91599499+0.37503317j])
-
     def assert_equal(self, tmp, ref):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
         assert np.max(np.abs(tmp - ref)) <= self.tol_test
@@ -160,45 +96,253 @@ class MakeTests(unittest.TestCase):
 
     def check_res(self, net):
         # check lines
+        l_is = self.net_ref.line["in_service"]
         por, qor, vor, aor = self.model.get_lineor_res()
         self.assert_equal(por, net.res_line["p_from_mw"].values)
         self.assert_equal(qor, net.res_line["q_from_mvar"].values)
         self.assert_equal(aor, net.res_line["i_from_ka"].values)
         vor_pp = net.bus.loc[net.line["from_bus"].values]["vn_kv"].values * net.res_line["vm_from_pu"].values
-        self.assert_equal(vor, vor_pp)
+        self.assert_equal(vor[l_is], vor_pp[l_is])
 
         # check trafo
+        f_is = self.net_ref.trafo["in_service"]
         plv, qlv, vlv, alv = self.model.get_trafolv_res()
         self.assert_equal(plv, net.res_trafo["p_lv_mw"].values)
         self.assert_equal(qlv, net.res_trafo["q_lv_mvar"].values)
         self.assert_equal(alv, net.res_trafo["i_lv_ka"].values)
         vlv_pp = net.bus.loc[net.trafo["lv_bus"].values]["vn_kv"].values * net.res_trafo["vm_lv_pu"].values
-        self.assert_equal(vlv, vlv_pp)
+        self.assert_equal(vlv[f_is], vlv_pp[f_is])
 
         # check loads
+        l_is = self.net_ref.load["in_service"]
         load_p, load_q, load_v = self.model.get_loads_res()
-        self.assert_equal(load_p, net.res_load["p_mw"].values)
-        self.assert_equal(load_q, net.res_load["q_mvar"].values)
+        self.assert_equal(load_p[l_is], net.res_load["p_mw"].values[l_is])
+        self.assert_equal(load_q[l_is], net.res_load["q_mvar"].values[l_is])
 
         # check shunts
+        s_is = self.net_ref.shunt["in_service"]
         shunt_p, shunt_q, shunt_v = self.model.get_shunts_res()
-        self.assert_equal(shunt_p, net.res_shunt["p_mw"].values)
-        self.assert_equal(shunt_q, net.res_shunt["q_mvar"].values)
+        self.assert_equal(shunt_p[s_is], net.res_shunt["p_mw"].values[s_is])
+        self.assert_equal(shunt_q[s_is], net.res_shunt["q_mvar"].values[s_is])
 
         # check generators
+        g_is = self.net_ref.gen["in_service"]
         prod_p, prod_q, prod_v = self.model.get_gen_res()
-        self.assert_equal(prod_p, net.res_gen["p_mw"].values)
+        self.assert_equal(prod_p[g_is], net.res_gen["p_mw"].values[g_is])
         # self.assert_equal(prod_q, net.res_gen["q_mvar"].values)
         v_gen_pp = net.bus.loc[net.gen["bus"].values]["vn_kv"].values * net.res_gen["vm_pu"].values
-        self.assert_equal(prod_v, v_gen_pp)
+        self.assert_equal(prod_v[g_is], v_gen_pp[g_is])
+
+    def make_v0(self, net):
+        V0 = np.full(net.bus.shape[0],
+                     fill_value=1.0,
+                     dtype=np.complex_)
+        all_gen_conn = net.gen["bus"].values
+        g_is = net.gen["in_service"].values
+        V0[all_gen_conn[g_is]] *= self.net_datamodel.gen.iloc[g_is]["vm_pu"].values
+        V0[net.ext_grid["bus"].values] = net.ext_grid["vm_pu"].values * np.exp(
+            1j * net.ext_grid["va_degree"].values / 360. * 2 * np.pi)
+        return V0
 
     def test_acpf(self):
         """
         Reference without modifying anything
         """
-        has_conv = self.model.compute_newton(self.V0, self.max_it, self.tol)
-        assert has_conv, "powerflow diverged !"
+        # compute a powerflow on a net without anything
+        pp.runpp(self.net_ref, init="flat")
 
+        V0 = self.make_v0(self.net_ref)
+        V0_th = np.array([0.955     +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.01      +0.j    ,
+                       0.971     +0.j    , 0.965     +0.j    , 1.        +0.j    ,
+                       0.952     +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.973     +0.j    , 0.99      +0.j    , 0.98      +0.j    ,
+                       0.975     +0.j    , 0.993     +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.005     +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.97      +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.973     +0.j    , 0.962     +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 0.992     +0.j    , 1.05      +0.j    ,
+                       1.015     +0.j    , 0.968     +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 0.998     +0.j    ,
+                       0.967     +0.j    , 0.963     +0.j    , 1.        +0.j    ,
+                       0.984     +0.j    , 1.        +0.j    , 0.98      +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.97      +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.985     +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.005     +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.025     +0.j    , 1.        +0.j    ,
+                       0.99      +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 0.955     +0.j    , 0.952     +0.j    ,
+                       0.954     +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.985     +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       0.995     +0.j    , 0.998     +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.005     +0.j    , 1.05      +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 0.89633629+0.5175j,
+                       0.984     +0.j    , 1.015     +0.j    , 1.        +0.j    ,
+                       0.98      +0.j    , 0.991     +0.j    , 0.958     +0.j    ,
+                       1.        +0.j    , 0.943     +0.j    , 1.006     +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.04      +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 0.985     +0.j    ,
+                       1.        +0.j    , 1.015     +0.j    , 1.        +0.j    ,
+                       1.005     +0.j    , 0.985     +0.j    , 1.05      +0.j    ,
+                       0.98      +0.j    , 0.99      +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.        +0.j    ,
+                       1.        +0.j    , 1.        +0.j    , 1.01      +0.j    ,
+                       1.017     +0.j    ])
+        # V0_th = V0[tmp_bus_ind]
+        # pdb.set_trace()
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_disco_gen(self):
+        self.net_ref.gen["in_service"][0] = False
+        self.model.deactivate_gen(0)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_disco_load(self):
+        self.net_ref.load["in_service"][0] = False
+        self.model.deactivate_load(0)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_disco_line(self):
+        self.net_ref.line["in_service"][0] = False
+        self.model.deactivate_powerline(0)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_disco_shunt(self):
+        self.net_ref.shunt["in_service"][0] = False
+        self.model.deactivate_shunt(0)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_disco_trafo(self):
+        self.net_ref.trafo["in_service"][0] = False
+        self.model.deactivate_trafo(0)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_reactivate(self):
+        # i deactivate everything, run a powerflow, and check that reactivating everything and supposes that the results
+        # is the same
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+
+        # i disconnect a load, the reconnect it
+        self.model.deactivate_load(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.model.reactivate_load(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+        self.model.deactivate_gen(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.model.reactivate_gen(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+        self.model.deactivate_powerline(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.model.reactivate_powerline(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+        self.model.deactivate_trafo(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.model.reactivate_trafo(0)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_gen(self):
+        self.net_ref.gen["bus"][0] = 2
+        self.model.change_bus_gen(0, 2)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_load(self):
+        self.net_ref.load["bus"][0] = 2
+        self.model.change_bus_load(0, 2)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_shunt(self):
+        self.net_ref.shunt["bus"][0] = 2
+        self.model.change_bus_shunt(0, 2)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_lineor(self):
+        self.net_ref.line["from_bus"][0] = 2
+        self.model.change_bus_powerline_or(0, 2)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_lineex(self):
+        self.net_ref.line["to_bus"][0] = 2
+        self.model.change_bus_powerline_ex(0, 2)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_trafolv(self):
+        self.net_ref.trafo["lv_bus"][0] = 5  # was 4 initially, and 4 is connected to 5
+        self.model.change_bus_trafo_lv(0, 5)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
+        self.check_res(self.net_ref)
+
+    def test_acpf_changebus_trafohv(self):
+        self.net_ref.trafo["hv_bus"][0] = 29  # was 7 initially, and 7 is connected to 29
+        self.model.change_bus_trafo_hv(0, 29)
+        pp.runpp(self.net_ref, init="flat")
+        V0 = self.make_v0(self.net_ref)
+        has_conv = self.model.compute_newton(V0, self.max_it, self.tol)
+        assert has_conv, "powerflow diverged !"
         self.check_res(self.net_ref)
 
 
