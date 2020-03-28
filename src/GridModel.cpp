@@ -40,14 +40,11 @@ void GridModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
                            const Eigen::VectorXd & shunt_q_mvar,
                            const Eigen::VectorXi & shunt_bus_id)
 {
-    /**
-    supposes the matrix Ybus_ has already been initialized
-    **/
-
-    shunts_p_mw_ = shunt_p_mw;
-    shunts_q_mvar_ = shunt_q_mvar;
-    shunts_bus_id_ = shunt_bus_id;
-    shunts_status_ = std::vector<bool>(shunt_p_mw.size(), true); // by default everything is connected
+    shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
+    // shunts_p_mw_ = shunt_p_mw;
+    // shunts_q_mvar_ = shunt_q_mvar;
+    // shunts_bus_id_ = shunt_bus_id;
+    // shunts_status_ = std::vector<bool>(shunt_p_mw.size(), true); // by default everything is connected
 }
 
 void GridModel::init_trafo(const Eigen::VectorXd & trafo_r,
@@ -152,25 +149,6 @@ void GridModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     }
 }
 
-void GridModel::fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac){
-    int nb_shunt = shunts_q_mvar_.size();
-    cdouble tmp;
-    int bus_id_me, bus_id_solver;
-    for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
-        // i don't do anything if the shunt is disconnected
-        if(!shunts_status_[shunt_id]) continue;
-
-        // assign diagonal coefficient
-        tmp = shunts_p_mw_(shunt_id) + 1.0i * shunts_q_mvar_(shunt_id);
-        bus_id_me = shunts_bus_id_(shunt_id);
-        bus_id_solver = id_me_to_solver_[bus_id_me];
-        if(bus_id_solver == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusShunt: A shunt is connected to a disconnected bus.");
-        }
-        res.coeffRef(bus_id_solver, bus_id_solver) -= tmp;
-    }
-}
-
 bool GridModel::compute_newton(const Eigen::VectorXcd & Vinit,
                                int max_iter,
                                double tol)
@@ -253,7 +231,8 @@ void GridModel::fillYbus(){
     // init the Ybus matrix
     // fillYbusBranch(Ybus_, true);
     powerlines_.fillYbus(Ybus_, true, id_me_to_solver_);
-    fillYbusShunt(Ybus_, true);
+    // fillYbusShunt(Ybus_, true);
+    shunts_.fillYbus(Ybus_, true, id_me_to_solver_);
     fillYbusTrafo(Ybus_, true);
 
     // init the Sbus vector
@@ -383,31 +362,12 @@ void GridModel::compute_results(){
     //TODO model disconnected stuff here!
     // for loads
     int nb_load = loads_p_.size();
-    res_loads(Va, Vm, loads_status_, nb_load, loads_bus_id_, res_load_v_);
+    v_kv_from_vpu(Va, Vm, loads_status_, nb_load, loads_bus_id_, id_me_to_solver_, bus_vn_kv_, res_load_v_);
     res_load_p_ = loads_p_;
     res_load_q_ = loads_q_;
 
     // for shunts
-    int nb_shunt = shunts_p_mw_.size();
-    res_loads(Va, Vm, shunts_status_, nb_shunt, shunts_bus_id_, res_shunt_v_);
-    res_shunt_p_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
-    res_shunt_q_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
-    const cdouble my_i = 1.0i;
-    for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
-        if(!shunts_status_[shunt_id]) continue;
-        int bus_id_me = shunts_bus_id_(shunt_id);
-        int bus_solver_id = id_me_to_solver_[bus_id_me];
-        if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::compute_results: A shunt is connected to a disconnected bus.");
-        }
-        cdouble E = V(bus_solver_id);
-        cdouble y = -1.0 * (shunts_p_mw_(shunt_id) + my_i * shunts_q_mvar_(shunt_id));
-        cdouble I = y * E;
-        I = std::conj(I);
-        cdouble s = E * I;
-        res_shunt_p_(shunt_id) = std::real(s);
-        res_shunt_q_(shunt_id) = std::imag(s);
-    }
+    shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
 
 
     //TODO model disconnected stuff here!
@@ -428,21 +388,6 @@ void GridModel::compute_results(){
     //TODO for res_gen_q_ !!!
 }
 
-/**
-void GridModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v){
-    const double _1_sqrt_3 = 1.0 / std::sqrt(3.);
-    Eigen::VectorXd p2q2 = p.array() * p.array() + q.array() * q.array();
-    p2q2 = p2q2.array().cwiseSqrt();
-
-    // modification in case of disconnected powerlines
-    // because i don't want to divide by 0. below
-    Eigen::VectorXd v_tmp = v;
-    for(auto & el: v_tmp){
-        if(el == 0.) el = 1.0;
-    }
-    a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
-}
-**/
 void GridModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                                const Eigen::Ref<Eigen::VectorXd> & Vm,
                                const Eigen::Ref<Eigen::VectorXcd> & V,
@@ -528,26 +473,6 @@ void GridModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
     _get_amps(aex, pex, qex, vex);
 }
 
-void GridModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
-                          const Eigen::Ref<Eigen::VectorXd> & Vm,
-                          const std::vector<bool> & status,
-                          int nb_element,
-                          const Eigen::VectorXi & bus_me_id,
-                          Eigen::VectorXd & v){
-    v = Eigen::VectorXd::Constant(nb_element, 0.0);
-    for(int el_id = 0; el_id < nb_element; ++el_id){
-        // if the element is disconnected, i leave it like that
-        if(!status[el_id]) continue;
-        int el_bus_me_id = bus_me_id(el_id);
-        int bus_solver_id = id_me_to_solver_[el_bus_me_id];
-        if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::res_loads: A load or a shunt is connected to a disconnected bus.");
-        }
-        double bus_vn_kv = bus_vn_kv_(el_bus_me_id);
-        v(el_id) = Vm(bus_solver_id) * bus_vn_kv;
-    }
-}
-
 void GridModel::reset_results(){
     res_load_p_ = Eigen::VectorXd(); // in MW
     res_load_q_ = Eigen::VectorXd(); // in MVar
@@ -568,9 +493,7 @@ void GridModel::reset_results(){
     res_trafo_vex_ = Eigen::VectorXd();  // in kV
     res_trafo_aex_ = Eigen::VectorXd();  // in kA
 
-    res_shunt_p_ = Eigen::VectorXd();  // in MW
-    res_shunt_q_ = Eigen::VectorXd();  // in MVar
-    res_shunt_v_ = Eigen::VectorXd();  // in kV
+    shunts_.reset_results();
 }
 
 Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0){
@@ -650,32 +573,15 @@ void GridModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
 
     // fill it properly
     //fillYbusBranch(tmp, false);
-    fillYbusShunt(tmp, false);
+    // fillYbusShunt(tmp, false);
+
+    powerlines_.fillYbus(Ybus_, false, id_me_to_solver_);
+    shunts_.fillYbus(Ybus_, false, id_me_to_solver_);
     fillYbusTrafo(tmp, false);
 
     // take only real part
     dcYbus  = tmp.real();
 }
-
-/**
-void GridModel::_reactivate(int el_id, std::vector<bool> & status){
-    bool val = status.at(el_id);
-    if(!val) need_reset_ = true;  // I need to recompute the grid, if a status has changed
-    status.at(el_id) = true;  //TODO why it's needed to do that again
-}
-void GridModel::_deactivate(int el_id, std::vector<bool> & status){
-    bool val = status.at(el_id);
-    if(val) need_reset_ = true;  // I need to recompute the grid, if a status has changed
-    status.at(el_id) = false;  //TODO why it's needed to do that again
-}
-void GridModel::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids){
-    // bus id here "me_id" and NOT "solver_id"
-    int & bus_me_id = el_bus_ids(el_id);
-    if(bus_me_id != new_bus_me_id) need_reset_ = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
-    bus_me_id = new_bus_me_id;
-}
-**/
-
 
 // deactivate a bus. Be careful, if a bus is deactivated, but an element is
 //still connected to it, it will throw an exception
@@ -752,13 +658,13 @@ void GridModel::change_bus_gen(int gen_id, int new_bus_id)
 //for shunts
 void GridModel::deactivate_shunt(int shunt_id)
 {
-    _deactivate(shunt_id, shunts_status_, need_reset_);
+    shunts_.deactivate(shunt_id, need_reset_); //_deactivate(shunt_id, shunts_status_, need_reset_);
 }
 void GridModel::reactivate_shunt(int shunt_id)
 {
-     _reactivate(shunt_id, shunts_status_, need_reset_);
+    shunts_.reactivate(shunt_id, need_reset_); //_reactivate(shunt_id, shunts_status_, need_reset_);
 }
 void GridModel::change_bus_shunt(int shunt_id, int new_bus_id)
 {
-    _change_bus(shunt_id, new_bus_id, shunts_bus_id_, need_reset_, bus_vn_kv_.size());
+    shunts_.change_bus(shunt_id, new_bus_id, need_reset_, bus_vn_kv_.size()); //_change_bus(shunt_id, new_bus_id, shunts_bus_id_, need_reset_, bus_vn_kv_.size());
 }

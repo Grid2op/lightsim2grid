@@ -20,6 +20,8 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 #include "DataLine.h"
+#include "DataShunt.h"
+
 
 // import klu solver
 #include "KLUSolver.h"
@@ -106,7 +108,7 @@ class GridModel : public DataGeneric
 
         // All results access
         tuple3d get_loads_res() const {return tuple3d(res_load_p_, res_load_q_, res_load_v_);}
-        tuple3d get_shunts_res() const {return tuple3d(res_shunt_p_, res_shunt_q_, res_shunt_v_);}
+        tuple3d get_shunts_res() const {return shunts_.get_res();}
         tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
         tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
         tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
@@ -188,10 +190,7 @@ class GridModel : public DataGeneric
 
         // 3. shunt
         // have the p_mw and q_mvar
-        Eigen::VectorXd shunts_p_mw_;
-        Eigen::VectorXd shunts_q_mvar_;
-        Eigen::VectorXi shunts_bus_id_;
-        std::vector<bool> shunts_status_;
+        DataShunt shunts_;
 
         // 4. transformers
         // have the r, x, h and ratio
@@ -249,14 +248,10 @@ class GridModel : public DataGeneric
         Eigen::VectorXd res_trafo_vex_;  // in kV
         Eigen::VectorXd res_trafo_aex_;  // in kA
 
-        Eigen::VectorXd res_shunt_p_;  // in MW
-        Eigen::VectorXd res_shunt_q_;  // in MVar
-        Eigen::VectorXd res_shunt_v_;  // in kV
-
     protected:
 
         // void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
-        void fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac);
+        // void fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac);
 
         /**

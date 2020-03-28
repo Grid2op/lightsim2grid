@@ -130,7 +130,7 @@ ext_modules = [
     Extension(
         'pyklu_cpp',
         ['src/main.cpp', "src/KLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
-         "src/DataLine.cpp", "src/DataGeneric.cpp"],
+         "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp"],
         include_dirs=include_dirs,
         language='c++',
         extra_objects=LIBS,

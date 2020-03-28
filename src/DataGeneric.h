@@ -28,6 +28,17 @@ class DataGeneric
         **/
         void _get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v);
 
+        /**
+        **/
+        void v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
+                           const Eigen::Ref<Eigen::VectorXd> & Vm,
+                           const std::vector<bool> & status,
+                           int nb_element,
+                           const Eigen::VectorXi & bus_me_id,
+                           const std::vector<int> & id_grid_to_solver,
+                           const Eigen::VectorXd & bus_vn_kv,
+                           Eigen::VectorXd & v);
+
 };
 
 #endif // DATAGENERIC_H

@@ -97,24 +97,6 @@ void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
                                const Eigen::Ref<Eigen::VectorXcd> & V,
                                const std::vector<int> & id_grid_to_solver,
                                const Eigen::VectorXd & bus_vn_kv)
-                               /**
-                               const std::vector<bool> & status,
-                               int nb_element,
-                               const Eigen::VectorXd & el_r,
-                               const Eigen::VectorXd & el_x,
-                               const Eigen::VectorXcd & el_h,
-                               const Eigen::VectorXd & ratio,
-                               const Eigen::VectorXi & bus_or_id_,
-                               const Eigen::VectorXi & bus_ex_id_,
-                               Eigen::VectorXd & por,  // in MW
-                               Eigen::VectorXd & qor,  // in MVar
-                               Eigen::VectorXd & vor,  // in kV
-                               Eigen::VectorXd & aor,  // in kA
-                               Eigen::VectorXd & pex,  // in MW
-                               Eigen::VectorXd & qex,  // in MVar
-                               Eigen::VectorXd & vex,  // in kV
-                               Eigen::VectorXd & aex  // in kA
-                              )**/
 {
     // it needs to be initialized at 0.
     int nb_element = nb();

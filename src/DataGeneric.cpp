@@ -38,3 +38,25 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     if(bus_me_id != new_bus_me_id) need_reset = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
     bus_me_id = new_bus_me_id;
 }
+
+void DataGeneric::v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
+                                const Eigen::Ref<Eigen::VectorXd> & Vm,
+                                const std::vector<bool> & status,
+                                int nb_element,
+                                const Eigen::VectorXi & bus_me_id,
+                                const std::vector<int> & id_grid_to_solver,
+                                const Eigen::VectorXd & bus_vn_kv,
+                                Eigen::VectorXd & v){
+    v = Eigen::VectorXd::Constant(nb_element, 0.0);
+    for(int el_id = 0; el_id < nb_element; ++el_id){
+        // if the element is disconnected, i leave it like that
+        if(!status[el_id]) continue;
+        int el_bus_me_id = bus_me_id(el_id);
+        int bus_solver_id = id_grid_to_solver[el_bus_me_id];
+        if(bus_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataModel::res_loads: A load or a shunt is connected to a disconnected bus.");
+        }
+        double bus_vn_kv_me = bus_vn_kv(el_bus_me_id);
+        v(el_id) = Vm(bus_solver_id) * bus_vn_kv_me;
+    }
+}
