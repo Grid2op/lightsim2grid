@@ -699,11 +699,11 @@ void GridModel::reactivate_powerline(int powerline_id)
 }
 void GridModel::change_bus_powerline_or(int powerline_id, int new_bus_id)
 {
-    powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_);
+    powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size());
 }
 void GridModel::change_bus_powerline_ex(int powerline_id, int new_bus_id)
 {
-    powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_);
+    powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size());
 }
 
 // for trafos
@@ -717,11 +717,11 @@ void GridModel::reactivate_trafo(int trafo_id)
 }
 void GridModel::change_bus_trafo_hv(int trafo_id, int new_bus_id)
 {
-    _change_bus(trafo_id, new_bus_id, transformers_bus_hv_id_, need_reset_);
+    _change_bus(trafo_id, new_bus_id, transformers_bus_hv_id_, need_reset_, bus_vn_kv_.size());
 }
 void GridModel::change_bus_trafo_lv(int trafo_id, int new_bus_id)
 {
-    _change_bus(trafo_id, new_bus_id, transformers_bus_lv_id_, need_reset_);
+    _change_bus(trafo_id, new_bus_id, transformers_bus_lv_id_, need_reset_, bus_vn_kv_.size());
 }
 // for loads
 void GridModel::deactivate_load(int load_id)
@@ -734,7 +734,7 @@ void GridModel::reactivate_load(int load_id)
 }
 void GridModel::change_bus_load(int load_id, int new_bus_id)
 {
-    _change_bus(load_id, new_bus_id, loads_bus_id_, need_reset_);
+    _change_bus(load_id, new_bus_id, loads_bus_id_, need_reset_, bus_vn_kv_.size());
 }
 // for generators
 void GridModel::deactivate_gen(int gen_id)
@@ -747,7 +747,7 @@ void GridModel::reactivate_gen(int gen_id)
 }
 void GridModel::change_bus_gen(int gen_id, int new_bus_id)
 {
-    _change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_);
+    _change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_, bus_vn_kv_.size());
 }
 //for shunts
 void GridModel::deactivate_shunt(int shunt_id)
@@ -760,5 +760,5 @@ void GridModel::reactivate_shunt(int shunt_id)
 }
 void GridModel::change_bus_shunt(int shunt_id, int new_bus_id)
 {
-    _change_bus(shunt_id, new_bus_id, shunts_bus_id_, need_reset_);
+    _change_bus(shunt_id, new_bus_id, shunts_bus_id_, need_reset_, bus_vn_kv_.size());
 }

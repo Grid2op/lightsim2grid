@@ -95,6 +95,51 @@ class MakeTests(unittest.TestCase):
         assert np.max(np.abs(tmp - ref)) <= self.tol_test
         assert np.mean(np.abs(tmp - ref)) <= self.tol_test
 
+    def test_deactivate_index_out_of_bound(self):
+        with self.assertRaises(IndexError):
+            self.model.deactivate_load(self.net_datamodel.load.shape[0])
+        with self.assertRaises(IndexError):
+            self.model.deactivate_gen(self.net_datamodel.gen.shape[0])
+        with self.assertRaises(IndexError):
+            self.model.deactivate_trafo(self.net_datamodel.trafo.shape[0])
+        with self.assertRaises(IndexError):
+            self.model.deactivate_powerline(self.net_datamodel.line.shape[0])
+        with self.assertRaises(IndexError):
+            self.model.deactivate_shunt(self.net_datamodel.shunt.shape[0])
+
+    def test_changebus_index_out_of_bound(self):
+        with self.assertRaises(IndexError):
+            self.model.change_bus_load(self.net_datamodel.load.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_gen(self.net_datamodel.gen.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_shunt(self.net_datamodel.shunt.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_powerline_or(self.net_datamodel.line.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_powerline_ex(self.net_datamodel.line.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_trafo_hv(self.net_datamodel.trafo.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_trafo_lv(self.net_datamodel.trafo.shape[0], 1)
+
+    def test_changebus_newbus_out_of_bound(self):
+        newbusid = self.net_datamodel.bus.shape[0]
+        with self.assertRaises(IndexError):
+            self.model.change_bus_load(0, newbusid)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_gen(0, newbusid)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_shunt(0, newbusid)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_powerline_or(0, newbusid)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_powerline_ex(0, newbusid)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_trafo_hv(0, newbusid)
+        with self.assertRaises(IndexError):
+            self.model.change_bus_trafo_lv(0, newbusid)
+
     def check_res(self, net):
         # check lines
         l_is = self.net_ref.line["in_service"]
