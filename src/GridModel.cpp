@@ -1,8 +1,8 @@
-#include "DataModel.h"
+#include "GridModel.h"
 
-const int DataModel::_deactivated_bus_id = -1;
+// const int GridModel::_deactivated_bus_id = -1;
 
-void DataModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo){
+void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo){
     /**
     initialize the bus_vn_kv_ member
     and
@@ -14,7 +14,7 @@ void DataModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
 }
 
-void DataModel::init_powerlines(const Eigen::VectorXd & branch_r,
+void GridModel::init_powerlines(const Eigen::VectorXd & branch_r,
                                 const Eigen::VectorXd & branch_x,
                                 const Eigen::VectorXcd & branch_h,
                                 const Eigen::VectorXi & branch_from_id,
@@ -33,15 +33,10 @@ void DataModel::init_powerlines(const Eigen::VectorXd & branch_r,
     //TODO consistency with trafo: have a converter methods to convert this value into pu, and store the pu
     // in this method
 
-    powerlines_bus_or_id_ = branch_from_id;
-    powerlines_bus_ex_id_ = branch_to_id;
-    powerlines_h_ = branch_h;
-    powerlines_r_ = branch_r;
-    powerlines_x_ = branch_x;
-    powerlines_status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
+    powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
 }
 
-void DataModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
+void GridModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
                            const Eigen::VectorXd & shunt_q_mvar,
                            const Eigen::VectorXi & shunt_bus_id)
 {
@@ -55,7 +50,7 @@ void DataModel::init_shunt(const Eigen::VectorXd & shunt_p_mw,
     shunts_status_ = std::vector<bool>(shunt_p_mw.size(), true); // by default everything is connected
 }
 
-void DataModel::init_trafo(const Eigen::VectorXd & trafo_r,
+void GridModel::init_trafo(const Eigen::VectorXd & trafo_r,
                            const Eigen::VectorXd & trafo_x,
                            const Eigen::VectorXcd & trafo_b,
                            const Eigen::VectorXd & trafo_tap_step_pct,
@@ -83,7 +78,7 @@ void DataModel::init_trafo(const Eigen::VectorXd & trafo_r,
 }
 
 
-void DataModel::init_generators(const Eigen::VectorXd & generators_p,
+void GridModel::init_generators(const Eigen::VectorXd & generators_p,
                      const Eigen::VectorXd & generators_v,
                      const Eigen::VectorXi & generators_bus_id)
 {
@@ -93,7 +88,7 @@ void DataModel::init_generators(const Eigen::VectorXd & generators_p,
     generators_status_ = std::vector<bool>(generators_p.size(), true);
 }
 
-void DataModel::init_loads(const Eigen::VectorXd & loads_p,
+void GridModel::init_loads(const Eigen::VectorXd & loads_p,
                 const Eigen::VectorXd & loads_q,
                 const Eigen::VectorXi & loads_bus_id)
 {
@@ -103,59 +98,7 @@ void DataModel::init_loads(const Eigen::VectorXd & loads_p,
     loads_status_ = std::vector<bool>(loads_p.size(), true);
 }
 
-void DataModel::fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac)
-{
-    // fill the matrix
-    //TODO template here instead of "if" for ac / dc
-    int nb_line = powerlines_r_.size();
-    cdouble my_i = 1.0i;
-
-    //diagonal coefficients
-    for(int line_id =0; line_id < nb_line; ++line_id){
-        // i only add this if the powerline is connected
-        if(!powerlines_status_[line_id]) continue;
-
-        // get the from / to bus id
-        // compute from / to
-        int bus_or_id_me = powerlines_bus_or_id_(line_id);
-        int bus_or_solver_id = id_me_to_solver_[bus_or_id_me];
-        if(bus_or_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusBranch: A line is connected (or) to a disconnected bus.");
-        }
-        int bus_ex_id_me = powerlines_bus_ex_id_(line_id);
-        int bus_ex_solver_id = id_me_to_solver_[bus_ex_id_me];
-        if(bus_ex_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusBranch: A line is connected (or) to a disconnected bus.");
-        }
-
-        // convert subsceptance to half subsceptance, applied on each ends
-        cdouble h = 0.;
-        if(ac){
-            h = powerlines_h_(line_id); // yes it's the correct one
-            h = my_i * 0.5 * h;
-        }
-
-        // compute the admittance y
-        cdouble y = 0.;
-        cdouble z = powerlines_x_(line_id);
-        if(ac){
-            z *= my_i;
-            z += powerlines_r_(line_id);
-        }
-        if (z !=0. ) y = 1.0 / z;
-
-        // fill non diagonal coefficient
-        res.coeffRef(bus_or_solver_id, bus_ex_solver_id) -= y; // * base_for_pu_from;
-        res.coeffRef(bus_ex_solver_id, bus_or_solver_id) -= y; // * base_for_pu_to;
-
-        // fill diagonal coefficient
-        cdouble tmp = y + h;
-        res.coeffRef(bus_or_solver_id, bus_or_solver_id) += tmp;
-        res.coeffRef(bus_ex_solver_id, bus_ex_solver_id) += tmp;
-    }
-}
-
-void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
+void GridModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if"
     int nb_trafo = transformers_bus_hv_id_.size();
@@ -209,7 +152,7 @@ void DataModel::fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac){
     }
 }
 
-void DataModel::fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac){
+void GridModel::fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac){
     int nb_shunt = shunts_q_mvar_.size();
     cdouble tmp;
     int bus_id_me, bus_id_solver;
@@ -228,7 +171,7 @@ void DataModel::fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac){
     }
 }
 
-bool DataModel::compute_newton(const Eigen::VectorXcd & Vinit,
+bool GridModel::compute_newton(const Eigen::VectorXcd & Vinit,
                                int max_iter,
                                double tol)
 {
@@ -261,8 +204,8 @@ bool DataModel::compute_newton(const Eigen::VectorXcd & Vinit,
     return res;
 };
 
-void DataModel::init_Ybus(){
-    int nb_line = powerlines_r_.size();
+void GridModel::init_Ybus(){
+    // int nb_line = powerlines_r_.size();
     int nb_trafo = transformers_r_.size();
 
     //TODO get disconnected bus !!! (and have some conversion for it)
@@ -283,7 +226,7 @@ void DataModel::init_Ybus(){
     int nb_bus = id_me_to_solver_.size();
 
     Ybus_ = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
-    Ybus_.reserve(nb_bus + 2*nb_line + 2*nb_trafo);  //TODO optimize with number of connected powerlines or trafo
+    Ybus_.reserve(nb_bus + 2*powerlines_.nb() + 2*nb_trafo);  //TODO optimize with number of connected powerlines or trafo
 
     // init diagonal coefficients
     for(int bus_id=0; bus_id < nb_bus; ++bus_id){
@@ -299,7 +242,7 @@ void DataModel::init_Ybus(){
     }
 }
 
-void DataModel::fillYbus(){
+void GridModel::fillYbus(){
     /**
     Supposes that the powerlines, shunt and transformers are initialized.
     And it fills the Ybus matrix.
@@ -308,7 +251,8 @@ void DataModel::fillYbus(){
     init_Ybus();
 
     // init the Ybus matrix
-    fillYbusBranch(Ybus_, true);
+    // fillYbusBranch(Ybus_, true);
+    powerlines_.fillYbus(Ybus_, true, id_me_to_solver_);
     fillYbusShunt(Ybus_, true);
     fillYbusTrafo(Ybus_, true);
 
@@ -384,7 +328,7 @@ void DataModel::fillYbus(){
     bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
 }
 
-void DataModel::compute_results(){
+void GridModel::compute_results(){
      //TODO check it has converged!
 
     // retrieve results from powerflow
@@ -393,6 +337,7 @@ void DataModel::compute_results(){
     const auto & V = _solver.get_V();
 
     // for powerlines
+    /**
     int nb_line = powerlines_r_.size();
     Eigen::VectorXd ratio = Eigen::VectorXd::Constant(nb_line, 1.0);
     res_powerlines(Va, Vm, V, powerlines_status_,
@@ -412,6 +357,8 @@ void DataModel::compute_results(){
                    res_powerline_vex_,  // in kV
                    res_powerline_aex_  // in kA
                    );
+    **/
+    powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
 
     // for trafo
     int nb_trafo = transformers_r_.size();
@@ -481,7 +428,8 @@ void DataModel::compute_results(){
     //TODO for res_gen_q_ !!!
 }
 
-void DataModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v){
+/**
+void GridModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v){
     const double _1_sqrt_3 = 1.0 / std::sqrt(3.);
     Eigen::VectorXd p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
@@ -494,8 +442,8 @@ void DataModel::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const 
     }
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
-
-void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
+**/
+void GridModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                                const Eigen::Ref<Eigen::VectorXd> & Vm,
                                const Eigen::Ref<Eigen::VectorXcd> & V,
                                const std::vector<bool> & status,
@@ -580,7 +528,7 @@ void DataModel::res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
     _get_amps(aex, pex, qex, vex);
 }
 
-void DataModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
+void GridModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
                           const Eigen::Ref<Eigen::VectorXd> & Vm,
                           const std::vector<bool> & status,
                           int nb_element,
@@ -600,7 +548,7 @@ void DataModel::res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
     }
 }
 
-void DataModel::reset_results(){
+void GridModel::reset_results(){
     res_load_p_ = Eigen::VectorXd(); // in MW
     res_load_q_ = Eigen::VectorXd(); // in MVar
     res_load_v_ = Eigen::VectorXd(); // in kV
@@ -609,14 +557,7 @@ void DataModel::reset_results(){
     res_gen_q_ = Eigen::VectorXd();  // in MVar
     res_gen_v_ = Eigen::VectorXd();  // in kV
 
-    res_powerline_por_ = Eigen::VectorXd();  // in MW
-    res_powerline_qor_ = Eigen::VectorXd();  // in MVar
-    res_powerline_vor_ = Eigen::VectorXd();  // in kV
-    res_powerline_aor_ = Eigen::VectorXd();  // in kA
-    res_powerline_pex_ = Eigen::VectorXd();  // in MW
-    res_powerline_qex_ = Eigen::VectorXd();  // in MVar
-    res_powerline_vex_ = Eigen::VectorXd();  // in kV
-    res_powerline_aex_ = Eigen::VectorXd();  // in kA
+    powerlines_.reset_results();
 
     res_trafo_por_ = Eigen::VectorXd();  // in MW
     res_trafo_qor_ = Eigen::VectorXd();  // in MVar
@@ -632,8 +573,8 @@ void DataModel::reset_results(){
     res_shunt_v_ = Eigen::VectorXd();  // in kV
 }
 
-Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0){
-    //TODO fix that with deactivated bus!
+Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0){
+    //TODO fix that with deactivated bus! taking into account refacto !!!
 
     // initialize the dc Ybus matrix
     Eigen::SparseMatrix<double> dcYbus;
@@ -700,15 +641,15 @@ Eigen::VectorXcd DataModel::dc_pf(const Eigen::VectorXd & p, const Eigen::Vector
     return Vm.array() * (theta.array().cos().cast<cdouble>() + 1.0i * theta.array().sin().cast<cdouble>());
 }
 
-void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
-    //TODO handle dc with missing bus
+void GridModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
+    //TODO handle dc with missing bus taking into account refacto!
     int nb_bus = bus_vn_kv_.size();
 
     // init this matrix
     Eigen::SparseMatrix<cdouble> tmp = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
 
     // fill it properly
-    fillYbusBranch(tmp, false);
+    //fillYbusBranch(tmp, false);
     fillYbusShunt(tmp, false);
     fillYbusTrafo(tmp, false);
 
@@ -717,104 +658,107 @@ void DataModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
 }
 
 /**
-
-**/
-void DataModel::_reactivate(int el_id, std::vector<bool> & status){
+void GridModel::_reactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     if(!val) need_reset_ = true;  // I need to recompute the grid, if a status has changed
     status.at(el_id) = true;  //TODO why it's needed to do that again
 }
-void DataModel::_deactivate(int el_id, std::vector<bool> & status){
+void GridModel::_deactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     if(val) need_reset_ = true;  // I need to recompute the grid, if a status has changed
     status.at(el_id) = false;  //TODO why it's needed to do that again
 }
-void DataModel::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids){
+void GridModel::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids){
     // bus id here "me_id" and NOT "solver_id"
     int & bus_me_id = el_bus_ids(el_id);
     if(bus_me_id != new_bus_me_id) need_reset_ = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
     bus_me_id = new_bus_me_id;
 }
+**/
+
+
 // deactivate a bus. Be careful, if a bus is deactivated, but an element is
 //still connected to it, it will throw an exception
-void DataModel::deactivate_bus(int bus_id)
+void GridModel::deactivate_bus(int bus_id)
 {
-    _deactivate(bus_id, bus_status_);
+    _deactivate(bus_id, bus_status_, need_reset_);
 }
-void DataModel::reactivate_bus(int bus_id)
+void GridModel::reactivate_bus(int bus_id)
 {
-    _reactivate(bus_id, bus_status_);
+    _reactivate(bus_id, bus_status_, need_reset_);
 }
+
 // for powerline
-void DataModel::deactivate_powerline(int powerline_id)
+void GridModel::deactivate_powerline(int powerline_id)
 {
-    _deactivate(powerline_id, powerlines_status_);
+    powerlines_.deactivate(powerline_id, need_reset_);
 }
-void DataModel::reactivate_powerline(int powerline_id)
+void GridModel::reactivate_powerline(int powerline_id)
 {
-    _reactivate(powerline_id, powerlines_status_);
+    powerlines_.reactivate(powerline_id, need_reset_);
 }
-void DataModel::change_bus_powerline_or(int powerline_id, int new_bus_id)
+void GridModel::change_bus_powerline_or(int powerline_id, int new_bus_id)
 {
-    _change_bus(powerline_id, new_bus_id, powerlines_bus_or_id_);
+    powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_);
 }
-void DataModel::change_bus_powerline_ex(int powerline_id, int new_bus_id)
+void GridModel::change_bus_powerline_ex(int powerline_id, int new_bus_id)
 {
-    _change_bus(powerline_id, new_bus_id, powerlines_bus_ex_id_);
+    powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_);
 }
+
 // for trafos
-void DataModel::deactivate_trafo(int trafo_id)
+void GridModel::deactivate_trafo(int trafo_id)
 {
-    _deactivate(trafo_id, transformers_status_);
+    _deactivate(trafo_id, transformers_status_, need_reset_);
 }
-void DataModel::reactivate_trafo(int trafo_id)
+void GridModel::reactivate_trafo(int trafo_id)
 {
-    _reactivate(trafo_id, transformers_status_);
+    _reactivate(trafo_id, transformers_status_, need_reset_);
 }
-void DataModel::change_bus_trafo_hv(int trafo_id, int new_bus_id)
+void GridModel::change_bus_trafo_hv(int trafo_id, int new_bus_id)
 {
-    _change_bus(trafo_id, new_bus_id, transformers_bus_hv_id_);
+    _change_bus(trafo_id, new_bus_id, transformers_bus_hv_id_, need_reset_);
 }
-void DataModel::change_bus_trafo_lv(int trafo_id, int new_bus_id)
+void GridModel::change_bus_trafo_lv(int trafo_id, int new_bus_id)
 {
-    _change_bus(trafo_id, new_bus_id, transformers_bus_lv_id_);
+    _change_bus(trafo_id, new_bus_id, transformers_bus_lv_id_, need_reset_);
 }
 // for loads
-void DataModel::deactivate_load(int load_id)
+void GridModel::deactivate_load(int load_id)
 {
-    _deactivate(load_id, loads_status_);
+    _deactivate(load_id, loads_status_, need_reset_);
 }
-void DataModel::reactivate_load(int load_id)
+void GridModel::reactivate_load(int load_id)
 {
-    _reactivate(load_id, loads_status_);
+    _reactivate(load_id, loads_status_, need_reset_);
 }
-void DataModel::change_bus_load(int load_id, int new_bus_id)
+void GridModel::change_bus_load(int load_id, int new_bus_id)
 {
-    _change_bus(load_id, new_bus_id, loads_bus_id_);
+    _change_bus(load_id, new_bus_id, loads_bus_id_, need_reset_);
 }
 // for generators
-void DataModel::deactivate_gen(int gen_id)
+void GridModel::deactivate_gen(int gen_id)
 {
-    _deactivate(gen_id, generators_status_);
+    _deactivate(gen_id, generators_status_, need_reset_);
 }
-void DataModel::reactivate_gen(int gen_id)
+void GridModel::reactivate_gen(int gen_id)
 {
-    _reactivate(gen_id, generators_status_);
+    _reactivate(gen_id, generators_status_, need_reset_);
 }
-void DataModel::change_bus_gen(int gen_id, int new_bus_id)
+void GridModel::change_bus_gen(int gen_id, int new_bus_id)
 {
-    _change_bus(gen_id, new_bus_id, generators_bus_id_);
+    _change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_);
 }
 //for shunts
-void DataModel::deactivate_shunt(int shunt_id)
+void GridModel::deactivate_shunt(int shunt_id)
 {
-    _deactivate(shunt_id, shunts_status_);
+    _deactivate(shunt_id, shunts_status_, need_reset_);
 }
-void DataModel::reactivate_shunt(int shunt_id)
+void GridModel::reactivate_shunt(int shunt_id)
 {
-     _reactivate(shunt_id, shunts_status_);
+     _reactivate(shunt_id, shunts_status_, need_reset_);
 }
-void DataModel::change_bus_shunt(int shunt_id, int new_bus_id)
+void GridModel::change_bus_shunt(int shunt_id, int new_bus_id)
 {
-    _change_bus(shunt_id, new_bus_id, shunts_bus_id_);
+    _change_bus(shunt_id, new_bus_id, shunts_bus_id_, need_reset_);
 }

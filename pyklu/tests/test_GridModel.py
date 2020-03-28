@@ -3,11 +3,12 @@ import unittest
 import numpy as np
 import pdb
 from scipy import sparse
-from pyklu_cpp import DataModel, PandaPowerConverter
+from pyklu_cpp import GridModel, PandaPowerConverter
 import pandapower.networks as pn
 import pandapower as pp
 
 
+# TODO test if i try to change status of a line that does not exist, it does not make everything crash
 class MakeTests(unittest.TestCase):
     def setUp(self):
         self.net_ref = pn.case118()
@@ -43,7 +44,7 @@ class MakeTests(unittest.TestCase):
                                            )
 
         # set up the data model accordingly
-        self.model = DataModel()
+        self.model = GridModel()
         tmp_bus_ind = np.argsort(self.net_datamodel.bus.index)
         self.model.init_bus(self.net_datamodel.bus.iloc[tmp_bus_ind]["vn_kv"].values,
                             self.net_datamodel.line.shape[0],

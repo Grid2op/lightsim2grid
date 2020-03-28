@@ -7,7 +7,7 @@
 
 #include "KLUSolver.h"
 #include "DataConverter.h"
-#include "DataModel.h"
+#include "GridModel.h"
 
 namespace py = pybind11;
 
@@ -39,64 +39,64 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("get_line_param", &PandaPowerConverter::get_line_param)
         .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
 
-    py::class_<DataModel>(m, "DataModel")
+    py::class_<GridModel>(m, "GridModel")
         .def(py::init<>())
         // general parameters
 
         // init the grid
-        .def("init_bus", &DataModel::init_bus)
-        .def("init_powerlines", &DataModel::init_powerlines)
-        .def("init_shunt", &DataModel::init_shunt)
-        .def("init_trafo", &DataModel::init_trafo)
-        .def("init_generators", &DataModel::init_generators)
-        .def("init_loads", &DataModel::init_loads)
-        .def("add_slackbus", &DataModel::add_slackbus)
+        .def("init_bus", &GridModel::init_bus)
+        .def("init_powerlines", &GridModel::init_powerlines)
+        .def("init_shunt", &GridModel::init_shunt)
+        .def("init_trafo", &GridModel::init_trafo)
+        .def("init_generators", &GridModel::init_generators)
+        .def("init_loads", &GridModel::init_loads)
+        .def("add_slackbus", &GridModel::add_slackbus)
 
         // modify the grid
-        .def("deactivate_bus", &DataModel::deactivate_bus)
-        .def("reactivate_bus", &DataModel::reactivate_bus)
+        .def("deactivate_bus", &GridModel::deactivate_bus)
+        .def("reactivate_bus", &GridModel::reactivate_bus)
 
-        .def("deactivate_powerline", &DataModel::deactivate_powerline)
-        .def("reactivate_powerline", &DataModel::reactivate_powerline)
-        .def("change_bus_powerline_or", &DataModel::change_bus_powerline_or)
-        .def("change_bus_powerline_ex", &DataModel::change_bus_powerline_ex)
+        .def("deactivate_powerline", &GridModel::deactivate_powerline)
+        .def("reactivate_powerline", &GridModel::reactivate_powerline)
+        .def("change_bus_powerline_or", &GridModel::change_bus_powerline_or)
+        .def("change_bus_powerline_ex", &GridModel::change_bus_powerline_ex)
 
-        .def("deactivate_trafo", &DataModel::deactivate_trafo)
-        .def("reactivate_trafo", &DataModel::reactivate_trafo)
-        .def("change_bus_trafo_hv", &DataModel::change_bus_trafo_hv)
-        .def("change_bus_trafo_lv", &DataModel::change_bus_trafo_lv)
+        .def("deactivate_trafo", &GridModel::deactivate_trafo)
+        .def("reactivate_trafo", &GridModel::reactivate_trafo)
+        .def("change_bus_trafo_hv", &GridModel::change_bus_trafo_hv)
+        .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv)
 
-        .def("deactivate_load", &DataModel::deactivate_load)
-        .def("reactivate_load", &DataModel::reactivate_load)
-        .def("change_bus_load", &DataModel::change_bus_load)
+        .def("deactivate_load", &GridModel::deactivate_load)
+        .def("reactivate_load", &GridModel::reactivate_load)
+        .def("change_bus_load", &GridModel::change_bus_load)
 
-        .def("deactivate_gen", &DataModel::deactivate_gen)
-        .def("reactivate_gen", &DataModel::reactivate_gen)
-        .def("change_bus_gen", &DataModel::change_bus_gen)
+        .def("deactivate_gen", &GridModel::deactivate_gen)
+        .def("reactivate_gen", &GridModel::reactivate_gen)
+        .def("change_bus_gen", &GridModel::change_bus_gen)
 
-        .def("deactivate_shunt", &DataModel::deactivate_shunt)
-        .def("reactivate_shunt", &DataModel::reactivate_shunt)
-        .def("change_bus_shunt", &DataModel::change_bus_shunt)
+        .def("deactivate_shunt", &GridModel::deactivate_shunt)
+        .def("reactivate_shunt", &GridModel::reactivate_shunt)
+        .def("change_bus_shunt", &GridModel::change_bus_shunt)
 
         // get back the results
-        .def("get_Va", &DataModel::get_Va)
-        .def("get_Vm", &DataModel::get_Vm)
-        .def("get_loads_res", &DataModel::get_loads_res)
-        .def("get_shunts_res", &DataModel::get_shunts_res)
-        .def("get_gen_res", &DataModel::get_gen_res)
-        .def("get_lineor_res", &DataModel::get_lineor_res)
-        .def("get_lineex_res", &DataModel::get_lineex_res)
-        .def("get_trafohv_res", &DataModel::get_trafohv_res)
-        .def("get_trafolv_res", &DataModel::get_trafolv_res)
+        .def("get_Va", &GridModel::get_Va)
+        .def("get_Vm", &GridModel::get_Vm)
+        .def("get_loads_res", &GridModel::get_loads_res)
+        .def("get_shunts_res", &GridModel::get_shunts_res)
+        .def("get_gen_res", &GridModel::get_gen_res)
+        .def("get_lineor_res", &GridModel::get_lineor_res)
+        .def("get_lineex_res", &GridModel::get_lineex_res)
+        .def("get_trafohv_res", &GridModel::get_trafohv_res)
+        .def("get_trafolv_res", &GridModel::get_trafolv_res)
 
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
-        .def("get_Ybus", &DataModel::get_Ybus)
-        .def("get_Sbus", &DataModel::get_Sbus)
-        .def("get_pv", &DataModel::get_pv)
-        .def("get_pq", &DataModel::get_pq)
-        .def("dc_pf", &DataModel::dc_pf)
-        .def("compute_newton", &DataModel::compute_newton)
+        .def("get_Ybus", &GridModel::get_Ybus)
+        .def("get_Sbus", &GridModel::get_Sbus)
+        .def("get_pv", &GridModel::get_pv)
+        .def("get_pq", &GridModel::get_pq)
+        .def("dc_pf", &GridModel::dc_pf)
+        .def("compute_newton", &GridModel::compute_newton)
         ;
 
 }

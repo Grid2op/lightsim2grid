@@ -16,7 +16,7 @@ from pandapower.run import _check_gen_index_and_print_warning_if_high
 
 import pandapower as pp
 
-from pyklu_cpp import KLUSolver, DataModel, PandaPowerConverter
+from pyklu_cpp import KLUSolver, GridModel, PandaPowerConverter
 
 import pdb
 

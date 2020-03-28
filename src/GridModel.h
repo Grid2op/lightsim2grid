@@ -1,5 +1,5 @@
-#ifndef DATAMODEL_H
-#define DATAMODEL_H
+#ifndef GRIDMODEL_H
+#define GRIDMODEL_H
 
 #include <iostream>
 #include <vector>
@@ -16,15 +16,19 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+// import data classes
+#include "Utils.h"
+#include "DataGeneric.h"
+#include "DataLine.h"
+
 // import klu solver
 #include "KLUSolver.h"
-#include "Utils.h"
-
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
-class DataModel{
+class GridModel : public DataGeneric
+{
     public:
-        DataModel():need_reset_(true){};
+        GridModel():need_reset_(true){};
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
@@ -104,8 +108,8 @@ class DataModel{
         tuple3d get_loads_res() const {return tuple3d(res_load_p_, res_load_q_, res_load_v_);}
         tuple3d get_shunts_res() const {return tuple3d(res_shunt_p_, res_shunt_q_, res_shunt_v_);}
         tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
-        tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
-        tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
+        tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
+        tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
         tuple4d get_trafohv_res() const {return tuple4d(res_trafo_por_, res_trafo_qor_, res_trafo_vor_, res_trafo_aor_);}
         tuple4d get_trafolv_res() const {return tuple4d(res_trafo_pex_, res_trafo_qex_, res_trafo_vex_, res_trafo_aex_);}
 
@@ -155,17 +159,9 @@ class DataModel{
         **/
         void reset_results();
 
-        /**
-        activation / deactivation of elements
-        **/
-        void _reactivate(int el_id, std::vector<bool> & status);
-        void _deactivate(int el_id, std::vector<bool> & status);
-        void _change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids);
-
-
     protected:
         // member of the grid
-        static const int _deactivated_bus_id;
+        // static const int _deactivated_bus_id;
         bool need_reset_;
 
         // powersystem representation
@@ -188,12 +184,7 @@ class DataModel{
         // - initYbus
         // - initSbus
         // - get_res
-        Eigen::VectorXd powerlines_r_;
-        Eigen::VectorXd powerlines_x_;
-        Eigen::VectorXcd powerlines_h_;
-        Eigen::VectorXi powerlines_bus_or_id_;
-        Eigen::VectorXi powerlines_bus_ex_id_;
-        std::vector<bool> powerlines_status_;
+        DataLine powerlines_;
 
         // 3. shunt
         // have the p_mw and q_mvar
@@ -249,15 +240,6 @@ class DataModel{
         Eigen::VectorXd res_gen_q_;  // in MVar
         Eigen::VectorXd res_gen_v_;  // in kV
 
-        Eigen::VectorXd res_powerline_por_;  // in MW
-        Eigen::VectorXd res_powerline_qor_;  // in MVar
-        Eigen::VectorXd res_powerline_vor_;  // in kV
-        Eigen::VectorXd res_powerline_aor_;  // in kA
-        Eigen::VectorXd res_powerline_pex_;  // in MW
-        Eigen::VectorXd res_powerline_qex_;  // in MVar
-        Eigen::VectorXd res_powerline_vex_;  // in kV
-        Eigen::VectorXd res_powerline_aex_;  // in kA
-
         Eigen::VectorXd res_trafo_por_;  // in MW
         Eigen::VectorXd res_trafo_qor_;  // in MVar
         Eigen::VectorXd res_trafo_vor_;  // in kV
@@ -273,7 +255,7 @@ class DataModel{
 
     protected:
 
-        void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
+        // void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac);
         void fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac);
 
@@ -302,11 +284,6 @@ class DataModel{
                             );
 
         /**
-        compute the amps from the p, the q and the v (v should NOT be pair unit)
-        **/
-        void _get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v);
-
-        /**
         This method will compute the results for the shunt and the loads FOR THE VOLTAGE ONLY
         **/
         void res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
@@ -318,4 +295,4 @@ class DataModel{
 
 };
 
-#endif  //DATAMODEL_H
+#endif  //GRIDMODEL_H
