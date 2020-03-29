@@ -13,6 +13,15 @@ Base class for every object that can be manipulated
 **/
 class DataGeneric
 {
+    public:
+
+        virtual void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
+        virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
+        virtual void fillpv(std::vector<int>& bus_pv,
+                            std::vector<bool> & has_bus_been_added,
+                            int slack_bus_id_solver,
+                            const std::vector<int> & id_grid_to_solver) {};
+
     protected:
         static const int _deactivated_bus_id;
         static const cdouble my_i;

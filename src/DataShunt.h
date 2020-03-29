@@ -25,9 +25,7 @@ class DataShunt : public DataGeneric
     void reactivate(int shunt_id, bool & need_reset) {_reactivate(shunt_id, status_, need_reset);}
     void change_bus(int shunt_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, need_reset, nb_bus);}
 
-
     void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    void fillSbus(Eigen::VectorXcd & Sbus, const std::vector<int> & id_grid_to_solver){};
 
     void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
                          const Eigen::Ref<Eigen::VectorXd> & Vm,

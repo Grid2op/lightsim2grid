@@ -32,9 +32,7 @@ class DataTrafo : public DataGeneric
     void change_bus_hv(int powerline_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}
     void change_bus_lv(int powerline_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_lv_id_, need_reset, nb_bus);}
 
-
     void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    void fillSbus(Eigen::VectorXcd & Sbus, const std::vector<int> & id_grid_to_solver){};
 
     void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
                          const Eigen::Ref<Eigen::VectorXd> & Vm,

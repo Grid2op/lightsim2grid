@@ -9,10 +9,10 @@ void DataLoad::init(const Eigen::VectorXd & loads_p,
     status_ = std::vector<bool>(loads_p.size(), true);
 }
 
-void DataLoad::fillSbus(Eigen::VectorXcd & Sbus, const std::vector<int> & id_grid_to_solver){
+void DataLoad::fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     int nb_load = nb();
     int bus_id_me, bus_id_solver;
-    double tmp;
+    cdouble tmp;
     for(int load_id = 0; load_id < nb_load; ++load_id){
         //  i don't do anything if the load is disconnected
         if(!status_[load_id]) continue;
@@ -23,8 +23,9 @@ void DataLoad::fillSbus(Eigen::VectorXcd & Sbus, const std::vector<int> & id_gri
             //TODO improve error message with the gen_id
             throw std::runtime_error("One load is connected to a disconnected bus.");
         }
-        tmp = p_mw_(load_id);
-        Sbus.coeffRef(bus_id_solver) -= tmp + my_i * q_mvar_(load_id);
+        tmp = static_cast<cdouble>(p_mw_(load_id));
+        if(ac) tmp += my_i * q_mvar_(load_id);
+        Sbus.coeffRef(bus_id_solver) -= tmp;
     }
 }
 

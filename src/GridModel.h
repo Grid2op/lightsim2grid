@@ -23,6 +23,7 @@
 #include "DataShunt.h"
 #include "DataTrafo.h"
 #include "DataLoad.h"
+#include "DataGen.h"
 
 
 // import klu solver
@@ -45,7 +46,6 @@ class GridModel : public DataGeneric
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
         }
-
         void init_shunt(const Eigen::VectorXd & shunt_p_mw,
                         const Eigen::VectorXd & shunt_q_mvar,
                         const Eigen::VectorXi & shunt_bus_id){
@@ -63,10 +63,11 @@ class GridModel : public DataGeneric
                         ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
         }
-
         void init_generators(const Eigen::VectorXd & generators_p,
                              const Eigen::VectorXd & generators_v,
-                             const Eigen::VectorXi & generators_bus_id);
+                             const Eigen::VectorXi & generators_bus_id){
+            generators_.init(generators_p, generators_v, generators_bus_id);
+        }
         void init_loads(const Eigen::VectorXd & loads_p,
                         const Eigen::VectorXd & loads_q,
                         const Eigen::VectorXi & loads_bus_id){
@@ -76,14 +77,19 @@ class GridModel : public DataGeneric
         void add_slackbus(int slack_bus_id){
             slack_bus_id_ = slack_bus_id;
         }
+
         //powerflows
-        // dc powerflow //TODO does not work with deactivated buses
-        Eigen::VectorXcd dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0);
+        // dc powerflow
+        Eigen::VectorXcd dc_pf(const Eigen::VectorXcd & Vinit,
+                               int max_iter,  // not used for DC
+                               double tol  // not used for DC
+                               );
 
         // ac powerflow
-        bool compute_newton(const Eigen::VectorXcd & Vinit,
-                            int max_iter,
-                            double tol);
+        Eigen::VectorXcd ac_pf(const Eigen::VectorXcd & Vinit,
+                               int max_iter,
+                               double tol);
+
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         //still connected to it, it will throw an exception
@@ -121,13 +127,11 @@ class GridModel : public DataGeneric
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
         tuple3d get_shunts_res() const {return shunts_.get_res();}
-        tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
+        tuple3d get_gen_res() const {return generators_.get_res();}
         tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
         tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
         tuple4d get_trafohv_res() const {return trafos_.get_res_hv();}
         tuple4d get_trafolv_res() const {return trafos_.get_res_lv();}
-
-
 
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
@@ -158,11 +162,14 @@ class GridModel : public DataGeneric
 
         // compute admittance matrix
         // dc powerflow
-        void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
+        // void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
+
         // ac powerflows
-        void init_Ybus();
-        void fillYbus();
-        void fillSbus();
+        void init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus, Eigen::VectorXcd & Sbus,
+                       std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
+                       int & slack_bus_id_solver);
+        void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac);
+        void fillSbus(Eigen::VectorXcd & res, bool ac);
         void fillpv_pq();
 
         // results
@@ -194,16 +201,9 @@ class GridModel : public DataGeneric
         std::vector<int> id_solver_to_me_;
 
         // 2. powerline
-        // have the r, x, and h
-        //TODO refactor that to have a consistent class that handles each object with methods:
-        // - init
-        // - initYbus
-        // - initSbus
-        // - get_res
         DataLine powerlines_;
 
         // 3. shunt
-        // have the p_mw and q_mvar
         DataShunt shunts_;
 
         // 4. transformers
@@ -212,10 +212,7 @@ class GridModel : public DataGeneric
         DataTrafo trafos_;
 
         // 5. generators
-        Eigen::VectorXd generators_p_;
-        Eigen::VectorXd generators_v_;
-        Eigen::VectorXi generators_bus_id_;
-        std::vector<bool> generators_status_;
+        DataGen generators_;
 
         // 6. loads
         DataLoad loads_;
@@ -234,11 +231,6 @@ class GridModel : public DataGeneric
 
         // to solve the newton raphson
         KLUSolver _solver;
-
-        // results of the powerflow
-        Eigen::VectorXd res_gen_p_;  // in MW
-        Eigen::VectorXd res_gen_q_;  // in MVar
-        Eigen::VectorXd res_gen_v_;  // in kV
 
 };
 

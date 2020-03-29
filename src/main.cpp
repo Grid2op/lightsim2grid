@@ -96,7 +96,8 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("get_pv", &GridModel::get_pv)
         .def("get_pq", &GridModel::get_pq)
         .def("dc_pf", &GridModel::dc_pf)
-        .def("compute_newton", &GridModel::compute_newton)
+        .def("ac_pf", &GridModel::ac_pf)
+        .def("compute_newton", &GridModel::ac_pf)
         ;
 
 }

@@ -14,30 +14,21 @@ void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
 }
 
-void GridModel::init_generators(const Eigen::VectorXd & generators_p,
-                     const Eigen::VectorXd & generators_v,
-                     const Eigen::VectorXi & generators_bus_id)
-{
-    generators_p_ = generators_p;
-    generators_v_ = generators_v;
-    generators_bus_id_ = generators_bus_id;
-    generators_status_ = std::vector<bool>(generators_p.size(), true);
-}
-
-bool GridModel::compute_newton(const Eigen::VectorXcd & Vinit,
-                               int max_iter,
-                               double tol)
+Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
+                                  int max_iter,
+                                  double tol)
 {
     // TODO optimization when it's not mandatory to start from scratch
-    bool res = false;
+    bool conv = false;
+    Eigen::VectorXcd res = Eigen::VectorXcd();
     if(need_reset_){
-        init_Ybus();
-        fillYbus();
+        init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
+        fillYbus(Ybus_, true);
         fillpv_pq();
         _solver.reset();
     }
 
-    fillSbus();
+    fillSbus(Sbus_, true);
 
     // extract only connected bus from Vinit
     int nb_bus_solver = id_solver_to_me_.size();
@@ -49,10 +40,11 @@ bool GridModel::compute_newton(const Eigen::VectorXcd & Vinit,
         // TODO save this V somewhere
     }
 
-    res = _solver.do_newton(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
-    if (res){
+    conv = _solver.do_newton(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
+    if (conv){
         compute_results();
         need_reset_ = false;
+        res = _solver.get_V();
     } else {
         //powerflow diverge
         reset_results();
@@ -61,109 +53,85 @@ bool GridModel::compute_newton(const Eigen::VectorXcd & Vinit,
     return res;
 };
 
-void GridModel::init_Ybus(){
+void GridModel::init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus, Eigen::VectorXcd & Sbus,
+                          std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
+                          int & slack_bus_id_solver){
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     int nb_bus_init = bus_vn_kv_.size();
-    id_me_to_solver_ = std::vector<int>(nb_bus_init, _deactivated_bus_id);  // by default, if a bus is disconnected, then it has a -1 there
-    id_solver_to_me_ = std::vector<int>();
-    id_solver_to_me_.reserve(bus_vn_kv_.size());
+    id_me_to_solver = std::vector<int>(nb_bus_init, _deactivated_bus_id);  // by default, if a bus is disconnected, then it has a -1 there
+    id_solver_to_me = std::vector<int>();
+    id_solver_to_me.reserve(bus_vn_kv_.size());
     int bus_id_solver=0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
         if(bus_status_[bus_id_me]){
             // bus is connected
-            id_solver_to_me_.push_back(bus_id_me);
-            id_me_to_solver_[bus_id_me] = bus_id_solver;
+            id_solver_to_me.push_back(bus_id_me);
+            id_me_to_solver[bus_id_me] = bus_id_solver;
             ++bus_id_solver;
         }
     }
-    int nb_bus = id_me_to_solver_.size();
+    int nb_bus = id_me_to_solver.size();
 
-    Ybus_ = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
-    Ybus_.reserve(nb_bus + 2*powerlines_.nb() + 2*trafos_.nb());
+    Ybus = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
+    Ybus.reserve(nb_bus + 2*powerlines_.nb() + 2*trafos_.nb());
 
     // init diagonal coefficients
     for(int bus_id=0; bus_id < nb_bus; ++bus_id){
         // assign diagonal coefficient
-        Ybus_.insert(bus_id, bus_id) = 0.;
+        Ybus.insert(bus_id, bus_id) = 0.;
     }
 
-    Sbus_ = Eigen::VectorXcd::Constant(nb_bus, 0.);
-    slack_bus_id_solver_ = id_me_to_solver_[slack_bus_id_];
-    if(slack_bus_id_solver_ == _deactivated_bus_id){
+    Sbus = Eigen::VectorXcd::Constant(nb_bus, 0.);
+    slack_bus_id_solver = id_me_to_solver[slack_bus_id_];
+    if(slack_bus_id_solver == _deactivated_bus_id){
         //TODO improve error message with the gen_id
         throw std::runtime_error("The slack bus is disconnected.");
     }
 }
 
-void GridModel::fillYbus(){
+void GridModel::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac){
     /**
     Supposes that the powerlines, shunt and transformers are initialized.
     And it fills the Ybus matrix.
     **/
     // init the Ybus matrix
-    powerlines_.fillYbus(Ybus_, true, id_me_to_solver_);
-    shunts_.fillYbus(Ybus_, true, id_me_to_solver_);
-    trafos_.fillYbus(Ybus_, true, id_me_to_solver_);
-    loads_.fillYbus(Ybus_, true, id_me_to_solver_);
+    powerlines_.fillYbus(res, ac, id_me_to_solver_);
+    shunts_.fillYbus(res, ac, id_me_to_solver_);
+    trafos_.fillYbus(res, ac, id_me_to_solver_);
+    loads_.fillYbus(res, ac, id_me_to_solver_);
+    generators_.fillYbus(res, ac, id_me_to_solver_);
 }
 
-void GridModel::fillSbus()
+void GridModel::fillSbus(Eigen::VectorXcd & res, bool ac)
 {
     // init the Sbus vector
-    int bus_id_me, bus_id_solver;
-    int nb_bus = id_solver_to_me_.size();
-    int nb_gen = generators_p_.size();
-    double tmp;
-
-    std::vector<bool> has_gen_conn(nb_bus, false);
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        //  i don't do anything if the generator is disconnected
-        if(!generators_status_[gen_id]) continue;
-
-        bus_id_me = generators_bus_id_(gen_id);
-        bus_id_solver = id_me_to_solver_[bus_id_me];
-        if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One generator is connected to a disconnected bus.");
-        }
-        tmp = generators_p_(gen_id);
-        Sbus_.coeffRef(bus_id_solver) += tmp; // + my_i * generators_p_(gen_id);
-        has_gen_conn[bus_id_solver] = true;
-    }
-
-    loads_.fillSbus(Sbus_, id_me_to_solver_);
+    powerlines_.fillSbus(res, ac, id_me_to_solver_);
+    shunts_.fillSbus(res, ac, id_me_to_solver_);
+    trafos_.fillSbus(res, ac, id_me_to_solver_);
+    loads_.fillSbus(res, ac, id_me_to_solver_);
+    generators_.fillSbus(res, ac, id_me_to_solver_);
 
     // handle slack bus
-    double sum_active = Sbus_.sum().real();
-    Sbus_.coeffRef(slack_bus_id_solver_) -= sum_active;
+    double sum_active = res.sum().real();
+    res.coeffRef(slack_bus_id_solver_) -= sum_active;
 }
 
 void GridModel::fillpv_pq()
 {
     // init pq and pv vector
     // TODO remove the order here..., i could be faster in this piece of code (looping once through the buses)
-    int nb_bus = id_me_to_solver_.size();
-    int nb_gen = generators_p_.size();
-    int bus_id_me, bus_id_solver;
+    int nb_bus = id_solver_to_me_.size();  // number of bus in the solver!
     std::vector<int> bus_pq;
     std::vector<int> bus_pv;
     std::vector<bool> has_bus_been_added(nb_bus, false);
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        //  i don't do anything if the generator is disconnected
-        if(!generators_status_[gen_id]) continue;
 
-        bus_id_me = generators_bus_id_(gen_id);
-        bus_id_solver = id_me_to_solver_[bus_id_me];
-        if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One generator is connected to a disconnected bus.");
-        }
-        if(bus_id_solver == slack_bus_id_solver_) continue;  // slack bus is not PV
-        if(has_bus_been_added[bus_id_solver]) continue; // i already added this bus
-        bus_pv.push_back(bus_id_solver);
-        has_bus_been_added[bus_id_solver] = true;  // don't add it a second time
-    }
+    powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver_);
+    shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver_);
+    trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver_);
+    loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver_);
+    generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver_);
+
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
         if(bus_id == slack_bus_id_solver_) continue;  // slack bus is not PQ either
         if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
@@ -198,118 +166,126 @@ void GridModel::compute_results(){
 
     //TODO model disconnected stuff here!
     // for prods
-    int nb_gen = generators_p_.size();
-    res_gen_p_ = generators_p_;
-    res_gen_v_ = Eigen::VectorXd::Constant(nb_gen, -1.0);
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!generators_status_[gen_id]) continue;
-        int bus_id_me = generators_bus_id_(gen_id);
-        int bus_solver_id = id_me_to_solver_[bus_id_me];
-        if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::compute_results: A generator is connected to a disconnected bus.");
-        }
-        double vm_me = Vm(bus_solver_id);
-        res_gen_v_(gen_id) = vm_me * bus_vn_kv_(bus_id_me);
-    }
+    generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     //TODO for res_gen_q_ !!!
 }
 
 void GridModel::reset_results(){
-    // res_load_p_ = Eigen::VectorXd(); // in MW
-    // res_load_q_ = Eigen::VectorXd(); // in MVar
-    // res_load_v_ = Eigen::VectorXd(); // in kV
-
-    res_gen_p_ = Eigen::VectorXd();  // in MW
-    res_gen_q_ = Eigen::VectorXd();  // in MVar
-    res_gen_v_ = Eigen::VectorXd();  // in kV
-
     powerlines_.reset_results();
     shunts_.reset_results();
     trafos_.reset_results();
     loads_.reset_results();
+    generators_.reset_results();
 }
 
-Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXd & p, const Eigen::VectorXcd Va0){
-    //TODO fix that with deactivated bus! taking into account refacto !!!
-
-    // initialize the dc Ybus matrix
-    Eigen::SparseMatrix<double> dcYbus;
-    init_dcY(dcYbus);
-    dcYbus.makeCompressed();
-
-    // get the correct matrix : remove the slack bus
+Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
+                                  int max_iter,  // not used for DC
+                                  double tol  // not used for DC
+                                  )
+{
+    // TODO refactor that with ac pf, this is mostly done, but only mostly...
     int nb_bus = bus_vn_kv_.size();
-    Eigen::SparseMatrix<double> mat_to_inv = Eigen::SparseMatrix<double>(nb_bus-1, nb_bus-1);
-    mat_to_inv.reserve(dcYbus.nonZeros());
+    Eigen::SparseMatrix<cdouble> dcYbus_tmp;
+    Eigen::VectorXcd Sbus_tmp;
+    std::vector<int> id_me_to_solver;
+    std::vector<int> id_solver_to_me;
+    int slack_bus_id_solver;
 
+    if(need_reset_){
+        init_Ybus(dcYbus_tmp, Sbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+        fillYbus(dcYbus_tmp, false);
+        fillpv_pq();
+        _solver.reset();
+    }
+    fillSbus(Sbus_tmp, false);
+
+    // extract only connected bus from Vinit
+    int nb_bus_solver = id_solver_to_me_.size();
+    Eigen::VectorXcd V = Eigen::VectorXcd::Constant(id_solver_to_me_.size(), 1.04);
+    for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
+        int bus_me_id = id_solver_to_me_[bus_solver_id];  //POSSIBLE SEGFAULT
+        cdouble tmp = Vinit(bus_me_id);
+        V(bus_solver_id) = tmp;
+    }
+
+
+    // DC SOLVER STARTS HERE
+    // remove the slack bus
+    // TODO this should rather be one in a "dc solver" instead of here
+
+    // remove the slack bus from Ybus
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
+    Eigen::SparseMatrix<double> dcYbus = Eigen::SparseMatrix<double>(nb_bus - 1, nb_bus - 1);
     std::vector<Eigen::Triplet<double> > tripletList;
     for (int k=0; k < nb_bus; ++k){
-        if(k == slack_bus_id_) continue;  // I don't add anything to the slack bus
-        for (Eigen::SparseMatrix<double>::InnerIterator it(dcYbus, k); it; ++it)
+        if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
+        for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dcYbus_tmp, k); it; ++it)
         {
             int row_res = it.row();
-            if(row_res == slack_bus_id_) continue;
-            row_res = row_res > slack_bus_id_ ? row_res-1 : row_res;
+            if(row_res == slack_bus_id_solver) continue;
+            row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
             int col_res = it.col();
-            col_res = col_res > slack_bus_id_ ? col_res-1 : col_res;
-            tripletList.push_back(Eigen::Triplet<double> (row_res, col_res, it.value()));
+            col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
+            tripletList.push_back(Eigen::Triplet<double> (row_res, col_res, std::real(it.value())));
         }
     }
-    mat_to_inv.setFromTriplets(tripletList.begin(), tripletList.end());
 
-    // solve for theta: P = dcY . theta
+    dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
+    dcYbus.makeCompressed();
+    // remove the slack bus from Sbus
+    Eigen::VectorXd Sbus = Eigen::VectorXd(nb_bus - 1);
+    for (int k=0; k < nb_bus; ++k){
+        if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
+        int col_res = k;
+        col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
+        Sbus.coeffRef(col_res) = std::real(Sbus_tmp(k));
+    }
+
+    // initialize the solver
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
-    solver.analyzePattern(mat_to_inv);
-    solver.factorize(mat_to_inv);
+    solver.analyzePattern(dcYbus);
+    solver.factorize(dcYbus);
 
-    // remove the slack bus from the p
-    Eigen::VectorXd p_tmp = Eigen::VectorXd(nb_bus-1);
-
-    // TODO vectorize like this, but be carefull to side effect
-    int index_tmp = 0;
-    for (int k=0; k < nb_bus-1; ++k, ++index_tmp){
-        if(k == slack_bus_id_) ++index_tmp;
-        p_tmp(k) = p(index_tmp); // - p0_tmp(k);
-    }
-    // solve the system
-    Eigen::VectorXd theta_tmp = solver.solve(p_tmp);
-    if(solver.info()!=Eigen::Success) {
-        // solving failed
-        return Eigen::VectorXd();
+    // solve for theta: Sbus = dcY . theta
+    Eigen::VectorXd Va_dc = solver.solve(Sbus);
+    if(solver.info() != Eigen::Success) {
+        // solving failed, this should not happen in dc ...
+        return Eigen::VectorXcd();
     }
 
-    // re insert everything to place
-    Eigen::VectorXd theta = Eigen::VectorXd::Constant(nb_bus, 0.);
-    index_tmp = 0;
-    for (int k=0; k < nb_bus-1; ++k, ++index_tmp){
-        if(k == slack_bus_id_) ++index_tmp;
-        theta(index_tmp) = theta_tmp(k);
+
+    // retrieve back the results in the proper shape
+    int nb_bus_me = bus_vn_kv_.size();
+    int bus_id_solver;
+    Eigen::VectorXd Va = Eigen::VectorXd::Constant(nb_bus_me, 0.);
+    // fill Va from dc approx
+    for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
+        if(bus_id_me == slack_bus_id_) continue;  // slack bus is handled elsewhere
+        if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is not connected
+
+        bus_id_solver = id_me_to_solver_[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            //TODO improve error message with the gen_id
+            throw std::runtime_error("One bus is both connected and disconnected");
+        }
+        bus_id_solver = bus_id_solver > slack_bus_id_solver ? bus_id_solver - 1 : bus_id_solver;
+        Va(bus_id_me) = Va_dc(bus_id_solver);
     }
-    theta.array() +=  std::arg(Va0(slack_bus_id_));
-    Eigen::VectorXd Vm = Va0.array().abs();
+    Va.array() +=  std::arg(Vinit(slack_bus_id_));
 
-    int nb_gen = generators_p_.size();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        int bus_id = generators_bus_id_(gen_id);
-        Vm(bus_id) = generators_v_(gen_id);
+    // fill Vm either Vinit if pq or Vm if pv (TODO)
+    Eigen::VectorXd Vm = Vinit.array().abs();  // fill Vm = Vinit for all
+    // put Vm = 0. for disconnected bus
+    for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
+        if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+        Vm(bus_id_me) = 0.;
     }
-    return Vm.array() * (theta.array().cos().cast<cdouble>() + 1.0i * theta.array().sin().cast<cdouble>());
-}
+    //END of the SOLVER PART
 
-void GridModel::init_dcY(Eigen::SparseMatrix<double> & dcYbus){
-    //TODO handle dc with missing bus taking into account refacto!
-    int nb_bus = bus_vn_kv_.size();
+    //TODO handle Vm = Vm (gen) for connected generators
+    return Vm.array() * (Va.array().cos().cast<cdouble>() + 1.0i * Va.array().sin().cast<cdouble>());
 
-    // init this matrix
-    Eigen::SparseMatrix<cdouble> tmp = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
-
-    powerlines_.fillYbus(Ybus_, false, id_me_to_solver_);
-    shunts_.fillYbus(Ybus_, false, id_me_to_solver_);
-    trafos_.fillYbus(Ybus_, false, id_me_to_solver_);
-
-    // take only real part
-    dcYbus  = tmp.real();
+    // return Eigen::VectorXcd();
 }
 
 // deactivate a bus. Be careful, if a bus is deactivated, but an element is
@@ -374,15 +350,15 @@ void GridModel::change_bus_load(int load_id, int new_bus_id)
 // for generators
 void GridModel::deactivate_gen(int gen_id)
 {
-    _deactivate(gen_id, generators_status_, need_reset_);
+    generators_.deactivate(gen_id, need_reset_); // _deactivate(gen_id, generators_status_, need_reset_);
 }
 void GridModel::reactivate_gen(int gen_id)
 {
-    _reactivate(gen_id, generators_status_, need_reset_);
+    generators_.reactivate(gen_id, need_reset_);  // _reactivate(gen_id, generators_status_, need_reset_);
 }
 void GridModel::change_bus_gen(int gen_id, int new_bus_id)
 {
-    _change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_, bus_vn_kv_.size());
+    generators_.change_bus(gen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); //_change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_, bus_vn_kv_.size());
 }
 //for shunts
 void GridModel::deactivate_shunt(int shunt_id)

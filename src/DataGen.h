@@ -1,5 +1,5 @@
-#ifndef DATALOAD_H
-#define DATALOAD_H
+#ifndef DATAGEN_H
+#define DATAGEN_H
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -9,23 +9,27 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
-class DataLoad : public DataGeneric
+class DataGen: public DataGeneric
 {
     public:
-    DataLoad() {};
+    DataGen() {};
 
-    void init(const Eigen::VectorXd & loads_p,
-              const Eigen::VectorXd & loads_q,
-              const Eigen::VectorXi & loads_bus_id
+    void init(const Eigen::VectorXd & generators_p,
+                     const Eigen::VectorXd & generators_v,
+                     const Eigen::VectorXi & generators_bus_id
               );
 
     int nb() { return p_mw_.size(); }
 
-    void deactivate(int load_id, bool & need_reset) {_deactivate(load_id, status_, need_reset);}
-    void reactivate(int load_id, bool & need_reset) {_reactivate(load_id, status_, need_reset);}
-    void change_bus(int load_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(load_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
+    void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
+    void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
 
     void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    void fillpv(std::vector<int>& bus_pv,
+                std::vector<bool> & has_bus_been_added,
+                int slack_bus_id_solver,
+                const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
                          const Eigen::Ref<Eigen::VectorXd> & Vm,
@@ -41,7 +45,7 @@ class DataLoad : public DataGeneric
 
         // input data
         Eigen::VectorXd p_mw_;
-        Eigen::VectorXd q_mvar_;
+        Eigen::VectorXd vm_pu_;
         Eigen::VectorXi bus_id_;
         std::vector<bool> status_;
 
@@ -51,4 +55,4 @@ class DataLoad : public DataGeneric
         Eigen::VectorXd res_v_;  // in kV
 };
 
-#endif  //DATALOAD_H
+#endif  //DATAGEN_H
