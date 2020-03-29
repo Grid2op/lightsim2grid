@@ -4,6 +4,7 @@
 //PYBIND11_MAKE_OPAQUE(std::vector<int>);
 //PYBIND11_MAKE_OPAQUE(std::vector<double>);
 #include <pybind11/eigen.h>
+#include <pybind11/stl.h>
 
 #include "KLUSolver.h"
 #include "DataConverter.h"
@@ -55,6 +56,7 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)
         .def("reactivate_bus", &GridModel::reactivate_bus)
+        .def("nb_bus", &GridModel::nb_bus)
 
         .def("deactivate_powerline", &GridModel::deactivate_powerline)
         .def("reactivate_powerline", &GridModel::reactivate_powerline)
@@ -87,13 +89,19 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         // get back the results
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
+
         .def("get_loads_res", &GridModel::get_loads_res)
+        .def("get_loads_status", &GridModel::get_loads_status)
         .def("get_shunts_res", &GridModel::get_shunts_res)
+        .def("get_shunts_status", &GridModel::get_shunts_status)
         .def("get_gen_res", &GridModel::get_gen_res)
+        .def("get_gen_status", &GridModel::get_gen_status)
         .def("get_lineor_res", &GridModel::get_lineor_res)
         .def("get_lineex_res", &GridModel::get_lineex_res)
+        .def("get_lines_status", &GridModel::get_lines_status)
         .def("get_trafohv_res", &GridModel::get_trafohv_res)
         .def("get_trafolv_res", &GridModel::get_trafolv_res)
+        .def("get_trafo_status", &GridModel::get_trafo_status)
 
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary

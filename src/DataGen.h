@@ -47,6 +47,7 @@ class DataGen: public DataGeneric
     void set_vm(Eigen::VectorXcd & V, const std::vector<int> & id_grid_to_solver);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    const std::vector<bool>& get_status() const {return status_;}
 
     protected:
         // physical properties

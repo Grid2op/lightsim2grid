@@ -294,3 +294,13 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     return Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>();
     //return Eigen::VectorXcd();
 }
+
+int GridModel::nb_bus() const
+{
+    int res = 0;
+    for(const auto & el : bus_status_)
+    {
+        if(el) ++res;
+    }
+    return res;
+}

@@ -37,6 +37,7 @@ class DataLoad : public DataGeneric
     void reset_results();
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    const std::vector<bool>& get_status() const {return status_;}
 
     protected:
         // physical properties

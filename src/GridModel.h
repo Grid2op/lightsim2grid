@@ -96,6 +96,7 @@ class GridModel : public DataGeneric
         void deactivate_bus(int bus_id) {_deactivate(bus_id, bus_status_, need_reset_); }
         // if a bus is connected, but isolated, it will make the powerflow diverge
         void reactivate_bus(int bus_id) {_reactivate(bus_id, bus_status_, need_reset_); }
+        int nb_bus() const;
 
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, need_reset_); }
@@ -132,12 +133,17 @@ class GridModel : public DataGeneric
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
+        const std::vector<bool>& get_loads_status() const { return loads_.get_status();}
         tuple3d get_shunts_res() const {return shunts_.get_res();}
+        const std::vector<bool>& get_shunts_status() const { return shunts_.get_status();}
         tuple3d get_gen_res() const {return generators_.get_res();}
+        const std::vector<bool>& get_gen_status() const { return shunts_.get_status();}
         tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
         tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
+        const std::vector<bool>& get_lines_status() const { return powerlines_.get_status();}
         tuple4d get_trafohv_res() const {return trafos_.get_res_hv();}
         tuple4d get_trafolv_res() const {return trafos_.get_res_lv();}
+        const std::vector<bool>& get_trafo_status() const { return trafos_.get_status();}
 
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
@@ -196,7 +202,7 @@ class GridModel : public DataGeneric
         // powersystem representation
         // 1. bus
         Eigen::VectorXd bus_vn_kv_;
-        std::vector<bool> bus_status_;  //TODO that is not handled at the moment
+        std::vector<bool> bus_status_;
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.

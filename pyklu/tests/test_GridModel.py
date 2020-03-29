@@ -163,6 +163,14 @@ class MakeACTests(unittest.TestCase):
         Vfinal = self.run_me_pf(V0)
         return Vfinal
 
+    def test_function_works(self):
+        self.do_i_skip("test_function_works")
+        self.model.get_loads_status()
+        self.model.get_shunts_status()
+        self.model.get_gen_status()
+        self.model.get_lines_status()
+        self.model.get_trafo_status()
+
     def test_deactivate_index_out_of_bound(self):
         self.do_i_skip("test_deactivate_index_out_of_bound")
         with self.assertRaises(IndexError):

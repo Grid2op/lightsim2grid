@@ -43,6 +43,7 @@ class DataTrafo : public DataGeneric
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
+    const std::vector<bool>& get_status() const {return status_;}
 
     protected:
         // physical properties
