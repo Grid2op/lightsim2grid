@@ -22,6 +22,7 @@
 #include "DataLine.h"
 #include "DataShunt.h"
 #include "DataTrafo.h"
+#include "DataLoad.h"
 
 
 // import klu solver
@@ -68,7 +69,9 @@ class GridModel : public DataGeneric
                              const Eigen::VectorXi & generators_bus_id);
         void init_loads(const Eigen::VectorXd & loads_p,
                         const Eigen::VectorXd & loads_q,
-                        const Eigen::VectorXi & loads_bus_id);
+                        const Eigen::VectorXi & loads_bus_id){
+            loads_.init(loads_p, loads_q, loads_bus_id);
+        }
 
         void add_slackbus(int slack_bus_id){
             slack_bus_id_ = slack_bus_id;
@@ -116,7 +119,7 @@ class GridModel : public DataGeneric
         void change_bus_shunt(int shunt_id, int new_bus_id);
 
         // All results access
-        tuple3d get_loads_res() const {return tuple3d(res_load_p_, res_load_q_, res_load_v_);}
+        tuple3d get_loads_res() const {return loads_.get_res();}
         tuple3d get_shunts_res() const {return shunts_.get_res();}
         tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
         tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
@@ -215,10 +218,7 @@ class GridModel : public DataGeneric
         std::vector<bool> generators_status_;
 
         // 6. loads
-        Eigen::VectorXd loads_p_;
-        Eigen::VectorXd loads_q_;
-        Eigen::VectorXi loads_bus_id_;
-        std::vector<bool> loads_status_;
+        DataLoad loads_;
 
         // 7. slack bus
         int slack_bus_id_;
@@ -236,10 +236,6 @@ class GridModel : public DataGeneric
         KLUSolver _solver;
 
         // results of the powerflow
-        Eigen::VectorXd res_load_p_; // in MW
-        Eigen::VectorXd res_load_q_; // in MVar
-        Eigen::VectorXd res_load_v_; // in kV
-
         Eigen::VectorXd res_gen_p_;  // in MW
         Eigen::VectorXd res_gen_q_;  // in MVar
         Eigen::VectorXd res_gen_v_;  // in kV

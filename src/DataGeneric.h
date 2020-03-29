@@ -15,6 +15,7 @@ class DataGeneric
 {
     protected:
         static const int _deactivated_bus_id;
+        static const cdouble my_i;
 
         /**
         activation / deactivation of elements
