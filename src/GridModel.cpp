@@ -275,16 +275,23 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     Va.array() +=  std::arg(Vinit(slack_bus_id_));
 
     // fill Vm either Vinit if pq or Vm if pv (TODO)
-    Eigen::VectorXd Vm = Vinit.array().abs();  // fill Vm = Vinit for all
+    /**
+    Eigen::VectorXd Vm =  Vinit.array().abs();  // fill Vm = Vinit for all
     // put Vm = 0. for disconnected bus
     for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
         if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
         Vm(bus_id_me) = 0.;
     }
+    // put Vm = Vm of turned on gen
+    generators_.get_vm_for_dc(Vm);
+    // assign vm of the slack bus
+    Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
     //END of the SOLVER PART
 
     //TODO handle Vm = Vm (gen) for connected generators
-    return Vm.array() * (Va.array().cos().cast<cdouble>() + 1.0i * Va.array().sin().cast<cdouble>());
+    return Vm.array() * (Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>());
+    **/
+    return Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>();
     //return Eigen::VectorXcd();
 }
 

@@ -70,3 +70,15 @@ void DataGen::reset_results(){
     res_q_ = Eigen::VectorXd();  // in MVar
     res_v_ = Eigen::VectorXd();  // in kV
 }
+
+void DataGen::get_vm_for_dc(Eigen::VectorXd & Vm){
+    int nb_gen = nb();
+    int bus_id_me;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        //  i don't do anything if the generator is disconnected
+        if(!status_[gen_id]) continue;
+        bus_id_me = bus_id_(gen_id);
+        double tmp = vm_pu_(bus_id_me);
+        if(tmp != 0.) Vm(bus_id_me) = tmp;
+    }
+}

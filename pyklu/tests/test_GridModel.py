@@ -154,7 +154,7 @@ class MakeACTests(unittest.TestCase):
         pp.runpp(net, init="flat")
 
     def do_i_skip(self, func_name):
-        self.skipTest("dev")
+        # self.skipTest("dev")
         pass
 
     def _run_both_pf(self, net):
@@ -324,7 +324,7 @@ class MakeACTests(unittest.TestCase):
         self.net_ref.line["to_bus"][0] = 2
         self.model.change_bus_powerline_ex(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
-        self.check_res(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
 
     def test_acpf_changebus_trafolv(self):
         self.do_i_skip("test_acpf_changebus_trafolv")
@@ -349,10 +349,20 @@ class MakeDCTests(MakeACTests):
         pp.rundcpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
-        if test_nm == "test_pf":
-            pass
-        else:
-            self.skipTest("dev")
+        pass
+        # if test_nm == "test_pf":
+        #    pass
+        #else:
+        #    self.skipTest("dev")
+
+    def check_res(self, Vfinal, net):
+        assert Vfinal.shape[0] > 0, "powerflow diverged !"
+        tmp_bus_ind = np.argsort(net.bus.index)
+        va_deg = net.res_bus["va_degree"].values
+        # vm_pu = net.res_bus["vm_pu"].values
+        # pdb.set_trace()
+        self.assert_equal(np.angle(Vfinal), va_deg[tmp_bus_ind] / 180. * np.pi)
+        # self.assert_equal(np.abs(Vfinal), vm_pu[tmp_bus_ind])
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ class DataGen: public DataGeneric
                          const std::vector<int> & id_grid_to_solver,
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
+    void get_vm_for_dc(Eigen::VectorXd & Vm);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
 
