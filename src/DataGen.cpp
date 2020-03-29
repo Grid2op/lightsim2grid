@@ -82,3 +82,39 @@ void DataGen::get_vm_for_dc(Eigen::VectorXd & Vm){
         if(tmp != 0.) Vm(bus_id_me) = tmp;
     }
 }
+
+void DataGen::change_p(int gen_id, double new_p, bool & need_reset)
+{
+    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
+    if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected generator");
+    p_mw_(gen_id) = new_p;
+}
+
+void DataGen::change_v(int gen_id, double new_v_pu, bool & need_reset)
+{
+    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
+    if(!my_status) throw std::runtime_error("Impossible to change the voltage setpoint of a disconnected generator");
+    vm_pu_(gen_id) = new_v_pu;
+}
+
+void DataGen::set_vm(Eigen::VectorXcd & V, const std::vector<int> & id_grid_to_solver)
+{
+    int nb_gen = nb();
+    int bus_id_me, bus_id_solver;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        //  i don't do anything if the generator is disconnected
+        if(!status_[gen_id]) continue;
+
+        bus_id_me = bus_id_(gen_id);
+        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            //TODO improve error message with the gen_id
+            throw std::runtime_error("One generator is connected to a disconnected bus.");
+        }
+        double tmp = std::abs(V(bus_id_solver));
+        if(tmp == 0.) tmp = 1.0;
+        tmp = 1.0 / tmp;
+        tmp *= vm_pu_(gen_id);
+        V(bus_id_solver) *= tmp;
+    }
+}

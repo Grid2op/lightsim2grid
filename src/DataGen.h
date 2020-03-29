@@ -24,6 +24,8 @@ class DataGen: public DataGeneric
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void change_p(int gen_id, double new_p, bool & need_reset);
+    void change_v(int gen_id, double new_v_pu, bool & need_reset);
 
     void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
     void fillpv(std::vector<int>& bus_pv,
@@ -38,6 +40,11 @@ class DataGen: public DataGeneric
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
     void get_vm_for_dc(Eigen::VectorXd & Vm);
+    /**
+    this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
+    the ac powerflow
+    **/
+    void set_vm(Eigen::VectorXcd & V, const std::vector<int> & id_grid_to_solver);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
 

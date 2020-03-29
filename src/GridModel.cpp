@@ -39,7 +39,7 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
         V(bus_solver_id) = tmp;
         // TODO save this V somewhere
     }
-
+    generators_.set_vm(V, id_me_to_solver_);
     conv = _solver.do_newton(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
     if (conv){
         compute_results();
@@ -354,6 +354,15 @@ void GridModel::change_bus_load(int load_id, int new_bus_id)
 {
     loads_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); //_change_bus(load_id, new_bus_id, loads_bus_id_, need_reset_, bus_vn_kv_.size());
 }
+void GridModel::change_p_load(int load_id, double new_p)
+{
+    loads_.change_p(load_id, new_p, need_reset_);
+}
+void GridModel::change_q_load(int load_id, double new_q)
+{
+    loads_.change_q(load_id, new_q, need_reset_);
+}
+
 // for generators
 void GridModel::deactivate_gen(int gen_id)
 {
@@ -367,6 +376,15 @@ void GridModel::change_bus_gen(int gen_id, int new_bus_id)
 {
     generators_.change_bus(gen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); //_change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_, bus_vn_kv_.size());
 }
+void GridModel::change_p_gen(int gen_id, double new_p)
+{
+    generators_.change_p(gen_id, new_p, need_reset_); //_change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_, bus_vn_kv_.size());
+}
+void GridModel::change_v_gen(int gen_id, double new_v_pu)
+{
+    generators_.change_v(gen_id, new_v_pu, need_reset_); //_change_bus(gen_id, new_bus_id, generators_bus_id_, need_reset_, bus_vn_kv_.size());
+}
+
 //for shunts
 void GridModel::deactivate_shunt(int shunt_id)
 {
@@ -379,4 +397,12 @@ void GridModel::reactivate_shunt(int shunt_id)
 void GridModel::change_bus_shunt(int shunt_id, int new_bus_id)
 {
     shunts_.change_bus(shunt_id, new_bus_id, need_reset_, bus_vn_kv_.size()); //_change_bus(shunt_id, new_bus_id, shunts_bus_id_, need_reset_, bus_vn_kv_.size());
+}
+void GridModel::change_p_shunt(int shunt_id, double new_p)
+{
+    shunts_.change_p(shunt_id, new_p, need_reset_);
+}
+void GridModel::change_q_shunt(int shunt_id, double new_q)
+{
+    shunts_.change_q(shunt_id, new_q, need_reset_);
 }

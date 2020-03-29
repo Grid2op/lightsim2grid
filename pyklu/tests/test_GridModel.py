@@ -211,6 +211,21 @@ class MakeACTests(unittest.TestCase):
         with self.assertRaises(IndexError):
             self.model.change_bus_trafo_lv(0, newbusid)
 
+    def test_changesetpoint_out_of_bound(self):
+        self.do_i_skip("test_changesetpoint_out_of_bound")
+        with self.assertRaises(IndexError):
+            self.model.change_p_load(self.net_datamodel.load.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_q_load(self.net_datamodel.load.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_p_gen(self.net_datamodel.gen.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_v_gen(self.net_datamodel.gen.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_p_shunt(self.net_datamodel.shunt.shape[0], 1)
+        with self.assertRaises(IndexError):
+            self.model.change_p_shunt(self.net_datamodel.shunt.shape[0], 1)
+
     def test_pf(self):
         """
         Reference without modifying anything
@@ -220,36 +235,36 @@ class MakeACTests(unittest.TestCase):
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_disco_gen(self):
-        self.do_i_skip("test_acpf_disco_gen")
+    def test_pf_disco_gen(self):
+        self.do_i_skip("test_pf_disco_gen")
         self.net_ref.gen["in_service"][0] = False
         self.model.deactivate_gen(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_disco_load(self):
-        self.do_i_skip("test_acpf_disco_load")
+    def test_pf_disco_load(self):
+        self.do_i_skip("test_pf_disco_load")
         self.net_ref.load["in_service"][0] = False
         self.model.deactivate_load(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_disco_line(self):
-        self.do_i_skip("test_acpf_disco_line")
+    def test_pf_disco_line(self):
+        self.do_i_skip("test_pf_disco_line")
         self.net_ref.line["in_service"][0] = False
         self.model.deactivate_powerline(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_disco_shunt(self):
-        self.do_i_skip("test_acpf_disco_shunt")
+    def test_pf_disco_shunt(self):
+        self.do_i_skip("test_pf_disco_shunt")
         self.net_ref.shunt["in_service"][0] = False
         self.model.deactivate_shunt(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_disco_trafo(self):
-        self.do_i_skip("test_acpf_disco_trafo")
+    def test_pf_disco_trafo(self):
+        self.do_i_skip("test_pf_disco_trafo")
         self.net_ref.trafo["in_service"][0] = False
         self.model.deactivate_trafo(0)
         Vfinal = self._run_both_pf(self.net_ref)
@@ -291,52 +306,95 @@ class MakeACTests(unittest.TestCase):
         Vfinal = self.run_me_pf(V0)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_gen(self):
-        self.do_i_skip("test_acpf_changebus_gen")
+    def test_pf_changebus_gen(self):
+        self.do_i_skip("test_pf_changebus_gen")
         self.net_ref.gen["bus"][0] = 2
         self.model.change_bus_gen(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_load(self):
-        self.do_i_skip("test_acpf_changebus_load")
+    def test_pf_changebus_load(self):
+        self.do_i_skip("test_pf_changebus_load")
         self.net_ref.load["bus"][0] = 2
         self.model.change_bus_load(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_shunt(self):
-        self.do_i_skip("test_acpf_changebus_shunt")
+    def test_pf_changebus_shunt(self):
+        self.do_i_skip("test_pf_changebus_shunt")
         self.net_ref.shunt["bus"][0] = 2
         self.model.change_bus_shunt(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_lineor(self):
-        self.do_i_skip("test_acpf_changebus_lineor")
+    def test_pf_changebus_lineor(self):
+        self.do_i_skip("test_pf_changebus_lineor")
         self.net_ref.line["from_bus"][0] = 2
         self.model.change_bus_powerline_or(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_lineex(self):
-        self.do_i_skip("test_acpf_changebus_lineex")
+    def test_pf_changebus_lineex(self):
+        self.do_i_skip("test_pf_changebus_lineex")
         self.net_ref.line["to_bus"][0] = 2
         self.model.change_bus_powerline_ex(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_trafolv(self):
-        self.do_i_skip("test_acpf_changebus_trafolv")
+    def test_pf_changebus_trafolv(self):
+        self.do_i_skip("test_pf_changebus_trafolv")
         self.net_ref.trafo["lv_bus"][0] = 5  # was 4 initially, and 4 is connected to 5
         self.model.change_bus_trafo_lv(0, 5)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
-    def test_acpf_changebus_trafohv(self):
-        self.do_i_skip("test_acpf_changebus_trafohv")
+    def test_pf_changebus_trafohv(self):
+        self.do_i_skip("test_pf_changebus_trafohv")
         self.net_ref.trafo["hv_bus"][0] = 29  # was 7 initially, and 7 is connected to 29
         self.model.change_bus_trafo_hv(0, 29)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+
+    def test_pf_changeloadp(self):
+        self.do_i_skip("test_pf_changeloadp")
+        self.net_ref.load["p_mw"][0] = 50
+        self.model.change_p_load(0, 50)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+
+    def test_pf_changeloadq(self):
+        self.do_i_skip("test_pf_changeloadq")
+        self.net_ref.load["q_mvar"][0] = 50
+        self.model.change_q_load(0, 50)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+
+    def test_pf_changeprodp(self):
+        self.do_i_skip("test_pf_changeprodp")
+        self.net_ref.gen["p_mw"][0] = 50
+        self.model.change_p_gen(0, 50)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+
+    def test_pf_changeprodv(self):
+        self.do_i_skip("test_pf_changeprodv")
+        self.net_ref.gen["vm_pu"][0] = 1.06
+        self.model.change_v_gen(0, 1.06)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+
+    def test_pf_changeshuntp(self):
+        self.skipTest("not usefull but not working at the moment")
+        self.do_i_skip("test_pf_changeshuntp")
+        self.net_ref.shunt["p_mw"][0] = 10
+        self.model.change_p_shunt(0, 10)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+
+    def test_pf_changeshuntq(self):
+        self.do_i_skip("test_pf_changeshuntq")
+        self.net_ref.shunt["q_mvar"][0] = 10
+        self.model.change_q_shunt(0, 10)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 

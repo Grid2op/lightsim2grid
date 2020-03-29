@@ -109,20 +109,26 @@ class GridModel : public DataGeneric
         void change_bus_trafo_hv(int trafo_id, int new_bus_id);
         void change_bus_trafo_lv(int trafo_id, int new_bus_id);
 
-        //deactivate load
+        //load
         void deactivate_load(int load_id);
         void reactivate_load(int load_id);
         void change_bus_load(int load_id, int new_bus_id);
+        void change_p_load(int load_id, double new_p);
+        void change_q_load(int load_id, double new_q);
 
-        //deactivate generator
+        //generator
         void deactivate_gen(int gen_id);
         void reactivate_gen(int gen_id);
         void change_bus_gen(int gen_id, int new_bus_id);
+        void change_p_gen(int gen_id, double new_p);
+        void change_v_gen(int gen_id, double new_v_pu);
 
-        //deactivate generator
+        //shunt
         void deactivate_shunt(int shunt_id);
         void reactivate_shunt(int shunt_id);
         void change_bus_shunt(int shunt_id, int new_bus_id);
+        void change_p_shunt(int shunt_id, double new_p);
+        void change_q_shunt(int shunt_id, double new_q);
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}

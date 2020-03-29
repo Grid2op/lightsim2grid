@@ -46,3 +46,17 @@ void DataLoad::reset_results(){
     res_q_ =  Eigen::VectorXd();  // in MVar
     res_v_ = Eigen::VectorXd();  // in kV
 }
+
+void DataLoad::change_p(int load_id, double new_p, bool & need_reset)
+{
+    bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
+    if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected load");
+    p_mw_(load_id) = new_p;
+}
+
+void DataLoad::change_q(int load_id, double new_q, bool & need_reset)
+{
+    bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
+    if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected load");
+    q_mvar_(load_id) = new_q;
+}

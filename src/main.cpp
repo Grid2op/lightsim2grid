@@ -69,14 +69,20 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("deactivate_load", &GridModel::deactivate_load)
         .def("reactivate_load", &GridModel::reactivate_load)
         .def("change_bus_load", &GridModel::change_bus_load)
+        .def("change_p_load", &GridModel::change_p_load)
+        .def("change_q_load", &GridModel::change_q_load)
 
         .def("deactivate_gen", &GridModel::deactivate_gen)
         .def("reactivate_gen", &GridModel::reactivate_gen)
         .def("change_bus_gen", &GridModel::change_bus_gen)
+        .def("change_p_gen", &GridModel::change_p_gen)
+        .def("change_v_gen", &GridModel::change_v_gen)
 
         .def("deactivate_shunt", &GridModel::deactivate_shunt)
         .def("reactivate_shunt", &GridModel::reactivate_shunt)
         .def("change_bus_shunt", &GridModel::change_bus_shunt)
+        .def("change_p_shunt", &GridModel::change_p_shunt)
+        .def("change_q_shunt", &GridModel::change_q_shunt)
 
         // get back the results
         .def("get_Va", &GridModel::get_Va)

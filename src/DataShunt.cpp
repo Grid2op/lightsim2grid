@@ -62,3 +62,20 @@ void DataShunt::reset_results(){
     res_q_ = Eigen::VectorXd();  // in MVar
     res_v_ = Eigen::VectorXd();  // in kV
 }
+
+void DataShunt::change_p(int shunt_id, double new_p, bool & need_reset)
+{
+    bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
+    if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected shunt");
+    if(p_mw_(shunt_id) != new_p) need_reset = true;
+    p_mw_(shunt_id) = new_p;
+
+}
+
+void DataShunt::change_q(int shunt_id, double new_q, bool & need_reset)
+{
+    bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
+    if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
+    if(q_mvar_(shunt_id) != new_q) need_reset = true;
+    q_mvar_(shunt_id) = new_q;
+}
