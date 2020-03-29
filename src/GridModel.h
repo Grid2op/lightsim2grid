@@ -21,6 +21,7 @@
 #include "DataGeneric.h"
 #include "DataLine.h"
 #include "DataShunt.h"
+#include "DataTrafo.h"
 
 
 // import klu solver
@@ -112,8 +113,8 @@ class GridModel : public DataGeneric
         tuple3d get_gen_res() const {return tuple3d(res_gen_p_, res_gen_q_, res_gen_v_);}
         tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
         tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
-        tuple4d get_trafohv_res() const {return tuple4d(res_trafo_por_, res_trafo_qor_, res_trafo_vor_, res_trafo_aor_);}
-        tuple4d get_trafolv_res() const {return tuple4d(res_trafo_pex_, res_trafo_qex_, res_trafo_vex_, res_trafo_aex_);}
+        tuple4d get_trafohv_res() const {return trafos_.get_res_hv();}
+        tuple4d get_trafolv_res() const {return trafos_.get_res_lv();}
 
 
 
@@ -195,13 +196,7 @@ class GridModel : public DataGeneric
         // 4. transformers
         // have the r, x, h and ratio
         // ratio is computed from the tap, so maybe store tap num and tap_step_pct
-        Eigen::VectorXd transformers_r_;
-        Eigen::VectorXd transformers_x_;
-        Eigen::VectorXcd transformers_h_;
-        Eigen::VectorXd transformers_ratio_;
-        Eigen::VectorXi transformers_bus_hv_id_;
-        Eigen::VectorXi transformers_bus_lv_id_;
-        std::vector<bool> transformers_status_;
+        DataTrafo trafos_;
 
         // 5. generators
         Eigen::VectorXd generators_p_;
@@ -239,15 +234,6 @@ class GridModel : public DataGeneric
         Eigen::VectorXd res_gen_q_;  // in MVar
         Eigen::VectorXd res_gen_v_;  // in kV
 
-        Eigen::VectorXd res_trafo_por_;  // in MW
-        Eigen::VectorXd res_trafo_qor_;  // in MVar
-        Eigen::VectorXd res_trafo_vor_;  // in kV
-        Eigen::VectorXd res_trafo_aor_;  // in kA
-        Eigen::VectorXd res_trafo_pex_;  // in MW
-        Eigen::VectorXd res_trafo_qex_;  // in MVar
-        Eigen::VectorXd res_trafo_vex_;  // in kV
-        Eigen::VectorXd res_trafo_aex_;  // in kA
-
     protected:
 
         // void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
@@ -256,7 +242,7 @@ class GridModel : public DataGeneric
 
         /**
         This method will compute the results for both the powerlines and the trafos
-        **/
+
         void res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
                             const Eigen::Ref<Eigen::VectorXd> & Vm,
                             const Eigen::Ref<Eigen::VectorXcd> & V,
@@ -277,16 +263,18 @@ class GridModel : public DataGeneric
                             Eigen::VectorXd & vex,  // in kV
                             Eigen::VectorXd & aex  // in kA
                             );
+        **/
 
         /**
         This method will compute the results for the shunt and the loads FOR THE VOLTAGE ONLY
-        **/
+
         void res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
                        const Eigen::Ref<Eigen::VectorXd> & Vm,
                        const std::vector<bool> & status,
                        int nb_element,
                        const Eigen::VectorXi & bus_id,
                        Eigen::VectorXd & v);
+                       **/
 
 };
 
