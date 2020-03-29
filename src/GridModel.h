@@ -38,13 +38,18 @@ class GridModel : public DataGeneric
 
         void init_powerlines(const Eigen::VectorXd & branch_r,
                              const Eigen::VectorXd & branch_x,
-                             const Eigen::VectorXcd & branch_c,
+                             const Eigen::VectorXcd & branch_h,
                              const Eigen::VectorXi & branch_from_id,
                              const Eigen::VectorXi & branch_to_id
-                             );
+                             ){
+            powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
+        }
+
         void init_shunt(const Eigen::VectorXd & shunt_p_mw,
                         const Eigen::VectorXd & shunt_q_mvar,
-                        const Eigen::VectorXi & shunt_bus_id);
+                        const Eigen::VectorXi & shunt_bus_id){
+            shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
+        }
         void init_trafo(const Eigen::VectorXd & trafo_r,
                         const Eigen::VectorXd & trafo_x,
                         const Eigen::VectorXcd & trafo_b,
@@ -54,7 +59,10 @@ class GridModel : public DataGeneric
                         const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & trafo_hv_id,
                         const Eigen::VectorXi & trafo_lv_id
-                        );
+                        ){
+            trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+        }
+
         void init_generators(const Eigen::VectorXd & generators_p,
                              const Eigen::VectorXd & generators_v,
                              const Eigen::VectorXi & generators_bus_id);
@@ -151,6 +159,8 @@ class GridModel : public DataGeneric
         // ac powerflows
         void init_Ybus();
         void fillYbus();
+        void fillSbus();
+        void fillpv_pq();
 
         // results
         /**
@@ -233,48 +243,6 @@ class GridModel : public DataGeneric
         Eigen::VectorXd res_gen_p_;  // in MW
         Eigen::VectorXd res_gen_q_;  // in MVar
         Eigen::VectorXd res_gen_v_;  // in kV
-
-    protected:
-
-        // void fillYbusBranch(Eigen::SparseMatrix<cdouble> & res, bool ac);
-        // void fillYbusShunt(Eigen::SparseMatrix<cdouble> & res, bool ac);
-        void fillYbusTrafo(Eigen::SparseMatrix<cdouble> & res, bool ac);
-
-        /**
-        This method will compute the results for both the powerlines and the trafos
-
-        void res_powerlines(const Eigen::Ref<Eigen::VectorXd> & Va,
-                            const Eigen::Ref<Eigen::VectorXd> & Vm,
-                            const Eigen::Ref<Eigen::VectorXcd> & V,
-                            const std::vector<bool> & status,
-                            int nb_element,
-                            const Eigen::VectorXd & el_r,
-                            const Eigen::VectorXd & el_x,
-                            const Eigen::VectorXcd & el_h,
-                            const Eigen::VectorXd & el_ratio,
-                            const Eigen::VectorXi & bus_or_id_,
-                            const Eigen::VectorXi & bus_ex_id_,
-                            Eigen::VectorXd & por,  // in MW
-                            Eigen::VectorXd & qor,  // in MVar
-                            Eigen::VectorXd & vor,  // in kV
-                            Eigen::VectorXd & aor,  // in kA
-                            Eigen::VectorXd & pex,  // in MW
-                            Eigen::VectorXd & qex,  // in MVar
-                            Eigen::VectorXd & vex,  // in kV
-                            Eigen::VectorXd & aex  // in kA
-                            );
-        **/
-
-        /**
-        This method will compute the results for the shunt and the loads FOR THE VOLTAGE ONLY
-
-        void res_loads(const Eigen::Ref<Eigen::VectorXd> & Va,
-                       const Eigen::Ref<Eigen::VectorXd> & Vm,
-                       const std::vector<bool> & status,
-                       int nb_element,
-                       const Eigen::VectorXi & bus_id,
-                       Eigen::VectorXd & v);
-                       **/
 
 };
 
