@@ -93,42 +93,42 @@ class GridModel : public DataGeneric
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         //still connected to it, it will throw an exception
-        void deactivate_bus(int bus_id);
+        void deactivate_bus(int bus_id) {_deactivate(bus_id, bus_status_, need_reset_); }
         // if a bus is connected, but isolated, it will make the powerflow diverge
-        void reactivate_bus(int bus_id);
+        void reactivate_bus(int bus_id) {_reactivate(bus_id, bus_status_, need_reset_); }
 
         //deactivate a powerline (disconnect it)
-        void deactivate_powerline(int powerline_id);
-        void reactivate_powerline(int powerline_id);
-        void change_bus_powerline_or(int powerline_id, int new_bus_id);
-        void change_bus_powerline_ex(int powerline_id, int new_bus_id);
+        void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, need_reset_); }
+        void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, need_reset_); }
+        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
 
         //deactivate trafo
-        void deactivate_trafo(int trafo_id);
-        void reactivate_trafo(int trafo_id);
-        void change_bus_trafo_hv(int trafo_id, int new_bus_id);
-        void change_bus_trafo_lv(int trafo_id, int new_bus_id);
+        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, need_reset_); }
+        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, need_reset_); }
+        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
 
         //load
-        void deactivate_load(int load_id);
-        void reactivate_load(int load_id);
-        void change_bus_load(int load_id, int new_bus_id);
-        void change_p_load(int load_id, double new_p);
-        void change_q_load(int load_id, double new_q);
+        void deactivate_load(int load_id) {loads_.deactivate(load_id, need_reset_); }
+        void reactivate_load(int load_id) {loads_.reactivate(load_id, need_reset_); }
+        void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_p_load(int load_id, double new_p) {loads_.change_p(load_id, new_p, need_reset_); }
+        void change_q_load(int load_id, double new_q) {loads_.change_q(load_id, new_q, need_reset_); }
 
         //generator
-        void deactivate_gen(int gen_id);
-        void reactivate_gen(int gen_id);
-        void change_bus_gen(int gen_id, int new_bus_id);
-        void change_p_gen(int gen_id, double new_p);
-        void change_v_gen(int gen_id, double new_v_pu);
+        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, need_reset_); }
+        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, need_reset_); }
+        void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_p_gen(int gen_id, double new_p) {generators_.change_p(gen_id, new_p, need_reset_); }
+        void change_v_gen(int gen_id, double new_v_pu) {generators_.change_v(gen_id, new_v_pu, need_reset_); }
 
         //shunt
-        void deactivate_shunt(int shunt_id);
-        void reactivate_shunt(int shunt_id);
-        void change_bus_shunt(int shunt_id, int new_bus_id);
-        void change_p_shunt(int shunt_id, double new_p);
-        void change_q_shunt(int shunt_id, double new_q);
+        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, need_reset_); }
+        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, need_reset_); }
+        void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, need_reset_, bus_vn_kv_.size());  }
+        void change_p_shunt(int shunt_id, double new_p) {shunts_.change_p(shunt_id, new_p, need_reset_); }
+        void change_q_shunt(int shunt_id, double new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
