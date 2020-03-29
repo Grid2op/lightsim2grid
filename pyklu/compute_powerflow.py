@@ -40,8 +40,6 @@ ColID2Names = {key: {col: i for i, col in enumerate(val)} for key, val in ID2Col
 # TODO just i want to test
 
 
-
-
 class KLU4Pandapower():
     def __init__(self):
         self.solver = KLUSolver()

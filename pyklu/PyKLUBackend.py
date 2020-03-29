@@ -2,12 +2,16 @@ import warnings
 import os
 import sys
 import copy
-import pandas as pd
 import numpy as np
+
+import pdb
 try:
-    from grid2op.Backend import Backend, PandaPowerBackend
+    # TODO will be deprecated in future version
+    from grid2op.Backend import Backend
+    from grid2op.BackendPandaPower import PandaPowerBackend
     grid2op_installed = True
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError) as e:
+    print("Error {}".format(e))
     grid2op_installed = False
 
 
@@ -16,14 +20,6 @@ except (ImportError, ModuleNotFoundError):
             pass
 
 from pyklu.initGridModel import init
-import pandapower as pp
-try:
-    import numba
-    numba_ = True
-except (ImportError, ModuleNotFoundError):
-    numba_ = False
-    warnings.warn("Numba cannot be loaded. You will gain possibly massive speed if installing it by "
-                  "\n\t{} -m pip install numba\n".format(sys.executable))
 
 
 class PyKLUBackend(Backend):
@@ -105,6 +101,7 @@ class PyKLUBackend(Backend):
         self.name_sub = self.init_pp_backend.name_sub
         self._compute_pos_big_topo()
 
+        pdb.set_trace()
         # deactive the buses that have been added
         nb_bus_init = self.init_pp_backend._grid.bus.shape[0] // 2
         for i in range(nb_bus_init):
