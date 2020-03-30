@@ -71,6 +71,8 @@ class PyKLUBackend(Backend):
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
 
+        self.nb_bus_total = None
+
     def load_grid(self, path=None, filename=None):
         self.init_pp_backend.load_grid(path, filename)
         self._grid = init(self.init_pp_backend._grid)
@@ -100,8 +102,8 @@ class PyKLUBackend(Backend):
         self.name_line = self.init_pp_backend.name_line
         self.name_sub = self.init_pp_backend.name_sub
         self._compute_pos_big_topo()
+        self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
-        pdb.set_trace()
         # deactive the buses that have been added
         nb_bus_init = self.init_pp_backend._grid.bus.shape[0] // 2
         for i in range(nb_bus_init):
@@ -130,11 +132,13 @@ class PyKLUBackend(Backend):
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
                     self._grid.change_p_gen(i, val)
+
         if "prod_v" in dict_injection:
             tmp = dict_injection["prod_v"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
-                    self._grid.change_v_gen(i, val * self.prod_pu_to_kv[i])
+                    pass
+                    # self._grid.change_v_gen(i, val * self.prod_pu_to_kv[i])
 
         # TODO for the rest !!!
 
@@ -144,18 +148,19 @@ class PyKLUBackend(Backend):
         try:
             if is_dc:
                 if self.V is None:
-                    self.V = np.ones(self._grid.nb_bus(), dtype=np.complex_)
+                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
                 self.V = self._grid.dc_pf(self.V, self.max_it, self.tol)
                 raise NotImplementedError("DC is not implemented at the moment")
             else:
                 if self.V is None:
                     # init from dc approx in this case
-                    self.V = np.ones(self._grid.nb_bus(), dtype=np.complex_)
+                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
                     self.V = self._grid.dc_pf(self.V, self.max_it, self.tol)
-                self.V = self._grid.ac_pf(self.V, self.max_it, self.tol)
-                if self.V.shape[0] == 0:
+                pdb.set_trace()
+                V = self._grid.ac_pf(self.V, self.max_it, self.tol)
+                if V.shape[0] == 0:
                     raise RuntimeError("divergence of powerflow")
-
+                self.V = V
                 lpor, lqor, lvor, laor = self._grid.get_lineor_res()
                 lpex, lqex, lvex, laex = self._grid.get_lineex_res()
                 tpor, tqor, tvor, taor = self._grid.get_trafohv_res()

@@ -9,7 +9,7 @@ import pandapower as pp
 
 
 # TODO test if i try to change status of a line that does not exist, it does not make everything crash
-class MakeACTests(unittest.TestCase):
+class BaseTests:
     def setUp(self):
         self.net_ref = pn.case118()
         self.net_datamodel = pn.case118()
@@ -407,7 +407,7 @@ class MakeACTests(unittest.TestCase):
         self.check_res(Vfinal, self.net_ref)
 
 
-class MakeDCTests(MakeACTests):
+class MakeDCTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):
         return self.model.dc_pf(V0, self.max_it, self.tol)
 
@@ -430,6 +430,29 @@ class MakeDCTests(MakeACTests):
         self.assert_equal(np.angle(Vfinal), va_deg[tmp_bus_ind] / 180. * np.pi)
         # self.assert_equal(np.abs(Vfinal), vm_pu[tmp_bus_ind])
 
+
+class MakeACTests(BaseTests, unittest.TestCase):
+    def run_me_pf(self, V0):
+        return self.model.ac_pf(V0, self.max_it, self.tol)
+
+    def run_ref_pf(self, net):
+        pp.runpp(net, init="flat")
+
+    def do_i_skip(self, test_nm):
+        pass
+        # if test_nm == "test_pf":
+        #    pass
+        #else:
+        #    self.skipTest("dev")
+
+    def check_res(self, Vfinal, net):
+        assert Vfinal.shape[0] > 0, "powerflow diverged !"
+        tmp_bus_ind = np.argsort(net.bus.index)
+        va_deg = net.res_bus["va_degree"].values
+        # vm_pu = net.res_bus["vm_pu"].values
+        # pdb.set_trace()
+        self.assert_equal(np.angle(Vfinal), va_deg[tmp_bus_ind] / 180. * np.pi)
+        # self.assert_equal(np.abs(Vfinal), vm_pu[tmp_bus_ind])
 
 if __name__ == "__main__":
     unittest.main()
