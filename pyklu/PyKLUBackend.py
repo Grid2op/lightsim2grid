@@ -72,6 +72,7 @@ class PyKLUBackend(Backend):
         self.tol = 1e-8  # tolerance for the solver
 
         self.nb_bus_total = None
+        self.initdc = False
 
     def load_grid(self, path=None, filename=None):
         self.init_pp_backend.load_grid(path, filename)
@@ -104,6 +105,8 @@ class PyKLUBackend(Backend):
         self._compute_pos_big_topo()
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
+        self.thermal_limit_a = self.init_pp_backend.thermal_limit_a
+
         # deactive the buses that have been added
         nb_bus_init = self.init_pp_backend._grid.bus.shape[0] // 2
         for i in range(nb_bus_init):
@@ -121,16 +124,19 @@ class PyKLUBackend(Backend):
             tmp = dict_injection["load_p"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
+                    pass
                     self._grid.change_p_load(i, val)
         if "load_q" in dict_injection:
             tmp = dict_injection["load_q"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
+                    pass
                     self._grid.change_q_load(i, val)
         if "prod_p" in dict_injection:
             tmp = dict_injection["prod_p"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
+                    pass
                     self._grid.change_p_gen(i, val)
 
         if "prod_v" in dict_injection:
@@ -138,7 +144,7 @@ class PyKLUBackend(Backend):
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
                     pass
-                    # self._grid.change_v_gen(i, val * self.prod_pu_to_kv[i])
+                    self._grid.change_v_gen(i, val / self.prod_pu_to_kv[i])
 
         # TODO for the rest !!!
 
@@ -154,13 +160,13 @@ class PyKLUBackend(Backend):
             else:
                 if self.V is None:
                     # init from dc approx in this case
-                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
+                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * 1.04
+                if self.initdc:
                     self.V = self._grid.dc_pf(self.V, self.max_it, self.tol)
-                pdb.set_trace()
                 V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     raise RuntimeError("divergence of powerflow")
-                self.V = V
+                # self.V = V
                 lpor, lqor, lvor, laor = self._grid.get_lineor_res()
                 lpex, lqex, lvex, laex = self._grid.get_lineex_res()
                 tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
@@ -170,13 +176,17 @@ class PyKLUBackend(Backend):
                 self.q_or = np.concatenate((lqor, tqor))
                 self.v_or = np.concatenate((lvor, tvor))
                 self.a_or = np.concatenate((laor, taor))
+                self.a_or *= 1000
                 self.p_ex = np.concatenate((lpex, tpex))
                 self.q_ex = np.concatenate((lqex, tqex))
                 self.v_ex = np.concatenate((lvex, tvex))
                 self.a_ex = np.concatenate((laex, taex))
+                self.a_ex *= 1000
 
                 self.load_p, self.load_q, self.load_v = self._grid.get_loads_res()
                 self.prod_p, self.prod_q, self.prod_v = self._grid.get_gen_res()
+                # TODO ! below !!!
+                self.prod_q = 1.0 * self.prod_p
 
         except Exception as e:
             # of the powerflow has not converged, results are Nan
@@ -208,7 +218,7 @@ class PyKLUBackend(Backend):
 
     def get_line_status(self):
         l_s = self._grid.get_lines_status()
-        t_s = self._grid.get_lines_status()
+        t_s = self._grid.get_trafo_status()
         return np.concatenate((l_s, t_s))
 
     def get_line_flow(self):

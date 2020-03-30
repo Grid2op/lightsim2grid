@@ -29,7 +29,10 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+
     V_ = V;
+    Vm_ = V_.array().abs();  // update Vm and Va again in case
+    Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
     // first check, if the problem is already solved, i stop there
     Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
@@ -59,10 +62,11 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
         }
         auto dx = -1.0*F;
 
-        // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
+
         Vm_ = V_.array().abs();  // update Vm and Va again in case
         Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
+        // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
         if (n_pv > 0) Va_(pv) += dx.segment(0,n_pv);
         if (n_pq > 0){
             Va_(pq) += dx.segment(n_pv,n_pq);
@@ -88,6 +92,9 @@ void KLUSolver::reset(){
     klu_free_numeric(&numeric_, &common_);
     n_ = -1;
     common_ = klu_common();
+
+    symbolic_ = nullptr;
+    numeric_ = nullptr;
 
     Vm_ = Eigen::VectorXd();  // voltage magnitude
     Va_= Eigen::VectorXd();  // voltage angle

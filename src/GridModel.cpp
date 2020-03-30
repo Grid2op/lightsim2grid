@@ -14,6 +14,18 @@ void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
 }
 
+void GridModel::reset()
+{
+    Ybus_ = Eigen::SparseMatrix<cdouble>();
+    Sbus_ = Eigen::VectorXcd();
+    id_me_to_solver_ = std::vector<int>();
+    id_solver_to_me_ = std::vector<int>();
+    slack_bus_id_solver_ = -1;
+    bus_pv_ = Eigen::VectorXi();
+    bus_pq_ = Eigen::VectorXi();
+    need_reset_ = true;
+
+}
 Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
                                   int max_iter,
                                   double tol)
@@ -22,19 +34,20 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
     if(Vinit.size() != nb_bus){
         throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). Components of Vinit corresponding to deactivated bys will be ignored anyway.");
     }
-    // TODO optimization when it's not mandatory to start from scratch
+
     bool conv = false;
     Eigen::VectorXcd res = Eigen::VectorXcd();
-    if(need_reset_){
-        init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
-        fillYbus(Ybus_, true, id_me_to_solver_);
-        fillpv_pq(id_me_to_solver_);
-        _solver.reset();
-    }
+    Eigen::VectorXcd res_tmp = Eigen::VectorXcd();
 
+    // if(need_reset_){ // TODO optimization when it's not mandatory to start from scratch
+    reset();
+    init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
+    fillYbus(Ybus_, true, id_me_to_solver_);
+    fillpv_pq(id_me_to_solver_);
+    _solver.reset();
+    // }
     fillSbus(Sbus_, true, id_me_to_solver_, slack_bus_id_solver_);
 
-    // extract only connected bus from Vinit
     int nb_bus_solver = id_solver_to_me_.size();
     Eigen::VectorXcd V = Eigen::VectorXcd::Constant(id_solver_to_me_.size(), 1.04);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
@@ -43,12 +56,25 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
         V(bus_solver_id) = tmp;
         // TODO save this V somewhere
     }
+
     generators_.set_vm(V, id_me_to_solver_);
     conv = _solver.do_newton(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
     if (conv){
+        // timer = CustTimer();
         compute_results();
         need_reset_ = false;
-        res = _solver.get_V();
+        res_tmp = _solver.get_V();
+        // convert back the results to "big" vector
+        res = Eigen::VectorXcd::Constant(Vinit.size(), 0.);
+        for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
+            if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+            int bus_id_solver = id_me_to_solver_[bus_id_me];
+            if(bus_id_solver == _deactivated_bus_id){
+                //TODO improve error message with the gen_id
+                throw std::runtime_error("One bus is connected in GridModel and disconnected in Solver");
+            }
+            res(bus_id_me) = res_tmp(bus_id_solver);
+        }
     } else {
         //powerflow diverge
         reset_results();
@@ -75,16 +101,10 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus, Eigen::VectorXcd 
             ++bus_id_solver;
         }
     }
-    int nb_bus = id_me_to_solver.size();
+    int nb_bus = id_solver_to_me.size();
 
     Ybus = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
     Ybus.reserve(nb_bus + 2*powerlines_.nb() + 2*trafos_.nb());
-
-    // init diagonal coefficients
-    for(int bus_id=0; bus_id < nb_bus; ++bus_id){
-        // assign diagonal coefficient
-        Ybus.insert(bus_id, bus_id) = 0.;
-    }
 
     Sbus = Eigen::VectorXcd::Constant(nb_bus, 0.);
     slack_bus_id_solver = id_me_to_solver[slack_bus_id_];
@@ -99,12 +119,17 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std:
     Supposes that the powerlines, shunt and transformers are initialized.
     And it fills the Ybus matrix.
     **/
+
     // init the Ybus matrix
-    powerlines_.fillYbus(res, ac, id_me_to_solver);
-    shunts_.fillYbus(res, ac, id_me_to_solver);
-    trafos_.fillYbus(res, ac, id_me_to_solver);
-    loads_.fillYbus(res, ac, id_me_to_solver);
-    generators_.fillYbus(res, ac, id_me_to_solver);
+    std::vector<Eigen::Triplet<cdouble> > tripletList;
+    tripletList.reserve(bus_vn_kv_.size() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
+    powerlines_.fillYbus(tripletList, ac, id_me_to_solver);
+    shunts_.fillYbus(tripletList, ac, id_me_to_solver);
+    trafos_.fillYbus(tripletList, ac, id_me_to_solver);
+    loads_.fillYbus(tripletList, ac, id_me_to_solver);
+    generators_.fillYbus(tripletList, ac, id_me_to_solver);
+    res.setFromTriplets(tripletList.begin(), tripletList.end());
+    res.makeCompressed();
 }
 
 void GridModel::fillSbus(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
@@ -130,6 +155,8 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
     std::vector<int> bus_pv;
     std::vector<bool> has_bus_been_added(nb_bus, false);
 
+    bus_pv_ = Eigen::VectorXi();
+    bus_pq_ = Eigen::VectorXi();
     powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
@@ -152,23 +179,14 @@ void GridModel::compute_results(){
     const auto & Va = _solver.get_Va();
     const auto & Vm = _solver.get_Vm();
     const auto & V = _solver.get_V();
-
     // for powerlines
     powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
-
     // for trafo
     trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
-
-
-    //TODO model disconnected stuff here!
     // for loads
     loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
-
     // for shunts
     shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
-
-
-    //TODO model disconnected stuff here!
     // for prods
     generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     //TODO for res_gen_q_ !!!
@@ -201,21 +219,14 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     //if(need_reset_){
     init_Ybus(dcYbus_tmp, Sbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     fillYbus(dcYbus_tmp, false, id_me_to_solver);
-    fillpv_pq(id_me_to_solver);
+    // fillpv_pq(id_me_to_solver);
     //}
     fillSbus(Sbus_tmp, false, id_me_to_solver, slack_bus_id_solver);
 
 
     // extract only connected bus from Vinit
     int nb_bus_solver = id_solver_to_me.size();
-    /**
-    Eigen::VectorXcd V = Eigen::VectorXcd::Constant(nb_bus_solver, 1.04);
-    for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
-        int bus_me_id = id_solver_to_me_[bus_solver_id];  //POSSIBLE SEGFAULT
-        cdouble tmp = Vinit(bus_me_id);
-        V(bus_solver_id) = tmp;
-    }
-    **/
+
     // DC SOLVER STARTS HERE
     // remove the slack bus
     // TODO this should rather be one in a "dc solver" instead of here
@@ -226,6 +237,7 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     dcYbus_tmp.makeCompressed();
     Eigen::SparseMatrix<double> dcYbus = Eigen::SparseMatrix<double>(nb_bus_solver - 1, nb_bus_solver - 1);
     std::vector<Eigen::Triplet<double> > tripletList;
+    tripletList.reserve(dcYbus_tmp.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
         for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dcYbus_tmp, k); it; ++it)
@@ -240,7 +252,6 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     }
     dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
     dcYbus.makeCompressed();
-
 
     // remove the slack bus from Sbus
     Eigen::VectorXd Sbus = Eigen::VectorXd(nb_bus_solver - 1);

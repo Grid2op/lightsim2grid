@@ -77,8 +77,65 @@ void DataTrafo::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std:
         if(!ac){
             r = 1.0; // in dc, r = 1.0 here (same voltage both side)
         }
-        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += (tmp + h) / r ;
-        res.coeffRef(bus_lv_solver_id, bus_lv_solver_id) += (tmp + h) * r;
+        tmp += h;
+        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += tmp / r ;
+        res.coeffRef(bus_lv_solver_id, bus_lv_solver_id) += tmp * r;
+    }
+}
+
+void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver)
+{
+    //TODO merge that with fillYbusBranch!
+    //TODO template here instead of "if"
+    int nb_trafo = nb();
+    cdouble my_i = 1.0i;
+    for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
+        // i don't do anything if the trafo is disconnected
+        if(!status_[trafo_id]) continue;
+
+        // compute from / to
+        int bus_hv_id_me = bus_hv_id_(trafo_id);
+        int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
+        if(bus_hv_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (hv) to a disconnected bus.");
+        }
+        int bus_lv_id_me = bus_lv_id_(trafo_id);
+        int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
+        if(bus_lv_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (lv) to a disconnected bus.");
+        }
+
+        // get the transformers ratio
+        double r = ratio_(trafo_id);
+
+        // subsecptance
+        cdouble h = 0.;
+        if(ac){
+            h = h_(trafo_id);
+            h = my_i * 0.5 * h;
+        }
+
+        // admittance
+        cdouble y = 0.;
+        cdouble z = x_(trafo_id);
+        if(ac){
+            z *= my_i;
+            z += r_(trafo_id);
+        }
+        if(z != 0.) y = 1.0 / z;
+
+        // fill non diagonal coefficient
+        cdouble tmp = y / r;
+        res.push_back(Eigen::Triplet<cdouble> (bus_hv_solver_id, bus_lv_solver_id, -tmp));
+        res.push_back(Eigen::Triplet<cdouble> (bus_lv_solver_id, bus_hv_solver_id, -tmp));
+
+        // fill diagonal coefficient
+        if(!ac){
+            r = 1.0; // in dc, r = 1.0 here (same voltage both side)
+        }
+        tmp += h;
+        res.push_back(Eigen::Triplet<cdouble>(bus_hv_solver_id, bus_hv_solver_id, tmp / r));
+        res.push_back(Eigen::Triplet<cdouble>(bus_lv_solver_id, bus_lv_solver_id, tmp * r));
     }
 }
 

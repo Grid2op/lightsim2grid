@@ -194,6 +194,11 @@ class GridModel : public DataGeneric
         **/
         void reset_results();
 
+        /**
+        reset the solver, and all its results
+        **/
+        void reset();
+
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;

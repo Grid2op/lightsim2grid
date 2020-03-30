@@ -27,6 +27,56 @@ void DataLine::init(const Eigen::VectorXd & branch_r,
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
 }
 
+void DataLine::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver)
+{
+    // fill the matrix
+    //TODO template here instead of "if" for ac / dc
+    int nb_line = powerlines_r_.size();
+    cdouble my_i = 1.0i;
+
+    //diagonal coefficients
+    for(int line_id =0; line_id < nb_line; ++line_id){
+        // i only add this if the powerline is connected
+        if(!status_[line_id]) continue;
+
+        // get the from / to bus id
+        // compute from / to
+        int bus_or_id_me = bus_or_id_(line_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
+        }
+        int bus_ex_id_me = bus_ex_id_(line_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
+        }
+
+        // convert subsceptance to half subsceptance, applied on each ends
+        cdouble h = 0.;
+        if(ac){
+            h = powerlines_h_(line_id); // yes it's the correct one
+            h = my_i * 0.5 * h;
+        }
+
+        // compute the admittance y
+        cdouble y = 0.;
+        cdouble z = powerlines_x_(line_id);
+        if(ac){
+            z *= my_i;
+            z += powerlines_r_(line_id);
+        }
+        if (z !=0. ) y = 1.0 / z;
+
+        // fill non diagonal coefficient
+        res.push_back(Eigen::Triplet<cdouble> (bus_or_solver_id, bus_ex_solver_id, -y));
+        res.push_back(Eigen::Triplet<cdouble> (bus_ex_solver_id, bus_or_solver_id, -y));
+        // fill diagonal coefficient
+        cdouble tmp = y + h;
+        res.push_back(Eigen::Triplet<cdouble> (bus_or_solver_id, bus_or_solver_id, tmp));
+        res.push_back(Eigen::Triplet<cdouble> (bus_ex_solver_id, bus_ex_solver_id, tmp));
+    }
+}
 void DataLine::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     // fill the matrix
