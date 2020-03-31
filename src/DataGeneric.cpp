@@ -40,6 +40,17 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     bus_me_id = new_bus_me_id;
 }
 
+int DataGeneric::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_)
+{
+    int res;
+    bool val = status_.at(el_id);  // also check if the el_id is out of bound
+    if(!val) res = 0;
+    else{
+        res = bus_id_(el_id);
+    }
+    return res;
+}
+
 void DataGeneric::v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
                                 const Eigen::Ref<Eigen::VectorXd> & Vm,
                                 const std::vector<bool> & status,

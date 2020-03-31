@@ -24,6 +24,7 @@ class DataGen: public DataGeneric
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
     void change_p(int gen_id, double new_p, bool & need_reset);
     void change_v(int gen_id, double new_v_pu, bool & need_reset);
 

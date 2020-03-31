@@ -27,10 +27,12 @@ class DataTrafo : public DataGeneric
 
     int nb() { return r_.size(); }
 
-    void deactivate(int powerline_id, bool & need_reset) {_deactivate(powerline_id, status_, need_reset);}
-    void reactivate(int powerline_id, bool & need_reset) {_reactivate(powerline_id, status_, need_reset);}
-    void change_bus_hv(int powerline_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}
-    void change_bus_lv(int powerline_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_lv_id_, need_reset, nb_bus);}
+    void deactivate(int trafo_id, bool & need_reset) {_deactivate(trafo_id, status_, need_reset);}
+    void reactivate(int trafo_id, bool & need_reset) {_reactivate(trafo_id, status_, need_reset);}
+    void change_bus_hv(int trafo_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}
+    void change_bus_lv(int trafo_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_lv_id_, need_reset, nb_bus);}
+    int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
+    int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
 
     void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver);

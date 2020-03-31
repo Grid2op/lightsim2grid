@@ -103,12 +103,16 @@ class GridModel : public DataGeneric
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, need_reset_); }
         void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
         void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
+        int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, need_reset_); }
         void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, need_reset_); }
         void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
         void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
+        int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, need_reset_); }
@@ -116,6 +120,7 @@ class GridModel : public DataGeneric
         void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
         void change_p_load(int load_id, double new_p) {loads_.change_p(load_id, new_p, need_reset_); }
         void change_q_load(int load_id, double new_q) {loads_.change_q(load_id, new_q, need_reset_); }
+        int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, need_reset_); }
@@ -123,6 +128,7 @@ class GridModel : public DataGeneric
         void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
         void change_p_gen(int gen_id, double new_p) {generators_.change_p(gen_id, new_p, need_reset_); }
         void change_v_gen(int gen_id, double new_v_pu) {generators_.change_v(gen_id, new_v_pu, need_reset_); }
+        int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
 
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, need_reset_); }
@@ -130,6 +136,7 @@ class GridModel : public DataGeneric
         void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, need_reset_, bus_vn_kv_.size());  }
         void change_p_shunt(int shunt_id, double new_p) {shunts_.change_p(shunt_id, new_p, need_reset_); }
         void change_q_shunt(int shunt_id, double new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
+        int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}

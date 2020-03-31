@@ -9,6 +9,7 @@ try:
     # TODO will be deprecated in future version
     from grid2op.Backend import Backend
     from grid2op.BackendPandaPower import PandaPowerBackend
+    from grid2op.Exceptions import InvalidLineStatus, BackendError
     grid2op_installed = True
 except (ImportError, ModuleNotFoundError) as e:
     print("Error {}".format(e))
@@ -50,10 +51,6 @@ class PyKLUBackend(Backend):
         self.prod_q = None
         self.prod_v = None
 
-        self._pf_init = "flat"
-        self._pf_init = "results"
-        self._nb_bus_before = 0
-
         self.thermal_limit_a = None
 
         self._iref_slack = None
@@ -73,6 +70,13 @@ class PyKLUBackend(Backend):
 
         self.nb_bus_total = None
         self.initdc = False
+        self.__nb_powerline = None
+        self.__nb_bus_before = None
+        self._init_bus_load = None
+        self._init_bus_gen = None
+        self._init_bus_lor = None
+        self._init_bus_lex = None
+        self._big_topo_to_obj = None
 
     def load_grid(self, path=None, filename=None):
         self.init_pp_backend.load_grid(path, filename)
@@ -112,14 +116,59 @@ class PyKLUBackend(Backend):
         for i in range(nb_bus_init):
             self._grid.deactivate_bus(i + nb_bus_init)
 
+        self.__nb_powerline = self.init_pp_backend._grid.line.shape[0]
+        self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()
+        self._init_bus_load = 1.0 * self.init_pp_backend._grid.load["bus"].values
+        self._init_bus_gen = 1.0 * self.init_pp_backend._grid.gen["bus"].values
+        self._init_bus_lor = 1.0 * self.init_pp_backend._grid.line["from_bus"].values
+        self._init_bus_lex = 1.0 * self.init_pp_backend._grid.line["to_bus"].values
+
+        t_for = 1.0 * self.init_pp_backend._grid.trafo["hv_bus"].values
+        t_fex = 1.0 * self.init_pp_backend._grid.trafo["lv_bus"].values
+        self._init_bus_lor = np.concatenate((self._init_bus_lor, t_for))
+        self._init_bus_lex = np.concatenate((self._init_bus_lor, t_fex))
+        self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
+
+        nm_ = "load"
+        for load_id, pos_big_topo  in enumerate(self.load_pos_topo_vect):
+            self._big_topo_to_obj[pos_big_topo] = (load_id, nm_)
+        nm_ = "gen"
+        for gen_id, pos_big_topo  in enumerate(self.gen_pos_topo_vect):
+            self._big_topo_to_obj[pos_big_topo] = (gen_id, nm_)
+        nm_ = "lineor"
+        for l_id, pos_big_topo in enumerate(self.line_or_pos_topo_vect):
+            self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
+        nm_ = "lineex"
+        for l_id, pos_big_topo  in enumerate(self.line_ex_pos_topo_vect):
+            self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
+
+        self.prod_p = self.init_pp_backend._grid.gen["p_mw"]
+
     def close(self):
         self.init_pp_backend.close()
         self._grid = None
+
+    def _convert_id_topo(self, id_big_topo):
+        """
+        convert an id of the big topo vector into:
+
+        - the id of the object in its "only object" (eg if id_big_topo represents load 2, then it will be 2)
+        - the type of object among: "load", "gen", "lineor" and "lineex"
+
+        """
+        return self._big_topo_to_obj[id_big_topo]
+
+    def _switch_bus_me(self, tmp):
+        """
+        return 1 if tmp is 2 else 2 if tmp is one
+        """
+        return 2 * (1 - tmp) + 2
 
     def apply_action(self, action):
         # change the _injection if needed
         dict_injection, set_status, switch_status, set_topo_vect, switcth_topo_vect, redispatching = action()
 
+        prod_p_set = self.prod_p
         if "load_p" in dict_injection:
             tmp = dict_injection["load_p"]
             for i, val in enumerate(tmp):
@@ -145,10 +194,126 @@ class PyKLUBackend(Backend):
                 if np.isfinite(val):
                     pass
                     self._grid.change_v_gen(i, val / self.prod_pu_to_kv[i])
+                    prod_p_set[i] = val
 
-        # TODO for the rest !!!
+        if np.any(redispatching != 0.):
+            for i, val in enumerate(redispatching):
+                if np.isfinite(val):
+                    if val != 0.:
+                        self._grid.change_p_gen(i, val + prod_p_set[i])
 
-        pass
+        # TODO for topology: refactor this is super hugly atm !!!
+        # topology
+        possiblechange = set_topo_vect != 0
+        if np.any(possiblechange) or np.any(switcth_topo_vect):
+            actual_topo_full = self.get_topo_vect()
+            # new topology vector
+            for id_el, do_i_switch in enumerate(switcth_topo_vect):
+                if do_i_switch:
+                    id_el_backend, type_obj = self._convert_id_topo(id_el)
+                    if type_obj == "load":
+                        new_bus_backend = self._klu_bus_from_grid2op_bus(self._switch_bus_me(actual_topo_full[id_el]),
+                                                                         self._init_bus_load[id_el_backend])
+                        self._grid.change_bus_load(id_el_backend, new_bus_backend)
+                    elif type_obj == "gen":
+                        new_bus_backend = self._klu_bus_from_grid2op_bus(self._switch_bus_me(actual_topo_full[id_el]),
+                                                                         self._init_bus_gen[id_el_backend])
+                        self._grid.change_bus_gen(id_el_backend, new_bus_backend)
+                    elif type_obj == "lineor":
+                        if id_el_backend < self.__nb_powerline:
+                            # it's a powerline
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(self._switch_bus_me(actual_topo_full[id_el]),
+                                                                             self._init_bus_lor[id_el_backend])
+                            self._grid.change_bus_powerline_or(id_el_backend, new_bus_backend)
+                        else:
+                            # it's a trafo
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(self._switch_bus_me(actual_topo_full[id_el]),
+                                                                             self._init_bus_lor[id_el_backend])
+                            self._grid.change_bus_trafo_hv(id_el_backend - self.__nb_powerline, new_bus_backend)
+                    elif type_obj == "lineex":
+                        if id_el_backend < self.__nb_powerline:
+                            # it's a powerline
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(self._switch_bus_me(actual_topo_full[id_el]),
+                                                                             self._init_bus_lex[id_el_backend])
+                            self._grid.change_bus_powerline_ex(id_el_backend, new_bus_backend)
+                        else:
+                            # it's a trafo
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(self._switch_bus_me(actual_topo_full[id_el]),
+                                                                             self._init_bus_lex[id_el_backend])
+                            self._grid.change_bus_trafo_lv(id_el_backend - self.__nb_powerline, new_bus_backend)
+
+            for id_el, new_bus in enumerate(set_topo_vect):
+                if new_bus != 0.:
+                    id_el_backend, type_obj = self._convert_id_topo(id_el)
+                    if type_obj == "load":
+                        new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus,
+                                                                         self._init_bus_load[id_el_backend])
+                        self._grid.change_bus_load(id_el_backend, new_bus_backend)
+                    elif type_obj == "gen":
+                        new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus,
+                                                                         self._init_bus_gen[id_el_backend])
+                        self._grid.change_bus_gen(id_el_backend, new_bus_backend)
+                    elif type_obj == "lineor":
+                        if id_el_backend < self.__nb_powerline:
+                            # it's a powerline
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus,
+                                                                             self._init_bus_lor[id_el_backend])
+                            self._grid.change_bus_powerline_or(id_el_backend, new_bus_backend)
+                        else:
+                            # it's a trafo
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus,
+                                                                             self._init_bus_lor[id_el_backend])
+                            self._grid.change_bus_trafo_hv(id_el_backend - self.__nb_powerline, new_bus_backend)
+                    elif type_obj == "lineor":
+                        if id_el_backend < self.__nb_powerline:
+                            # it's a powerline
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus,
+                                                                             self._init_bus_lex[id_el_backend])
+                            self._grid.change_bus_powerline_ex(id_el_backend, new_bus_backend)
+                        else:
+                            # it's a trafo
+                            new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus,
+                                                                             self._init_bus_lex[id_el_backend])
+                            self._grid.change_bus_trafo_lv(id_el_backend - self.__nb_powerline, new_bus_backend)
+
+        # change line status if needed
+        # note that it is a specification that lines status must override buses reconfiguration.
+        if np.any(set_status != 0.):
+            for i, el in enumerate(set_status):
+                # TODO performance optim here, it can be vectorized
+                if el == -1:
+                    self._disconnect_line(i)
+                elif el == 1:
+                    if i < self.__nb_powerline:
+                        self._grid.reactivate_powerline(i)
+                    else:
+                        self._grid.reactivate_trafo(i - self.__nb_powerline)
+
+        # switch line status if needed
+        if np.any(switch_status):
+            powerlines_current_status = self.get_line_status()
+            for i, el in enumerate(switch_status):
+                if el:
+                    connected = powerlines_current_status[i]
+                    if connected:
+                        # switch a connected powerline -> i disconnect it
+                        if i < self.__nb_powerline:
+                            self._grid.deactivate_powerline(i)
+                        else:
+                            self._grid.deactivate_trafo(i - self.__nb_powerline)
+                    else:
+                        # switch a connected powerline -> i reconnect it
+                        # but first i need to check
+                        bus_or = set_topo_vect[self.line_or_pos_topo_vect[i]]
+                        bus_ex = set_topo_vect[self.line_ex_pos_topo_vect[i]]
+                        if bus_ex == 0 or bus_or == 0:
+                            raise InvalidLineStatus("Line {} was disconnected. The action switched its status, "
+                                                    "without providing buses to connect it on both ends.".format(i))
+                        # reconnection has then be handled in the topology
+                        if i < self.__nb_powerline:
+                            self._grid.reactivate_powerline(i)
+                        else:
+                            self._grid.reactivate_trafo(i - self.__nb_powerline)
 
     def runpf(self, is_dc=False):
         try:
@@ -198,7 +363,6 @@ class PyKLUBackend(Backend):
             self.q_ex = self.p_or
             self.v_ex = self.p_or
             self.a_ex = self.p_or
-            self._nb_bus_before = None
             self.load_p = np.full(self.n_load, dtype=np.float, fill_value=np.NaN)
             self.load_q = self.load_p
             self.load_v = self.load_p
@@ -224,9 +388,46 @@ class PyKLUBackend(Backend):
     def get_line_flow(self):
         return self.a_or
 
+    def _grid2op_bus_from_klu_bus(self, klu_bus):
+        res = 0
+        if klu_bus != 0:
+            # object is connected
+            res = 1 if klu_bus < self.__nb_bus_before else 2
+        return res
+
+    def _klu_bus_from_grid2op_bus(self, grid2op_bus, grid2op_bus_init):
+        if grid2op_bus == 0:
+            res = grid2op_bus_init
+        elif grid2op_bus == 1:
+            res = grid2op_bus_init
+        elif grid2op_bus == 2:
+            res = grid2op_bus_init + self.__nb_bus_before
+        else:
+            raise BackendError("grid2op bus must be 0 1 or 2")
+        return res
+
     def get_topo_vect(self):
-        # TODO
-        return np.ones(self.dim_topo, dtype=np.int)
+        res = np.zeros(self.dim_topo, dtype=np.int)
+        # TODO clean that mess
+        for el_id, el_res_pos in enumerate(self.load_pos_topo_vect):
+            tmp = self._grid.get_bus_load(el_id)
+            res[el_res_pos] = self._grid2op_bus_from_klu_bus(tmp)
+        for el_id, el_res_pos in enumerate(self.gen_pos_topo_vect):
+            tmp = self._grid.get_bus_gen(el_id)
+            res[el_res_pos] = self._grid2op_bus_from_klu_bus(tmp)
+        for el_id, el_res_pos in enumerate(self.line_or_pos_topo_vect):
+            if el_id < self.__nb_powerline:
+                tmp = self._grid.get_bus_powerline_or(el_id)
+            else:
+                tmp = self._grid.get_bus_trafo_hv(el_id - self.__nb_powerline)
+            res[el_res_pos] = self._grid2op_bus_from_klu_bus(tmp)
+        for el_id, el_res_pos in enumerate(self.line_ex_pos_topo_vect):
+            if el_id < self.__nb_powerline:
+                tmp = self._grid.get_bus_powerline_ex(el_id)
+            else:
+                tmp = self._grid.get_bus_trafo_lv(el_id - self.__nb_powerline)
+            res[el_res_pos] = self._grid2op_bus_from_klu_bus(tmp)
+        return res
 
     def generators_info(self):
         return self.prod_p, self.prod_q, self.prod_v
@@ -243,5 +444,8 @@ class PyKLUBackend(Backend):
     def shunt_info(self):
         return self._grid.get_shunts_res()
 
-    def _disconnect_line(self, id):
-        self._grid.deactivate_powerline(id)
+    def _disconnect_line(self, id_):
+        if id_ < self.__nb_powerline:
+            self._grid.deactivate_powerline(id_)
+        else:
+            self._grid.deactivate_trafo(id_ - self.__nb_powerline)

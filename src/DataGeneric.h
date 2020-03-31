@@ -33,6 +33,7 @@ class DataGeneric
         void _reactivate(int el_id, std::vector<bool> & status, bool & need_reset);
         void _deactivate(int el_id, std::vector<bool> & status, bool & need_reset);
         void _change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, bool & need_reset, int nb_bus);
+        int _get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_);
 
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
