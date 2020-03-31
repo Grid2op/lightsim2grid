@@ -142,7 +142,7 @@ class PyKLUBackend(Backend):
         for l_id, pos_big_topo  in enumerate(self.line_ex_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
 
-        self.prod_p = self.init_pp_backend._grid.gen["p_mw"]
+        self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
 
     def close(self):
         self.init_pp_backend.close()
@@ -173,26 +173,21 @@ class PyKLUBackend(Backend):
             tmp = dict_injection["load_p"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
-                    pass
                     self._grid.change_p_load(i, val)
         if "load_q" in dict_injection:
             tmp = dict_injection["load_q"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
-                    pass
                     self._grid.change_q_load(i, val)
         if "prod_p" in dict_injection:
             tmp = dict_injection["prod_p"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
-                    pass
                     self._grid.change_p_gen(i, val)
-
         if "prod_v" in dict_injection:
             tmp = dict_injection["prod_v"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
-                    pass
                     self._grid.change_v_gen(i, val / self.prod_pu_to_kv[i])
                     prod_p_set[i] = val
 
