@@ -36,6 +36,7 @@ class DataLoad : public DataGeneric
                          const std::vector<int> & id_grid_to_solver,
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
+    virtual double get_p_slack(int slack_bus_id);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     const std::vector<bool>& get_status() const {return status_;}

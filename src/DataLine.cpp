@@ -211,6 +211,18 @@ void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
 }
 
+double DataLine::get_p_slack(int slack_bus_id)
+{
+    int nb_element = nb();
+    double res = 0.;
+    for(int line_id = 0; line_id < nb_element; ++line_id)
+    {
+        if(!status_[line_id]) continue;
+        if(bus_or_id_(line_id) == slack_bus_id) res += res_powerline_por_(line_id);
+        if(bus_ex_id_(line_id) == slack_bus_id) res += res_powerline_pex_(line_id);
+    }
+    return res;
+}
 // for powerline
 /**
 void DataLine::deactivate(int powerline_id, bool & need_reset)

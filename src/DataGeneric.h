@@ -22,6 +22,8 @@ class DataGeneric
                             std::vector<bool> & has_bus_been_added,
                             int slack_bus_id_solver,
                             const std::vector<int> & id_grid_to_solver) {};
+        virtual double get_p_slack(int slack_bus_id) {return 0.;}
+        virtual void set_p_slack(int gen_slackbus, double p_slack) {};
 
     protected:
         static const int _deactivated_bus_id;

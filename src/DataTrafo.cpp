@@ -221,3 +221,16 @@ void DataTrafo::reset_results(){
     res_v_lv_ = Eigen::VectorXd();  // in kV
     res_a_lv_ = Eigen::VectorXd();  // in kA
 }
+
+double DataTrafo::get_p_slack(int slack_bus_id)
+{
+    int nb_element = nb();
+    double res = 0.;
+    for(int line_id = 0; line_id < nb_element; ++line_id)
+    {
+        if(!status_[line_id]) continue;
+        if(bus_hv_id_(line_id) == slack_bus_id) res += res_p_hv_(line_id);
+        if(bus_hv_id_(line_id) == slack_bus_id) res += res_p_lv_(line_id);
+    }
+    return res;
+}

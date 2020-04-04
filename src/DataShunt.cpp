@@ -97,3 +97,16 @@ void DataShunt::change_q(int shunt_id, double new_q, bool & need_reset)
     if(q_mvar_(shunt_id) != new_q) need_reset = true;
     q_mvar_(shunt_id) = new_q;
 }
+
+double DataShunt::get_p_slack(int slack_bus_id)
+{
+    int nb_element = nb();
+    double res = 0.;
+    for(int line_id = 0; line_id < nb_element; ++line_id)
+    {
+        if(!status_[line_id]) continue;
+        if(bus_id_(line_id) == slack_bus_id) res += res_p_(line_id);
+    }
+    return res;
+}
+

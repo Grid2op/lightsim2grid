@@ -41,6 +41,7 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
 
     // if(need_reset_){ // TODO optimization when it's not mandatory to start from scratch
     reset();
+    slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
     init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
     fillYbus(Ybus_, true, id_me_to_solver_);
     fillpv_pq(id_me_to_solver_);
@@ -173,8 +174,6 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
     bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
 }
 void GridModel::compute_results(){
-     //TODO check it has converged!
-
     // retrieve results from powerflow
     const auto & Va = _solver.get_Va();
     const auto & Vm = _solver.get_Vm();
@@ -189,6 +188,14 @@ void GridModel::compute_results(){
     shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for prods
     generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+
+    //handle_slack_bus
+    double p_slack = powerlines_.get_p_slack(slack_bus_id_);
+    p_slack += trafos_.get_p_slack(slack_bus_id_);
+    p_slack += loads_.get_p_slack(slack_bus_id_);
+    p_slack += shunts_.get_p_slack(slack_bus_id_);
+
+    generators_.set_p_slack(gen_slackbus_, p_slack);
     //TODO for res_gen_q_ !!!
 }
 
@@ -217,6 +224,7 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     int slack_bus_id_solver;
 
     //if(need_reset_){
+    slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
     init_Ybus(dcYbus_tmp, Sbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     fillYbus(dcYbus_tmp, false, id_me_to_solver);
     // fillpv_pq(id_me_to_solver);
@@ -326,4 +334,10 @@ int GridModel::nb_bus() const
         if(el) ++res;
     }
     return res;
+}
+
+void GridModel::add_gen_slackbus(int gen_id){
+    if(gen_id < 0) throw std::runtime_error("Slack bus should be an id of a generator, thus positive");
+    if(gen_id > generators_.nb()) throw std::runtime_error("Slack bus should be an id of a generator, your id is to high.");
+    gen_slackbus_ = gen_id;
 }

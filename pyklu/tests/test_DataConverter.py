@@ -205,7 +205,5 @@ class MakeTests(unittest.TestCase):
         self.assert_equal(trafo_b, trafo_h_res)
 
 
-
-
 if __name__ == "__main__":
     unittest.main()

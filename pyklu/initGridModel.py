@@ -4,6 +4,7 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 
 import numpy as np
 from pyklu_cpp import GridModel, PandaPowerConverter
+import pdb
 
 
 def init(pp_net):
@@ -106,6 +107,23 @@ def init(pp_net):
                           pp_net.gen["bus"].values
                                )
 
-    # TODO handle that better maybe
-    model.add_slackbus(pp_net.ext_grid["bus"].values[0])
+    # TODO handle that better maybe, and warn only one slack bus is implemented
+    if np.any(pp_net.gen["slack"].values):
+        slack_gen_id = np.where(pp_net.gen["slack"].values)[0]
+    else:
+        # there is no slack bus in the generator of the pp grid
+
+        # first i try to see if a generator is connected to a slack bus
+        slack_bus_id = pp_net.ext_grid["bus"].values[0]
+        if np.any(pp_net.gen["bus"].values == slack_bus_id):
+            slack_gen_id = np.where(pp_net.gen["bus"].values == slack_bus_id)[0]
+        else:
+            # no gen is connected to a slack bus, so i create one.
+            gen_p = np.concatenate((pp_net.gen["p_mw"].values, [0]))
+            gen_v = np.concatenate((pp_net.gen["vm_pu"].values, [pp_net.ext_grid["vm_pu"].values[0]]))
+            gen_bus = np.concatenate((pp_net.gen["bus"].values, [slack_bus_id]))
+            model.init_generators(gen_p, gen_v, gen_bus)
+            slack_gen_id = pp_net.gen["bus"].shape[0]
+
+    model.add_gen_slackbus(slack_gen_id)
     return model

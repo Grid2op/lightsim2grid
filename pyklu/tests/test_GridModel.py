@@ -1,14 +1,12 @@
-import os
 import unittest
 import numpy as np
-import pdb
-from scipy import sparse
-from pyklu_cpp import GridModel, PandaPowerConverter
 import pandapower.networks as pn
 import pandapower as pp
 
+from pyklu.initGridModel import init
+import pdb
 
-# TODO test if i try to change status of a line that does not exist, it does not make everything crash
+
 class BaseTests:
     def setUp(self):
         self.net_ref = pn.case118()
@@ -20,75 +18,7 @@ class BaseTests:
         self.tol_test = 1e-5  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
 
         # initialize and use converters
-        self.converter = PandaPowerConverter()
-        self.converter.set_sn_mva(self.net_datamodel.sn_mva)  # TODO raise an error if not set !
-        self.converter.set_f_hz(self.net_datamodel.f_hz)
-        self.line_r, self.line_x, self.line_h = \
-            self.converter.get_line_param(
-                self.net_datamodel.line["r_ohm_per_km"].values * self.net_datamodel.line["length_km"].values,
-                self.net_datamodel.line["x_ohm_per_km"].values * self.net_datamodel.line["length_km"].values,
-                self.net_datamodel.line["c_nf_per_km"].values * self.net_datamodel.line["length_km"].values,
-                self.net_datamodel.line["g_us_per_km"].values * self.net_datamodel.line["length_km"].values,
-                self.net_datamodel.bus.loc[self.net_datamodel.line["from_bus"]]["vn_kv"],
-                self.net_datamodel.bus.loc[self.net_datamodel.line["to_bus"]]["vn_kv"]
-            )
-        self.trafo_r, self.trafo_x, self.trafo_b = \
-            self.converter.get_trafo_param(self.net_datamodel.trafo["vn_hv_kv"].values,
-                                           self.net_datamodel.trafo["vn_lv_kv"].values,
-                                           self.net_datamodel.trafo["vk_percent"].values,
-                                           self.net_datamodel.trafo["vkr_percent"].values,
-                                           self.net_datamodel.trafo["sn_mva"].values,
-                                           self.net_datamodel.trafo["pfe_kw"].values,
-                                           self.net_datamodel.trafo["i0_percent"].values,
-                                           self.net_datamodel.bus.loc[self.net_datamodel.trafo["lv_bus"]]["vn_kv"]
-                                           )
-
-        # set up the data model accordingly
-        self.model = GridModel()
-        tmp_bus_ind = np.argsort(self.net_datamodel.bus.index)
-        self.model.init_bus(self.net_datamodel.bus.iloc[tmp_bus_ind]["vn_kv"].values,
-                            self.net_datamodel.line.shape[0],
-                            self.net_datamodel.trafo.shape[0])
-
-        self.model.init_powerlines(self.line_r, self.line_x, self.line_h,
-                                   self.net_datamodel.line["from_bus"].values,
-                                   self.net_datamodel.line["to_bus"].values
-                                   )
-
-        # init the shunts
-        self.model.init_shunt(self.net_datamodel.shunt["p_mw"].values,
-                              self.net_datamodel.shunt["q_mvar"].values,
-                              self.net_datamodel.shunt["bus"].values
-                              )
-
-        tap_step_pct = self.net_datamodel.trafo["tap_step_percent"].values
-        tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
-
-        tap_pos = self.net_datamodel.trafo["tap_pos"].values
-        tap_pos[~np.isfinite(tap_pos)] = 0.
-
-        is_tap_hv_side = self.net_datamodel.trafo["tap_side"].values == "hv"
-        is_tap_hv_side[~np.isfinite(tap_pos)] = True
-        self.model.init_trafo(self.trafo_r,
-                              self.trafo_x,
-                              self.trafo_b,
-                              tap_step_pct,
-                              tap_pos,
-                              is_tap_hv_side,
-                              self.net_datamodel.trafo["hv_bus"].values,
-                              self.net_datamodel.trafo["lv_bus"].values)
-
-        self.model.init_loads(self.net_datamodel.load["p_mw"].values,
-                              self.net_datamodel.load["q_mvar"].values,
-                              self.net_datamodel.load["bus"].values
-                              )
-        self.model.init_generators(self.net_datamodel.gen["p_mw"].values,
-                                   self.net_datamodel.gen["vm_pu"].values,
-                                   self.net_datamodel.gen["bus"].values
-                                   )
-
-        # TODO handle that better maybe
-        self.model.add_slackbus(self.net_datamodel.ext_grid["bus"].values[0])
+        self.model = init(self.net_datamodel)
 
     def assert_equal(self, tmp, ref):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
@@ -131,6 +61,12 @@ class BaseTests:
         # check generators
         g_is = self.net_ref.gen["in_service"]
         prod_p, prod_q, prod_v = self.model.get_gen_res()
+        if len(prod_p) != g_is.shape[0]:
+            # it means a generator has been added for the slack bus
+            prod_p = prod_p[:-1]
+            prod_q = prod_q[:-1]
+            prod_v = prod_v[:-1]
+
         self.assert_equal(prod_p[g_is], net.res_gen["p_mw"].values[g_is])
         # self.assert_equal(prod_q, net.res_gen["q_mvar"].values)
         v_gen_pp = net.bus.loc[net.gen["bus"].values]["vn_kv"].values * net.res_gen["vm_pu"].values
@@ -176,7 +112,8 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.deactivate_load(self.net_datamodel.load.shape[0])
         with self.assertRaises(IndexError):
-            self.model.deactivate_gen(self.net_datamodel.gen.shape[0])
+            # +1 is added for gen because in some cases, gen is added in gridmodel for the slack bus
+            self.model.deactivate_gen(self.net_datamodel.gen.shape[0]+1)
         with self.assertRaises(IndexError):
             self.model.deactivate_trafo(self.net_datamodel.trafo.shape[0])
         with self.assertRaises(IndexError):
@@ -189,7 +126,8 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_bus_load(self.net_datamodel.load.shape[0], 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_gen(self.net_datamodel.gen.shape[0], 1)
+            # +1 is added for gen because in some cases, gen is added in gridmodel for the slack bus
+            self.model.change_bus_gen(self.net_datamodel.gen.shape[0]+1, 1)
         with self.assertRaises(IndexError):
             self.model.change_bus_shunt(self.net_datamodel.shunt.shape[0], 1)
         with self.assertRaises(IndexError):
@@ -226,9 +164,11 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_q_load(self.net_datamodel.load.shape[0], 1)
         with self.assertRaises(IndexError):
-            self.model.change_p_gen(self.net_datamodel.gen.shape[0], 1)
+            # +1 is added for gen because in some cases, gen is added in gridmodel for the slack bus
+            self.model.change_p_gen(self.net_datamodel.gen.shape[0] + 1, 1)
         with self.assertRaises(IndexError):
-            self.model.change_v_gen(self.net_datamodel.gen.shape[0], 1)
+            # +1 is added for gen because in some cases, gen is added in gridmodel for the slack bus
+            self.model.change_v_gen(self.net_datamodel.gen.shape[0] + 1, 1)
         with self.assertRaises(IndexError):
             self.model.change_p_shunt(self.net_datamodel.shunt.shape[0], 1)
         with self.assertRaises(IndexError):
@@ -415,6 +355,7 @@ class MakeDCTests(BaseTests, unittest.TestCase):
         pp.rundcpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
+        # self.skipTest("dev")
         pass
         # if test_nm == "test_pf":
         #    pass
@@ -442,17 +383,9 @@ class MakeACTests(BaseTests, unittest.TestCase):
         pass
         # if test_nm == "test_pf":
         #    pass
-        #else:
+        # else:
         #    self.skipTest("dev")
 
-    def check_res(self, Vfinal, net):
-        assert Vfinal.shape[0] > 0, "powerflow diverged !"
-        tmp_bus_ind = np.argsort(net.bus.index)
-        va_deg = net.res_bus["va_degree"].values
-        # vm_pu = net.res_bus["vm_pu"].values
-        # pdb.set_trace()
-        self.assert_equal(np.angle(Vfinal), va_deg[tmp_bus_ind] / 180. * np.pi)
-        # self.assert_equal(np.abs(Vfinal), vm_pu[tmp_bus_ind])
 
 if __name__ == "__main__":
     unittest.main()

@@ -74,9 +74,7 @@ class GridModel : public DataGeneric
             loads_.init(loads_p, loads_q, loads_bus_id);
         }
 
-        void add_slackbus(int slack_bus_id){
-            slack_bus_id_ = slack_bus_id;
-        }
+        void add_gen_slackbus(int gen_id);
 
         //powerflows
         // dc powerflow
@@ -242,6 +240,7 @@ class GridModel : public DataGeneric
         DataLoad loads_;
 
         // 7. slack bus
+        int gen_slackbus_;
         int slack_bus_id_;
         int slack_bus_id_solver_;
 

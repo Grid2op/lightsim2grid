@@ -60,3 +60,15 @@ void DataLoad::change_q(int load_id, double new_q, bool & need_reset)
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected load");
     q_mvar_(load_id) = new_q;
 }
+
+double DataLoad::get_p_slack(int slack_bus_id)
+{
+    int nb_element = nb();
+    double res = 0.;
+    for(int line_id = 0; line_id < nb_element; ++line_id)
+    {
+        if(!status_[line_id]) continue;
+        if(bus_id_(line_id) == slack_bus_id) res -= res_p_(line_id);
+    }
+    return res;
+}

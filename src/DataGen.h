@@ -40,6 +40,9 @@ class DataGen: public DataGeneric
                          const std::vector<int> & id_grid_to_solver,
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
+    int get_slack_bus_id(int gen_id);
+    virtual void set_p_slack(int slack_bus_id, double p_slack);
+
     void get_vm_for_dc(Eigen::VectorXd & Vm);
     /**
     this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize

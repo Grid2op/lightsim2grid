@@ -51,7 +51,7 @@ PYBIND11_MODULE(pyklu_cpp, m) {
         .def("init_trafo", &GridModel::init_trafo)
         .def("init_generators", &GridModel::init_generators)
         .def("init_loads", &GridModel::init_loads)
-        .def("add_slackbus", &GridModel::add_slackbus)
+        .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
 
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)

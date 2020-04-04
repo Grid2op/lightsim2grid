@@ -118,3 +118,16 @@ void DataGen::set_vm(Eigen::VectorXcd & V, const std::vector<int> & id_grid_to_s
         V(bus_id_solver) *= tmp;
     }
 }
+
+int DataGen::get_slack_bus_id(int gen_id){
+    bool status = status_.at(gen_id);  // also to ensure gen_id is consistent with number of gen
+    if(!status) throw std::runtime_error("Generator for slack bus is deactivated");
+    int res = bus_id_(gen_id);
+    return res;
+}
+
+void DataGen::set_p_slack(int slack_bus_id, double p_slack){
+    bool status = status_.at(slack_bus_id);  // also to ensure gen_id is consistent with number of gen
+    if(!status) throw std::runtime_error("Generator for slack bus is deactivated");
+    res_p_(slack_bus_id) = p_slack;
+}
