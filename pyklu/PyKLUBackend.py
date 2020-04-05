@@ -10,7 +10,7 @@ try:
     from grid2op.Backend import Backend
     # from grid2op.BackendPandaPower import PandaPowerBackend
     from grid2op.Backend import PandaPowerBackend
-    from grid2op.Exceptions import InvalidLineStatus, BackendError
+    from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
     grid2op_installed = True
 except (ImportError, ModuleNotFoundError) as e:
     grid2op_installed = False
@@ -28,6 +28,29 @@ class PyKLUBackend(Backend):
         if not grid2op_installed:
             raise NotImplementedError("Impossible to use a Backend if grid2op is not installed.")
         Backend.__init__(self, detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+
+        self.nb_bus_total = None
+        self.initdc = True  # does not really hurt computation time
+        self.__nb_powerline = None
+        self.__nb_bus_before = None
+        self._init_bus_load = None
+        self._init_bus_gen = None
+        self._init_bus_lor = None
+        self._init_bus_lex = None
+        self._big_topo_to_obj = None
+        self.nb_obj_per_bus = None
+
+        self.next_prod_p = None  # this vector is updated with the action that will modify the environment
+        # it is done to keep track of the redispatching
+
+        self.topo_vect = None
+        self.shunt_topo_vect = None
+
+        self.init_pp_backend = PandaPowerBackend()
+
+        self.V = None
+        self.max_it = 10
+        self.tol = 1e-8  # tolerance for the solver
 
         self.prod_pu_to_kv = None
         self.load_pu_to_kv = None
@@ -61,26 +84,6 @@ class PyKLUBackend(Backend):
         self._corresp_name_fun = {}
         self._get_vector_inj = {}
         self.dim_topo = -1
-
-        self.init_pp_backend = PandaPowerBackend()
-
-        self.V = None
-        self.max_it = 10
-        self.tol = 1e-8  # tolerance for the solver
-
-        self.nb_bus_total = None
-        self.initdc = False
-        self.__nb_powerline = None
-        self.__nb_bus_before = None
-        self._init_bus_load = None
-        self._init_bus_gen = None
-        self._init_bus_lor = None
-        self._init_bus_lex = None
-        self._big_topo_to_obj = None
-        self.nb_obj_per_bus = None
-
-        self.topo_vect = None
-        self.shunt_topo_vect = None
 
     def load_grid(self, path=None, filename=None):
 
@@ -149,6 +152,7 @@ class PyKLUBackend(Backend):
             self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
 
         self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
+        self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
 
         # for shunts
         self.n_shunt = self.init_pp_backend.n_shunt
@@ -228,7 +232,6 @@ class PyKLUBackend(Backend):
         # change the _injection if needed
         dict_injection, set_status, switch_status, set_topo_vect, switcth_topo_vect, redispatching, shunts = action()
 
-        prod_p_set = self.prod_p
         if "load_p" in dict_injection:
             tmp = dict_injection["load_p"]
             for i, val in enumerate(tmp):
@@ -244,18 +247,19 @@ class PyKLUBackend(Backend):
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
                     self._grid.change_p_gen(i, val)
+                    self.next_prod_p[i] = val
         if "prod_v" in dict_injection:
             tmp = dict_injection["prod_v"]
             for i, val in enumerate(tmp):
                 if np.isfinite(val):
                     self._grid.change_v_gen(i, val / self.prod_pu_to_kv[i])
-                    prod_p_set[i] = val
 
         if np.any(redispatching != 0.):
             for i, val in enumerate(redispatching):
                 if np.isfinite(val):
                     if val != 0.:
-                        self._grid.change_p_gen(i, val + prod_p_set[i])
+                        self._grid.change_p_gen(i, val + self.next_prod_p[i])
+                        self.next_prod_p[i] += val
 
         # shunts
         if shunts:
@@ -283,7 +287,6 @@ class PyKLUBackend(Backend):
 
         # topology
         possiblechange = set_topo_vect != 0
-        # TODO: connect / disconnect the bus in self._grid !!!!!!!
         if np.any(possiblechange) or np.any(switcth_topo_vect):
             actual_topo_full = 1.0 * self.get_topo_vect()
             # new topology vector
@@ -339,10 +342,6 @@ class PyKLUBackend(Backend):
                 elif el == 1:
                     if i < self.__nb_powerline:
                         self._grid.reactivate_powerline(i)
-                        # print("\treconnecting powerline {}".format(i))
-                        # print("\t\t and status is {}".format(self._grid.get_lines_status()[i]))
-                        # print("\t\t and bus or is {}".format(self.line_or_to_sub_pos[i]))
-                        # print("\t\t and bus ex is {}".format(self.line_ex_to_sub_pos[i]))
                     else:
                         self._grid.reactivate_trafo(i - self.__nb_powerline)
         else:
@@ -378,22 +377,28 @@ class PyKLUBackend(Backend):
             self._count_object_per_bus()
             self._deactivate_unused_bus()
             if is_dc:
+                raise NotImplementedError("Not fully implemented at the moment.")
                 if self.V is None:
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
                 self.V = self._grid.dc_pf(self.V, self.max_it, self.tol)
-                raise NotImplementedError("DC is not implemented at the moment")
             else:
                 if self.V is None:
                     # init from dc approx in this case
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * 1.04
+
                 if self.initdc:
-                    raise NotImplementedError("DC is not implemented at the moment")
-                    self.V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                    V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                    if V.shape[0] == 0:
+                        # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
+                        raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
+                    self.V = V
+
                 V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
-                    raise RuntimeError("divergence of powerflow")
-                # self.V = V
+                    raise DivergingPowerFlow("divergence of powerflow")
+                self.V = V
+                self.V[self.V == 0.] = 1.
                 lpor, lqor, lvor, laor = self._grid.get_lineor_res()
                 lpex, lqex, lvex, laex = self._grid.get_lineex_res()
                 tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
@@ -412,9 +417,10 @@ class PyKLUBackend(Backend):
 
                 self.load_p, self.load_q, self.load_v = self._grid.get_loads_res()
                 self.prod_p, self.prod_q, self.prod_v = self._grid.get_gen_res()
+                self.next_prod_p[:] = self.prod_p
+                res = True
                 # TODO ! below !!! gen_q not handled!!!
                 # self.prod_q = 1.0 * self.prod_p
-
         except Exception as e:
             # of the powerflow has not converged, results are Nan
             self.p_or = np.full(self.n_line, dtype=np.float, fill_value=np.NaN)
@@ -429,16 +435,19 @@ class PyKLUBackend(Backend):
             self.load_q = self.load_p
             self.load_v = self.load_p
             self.prod_p = np.full(self.n_load, dtype=np.float, fill_value=np.NaN)
+            self.next_prod_p[:] = self.prod_p
             self.prod_q = self.prod_p
             self.prod_v = self.prod_p
-            return False
-        return True
+            res = False
+        return res
 
     def copy(self):
         mygrid = self._grid
         self._grid = None
         res = copy.deepcopy(self)
         res._grid = init(self.init_pp_backend._grid)
+        #TODO I need a c++ method that would just copy the state of the grid (bus connection, powerlines connected etc.)
+        # TODO this could be done in a "get_action_to_set_me" and use to update obsenv for example!
         self._grid = mygrid
         return res
 
@@ -484,7 +493,9 @@ class PyKLUBackend(Backend):
         return self.p_ex, self.q_ex, self.v_ex, self.a_ex
 
     def shunt_info(self):
-        return self._grid.get_shunts_res()
+        tmp = self._grid.get_shunts_res()
+        shunt_bus = [self._grid.get_bus_shunt(i) for i in range(self.n_shunt)]
+        return (tmp[0], tmp[1], tmp[2], shunt_bus)
 
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1

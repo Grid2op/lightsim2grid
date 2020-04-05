@@ -35,7 +35,6 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
     if(Vinit.size() != nb_bus){
         throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). Components of Vinit corresponding to deactivated bys will be ignored anyway.");
     }
-
     bool conv = false;
     Eigen::VectorXcd res = Eigen::VectorXcd();
     Eigen::VectorXcd res_tmp = Eigen::VectorXcd();
@@ -246,9 +245,8 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     int nb_bus_solver = id_solver_to_me.size();
 
     // DC SOLVER STARTS HERE
+    // TODO all this should rather be one in a "dc solver" instead of here
     // remove the slack bus
-    // TODO this should rather be one in a "dc solver" instead of here
-
 
     // remove the slack bus from Ybus
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
@@ -271,8 +269,17 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
     dcYbus.makeCompressed();
 
+    // initialize the solver
+    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
+    solver.analyzePattern(dcYbus);
+    solver.factorize(dcYbus);
+    if(solver.info() != Eigen::Success) {
+        // matrix is not connected
+        return Eigen::VectorXcd();
+    }
+
     // remove the slack bus from Sbus
-    Eigen::VectorXd Sbus = Eigen::VectorXd(nb_bus_solver - 1);
+    Eigen::VectorXd Sbus = Eigen::VectorXd::Constant(nb_bus_solver - 1, 0.);
     for (int k=0; k < nb_bus_solver; ++k){
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
         int col_res = k;
@@ -280,19 +287,12 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
         Sbus(col_res) = std::real(Sbus_tmp(k));
     }
 
-    // initialize the solver
-    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
-    solver.analyzePattern(dcYbus);
-    solver.factorize(dcYbus);
-
-
     // solve for theta: Sbus = dcY . theta
     Eigen::VectorXd Va_dc = solver.solve(Sbus);
     if(solver.info() != Eigen::Success) {
         // solving failed, this should not happen in dc ...
         return Eigen::VectorXcd();
     }
-
 
     // retrieve back the results in the proper shape
     int nb_bus_me = bus_vn_kv_.size();
@@ -314,19 +314,20 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     Va.array() +=  std::arg(Vinit(slack_bus_id_));
 
     // fill Vm either Vinit if pq or Vm if pv (TODO)
-    /**
-    Eigen::VectorXd Vm = Vinit.array().abs();  // fill Vm = Vinit for all
-    // put Vm = 0. for disconnected bus
-    for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-        if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-        Vm(bus_id_me) = 0.;
+    if(false){
+        Eigen::VectorXd Vm = Vinit.array().abs();  // fill Vm = Vinit for all
+        // put Vm = 0. for disconnected bus
+        for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
+            if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+            Vm(bus_id_me) = 0.;
+        }
+        // put Vm = Vm of turned on gen
+        // generators_.get_vm_for_dc(Vm);
+        // assign vm of the slack bus
+        Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
     }
-    // put Vm = Vm of turned on gen
-    // generators_.get_vm_for_dc(Vm);
-    // assign vm of the slack bus
-    Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
     //END of the SOLVER PART
-    **/
+
     Eigen::VectorXd Vm = Eigen::VectorXd::Constant(Vinit.size(), 1.0);
     for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
         if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
@@ -334,6 +335,7 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     }
     //TODO handle Vm = Vm (gen) for connected generators
     return Vm.array() * (Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>());
+    //return Eigen::VectorXcd();
 }
 
 int GridModel::nb_bus() const
