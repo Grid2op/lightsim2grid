@@ -413,10 +413,9 @@ class PyKLUBackend(Backend):
                 self.load_p, self.load_q, self.load_v = self._grid.get_loads_res()
                 self.prod_p, self.prod_q, self.prod_v = self._grid.get_gen_res()
                 # TODO ! below !!! gen_q not handled!!!
-                self.prod_q = 1.0 * self.prod_p
+                # self.prod_q = 1.0 * self.prod_p
 
         except Exception as e:
-            print(e)
             # of the powerflow has not converged, results are Nan
             self.p_or = np.full(self.n_line, dtype=np.float, fill_value=np.NaN)
             self.q_or = self.p_or

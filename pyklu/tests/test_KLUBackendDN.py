@@ -16,6 +16,7 @@ class TestDN(ABC):
         self.param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
         self.max_ts = 100
         self.tol = 1e-5
+        self.agent_class = DoNothingAgent
 
     @abstractmethod
     def _get_env_name(self):
@@ -23,7 +24,7 @@ class TestDN(ABC):
 
     def _run_env(self, env):
         aor = np.zeros((self.max_ts, env.n_line))
-        agent = DoNothingAgent(action_space=env.action_space)
+        agent = self.agent_class(action_space=env.action_space)
         obs = env.get_obs()
         done = False
         reward = env.reward_range[0]

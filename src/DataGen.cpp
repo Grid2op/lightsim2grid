@@ -1,12 +1,22 @@
 #include "DataGen.h"
+#include <iostream>
 
 void DataGen::init(const Eigen::VectorXd & generators_p,
-                     const Eigen::VectorXd & generators_v,
-                     const Eigen::VectorXi & generators_bus_id)
+                   const Eigen::VectorXd & generators_v,
+                   const Eigen::VectorXd & generators_min_q,
+                   const Eigen::VectorXd & generators_max_q,
+                   const Eigen::VectorXi & generators_bus_id)
 {
     p_mw_ = generators_p;
     vm_pu_ = generators_v;
     bus_id_ = generators_bus_id;
+    min_q_ = generators_min_q;
+    max_q_ = generators_max_q;
+    if(min_q_.size() != max_q_.size()) throw std::runtime_error("Impossible to initialize generator with not the same size for min_q and max_q");
+    int nb_gen = min_q_.size();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if (min_q_(gen_id) > max_q_(gen_id)) throw std::runtime_error("Impossible to initialize generator min_q being above max_q");
+    }
     status_ = std::vector<bool>(generators_p.size(), true);
 }
 
@@ -131,3 +141,46 @@ void DataGen::set_p_slack(int slack_bus_id, double p_slack){
     if(!status) throw std::runtime_error("Generator for slack bus is deactivated");
     res_p_(slack_bus_id) = p_slack;
 }
+
+void DataGen::init_q_vector(int nb_bus)
+{
+    int nb_gen = nb();
+    total_q_min_per_bus_ = Eigen::VectorXd::Constant(nb_bus, 0.);
+    total_q_max_per_bus_ = Eigen::VectorXd::Constant(nb_bus, 0.);
+    total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus, 0);
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(!status_[gen_id]) continue;
+        int bus_id = bus_id_(gen_id);
+        total_q_min_per_bus_(bus_id) += min_q_(gen_id);
+        total_q_max_per_bus_(bus_id) += max_q_(gen_id);
+        total_gen_per_bus_(bus_id) += 1;
+    }
+}
+
+void DataGen::set_q(const std::vector<double> & q_by_bus)
+{
+    // for(int bus_id = 0; bus_id < q_by_bus.size(); ++bus_id) std::cout << "bus id " << bus_id << " sum q " << q_by_bus[bus_id] << std::endl;
+    int nb_gen = nb();
+    res_q_ = Eigen::VectorXd::Constant(nb_gen, 0.);
+    double eps_q = 0.0001;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(!status_[gen_id]) continue;
+        int bus_id = bus_id_(gen_id);
+        double q_to_absorb = q_by_bus[bus_id];
+        double max_q_me = max_q_(gen_id);
+        double min_q_me = min_q_(gen_id);
+        double max_q_bus = total_q_max_per_bus_(bus_id);
+        double min_q_bus = total_q_min_per_bus_(bus_id);
+        int nb_gen_with_me = total_gen_per_bus_(bus_id);
+        double real_q = q_to_absorb; //min_q_me + (q_to_absorb - min_q_me) / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) * (max_q_me - min_q_me + eps_q);
+        // std::cout << " ratio " << 1.0 / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) * (max_q_me - min_q_me + eps_q) << std::endl;
+        // std::cout << " q_to_absorb " << q_to_absorb << std::endl;
+        //handle the corner cases where i am the only gen connected to my bus, and min_q = max_q
+        if((min_q_me == max_q_me) & (min_q_bus == max_q_bus)) real_q = q_to_absorb;
+        res_q_(gen_id) = real_q;
+        // std::cout << " real_q " << real_q << std::endl;
+    }
+}
+

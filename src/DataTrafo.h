@@ -44,6 +44,7 @@ class DataTrafo : public DataGeneric
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
     virtual double get_p_slack(int slack_bus_id);
+    virtual void get_q(std::vector<double>& q_by_bus);
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}

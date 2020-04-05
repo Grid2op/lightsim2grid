@@ -104,8 +104,10 @@ def init(pp_net):
                           )
     model.init_generators(pp_net.gen["p_mw"].values,
                           pp_net.gen["vm_pu"].values,
+                          pp_net.gen["min_q_mvar"].values,
+                          pp_net.gen["max_q_mvar"].values,
                           pp_net.gen["bus"].values
-                               )
+                          )
 
     # TODO handle that better maybe, and warn only one slack bus is implemented
     if np.any(pp_net.gen["slack"].values):
@@ -119,10 +121,12 @@ def init(pp_net):
             slack_gen_id = np.where(pp_net.gen["bus"].values == slack_bus_id)[0]
         else:
             # no gen is connected to a slack bus, so i create one.
-            gen_p = np.concatenate((pp_net.gen["p_mw"].values, [0]))
+            gen_p = np.concatenate((pp_net.gen["p_mw"].values, [np.sum(pp_net.load["p_mw"]) - np.sum(pp_net.gen["p_mw"])]))
             gen_v = np.concatenate((pp_net.gen["vm_pu"].values, [pp_net.ext_grid["vm_pu"].values[0]]))
             gen_bus = np.concatenate((pp_net.gen["bus"].values, [slack_bus_id]))
-            model.init_generators(gen_p, gen_v, gen_bus)
+            gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].values, [-999999.]))
+            gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].values, [+99999.]))
+            model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
             slack_gen_id = pp_net.gen["bus"].shape[0]
 
     model.add_gen_slackbus(slack_gen_id)

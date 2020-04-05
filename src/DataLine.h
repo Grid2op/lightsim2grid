@@ -39,6 +39,7 @@ class DataLine : public DataGeneric
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
     virtual double get_p_slack(int slack_bus_id);
+    virtual void get_q(std::vector<double>& q_by_bus);
 
     tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
     tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}

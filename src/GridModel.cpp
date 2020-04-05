@@ -26,6 +26,7 @@ void GridModel::reset()
     need_reset_ = true;
 
 }
+
 Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
                                   int max_iter,
                                   double tol)
@@ -45,6 +46,7 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
     init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
     fillYbus(Ybus_, true, id_me_to_solver_);
     fillpv_pq(id_me_to_solver_);
+    generators_.init_q_vector(bus_vn_kv_.size());
     _solver.reset();
     // }
     fillSbus(Sbus_, true, id_me_to_solver_, slack_bus_id_solver_);
@@ -194,8 +196,16 @@ void GridModel::compute_results(){
     p_slack += trafos_.get_p_slack(slack_bus_id_);
     p_slack += loads_.get_p_slack(slack_bus_id_);
     p_slack += shunts_.get_p_slack(slack_bus_id_);
-
     generators_.set_p_slack(gen_slackbus_, p_slack);
+
+    // handle gen_q now
+    std::vector<double> q_by_bus = std::vector<double>(bus_vn_kv_.size(), 0.);
+    powerlines_.get_q(q_by_bus);
+    trafos_.get_q(q_by_bus);
+    loads_.get_q(q_by_bus);
+    shunts_.get_q(q_by_bus);
+
+    generators_.set_q(q_by_bus);
     //TODO for res_gen_q_ !!!
 }
 

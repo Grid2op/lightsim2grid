@@ -38,6 +38,7 @@ class DataShunt : public DataGeneric
                          const Eigen::VectorXd & bus_vn_kv);
     void reset_results();
     virtual double get_p_slack(int slack_bus_id);
+    virtual void get_q(std::vector<double>& q_by_bus);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     const std::vector<bool>& get_status() const {return status_;}

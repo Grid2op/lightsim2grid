@@ -65,8 +65,10 @@ class GridModel : public DataGeneric
         }
         void init_generators(const Eigen::VectorXd & generators_p,
                              const Eigen::VectorXd & generators_v,
+                             const Eigen::VectorXd & generators_min_q,
+                             const Eigen::VectorXd & generators_max_q,
                              const Eigen::VectorXi & generators_bus_id){
-            generators_.init(generators_p, generators_v, generators_bus_id);
+            generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
         }
         void init_loads(const Eigen::VectorXd & loads_p,
                         const Eigen::VectorXd & loads_q,

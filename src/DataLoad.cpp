@@ -65,10 +65,21 @@ double DataLoad::get_p_slack(int slack_bus_id)
 {
     int nb_element = nb();
     double res = 0.;
-    for(int line_id = 0; line_id < nb_element; ++line_id)
+    for(int load_id = 0; load_id < nb_element; ++load_id)
     {
-        if(!status_[line_id]) continue;
-        if(bus_id_(line_id) == slack_bus_id) res -= res_p_(line_id);
+        if(!status_[load_id]) continue;
+        if(bus_id_(load_id) == slack_bus_id) res += res_p_(load_id);
     }
     return res;
+}
+
+void DataLoad::get_q(std::vector<double>& q_by_bus)
+{
+    int nb_element = nb();
+    for(int load_id = 0; load_id < nb_element; ++load_id)
+    {
+        if(!status_[load_id]) continue;
+        int bus_id = bus_id_[load_id];
+        q_by_bus[bus_id] += res_q_(load_id); //TODO weird that i need to put a + here and a - for the active!
+    }
 }

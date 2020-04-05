@@ -61,14 +61,15 @@ class BaseTests:
         # check generators
         g_is = self.net_ref.gen["in_service"]
         prod_p, prod_q, prod_v = self.model.get_gen_res()
+        # test the slack bus is properly modeled as a generator
+        assert np.abs(np.sum(net._ppc["gen"][:, 1]) - np.sum(prod_p)) <= self.tol
         if len(prod_p) != g_is.shape[0]:
             # it means a generator has been added for the slack bus
             prod_p = prod_p[:-1]
             prod_q = prod_q[:-1]
             prod_v = prod_v[:-1]
-
         self.assert_equal(prod_p[g_is], net.res_gen["p_mw"].values[g_is])
-        # self.assert_equal(prod_q, net.res_gen["q_mvar"].values)
+        self.assert_equal(prod_q, net.res_gen["q_mvar"].values)
         v_gen_pp = net.bus.loc[net.gen["bus"].values]["vn_kv"].values * net.res_gen["vm_pu"].values
         self.assert_equal(prod_v[g_is], v_gen_pp[g_is])
 
@@ -355,7 +356,7 @@ class MakeDCTests(BaseTests, unittest.TestCase):
         pp.rundcpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
-        # self.skipTest("dev")
+        #self.skipTest("dev")
         pass
         # if test_nm == "test_pf":
         #    pass

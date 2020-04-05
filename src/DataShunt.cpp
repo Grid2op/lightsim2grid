@@ -102,11 +102,23 @@ double DataShunt::get_p_slack(int slack_bus_id)
 {
     int nb_element = nb();
     double res = 0.;
-    for(int line_id = 0; line_id < nb_element; ++line_id)
+    for(int shunt_id = 0; shunt_id < nb_element; ++shunt_id)
     {
-        if(!status_[line_id]) continue;
-        if(bus_id_(line_id) == slack_bus_id) res += res_p_(line_id);
+        if(!status_[shunt_id]) continue;
+        if(bus_id_(shunt_id) == slack_bus_id) res += res_p_(shunt_id);  //TODO plus here or minus ???
     }
     return res;
 }
+
+void DataShunt::get_q(std::vector<double>& q_by_bus)
+{
+    int nb_element = nb();
+    for(int shunt_id = 0; shunt_id < nb_element; ++shunt_id)
+    {
+        if(!status_[shunt_id]) continue;
+        int bus_id = bus_id_[shunt_id];
+        q_by_bus[bus_id] += res_q_(shunt_id);  //TODO plus here or minus ???
+    }
+}
+
 

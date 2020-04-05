@@ -223,6 +223,19 @@ double DataLine::get_p_slack(int slack_bus_id)
     }
     return res;
 }
+
+void DataLine::get_q(std::vector<double>& q_by_bus)
+{
+    int nb_element = nb();
+    for(int el_id = 0; el_id < nb_element; ++el_id)
+    {
+        if(!status_[el_id]) continue;
+        int bus_id_ex = bus_ex_id_[el_id];
+        int bus_id_or = bus_or_id_[el_id];
+        q_by_bus[bus_id_or] += res_powerline_qor_(el_id);
+        q_by_bus[bus_id_ex] += res_powerline_qex_(el_id);
+    }
+}
 // for powerline
 /**
 void DataLine::deactivate(int powerline_id, bool & need_reset)
