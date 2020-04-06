@@ -1,3 +1,11 @@
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+
 import copy
 from time import time
 import numpy as np
@@ -63,6 +71,7 @@ class KLU4Pandapower():
         self.pq = None
         self.ref_gens = None
         self.baseMVA = None
+        raise RuntimeError("This module is deprecated.")
 
     def runpp(self, net, max_iteration=10,  need_reset=True, **kwargs):
         net_orig = copy.deepcopy(net)

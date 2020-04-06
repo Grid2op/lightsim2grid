@@ -15,7 +15,7 @@ from grid2op.Chronics import ChronicsHandler, GridStateFromFile, ChangeNothing
 from grid2op.MakeEnv import make
 from grid2op.Action import BaseAction
 
-from pyklu.PyKLUBackend import PyKLUBackend
+from pyklu2grid.PyKLUBackend import PyKLUBackend
 
 DEBUG = False
 PROFILE_CODE = False

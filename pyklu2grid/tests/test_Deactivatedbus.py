@@ -4,7 +4,7 @@ import copy
 import numpy as np
 import pdb
 from scipy import sparse
-from pyklu.initGridModel import init
+from pyklu2grid.initGridModel import init
 import pandapower.networks as pn
 import pandapower as pp
 

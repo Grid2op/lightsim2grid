@@ -15,7 +15,10 @@ class get_pybind_include(object):
     """Helper class to determine the pybind11 include path
     The purpose of this class is to postpone importing pybind11
     until it is actually installed, so that the ``get_include()``
-    method can be invoked. """
+    method can be invoked.
+
+    @author: Sylvain Corlay
+    """
 
     def __init__(self, user=False):
         self.user = user
@@ -30,6 +33,8 @@ class get_pybind_include(object):
 def has_flag(compiler, flagname):
     """Return a boolean indicating whether a flag name is supported on
     the specified compiler.
+
+    @author: Sylvain Corlay
     """
     import tempfile
     with tempfile.NamedTemporaryFile('w', suffix='.cpp') as f:
@@ -44,6 +49,8 @@ def has_flag(compiler, flagname):
 def cpp_flag(compiler):
     """Return the -std=c++[11/14/17] compiler flag.
     The newer version is prefered over c++11 (when it is available).
+
+    @author: Sylvain Corlay
     """
     flags = ['-std=c++17', '-std=c++14', '-std=c++11']
 
@@ -53,10 +60,12 @@ def cpp_flag(compiler):
     raise RuntimeError('Unsupported compiler -- at least C++11 support '
                        'is needed!')
 
-# import pdb
-# pdb.set_trace()
+
 class BuildExt(build_ext):
-    """A custom build extension for adding compiler-specific options."""
+    """
+    A custom build extension for adding compiler-specific options.
+    @author: Sylvain Corlay
+    """
     c_opts = {
         'msvc': ['/EHsc'],
         'unix': [],
@@ -92,11 +101,11 @@ eigen_path = os.path.abspath(".")
 
 # library to link against (require the "make" command to have run)
 LIBS = ["{}/KLU/Lib/libklu.a",
-       "{}/BTF/Lib/libbtf.a",
-       "{}/AMD/Lib/libamd.a",
-       "{}/COLAMD/Lib/libcolamd.a",
-       "{}/CXSparse/Lib/libcxsparse.a",
-       "{}/SuiteSparse_config/libsuitesparseconfig.a"
+        "{}/BTF/Lib/libbtf.a",
+        "{}/AMD/Lib/libamd.a",
+        "{}/COLAMD/Lib/libcolamd.a",
+        "{}/CXSparse/Lib/libcxsparse.a",
+        "{}/SuiteSparse_config/libsuitesparseconfig.a"
        ]
 
 LIBS = [el.format(suitesparse_path) for el in LIBS]
@@ -128,7 +137,7 @@ extra_compile_args = ["-march=native", "-fext-numeric-literals"]
 # -march=native is here to use the vectorization of the code offered by Eigen
 ext_modules = [
     Extension(
-        'pyklu_cpp',
+        'pyklu2grid_cpp',
         ['src/main.cpp', "src/KLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
          "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
          "src/DataLoad.cpp", "src/DataGen.cpp"],
@@ -139,21 +148,22 @@ ext_modules = [
     )
 ]
 
-setup(name='pyklu',
+setup(name='pyklu2grid',
       version=__version__,
       author='Benjamin Donnot',
       author_email='benjamin.donnot@rte-france.com',
       url='TODO',
-      description='A powerflow solver for pandapower written in c++ (using Eigen and klu) for pandapower',
-      long_description='This fast powerflow can be used instead of the "pp.runpp()" function of pandapower under some '
-                         'circumstances TODO',
+      description='PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.',
+      long_description='PyKLU2Grid a implements a backend for the Grid2Op platform written in c++ using state of the '
+                       'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '
+                       'its usage.',
       ext_modules=ext_modules,
-      install_requires=['pybind11>=2.4', "pandapower"],
+      install_requires=['pybind11>=2.4', "pandapower", "numpy", "scipy"],
       setup_requires=['pybind11>=2.4'],
       cmdclass={'build_ext': BuildExt},
       zip_safe=False,
-      packages=['pyklu'],
-      keywords='powergrid optmization power-systems KLU sparse-matrix',
+      packages=['pyklu2grid'],
+      keywords='powerflow pandapower powergrid klu sparse-matrix eigen',
       classifiers=[
             'Development Status :: 4 - Beta',
             'Programming Language :: Python :: 3.6',

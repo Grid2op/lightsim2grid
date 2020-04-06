@@ -3,7 +3,7 @@ from grid2op.Agent import AgentWithConverter
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
 from grid2op.Converter import IdToAct
-from pyklu.PyKLUBackend import PyKLUBackend
+from pyklu2grid.PyKLUBackend import PyKLUBackend
 import numpy as np
 import unittest
 from abc import ABC, abstractmethod

@@ -3,7 +3,7 @@ import numpy as np
 import pandapower.networks as pn
 import pandapower as pp
 
-from pyklu.initGridModel import init
+from pyklu2grid.initGridModel import init
 import pdb
 
 

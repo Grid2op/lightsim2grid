@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pdb
 import zipfile
-from pyklu.newtonpf import newtonpf
+from pyklu2grid.newtonpf import newtonpf
 from scipy import sparse
 
 

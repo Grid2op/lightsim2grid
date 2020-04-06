@@ -1,3 +1,11 @@
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+
 import numpy as np
 
 from grid2op import make
@@ -6,7 +14,7 @@ from grid2op.Parameters import Parameters
 from grid2op.Converter import IdToAct
 from grid2op.Rules import AlwaysLegal
 
-from pyklu.PyKLUBackend import PyKLUBackend
+from pyklu2grid.PyKLUBackend import PyKLUBackend
 
 from utils_benchmark import print_res, run_env
 

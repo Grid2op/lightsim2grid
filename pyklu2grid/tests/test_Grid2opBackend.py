@@ -18,7 +18,7 @@ from grid2op.Rules import RulesChecker
 from grid2op.MakeEnv import make
 from grid2op.Rules import AlwaysLegal
 
-from pyklu.PyKLUBackend import PyKLUBackend
+from pyklu2grid.PyKLUBackend import PyKLUBackend
 
 PATH_DATA_TEST = PATH_DATA_TEST_PP
 

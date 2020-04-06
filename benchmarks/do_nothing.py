@@ -4,12 +4,12 @@
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
-# This file is part of Grid2Op, Grid2Op a testbed platform to model sequential decision making in power systems.
+# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
 
 from grid2op import make
 from grid2op.Agent import DoNothingAgent
 from grid2op.Parameters import Parameters
-from pyklu.PyKLUBackend import PyKLUBackend
+from pyklu2grid.PyKLUBackend import PyKLUBackend
 from utils_benchmark import print_res, run_env
 
 MAX_TS = 1000

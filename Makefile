@@ -1,4 +1,10 @@
-# Simple C Wrapper Makefile. Provide routine for solving linear system.
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
 
 default: all
 
@@ -54,6 +60,4 @@ prelude:
 	(cd $(LIBPATH)/KLU/Lib/ && make CC=gcc)
 
 pyKLU: $(PATHOUT)/pyklu.c $(LIB)
-	$(CC) $(INCLUDE) -fPIC -shared -o $(PATHOUT)/libpyklu.so $(PATHOUT)/pyklu.c $(LIB)
-	# $(CXX) $(INCLUDE) -fPIC -shared -o $(PATHOUT)/libpyklu_cpp.so $(PATHOUT)/pyklu.cpp $(LIB)
 

@@ -1,8 +1,16 @@
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+
 import numpy as np
 import sys
 from scipy import sparse
-from pyklu.compute_powerflow import KLUSolver
-from pandapower.pf.create_jacobian import create_jacobian_matrix, get_fastest_jacobian_function
+from pyklu2grid.compute_powerflow import KLUSolver
+
 import pdb
 for it in range(1,5):
     Ybus = np.load("Ybus_{}.npy".format(it))
@@ -384,8 +392,8 @@ sys.exit()
 #                -0.00424623,  0.00021747, -0.00913819,  0.0027597 ,  0.02196277,
 #                 0.03493246])
 
-import pyklu
-dx_klu = -1.0 * pyklu.solve_linear_system(J, F_klu)
+import pyklu2grid
+dx_klu = -1.0 * pyklu2grid.solve_linear_system(J, F_klu)
 # from scipy import sparse
 # import ctypes
 # libklu = ctypes.cdll.LoadLibrary('libpyklu.so')
