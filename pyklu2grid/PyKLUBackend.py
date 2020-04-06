@@ -232,7 +232,7 @@ class PyKLUBackend(Backend):
         """
         return 1 if tmp is 2 else 2 if tmp is one
         """
-        return 2 * (1 - tmp) + 2
+        return (1 - tmp) + 2
 
     def apply_action(self, action):
         # change the _injection if needed
@@ -299,6 +299,7 @@ class PyKLUBackend(Backend):
             for id_el, do_i_switch in enumerate(switcth_topo_vect):
                 if do_i_switch:
                     new_bus_me = self._switch_bus_me(actual_topo_full[id_el])
+                    # TODO this can be vectorized
                     self.topo_vect[id_el] = new_bus_me
 
             for id_el, new_bus in enumerate(set_topo_vect):
@@ -440,7 +441,7 @@ class PyKLUBackend(Backend):
             self.load_p = np.full(self.n_load, dtype=np.float, fill_value=np.NaN)
             self.load_q = self.load_p
             self.load_v = self.load_p
-            self.prod_p = np.full(self.n_load, dtype=np.float, fill_value=np.NaN)
+            self.prod_p = np.full(self.n_gen, dtype=np.float, fill_value=np.NaN)
             self.next_prod_p[:] = self.prod_p
             self.prod_q = self.prod_p
             self.prod_v = self.prod_p
@@ -455,6 +456,7 @@ class PyKLUBackend(Backend):
         #TODO I need a c++ method that would just copy the state of the grid (bus connection, powerlines connected etc.)
         # TODO this could be done in a "get_action_to_set_me" and use to update obsenv for example!
         self._grid = mygrid
+        res.apply_action(self.get_action_to_set())
         return res
 
     def get_line_status(self):

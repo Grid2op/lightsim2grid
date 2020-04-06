@@ -9,7 +9,6 @@ import warnings
 from grid2op.tests.helper_path_test import HelperTests, PATH_DATA_TEST_PP
 
 from grid2op.Action import ActionSpace, CompleteAction
-from grid2op.Backend import PandaPowerBackend
 from grid2op.Parameters import Parameters
 from grid2op.Chronics import ChronicsHandler, ChangeNothing
 from grid2op.Environment import Environment
@@ -23,7 +22,7 @@ from pyklu2grid.PyKLUBackend import PyKLUBackend
 PATH_DATA_TEST = PATH_DATA_TEST_PP
 
 
-class TestLoadingCase(): #unittest.TestCase):
+class TestLoadingCase(unittest.TestCase):
     def setUp(self):
         self.tolvect = 1e-2
         self.tol_one = 1e-5
@@ -82,7 +81,7 @@ class TestLoadingCase(): #unittest.TestCase):
         backend.assert_grid_correct_after_powerflow()
 
 
-class TestLoadingBackendFunc(): #unittest.TestCase):
+class TestLoadingBackendFunc(unittest.TestCase):
     # Cette méthode sera appelée avant chaque test.
     def setUp(self):
         self.backend = PyKLUBackend()
@@ -418,7 +417,7 @@ class TestLoadingBackendFunc(): #unittest.TestCase):
         assert not flows[17]
 
 
-class TestTopoAction(): #unittest.TestCase):
+class TestTopoAction(unittest.TestCase):
     # Cette méthode sera appelée avant chaque test.
     def setUp(self):
         self.backend = PyKLUBackend()
@@ -642,7 +641,6 @@ class TestTopoAction(): #unittest.TestCase):
             topo_vect[self.backend.line_ex_pos_topo_vect[lex_ids]] == 1+arr1[self.backend.line_ex_to_sub_pos[lex_ids]])
         gen_ids = np.where(self.backend.gen_to_subid == id_1)[0]
         assert np.all(topo_vect[self.backend.gen_pos_topo_vect[gen_ids]] == 1+arr1[self.backend.gen_to_sub_pos[gen_ids]])
-
 
         load_ids = np.where(self.backend.load_to_subid == id_2)[0]
         assert np.all(
@@ -871,7 +869,7 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
                 assert (not grid_tmp.get_line_status()[self.id_2nd_line_disco])
 
 
-class TestChangeBusAffectRightBus(): #unittest.TestCase):
+class TestChangeBusAffectRightBus(unittest.TestCase):
     def setUp(self):
         self.backend = PyKLUBackend()
 
@@ -974,7 +972,7 @@ class TestChangeBusAffectRightBus(): #unittest.TestCase):
         assert done_case2
 
 
-class TestShuntAction(): #HelperTests):
+class TestShuntAction(HelperTests):
     def test_shunt_ambiguous_id_incorrect(self):
         self.backend = PyKLUBackend()
         with warnings.catch_warnings():
