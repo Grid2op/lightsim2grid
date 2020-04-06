@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pdb
 import zipfile
-from pyklu_cpp import KLUSolver
+from pyklu2grid_cpp import KLUSolver
 from scipy import sparse
 
 
