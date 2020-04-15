@@ -4,7 +4,7 @@
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
-# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
 from time import time
@@ -24,7 +24,7 @@ from pandapower.run import _check_gen_index_and_print_warning_if_high
 
 import pandapower as pp
 
-from pyklu_cpp import KLUSolver, GridModel, PandaPowerConverter
+from lightsim2grid_cpp import KLUSolver, GridModel, PandaPowerConverter
 
 import pdb
 

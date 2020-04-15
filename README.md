@@ -1,5 +1,10 @@
-# powerflow_klu
-Provide a faster powerflow for pandapower using c++ klu (I hope)
+# LightSim2Grid
+Provide a fast backend for grid2op using c++ KLU and Eigen librairies. Its primary goal is to serve as a fast
+backend for the grid2op platform, used primarily as a testbed platform for sequential decision making in
+the world of power system.
+
+See the [Disclaimer](DISCLAIMER.md) to have a more detailed view on what is and what is not this package. For example
+this package should not be used for detailed power system computations or simulations.
 
 ## installation
 You need to:
@@ -33,11 +38,28 @@ Once installed (don't forget, if you used the optional virtual env
 above you need to load it with `source venv/bin/activate`) you can
 use it as any python package.
 
-### 1. replacement of pandapower "newtonpf" method
+### 1. As a grid2op backend (preferred method)
+This functionality requires you to have grid2op installed, with at least version 0.7.0. You can install it with
+```bash
+pip install grid2op>=0.7.0
+```
+
+Then you can use a LightSimBackend instead of the default PandapowerBackend this way:
+
+```python3
+import grid2op
+from lightsim2grid import LightSimBackend
+backend = LightSimBackend()
+env = grid2op.make(backend=backend)
+# do regular computation as you would with grid2op
+```
+And you are good to go.
+
+### 2. replacement of pandapower "newtonpf" method (advanced method)
 Suppose you somehow get:
-- `Ybus` the admittance matrix of your powersystem
-- `V0` the (complex) voltage vector at each bus
-- `Sbus` the (complex) power absorb at each bus
+- `Ybus` the admittance matrix of your powersystem given by pandapower
+- `V0` the (complex) voltage vector at each bus given by pandapower
+- `Sbus` the (complex) power absorb at each bus as given by pandapower
 - `ppci` a ppc internal pandapower test case
 - `pv` list of PV buses
 - `pq` list of PQ buses
@@ -46,45 +68,13 @@ Suppose you somehow get:
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
 ```python
-from pyklu.newtonpf import newtonpf
+from lighsim2grid.newtonpf import newtonpf
 V, converged, iterations, J = newtonpf(Ybus, V, Sbus, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
 
-### 2. attempt to optimize the code
-You can also use a different class, that should be able to avoid
-un necessary conversion from pandapower to the format specified above.
-
-WORK IN PROGRESS USE AT YOUR OWN RISK
-
-```python
-from pyklu.compute_powerflow import KLU4Pandapower
-import pandapower.networks as pn
-grid2 = pn.case9241pegase()
-cpp_solver = KLU4Pandapower()
-nb_max_newton_it = 10  #maximum number of iteration for newton raphson
-# first call, you need to "reset the solver"
-cpp_solver.runpp(grid2, 
-                 max_iteration=nb_max_newton_it,
-                 need_reset=True   # reset the KLU solver to an original state, need to be done each time the Ymatrix is changed (might be slow)
-                 )
-
-# second and further calls, as long as the admittance matrix does not change
-cpp_solver.runpp(grid2, 
-                 max_iteration=nb_max_newton_it,
-                 need_reset=False  # reuse previous voltage angles, jacobian matrix, and admittance matrix
-                 )
-```
-
 ## Miscelanous
-WORK IN PROGRESS USE AT YOUR OWN RISK
-
-You can run some tests with:
-```bash
-python old/test_klu.py
-```
-
 And some official test, to make sure the solver returns the same results as pandapower
 are performed in "pyklu/tests"
 ```bash
@@ -92,4 +82,5 @@ cd pyklu/tests
 python -m unittest discover
 ```
 
-
+This tests ensure that the results given by this simulator are consistent with the one given by pandapower when
+using the Newton-Raphson algorithm, with a single slack bus, without enforcing q limits on the generators etc.

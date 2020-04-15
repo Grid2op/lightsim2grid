@@ -4,13 +4,9 @@
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 // you can obtain one at http://mozilla.org/MPL/2.0/.
 // SPDX-License-Identifier: MPL-2.0
-// This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include <pybind11/pybind11.h>
-//#include <pybind11/stl.h>
-//#include <pybind11/stl_bind.h>
-//PYBIND11_MAKE_OPAQUE(std::vector<int>);
-//PYBIND11_MAKE_OPAQUE(std::vector<double>);
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 
@@ -20,14 +16,9 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(pyklu2grid_cpp, m) {
-//    py::bind_vector<std::vector<int> >(m, "VectorInt");
-//    py::bind_vector<std::vector<double> >(m, "VectorDouble");
+PYBIND11_MODULE(lightsim2grid_cpp, m) {
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
-//        .def("initialize_test", &KLUSolver::initialize_test)  // initialize the solver (DO NOT USE)
-//        .def("get_ds_test", &KLUSolver::_get_ds_test)  //test function to test if the partial derivatives are properly computed
-//        .def("get_Ybus", &KLUSolver::get_Ybus)  //test function to test if the partial derivatives are properly computed
         .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)

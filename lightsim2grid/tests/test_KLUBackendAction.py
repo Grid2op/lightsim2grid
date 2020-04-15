@@ -3,7 +3,7 @@ from grid2op.Agent import DoNothingAgent
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
 from grid2op.Chronics import ChangeNothing
-from pyklu2grid.PyKLUBackend import PyKLUBackend
+from lightsim2grid.LightSimBackend import LightSimBackend
 import numpy as np
 import unittest
 import warnings
@@ -17,7 +17,7 @@ class TestDN(unittest.TestCase):
         self.max_ts = 100
         self.tol = 1e-5
         self.env_name = "case5_example"
-        backend = PyKLUBackend()
+        backend = LightSimBackend()
         env_name = self.env_name
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

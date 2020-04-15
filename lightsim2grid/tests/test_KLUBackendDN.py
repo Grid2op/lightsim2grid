@@ -2,7 +2,7 @@ from grid2op import make
 from grid2op.Agent import DoNothingAgent
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
-from pyklu2grid.PyKLUBackend import PyKLUBackend
+from lightsim2grid.LightSimBackend import LightSimBackend
 import numpy as np
 import unittest
 from abc import ABC, abstractmethod
@@ -39,7 +39,7 @@ class TestDN(ABC):
         return nb_ts, aor
 
     def test_do_nothing(self):
-        backend = PyKLUBackend()
+        backend = LightSimBackend()
         env_name = self._get_env_name()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

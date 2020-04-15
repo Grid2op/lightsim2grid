@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pdb
 import pandapower.networks as pn
-from pyklu2grid_cpp import PandaPowerConverter
+from lightsim2grid_cpp import PandaPowerConverter
 
 
 class MakeTests(unittest.TestCase):

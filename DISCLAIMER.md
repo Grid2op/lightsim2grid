@@ -4,13 +4,13 @@ This Source Code Form is subject to the terms of the Mozilla Public License, ver
 If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 you can obtain one at http://mozilla.org/MPL/2.0/.
 SPDX-License-Identifier: MPL-2.0
-This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
 This disclaimer only serves as a complement to the `LICENSE.md` file provided with it. It can not serve as a 
 replacement of this file.
 
 
-The "powerflow" implemented in this package is made for speed mainly to serve as a grid2op backend (see
+The simulator implemented in this package is made for speed mainly to serve as a grid2op backend (see
 https://github.com/rte-france/grid2op for more information). We recall here that grid2op is a research testbed platform
 aiming at emulating sequential decisions making in powergrids.
 

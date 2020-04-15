@@ -17,7 +17,7 @@ from grid2op.Rules import RulesChecker
 from grid2op.MakeEnv import make
 from grid2op.Rules import AlwaysLegal
 
-from pyklu2grid.PyKLUBackend import PyKLUBackend
+from lightsim2grid.LightSimBackend import LightSimBackend
 
 PATH_DATA_TEST = PATH_DATA_TEST_PP
 
@@ -28,7 +28,7 @@ class TestLoadingCase(unittest.TestCase):
         self.tol_one = 1e-5
 
     def test_load_file(self):
-        backend = PyKLUBackend()
+        backend = LightSimBackend()
         path_matpower = PATH_DATA_TEST
         case_file = "test_case14.json"
         backend.load_grid(path_matpower, case_file)
@@ -72,7 +72,7 @@ class TestLoadingCase(unittest.TestCase):
             pass
 
     def test_assert_grid_correct(self):
-        backend = PyKLUBackend()
+        backend = LightSimBackend()
         path_matpower = PATH_DATA_TEST
         case_file = "test_case14.json"
         backend.load_grid(path_matpower, case_file)
@@ -84,7 +84,7 @@ class TestLoadingCase(unittest.TestCase):
 class TestLoadingBackendFunc(unittest.TestCase):
     # Cette méthode sera appelée avant chaque test.
     def setUp(self):
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         self.path_matpower = PATH_DATA_TEST
         self.case_file = "test_case14.json"
         self.backend.load_grid(self.path_matpower, self.case_file)
@@ -420,7 +420,7 @@ class TestLoadingBackendFunc(unittest.TestCase):
 class TestTopoAction(unittest.TestCase):
     # Cette méthode sera appelée avant chaque test.
     def setUp(self):
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         self.path_matpower = PATH_DATA_TEST
         self.case_file = "test_case14.json"
         self.backend.load_grid(self.path_matpower, self.case_file)
@@ -678,7 +678,7 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
     Test the "next_grid_state" method of the back-end
     """
     def setUp(self):
-        self.backend = PyKLUBackend(detailed_infos_for_cascading_failures=True)
+        self.backend = LightSimBackend(detailed_infos_for_cascading_failures=True)
         self.path_matpower = PATH_DATA_TEST
         self.case_file = "test_case14.json"
         self.backend.load_grid(self.path_matpower, self.case_file)
@@ -871,7 +871,7 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
 
 class TestChangeBusAffectRightBus(unittest.TestCase):
     def setUp(self):
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
 
     def test_set_bus(self):
         with warnings.catch_warnings():
@@ -974,7 +974,7 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
 
 class TestShuntAction(HelperTests):
     def test_shunt_ambiguous_id_incorrect(self):
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             with make("case5_example", gamerules_class=AlwaysLegal, action_class=CompleteAction, backend=self.backend) as env_case2:
@@ -982,7 +982,7 @@ class TestShuntAction(HelperTests):
                     act = env_case2.action_space({"shunt": {"set_bus": [(0, 2)]}})
 
     def test_shunt_effect(self):
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             env_ref = make("case14_realistic", gamerules_class=AlwaysLegal, action_class=CompleteAction)
