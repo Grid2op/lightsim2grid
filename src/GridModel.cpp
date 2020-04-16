@@ -56,7 +56,7 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
     generators_.init_q_vector(bus_vn_kv_.size());
     _solver.reset();
     // }
-    fillSbus(Sbus_, true, id_me_to_solver_, slack_bus_id_solver_);
+    fillSbus_me(Sbus_, true, id_me_to_solver_, slack_bus_id_solver_);
 
     int nb_bus_solver = id_solver_to_me_.size();
     Eigen::VectorXcd V = Eigen::VectorXcd::Constant(id_solver_to_me_.size(), 1.04);
@@ -142,7 +142,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std:
     res.makeCompressed();
 }
 
-void GridModel::fillSbus(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
+void GridModel::fillSbus_me(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
 {
     // init the Sbus vector
     powerlines_.fillSbus(res, ac, id_me_to_solver);
@@ -246,7 +246,7 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     fillYbus(dcYbus_tmp, false, id_me_to_solver);
     // fillpv_pq(id_me_to_solver);
     //}
-    fillSbus(Sbus_tmp, false, id_me_to_solver, slack_bus_id_solver);
+    fillSbus_me(Sbus_tmp, false, id_me_to_solver, slack_bus_id_solver);
 
 
     // extract only connected bus from Vinit

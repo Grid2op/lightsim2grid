@@ -15,7 +15,6 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-using namespace std::complex_literals;
 
 /**
 Base class for every object that can be manipulated
@@ -33,7 +32,7 @@ class DataGeneric
                             const std::vector<int> & id_grid_to_solver) {};
         virtual double get_p_slack(int slack_bus_id) {return 0.;}
         virtual void set_p_slack(int gen_slackbus, double p_slack) {};
-        virtual void get_q(const std::vector<double>& q_by_bus) {};
+        virtual void get_q(std::vector<double>& q_by_bus) {};
 
     protected:
         static const int _deactivated_bus_id;

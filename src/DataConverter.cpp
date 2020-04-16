@@ -17,6 +17,7 @@ void PandaPowerConverter::_check_init(){
     }
 }
 
+const cdouble PandaPowerConverter::my_i = {0., 1.};
 
 std::tuple<Eigen::VectorXd,
            Eigen::VectorXd,
@@ -64,12 +65,11 @@ std::tuple<Eigen::VectorXd,
     for(int i = 0; i<nb_trafo; ++i) {if (b_img(i) < 0.)  b_img(i) = 0.;}
     b_img = b_img.cwiseSqrt();
     b_img.array() *= baseR.array() / vnl_squared.array();
-    Eigen::VectorXcd y = - 1.0i * b_real.array().cast<cdouble>() - b_img.array().cast<cdouble>() * trafo_i0_pct.cwiseSign().array();
+    Eigen::VectorXcd y = - my_i * b_real.array().cast<cdouble>() - b_img.array().cast<cdouble>() * trafo_i0_pct.cwiseSign().array();
     Eigen::VectorXcd b_sc = y.array() / tmp.array().cast<cdouble>();
 
     //transform trafo from t model to pi model, of course...
     // (remove that if trafo model is not t, but directly pi)
-    cdouble my_i = 1.0i;
     for(int i = 0; i<nb_trafo; ++i){
         if(b_sc(i) == 0.) continue;
         cdouble za_star = 0.5 * (r_sc(i) + my_i * x_sc(i));
@@ -112,5 +112,5 @@ std::tuple<Eigen::VectorXd,
     std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXcd> res = std::tuple<Eigen::VectorXd,
            Eigen::VectorXd,
            Eigen::VectorXcd> (std::move(powerlines_r), std::move(powerlines_x), std::move(powerlines_h));
-    return std::move(res);
+    return res;
 }

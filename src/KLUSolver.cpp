@@ -8,7 +8,7 @@
 
 #include "KLUSolver.h"
 
-const cdouble KLUSolver::my_i = 1.0i;
+const cdouble KLUSolver::my_i = {0., 1.};
 
 bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
                           Eigen::VectorXcd & V,

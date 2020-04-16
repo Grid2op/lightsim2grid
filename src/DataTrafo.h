@@ -42,8 +42,8 @@ class DataTrafo : public DataGeneric
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
 
-    void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
                          const Eigen::Ref<Eigen::VectorXd> & Vm,

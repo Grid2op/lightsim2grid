@@ -9,7 +9,7 @@
 #include "DataGeneric.h"
 
 const int DataGeneric::_deactivated_bus_id = -1;
-const cdouble DataGeneric::my_i = 1.0i;
+const cdouble DataGeneric::my_i = {0., 1.};
 
 // TODO all functions bellow are generic ! Make a base class for that
 void DataGeneric::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v){

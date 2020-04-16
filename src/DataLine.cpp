@@ -40,7 +40,6 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, co
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
     int nb_line = powerlines_r_.size();
-    cdouble my_i = 1.0i;
 
     //diagonal coefficients
     for(int line_id =0; line_id < nb_line; ++line_id){
@@ -85,12 +84,11 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, co
         res.push_back(Eigen::Triplet<cdouble> (bus_ex_solver_id, bus_ex_solver_id, tmp));
     }
 }
-void DataLine::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
     int nb_line = powerlines_r_.size();
-    cdouble my_i = 1.0i;
 
     //diagonal coefficients
     for(int line_id =0; line_id < nb_line; ++line_id){
@@ -166,7 +164,6 @@ void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
     res_powerline_qex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
     res_powerline_vex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
     res_powerline_aex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
-    cdouble my_i = 1.0i;
     for(int line_id = 0; line_id < nb_element; ++line_id){
         // don't do anything if the element is disconnected
         if(!status_[line_id]) continue;

@@ -58,6 +58,7 @@ class PandaPowerConverter{
     protected:
         double sn_mva_;
         double f_hz_;
+        static const cdouble my_i;
 
     private:
         void _check_init();

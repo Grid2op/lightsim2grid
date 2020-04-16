@@ -27,7 +27,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, c
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = p_mw_(shunt_id) + 1.0i * q_mvar_(shunt_id);
+        tmp = p_mw_(shunt_id) + my_i * q_mvar_(shunt_id);
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
@@ -36,7 +36,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, c
         res.push_back(Eigen::Triplet<cdouble> (bus_id_solver, bus_id_solver, -tmp));
     }
 }
-void DataShunt::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver){
     int nb_shunt = q_mvar_.size();
     cdouble tmp;
     int bus_id_me, bus_id_solver;
@@ -45,7 +45,7 @@ void DataShunt::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std:
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = p_mw_(shunt_id) + 1.0i * q_mvar_(shunt_id);
+        tmp = p_mw_(shunt_id) + my_i * q_mvar_(shunt_id);
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
@@ -65,7 +65,6 @@ void DataShunt::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     res_p_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
     res_q_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
-    const cdouble my_i = 1.0i;
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
         if(!status_[shunt_id]) continue;
         int bus_id_me = bus_id_(shunt_id);

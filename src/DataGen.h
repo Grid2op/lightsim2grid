@@ -38,8 +38,8 @@ class DataGen: public DataGeneric
     void change_p(int gen_id, double new_p, bool & need_reset);
     void change_v(int gen_id, double new_v_pu, bool & need_reset);
 
-    void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
-    void fillpv(std::vector<int>& bus_pv,
+    virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillpv(std::vector<int>& bus_pv,
                 std::vector<bool> & has_bus_been_added,
                 int slack_bus_id_solver,
                 const std::vector<int> & id_grid_to_solver);

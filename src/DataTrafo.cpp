@@ -35,12 +35,11 @@ void DataTrafo::init(const Eigen::VectorXd & trafo_r,
     status_ = std::vector<bool>(trafo_r.size(), true);
 }
 
-void DataTrafo::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if"
     int nb_trafo = nb();
-    cdouble my_i = 1.0i;
     for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
         // i don't do anything if the trafo is disconnected
         if(!status_[trafo_id]) continue;
@@ -96,7 +95,6 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, c
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if"
     int nb_trafo = nb();
-    cdouble my_i = 1.0i;
     for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
         // i don't do anything if the trafo is disconnected
         if(!status_[trafo_id]) continue;
@@ -164,7 +162,6 @@ void DataTrafo::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
     res_q_lv_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
     res_v_lv_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
     res_a_lv_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
-    cdouble my_i = 1.0i;
     for(int line_id = 0; line_id < nb_element; ++line_id){
         // don't do anything if the element is disconnected
         if(!status_[line_id]) continue;

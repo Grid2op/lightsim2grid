@@ -196,7 +196,7 @@ class GridModel : public DataGeneric
                        std::vector<int> & id_me_to_solver, std::vector<int>& id_solver_to_me,
                        int & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
+        void fillSbus_me(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver);
 
         // results

@@ -36,7 +36,7 @@ class DataLoad : public DataGeneric
     void change_p(int load_id, double new_p, bool & need_reset);
     void change_q(int load_id, double new_q, bool & need_reset);
 
-    void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
                          const Eigen::Ref<Eigen::VectorXd> & Vm,
