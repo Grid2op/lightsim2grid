@@ -31,6 +31,7 @@ extern "C" {
 
 #include "CustTimer.h"
 #include "Utils.h"
+using namespace std::complex_literals;
 /**
 class to handle the solver using newton-raphson method, using KLU algorithm and sparse matrices.
 

@@ -15,6 +15,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
+using namespace std::complex_literals;
 
 /**
 Base class for every object that can be manipulated
