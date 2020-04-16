@@ -39,13 +39,13 @@ class TestLoadingCase(unittest.TestCase):
         assert backend.n_sub == 14
 
         name_line = ['0_1_0', '0_4_1',  '8_9_2', '8_13_3', '9_10_4', '11_12_5', '12_13_6', '1_2_7',
-                      '1_3_8', '1_4_9', '2_3_10', '3_4_11', '5_10_12', '5_11_13', '5_12_14',  '3_6_15',
-                      '3_8_16', '4_5_17', '6_7_18', '6_8_19']
+                     '1_3_8', '1_4_9', '2_3_10', '3_4_11', '5_10_12', '5_11_13', '5_12_14',  '3_6_15',
+                     '3_8_16', '4_5_17', '6_7_18', '6_8_19']
         name_line = np.array(name_line)
         assert np.all(sorted(backend.name_line) == sorted(name_line))
 
         name_sub = ['sub_0', 'sub_1', 'sub_2', 'sub_3', 'sub_4', 'sub_5', 'sub_6', 'sub_7', 'sub_8', 'sub_9', 'sub_10',
-                     'sub_11', 'sub_12', 'sub_13']
+                    'sub_11', 'sub_12', 'sub_13']
         name_sub = np.array(name_sub)
         assert np.all(sorted(backend.name_sub) == sorted(name_sub))
 
@@ -54,7 +54,7 @@ class TestLoadingCase(unittest.TestCase):
         assert np.all(sorted(backend.name_gen) == sorted(name_gen))
 
         name_load = ['load_1_0', 'load_2_1', 'load_13_2', 'load_3_3', 'load_4_4', 'load_5_5', 'load_8_6',
-                      'load_9_7', 'load_10_8', 'load_11_9', 'load_12_10']
+                     'load_9_7', 'load_10_8', 'load_11_9', 'load_12_10']
         name_load = np.array(name_load)
         assert np.all(sorted(backend.name_load) == sorted(name_load))
 

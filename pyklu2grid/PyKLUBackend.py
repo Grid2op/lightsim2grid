@@ -451,11 +451,14 @@ class PyKLUBackend(Backend):
     def copy(self):
         mygrid = self._grid
         self._grid = None
+        inippbackend = self.init_pp_backend._grid
+        self.init_pp_backend._grid = None
         res = copy.deepcopy(self)
-        res._grid = init(self.init_pp_backend._grid)
+        res._grid = init(inippbackend)
         #TODO I need a c++ method that would just copy the state of the grid (bus connection, powerlines connected etc.)
         # TODO this could be done in a "get_action_to_set_me" and use to update obsenv for example!
         self._grid = mygrid
+        self.init_pp_backend._grid = inippbackend
         res.apply_action(self.get_action_to_set())
         return res
 
