@@ -3,7 +3,7 @@ import numpy as np
 import pandapower.networks as pn
 import pandapower as pp
 
-from pyklu2grid.initGridModel import init
+from lightsim2grid.initGridModel import init
 import pdb
 
 

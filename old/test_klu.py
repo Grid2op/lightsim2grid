@@ -11,7 +11,7 @@ import time
 
 import pandapower as pp
 import pandapower.networks as pn
-from pyklu2grid.compute_powerflow import KLU4Pandapower
+from lightsim2grid.compute_powerflow import KLU4Pandapower
 
 import pdb
 tol = 1e-6

@@ -4,7 +4,7 @@
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
-# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+# This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
 import numpy as np
 
@@ -14,7 +14,7 @@ from grid2op.Parameters import Parameters
 from grid2op.Converter import IdToAct
 from grid2op.Rules import AlwaysLegal
 
-from pyklu2grid.PyKLUBackend import PyKLUBackend
+from lightsim2grid.LightSimBackend import LightSimBackend
 
 from utils_benchmark import print_res, run_env
 
@@ -95,7 +95,7 @@ class TestAgent(AgentWithConverter):
 
 
 def main(max_ts, name):
-    backend = PyKLUBackend()
+    backend = LightSimBackend()
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 

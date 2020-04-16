@@ -137,7 +137,7 @@ extra_compile_args = ["-march=native", "-fext-numeric-literals"]
 # -march=native is here to use the vectorization of the code offered by Eigen
 ext_modules = [
     Extension(
-        'pyklu2grid_cpp',
+        'lightsim2grid_cpp',
         ['src/main.cpp', "src/KLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
          "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
          "src/DataLoad.cpp", "src/DataGen.cpp"],
@@ -148,13 +148,13 @@ ext_modules = [
     )
 ]
 
-setup(name='pyklu2grid',
+setup(name='LightSim2Grid',
       version=__version__,
       author='Benjamin Donnot',
       author_email='benjamin.donnot@rte-france.com',
       url='TODO',
-      description='PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.',
-      long_description='PyKLU2Grid a implements a backend for the Grid2Op platform written in c++ using state of the '
+      description='LightSim2Grid implements a c++ backend targeting the Grid2Op platform.',
+      long_description='LightSim2Grid implements a backend for the Grid2Op platform written in c++ using state of the '
                        'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '
                        'its usage.',
       ext_modules=ext_modules,
@@ -162,8 +162,8 @@ setup(name='pyklu2grid',
       setup_requires=['pybind11>=2.4'],
       cmdclass={'build_ext': BuildExt},
       zip_safe=False,
-      packages=['pyklu2grid'],
-      keywords='powerflow pandapower powergrid klu sparse-matrix eigen',
+      packages=['lightsim2grid'],
+      keywords='pandapower powergrid simulator KLU Eigen c++',
       classifiers=[
             'Development Status :: 4 - Beta',
             'Programming Language :: Python :: 3.6',

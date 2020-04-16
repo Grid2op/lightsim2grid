@@ -4,7 +4,7 @@
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
-# This file is part of PyKLU2Grid, PyKLU2Grid a implements a c++ backend targeting the Grid2Op platform.
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
 import numpy as np
@@ -26,10 +26,10 @@ except (ImportError, ModuleNotFoundError) as e:
         def __init__(self, detailed_infos_for_cascading_failures=False):
             pass
 
-from pyklu2grid.initGridModel import init
+from lightsim2grid.initGridModel import init
 
 
-class PyKLUBackend(Backend):
+class LightSimBackend(Backend):
     def __init__(self, detailed_infos_for_cascading_failures=False):
         if not grid2op_installed:
             raise NotImplementedError("Impossible to use a Backend if grid2op is not installed.")

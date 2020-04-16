@@ -15,7 +15,7 @@ from grid2op.Chronics import ChronicsHandler, GridStateFromFile, ChangeNothing
 from grid2op.MakeEnv import make
 from grid2op.Action import BaseAction
 
-from pyklu2grid.PyKLUBackend import PyKLUBackend
+from lightsim2grid.LightSimBackend import LightSimBackend
 
 DEBUG = False
 PROFILE_CODE = False
@@ -26,7 +26,7 @@ if PROFILE_CODE:
 class TestRedispatch(HelperTests):
     def setUp(self):
         # powergrid
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         self.path_matpower = PATH_DATA_TEST_PP
         self.case_file = "test_case14.json"
         # chronics
@@ -257,7 +257,7 @@ class TestRedispatch(HelperTests):
 class TestRedispatchChangeNothingEnvironment(HelperTests):
     def setUp(self):
         # powergrid
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         self.path_matpower = PATH_DATA_TEST_PP
         self.case_file = "test_case14.json"
         # chronics
@@ -323,7 +323,7 @@ class TestRedispatchChangeNothingEnvironment(HelperTests):
 class TestRedispTooLowHigh(HelperTests):
     # test bug reported in issues https://github.com/rte-france/Grid2Op/issues/44
     def setUp(self) -> None:
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = make("case14_redisp", backend=self.backend)
@@ -391,7 +391,7 @@ class TestRedispTooLowHigh(HelperTests):
 
 class TestLoadingBackendPandaPower(HelperTests):
     def setUp(self):
-        self.backend = PyKLUBackend()
+        self.backend = LightSimBackend()
         # powergrid
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

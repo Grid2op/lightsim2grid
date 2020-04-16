@@ -36,7 +36,6 @@ clean:
 	(cd $(LIBPATH)/BTF/Lib/ && make clean)
 	(cd $(LIBPATH)/COLAMD/Lib/ && make clean)
 	(cd $(LIBPATH)/KLU/Lib/ && make clean)
-	rm $(PATHOUT)/libpyklu.so
 
 purge:
 	(cd $(LIBPATH)/SuiteSparse_config/ && make purge)
@@ -45,11 +44,10 @@ purge:
 	(cd $(LIBPATH)/BTF/Lib/ && make purge)
 	(cd $(LIBPATH)/COLAMD/Lib/ && make purge)
 	(cd $(LIBPATH)/KLU/Lib/ && make purge)
-	rm $(PATHOUT)/libpyklu.so
 
 distclean: purge
 
-all: prelude pyKLU
+all: prelude
 
 prelude:
 	(cd $(LIBPATH)/SuiteSparse_config/ && make CC=gcc)
@@ -58,6 +56,3 @@ prelude:
 	(cd $(LIBPATH)/BTF/Lib/ && make CC=gcc)
 	(cd $(LIBPATH)/COLAMD/Lib/ && make CC=gcc)
 	(cd $(LIBPATH)/KLU/Lib/ && make CC=gcc)
-
-pyKLU: $(PATHOUT)/pyklu.c $(LIB)
-

@@ -9,7 +9,7 @@
 import numpy as np
 import sys
 from scipy import sparse
-from pyklu2grid.compute_powerflow import KLUSolver
+from lightsim2grid.compute_powerflow import KLUSolver
 
 import pdb
 for it in range(1,5):
@@ -392,8 +392,8 @@ sys.exit()
 #                -0.00424623,  0.00021747, -0.00913819,  0.0027597 ,  0.02196277,
 #                 0.03493246])
 
-import pyklu2grid
-dx_klu = -1.0 * pyklu2grid.solve_linear_system(J, F_klu)
+import lightsim2grid
+dx_klu = -1.0 * lightsim2grid.solve_linear_system(J, F_klu)
 # from scipy import sparse
 # import ctypes
 # libklu = ctypes.cdll.LoadLibrary('libpyklu.so')
