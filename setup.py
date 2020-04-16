@@ -132,8 +132,13 @@ include_dirs = [
 include_dirs += INCLUDE
 
 # compiler options
-extra_compile_args = ["-march=native", "-fext-numeric-literals"]
-# -fext-numeric-literals is used for definition of complex number by some version of gcc
+extra_compile_args_tmp = []
+if sys.platform.startswith('linux'):
+    extra_compile_args_tmp = ["-fext-numeric-literals"]
+    # -fext-numeric-literals is used for definition of complex number by some version of gcc
+    # macos and windows does not use gcc, so this is not working on these platforms
+
+extra_compile_args = ["-march=native"] + extra_compile_args_tmp
 # -march=native is here to use the vectorization of the code offered by Eigen
 ext_modules = [
     Extension(

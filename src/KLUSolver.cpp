@@ -8,6 +8,8 @@
 
 #include "KLUSolver.h"
 
+const cdouble KLUSolver::my_i = 1.0i;
+
 bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
                           Eigen::VectorXcd & V,
                           const Eigen::VectorXcd & Sbus,
@@ -82,7 +84,7 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
         }
 
         // TODO change here for not having to cast all the time ... maybe
-        V_ = Vm_.array() * (Va_.array().cos().cast<cdouble>() + 1.0i * Va_.array().sin().cast<cdouble>() );
+        V_ = Vm_.array() * (Va_.array().cos().cast<cdouble>() + my_i * Va_.array().sin().cast<cdouble>() );
 
         F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
         converged = _check_for_convergence(F, tol);
@@ -191,7 +193,7 @@ void KLUSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > 
                 // diagonal element
                 it.valueRef() -= Ibus(it.row());  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
             }
-            cdouble tmp = static_cast<cdouble>(1.0i) * V(it.row());
+            cdouble tmp = my_i * V(it.row());
             it.valueRef() = std::conj(-it.valueRef()) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
         }
     }

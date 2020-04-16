@@ -187,6 +187,7 @@ class KLUSolver
         // no copy allowed
         KLUSolver( const KLUSolver & ) ;
         KLUSolver & operator=( const KLUSolver & ) ;
+        static const cdouble my_i;
 
     private:
         // debug func i don't want to remove yet
@@ -234,7 +235,7 @@ class KLUSolver
             }
 
             // TODO change here for not having to cast all the time ...
-            V = Vm_.array() * (Va_.array().cos().cast<cdouble>() + 1.0i * Va_.array().sin().cast<cdouble>() );
+            V = Vm_.array() * (Va_.array().cos().cast<cdouble>() + my_i * Va_.array().sin().cast<cdouble>() );
 
             F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
             return std::tuple<Eigen::VectorXd, Eigen::VectorXcd>(F, V);
@@ -308,7 +309,7 @@ class KLUSolver
             tmp = Ybus * diagV;
             tmp = tmp.conjugate();
             auto tmp2 = diagIbus_conj - tmp;  // conj(diagIbus - Ybus * diagV)
-            dS_dVa = 1.0i * diagV * tmp2;
+            dS_dVa = my_i * diagV * tmp2;
 
             // python implementation
             // dS_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
