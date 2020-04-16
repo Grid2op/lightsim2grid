@@ -39,6 +39,10 @@ Open source options for powerflow analysis
 --------------------------------------------------
 To get free of these limitations and be able to perform state of the art powerflow analysis, 
 while still using open source softwares, we kindly recommend you to have a look at:
+- [Matpower](https://matpower.org/) which is a "free, open-source tools for electric power system simulation and 
+  optimization "
+- [Pandapower](https://www.pandapower.org/) that is "An easy to use open source tool for power system modeling, 
+  analysis and optimization with a high degree of automation. "
 - [PowerModels](https://lanl-ansi.github.io/PowerModels.jl/stable/) described by its authors as "Julia/JuMP package 
   for Steady-State Power Network Optimization".
 - [GridPack](https://www.gridpack.org/wiki/index.php/Main_Page) which is described as "An open source toolkit for 
