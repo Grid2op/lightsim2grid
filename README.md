@@ -15,7 +15,7 @@ You need to:
 
 All of that can be done, on a computer with make (so most likely MacOS or GNU/Linux based):
 ```bash
-git clone https://github.com/BDonnot/powerflow_klu.git
+git clone https://github.com/BDonnot/lightsim2grid.git
 cd powerflow_klu
 # it is recommended to do a python virtual environment
 python -m virtualenv venv  # optional
