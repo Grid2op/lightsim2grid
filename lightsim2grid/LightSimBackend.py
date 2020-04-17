@@ -415,19 +415,17 @@ class LightSimBackend(Backend):
                 self.q_or = np.concatenate((lqor, tqor))
                 self.v_or = np.concatenate((lvor, tvor))
                 self.a_or = np.concatenate((laor, taor))
-                self.a_or *= 1000
+                self.a_or *= 1000.
                 self.p_ex = np.concatenate((lpex, tpex))
                 self.q_ex = np.concatenate((lqex, tqex))
                 self.v_ex = np.concatenate((lvex, tvex))
                 self.a_ex = np.concatenate((laex, taex))
-                self.a_ex *= 1000
+                self.a_ex *= 1000.
 
                 self.load_p, self.load_q, self.load_v = self._grid.get_loads_res()
                 self.prod_p, self.prod_q, self.prod_v = self._grid.get_gen_res()
                 self.next_prod_p[:] = self.prod_p
                 res = True
-                # TODO ! below !!! gen_q not handled!!!
-                # self.prod_q = 1.0 * self.prod_p
         except Exception as e:
             # of the powerflow has not converged, results are Nan
             self.p_or = np.full(self.n_line, dtype=np.float, fill_value=np.NaN)
