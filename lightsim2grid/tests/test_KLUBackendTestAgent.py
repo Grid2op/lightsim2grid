@@ -1,4 +1,4 @@
-from grid2op import make
+from grid2op import make_new
 from grid2op.Agent import AgentWithConverter
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
@@ -113,26 +113,34 @@ class TestDN(ABC):
         env_name = self._get_env_name()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            with make(env_name, param=self.param, backend=backend,  gamerules_class=AlwaysLegal) as env:
+            with make_new(env_name, __dev=True, param=self.param, backend=backend,  gamerules_class=AlwaysLegal) as env:
                 nb_ts_klu, aor_klu, gen_p_klu, gen_q_klu = self._run_env(env)
-            with make(env_name, param=self.param, gamerules_class=AlwaysLegal) as env:
+            with make_new(env_name, __dev=True, param=self.param, gamerules_class=AlwaysLegal) as env:
                 nb_ts_pp, aor_pp, gen_p_pp, gen_q_pp = self._run_env(env)
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}".format(env_name)
         assert np.max(np.abs(aor_klu - aor_pp)) <= self.tol, "l inf different for {}".format(env_name)
         assert np.mean(np.abs(aor_klu - aor_pp)) <= self.tol, "l1 different for {} aor".format(env_name)
+        assert np.max(np.abs(gen_p_klu - gen_p_pp)) <= self.tol, "l inf different for {} gen_p".format(env_name)
         assert np.mean(np.abs(gen_p_klu - gen_p_pp)) <= self.tol, "l1 different for {} gen_p".format(env_name)
+        assert np.max(np.abs(gen_q_klu - gen_q_pp)) <= self.tol, "l inf different for {} gen_q".format(env_name)
         assert np.mean(np.abs(gen_q_klu - gen_q_pp)) <= self.tol, "l1 different for {} gen_q".format(env_name)
 
 
 class Testcase5(TestDN, unittest.TestCase):
     def _get_env_name(self):
-        return "case5_example"
+        return "rte_case5_example"
 
 
 class Testcase14(TestDN, unittest.TestCase):
     def _get_env_name(self):
-        return "case14_realistic"
+        return "rte_case14_realistic"
+
+
+# requires additional data to be downloaded
+# class TestcaseSandbox(TestDN, unittest.TestCase):
+#    def _get_env_name(self):
+#        return "l2rpn_case14_sandbox"
 
 
 if __name__ == "__main__":
