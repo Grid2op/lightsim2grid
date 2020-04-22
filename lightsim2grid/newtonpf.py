@@ -17,7 +17,7 @@ from scipy import sparse
 from lightsim2grid_cpp import KLUSolver
 
 
-def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
+def newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options):
     """
     Perform the Newton scheme to compute the AC powerflow of the system provided as input.
     It supports only one single slack bus.
@@ -29,11 +29,11 @@ def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
     Ybus: ``numpy.ndarray``, ``numpy.sparmatrix``, dtype:complex
         The admittance matrix. If not in a sparse CSC format, it will be converted to it.
 
-    V: ``numpy.ndarray``, dtype:complex
-        The initial voltage
-
     Sbus: ``numpy.ndarray``, dtype:complex
-        The origin injection
+        The power injected at each bus.
+
+    V0: ``numpy.ndarray``, dtype:complex
+        The initial voltage
 
     pv: ``numpy.ndarray``, dtype:np.int
         Index of the pv buses (slack bus must NOT be on this list)
@@ -69,7 +69,7 @@ def newtonpf(Ybus, V, Sbus, pv, pq, ppci, options):
     Ybus = sparse.csc_matrix(Ybus)
 
     # do the newton raphson algorithm
-    solver.solve(Ybus, V, Sbus, pv, pq, max_it, tol)
+    solver.solve(Ybus, V0, Sbus, pv, pq, max_it, tol)
 
     # extract the results
     Va = solver.get_Va()
