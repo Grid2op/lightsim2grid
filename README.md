@@ -16,7 +16,7 @@ You need to:
 All of that can be done, on a computer with make (so most likely MacOS or GNU/Linux based):
 ```bash
 git clone https://github.com/BDonnot/lightsim2grid.git
-cd powerflow_klu
+cd lightsim2grid
 # it is recommended to do a python virtual environment
 python -m virtualenv venv  # optional
 source venv/bin/activate  # optional
@@ -63,7 +63,7 @@ Suppose you somehow get:
 - `ppci` a ppc internal pandapower test case
 - `pv` list of PV buses
 - `pq` list of PQ buses
-- `options` list of pandapower powerflow "options"
+- `options` list of pandapower "options"
 
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
