@@ -232,6 +232,8 @@ class LightSimBackend(Backend):
         """
         return 1 if tmp is 2 else 2 if tmp is one
         """
+        if tmp == -1:
+            return tmp
         return (1 - tmp) + 2
 
     def apply_action(self, action):
