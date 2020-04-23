@@ -90,9 +90,11 @@ class LightSimBackend(Backend):
         self._corresp_name_fun = {}
         self._get_vector_inj = {}
         self.dim_topo = -1
+        self._init_action_to_set = None
 
     def load_grid(self, path=None, filename=None):
 
+        # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
 
         self._grid = init(self.init_pp_backend._grid)
@@ -174,6 +176,8 @@ class LightSimBackend(Backend):
             self.shunt_topo_vect = np.ones(self.n_shunt, dtype=np.int)
 
         self._count_object_per_bus()
+
+        self._init_action_to_set = self.get_action_to_set()
 
     def _count_object_per_bus(self):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
@@ -343,7 +347,6 @@ class LightSimBackend(Backend):
         # change line status if needed
         # note that it is a specification that lines status must override buses reconfiguration.
         if np.any(set_status != 0):
-            # print("some set_status are non 0")
             for i, el in enumerate(set_status):
                 # TODO performance optim here, it can be vectorized
                 if el == -1:
@@ -355,7 +358,6 @@ class LightSimBackend(Backend):
                         self._grid.reactivate_trafo(i - self.__nb_powerline)
         else:
             pass
-            # print("all_set_status are 0")
 
         # switch line status if needed
         if np.any(switch_status):
@@ -515,3 +517,30 @@ class LightSimBackend(Backend):
             self._grid.deactivate_powerline(id_)
         else:
             self._grid.deactivate_trafo(id_ - self.__nb_powerline)
+
+    def reset(self, grid_path, grid_filename=None):
+        self.V = None
+        self.apply_action(self._init_action_to_set)
+        res = self.runpf()
+
+    def get_action_to_set(self):
+        from grid2op.Action import CompleteAction
+        from grid2op.dtypes import dt_int
+
+        line_status = self.get_line_status()
+        line_status = 2 * line_status - 1
+        line_status = line_status.astype(dt_int)
+        topo_vect = self.get_topo_vect()
+        self.runpf()
+
+        prod_p, _, prod_v = self.generators_info()
+        load_p, load_q, _ = self.loads_info()
+        # prod_p, prod_q, prod_v = self.init_pp_backend._gens_info()
+        # load_p, load_q, load_v = self.init_pp_backend._loads_info()
+        set_me = CompleteAction(self)
+        set_me.update({"set_line_status": 1 * line_status,
+                       "set_bus": 1 * topo_vect})
+
+        injs = {"prod_p": prod_p, "prod_v": prod_v, "load_p": load_p, "load_q": load_q}
+        set_me.update({"injection": injs})
+        return set_me

@@ -152,7 +152,7 @@ class GridModel : public DataGeneric
         tuple3d get_shunts_res() const {return shunts_.get_res();}
         const std::vector<bool>& get_shunts_status() const { return shunts_.get_status();}
         tuple3d get_gen_res() const {return generators_.get_res();}
-        const std::vector<bool>& get_gen_status() const { return shunts_.get_status();}
+        const std::vector<bool>& get_gen_status() const { return generators_.get_status();}
         tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
         tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
         const std::vector<bool>& get_lines_status() const { return powerlines_.get_status();}
