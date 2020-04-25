@@ -77,7 +77,7 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(comp_val[len(pvpq):, len(pvpq):])) <= self.tol_test, "J22 (dS_dVm_i) are not equal"
 
     def solver_aux(self):
-        V, converged, iterations, J, *_ = newtonpf(self.Ybus, self.V_init, self.Sbus, self.pv, self.pq, self.ppci, self.options)
+        V, converged, iterations, J, *_ = newtonpf(self.Ybus, self.Sbus, self.V_init, self.pv, self.pq, self.ppci, self.options)
         assert converged, "the load flow has diverged for {}".format(self.path)
         Va = np.angle(V)
         Vm = np.abs(V)

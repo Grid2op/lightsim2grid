@@ -17,6 +17,7 @@ try:
     # from grid2op.BackendPandaPower import PandaPowerBackend
     from grid2op.Backend import PandaPowerBackend
     from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
+    from grid2op.dtypes import dt_float, dt_int
     grid2op_installed = True
 except (ImportError, ModuleNotFoundError) as e:
     grid2op_installed = False
@@ -174,6 +175,23 @@ class LightSimBackend(Backend):
         self.topo_vect = np.ones(self.dim_topo, dtype=np.int)
         if self.shunts_data_available:
             self.shunt_topo_vect = np.ones(self.n_shunt, dtype=np.int)
+
+        self.p_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.q_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.v_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.a_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.p_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.q_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.v_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.a_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+
+        self.load_p = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.load_q = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.load_v = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
+
+        self.prod_p = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.prod_q = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.prod_v = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
 
         self._count_object_per_bus()
 
@@ -415,38 +433,37 @@ class LightSimBackend(Backend):
                 tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
                 tpex, tqex, tvex, taex = self._grid.get_trafolv_res()
 
-                self.p_or = np.concatenate((lpor, tpor))
-                self.q_or = np.concatenate((lqor, tqor))
-                self.v_or = np.concatenate((lvor, tvor))
-                self.a_or = np.concatenate((laor, taor))
-                self.a_or *= 1000.
-                self.p_ex = np.concatenate((lpex, tpex))
-                self.q_ex = np.concatenate((lqex, tqex))
-                self.v_ex = np.concatenate((lvex, tvex))
-                self.a_ex = np.concatenate((laex, taex))
-                self.a_ex *= 1000.
+                self.p_or[:] = np.concatenate((lpor, tpor))
+                self.q_or[:] = np.concatenate((lqor, tqor))
+                self.v_or[:] = np.concatenate((lvor, tvor))
+                self.a_or[:] = 1000. * np.concatenate((laor, taor))
 
-                self.load_p, self.load_q, self.load_v = self._grid.get_loads_res()
-                self.prod_p, self.prod_q, self.prod_v = self._grid.get_gen_res()
+                self.p_ex[:] = np.concatenate((lpex, tpex))
+                self.q_ex[:] = np.concatenate((lqex, tqex))
+                self.v_ex[:] = np.concatenate((lvex, tvex))
+                self.a_ex[:] = 1000. * np.concatenate((laex, taex))
+
+                self.load_p[:], self.load_q[:], self.load_v[:] = self._grid.get_loads_res()
+                self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
                 self.next_prod_p[:] = self.prod_p
                 res = True
         except Exception as e:
             # of the powerflow has not converged, results are Nan
-            self.p_or = np.full(self.n_line, dtype=np.float, fill_value=np.NaN)
-            self.q_or = self.p_or
-            self.v_or = self.p_or
-            self.a_or = self.p_or
-            self.p_ex = self.p_or
-            self.q_ex = self.p_or
-            self.v_ex = self.p_or
-            self.a_ex = self.p_or
-            self.load_p = np.full(self.n_load, dtype=np.float, fill_value=np.NaN)
-            self.load_q = self.load_p
-            self.load_v = self.load_p
-            self.prod_p = np.full(self.n_gen, dtype=np.float, fill_value=np.NaN)
+            self.p_or[:] = np.NaN
+            self.q_or[:] = np.NaN
+            self.v_or[:] = np.NaN
+            self.a_or[:] = np.NaN
+            self.p_ex[:] = np.NaN
+            self.q_ex[:] = np.NaN
+            self.v_ex[:] = np.NaN
+            self.a_ex[:] = np.NaN
+            self.load_p[:] = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
+            self.load_q[:] = self.load_p
+            self.load_v[:] = self.load_p
+            self.prod_p[:] = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
             self.next_prod_p[:] = self.prod_p
-            self.prod_q = self.prod_p
-            self.prod_v = self.prod_p
+            self.prod_q[:] = self.prod_p
+            self.prod_v[:] = self.prod_p
             res = False
         return res
 

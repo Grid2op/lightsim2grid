@@ -15,7 +15,7 @@ class TestDN(ABC):
         self.param = Parameters()
         self.param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
         self.max_ts = 100
-        self.tol = 1e-5
+        self.tol = 5e-4
         self.agent_class = DoNothingAgent
 
     @abstractmethod

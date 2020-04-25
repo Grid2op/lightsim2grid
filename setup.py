@@ -134,17 +134,16 @@ include_dirs += INCLUDE
 # compiler options
 extra_compile_args_tmp = []
 if sys.platform.startswith('linux'):
-    # extra_compile_args_tmp = ["-fext-numeric-literals"]
+    extra_compile_args_tmp = ["-fext-numeric-literals"]
+    extra_compile_args_tmp = []
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
     # macos and windows does not use gcc, so this is not working on these platforms
-    extra_compile_args_tmp = []
 elif sys.platform.startswith("darwin"):
     extra_compile_args_tmp = ["-fsized-deallocation"]
-    extra_compile_args_tmp = []
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
 
-extra_compile_args = ["-march=native"] + extra_compile_args_tmp
+extra_compile_args = ["-march=native", "-fsized-deallocation"] + extra_compile_args_tmp
 # -march=native is here to use the vectorization of the code offered by Eigen
 ext_modules = [
     Extension(
@@ -169,7 +168,7 @@ setup(name='LightSim2Grid',
                        'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '
                        'its usage.',
       ext_modules=ext_modules,
-      install_requires=['pybind11>=2.4', "pandapower", "numpy", "scipy"],
+      install_requires=['pybind11>=2.4', "pandapower", "numpy", "scipy", "grid2op"],
       setup_requires=['pybind11>=2.4'],
       cmdclass={'build_ext': BuildExt},
       zip_safe=False,

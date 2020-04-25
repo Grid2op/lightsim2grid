@@ -81,7 +81,7 @@ class TestDN(ABC):
         self.param = Parameters()
         self.param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
         self.max_ts = 100
-        self.tol = 1e-5
+        self.tol = 5e-4
         self.agent_class = TestAgent
 
     @abstractmethod
@@ -113,9 +113,9 @@ class TestDN(ABC):
         env_name = self._get_env_name()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            with make_new(env_name, __dev=True, param=self.param, backend=backend,  gamerules_class=AlwaysLegal) as env:
+            with make_new(env_name, test=True, param=self.param, backend=backend,  gamerules_class=AlwaysLegal) as env:
                 nb_ts_klu, aor_klu, gen_p_klu, gen_q_klu = self._run_env(env)
-            with make_new(env_name, __dev=True, param=self.param, gamerules_class=AlwaysLegal) as env:
+            with make_new(env_name, test=True, param=self.param, gamerules_class=AlwaysLegal) as env:
                 nb_ts_pp, aor_pp, gen_p_pp, gen_q_pp = self._run_env(env)
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}".format(env_name)
