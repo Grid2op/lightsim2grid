@@ -18,8 +18,8 @@ from lightsim2grid.LightSimBackend import LightSimBackend
 
 from utils_benchmark import print_res, run_env
 
-ENV_NAME = "case5_example"
-ENV_NAME = "case14_realistic"
+ENV_NAME = "rte_case5_example"
+ENV_NAME = "rte_case14_realistic"
 MAX_TS = 1000
 
 
@@ -33,10 +33,10 @@ class TestAgent(AgentWithConverter):
 
         # powerline switch: disconnection
         for i in range(action_space.n_line):
-            if env_name == "case14_realistic":
+            if env_name == "rte_case14_realistic":
                 if i == 18:
                     continue
-            if env_name == "case5_example":
+            if env_name == "rte_case5_example":
                 pass
             all_actions_tmp.append(action_space.disconnect_powerline(line_id=i))
 
@@ -44,7 +44,7 @@ class TestAgent(AgentWithConverter):
         all_actions_tmp += action_space.get_all_unitary_topologies_set(action_space)
         # self.action_space.all_actions += action_space.get_all_unitary_redispatch(action_space)
 
-        if env_name == "case14_realistic":
+        if env_name == "rte_case14_realistic":
             # remove action that makes the powerflow diverge
             breaking_acts = [action_space({"set_bus": {"lines_or_id": [(7,2), (8,1), (9,1)],
                                                        "lines_ex_id": [(17,2)],
@@ -99,11 +99,11 @@ def main(max_ts, name):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
-    env_klu = make(name, backend=backend, param=param, gamerules_class=AlwaysLegal)
+    env_klu = make(name, backend=backend, param=param, gamerules_class=AlwaysLegal, test=True)
     agent = TestAgent(action_space=env_klu.action_space, env_name=name)
     nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent)
 
-    env_pp = make(name, param=param, gamerules_class=AlwaysLegal)
+    env_pp = make(name, param=param, gamerules_class=AlwaysLegal, test=True)
     agent = TestAgent(action_space=env_pp.action_space, env_name=name)
     nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent)
 

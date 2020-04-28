@@ -8,6 +8,8 @@
 
 import copy
 import numpy as np
+from grid2op.Action import CompleteAction
+from grid2op.dtypes import dt_int
 
 import pdb
 
@@ -541,8 +543,6 @@ class LightSimBackend(Backend):
         res = self.runpf()
 
     def get_action_to_set(self):
-        from grid2op.Action import CompleteAction
-        from grid2op.dtypes import dt_int
 
         line_status = self.get_line_status()
         line_status = 2 * line_status - 1
@@ -554,7 +554,8 @@ class LightSimBackend(Backend):
         load_p, load_q, _ = self.loads_info()
         # prod_p, prod_q, prod_v = self.init_pp_backend._gens_info()
         # load_p, load_q, load_v = self.init_pp_backend._loads_info()
-        set_me = CompleteAction(self)
+        complete_action_class = CompleteAction.init_grid(self)
+        set_me = complete_action_class()
         set_me.update({"set_line_status": 1 * line_status,
                        "set_bus": 1 * topo_vect})
 

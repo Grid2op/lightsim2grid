@@ -19,12 +19,12 @@ def print_res(env_klu, env_pp,
               gen_p_klu, gen_p_pp,
               gen_q_klu, gen_q_pp):
     print("Overall speed-up of KLU vs pandapower (for grid2opbackend) {:.2f}\n".format(time_pp / time_klu))
-    print("PyKLU Backend {} time steps".format(nb_ts_klu))
+    print("PyKLU Backend {} time steps in {}s ({:.2f} it/s)".format(nb_ts_klu, time_klu, nb_ts_klu/time_klu))
     print("\tTime apply act: {:.2f}ms".format(1000. * env_klu._time_apply_act / nb_ts_klu))
     print("\tTime powerflow: {:.2f}ms".format(1000. * env_klu._time_powerflow / nb_ts_klu))
     print("\tTime extract observation: {:.2f}ms".format(1000. * env_klu._time_extract_obs / nb_ts_klu))
 
-    print("Pandapower Backend {} time steps".format(nb_ts_pp))
+    print("Pandapower Backend {} time steps in {}s ({:.2f} it/s)".format(nb_ts_pp, time_pp, nb_ts_pp/time_pp))
     print("\tTime apply act: {:.2f}ms".format(1000. * env_pp._time_apply_act / nb_ts_pp))
     print("\tTime powerflow: {:.2f}ms".format(1000. * env_pp._time_powerflow / nb_ts_pp))
     print("\tTime extract observation: {:.2f}ms".format(1000. * env_pp._time_extract_obs / nb_ts_pp))
@@ -56,8 +56,8 @@ def run_env(env, max_ts, agent):
             pbar.update(1)
             if nb_ts >= max_ts:
                 break
-            if np.sum(obs.line_status) < obs.n_line - 1 * (nb_ts % 2 == 1):
-                print("There is a bug following action; {}".format(act))
+            # if np.sum(obs.line_status) < obs.n_line - 1 * (nb_ts % 2 == 1):
+            #     print("There is a bug following action; {}".format(act))
             prev_act = act
     end_ = time.time()
     total_time = end_ - beg_
