@@ -139,11 +139,13 @@ if sys.platform.startswith('linux'):
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
     # macos and windows does not use gcc, so this is not working on these platforms
 elif sys.platform.startswith("darwin"):
-    extra_compile_args_tmp = ["-fsized-deallocation"]
+    # extra_compile_args_tmp = ["-fsized-deallocation"]
+    extra_compile_args_tmp = []
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
 
-extra_compile_args = ["-march=native", "-fsized-deallocation"] + extra_compile_args_tmp
+
+extra_compile_args = ["-march=native"] + extra_compile_args_tmp
 # -march=native is here to use the vectorization of the code offered by Eigen
 ext_modules = [
     Extension(
