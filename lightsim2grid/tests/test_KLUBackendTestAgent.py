@@ -1,4 +1,4 @@
-from grid2op import make_new
+from grid2op import make
 from grid2op.Agent import AgentWithConverter
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
@@ -113,9 +113,9 @@ class TestDN(ABC):
         env_name = self._get_env_name()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            with make_new(env_name, test=True, param=self.param, backend=backend,  gamerules_class=AlwaysLegal) as env:
+            with make(env_name, test=True, param=self.param, backend=backend,  gamerules_class=AlwaysLegal, test=True) as env:
                 nb_ts_klu, aor_klu, gen_p_klu, gen_q_klu = self._run_env(env)
-            with make_new(env_name, test=True, param=self.param, gamerules_class=AlwaysLegal) as env:
+            with make(env_name, test=True, param=self.param, gamerules_class=AlwaysLegal, test=True) as env:
                 nb_ts_pp, aor_pp, gen_p_pp, gen_q_pp = self._run_env(env)
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}".format(env_name)

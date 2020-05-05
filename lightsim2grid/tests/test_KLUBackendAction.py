@@ -23,7 +23,8 @@ class TestDN(unittest.TestCase):
             warnings.filterwarnings("ignore")
             self.env = make(self.env_name, param=self.param, backend=backend,
                             gamerules_class=AlwaysLegal,
-                            chronics_class=ChangeNothing)
+                            chronics_class=ChangeNothing,
+                            test=True)
 
     def tearDown(self):
         self.env.close()

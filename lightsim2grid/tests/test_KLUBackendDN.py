@@ -43,9 +43,9 @@ class TestDN(ABC):
         env_name = self._get_env_name()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            with make(env_name, param=self.param, backend=backend,  gamerules_class=AlwaysLegal) as env:
+            with make(env_name, param=self.param, backend=backend,  gamerules_class=AlwaysLegal, test=True) as env:
                 nb_ts_klu, aor_klu = self._run_env(env)
-            with make(env_name, param=self.param, gamerules_class=AlwaysLegal) as env:
+            with make(env_name, param=self.param, gamerules_class=AlwaysLegal, test=True) as env:
                 nb_ts_pp, aor_pp = self._run_env(env)
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}".format(env_name)

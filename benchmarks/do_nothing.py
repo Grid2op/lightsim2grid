@@ -13,7 +13,7 @@ from lightsim2grid.LightSimBackend import LightSimBackend
 from utils_benchmark import print_res, run_env
 
 MAX_TS = 1000
-ENV_NAME = "case14_realistic"
+ENV_NAME = "rte_case14_realistic"
 
 
 def main(max_ts, ENV_NAME):

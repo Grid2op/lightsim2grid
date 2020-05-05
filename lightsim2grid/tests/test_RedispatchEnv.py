@@ -326,7 +326,7 @@ class TestRedispTooLowHigh(HelperTests):
         self.backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = make("case14_redisp", backend=self.backend)
+            self.env = make("case14_redisp", backend=self.backend, test=True)
 
         # i don't want to be bother by ramps in these test (note that is NOT recommended to change that)
         self.env.gen_max_ramp_down[:] = 5000
@@ -395,7 +395,7 @@ class TestLoadingBackendPandaPower(HelperTests):
         # powergrid
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = make("case14_test", backend=self.backend)
+            self.env = make("case14_test", backend=self.backend, test=True)
 
     def test_invalid_dispatch(self):
         self.env.set_id(0)  # make sure to use the same environment input data.

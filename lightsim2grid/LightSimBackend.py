@@ -19,6 +19,7 @@ try:
     # from grid2op.BackendPandaPower import PandaPowerBackend
     from grid2op.Backend import PandaPowerBackend
     from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
+    from grid2op.Action._BackendAction import _BackendAction
     from grid2op.dtypes import dt_float, dt_int
     grid2op_installed = True
 except (ImportError, ModuleNotFoundError) as e:
@@ -94,6 +95,8 @@ class LightSimBackend(Backend):
         self._get_vector_inj = {}
         self.dim_topo = -1
         self._init_action_to_set = None
+        self._backend_action_class = None
+        self.cst_1  = dt_float(1.0)
 
     def load_grid(self, path=None, filename=None):
 
@@ -197,7 +200,10 @@ class LightSimBackend(Backend):
 
         self._count_object_per_bus()
 
-        self._init_action_to_set = self.get_action_to_set()
+        _init_action_to_set = self.get_action_to_set()
+        self._backend_action_class = _BackendAction.init_grid(self)
+        self._init_action_to_set = self._backend_action_class()
+        self._init_action_to_set += _init_action_to_set
 
     def _count_object_per_bus(self):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
@@ -260,153 +266,107 @@ class LightSimBackend(Backend):
             return tmp
         return (1 - tmp) + 2
 
-    def apply_action(self, action):
-        # change the _injection if needed
-        dict_injection, set_status, switch_status, set_topo_vect, switcth_topo_vect, redispatching, shunts = action()
+    def apply_action(self, backendAction):
+        """
+        Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
+        """
+        active_bus, (prod_p, prod_v, load_p, load_q), topo__, shunts__ = backendAction()
 
-        if "load_p" in dict_injection:
-            tmp = dict_injection["load_p"]
-            for i, val in enumerate(tmp):
-                if np.isfinite(val):
-                    self._grid.change_p_load(i, val)
-        if "load_q" in dict_injection:
-            tmp = dict_injection["load_q"]
-            for i, val in enumerate(tmp):
-                if np.isfinite(val):
-                    self._grid.change_q_load(i, val)
-        if "prod_p" in dict_injection:
-            tmp = dict_injection["prod_p"]
-            for i, val in enumerate(tmp):
-                if np.isfinite(val):
-                    self._grid.change_p_gen(i, val)
-                    self.next_prod_p[i] = val
-        if "prod_v" in dict_injection:
-            tmp = dict_injection["prod_v"]
-            for i, val in enumerate(tmp):
-                if np.isfinite(val):
-                    self._grid.change_v_gen(i, val / self.prod_pu_to_kv[i])
+        # handle active bus
+        for i, (bus1_status, bus2_status) in enumerate(active_bus):
+            if bus1_status:
+                self._grid.reactivate_bus(i)
+            else:
+                self._grid.deactivate_bus(i)
 
-        if np.any(redispatching != 0.):
-            for i, val in enumerate(redispatching):
-                if np.isfinite(val):
-                    if val != 0.:
-                        self._grid.change_p_gen(i, val + self.next_prod_p[i])
-                        self.next_prod_p[i] += val
+            if bus2_status:
+                self._grid.reactivate_bus(i + self.__nb_bus_before)
+            else:
+                self._grid.deactivate_bus(i + self.__nb_bus_before)
 
-        # shunts
-        if shunts:
-            arr_ = shunts["shunt_p"]
-            for sh_id, new_p in enumerate(arr_):
-                if np.isfinite(new_p):
-                    self._grid.change_p_shunt(sh_id, new_p)
-            arr_ = shunts["shunt_q"]
-            for sh_id, new_q in enumerate(arr_):
-                if np.isfinite(new_q):
-                    self._grid.change_q_shunt(sh_id, new_q)
-            arr_ = shunts["shunt_bus"]
-            for sh_id, new_bus in enumerate(arr_):
+        # update the injections
+        for gen_id, new_p in prod_p:
+            self._grid.change_p_gen(gen_id, new_p)
+
+        for gen_id, new_v in prod_v:
+            new_v /= self.prod_pu_to_kv[gen_id]
+            self._grid.change_v_gen(gen_id, new_v)
+
+        for load_id, new_p in load_p:
+            self._grid.change_p_load(load_id, new_p)
+
+        for load_id, new_q in load_q:
+            self._grid.change_q_load(load_id, new_q)
+
+        # handle shunts
+        if self.shunts_data_available:
+            shunt_p, shunt_q, shunt_bus = shunts__
+            for sh_id, new_p in shunt_p:
+                self._grid.change_p_shunt(sh_id, new_p)
+            for sh_id, new_q in shunt_q:
+                self._grid.change_q_shunt(sh_id, new_q)
+
+            # shunt topology
+            for sh_id, new_bus in shunt_bus:
                 if new_bus == -1:
                     self._grid.deactivate_shunt(sh_id)
-                    self.shunt_topo_vect[sh_id] = -1
-                elif new_bus == 1:
+                else:
                     self._grid.reactivate_shunt(sh_id)
-                    self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id])
-                    self.shunt_topo_vect[sh_id] = 1
-                elif new_bus == 2:
-                    self._grid.reactivate_shunt(sh_id)
-                    self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id]+self.__nb_bus_before)
-                    self.shunt_topo_vect[sh_id] = 2
+                    self._grid.change_bus_shunt(sh_id, new_bus)
 
-        # topology
-        possiblechange = set_topo_vect != 0
-        if np.any(possiblechange) or np.any(switcth_topo_vect):
-            actual_topo_full = 1.0 * self.get_topo_vect()
-            # new topology vector
-            for id_el, do_i_switch in enumerate(switcth_topo_vect):
-                if do_i_switch:
-                    new_bus_me = self._switch_bus_me(actual_topo_full[id_el])
-                    # TODO this can be vectorized
-                    self.topo_vect[id_el] = new_bus_me
+        # and now change the overall topology
+        for id_el, new_bus in topo__:
+            id_el_backend, type_obj = self._convert_id_topo(id_el)
+            self.topo_vect[id_el] = new_bus
 
-            for id_el, new_bus in enumerate(set_topo_vect):
-                if new_bus != 0.:
-                    self.topo_vect[id_el] = new_bus
+            if type_obj == "load":
+                if new_bus > 0:
+                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_load[id_el_backend])
+                    self._grid.reactivate_load(id_el_backend)
+                    self._grid.change_bus_load(id_el_backend, new_bus_backend)
+                else:
+                    self._grid.deactivate_load(id_el_backend)
 
-            if np.any(self.topo_vect != actual_topo_full):
-                # i made at least a real change, so i implement it in the backend
-                for id_el, new_bus in enumerate(self.topo_vect):
-                    if new_bus < 0:
-                        # I don't handle disconnection here
-                        continue
-                    # if self.topo_vect[id_el] == actual_topo_full[id_el]: continue
-                    id_el_backend, type_obj = self._convert_id_topo(id_el)
-                    if type_obj == "load":
-                        new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_load[id_el_backend])
-                        self._grid.change_bus_load(id_el_backend, new_bus_backend)
-                    elif type_obj == "gen":
-                        new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_gen[id_el_backend])
-                        self._grid.change_bus_gen(id_el_backend, new_bus_backend)
-                    elif type_obj == "lineor":
-                        new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lor[id_el_backend])
-                        if id_el_backend < self.__nb_powerline:
-                            # it's a powerline
-                            self._grid.change_bus_powerline_or(id_el_backend, new_bus_backend)
-                        else:
-                            # it's a trafo
-                            self._grid.change_bus_trafo_hv(id_el_backend - self.__nb_powerline, new_bus_backend)
-                    elif type_obj == "lineex":
-                        new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lex[id_el_backend])
-                        # if id_el_backend == 0: pdb.set_trace()
-                        if id_el_backend < self.__nb_powerline:
-                            # it's a powerline
-                            self._grid.change_bus_powerline_ex(id_el_backend, new_bus_backend)
-                        else:
-                            # it's a trafo
-                            self._grid.change_bus_trafo_lv(id_el_backend - self.__nb_powerline, new_bus_backend)
+            elif type_obj == "gen":
+                if new_bus > 0:
+                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_gen[id_el_backend])
+                    self._grid.reactivate_gen(id_el_backend)
+                    self._grid.change_bus_gen(id_el_backend, new_bus_backend)
+                else:
+                    self._grid.deactivate_gen(id_el_backend)
 
-        # change line status if needed
-        # note that it is a specification that lines status must override buses reconfiguration.
-        if np.any(set_status != 0):
-            for i, el in enumerate(set_status):
-                # TODO performance optim here, it can be vectorized
-                if el == -1:
-                    self._disconnect_line(i)
-                elif el == 1:
-                    if i < self.__nb_powerline:
-                        self._grid.reactivate_powerline(i)
+            elif type_obj == "lineor":
+                if new_bus < 0:
+                    self._disconnect_line(id_el_backend)
+                else:
+                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lor[id_el_backend])
+                    if id_el_backend < self.__nb_powerline:
+                        # it's a powerline
+                        self._grid.reactivate_powerline(id_el_backend)
+                        self._grid.change_bus_powerline_or(id_el_backend, new_bus_backend)
                     else:
-                        self._grid.reactivate_trafo(i - self.__nb_powerline)
-        else:
-            pass
+                        # it's a trafo
+                        id_el_backend -= self.__nb_powerline
+                        self._grid.reactivate_trafo(id_el_backend)
+                        self._grid.change_bus_trafo_hv(id_el_backend, new_bus_backend)
 
-        # switch line status if needed
-        if np.any(switch_status):
-            powerlines_current_status = self.get_line_status()
-            for i, el in enumerate(switch_status):
-                if el:
-                    connected = powerlines_current_status[i]
-                    if connected:
-                        self._disconnect_line(i)
+            elif type_obj == "lineex":
+                if new_bus < 0:
+                    self._disconnect_line(id_el_backend)
+                else:
+                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lex[id_el_backend])
+                    if id_el_backend < self.__nb_powerline:
+                        # it's a powerline
+                        self._grid.reactivate_powerline(id_el_backend)
+                        self._grid.change_bus_powerline_ex(id_el_backend, new_bus_backend)
                     else:
-                        # switch a connected powerline -> i reconnect it
-                        # but first i need to check
-                        bus_or = set_topo_vect[self.line_or_pos_topo_vect[i]]
-                        bus_ex = set_topo_vect[self.line_ex_pos_topo_vect[i]]
-                        if bus_ex == 0 or bus_or == 0:
-                            raise InvalidLineStatus("Line {} was disconnected. The action switched its status, "
-                                                    "without providing buses to connect it on both ends.".format(i))
-
-                        # reconnection has then be handled in the topology
-                        # and so is the update of topo_vect
-                        if i < self.__nb_powerline:
-                            self._grid.reactivate_powerline(i)
-                        else:
-                            self._grid.reactivate_trafo(i - self.__nb_powerline)
+                        # it's a trafo
+                        id_el_backend -= self.__nb_powerline
+                        self._grid.reactivate_trafo(id_el_backend)
+                        self._grid.change_bus_trafo_lv(id_el_backend, new_bus_backend)
 
     def runpf(self, is_dc=False):
         try:
-            self._count_object_per_bus()
-            self._deactivate_unused_bus()
             if is_dc:
                 raise NotImplementedError("Not fully implemented at the moment.")
                 if self.V is None:
@@ -422,14 +382,14 @@ class LightSimBackend(Backend):
                     if V.shape[0] == 0:
                         # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
-                    self.V = V
+                    self.V[:] = V
 
                 V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                     raise DivergingPowerFlow("divergence of powerflow")
-                self.V = V
-                self.V[self.V == 0.] = 1.
+                self.V[:] = V
+                # self.V[self.V == 0.] = 1.
                 lpor, lqor, lvor, laor = self._grid.get_lineor_res()
                 lpex, lqex, lvex, laex = self._grid.get_lineex_res()
                 tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
@@ -459,13 +419,13 @@ class LightSimBackend(Backend):
             self.q_ex[:] = np.NaN
             self.v_ex[:] = np.NaN
             self.a_ex[:] = np.NaN
-            self.load_p[:] = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
-            self.load_q[:] = self.load_p
-            self.load_v[:] = self.load_p
-            self.prod_p[:] = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
-            self.next_prod_p[:] = self.prod_p
-            self.prod_q[:] = self.prod_p
-            self.prod_v[:] = self.prod_p
+            self.load_p[:] = np.NaN
+            self.load_q[:] = np.NaN
+            self.load_v[:] = np.NaN
+            self.prod_p[:] = np.NaN
+            self.next_prod_p[:] = np.NaN
+            self.prod_q[:] = np.NaN
+            self.prod_v[:] = np.NaN
             res = False
         return res
 
@@ -480,7 +440,12 @@ class LightSimBackend(Backend):
         # TODO this could be done in a "get_action_to_set_me" and use to update obsenv for example!
         self._grid = mygrid
         self.init_pp_backend._grid = inippbackend
-        res.apply_action(self.get_action_to_set())
+        # res.apply_action(self.get_action_to_set())
+
+        _action_to_set_act = self.get_action_to_set()
+        _action_to_set = self._backend_action_class()
+        _action_to_set += _action_to_set_act
+        res.apply_action(_action_to_set)
         return res
 
     def get_line_status(self):
@@ -499,9 +464,7 @@ class LightSimBackend(Backend):
         return res
 
     def _klu_bus_from_grid2op_bus(self, grid2op_bus, grid2op_bus_init):
-        if grid2op_bus == 0:
-            res = grid2op_bus_init
-        elif grid2op_bus == 1:
+        if grid2op_bus == 1:
             res = grid2op_bus_init
         elif grid2op_bus == 2:
             res = grid2op_bus_init + self.__nb_bus_before
@@ -513,21 +476,23 @@ class LightSimBackend(Backend):
         return self.topo_vect
 
     def generators_info(self):
-        return self.prod_p, self.prod_q, self.prod_v
+        return self.cst_1 * self.prod_p, self.cst_1 * self.prod_q, self.cst_1 * self.prod_v
 
     def loads_info(self):
-        return self.load_p, self.load_q, self.load_v
+        return self.cst_1 * self.load_p, self.cst_1 * self.load_q, self.cst_1 * self.load_v
 
     def lines_or_info(self):
-        return self.p_or, self.q_or, self.v_or, self.a_or
+        return self.cst_1 * self.p_or, self.cst_1 * self.q_or, self.cst_1 * self.v_or, self.cst_1 * self.a_or
 
     def lines_ex_info(self):
-        return self.p_ex, self.q_ex, self.v_ex, self.a_ex
+        return self.cst_1 * self.p_ex, self.cst_1 * self.q_ex, self.cst_1 * self.v_ex, self.cst_1 * self.a_ex
 
     def shunt_info(self):
         tmp = self._grid.get_shunts_res()
-        shunt_bus = [self._grid.get_bus_shunt(i) for i in range(self.n_shunt)]
-        return (tmp[0], tmp[1], tmp[2], shunt_bus)
+        shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(self.n_shunt)], dtype=dt_int)
+        res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)
+        res_bus[shunt_bus >= self.__nb_bus_before] = 2
+        return (tmp[0], tmp[1], tmp[2], res_bus)
 
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1
