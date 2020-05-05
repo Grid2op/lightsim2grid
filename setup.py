@@ -8,7 +8,7 @@ import sysconfig
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
 
-__version__ = '0.0.1'
+__version__ = '0.1.0'
 
 
 class get_pybind_include(object):
