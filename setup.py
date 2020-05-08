@@ -8,7 +8,7 @@ import sysconfig
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 
 class get_pybind_include(object):
@@ -164,7 +164,7 @@ setup(name='LightSim2Grid',
       version=__version__,
       author='Benjamin Donnot',
       author_email='benjamin.donnot@rte-france.com',
-      url='TODO',
+      url='https://github.com/BDonnot/lightsim2grid/',
       description='LightSim2Grid implements a c++ backend targeting the Grid2Op platform.',
       long_description='LightSim2Grid implements a backend for the Grid2Op platform written in c++ using state of the '
                        'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '

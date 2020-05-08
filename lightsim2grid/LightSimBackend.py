@@ -504,11 +504,12 @@ class LightSimBackend(Backend):
 
     def reset(self, grid_path, grid_filename=None):
         self.V = None
+        self._init_action_to_set.all_changed()
         self.apply_action(self._init_action_to_set)
+        self._init_action_to_set.reset()
         res = self.runpf()
 
     def get_action_to_set(self):
-
         line_status = self.get_line_status()
         line_status = 2 * line_status - 1
         line_status = line_status.astype(dt_int)
