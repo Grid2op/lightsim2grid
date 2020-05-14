@@ -152,7 +152,7 @@ class LightSimBackend(Backend):
         self._init_bus_lex = np.concatenate((self._init_bus_lex, t_fex)).astype(np.int)
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
 
-        nm_ = "load"
+        nm_ = "load"sandbox
         for load_id, pos_big_topo  in enumerate(self.load_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (load_id, nm_)
         nm_ = "gen"
@@ -408,6 +408,10 @@ class LightSimBackend(Backend):
                 self.load_p[:], self.load_q[:], self.load_v[:] = self._grid.get_loads_res()
                 self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
                 self.next_prod_p[:] = self.prod_p
+
+                if np.any(~np.isfinite(self.load_v)) or np.any(~np.isfinite(self.prod_v)):
+                    raise DivergingPowerFlow("or load or one generator not connected")
+
                 res = True
         except Exception as e:
             # of the powerflow has not converged, results are Nan
