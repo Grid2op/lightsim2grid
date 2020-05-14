@@ -152,7 +152,7 @@ class LightSimBackend(Backend):
         self._init_bus_lex = np.concatenate((self._init_bus_lex, t_fex)).astype(np.int)
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
 
-        nm_ = "load"sandbox
+        nm_ = "load"
         for load_id, pos_big_topo  in enumerate(self.load_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (load_id, nm_)
         nm_ = "gen"
