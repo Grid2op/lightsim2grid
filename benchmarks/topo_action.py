@@ -59,7 +59,10 @@ class TestAgent(AgentWithConverter):
                                                        "loads_id": [(1, 1)]}}),
                              action_space({"set_bus": {"lines_or_id": [(6, 2), (15, 2), (16, 1)],
                                                        "lines_ex_id": [(3, 2), (5, 2)],
-                                                       "loads_id": [(2, 1)]}})
+                                                       "loads_id": [(2, 1)]}}),
+                             action_space({"set_bus": {"lines_or_id": [(18, 1)],
+                                                       "lines_ex_id": [(15, 2), (19, 2)],
+                                                       }})
             ]
         else:
             breaking_acts = [action_space({"set_bus": {"lines_or_id": [(0,2), (1,2), (2,2), (3,1)],
@@ -72,7 +75,6 @@ class TestAgent(AgentWithConverter):
         for el in all_actions_tmp:
             if not el in breaking_acts:
                 all_actions.append(el)
-
         # set the action to the action space
         self.action_space.all_actions = all_actions
 

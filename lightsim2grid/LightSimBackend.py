@@ -132,7 +132,7 @@ class LightSimBackend(Backend):
         self._compute_pos_big_topo()
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
-        self.thermal_limit_a = self.init_pp_backend.thermal_limit_a
+        self.thermal_limit_a = copy.deepcopy(self.init_pp_backend.thermal_limit_a)
 
         # deactive the buses that have been added
         nb_bus_init = self.init_pp_backend._grid.bus.shape[0] // 2
@@ -148,8 +148,24 @@ class LightSimBackend(Backend):
 
         t_for = 1.0 * self.init_pp_backend._grid.trafo["hv_bus"].values
         t_fex = 1.0 * self.init_pp_backend._grid.trafo["lv_bus"].values
-        self._init_bus_lor = np.concatenate((self._init_bus_lor, t_for)).astype(np.int)
-        self._init_bus_lex = np.concatenate((self._init_bus_lex, t_fex)).astype(np.int)
+        self._init_bus_lor = np.concatenate((self._init_bus_lor, t_for)).astype(int)
+        self._init_bus_lex = np.concatenate((self._init_bus_lex, t_fex)).astype(int)
+        self._init_bus_load = self._init_bus_load.astype(int)
+        self._init_bus_gen = self._init_bus_gen.astype(int)
+
+        tmp = self._init_bus_lor + self.__nb_bus_before
+        self._init_bus_lor = np.concatenate((self._init_bus_lor.reshape(-1, 1),
+                                             tmp.reshape(-1, 1)), axis=-1)
+        tmp = self._init_bus_lex + self.__nb_bus_before
+        self._init_bus_lex = np.concatenate((self._init_bus_lex.reshape(-1, 1),
+                                             tmp.reshape(-1, 1)), axis=-1)
+        tmp = self._init_bus_load + self.__nb_bus_before
+        self._init_bus_load = np.concatenate((self._init_bus_load.reshape(-1, 1),
+                                             tmp.reshape(-1, 1)), axis=-1)
+        tmp = self._init_bus_gen + self.__nb_bus_before
+        self._init_bus_gen = np.concatenate((self._init_bus_gen.reshape(-1, 1),
+                                             tmp.reshape(-1, 1)), axis=-1)
+
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
 
         nm_ = "load"
@@ -321,7 +337,7 @@ class LightSimBackend(Backend):
 
             if type_obj == "load":
                 if new_bus > 0:
-                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_load[id_el_backend])
+                    new_bus_backend = self._init_bus_load[id_el_backend, new_bus-1] #self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_load[id_el_backend])
                     self._grid.reactivate_load(id_el_backend)
                     self._grid.change_bus_load(id_el_backend, new_bus_backend)
                 else:
@@ -329,7 +345,7 @@ class LightSimBackend(Backend):
 
             elif type_obj == "gen":
                 if new_bus > 0:
-                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_gen[id_el_backend])
+                    new_bus_backend = self._init_bus_gen[id_el_backend, new_bus-1] #self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_gen[id_el_backend])
                     self._grid.reactivate_gen(id_el_backend)
                     self._grid.change_bus_gen(id_el_backend, new_bus_backend)
                 else:
@@ -339,7 +355,7 @@ class LightSimBackend(Backend):
                 if new_bus < 0:
                     self._disconnect_line(id_el_backend)
                 else:
-                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lor[id_el_backend])
+                    new_bus_backend = self._init_bus_lor[id_el_backend, new_bus-1] #self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lor[id_el_backend])
                     if id_el_backend < self.__nb_powerline:
                         # it's a powerline
                         self._grid.reactivate_powerline(id_el_backend)
@@ -354,7 +370,7 @@ class LightSimBackend(Backend):
                 if new_bus < 0:
                     self._disconnect_line(id_el_backend)
                 else:
-                    new_bus_backend = self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lex[id_el_backend])
+                    new_bus_backend = self._init_bus_lex[id_el_backend, new_bus-1] #self._klu_bus_from_grid2op_bus(new_bus, self._init_bus_lex[id_el_backend])
                     if id_el_backend < self.__nb_powerline:
                         # it's a powerline
                         self._grid.reactivate_powerline(id_el_backend)
@@ -399,6 +415,11 @@ class LightSimBackend(Backend):
                 self.q_or[:] = np.concatenate((lqor, tqor))
                 self.v_or[:] = np.concatenate((lvor, tvor))
                 self.a_or[:] = 1000. * np.concatenate((laor, taor))
+
+                self.a_or[~np.isfinite(self.a_or)] = 0.
+                self.v_or[~np.isfinite(self.v_or)] = 0.
+                self.a_ex[~np.isfinite(self.a_ex)] = 0.
+                self.v_ex[~np.isfinite(self.v_ex)] = 0.
 
                 self.p_ex[:] = np.concatenate((lpex, tpex))
                 self.q_ex[:] = np.concatenate((lqex, tqex))
@@ -468,13 +489,15 @@ class LightSimBackend(Backend):
         return res
 
     def _klu_bus_from_grid2op_bus(self, grid2op_bus, grid2op_bus_init):
-        if grid2op_bus == 1:
-            res = grid2op_bus_init
-        elif grid2op_bus == 2:
-            res = grid2op_bus_init + self.__nb_bus_before
-        else:
-            raise BackendError("grid2op bus must be 0 1 or 2")
-        return int(res)
+        return grid2op_bus_init[grid2op_bus - 1]
+        # res = grid2op_bus_init + (grid2op_bus - 1) * self.__nb_bus_before
+        # if grid2op_bus == 1:
+        #     res = grid2op_bus_init
+        # elif grid2op_bus == 2:
+        #     res = grid2op_bus_init + self.__nb_bus_before
+        # else:
+        #     raise BackendError("grid2op bus must be 0 1 or 2")
+        # return res
 
     def get_topo_vect(self):
         return self.topo_vect
