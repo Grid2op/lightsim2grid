@@ -8,21 +8,17 @@
 
 import copy
 import numpy as np
-from grid2op.Action import CompleteAction
-from grid2op.dtypes import dt_int
-
-import pdb
 
 try:
     # TODO will be deprecated in future version
-    from grid2op.Backend import Backend
-    # from grid2op.BackendPandaPower import PandaPowerBackend
-    from grid2op.Backend import PandaPowerBackend
+    from grid2op.Action import CompleteAction
+    from grid2op.dtypes import dt_int
+    from grid2op.Backend import Backend, PandaPowerBackend
     from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
     from grid2op.Action._BackendAction import _BackendAction
     from grid2op.dtypes import dt_float, dt_int
     grid2op_installed = True
-except (ImportError, ModuleNotFoundError) as e:
+except ImportError as e:
     grid2op_installed = False
 
 
@@ -57,6 +53,7 @@ class LightSimBackend(Backend):
         self.shunt_topo_vect = None
 
         self.init_pp_backend = PandaPowerBackend()
+        print("__init__ init_pp_backend: {}".format(self.init_pp_backend.env_name))
 
         self.V = None
         self.max_it = 10
@@ -102,6 +99,8 @@ class LightSimBackend(Backend):
 
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
+        self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self.init_pp_backend)
+        print("load_grid init_pp_backend: {}".format(self.init_pp_backend.env_name))
 
         self._grid = init(self.init_pp_backend._grid)
 
@@ -216,9 +215,9 @@ class LightSimBackend(Backend):
 
         self._count_object_per_bus()
 
-        _init_action_to_set = self.get_action_to_set()
-        self._backend_action_class = _BackendAction.init_grid(self)
+        self._backend_action_class = _BackendAction.init_grid(self.init_pp_backend)
         self._init_action_to_set = self._backend_action_class()
+        _init_action_to_set = self.get_action_to_set()
         self._init_action_to_set += _init_action_to_set
 
     def _count_object_per_bus(self):
@@ -547,7 +546,7 @@ class LightSimBackend(Backend):
         load_p, load_q, _ = self.loads_info()
         # prod_p, prod_q, prod_v = self.init_pp_backend._gens_info()
         # load_p, load_q, load_v = self.init_pp_backend._loads_info()
-        complete_action_class = CompleteAction.init_grid(self)
+        complete_action_class = CompleteAction.init_grid(self.init_pp_backend)
         set_me = complete_action_class()
         set_me.update({"set_line_status": 1 * line_status,
                        "set_bus": 1 * topo_vect})

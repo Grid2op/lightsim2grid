@@ -6,17 +6,18 @@ import copy
 import pdb
 import warnings
 
+import grid2op
 from grid2op.tests.helper_path_test import HelperTests, PATH_DATA_TEST_PP
-
 from grid2op.Action import ActionSpace, CompleteAction
 from grid2op.Parameters import Parameters
 from grid2op.Chronics import ChronicsHandler, ChangeNothing
 from grid2op.Environment import Environment
-from grid2op.Exceptions import *
+from grid2op.Exceptions import AmbiguousAction
 from grid2op.Rules import RulesChecker
 from grid2op.MakeEnv import make
 from grid2op.Rules import AlwaysLegal
 from grid2op.Action._BackendAction import _BackendAction
+from grid2op.Backend import Backend, PandaPowerBackend
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 
@@ -732,7 +733,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, self.case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=self.env_params)
+                          parameters=self.env_params,
+                          name="next_grid_state_no_overflow")
 
         disco, infos = self.backend.next_grid_state(env, is_dc=False)
         assert not infos
@@ -745,7 +747,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=env_params)
+                          parameters=env_params,
+                          name="test_next_grid_state_1overflow")
         self.backend.load_grid(self.path_matpower, case_file)
 
         thermal_limit = 10*self.lines_flows_init
@@ -766,7 +769,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=self.env_params)
+                          parameters=self.env_params,
+                          name="test_next_grid_state_1overflow_envNoCF")
         self.backend.load_grid(self.path_matpower, case_file)
 
         thermal_limit = 10*self.lines_flows_init
@@ -789,7 +793,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=env_params)
+                          parameters=env_params,
+                          name="test_nb_timestep_overflow_disc0")
         self.backend.load_grid(self.path_matpower, case_file)
 
         thermal_limit = 10*self.lines_flows_init
@@ -818,7 +823,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=env_params)
+                          parameters=env_params,
+                          name="test_nb_timestep_overflow_nodisc")
         self.backend.load_grid(self.path_matpower, case_file)
 
         env.timestep_overflow[self.id_2nd_line_disco] = 0
@@ -846,7 +852,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=env_params)
+                          parameters=env_params,
+                          name="test_nb_timestep_overflow_nodisc_2")
         self.backend.load_grid(self.path_matpower, case_file)
 
         env.timestep_overflow[self.id_2nd_line_disco] = 1
@@ -875,7 +882,8 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
         env = Environment(init_grid_path=os.path.join(self.path_matpower, case_file),
                           backend=self.backend,
                           chronics_handler=self.chronics_handler,
-                          parameters=env_params)
+                          parameters=env_params,
+                          name="test_nb_timestep_overflow_disc2")
         self.backend.load_grid(self.path_matpower, case_file)
 
         env.timestep_overflow[self.id_2nd_line_disco] = 2
@@ -897,13 +905,11 @@ class TestEnvPerformsCorrectCascadingFailures(unittest.TestCase):
 
 
 class TestChangeBusAffectRightBus(unittest.TestCase):
-    def setUp(self):
-        self.backend = LightSimBackend()
-
     def test_set_bus(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env = make(backend=self.backend, test=True)
+            env = make(backend=backend, test=True)
         env.reset()
         # action = env.helper_action_player({"change_bus": {"lines_or_id": [17]}})
         action = env.helper_action_player({"set_bus": {"lines_or_id": [(17, 2)]}})
@@ -912,9 +918,10 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert env.backend._grid.nb_bus() == 15
 
     def test_change_bus(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env = make(backend=self.backend, test=True)
+            env = make(backend=backend, test=True)
         env.reset()
         action = env.helper_action_player({"change_bus": {"lines_or_id": [17]}})
         obs, reward, done, info = env.step(action)
@@ -922,9 +929,10 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert env.backend._grid.nb_bus() == 15
 
     def test_change_bustwice(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env = make(backend=self.backend, test=True)
+            env = make(backend=backend, test=True)
         env.reset()
         action = env.helper_action_player({"change_bus": {"lines_or_id": [17]}})
         obs, reward, done, info = env.step(action)
@@ -933,17 +941,19 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert env.backend._grid.nb_bus() == 14
 
     def test_isolate_load(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env = make(backend=self.backend, test=True)
+            env = make(backend=backend, test=True)
         act = env.action_space({"set_bus": {"loads_id": [(0, 2)]}})
         obs, reward, done, info = env.step(act)
         assert done, "an isolated laod has not lead to a game over"
 
     def test_reco_disco_bus(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env_case1 = make("case5_example", gamerules_class=AlwaysLegal, backend=self.backend, test=True)
+            env_case1 = make("case5_example", gamerules_class=AlwaysLegal, backend=backend, test=True)
         obs = env_case1.reset()  # reset is good
         act = env_case1.action_space.disconnect_powerline(line_id=5)  # I disconnect a powerline
         obs, reward, done, info = env_case1.step(act)  # do the action, it's valid
@@ -954,9 +964,10 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert done_case1
 
     def test_reco_disco_bus2(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=self.backend, test=True)
+            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=backend, test=True)
         obs = env_case2.reset()  # reset is good
         obs, reward, done, info = env_case2.step(env_case2.action_space())  # do the action, it's valid
         act_case2 = env_case2.action_space.reconnect_powerline(line_id=5, bus_or=2, bus_ex=2)  # reconnect powerline on bus 2 both ends
@@ -967,9 +978,10 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert done_case2
 
     def test_reco_disco_bus3(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=self.backend, test=True)
+            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=backend, test=True)
         obs = env_case2.reset()  # reset is good
         obs, reward, done, info = env_case2.step(env_case2.action_space())  # do the action, it's valid
         act_case2 = env_case2.action_space.reconnect_powerline(line_id=5, bus_or=1, bus_ex=2)  # reconnect powerline on bus 2 both ends
@@ -978,9 +990,10 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert done_case2 is False
 
     def test_reco_disco_bus4(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=self.backend, test=True)
+            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=backend, test=True)
         obs = env_case2.reset()  # reset is good
         obs, reward, done, info = env_case2.step(env_case2.action_space())  # do the action, it's valid
         act_case2 = env_case2.action_space.reconnect_powerline(line_id=5, bus_or=2, bus_ex=1)  # reconnect powerline on bus 2 both ends
@@ -989,9 +1002,10 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
         assert done_case2 is False
 
     def test_reco_disco_bus5(self):
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=self.backend, test=True)
+            env_case2 = make("case5_example", gamerules_class=AlwaysLegal, backend=backend, test=True)
         obs = env_case2.reset()  # reset is good
         act_case2 = env_case2.action_space({"set_bus": {"lines_or_id": [(5,2)], "lines_ex_id": [(5,2)]}})  # reconnect powerline on bus 2 both ends
         # this should not lead to a game over this time, the grid is connex!
@@ -1001,27 +1015,25 @@ class TestChangeBusAffectRightBus(unittest.TestCase):
 
 class TestShuntAction(HelperTests):
     def test_shunt_ambiguous_id_incorrect(self):
-        self.backend = LightSimBackend()
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            with make("case5_example",
+            with make("rte_case5_example",
+                      test=True,
                       gamerules_class=AlwaysLegal,
                       action_class=CompleteAction,
-                      backend=self.backend,
-                      test=True) as env_case2:
+                      backend=backend) as env_case2:
                 with self.assertRaises(AmbiguousAction):
                     act = env_case2.action_space({"shunt": {"set_bus": [(0, 2)]}})
 
     def test_shunt_effect(self):
-        self.backend = LightSimBackend()
+        backend = LightSimBackend()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env_ref = make("case14_realistic",
-                           gamerules_class=AlwaysLegal,
-                           action_class=CompleteAction, test=True)
-            env_change_q = make("case14_realistic",
-                                gamerules_class=AlwaysLegal,
-                                action_class=CompleteAction, backend=self.backend, test=True)
+            env_ref = make("rte_case14_realistic", test=True, gamerules_class=AlwaysLegal,
+                               action_class=CompleteAction)
+            env_change_q = make("rte_case14_realistic", test=True, gamerules_class=AlwaysLegal,
+                                    action_class=CompleteAction, backend=backend)
 
         obs_ref, *_ = env_ref.step(env_ref.action_space())
         obs_change_p, *_ = env_change_q.step(env_change_q.action_space({"shunt": {"shunt_q": [(0, -30)]}}))
@@ -1033,6 +1045,151 @@ class TestShuntAction(HelperTests):
         env_ref.backend._grid.shunt["in_service"] = False  # force disconnection of shunt
         obs_ref, *_ = env_ref.step(env_ref.action_space())
         assert np.abs(obs_ref.v_or[10] - obs_change_p.v_or[10]) < self.tol_one
+
+
+class TestResetEqualsLoadGrid(unittest.TestCase):
+    def setUp(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env1 = make("rte_case5_example", test=True, backend=PandaPowerBackend())
+            self.backend1 = self.env1.backend
+            self.env2 = make("rte_case5_example", test=True, backend=PandaPowerBackend())
+            self.backend2 = self.env2.backend
+
+    def tearDown(self):
+        self.env1.close()
+        self.env2.close()
+
+    def test_reset_equals_reset(self):
+        # Reset backend1 with reset
+        self.env1.reset()
+        # Reset backend2 with reset
+        self.env2.reset()
+
+        # Compare
+        assert np.all(self.backend1.prod_pu_to_kv == self.backend2.prod_pu_to_kv)
+        assert np.all(self.backend1.load_pu_to_kv == self.backend2.load_pu_to_kv)
+        assert np.all(self.backend1.lines_or_pu_to_kv == self.backend2.lines_or_pu_to_kv)
+        assert np.all(self.backend1.lines_ex_pu_to_kv == self.backend2.lines_ex_pu_to_kv)
+        assert np.all(self.backend1.p_or == self.backend2.p_or)
+        assert np.all(self.backend1.q_or == self.backend2.q_or)
+        assert np.all(self.backend1.v_or == self.backend2.v_or)
+        assert np.all(self.backend1.a_or == self.backend2.a_or)
+        assert np.all(self.backend1.p_ex == self.backend2.p_ex)
+        assert np.all(self.backend1.a_ex == self.backend2.a_ex)
+        assert np.all(self.backend1.v_ex == self.backend2.v_ex)
+
+    def test_reset_equals_load_grid(self):
+        # Reset backend1 with reset
+        self.env1.reset()
+        # Reset backend2 with load_grid
+        self.backend2.reset = self.backend2.load_grid
+        self.env2.reset()
+
+        # Compare
+        assert np.all(self.backend1.prod_pu_to_kv == self.backend2.prod_pu_to_kv)
+        assert np.all(self.backend1.load_pu_to_kv == self.backend2.load_pu_to_kv)
+        assert np.all(self.backend1.lines_or_pu_to_kv == self.backend2.lines_or_pu_to_kv)
+        assert np.all(self.backend1.lines_ex_pu_to_kv == self.backend2.lines_ex_pu_to_kv)
+        assert np.all(self.backend1.p_or == self.backend2.p_or)
+        assert np.all(self.backend1.q_or == self.backend2.q_or)
+        assert np.all(self.backend1.v_or == self.backend2.v_or)
+        assert np.all(self.backend1.a_or == self.backend2.a_or)
+        assert np.all(self.backend1.p_ex == self.backend2.p_ex)
+        assert np.all(self.backend1.a_ex == self.backend2.a_ex)
+        assert np.all(self.backend1.v_ex == self.backend2.v_ex)
+
+    def test_load_grid_equals_load_grid(self):
+        # Reset backend1 with load_grid
+        self.backend1.reset = self.backend1.load_grid
+        self.env1.reset()
+        # Reset backend2 with load_grid
+        self.backend2.reset = self.backend2.load_grid
+        self.env2.reset()
+
+        # Compare
+        assert np.all(self.backend1.prod_pu_to_kv == self.backend2.prod_pu_to_kv)
+        assert np.all(self.backend1.load_pu_to_kv == self.backend2.load_pu_to_kv)
+        assert np.all(self.backend1.lines_or_pu_to_kv == self.backend2.lines_or_pu_to_kv)
+        assert np.all(self.backend1.lines_ex_pu_to_kv == self.backend2.lines_ex_pu_to_kv)
+        assert np.all(self.backend1.p_or == self.backend2.p_or)
+        assert np.all(self.backend1.q_or == self.backend2.q_or)
+        assert np.all(self.backend1.v_or == self.backend2.v_or)
+        assert np.all(self.backend1.a_or == self.backend2.a_or)
+        assert np.all(self.backend1.p_ex == self.backend2.p_ex)
+        assert np.all(self.backend1.a_ex == self.backend2.a_ex)
+        assert np.all(self.backend1.v_ex == self.backend2.v_ex)
+
+    def test_obs_from_same_chronic(self):
+        # Store first observation
+        obs1 = self.env1.current_obs
+        obs2 = None
+        for i in range(3):
+            self.env1.step(self.env1.action_space({}))
+
+        # Reset to first chronic
+        self.env1.chronics_handler.tell_id(-1)
+        self.env1.reset()
+
+        # Store second observation
+        obs2 = self.env1.current_obs
+
+        # Compare
+        assert np.allclose(obs1.prod_p, obs2.prod_p)
+        assert np.allclose(obs1.prod_q, obs2.prod_q)
+        assert np.allclose(obs1.prod_v, obs2.prod_v)
+        assert np.allclose(obs1.load_p, obs2.load_p)
+        assert np.allclose(obs1.load_q, obs2.load_q)
+        assert np.allclose(obs1.load_v, obs2.load_v)
+        assert np.allclose(obs1.p_or, obs2.p_or)
+        assert np.allclose(obs1.q_or, obs2.q_or)
+        assert np.allclose(obs1.v_or, obs2.v_or)
+        assert np.allclose(obs1.a_or, obs2.a_or)
+        assert np.allclose(obs1.p_ex, obs2.p_ex)
+        assert np.allclose(obs1.q_ex, obs2.q_ex)
+        assert np.allclose(obs1.v_ex, obs2.v_ex)
+        assert np.allclose(obs1.a_ex, obs2.a_ex)
+        assert np.allclose(obs1.rho, obs2.rho)
+        assert np.all(obs1.line_status == obs2.line_status)
+        assert np.all(obs1.topo_vect == obs2.topo_vect)
+        assert np.all(obs1.timestep_overflow == obs2.timestep_overflow)
+        assert np.all(obs1.time_before_cooldown_line == obs2.time_before_cooldown_line)
+        assert np.all(obs1.time_before_cooldown_sub == obs2.time_before_cooldown_sub)
+        assert np.all(obs1.time_next_maintenance == obs2.time_next_maintenance)
+        assert np.all(obs1.duration_next_maintenance == obs2.duration_next_maintenance)
+        assert np.all(obs1.target_dispatch == obs2.target_dispatch)
+        assert np.all(obs1.actual_dispatch == obs2.actual_dispatch)
+
+
+class TestVoltageOWhenDisco(unittest.TestCase):
+    def test_this(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            with make("rte_case14_realistic", test=True) as env:
+                line_id = 1
+                act = env.action_space({"set_line_status": [(line_id, -1)]})
+                obs, *_ = env.step(act)
+                assert obs.v_or[line_id] == 0.  # is not 0 however line is not connected
+
+
+class TestChangeBusSlack(unittest.TestCase):
+    def setUp(self):
+        self.tolvect = 1e-2
+        self.tol_one = 1e-5
+
+    def test_change_slack_case14(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make("rte_case14_realistic", test=True)
+        action = env.action_space({"set_bus": {"generators_id": [(-1, 2)], "lines_or_id": [(0, 2)]}})
+        obs, reward, am_i_done, info = env.step(action)
+        assert am_i_done is False
+        assert np.all(obs.prod_p >= 0.)
+        assert np.sum(obs.prod_p) >= np.sum(obs.load_p)
+        p_subs, q_subs, p_bus, q_bus = env.backend.check_kirchoff()
+        assert np.all(np.abs(p_subs) <= self.tol_one)
+        assert np.all(np.abs(p_bus) <= self.tol_one)
+
 
 
 if __name__ == "__main__":
