@@ -21,11 +21,6 @@ try:
 except ImportError as e:
     grid2op_installed = False
 
-
-    class Backend():
-        def __init__(self, detailed_infos_for_cascading_failures=False):
-            pass
-
 from lightsim2grid.initGridModel import init
 
 
@@ -53,7 +48,6 @@ class LightSimBackend(Backend):
         self.shunt_topo_vect = None
 
         self.init_pp_backend = PandaPowerBackend()
-        print("__init__ init_pp_backend: {}".format(self.init_pp_backend.env_name))
 
         self.V = None
         self.max_it = 10
@@ -99,8 +93,6 @@ class LightSimBackend(Backend):
 
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
-        self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self.init_pp_backend)
-        print("load_grid init_pp_backend: {}".format(self.init_pp_backend.env_name))
 
         self._grid = init(self.init_pp_backend._grid)
 
@@ -215,7 +207,19 @@ class LightSimBackend(Backend):
 
         self._count_object_per_bus()
 
-        self._backend_action_class = _BackendAction.init_grid(self.init_pp_backend)
+    def assert_grid_correct_after_powerflow(self):
+        """
+        This method is called by the environment. It ensure that the backend remains consistent even after a powerflow
+        has be run with :func:`Backend.runpf` method.
+
+        :return: ``None``
+        :raise: :class:`grid2op.Exceptions.EnvError` and possibly all of its derived class.
+        """
+        # test the results gives the proper size
+        super().assert_grid_correct_after_powerflow()
+        self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self)
+        print("load_grid init_pp_backend: {}".format(self.init_pp_backend.env_name))
+        self._backend_action_class = _BackendAction.init_grid(self)
         self._init_action_to_set = self._backend_action_class()
         _init_action_to_set = self.get_action_to_set()
         self._init_action_to_set += _init_action_to_set
