@@ -96,7 +96,7 @@ void DataGen::get_vm_for_dc(Eigen::VectorXd & Vm){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
         bus_id_me = bus_id_(gen_id);
-        double tmp = vm_pu_(bus_id_me);
+        double tmp = vm_pu_(gen_id);
         if(tmp != 0.) Vm(bus_id_me) = tmp;
     }
 }

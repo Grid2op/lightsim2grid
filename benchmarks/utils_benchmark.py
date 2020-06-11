@@ -9,6 +9,7 @@
 import time
 import numpy as np
 from tqdm import tqdm
+import argparse
 import pdb
 
 
@@ -34,12 +35,20 @@ def print_res(env_klu, env_pp,
     print("Absolute value of the difference for gen_q: {}".format(np.max(np.abs(gen_q_klu - gen_q_pp))))
 
 
-def run_env(env, max_ts, agent):
+def run_env(env, max_ts, agent, chron_id=None):
     nb_rows = min(env.chronics_handler.max_timestep(), max_ts)
     aor = np.zeros((nb_rows, env.n_line))
     gen_p = np.zeros((nb_rows, env.n_gen))
     gen_q = np.zeros((nb_rows, env.n_gen))
-    obs = env.get_obs()
+    if chron_id is not None:
+        # reset the environment
+        env.chronics_handler.tell_id(chron_id-1)
+        # deactivate the forecast (not used here)
+        env.deactivate_forecast()
+        # reset it
+        obs = env.reset()
+    else:
+        obs = env.get_obs()
     done = False
     reward = env.reward_range[0]
     nb_ts = 0
@@ -62,3 +71,14 @@ def run_env(env, max_ts, agent):
     end_ = time.time()
     total_time = end_ - beg_
     return nb_ts, total_time, aor, gen_p, gen_q
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')

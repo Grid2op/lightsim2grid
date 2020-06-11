@@ -36,8 +36,30 @@ class TestAgent(AgentWithConverter):
             if env_name == "rte_case14_realistic":
                 if i == 18:
                     continue
-            if env_name == "rte_case5_example":
+            elif env_name == "rte_case5_example":
                 pass
+            elif env_name == "rte_case118_example":
+                if i == 6:
+                    continue
+                if i == 26:
+                    continue
+                if i == 72:
+                    continue
+                if i == 73:
+                    continue
+                if i == 80:
+                    continue
+                if i == 129:
+                    continue
+                if i == 140:
+                    continue
+                if i == 176:
+                    continue
+                if i == 177:
+                    continue
+            elif env_name == "l2rpn_wcci_2020":
+                if i == 2:
+                    continue
             all_actions_tmp.append(action_space.disconnect_powerline(line_id=i))
 
         # other type of actions
@@ -60,9 +82,57 @@ class TestAgent(AgentWithConverter):
                              action_space({"set_bus": {"lines_or_id": [(6, 2), (15, 2), (16, 1)],
                                                        "lines_ex_id": [(3, 2), (5, 2)],
                                                        "loads_id": [(2, 1)]}}),
-                             action_space({"set_bus": {"lines_or_id": [(18, 1)],
-                                                       "lines_ex_id": [(15, 2), (19, 2)],
-                                                       }})
+                            action_space({"set_bus": {"lines_or_id": [(18, 1)],
+                                                      "lines_ex_id": [(15, 2), (19, 2)],
+                                                      }})
+            ]
+        elif env_name == "rte_case118_example":
+            breaking_acts = [action_space({"set_bus": {"lines_or_id": [(100, 2), (129, 1), (173, 2)],
+                                                       # "lines_ex_id": [(17,2)],
+                                                       "generators_id": [(2, 2)],
+                                                       "loads_id": [(6, 1)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(100, 2), (129, 1), (173, 2)],
+                                                       # "lines_ex_id": [(17,2)],
+                                                       "generators_id": [(2, 2)],
+                                                       "loads_id": [(6, 2)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(100, 2), (129, 1), (173, 2)],
+                                                       # "lines_ex_id": [(17,2)],
+                                                       "generators_id": [(2, 1)],
+                                                       "loads_id": [(6, 1)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(140, 1)],
+                                                       "lines_ex_id": [(129, 2)],
+                                                       # "generators_id": [(2, 1)],
+                                                       # "loads_id": [(6, 1)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(57, 2), (80, 1), (83, 2)],
+                                                       "lines_ex_id": [(2, 2), (13, 2), (24, 2), (35, 2)],
+                                                       "generators_id": [(6, 2)],
+                                                       "loads_id": [(8, 2)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(57, 2), (80, 1), (83, 2)],
+                                                       "lines_ex_id": [(2, 2), (13, 2), (24, 2), (35, 2)],
+                                                       "generators_id": [(6, 2)],
+                                                       "loads_id": [(8, 1)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(57, 2), (80, 1), (83, 2)],
+                                                       "lines_ex_id": [(2, 2), (13, 2), (24, 2), (35, 2)],
+                                                       "generators_id": [(6, 1)],
+                                                       "loads_id": [(8, 2)]
+                                                       }}),
+                             action_space({"set_bus": {"lines_or_id": [(57, 2), (80, 1), (83, 2)],
+                                                       "lines_ex_id": [(2, 2), (13, 2), (24, 2), (35, 2)],
+                                                       "generators_id": [(6, 1)],
+                                                       "loads_id": [(8, 1)]
+                                                       }}),
+            ]
+
+        elif env_name == "l2rpn_wcci_2020":
+            breaking_acts = [action_space({"set_bus": {"lines_or_id": [(5, 2), (6, 2)],
+                                                       "lines_ex_id": [(1, 2), (2, 1), (4, 2), (55, 2)],
+                                                       }}),
             ]
         else:
             breaking_acts = [action_space({"set_bus": {"lines_or_id": [(0,2), (1,2), (2,2), (3,1)],
@@ -75,6 +145,7 @@ class TestAgent(AgentWithConverter):
         for el in all_actions_tmp:
             if not el in breaking_acts:
                 all_actions.append(el)
+
         # set the action to the action space
         self.action_space.all_actions = all_actions
 

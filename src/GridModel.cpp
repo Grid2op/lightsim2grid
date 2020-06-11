@@ -322,8 +322,9 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     Va.array() +=  std::arg(Vinit(slack_bus_id_));
 
     // fill Vm either Vinit if pq or Vm if pv (TODO)
+    Eigen::VectorXd Vm;
     if(false){
-        Eigen::VectorXd Vm = Vinit.array().abs();  // fill Vm = Vinit for all
+        Vm = Vinit.array().abs();  // fill Vm = Vinit for all
         // put Vm = 0. for disconnected bus
         for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
             if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
@@ -334,16 +335,18 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
         // assign vm of the slack bus
         Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
     }
+    else{
+        Vm = Eigen::VectorXd::Constant(Vinit.size(), 1.0);
+        for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
+            if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+            Vm(bus_id_me) = 0.;
+        }
+        generators_.get_vm_for_dc(Vm);
+    }
     //END of the SOLVER PART
 
-    Eigen::VectorXd Vm = Eigen::VectorXd::Constant(Vinit.size(), 1.0);
-    for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-        if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-        Vm(bus_id_me) = 0.;
-    }
     //TODO handle Vm = Vm (gen) for connected generators
     return Vm.array() * (Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>());
-    //return Eigen::VectorXcd();
 }
 
 int GridModel::nb_bus() const

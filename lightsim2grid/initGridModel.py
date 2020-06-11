@@ -12,7 +12,6 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 
 import numpy as np
 from lightsim2grid_cpp import GridModel, PandaPowerConverter
-import pdb
 
 
 def init(pp_net):
@@ -116,10 +115,10 @@ def init(pp_net):
                           pp_net.gen["max_q_mvar"].values,
                           pp_net.gen["bus"].values
                           )
-
     # TODO handle that better maybe, and warn only one slack bus is implemented
     if np.any(pp_net.gen["slack"].values):
         slack_gen_id = np.where(pp_net.gen["slack"].values)[0]
+        model.change_v_gen(slack_gen_id, pp_net.gen["vm_pu"][slack_gen_id])
     else:
         # there is no slack bus in the generator of the pp grid
 

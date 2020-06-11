@@ -6,28 +6,46 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
+import numpy as np
+import os
+
 from grid2op import make
 from grid2op.Agent import DoNothingAgent
+from grid2op.Chronics import GridStateFromFile
 from grid2op.Parameters import Parameters
 from lightsim2grid.LightSimBackend import LightSimBackend
-from utils_benchmark import print_res, run_env
+from utils_benchmark import print_res, run_env, str2bool
+import pdb
 
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
 
 
-def main(max_ts, ENV_NAME):
+def main(max_ts, ENV_NAME, test=True):
     backend = LightSimBackend()
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
-    env_klu = make(ENV_NAME, backend=backend, param=param, test=True)
+    env_klu = make(ENV_NAME, backend=backend, param=param, test=test,
+                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
     agent = DoNothingAgent(action_space=env_klu.action_space)
-    nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent)
+    nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent, chron_id=0)
 
-    env_pp = make(ENV_NAME, param=param, test=True)
+    env_pp = make(ENV_NAME, param=param, test=test,
+                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
     agent = DoNothingAgent(action_space=env_pp.action_space)
-    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent)
+    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0)
+
+    if os.path.exists("aor_ls.npy"):
+        aor_klu_prev = np.load("aor_ls.npy")
+        print("max klu: {:.3f}".format(np.max(np.abs(aor_klu_prev - aor_klu))))
+    if os.path.exists("aor_pp.npy"):
+        aor_pp_prev = np.load("aor_pp.npy")
+        print("max pp: {:.3f}".format(np.max(np.abs(aor_pp_prev - aor_pp))))
+
+    pdb.set_trace()
+    np.save(arr=aor_pp, file="aor_pp.npy")
+    np.save(arr=aor_klu, file="aor_ls.npy")
 
     print_res(env_klu, env_pp,
               nb_ts_klu, nb_ts_pp,
@@ -45,9 +63,13 @@ if __name__ == "__main__":
                         help='Environment name to be used for the benchmark.')
     parser.add_argument('--number', type=int, default=MAX_TS,
                         help='Maximum number of time steps for which the benchamark will be run.')
+    parser.add_argument('--no_test', type=str2bool, nargs='?',
+                        const=True, default=False,
+                        help='Do not use test environment for the benchmark (default False: use test environment)')
 
     args = parser.parse_args()
 
     max_ts = int(args.number)
     name = str(args.name)
-    main(max_ts, name)
+    test_env = not args.no_test
+    main(max_ts, name, test_env)

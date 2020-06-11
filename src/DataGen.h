@@ -9,6 +9,8 @@
 #ifndef DATAGEN_H
 #define DATAGEN_H
 
+#include <iostream>
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
@@ -65,6 +67,11 @@ class DataGen: public DataGeneric
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     const std::vector<bool>& get_status() const {return status_;}
 
+    void cout_v(){
+        for(const auto & el : vm_pu_){
+            std::cout << "V " << el << std::endl;
+        }
+    }
     protected:
         // physical properties
 
