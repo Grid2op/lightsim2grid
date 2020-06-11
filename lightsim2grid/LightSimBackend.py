@@ -218,7 +218,6 @@ class LightSimBackend(Backend):
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
         self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self)
-        print("load_grid init_pp_backend: {}".format(self.init_pp_backend.env_name))
         self._backend_action_class = _BackendAction.init_grid(self)
         self._init_action_to_set = self._backend_action_class()
         _init_action_to_set = self.get_action_to_set()
@@ -458,6 +457,7 @@ class LightSimBackend(Backend):
         return res
 
     def copy(self):
+        # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
         self._grid = None
         inippbackend = self.init_pp_backend._grid
@@ -470,10 +470,14 @@ class LightSimBackend(Backend):
         self.init_pp_backend._grid = inippbackend
         # res.apply_action(self.get_action_to_set())
 
-        _action_to_set_act = self.get_action_to_set()
-        _action_to_set = self._backend_action_class()
-        _action_to_set += _action_to_set_act
-        res.apply_action(_action_to_set)
+        if self._backend_action_class is not None:
+            _action_to_set_act = self.get_action_to_set()
+            _action_to_set = self._backend_action_class()
+            _action_to_set += _action_to_set_act
+            res.apply_action(_action_to_set)
+        else:
+            # we are at the beginning, so it does not really matters that i cannot assign the injection
+            pass
         return res
 
     def get_line_status(self):
@@ -493,14 +497,6 @@ class LightSimBackend(Backend):
 
     def _klu_bus_from_grid2op_bus(self, grid2op_bus, grid2op_bus_init):
         return grid2op_bus_init[grid2op_bus - 1]
-        # res = grid2op_bus_init + (grid2op_bus - 1) * self.__nb_bus_before
-        # if grid2op_bus == 1:
-        #     res = grid2op_bus_init
-        # elif grid2op_bus == 2:
-        #     res = grid2op_bus_init + self.__nb_bus_before
-        # else:
-        #     raise BackendError("grid2op bus must be 0 1 or 2")
-        # return res
 
     def get_topo_vect(self):
         return self.topo_vect
