@@ -163,7 +163,8 @@ class TestAgentAllMove(ABC):
         self.param = Parameters()
         self.param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
         self.max_ts = MAX_TS
-        self.tol = 1e-8
+        self.tol = 1e-9
+        self.tol_q = 2e-5
         self.agent_class = TestAgent
 
     @abstractmethod
@@ -219,9 +220,10 @@ class TestAgentAllMove(ABC):
         assert np.mean(np.abs(gen_p_klu - gen_p_pp)) <= self.tol, "gen_p l1 different for {}: {}" \
                                                                   "".format(env_name, np.mean(np.abs(gen_p_klu - gen_p_pp)))
 
-        # this is not exactly exact atm
-        # assert np.max(np.abs(gen_q_klu - gen_q_pp)) <= self.tol, "l inf different for {} gen_q".format(env_name)
-        # assert np.mean(np.abs(gen_q_klu - gen_q_pp)) <= self.tol, "l1 different for {} gen_q".format(env_name)
+        # a slightly different algorithm compare to pandapower (see DataGen.cpp, set_q)
+        assert np.max(np.abs(gen_q_klu - gen_q_pp)) <= self.tol_q, "l inf different for {} gen_q: {}" \
+                                                                   "".format(env_name, np.max(np.abs(gen_q_klu - gen_q_pp)))
+        assert np.mean(np.abs(gen_q_klu - gen_q_pp)) <= self.tol_q, "l1 different for {} gen_q".format(env_name)
 
 
 class Testcase5(TestAgentAllMove, unittest.TestCase):

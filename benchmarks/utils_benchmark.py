@@ -35,7 +35,7 @@ def print_res(env_klu, env_pp,
     print("Absolute value of the difference for gen_q: {}".format(np.max(np.abs(gen_q_klu - gen_q_pp))))
 
 
-def run_env(env, max_ts, agent, chron_id=None):
+def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False):
     nb_rows = min(env.chronics_handler.max_timestep(), max_ts)
     aor = np.zeros((nb_rows, env.n_line))
     gen_p = np.zeros((nb_rows, env.n_gen))
@@ -44,7 +44,8 @@ def run_env(env, max_ts, agent, chron_id=None):
         # reset the environment
         env.chronics_handler.tell_id(chron_id-1)
         # deactivate the forecast (not used here)
-        env.deactivate_forecast()
+        if not keep_forecast:
+            env.deactivate_forecast()
         # reset it
         obs = env.reset()
     else:

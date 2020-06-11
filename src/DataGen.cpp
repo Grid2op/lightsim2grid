@@ -171,7 +171,7 @@ void DataGen::set_q(const std::vector<double> & q_by_bus)
     // for(int bus_id = 0; bus_id < q_by_bus.size(); ++bus_id) std::cout << "bus id " << bus_id << " sum q " << q_by_bus[bus_id] << std::endl;
     int nb_gen = nb();
     res_q_ = Eigen::VectorXd::Constant(nb_gen, 0.);
-    double eps_q = 0.0001;
+    double eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         if(!status_[gen_id]) continue;
@@ -186,13 +186,8 @@ void DataGen::set_q(const std::vector<double> & q_by_bus)
         if(nb_gen_with_me == 1){
             real_q = q_to_absorb;
         }else{
-            double ratio = 1.0 / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) * (max_q_me - min_q_me + eps_q);
-            //  std::cout << " ratio " << ratio << std::endl;
-            // real_q = min_q_me + (q_to_absorb - min_q_me) * ratio ;
+            double ratio = (max_q_me - min_q_me + eps_q) / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) ;
             real_q = q_to_absorb * ratio ;
-            // std::cout << " q_to_absorb " << q_to_absorb << std::endl;
-            //handle the corner cases where i am the only gen connected to my bus, and min_q = max_q
-            // if((min_q_me == max_q_me) & (min_q_bus == max_q_bus)) real_q = q_to_absorb;
         }
         res_q_(gen_id) = real_q;
     }

@@ -12,6 +12,7 @@ from grid2op import make
 from grid2op.Agent import PowerLineSwitch
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
+from grid2op.Chronics import GridStateFromFileWithForecasts
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 
@@ -27,13 +28,15 @@ def main(max_ts, name):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
-    env_klu = make(name, backend=backend, param=param, gamerules_class=AlwaysLegal, test=True)
+    env_klu = make(name, backend=backend, param=param, gamerules_class=AlwaysLegal, test=True,
+                   data_feeding_kwargs={"gridvalueClass": GridStateFromFileWithForecasts})
     agent = PowerLineSwitch(action_space=env_klu.action_space)
-    nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent)
+    nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent, chron_id=0, keep_forecast=True)
 
-    env_pp = make(name, param=param, gamerules_class=AlwaysLegal, test=True)
+    env_pp = make(name, param=param, gamerules_class=AlwaysLegal, test=True,
+                   data_feeding_kwargs={"gridvalueClass": GridStateFromFileWithForecasts})
     agent = PowerLineSwitch(action_space=env_pp.action_space)
-    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent)
+    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, keep_forecast=True)
 
     print_res(env_klu, env_pp,
               nb_ts_klu, nb_ts_pp,
