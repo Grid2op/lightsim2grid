@@ -401,7 +401,6 @@ class LightSimBackend(Backend):
                         # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
                     self.V[:] = V
-                print("klu V init: {}".format(self.V))
                 V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)

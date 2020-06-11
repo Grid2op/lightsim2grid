@@ -36,16 +36,16 @@ def main(max_ts, ENV_NAME, test=True):
     agent = DoNothingAgent(action_space=env_pp.action_space)
     nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0)
 
-    if os.path.exists("aor_ls.npy"):
-        aor_klu_prev = np.load("aor_ls.npy")
-        print("max klu: {:.3f}".format(np.max(np.abs(aor_klu_prev - aor_klu))))
-    if os.path.exists("aor_pp.npy"):
-        aor_pp_prev = np.load("aor_pp.npy")
-        print("max pp: {:.3f}".format(np.max(np.abs(aor_pp_prev - aor_pp))))
-
-    pdb.set_trace()
-    np.save(arr=aor_pp, file="aor_pp.npy")
-    np.save(arr=aor_klu, file="aor_ls.npy")
+    # # if os.path.exists("aor_ls.npy"):
+    # #     aor_klu_prev = np.load("aor_ls.npy")
+    # #     print("max klu: {:.3f}".format(np.max(np.abs(aor_klu_prev - aor_klu))))
+    # # if os.path.exists("aor_pp.npy"):
+    # #     aor_pp_prev = np.load("aor_pp.npy")
+    # #     print("max pp: {:.3f}".format(np.max(np.abs(aor_pp_prev - aor_pp))))
+    # #
+    # # np.save(arr=aor_pp, file="aor_pp.npy")
+    # # np.save(arr=aor_klu, file="aor_ls.npy")
+    # pdb.set_trace()
 
     print_res(env_klu, env_pp,
               nb_ts_klu, nb_ts_pp,
