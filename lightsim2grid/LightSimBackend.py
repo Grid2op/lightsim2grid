@@ -291,20 +291,23 @@ class LightSimBackend(Backend):
         active_bus, (prod_p, prod_v, load_p, load_q), topo__, shunts__ = backendAction()
 
         # handle active bus
-        for i, (bus1_status, bus2_status) in enumerate(active_bus):
-            if bus1_status:
-                self._grid.reactivate_bus(i)
-            else:
-                self._grid.deactivate_bus(i)
-
-            if bus2_status:
-                self._grid.reactivate_bus(i + self.__nb_bus_before)
-            else:
-                self._grid.deactivate_bus(i + self.__nb_bus_before)
+        self._grid.update_bus_status(self.__nb_bus_before, backendAction.activated_bus)
+        # for i, (bus1_status, bus2_status) in enumerate(active_bus):
+        #     if bus1_status:
+        #         self._grid.reactivate_bus(i)
+        #     else:
+        #         self._grid.deactivate_bus(i)
+        #
+        #     if bus2_status:
+        #         self._grid.reactivate_bus(i + self.__nb_bus_before)
+        #     else:
+        #         self._grid.deactivate_bus(i + self.__nb_bus_before)
 
         # update the injections
-        for gen_id, new_p in prod_p:
-            self._grid.change_p_gen(gen_id, new_p)
+        self._grid.update_gens_p(backendAction.prod_p.changed,
+                                 backendAction.prod_p.values)
+        # for gen_id, new_p in prod_p:
+        #     self._grid.change_p_gen(gen_id, new_p)
 
         for gen_id, new_v in prod_v:
             new_v = new_v / self.prod_pu_to_kv[gen_id]

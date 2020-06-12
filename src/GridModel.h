@@ -184,6 +184,11 @@ class GridModel : public DataGeneric
             return _solver.get_J();
         }
 
+        // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
+        // this is not recommended to use it outside of its intended usage.
+        void update_bus_status(int nb_bus_before, Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
+        void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
     protected:
     // add method to change topology, change ratio of transformers, change
 

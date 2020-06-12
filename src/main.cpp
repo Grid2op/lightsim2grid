@@ -52,6 +52,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
         .def("init_loads", &GridModel::init_loads)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
 
+        // apply action faster (optimized for grid2op representation)
+        .def("update_bus_status", &GridModel::update_bus_status)
+        .def("update_gens_p", &GridModel::update_gens_p)
+
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)
         .def("reactivate_bus", &GridModel::reactivate_bus)
