@@ -4,11 +4,10 @@ import sys
 import setuptools
 import os
 import sysconfig
+from lightsim2grid import __version__
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
-
-__version__ = '0.1.1'
 
 
 class get_pybind_include(object):
