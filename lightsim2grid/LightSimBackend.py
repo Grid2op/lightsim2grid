@@ -88,6 +88,7 @@ class LightSimBackend(Backend):
         self._init_action_to_set = None
         self._backend_action_class = None
         self.cst_1  = dt_float(1.0)
+        self.__me_at_init = None
 
     def load_grid(self, path=None, filename=None):
 
@@ -221,6 +222,7 @@ class LightSimBackend(Backend):
         self.prod_v = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
 
         self._count_object_per_bus()
+        self.__me_at_init = self._grid.copy()
 
     def assert_grid_correct_after_powerflow(self):
         """
@@ -307,7 +309,7 @@ class LightSimBackend(Backend):
 
         # handle active bus
         self._grid.update_bus_status(self.__nb_bus_before, backendAction.activated_bus)
-        
+
         # update the injections
         self._grid.update_gens_p(backendAction.prod_p.changed,
                                  backendAction.prod_p.values)
@@ -341,7 +343,6 @@ class LightSimBackend(Backend):
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
         # TODO have been correctly called before calling the function self._grid.update_topo
-
 
     def runpf(self, is_dc=False):
         try:
@@ -397,35 +398,43 @@ class LightSimBackend(Backend):
                 res = True
         except Exception as e:
             # of the powerflow has not converged, results are Nan
-            self.p_or[:] = np.NaN
-            self.q_or[:] = np.NaN
-            self.v_or[:] = np.NaN
-            self.a_or[:] = np.NaN
-            self.p_ex[:] = np.NaN
-            self.q_ex[:] = np.NaN
-            self.v_ex[:] = np.NaN
-            self.a_ex[:] = np.NaN
-            self.load_p[:] = np.NaN
-            self.load_q[:] = np.NaN
-            self.load_v[:] = np.NaN
-            self.prod_p[:] = np.NaN
-            self.next_prod_p[:] = np.NaN
-            self.prod_q[:] = np.NaN
-            self.prod_v[:] = np.NaN
-            res = False
+            self._fill_nans()
+
         return res
+
+    def _fill_nans(self):
+        """fill the results vectors with nans"""
+        self.p_or[:] = np.NaN
+        self.q_or[:] = np.NaN
+        self.v_or[:] = np.NaN
+        self.a_or[:] = np.NaN
+        self.p_ex[:] = np.NaN
+        self.q_ex[:] = np.NaN
+        self.v_ex[:] = np.NaN
+        self.a_ex[:] = np.NaN
+        self.load_p[:] = np.NaN
+        self.load_q[:] = np.NaN
+        self.load_v[:] = np.NaN
+        self.prod_p[:] = np.NaN
+        self.next_prod_p[:] = np.NaN
+        self.prod_q[:] = np.NaN
+        self.prod_v[:] = np.NaN
+        res = False
 
     def copy(self):
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
+        __me_at_init = self.__me_at_init
+
         self._grid = None
+        self.__me_at_init = None
         inippbackend = self.init_pp_backend._grid
         self.init_pp_backend._grid = None
         res = copy.deepcopy(self)
-        res._grid = init(inippbackend)
         self._grid = mygrid
         self.init_pp_backend._grid = inippbackend
         res._grid = self._grid.copy()
+        self.__me_at_init = __me_at_init.copy()
         return res
 
     def get_line_status(self):
@@ -478,10 +487,8 @@ class LightSimBackend(Backend):
 
     def reset(self, grid_path, grid_filename=None):
         self.V = None
-        self._init_action_to_set.all_changed()
-        self.apply_action(self._init_action_to_set)
-        self._init_action_to_set.reset()
-        res = self.runpf()
+        self._fill_nans()
+        self._grid = self.__me_at_init.copy()
 
     def get_action_to_set(self):
         line_status = self.get_line_status()
