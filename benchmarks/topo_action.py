@@ -13,6 +13,7 @@ from grid2op.Agent import AgentWithConverter, DoNothingAgent
 from grid2op.Parameters import Parameters
 from grid2op.Converter import IdToAct
 from grid2op.Rules import AlwaysLegal
+from grid2op.Chronics import GridStateFromFile
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 
@@ -127,6 +128,11 @@ class TestAgent(AgentWithConverter):
                                                        "generators_id": [(6, 1)],
                                                        "loads_id": [(8, 1)]
                                                        }}),
+                             action_space({"set_bus": {"lines_or_id": [(100, 2), (129, 1), (173, 2)],
+                                                       # "lines_ex_id": [(2, 2), (13, 2), (24, 2), (35, 2)],
+                                                       "generators_id": [(2, 1)],
+                                                       "loads_id": [(6, 2)]
+                                                       }}),
             ]
 
         elif env_name == "l2rpn_wcci_2020":
@@ -172,13 +178,19 @@ def main(max_ts, name):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
-    env_klu = make(name, backend=backend, param=param, gamerules_class=AlwaysLegal, test=True)
+    env_klu = make(name, backend=backend, param=param, gamerules_class=AlwaysLegal, test=True,
+                   data_feeding_kwargs={"chunk_size": 128, "max_iter": max_ts, "gridvalueClass": GridStateFromFile})
     agent = TestAgent(action_space=env_klu.action_space, env_name=name)
-    nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent)
-
-    env_pp = make(name, param=param, gamerules_class=AlwaysLegal, test=True)
+    print("lightsim:")
+    nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_klu, max_ts, agent,
+                                                                 chron_id=0, keep_forecast=False)
+    print("__________________")
+    env_pp = make(name, param=param, gamerules_class=AlwaysLegal, test=True,
+                   data_feeding_kwargs={"chunk_size": 128, "max_iter": max_ts, "gridvalueClass": GridStateFromFile})
     agent = TestAgent(action_space=env_pp.action_space, env_name=name)
-    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent)
+    print("pandapower:")
+    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent,
+                                                            chron_id=0, keep_forecast=False)
 
     print_res(env_klu, env_pp,
               nb_ts_klu, nb_ts_pp,

@@ -30,9 +30,9 @@ def print_res(env_klu, env_pp,
     print("\tTime powerflow: {:.2f}ms".format(1000. * env_pp._time_powerflow / nb_ts_pp))
     print("\tTime extract observation: {:.2f}ms".format(1000. * env_pp._time_extract_obs / nb_ts_pp))
 
-    print("Absolute value of the difference for aor: {}".format(np.max(np.abs(aor_klu - aor_pp))))
-    print("Absolute value of the difference for gen_p: {}".format(np.max(np.abs(gen_p_klu - gen_p_pp))))
-    print("Absolute value of the difference for gen_q: {}".format(np.max(np.abs(gen_q_klu - gen_q_pp))))
+    print("Absolute value of the difference (max) for aor: {}".format(np.max(np.abs(aor_klu - aor_pp))))
+    print("Absolute value of the difference (max) for gen_p: {}".format(np.max(np.abs(gen_p_klu - gen_p_pp))))
+    print("Absolute value of the difference (max) for gen_q: {}".format(np.max(np.abs(gen_q_klu - gen_q_pp))))
 
 
 def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False):
@@ -64,7 +64,7 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False):
             gen_q[nb_ts, :] = obs.prod_q
             nb_ts += 1
             pbar.update(1)
-            if nb_ts >= max_ts:
+            if nb_ts >= max_ts or done:
                 break
             # if np.sum(obs.line_status) < obs.n_line - 1 * (nb_ts % 2 == 1):
             #     print("There is a bug following action; {}".format(act))

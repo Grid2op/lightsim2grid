@@ -393,7 +393,7 @@ class LightSimBackend(Backend):
                 self.next_prod_p[:] = self.prod_p
 
                 if np.any(~np.isfinite(self.load_v)) or np.any(~np.isfinite(self.prod_v)):
-                    raise DivergingPowerFlow("or load or one generator not connected")
+                    raise DivergingPowerFlow("one load or one generator not connected")
 
                 res = True
         except Exception as e:

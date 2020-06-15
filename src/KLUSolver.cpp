@@ -87,6 +87,8 @@ bool KLUSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
         V_ = Vm_.array() * (Va_.array().cos().cast<cdouble>() + my_i * Va_.array().sin().cast<cdouble>() );
 
         F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
+        bool tmp = F.allFinite();
+        if(!tmp) break; // divergence due to Nans
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){

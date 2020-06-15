@@ -174,8 +174,8 @@ void DataGen::set_q(const std::vector<double> & q_by_bus)
     double eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
-        if(!status_[gen_id]) continue;
-        double real_q;
+        double real_q = 0.;
+        if(!status_[gen_id]) res_q_[gen_id] = real_q;
         int bus_id = bus_id_(gen_id);
         double q_to_absorb = q_by_bus[bus_id];
         double max_q_me = max_q_(gen_id);
