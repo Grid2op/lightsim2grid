@@ -175,7 +175,7 @@ void DataGen::set_q(const std::vector<double> & q_by_bus)
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         double real_q = 0.;
-        if(!status_[gen_id]) res_q_[gen_id] = real_q;
+        if(!status_[gen_id]) continue;  // set at 0 for disconnected generators
         int bus_id = bus_id_(gen_id);
         double q_to_absorb = q_by_bus[bus_id];
         double max_q_me = max_q_(gen_id);
