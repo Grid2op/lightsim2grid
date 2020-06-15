@@ -8,7 +8,64 @@
 
 #include "GridModel.h"
 
-// const int GridModel::_deactivated_bus_id = -1;
+GridModel::GridModel(const GridModel & other)
+{
+    /** done in reset
+        Ybus_ = Eigen::SparseMatrix<cdouble>();
+        Sbus_ = Eigen::VectorXcd();
+        id_me_to_solver_ = std::vector<int>();
+        id_solver_to_me_ = std::vector<int>();
+        slack_bus_id_solver_ = -1;
+        bus_pv_ = Eigen::VectorXi();
+        bus_pq_ = Eigen::VectorXi();
+        need_reset_ = true;
+    **/
+    reset();
+
+    // powersystem representation
+    // 1. bus
+    bus_vn_kv_.array() = other.bus_vn_kv_;
+    bus_status_ = other.bus_status_;
+
+
+
+    // 2. powerline
+    powerlines_ = other.powerlines_;
+
+    // 3. shunt
+    shunts_ = other.shunts_;
+
+    // 4. transformers
+    // have the r, x, h and ratio
+    // ratio is computed from the tap, so maybe store tap num and tap_step_pct
+    trafos_ = other.trafos_;
+
+    // 5. generators
+    generators_ = other.generators_;
+
+    // 6. loads
+    loads_ = other.loads_;
+
+    // 7. slack bus
+    gen_slackbus_ = other.gen_slackbus_;
+    slack_bus_id_ = other.slack_bus_id_;
+
+    // specific grid2op
+    n_sub_ = other.n_sub_;
+    load_pos_topo_vect_ = other.load_pos_topo_vect_;
+    gen_pos_topo_vect_ = other.gen_pos_topo_vect_;
+    line_or_pos_topo_vect_ = other.line_or_pos_topo_vect_;
+    line_ex_pos_topo_vect_ = other.line_ex_pos_topo_vect_;
+    trafo_hv_pos_topo_vect_ = other.trafo_hv_pos_topo_vect_;
+    trafo_lv_pos_topo_vect_ = other.trafo_lv_pos_topo_vect_;
+
+    load_to_subid_ = other.load_to_subid_;
+    gen_to_subid_ = other.gen_to_subid_;
+    line_or_to_subid_ = other.line_or_to_subid_;
+    line_ex_to_subid_ = other.line_ex_to_subid_;
+    trafo_hv_to_subid_ = other.trafo_hv_to_subid_;
+    trafo_lv_to_subid_ = other.trafo_lv_to_subid_;
+}
 
 void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo){
     /**
@@ -322,8 +379,9 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     Va.array() +=  std::arg(Vinit(slack_bus_id_));
 
     // fill Vm either Vinit if pq or Vm if pv (TODO)
+    Eigen::VectorXd Vm;
     if(false){
-        Eigen::VectorXd Vm = Vinit.array().abs();  // fill Vm = Vinit for all
+        Vm = Vinit.array().abs();  // fill Vm = Vinit for all
         // put Vm = 0. for disconnected bus
         for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
             if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
@@ -334,16 +392,18 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
         // assign vm of the slack bus
         Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
     }
+    else{
+        Vm = Eigen::VectorXd::Constant(Vinit.size(), 1.0);
+        for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
+            if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+            Vm(bus_id_me) = 0.;
+        }
+        generators_.get_vm_for_dc(Vm);
+    }
     //END of the SOLVER PART
 
-    Eigen::VectorXd Vm = Eigen::VectorXd::Constant(Vinit.size(), 1.0);
-    for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-        if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-        Vm(bus_id_me) = 0.;
-    }
     //TODO handle Vm = Vm (gen) for connected generators
     return Vm.array() * (Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>());
-    //return Eigen::VectorXcd();
 }
 
 int GridModel::nb_bus() const
@@ -360,4 +420,86 @@ void GridModel::add_gen_slackbus(int gen_id){
     if(gen_id < 0) throw std::runtime_error("Slack bus should be an id of a generator, thus positive");
     if(gen_id > generators_.nb()) throw std::runtime_error("Slack bus should be an id of a generator, your id is to high.");
     gen_slackbus_ = gen_id;
+}
+
+/** GRID2OP SPECIFIC REPRESENTATION **/
+void GridModel::update_bus_status(int nb_bus_before,
+                                  Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus)
+{
+    for(int bus_id = 0; bus_id < active_bus.rows(); ++bus_id)
+    {
+        if(active_bus(bus_id, 0)){
+            reactivate_bus(bus_id);
+        }else{
+            deactivate_bus(bus_id);
+        }
+        if(active_bus(bus_id, 1)){
+            reactivate_bus(bus_id + nb_bus_before);
+        }else{
+            deactivate_bus(bus_id + nb_bus_before);
+        }
+    }
+}
+
+void GridModel::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+{
+    update_continuous_values(has_changed, new_values, &GridModel::change_p_gen);
+}
+void GridModel::update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+{
+    update_continuous_values(has_changed, new_values, &GridModel::change_v_gen);
+}
+void GridModel::update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+{
+    update_continuous_values(has_changed, new_values, &GridModel::change_p_load);
+}
+void GridModel::update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+{
+    update_continuous_values(has_changed, new_values, &GridModel::change_q_load);
+}
+void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                            Eigen::Ref<Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
+{
+    update_topo_generic(has_changed, new_values,
+                        load_pos_topo_vect_, load_to_subid_,
+                        &GridModel::reactivate_load,
+                        &GridModel::change_bus_load,
+                        &GridModel::deactivate_load
+                        );
+    update_topo_generic(has_changed, new_values,
+                        gen_pos_topo_vect_, gen_to_subid_,
+                        &GridModel::reactivate_gen,
+                        &GridModel::change_bus_gen,
+                        &GridModel::deactivate_gen
+                        );
+    // NB we suppose that if a powerline is disconnected, then both its ends are
+    // and same for trafo, obviously
+    update_topo_generic(has_changed, new_values,
+                        line_or_pos_topo_vect_, line_or_to_subid_,
+                        &GridModel::reactivate_powerline,
+                        &GridModel::change_bus_powerline_or,
+                        &GridModel::deactivate_powerline
+                        );
+    update_topo_generic(has_changed, new_values,
+                        line_ex_pos_topo_vect_, line_ex_to_subid_,
+                        &GridModel::reactivate_powerline,
+                        &GridModel::change_bus_powerline_ex,
+                        &GridModel::deactivate_powerline
+                        );
+    update_topo_generic(has_changed, new_values,
+                        trafo_hv_pos_topo_vect_, trafo_hv_to_subid_,
+                        &GridModel::reactivate_trafo,
+                        &GridModel::change_bus_trafo_hv,
+                        &GridModel::deactivate_trafo
+                        );
+    update_topo_generic(has_changed, new_values,
+                        trafo_lv_pos_topo_vect_, trafo_lv_to_subid_,
+                        &GridModel::reactivate_trafo,
+                        &GridModel::change_bus_trafo_lv,
+                        &GridModel::deactivate_trafo
+                        );
 }

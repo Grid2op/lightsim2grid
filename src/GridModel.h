@@ -42,6 +42,11 @@ class GridModel : public DataGeneric
 {
     public:
         GridModel():need_reset_(true){};
+        GridModel(const GridModel & other);
+        GridModel copy(){
+            GridModel res(*this);
+            return res;
+        }
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
@@ -184,6 +189,74 @@ class GridModel : public DataGeneric
             return _solver.get_J();
         }
 
+        // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
+        // this is not recommended to use it outside of its intended usage.
+        void update_bus_status(int nb_bus_before, Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
+        void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                         Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+
+        void set_load_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > load_pos_topo_vect)
+        {
+            load_pos_topo_vect_.array() = load_pos_topo_vect;
+        }
+        void set_gen_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > gen_pos_topo_vect)
+        {
+            gen_pos_topo_vect_.array() = gen_pos_topo_vect;
+        }
+        void set_line_or_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_or_pos_topo_vect)
+        {
+            line_or_pos_topo_vect_.array() = line_or_pos_topo_vect;
+        }
+        void set_line_ex_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_ex_pos_topo_vect)
+        {
+            line_ex_pos_topo_vect_.array() = line_ex_pos_topo_vect;
+        }
+        void set_trafo_hv_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_hv_pos_topo_vect)
+        {
+            trafo_hv_pos_topo_vect_.array() = trafo_hv_pos_topo_vect;
+        }
+        void set_trafo_lv_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_lv_pos_topo_vect)
+        {
+            trafo_lv_pos_topo_vect_.array() = trafo_lv_pos_topo_vect;
+        }
+
+        void set_load_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > load_to_subid)
+        {
+            load_to_subid_.array() = load_to_subid;
+        }
+        void set_gen_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > gen_to_subid)
+        {
+            gen_to_subid_.array() = gen_to_subid;
+        }
+        void set_line_or_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_or_to_subid)
+        {
+            line_or_to_subid_.array() = line_or_to_subid;
+        }
+        void set_line_ex_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_ex_to_subid)
+        {
+            line_ex_to_subid_.array() = line_ex_to_subid;
+        }
+        void set_trafo_hv_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_hv_to_subid)
+        {
+            trafo_hv_to_subid_.array() = trafo_hv_to_subid;
+        }
+        void set_trafo_lv_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_lv_to_subid)
+        {
+            trafo_lv_to_subid_.array() = trafo_lv_to_subid;
+        }
+        void set_n_sub(int n_sub)
+        {
+            n_sub_ = n_sub;
+        }
+
     protected:
     // add method to change topology, change ratio of transformers, change
 
@@ -213,6 +286,51 @@ class GridModel : public DataGeneric
         reset the solver, and all its results
         **/
         void reset();
+
+        /**
+        optimization for grid2op
+        **/
+        template<class T>
+        void update_continuous_values(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                                      Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+                                      T fun)
+        {
+            for(int el_id = 0; el_id < has_changed.rows(); ++el_id)
+            {
+                if(has_changed(el_id))
+                {
+                    (this->*fun)(el_id, static_cast<double>(new_values[el_id]));
+                }
+            }
+        }
+        template<class CReac, class CChange, class CDeact>
+        void update_topo_generic(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+                                 Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+                                 const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_pos,
+                                 const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_subid,
+                                 CReac fun_react,
+                                 CChange fun_change,
+                                 CDeact fun_deact)
+        {
+            for(int el_id = 0; el_id < vect_pos.rows(); ++el_id)
+            {
+                int el_pos = vect_pos(el_id);
+                if(has_changed(el_pos))
+                {
+                    int new_bus = new_values(el_pos);
+                    if(new_bus > 0){
+                        // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                        int init_bus_me = vect_subid(el_id);
+                        int new_bus_backend = new_bus == 1 ? init_bus_me : init_bus_me + n_sub_ ;
+                        (this->*fun_react)(el_id); // eg reactivate_load(load_id);
+                        (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
+                    } else{
+                        // new bus is negative, we deactivate it
+                        (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
+                    }
+                }
+            }
+        }
 
     protected:
         // member of the grid
@@ -264,6 +382,22 @@ class GridModel : public DataGeneric
 
         // to solve the newton raphson
         KLUSolver _solver;
+
+        // specific grid2op
+        int n_sub_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> load_pos_topo_vect_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> gen_pos_topo_vect_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_or_pos_topo_vect_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_ex_pos_topo_vect_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_hv_pos_topo_vect_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_lv_pos_topo_vect_;
+
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> load_to_subid_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> gen_to_subid_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_or_to_subid_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_ex_to_subid_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_hv_to_subid_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_lv_to_subid_;
 
 };
 

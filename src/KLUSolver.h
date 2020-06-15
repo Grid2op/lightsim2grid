@@ -144,11 +144,12 @@ class KLUSolver
                                      const Eigen::VectorXi & pq);
 
         bool _check_for_convergence(const Eigen::VectorXd & F,
-                                 double tol)
+                                    double tol)
         {
             auto timer = CustTimer();
-            return F.lpNorm<Eigen::Infinity>()  < tol;
+            bool res =  F.lpNorm<Eigen::Infinity>()  < tol;
             timer_check_ += timer.duration();
+            return res;
         }
 
     private:

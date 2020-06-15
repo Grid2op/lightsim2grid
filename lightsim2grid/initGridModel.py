@@ -12,7 +12,6 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 
 import numpy as np
 from lightsim2grid_cpp import GridModel, PandaPowerConverter
-import pdb
 
 
 def init(pp_net):
@@ -82,13 +81,22 @@ def init(pp_net):
                           pp_net.line["from_bus"].values,
                           pp_net.line["to_bus"].values
                                )
+    for line_id, sh_status in enumerate(pp_net.line["in_service"].values):
+        if not sh_status:
+            # powerline is deactivated
+            model.deactivate_powerline(line_id)
 
     # init the shunts
     model.init_shunt(pp_net.shunt["p_mw"].values,
                      pp_net.shunt["q_mvar"].values,
                      pp_net.shunt["bus"].values
-                          )
+                     )
+    for sh_id, sh_status in enumerate(pp_net.shunt["in_service"].values):
+        if not sh_status:
+            # shunt is deactivated
+            model.deactivate_shunt(sh_id)
 
+    # handle the trafos
     tap_step_pct = pp_net.trafo["tap_step_percent"].values
     tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
 
@@ -105,21 +113,38 @@ def init(pp_net):
                      is_tap_hv_side,
                      pp_net.trafo["hv_bus"].values,
                      pp_net.trafo["lv_bus"].values)
+    for tr_id, sh_status in enumerate(pp_net.trafo["in_service"].values):
+        if not sh_status:
+            # trafo is deactivated
+            model.deactivate_trafo(tr_id)
 
+    # handle loads
     model.init_loads(pp_net.load["p_mw"].values,
                      pp_net.load["q_mvar"].values,
                      pp_net.load["bus"].values
                           )
+    for load_id, sh_status in enumerate(pp_net.load["in_service"].values):
+        if not sh_status:
+            # load is deactivated
+            model.deactivate_load(load_id)
+
+    # handle generators
     model.init_generators(pp_net.gen["p_mw"].values,
                           pp_net.gen["vm_pu"].values,
                           pp_net.gen["min_q_mvar"].values,
                           pp_net.gen["max_q_mvar"].values,
                           pp_net.gen["bus"].values
                           )
+    for gen_id, sh_status in enumerate(pp_net.gen["in_service"].values):
+        if not sh_status:
+            # generator is deactivated
+            model.deactivate_gen(gen_id)
 
+    # deal with slack bus
     # TODO handle that better maybe, and warn only one slack bus is implemented
     if np.any(pp_net.gen["slack"].values):
         slack_gen_id = np.where(pp_net.gen["slack"].values)[0]
+        model.change_v_gen(slack_gen_id, pp_net.gen["vm_pu"][slack_gen_id])
     else:
         # there is no slack bus in the generator of the pp grid
 

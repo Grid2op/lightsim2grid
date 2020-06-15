@@ -20,10 +20,10 @@ class BaseTests:
         # initialize and use converters
         self.model = init(self.net_datamodel)
 
-    def assert_equal(self, tmp, ref):
+    def assert_equal(self, tmp, ref, error=""):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
-        assert np.max(np.abs(tmp - ref)) <= self.tol_test
-        assert np.mean(np.abs(tmp - ref)) <= self.tol_test
+        assert np.max(np.abs(tmp - ref)) <= self.tol_test, error
+        assert np.mean(np.abs(tmp - ref)) <= self.tol_test, error
 
     def check_res(self, Vfinal, net):
         assert Vfinal.shape[0] > 0, "powerflow diverged !"
@@ -31,32 +31,32 @@ class BaseTests:
         # check lines
         l_is = self.net_ref.line["in_service"]
         por, qor, vor, aor = self.model.get_lineor_res()
-        self.assert_equal(por, net.res_line["p_from_mw"].values)
-        self.assert_equal(qor, net.res_line["q_from_mvar"].values)
-        self.assert_equal(aor, net.res_line["i_from_ka"].values)
+        self.assert_equal(por, net.res_line["p_from_mw"].values, "error for p_from")
+        self.assert_equal(qor, net.res_line["q_from_mvar"].values, "error for q_from")
+        self.assert_equal(aor, net.res_line["i_from_ka"].values, "error for i_from_ka")
         vor_pp = net.bus.loc[net.line["from_bus"].values]["vn_kv"].values * net.res_line["vm_from_pu"].values
-        self.assert_equal(vor[l_is], vor_pp[l_is])
+        self.assert_equal(vor[l_is], vor_pp[l_is], "error for vor_pp")
 
         # check trafo
         f_is = self.net_ref.trafo["in_service"]
         plv, qlv, vlv, alv = self.model.get_trafolv_res()
-        self.assert_equal(plv, net.res_trafo["p_lv_mw"].values)
-        self.assert_equal(qlv, net.res_trafo["q_lv_mvar"].values)
-        self.assert_equal(alv, net.res_trafo["i_lv_ka"].values)
+        self.assert_equal(plv, net.res_trafo["p_lv_mw"].values, "error for p_lv_mw")
+        self.assert_equal(qlv, net.res_trafo["q_lv_mvar"].values, "error for q_lv_mvar")
+        self.assert_equal(alv, net.res_trafo["i_lv_ka"].values, "error for i_lv_ka")
         vlv_pp = net.bus.loc[net.trafo["lv_bus"].values]["vn_kv"].values * net.res_trafo["vm_lv_pu"].values
-        self.assert_equal(vlv[f_is], vlv_pp[f_is])
+        self.assert_equal(vlv[f_is], vlv_pp[f_is], "error for vlv_pp")
 
         # check loads
         l_is = self.net_ref.load["in_service"]
         load_p, load_q, load_v = self.model.get_loads_res()
-        self.assert_equal(load_p[l_is], net.res_load["p_mw"].values[l_is])
-        self.assert_equal(load_q[l_is], net.res_load["q_mvar"].values[l_is])
+        self.assert_equal(load_p[l_is], net.res_load["p_mw"].values[l_is], "error for load p_mw")
+        self.assert_equal(load_q[l_is], net.res_load["q_mvar"].values[l_is], "error for load q_mvar")
 
         # check shunts
         s_is = self.net_ref.shunt["in_service"]
         shunt_p, shunt_q, shunt_v = self.model.get_shunts_res()
-        self.assert_equal(shunt_p[s_is], net.res_shunt["p_mw"].values[s_is])
-        self.assert_equal(shunt_q[s_is], net.res_shunt["q_mvar"].values[s_is])
+        self.assert_equal(shunt_p[s_is], net.res_shunt["p_mw"].values[s_is], "error for shunt p_mw")
+        self.assert_equal(shunt_q[s_is], net.res_shunt["q_mvar"].values[s_is], "error for shunt q_mvar")
 
         # check generators
         g_is = self.net_ref.gen["in_service"]
@@ -68,10 +68,10 @@ class BaseTests:
             prod_p = prod_p[:-1]
             prod_q = prod_q[:-1]
             prod_v = prod_v[:-1]
-        self.assert_equal(prod_p[g_is], net.res_gen["p_mw"].values[g_is])
-        self.assert_equal(prod_q, net.res_gen["q_mvar"].values)
+        self.assert_equal(prod_p[g_is], net.res_gen["p_mw"].values[g_is], "error for gen p_mw")
+        self.assert_equal(prod_q, net.res_gen["q_mvar"].values, "error for gen q_mvar")
         v_gen_pp = net.bus.loc[net.gen["bus"].values]["vn_kv"].values * net.res_gen["vm_pu"].values
-        self.assert_equal(prod_v[g_is], v_gen_pp[g_is])
+        self.assert_equal(prod_v[g_is], v_gen_pp[g_is], "error for prod_v")
 
     def make_v0(self, net):
         V0 = np.full(net.bus.shape[0],
