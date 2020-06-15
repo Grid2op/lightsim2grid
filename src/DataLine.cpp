@@ -241,22 +241,3 @@ void DataLine::get_q(std::vector<double>& q_by_bus)
         q_by_bus[bus_id_ex] += res_powerline_qex_(el_id);
     }
 }
-// for powerline
-/**
-void DataLine::deactivate(int powerline_id, bool & need_reset)
-{
-    _deactivate(powerline_id, status_, need_reset);
-}
-void DataLine::reactivate(int powerline_id, bool & need_reset)
-{
-    _reactivate(powerline_id, status_, need_reset);
-}
-void DataLine::change_bus_or(int powerline_id, int new_bus_id, bool & need_reset)
-{
-    _change_bus(powerline_id, new_bus_id, bus_or_id_, need_reset);
-}
-void DataLine::change_bus_ex(int powerline_id, int new_bus_id, bool & need_reset)
-{
-    _change_bus(powerline_id, new_bus_id, bus_ex_id_, need_reset);
-}
-**/
