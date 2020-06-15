@@ -41,6 +41,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
 
     py::class_<GridModel>(m, "GridModel")
         .def(py::init<>())
+        .def("copy", &GridModel::copy)
         // general parameters
 
         // init the grid
@@ -51,28 +52,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
         .def("init_generators", &GridModel::init_generators)
         .def("init_loads", &GridModel::init_loads)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
-
-        // apply action faster (optimized for grid2op representation)
-        .def("update_bus_status", &GridModel::update_bus_status)
-        .def("update_gens_p", &GridModel::update_gens_p)
-        .def("update_gens_v", &GridModel::update_gens_v)
-        .def("update_loads_p", &GridModel::update_loads_p)
-        .def("update_loads_q", &GridModel::update_loads_q)
-        .def("update_topo", &GridModel::update_topo)
-        // auxiliary functions
-        .def("set_n_sub", &GridModel::set_n_sub)
-        .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect)
-        .def("set_gen_pos_topo_vect", &GridModel::set_gen_pos_topo_vect)
-        .def("set_line_or_pos_topo_vect", &GridModel::set_line_or_pos_topo_vect)
-        .def("set_line_ex_pos_topo_vect", &GridModel::set_line_ex_pos_topo_vect)
-        .def("set_trafo_hv_pos_topo_vect", &GridModel::set_trafo_hv_pos_topo_vect)
-        .def("set_trafo_lv_pos_topo_vect", &GridModel::set_trafo_lv_pos_topo_vect)
-        .def("set_load_to_subid", &GridModel::set_load_to_subid)
-        .def("set_gen_to_subid", &GridModel::set_gen_to_subid)
-        .def("set_line_or_to_subid", &GridModel::set_line_or_to_subid)
-        .def("set_line_ex_to_subid", &GridModel::set_line_ex_to_subid)
-        .def("set_trafo_hv_to_subid", &GridModel::set_trafo_hv_to_subid)
-        .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid)
 
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)
@@ -140,6 +119,29 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
         .def("dc_pf", &GridModel::dc_pf)
         .def("ac_pf", &GridModel::ac_pf)
         .def("compute_newton", &GridModel::ac_pf)
+
+         // apply action faster (optimized for grid2op representation)
+         // it is not recommended to use it outside of grid2Op.
+        .def("update_bus_status", &GridModel::update_bus_status)
+        .def("update_gens_p", &GridModel::update_gens_p)
+        .def("update_gens_v", &GridModel::update_gens_v)
+        .def("update_loads_p", &GridModel::update_loads_p)
+        .def("update_loads_q", &GridModel::update_loads_q)
+        .def("update_topo", &GridModel::update_topo)
+        // auxiliary functions
+        .def("set_n_sub", &GridModel::set_n_sub)
+        .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect)
+        .def("set_gen_pos_topo_vect", &GridModel::set_gen_pos_topo_vect)
+        .def("set_line_or_pos_topo_vect", &GridModel::set_line_or_pos_topo_vect)
+        .def("set_line_ex_pos_topo_vect", &GridModel::set_line_ex_pos_topo_vect)
+        .def("set_trafo_hv_pos_topo_vect", &GridModel::set_trafo_hv_pos_topo_vect)
+        .def("set_trafo_lv_pos_topo_vect", &GridModel::set_trafo_lv_pos_topo_vect)
+        .def("set_load_to_subid", &GridModel::set_load_to_subid)
+        .def("set_gen_to_subid", &GridModel::set_gen_to_subid)
+        .def("set_line_or_to_subid", &GridModel::set_line_or_to_subid)
+        .def("set_line_ex_to_subid", &GridModel::set_line_ex_to_subid)
+        .def("set_trafo_hv_to_subid", &GridModel::set_trafo_hv_to_subid)
+        .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid)
         ;
 
 }

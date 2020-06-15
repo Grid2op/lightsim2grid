@@ -42,6 +42,11 @@ class GridModel : public DataGeneric
 {
     public:
         GridModel():need_reset_(true){};
+        GridModel(const GridModel & other);
+        GridModel copy(){
+            GridModel res(*this);
+            return res;
+        }
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);

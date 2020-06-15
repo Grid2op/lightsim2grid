@@ -8,7 +8,64 @@
 
 #include "GridModel.h"
 
-// const int GridModel::_deactivated_bus_id = -1;
+GridModel::GridModel(const GridModel & other)
+{
+    /** done in reset
+        Ybus_ = Eigen::SparseMatrix<cdouble>();
+        Sbus_ = Eigen::VectorXcd();
+        id_me_to_solver_ = std::vector<int>();
+        id_solver_to_me_ = std::vector<int>();
+        slack_bus_id_solver_ = -1;
+        bus_pv_ = Eigen::VectorXi();
+        bus_pq_ = Eigen::VectorXi();
+        need_reset_ = true;
+    **/
+    reset();
+
+    // powersystem representation
+    // 1. bus
+    bus_vn_kv_.array() = other.bus_vn_kv_;
+    bus_status_ = other.bus_status_;
+
+
+
+    // 2. powerline
+    powerlines_ = other.powerlines_;
+
+    // 3. shunt
+    shunts_ = other.shunts_;
+
+    // 4. transformers
+    // have the r, x, h and ratio
+    // ratio is computed from the tap, so maybe store tap num and tap_step_pct
+    trafos_ = other.trafos_;
+
+    // 5. generators
+    generators_ = other.generators_;
+
+    // 6. loads
+    loads_ = other.loads_;
+
+    // 7. slack bus
+    gen_slackbus_ = other.gen_slackbus_;
+    slack_bus_id_ = other.slack_bus_id_;
+
+    // specific grid2op
+    n_sub_ = other.n_sub_;
+    load_pos_topo_vect_ = other.load_pos_topo_vect_;
+    gen_pos_topo_vect_ = other.gen_pos_topo_vect_;
+    line_or_pos_topo_vect_ = other.line_or_pos_topo_vect_;
+    line_ex_pos_topo_vect_ = other.line_ex_pos_topo_vect_;
+    trafo_hv_pos_topo_vect_ = other.trafo_hv_pos_topo_vect_;
+    trafo_lv_pos_topo_vect_ = other.trafo_lv_pos_topo_vect_;
+
+    load_to_subid_ = other.load_to_subid_;
+    gen_to_subid_ = other.gen_to_subid_;
+    line_or_to_subid_ = other.line_or_to_subid_;
+    line_ex_to_subid_ = other.line_ex_to_subid_;
+    trafo_hv_to_subid_ = other.trafo_hv_to_subid_;
+    trafo_lv_to_subid_ = other.trafo_lv_to_subid_;
+}
 
 void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo){
     /**

@@ -330,7 +330,6 @@ class LightSimBackend(Backend):
         self._grid.update_gens_v(backendAction.prod_v.changed,
                                  backendAction.prod_v.values / self.prod_pu_to_kv)
 
-
         self._grid.update_loads_p(backendAction.load_p.changed,
                                  backendAction.load_p.values)
         self._grid.update_loads_q(backendAction.load_q.changed,
@@ -360,6 +359,11 @@ class LightSimBackend(Backend):
         # and now change the overall topology
         self._grid.update_topo(backendAction.current_topo.changed,
                                backendAction.current_topo.values)
+        chgt = backendAction.current_topo.changed
+        self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
+        # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
+        # TODO have been correctly called before calling the function self._grid.update_topo
+
         # for id_el, new_bus in topo__:
         #     id_el_backend, type_obj = self._convert_id_topo(id_el)
         #     self.topo_vect[id_el] = new_bus
@@ -490,20 +494,9 @@ class LightSimBackend(Backend):
         self.init_pp_backend._grid = None
         res = copy.deepcopy(self)
         res._grid = init(inippbackend)
-        #TODO I need a c++ method that would just copy the state of the grid (bus connection, powerlines connected etc.)
-        # TODO this could be done in a "get_action_to_set_me" and use to update obsenv for example!
         self._grid = mygrid
         self.init_pp_backend._grid = inippbackend
-        # res.apply_action(self.get_action_to_set())
-
-        if self._backend_action_class is not None:
-            _action_to_set_act = self.get_action_to_set()
-            _action_to_set = self._backend_action_class()
-            _action_to_set += _action_to_set_act
-            res.apply_action(_action_to_set)
-        else:
-            # we are at the beginning, so it does not really matters that i cannot assign the injection
-            pass
+        res._grid = self._grid.copy()
         return res
 
     def get_line_status(self):
@@ -566,12 +559,9 @@ class LightSimBackend(Backend):
         line_status = 2 * line_status - 1
         line_status = line_status.astype(dt_int)
         topo_vect = self.get_topo_vect()
-        self.runpf()
 
         prod_p, _, prod_v = self.generators_info()
         load_p, load_q, _ = self.loads_info()
-        # prod_p, prod_q, prod_v = self.init_pp_backend._gens_info()
-        # load_p, load_q, load_v = self.init_pp_backend._loads_info()
         complete_action_class = CompleteAction.init_grid(self.init_pp_backend)
         set_me = complete_action_class()
         set_me.update({"set_line_status": 1 * line_status,
