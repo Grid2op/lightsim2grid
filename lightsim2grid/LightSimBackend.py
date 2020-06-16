@@ -89,6 +89,7 @@ class LightSimBackend(Backend):
         self._backend_action_class = None
         self.cst_1  = dt_float(1.0)
         self.__me_at_init = None
+        self.__init_topo_vect = None
 
     def load_grid(self, path=None, filename=None):
 
@@ -223,6 +224,8 @@ class LightSimBackend(Backend):
 
         self._count_object_per_bus()
         self.__me_at_init = self._grid.copy()
+        self.__init_topo_vect = np.ones(self.dim_topo, dtype=np.int)
+        self.__init_topo_vect[:] = self.topo_vect
 
     def assert_grid_correct_after_powerflow(self):
         """
@@ -392,6 +395,7 @@ class LightSimBackend(Backend):
                 self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
                 self.next_prod_p[:] = self.prod_p
 
+
                 if np.any(~np.isfinite(self.load_v)) or np.any(~np.isfinite(self.prod_v)):
                     raise DivergingPowerFlow("one load or one generator not connected")
 
@@ -419,6 +423,7 @@ class LightSimBackend(Backend):
         self.next_prod_p[:] = np.NaN
         self.prod_q[:] = np.NaN
         self.prod_v[:] = np.NaN
+        self.topo_vect[:] = np.NaN
         res = False
 
     def copy(self):
@@ -489,6 +494,9 @@ class LightSimBackend(Backend):
         self.V = None
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
+        self.topo_vect[:] = self.__init_topo_vect
+        # import pdb
+        # pdb.set_trace()
 
     def get_action_to_set(self):
         line_status = self.get_line_status()
