@@ -10,6 +10,10 @@ Change Log
 - build on windows
 - distribute pypi package
 
+[0.2.1] - 2020-06-xx
+--------------------
+- [FIXED] update of the `topo_vect` attribute in class `LightSimBackend` when reset.
+
 [0.2.0] - 2020-06-15
 --------------------
 - [ADDED] the changelog
