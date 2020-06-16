@@ -13,6 +13,7 @@ Change Log
 [0.2.1] - 2020-06-xx
 --------------------
 - [FIXED] update of the `topo_vect` attribute in class `LightSimBackend` when reset.
+- [ADDED] a github issue template
 
 [0.2.0] - 2020-06-15
 --------------------
