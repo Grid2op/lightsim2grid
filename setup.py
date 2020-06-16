@@ -3,8 +3,8 @@ from setuptools.command.build_ext import build_ext
 import sys
 import setuptools
 import os
-import sysconfig
-from lightsim2grid import __version__
+
+__version__ = "0.2.1"
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
