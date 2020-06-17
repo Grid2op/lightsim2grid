@@ -26,18 +26,18 @@ RUN apt-get update && \
     gzip
 
 # install grid2op and l2rpn-baselines and pybind11
-RUN pip3 install -U grid2op[optional] l2rpn-baselines[challenge] pybind11
+RUN pip3 install -U grid2op pybind11
 
 # install lightsim
-RUN echo "Oh dang look at that ${ls_version}"
-
 RUN git clone --recurse-submodules https://github.com/BDonnot/lightsim2grid.git
 WORKDIR /lightsim2grid
+RUN git pull
 RUN git remote update
 RUN git fetch --all --tags
 RUN git checkout "tags/${ls_version}" -b "${ls_version}-branch"
 RUN make
 RUN pip install -U .
+RUN make clean purge
 WORKDIR /
 
 # Make port 80 available to the world outside this container
