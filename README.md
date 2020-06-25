@@ -101,7 +101,7 @@ You first need to start a docker container and tell docker that the container ca
 following command:
 
 ```commandline
-docker run -t -d --name lightsim_container -v DIR_PATH:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
+docker run -t -d -p 8888:8888 --name lightsim_container -v DIR_PATH:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
 ```
 More information on this command 
 [in the official docker documentation](https://docs.docker.com/engine/reference/commandline/run/)
