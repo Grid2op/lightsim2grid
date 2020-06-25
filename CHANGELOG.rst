@@ -10,6 +10,11 @@ Change Log
 - build on windows
 - distribute pypi package
 
+[0.2.2] - 2020-06-25
+---------------------
+- [UPDATED] removing the `-march=native` that causes some difficulty for some compilers
+- [ADDED] compatibility with grid2op 1.0.0
+
 [0.2.1] - 2020-06-xx
 --------------------
 - [FIXED] update of the `topo_vect` attribute in class `LightSimBackend` when reset.

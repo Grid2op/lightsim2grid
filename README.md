@@ -77,8 +77,13 @@ docker pull bdonnot/lightsim2grid:latest
 ```
 
 This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
-internet. The lightsim2grid image contains lightsim, grid2op and l2rpn-baselines python packages (as well as their
-dependencies)
+internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
+dependencies), equivalent of what would be installed if you typed:
+```commandline
+pip install -U grid2op[optional] pybind11
+# and do steps detailed in section "Installation (from source)"
+# that we will not repeat
+```
 
 ### 3. Run a code on this container
 You can skip this section if you know how to use docker. We will present here "the simplest way" to use. This is NOT

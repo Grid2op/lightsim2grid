@@ -26,7 +26,7 @@ RUN apt-get update && \
     gzip
 
 # install grid2op and l2rpn-baselines and pybind11
-RUN pip3 install -U grid2op[optional] l2rpn-baselines[challenge] pybind11
+RUN pip3 install -U grid2op[optional] pybind11
 
 # install lightsim
 RUN git clone --recurse-submodules https://github.com/BDonnot/lightsim2grid.git
