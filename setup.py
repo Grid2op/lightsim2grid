@@ -4,7 +4,7 @@ import sys
 import setuptools
 import os
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
@@ -144,8 +144,11 @@ elif sys.platform.startswith("darwin"):
     # https://github.com/pybind/pybind11/issues/1604
 
 
-extra_compile_args = ["-march=native"] + extra_compile_args_tmp
+# for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
+# why we deactivated it
 # -march=native is here to use the vectorization of the code offered by Eigen
+# extra_compile_args = ["-march=native"] + extra_compile_args_tmp
+extra_compile_args = extra_compile_args_tmp
 ext_modules = [
     Extension(
         'lightsim2grid_cpp',
@@ -179,6 +182,7 @@ setup(name='LightSim2Grid',
             'Development Status :: 4 - Beta',
             'Programming Language :: Python :: 3.6',
             'Programming Language :: Python :: 3.7',
+            'Programming Language :: Python :: 3.8',
             "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
             "Intended Audience :: Developers",
             "Intended Audience :: Education",
