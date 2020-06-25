@@ -163,3 +163,6 @@ dVm_x*.npy
 test_backend.ipynb
 benchmarks/aor_ls.npy
 benchmarks/aor_pp.npy
+pandapower/
+success.txt
+test_docker.py
