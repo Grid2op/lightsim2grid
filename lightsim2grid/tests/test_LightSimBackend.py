@@ -14,7 +14,7 @@ from grid2op.tests.BaseBackendTest import BaseTestNames, BaseTestLoadingCase, Ba
 from grid2op.tests.BaseBackendTest import BaseTestTopoAction, BaseTestEnvPerformsCorrectCascadingFailures
 from grid2op.tests.BaseBackendTest import BaseTestChangeBusAffectRightBus, BaseTestShuntAction
 from grid2op.tests.BaseBackendTest import BaseTestResetEqualsLoadGrid, BaseTestVoltageOWhenDisco, BaseTestChangeBusSlack
-from grid2op.tests.BaseBackendTest import BaseIssuesTest
+from grid2op.tests.BaseBackendTest import BaseIssuesTest, BaseStatusActions
 
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP
@@ -129,6 +129,11 @@ class TestChangeBusSlack(HelperTests, BaseTestChangeBusSlack):
 
 
 class TestIssuesTest(HelperTests, BaseIssuesTest):
+    def make_backend(self, detailed_infos_for_cascading_failures=False):
+        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+
+
+class TestStatusAction(HelperTests, BaseStatusActions):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
