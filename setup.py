@@ -4,7 +4,7 @@ import sys
 import setuptools
 import os
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
