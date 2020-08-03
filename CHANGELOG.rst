@@ -10,6 +10,12 @@ Change Log
 - build on windows
 - distribute pypi package
 
+[0.2.3] - 2020-08-03
+--------------------
+- [UPDATED] consistent behaviour between grid2op.PandaPowerBackend and LightSimBackend for action that
+  set the bus of only one extremity of a powerline.
+- [ADDED] compatibility with grid2op 1.2.0
+
 [0.2.2] - 2020-06-25
 ---------------------
 - [UPDATED] removing the `-march=native` that causes some difficulty for some compilers

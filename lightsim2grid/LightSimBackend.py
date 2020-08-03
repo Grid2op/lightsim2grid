@@ -28,7 +28,8 @@ class LightSimBackend(Backend):
     def __init__(self, detailed_infos_for_cascading_failures=False):
         if not grid2op_installed:
             raise NotImplementedError("Impossible to use a Backend if grid2op is not installed.")
-        Backend.__init__(self, detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        Backend.__init__(self,
+                         detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -395,9 +396,10 @@ class LightSimBackend(Backend):
                 self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
                 self.next_prod_p[:] = self.prod_p
 
-
-                if np.any(~np.isfinite(self.load_v)) or np.any(~np.isfinite(self.prod_v)):
-                    raise DivergingPowerFlow("one load or one generator not connected")
+                if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
+                    raise DivergingPowerFlow("One load is disconnected")
+                if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
+                    raise DivergingPowerFlow("One generator is disconnected")
 
                 res = True
         except Exception as e:

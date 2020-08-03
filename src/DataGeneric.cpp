@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataGeneric.h"
+#include <iostream>
 
 const int DataGeneric::_deactivated_bus_id = -1;
 const cdouble DataGeneric::my_i = {0., 1.};
@@ -52,7 +53,7 @@ int DataGeneric::_get_bus(int el_id, const std::vector<bool> & status_, const Ei
 {
     int res;
     bool val = status_.at(el_id);  // also check if the el_id is out of bound
-    if(!val) res = 0;
+    if(!val) res = _deactivated_bus_id;
     else{
         res = bus_id_(el_id);
     }
@@ -67,14 +68,14 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
                                 const std::vector<int> & id_grid_to_solver,
                                 const Eigen::VectorXd & bus_vn_kv,
                                 Eigen::VectorXd & v){
-    v = Eigen::VectorXd::Constant(nb_element, 0.0);
+    v = Eigen::VectorXd::Constant(nb_element, -1.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) continue;
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::res_loads: A load or a shunt is connected to a disconnected bus.");
+            throw std::runtime_error("DataGeneric::v_kv_from_vpu: An element is connected to a disconnected bus");
         }
         double bus_vn_kv_me = bus_vn_kv(el_bus_me_id);
         v(el_id) = Vm(bus_solver_id) * bus_vn_kv_me;
