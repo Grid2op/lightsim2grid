@@ -10,6 +10,10 @@ Change Log
 - build on windows
 - distribute pypi package
 
+[0.2.4] - 2020-08-xx
+--------------------
+- [FIXED] issue for copying environment
+
 [0.2.3] - 2020-08-03
 --------------------
 - [UPDATED] consistent behaviour between grid2op.PandaPowerBackend and LightSimBackend for action that
