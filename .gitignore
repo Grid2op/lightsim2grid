@@ -166,3 +166,9 @@ benchmarks/aor_pp.npy
 pandapower/
 success.txt
 test_docker.py
+pyklu.c
+pyklu.cpp
+pyklu.h
+pyklu.py
+start_pandapower.py
+test_pyklu_package.py

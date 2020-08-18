@@ -9,27 +9,22 @@
 import copy
 import numpy as np
 
-try:
-    # TODO will be deprecated in future version
-    from grid2op.Action import CompleteAction
-    from grid2op.dtypes import dt_int
-    from grid2op.Backend import Backend, PandaPowerBackend
-    from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
-    from grid2op.Action._BackendAction import _BackendAction
-    from grid2op.dtypes import dt_float, dt_int
-    grid2op_installed = True
-except ImportError as e:
-    grid2op_installed = False
+from grid2op.Action import CompleteAction
+from grid2op.Backend import Backend
+from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
+from grid2op.Action._BackendAction import _BackendAction
+from grid2op.dtypes import dt_float, dt_int
 
 from lightsim2grid.initGridModel import init
 
 
 class LightSimBackend(Backend):
     def __init__(self, detailed_infos_for_cascading_failures=False):
-        if not grid2op_installed:
-            raise NotImplementedError("Impossible to use a Backend if grid2op is not installed.")
         Backend.__init__(self,
                          detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+
+        # lazy loading becuase otherwise somehow it crashes...
+        from grid2op.Backend import PandaPowerBackend
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -432,6 +427,10 @@ class LightSimBackend(Backend):
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
         __me_at_init = self.__me_at_init
+        if __me_at_init is None:
+            # __me_at_init is defined as being the copy of the grid,
+            # if it's not defined then i can define it here.
+            __me_at_init = self._grid.copy()
 
         self._grid = None
         self.__me_at_init = None
@@ -497,8 +496,6 @@ class LightSimBackend(Backend):
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
         self.topo_vect[:] = self.__init_topo_vect
-        # import pdb
-        # pdb.set_trace()
 
     def get_action_to_set(self):
         line_status = self.get_line_status()
