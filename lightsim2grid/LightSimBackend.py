@@ -315,9 +315,9 @@ class LightSimBackend(Backend):
         self._grid.update_gens_v(backendAction.prod_v.changed,
                                  backendAction.prod_v.values / self.prod_pu_to_kv)
         self._grid.update_loads_p(backendAction.load_p.changed,
-                                 backendAction.load_p.values)
+                                  backendAction.load_p.values)
         self._grid.update_loads_q(backendAction.load_q.changed,
-                                 backendAction.load_q.values)
+                                  backendAction.load_q.values)
 
         # handle shunts
         if self.shunts_data_available:
@@ -400,6 +400,7 @@ class LightSimBackend(Backend):
         except Exception as e:
             # of the powerflow has not converged, results are Nan
             self._fill_nans()
+            res = False
 
         return res
 
