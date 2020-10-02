@@ -35,6 +35,40 @@ void DataLine::init(const Eigen::VectorXd & branch_r,
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
 }
 
+DataLine::StateRes DataLine::get_state() const
+{
+     std::vector<double> branch_r(powerlines_r_.begin(), powerlines_r_.end());
+     std::vector<double> branch_x(powerlines_x_.begin(), powerlines_x_.end());
+     std::vector<std::complex<double> > branch_h(powerlines_h_.begin(), powerlines_h_.end());
+     std::vector<int > branch_from_id(bus_or_id_.begin(), bus_or_id_.end());
+     std::vector<int > branch_to_id(bus_ex_id_.begin(), bus_ex_id_.end());
+     std::vector<bool> status = status_;
+     DataLine::StateRes res(branch_r, branch_x, branch_h, branch_from_id, branch_to_id, status);
+     return res;
+}
+void DataLine::set_state(DataLine::StateRes & my_state)
+{
+    reset_results();
+
+    std::vector<double> & branch_r = std::get<0>(my_state);
+    std::vector<double> & branch_x = std::get<1>(my_state);
+    std::vector<std::complex<double> > & branch_h = std::get<2>(my_state);
+    std::vector<int> & branch_from_id = std::get<3>(my_state);
+    std::vector<int> & branch_to_id = std::get<4>(my_state);
+    std::vector<bool> & status = std::get<5>(my_state);
+    // TODO check sizes
+
+    // now assign the values
+    powerlines_r_ = Eigen::VectorXd::Map(&branch_r[0], branch_r.size());
+    powerlines_x_ = Eigen::VectorXd::Map(&branch_x[0], branch_x.size());
+    powerlines_h_ = Eigen::VectorXcd::Map(&branch_h[0], branch_h.size());
+
+    // input data
+    bus_or_id_ = Eigen::VectorXi::Map(&branch_from_id[0], branch_from_id.size());
+    bus_ex_id_ = Eigen::VectorXi::Map(&branch_to_id[0], branch_to_id.size());
+    status_ = status;
+}
+
 void DataLine::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     // fill the matrix

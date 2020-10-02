@@ -9,6 +9,12 @@ Change Log
 - easier building (get rid of the "make" part)
 - build on windows
 - distribute pypi package
+- try to implement an easier powerflow (for example gauss siedel) to make it available on all platform
+- make dc approx available on all platform
+
+[0.3.0] - 2020-10-xx
+-------------------------
+- [ADDING] Support for pickle for the lightsim Backend.
 
 [0.2.4] - 2020-08-xx
 --------------------

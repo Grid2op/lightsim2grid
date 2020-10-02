@@ -22,6 +22,15 @@
 class DataGen: public DataGeneric
 {
     public:
+    typedef std::tuple<
+       std::vector<double>, // p_mw
+       std::vector<double>, // vm_pu_
+       std::vector<double>, // min_q_
+       std::vector<double>, // max_q_
+       std::vector<int>, // bus_id
+       std::vector<bool> // status
+       >  StateRes;
+
     DataGen() {};
 
     void init(const Eigen::VectorXd & generators_p,
@@ -32,6 +41,10 @@ class DataGen: public DataGeneric
               );
 
     int nb() { return p_mw_.size(); }
+
+    // pickle
+    DataGen::StateRes get_state() const;
+    void set_state(DataGen::StateRes & my_state );
 
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}

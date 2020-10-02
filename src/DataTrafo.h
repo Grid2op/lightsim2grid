@@ -20,6 +20,16 @@
 class DataTrafo : public DataGeneric
 {
     public:
+    typedef std::tuple<
+               std::vector<double>, // branch_r
+               std::vector<double>, // branch_x
+               std::vector<std::complex<double> >, // branch_h
+               std::vector<int>, // branch_from_id
+               std::vector<int>, // branch_to_id
+               std::vector<bool> , // status_
+               std::vector<double> // ratio_
+           >  StateRes;
+
     DataTrafo() {};
 
     void init(const Eigen::VectorXd & trafo_r,
@@ -32,6 +42,8 @@ class DataTrafo : public DataGeneric
                            const Eigen::VectorXi & trafo_hv_id,
                            const Eigen::VectorXi & trafo_lv_id
               );
+    DataTrafo::StateRes get_state() const;
+    void set_state(DataTrafo::StateRes & my_state );
 
     int nb() { return r_.size(); }
 

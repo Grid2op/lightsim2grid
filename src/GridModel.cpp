@@ -67,6 +67,77 @@ GridModel::GridModel(const GridModel & other)
     trafo_lv_to_subid_ = other.trafo_lv_to_subid_;
 }
 
+//pickle
+GridModel::StateRes GridModel::get_state() const
+{
+    std::vector<double> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
+    auto res_line = powerlines_.get_state();
+    auto res_shunt = shunts_.get_state();
+    auto res_trafo = trafos_.get_state();
+    auto res_gen = generators_.get_state();
+    auto res_load = loads_.get_state();
+
+    GridModel::StateRes res(bus_vn_kv,
+                            bus_status_,
+                            res_line,
+                            res_shunt,
+                            res_trafo,
+                            res_gen,
+                            res_load,
+                            gen_slackbus_
+                            );
+    return res;
+};
+
+void GridModel::set_state(GridModel::StateRes & my_state)
+{
+    // after loading back, the instance need to be reset anyway
+    // TODO see if it's worth the trouble NOT to do it
+    reset();
+    need_reset_ = true;
+
+    // extract data from the state
+    std::vector<double> & bus_vn_kv = std::get<0>(my_state);
+    std::vector<bool> & bus_status = std::get<1>(my_state);
+
+    // powerlines
+    DataLine::StateRes & state_lines = std::get<2>(my_state);
+    // shunts
+    DataShunt::StateRes & state_shunts = std::get<3>(my_state);
+    // trafos
+    DataTrafo::StateRes & state_trafos = std::get<4>(my_state);
+    // generators
+    DataGen::StateRes & state_gens = std::get<5>(my_state);
+    // loads
+    DataLoad::StateRes & state_loads = std::get<6>(my_state);
+    int gen_slackbus = std::get<7>(my_state);
+
+    // assign it to this instance
+
+    // buses
+    // 1. bus_vn_kv_
+    bus_vn_kv_ = Eigen::VectorXd::Map(&bus_vn_kv[0], bus_vn_kv.size());
+    // 2. bus status
+    bus_status_ = bus_status;
+
+    // elements
+    // 1. powerlines
+    powerlines_.set_state(state_lines);
+    // 2. shunts
+    shunts_.set_state(state_shunts);
+    // 3. trafos
+    trafos_.set_state(state_trafos);
+    // 4. gen
+    generators_.set_state(state_gens);
+    // 5. loads
+    loads_.set_state(state_loads);
+
+    // other stuff
+    gen_slackbus_ = gen_slackbus;
+
+};
+
+//init
 void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo){
     /**
     initialize the bus_vn_kv_ member
@@ -98,7 +169,8 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). Components of Vinit corresponding to deactivated bys will be ignored anyway.");
+        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
+        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).");
     }
     bool conv = false;
     Eigen::VectorXcd res = Eigen::VectorXcd();
@@ -289,7 +361,8 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     // TODO refactor that with ac pf, this is mostly done, but only mostly...
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). Components of Vinit corresponding to deactivated bys will be ignored anyway.");
+        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
+        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there.)");
     }
     Eigen::SparseMatrix<cdouble> dcYbus_tmp;
     Eigen::VectorXcd Sbus_tmp;

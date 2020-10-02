@@ -41,6 +41,23 @@
 class GridModel : public DataGeneric
 {
     public:
+        typedef std::tuple<
+                std::vector<double>,  // bus_vn_kv
+                std::vector<bool>,  // bus_status
+                // powerlines
+                DataLine::StateRes ,
+                // shunts
+                DataShunt::StateRes,
+                // trafos
+                DataTrafo::StateRes,
+                // gens
+                DataGen::StateRes,
+                // loads
+                DataLoad::StateRes,
+                // slack bus generator id
+                int
+                >  StateRes;
+
         GridModel():need_reset_(true){};
         GridModel(const GridModel & other);
         GridModel copy(){
@@ -90,6 +107,22 @@ class GridModel : public DataGeneric
         }
 
         void add_gen_slackbus(int gen_id);
+
+        //pickle
+        GridModel::StateRes get_state() const ;
+        void set_state(GridModel::StateRes & my_state) ;
+        template<class T>
+        void check_size(const T& my_state)
+        {
+            // currently un used
+            unsigned int size_th = 6;
+            if (my_state.size() != size_th)
+            {
+                std::cout << "LightSim::GridModel state size " << my_state.size() << " instead of "<< size_th << std::endl;
+                // TODO more explicit error message
+                throw std::runtime_error("Invalid state when loading LightSim::GridModel");
+            }
+        }
 
         //powerflows
         // dc powerflow

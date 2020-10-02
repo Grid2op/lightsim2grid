@@ -42,6 +42,28 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
     py::class_<GridModel>(m, "GridModel")
         .def(py::init<>())
         .def("copy", &GridModel::copy)
+
+        // pickle
+        .def(py::pickle(
+                        [](const GridModel &gm) { // __getstate__
+                            // Return a tuple that fully encodes the state of the object
+                            return py::make_tuple(gm.get_state());
+                        },
+                        [](py::tuple py_state) { // __setstate__
+                            if (py_state.size() != 1){
+                                std::cout << "GridModel.__setstate__ : state size " << py_state.size() << std::endl;
+                                throw std::runtime_error("Invalid state size when loading GridModel.__setstate__");
+                                }
+                            // Create a new C++ instance
+                            GridModel gm = GridModel();
+                            // TODO check the size of the input tuple!
+
+                            // now set the status
+                            GridModel::StateRes state = py_state[0].cast<GridModel::StateRes>();
+                            gm.set_state(state);
+                            return gm;
+        }))
+
         // general parameters
 
         // init the grid
