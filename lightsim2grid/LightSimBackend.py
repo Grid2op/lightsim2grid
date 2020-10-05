@@ -15,7 +15,7 @@ from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFl
 from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int
 
-from lightsim2grid.initGridModel import init
+from lightsim2grid.initGridModel import init, SolverType
 
 
 class LightSimBackend(Backend):
@@ -93,6 +93,9 @@ class LightSimBackend(Backend):
         self.init_pp_backend.load_grid(path, filename)
 
         self._grid = init(self.init_pp_backend._grid)
+        available_solvers = self._grid.available_solvers()
+        if SolverType.KLU in available_solvers:
+            self._grid.change_solver(SolverType.KLU)
 
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen

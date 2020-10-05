@@ -15,6 +15,8 @@ Change Log
 [0.3.0] - 2020-10-xx
 -------------------------
 - [ADDING] Support for pickle for the lightsim Backend.
+- [ADDING] LightSim should now be compatible with windows (implementation of a powerflow mode without
+  using the SuiteSparse KLU linear solver but rather the Eigen SparseLU one)
 
 [0.2.4] - 2020-08-xx
 --------------------

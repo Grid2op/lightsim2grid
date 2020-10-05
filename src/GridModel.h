@@ -34,8 +34,8 @@
 #include "DataGen.h"
 
 
-// import klu solver
-#include "KLUSolver.h"
+// import newton raphson solvers using different linear algebra solvers
+#include "ChooseSolver.h"
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class GridModel : public DataGeneric
@@ -64,6 +64,13 @@ class GridModel : public DataGeneric
             GridModel res(*this);
             return res;
         }
+
+        // solver "control"
+        void change_solver(const SolverType & type){
+            need_reset_ = true;
+            _solver.change_solver(type);
+        }
+        std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
@@ -414,7 +421,7 @@ class GridModel : public DataGeneric
         // TODO have version of the stuff above for the public api, indexed with "me" and not "solver"
 
         // to solve the newton raphson
-        KLUSolver _solver;
+        ChooseSolver _solver;
 
         // specific grid2op
         int n_sub_;

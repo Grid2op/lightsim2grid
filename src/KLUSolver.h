@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#ifdef KLU_SOLVER_AVAILABLE
 #ifndef KLSOLVER_H
 #define KLSOLVER_H
 
@@ -31,6 +32,7 @@ extern "C" {
 
 #include "CustTimer.h"
 #include "Utils.h"
+#include "BaseNRSolver.h"
 /**
 class to handle the solver using newton-raphson method, using KLU algorithm and sparse matrices.
 
@@ -40,20 +42,10 @@ Reusing the same solver is possible, but "reset" method must be called.
 Otherwise, unexpected behaviour might follow, including "segfault".
 
 **/
-class KLUSolver
+class KLUSolver: public BaseNRSolver
 {
     public:
-        KLUSolver():symbolic_(),numeric_(),common_(),n_(-1),need_factorize_(true),err_(-1),
-                    timer_Fx_(0.){
-            klu_defaults(&common_);
-            timer_Fx_ = 0.;
-            timer_solve_ = 0.;
-            timer_initialize_ = 0.;
-            timer_check_ = 0.;
-            timer_dSbus_ = 0.;
-            timer_fillJ_ = 0.;
-            timer_total_nr_ = 0.;
-        }
+        KLUSolver():BaseNRSolver(),symbolic_(),numeric_(),common_(){}
 
         ~KLUSolver()
          {
@@ -61,134 +53,24 @@ class KLUSolver
              klu_free_numeric(&numeric_, &common_);
          }
 
-        Eigen::SparseMatrix<double> get_J(){
-            return J_;
-        }
-        Eigen::Ref<Eigen::VectorXd> get_Va(){
-            return Va_;
-        }
-        Eigen::Ref<Eigen::VectorXd> get_Vm(){
-            return Vm_;
-        }
-        Eigen::Ref<Eigen::VectorXcd> get_V(){
-            return V_;
-        }
-        int get_error(){
-            return err_;
-        }
-        int get_nb_iter(){
-            return nr_iter_;
-        }
-        std::tuple<double, double, double, double, double, double, double> get_timers()
-        {
-            auto res = std::tuple<double, double, double, double, double, double, double>(
-              timer_Fx_, timer_solve_, timer_initialize_, timer_check_, timer_dSbus_, timer_fillJ_, timer_total_nr_);
-            return res;
-        }
-
-        bool do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
-                       const Eigen::VectorXi & pv,
-                       const Eigen::VectorXi & pq,
-                       int max_iter,
-                       double tol
-                       );
-
-
-        void reset();
-
-        bool converged(){
-            return err_ == 0;
-        }
+        virtual void reset();
 
     protected:
-        void reset_timer(){
-            timer_Fx_ = 0.;
-            timer_solve_ = 0.;
-            timer_initialize_ = 0.;
-            timer_check_ = 0.;
-            timer_dSbus_ = 0.;
-            timer_fillJ_ = 0.;
-            timer_total_nr_ = 0.;
-        }
+        virtual
         void initialize();
 
+        virtual
         void solve(Eigen::VectorXd & b, bool has_just_been_inialized);
-
-        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
-                       const Eigen::Ref<const Eigen::VectorXcd > & V);
-
-        void _get_values_J(int & nb_obj_this_col,
-                           std::vector<int> & inner_index,
-                           std::vector<double> & values,
-                           const Eigen::SparseMatrix<double> & mat,  // ex. dS_dVa_r
-                           const std::vector<int> & index_row_inv, // ex. pvpq_inv
-                           const Eigen::VectorXi & index_col, // ex. pvpq
-                           int col_id,
-                           int row_lag  // 0 for J11 for example, n_pvpq for J12
-                           );
-
-        void fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                  const Eigen::VectorXcd & V,
-                                  const Eigen::VectorXi & pq,
-                                  const Eigen::VectorXi & pvpq,
-                                  const std::vector<int> & pq_inv,
-                                  const std::vector<int> & pvpq_inv
-                                  );
-
-        Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Ybus,
-                                     const Eigen::VectorXcd & V,
-                                     const Eigen::VectorXcd & Sbus,
-                                     const Eigen::VectorXi & pv,
-                                     const Eigen::VectorXi & pq);
-
-        bool _check_for_convergence(const Eigen::VectorXd & F,
-                                    double tol)
-        {
-            auto timer = CustTimer();
-            bool res =  F.lpNorm<Eigen::Infinity>()  < tol;
-            timer_check_ += timer.duration();
-            return res;
-        }
 
     private:
         // solver initialization
         klu_symbolic* symbolic_;
         klu_numeric* numeric_;
         klu_common common_;
-        int n_;
-
-        // solution of the problem
-        Eigen::VectorXd Vm_;  // voltage magnitude
-        Eigen::VectorXd Va_;  // voltage angle
-        Eigen::VectorXcd V_;  // voltage angle
-        Eigen::SparseMatrix<double> J_;  // the jacobian matrix
-        Eigen::SparseMatrix<cdouble> dS_dVm_;
-        Eigen::SparseMatrix<cdouble> dS_dVa_;
-        bool need_factorize_;
-        int nr_iter_;  // number of iteration performs by the Newton Raphson algorithm
-        int err_; //error message:
-        // -1 : the solver has not been initialized (call initialize in this case)
-        // 0 everything ok
-        // 1: i can't factorize the matrix (klu_factor)
-        // 2: i can't refactorize the matrix (klu_refactor)
-        // 3: i can't solve the system (klu_solve)
-        // 4: end of possible iterations (divergence because nr_iter_ >= max_iter
-
-        // timers
-         double timer_Fx_;
-         double timer_solve_;
-         double timer_initialize_;
-         double timer_check_;
-         double timer_dSbus_;
-         double timer_fillJ_;
-         double timer_total_nr_;
 
         // no copy allowed
         KLUSolver( const KLUSolver & ) ;
         KLUSolver & operator=( const KLUSolver & ) ;
-        static const cdouble my_i;
 
     private:
         // debug func i don't want to remove yet
@@ -280,7 +162,7 @@ class KLUSolver
         std::tuple<Eigen::SparseMatrix<cdouble> , Eigen::SparseMatrix<cdouble> >
                     _get_ds_test(Eigen::SparseMatrix<cdouble> & Ybus,
                                 Eigen::VectorXcd & V){
-            _dSbus_dV(Ybus, V);
+            BaseNRSolver::_dSbus_dV(Ybus, V);
             auto res = std::tuple<Eigen::SparseMatrix<cdouble> , Eigen::SparseMatrix<cdouble> >(dS_dVm_, dS_dVa_);
             return res;
         }
@@ -337,3 +219,4 @@ class KLUSolver
 };
 
 #endif // KLSOLVER_H
+#endif  // KLU_SOLVER_AVAILABLE

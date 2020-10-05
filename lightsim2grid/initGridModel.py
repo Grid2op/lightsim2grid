@@ -11,7 +11,7 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 """
 
 import numpy as np
-from lightsim2grid_cpp import GridModel, PandaPowerConverter
+from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
 
 
 def init(pp_net):

@@ -22,12 +22,13 @@ GridModel::GridModel(const GridModel & other)
     **/
     reset();
 
+    // solver
+    _solver.change_solver(other._solver.get_type());
+
     // powersystem representation
     // 1. bus
     bus_vn_kv_.array() = other.bus_vn_kv_;
     bus_status_ = other.bus_status_;
-
-
 
     // 2. powerline
     powerlines_ = other.powerlines_;
@@ -161,6 +162,8 @@ void GridModel::reset()
     bus_pq_ = Eigen::VectorXi();
     need_reset_ = true;
 
+    // reset the solvers
+    _solver.reset();
 }
 
 Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
@@ -183,7 +186,6 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
     fillYbus(Ybus_, true, id_me_to_solver_);
     fillpv_pq(id_me_to_solver_);
     generators_.init_q_vector(bus_vn_kv_.size());
-    _solver.reset();
     // }
     fillSbus_me(Sbus_, true, id_me_to_solver_, slack_bus_id_solver_);
 

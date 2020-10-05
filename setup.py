@@ -3,8 +3,10 @@ from setuptools.command.build_ext import build_ext
 import sys
 import setuptools
 import os
+import warnings
 
 __version__ = "0.2.4"
+KLU_SOLVER_AVAILABLE = False
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
@@ -99,6 +101,7 @@ suitesparse_path = os.path.abspath("./SuiteSparse")
 eigen_path = os.path.abspath(".")
 
 # library to link against (require the "make" command to have run)
+# check that they exist
 LIBS = ["{}/KLU/Lib/libklu.a",
         "{}/BTF/Lib/libbtf.a",
         "{}/AMD/Lib/libamd.a",
@@ -106,22 +109,35 @@ LIBS = ["{}/KLU/Lib/libklu.a",
         "{}/CXSparse/Lib/libcxsparse.a",
         "{}/SuiteSparse_config/libsuitesparseconfig.a"
        ]
-
 LIBS = [el.format(suitesparse_path) for el in LIBS]
+exists_libs = True
+for el in LIBS:
+    if not os.path.exists(el):
+        exists_libs = False
+if exists_libs:
+    KLU_SOLVER_AVAILABLE = True
 
-# include directory
-INCLUDE_suitesparse = ["{}/SuiteSparse_config",
-                       "{}/CXSparse/Include",
-                       "{}/AMD/Include",
-                       "{}/BTF/Include",
-                       "{}/COLAMD/Include",
-                       "{}/KLU/Include"
-                       ]
+    # include directory
+    INCLUDE_suitesparse = ["{}/SuiteSparse_config",
+                           "{}/CXSparse/Include",
+                           "{}/AMD/Include",
+                           "{}/BTF/Include",
+                           "{}/COLAMD/Include",
+                           "{}/KLU/Include"
+                           ]
+    INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
+else:
+    # suitesparse, and in particular the KLU solver is not available.
+    # we'll use a default solver (a bit slower)
+    LIBS = []
+    INCLUDE_suitesparse = []
+    warnings.warn("SuiteSparse is not available on your system, or has not been compiled. The faster "
+                  "\"KLU\" linear algebra solver will not be available. The \"SparseLU\" solver will however "
+                  "be available, which is maybe ~30% slower than \"KLU\". If you are using grid2op there "
+                  "will still be a huge benefit.")
 
-INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
 INCLUDE = INCLUDE_suitesparse
 INCLUDE.append("{}/eigen".format(eigen_path))
-# INCLUDE.append(os.path.abspath("."))
 
 include_dirs = [
                 # Path to pybind11 headers
@@ -131,7 +147,7 @@ include_dirs = [
 include_dirs += INCLUDE
 
 # compiler options
-extra_compile_args_tmp = []
+extra_compile_args_tmp = ["-DNDEBUG"]
 if sys.platform.startswith('linux'):
     extra_compile_args_tmp = ["-fext-numeric-literals"]
     extra_compile_args_tmp = []
@@ -149,12 +165,17 @@ elif sys.platform.startswith("darwin"):
 # -march=native is here to use the vectorization of the code offered by Eigen
 # extra_compile_args = ["-march=native"] + extra_compile_args_tmp
 extra_compile_args = extra_compile_args_tmp
+src_files = ['src/main.cpp', "src/SparseLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
+             "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
+             "src/DataLoad.cpp", "src/DataGen.cpp", "src/BaseNRSolver.cpp", "src/ChooseSolver.cpp"]
+if KLU_SOLVER_AVAILABLE:
+    src_files.append("src/KLUSolver.cpp")
+    extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
+
 ext_modules = [
     Extension(
         'lightsim2grid_cpp',
-        ['src/main.cpp', "src/KLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
-         "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
-         "src/DataLoad.cpp", "src/DataGen.cpp"],
+        src_files,
         include_dirs=include_dirs,
         language='c++',
         extra_objects=LIBS,

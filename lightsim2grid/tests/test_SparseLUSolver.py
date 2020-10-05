@@ -4,10 +4,10 @@ import numpy as np
 import pdb
 import zipfile
 from scipy import sparse
-KLU_AVAILBLE = False
+SparseLUSolver_AVAILBLE = False
 try:
-    from lightsim2grid_cpp import KLUSolver
-    KLU_AVAILBLE = True
+    from lightsim2grid_cpp import SparseLUSolver
+    SparseLUSolver_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
     pass
@@ -21,9 +21,10 @@ class MakeTests(unittest.TestCase):
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
-        if not KLU_AVAILBLE:
+        if not SparseLUSolver_AVAILBLE:
             return
-        self.solver = KLUSolver()
+
+        self.solver = SparseLUSolver()
 
         self.path = None
         self.V_init = None
@@ -99,7 +100,7 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
 
     def test_dir(self):
-        self.skipTest("KLU is not installed")
+        self.skipTest("SparseLUSolver is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

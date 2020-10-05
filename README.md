@@ -7,15 +7,13 @@ See the [Disclaimer](DISCLAIMER.md) to have a more detailed view on what is and 
 this package should not be used for detailed power system computations or simulations.
 
 ## Installation (from source)
-**At time of writing, this procedure only work on Gnu-Linux / Mac OS, unless you manage to compile SparseSuite from
-source**
-
 You need to:
-- clone this repository
-- get the code of Eigen and SparseSuite (mandatory for compilation)
-- compile a piece of SparseSuite
+- clone this repository and get the code of Eigen and SparseSuite (mandatory for compilation)
+- (optional) compile a piece of SparseSuite
 - install the package
 
+
+### 1. Retrieve the sources
 First, you can download it with git with:
 ```commandline
 git clone https://github.com/BDonnot/lightsim2grid.git
@@ -23,32 +21,33 @@ cd lightsim2grid
 # it is recommended to do a python virtual environment
 python -m virtualenv venv  # optional
 source venv/bin/activate  # optional
+
+# retrieve the code of SparseSuite and Eigen (dependencies, mandatory)
+git submodule init
+git submodule update
 ```
 
-**NB** On windows you can rely on the "WSL" 
-[Windows Subsystem for Linux](https://docs.microsoft.com/en-us/windows/wsl/install-win10) to emulate the behavior
-of a linux-like machine running from windows. This possibility will make it possible for you to have lightsim2grid
-on this system, provided that you installed WSL (now WSL verion 2) and all the necessary packages there.
+### (optional) Compilation of SuiteSparse
+SuiteSparse comes with the faster KLU linear solver. Since version 0.3.0 this requirement has been removed. This entails
+that on linux / macos you can still benefit from the faster KLU solver. On windows you will still benefit from the
+speed up of lightsim (versus the default PandaPowerBackend) but this speed up will be less than if you manage
+to compile SuiteSparse. **NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a 
+Newton Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
+difference in the two version (with KLU and without) is that the linear equation solver is different. Up to the
+double float precision, both results (with and without KLU) should match.
 
-### 1. Compilation of SuiteSparse
-We only detail the procedure on a system using "make" (so most likely GNU-Linux and MacOS). If you manage to
+We only detail the compilation on a system using "make" (so most likely GNU-Linux and MacOS). If you manage to
 do this step on Windows, you can continue (and let us know!). If you don't feel confortable with this, we
 provided a docker version. See the next section for more information.
 
 
 ```commandline
-# retrieve the code of SparseSuite and Eigen
-git submodule init
-git submodule update
-
 # compile static libraries of SparseSuite
 make
 ```
 
 ### 2. Installation of the python package
-Provided that you manage to create the file above (either you are on GNU-Linus / MacOS and could run the commands above)
-or you are an expert in software development in Windows (in that case let us know !), you simply need to install
-the lightsim2grid package this way:
+Now you simply need to install the lightsim2grid package this way, like any python package:
 
 ```commandline
 # install the dependency
@@ -84,6 +83,51 @@ pip install -U grid2op[optional] pybind11
 # and do steps detailed in section "Installation (from source)"
 # that we will not repeat
 ```
+### Benchmark
+In this section we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
+The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
+
+All of them has been run on a computer with a `Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz` processor. The command
+to run the benchmark is (once `cd` in the [benchmark](./benchmarks) folder folder):
+```commandline
+python3 do_nothing.py --name l2rpn_case14_sandbox  # for environment based on IEEE 14 grid
+python3 do_nothing.py --name l2rpn_neurips_2020_track2  --no_test  # for environment based on IEEE 118 grid
+```
+
+We compare 3 different backends:
+- **PP**: PandaPowerBackend (default grid2op backend)
+- **LS+SLU** (LightSimBackend+SparseLU): the grid2op backend based on lightsim2grid that uses the linear solver "SparseLU" from the
+  Eigen c++ library (available on all platform)
+- **LS+KLU** (LightSimBackend+KLU): the grid2op backend based on lightsim2grid that uses the linear solver
+  "KLU" from the SuiteSparse c package, available only (for now) on Linux and Mac Os.
+
+
+|         | IEEE 14 (it / s)   |  IEEE 118 (it / s) |  IEEE 14 (powerflow time, ms) | IEEE 118 (powerflow time, ms) | 
+|---------|:-------:|:---:|:---:|:---:|
+| PP      |   68.5  |  42.2  |   12.1  |  14.3  |
+| LS+SLU  |   880   |  458   |   0.20  |  1.08  |
+| LS+KLU  |   880   |  596   |   0.17  |  0.62  |
+
+(results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
+
+(we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
+make use of all the available cores, which would increase the number of steps that can be performed)
+
+From a grid2op perspective, lightsim2grid allows to compute 880 steps each second on the case 14 and "only" 68.5
+for the default PandaPower Backend, leading to a speed up of **~13** in this case (lightsim2grid is 13 times faster
+than Pandapower). For such a small environment, there is no difference in using KLU linear solver (not available on
+Windows based machine) compared to using the SparseLU solver of Eigen.
+
+For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) 
+[for now only available on linux and MacOS] is **~14** time faster than 
+using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~11**
+times faster than using the default backend [using sparseLU linear solver is approximately 30% slower than using KLU.]
+
+If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
+initialize the solver, to modify the grid, read back the results, to perform the other update in the
+grid2op environment etc.) we can notice that it takes on average (over 575 different states) approximately **0.62 ms** 
+to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **14.3 ms** when using
+the PandaPowerBackend.
 
 ### 3. Run a code on this container
 You can skip this section if you know how to use docker. We will present here "the simplest way" to use. This is NOT
