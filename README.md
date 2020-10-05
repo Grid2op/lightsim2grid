@@ -12,6 +12,15 @@ You need to:
 - (optional) compile a piece of SparseSuite
 - install the package
 
+### Important note
+This package relies on the excellent pybind11 package to integrate c++ code into python easily. So to install
+lightsim2grid you need pybind and its requirement, which include a working compiler: for example (as of writing) 
+gcc (default on ubuntu, version >= 4.8), clang (default on MacOS, version >= 5.0.0) or 
+Microsoft visual studio (Microsoft Visual Studio 2015 Update 3 or newer, 
+). This readme does not cover the install of such compilers. Please refer to the documentation of 
+[pybind11](https://pybind11.readthedocs.io/en/latest/) for more information. Do not hesitate to write github issues
+if you encounter a problem in installing such compiler (**nb** on windows you have to install
+visual studio, on linux of MacOs you might already have a working compiler installed).
 
 ### 1. Retrieve the sources
 First, you can download it with git with:
