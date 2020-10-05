@@ -31,7 +31,9 @@ git submodule update
 SuiteSparse comes with the faster KLU linear solver. Since version 0.3.0 this requirement has been removed. This entails
 that on linux / macos you can still benefit from the faster KLU solver. On windows you will still benefit from the
 speed up of lightsim (versus the default PandaPowerBackend) but this speed up will be less than if you manage
-to compile SuiteSparse. **NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a 
+to compile SuiteSparse (see the subsection [Benchmark](#benchmark) for more information).
+
+**NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a 
 Newton Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
 difference in the two version (with KLU and without) is that the linear equation solver is different. Up to the
 double float precision, both results (with and without KLU) should match.
@@ -58,31 +60,6 @@ pip install -U .
 
 And you are done :-)
 
-## Installation (using docker)
-In this section we cover the use of docker with grid2op.
-
-### 1. Install docker
-First, you need to install docker. You can consult the 
-[docker on windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) if you use a windows like
-operating system, if you are using MacOs you can consult 
-[docker on Mac](https://hub.docker.com/editions/community/docker-ce-desktop-mac/). The installation of docker on linux
-depends on your linux distribution, we will not list them all here here.
-
-### 2. Get the lightsim2grid image
-
-Once done, you can simply "install" the lightsim2grid image with:
-```commandline
-docker pull bdonnot/lightsim2grid:latest
-```
-
-This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
-internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
-dependencies), equivalent of what would be installed if you typed:
-```commandline
-pip install -U grid2op[optional] pybind11
-# and do steps detailed in section "Installation (from source)"
-# that we will not repeat
-```
 ### Benchmark
 In this section we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
 The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
@@ -128,6 +105,32 @@ initialize the solver, to modify the grid, read back the results, to perform the
 grid2op environment etc.) we can notice that it takes on average (over 575 different states) approximately **0.62 ms** 
 to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **14.3 ms** when using
 the PandaPowerBackend.
+
+## Installation (using docker)
+In this section we cover the use of docker with grid2op.
+
+### 1. Install docker
+First, you need to install docker. You can consult the 
+[docker on windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) if you use a windows like
+operating system, if you are using MacOs you can consult 
+[docker on Mac](https://hub.docker.com/editions/community/docker-ce-desktop-mac/). The installation of docker on linux
+depends on your linux distribution, we will not list them all here.
+
+### 2. Get the lightsim2grid image
+
+Once done, you can simply "install" the lightsim2grid image with:
+```commandline
+docker pull bdonnot/lightsim2grid:latest
+```
+
+This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
+internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
+dependencies), equivalent of what would be installed if you typed:
+```commandline
+pip install -U grid2op[optional] pybind11
+# and do steps detailed in section "Installation (from source)"
+# that we will not repeat
+```
 
 ### 3. Run a code on this container
 You can skip this section if you know how to use docker. We will present here "the simplest way" to use. This is NOT
