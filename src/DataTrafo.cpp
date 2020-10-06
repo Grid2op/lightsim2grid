@@ -35,6 +35,43 @@ void DataTrafo::init(const Eigen::VectorXd & trafo_r,
     status_ = std::vector<bool>(trafo_r.size(), true);
 }
 
+DataTrafo::StateRes DataTrafo::get_state() const
+{
+     std::vector<double> branch_r(r_.begin(), r_.end());
+     std::vector<double> branch_x(x_.begin(), x_.end());
+     std::vector<std::complex<double> > branch_h(h_.begin(), h_.end());
+     std::vector<int > bus_hv_id(bus_hv_id_.begin(), bus_hv_id_.end());
+     std::vector<int > bus_lv_id(bus_lv_id_.begin(), bus_lv_id_.end());
+     std::vector<bool> status = status_;
+     std::vector<double> ratio(ratio_.begin(), ratio_.end());
+     DataTrafo::StateRes res(branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio);
+     return res;
+}
+void DataTrafo::set_state(DataTrafo::StateRes & my_state)
+{
+    reset_results();
+
+    std::vector<double> & branch_r = std::get<0>(my_state);
+    std::vector<double> & branch_x = std::get<1>(my_state);
+    std::vector<std::complex<double> > & branch_h = std::get<2>(my_state);
+    std::vector<int> & bus_hv_id = std::get<3>(my_state);
+    std::vector<int> & bus_lv_id = std::get<4>(my_state);
+    std::vector<bool> & status = std::get<5>(my_state);
+    std::vector<double> & ratio = std::get<6>(my_state);
+    // TODO check sizes
+
+    // now assign the values
+    r_ = Eigen::VectorXd::Map(&branch_r[0], branch_r.size());
+    x_ = Eigen::VectorXd::Map(&branch_x[0], branch_x.size());
+    h_ = Eigen::VectorXcd::Map(&branch_h[0], branch_h.size());
+
+    // input data
+    bus_hv_id_ = Eigen::VectorXi::Map(&bus_hv_id[0], bus_hv_id.size());
+    bus_lv_id_ = Eigen::VectorXi::Map(&bus_lv_id[0], bus_lv_id.size());
+    status_ = status;
+    ratio_  = Eigen::VectorXd::Map(&ratio[0], ratio.size());
+}
+
 void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     //TODO merge that with fillYbusBranch!

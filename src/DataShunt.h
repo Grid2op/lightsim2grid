@@ -20,12 +20,24 @@
 class DataShunt : public DataGeneric
 {
     public:
+    typedef std::tuple<
+           std::vector<double>, // p_mw
+           std::vector<double>, // q_mvar
+           std::vector<int>, // bus_id
+           std::vector<bool> // status
+           >  StateRes;
+
     DataShunt() {};
 
     void init(const Eigen::VectorXd & shunt_p_mw,
                      const Eigen::VectorXd & shunt_q_mvar,
                      const Eigen::VectorXi & shunt_bus_id
               );
+
+    // pickle (python)
+    DataShunt::StateRes get_state() const;
+    void set_state(DataShunt::StateRes & my_state );
+
 
     int nb() { return p_mw_.size(); }
 

@@ -163,7 +163,6 @@ dVm_x*.npy
 test_backend.ipynb
 benchmarks/aor_ls.npy
 benchmarks/aor_pp.npy
-pandapower/
 success.txt
 test_docker.py
 pyklu.c
@@ -172,3 +171,7 @@ pyklu.h
 pyklu.py
 start_pandapower.py
 test_pyklu_package.py
+test_pickle.pickle
+test_pickle.py
+documentation
+

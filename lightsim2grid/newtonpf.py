@@ -14,7 +14,14 @@ This module provide a function that can serve as a base replacement to the funct
 """
 import numpy as np
 from scipy import sparse
-from lightsim2grid_cpp import KLUSolver
+
+from lightsim2grid_cpp import SparseLUSolver
+KLU_solver_available = False
+try:
+    from lightsim2grid_cpp import KLUSolver
+    KLU_solver_available = True
+except ImportError:
+    pass
 
 
 def newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options):
@@ -65,7 +72,11 @@ def newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
     # initialize the solver
-    solver = KLUSolver()
+    # TODO have that in options maybe.
+    if KLU_solver_available:
+        solver = KLUSolver()
+    else:
+        solver = SparseLUSolver()
     Ybus = sparse.csc_matrix(Ybus)
 
     # do the newton raphson algorithm

@@ -34,19 +34,43 @@
 #include "DataGen.h"
 
 
-// import klu solver
-#include "KLUSolver.h"
+// import newton raphson solvers using different linear algebra solvers
+#include "ChooseSolver.h"
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class GridModel : public DataGeneric
 {
     public:
+        typedef std::tuple<
+                std::vector<double>,  // bus_vn_kv
+                std::vector<bool>,  // bus_status
+                // powerlines
+                DataLine::StateRes ,
+                // shunts
+                DataShunt::StateRes,
+                // trafos
+                DataTrafo::StateRes,
+                // gens
+                DataGen::StateRes,
+                // loads
+                DataLoad::StateRes,
+                // slack bus generator id
+                int
+                >  StateRes;
+
         GridModel():need_reset_(true){};
         GridModel(const GridModel & other);
         GridModel copy(){
             GridModel res(*this);
             return res;
         }
+
+        // solver "control"
+        void change_solver(const SolverType & type){
+            need_reset_ = true;
+            _solver.change_solver(type);
+        }
+        std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
@@ -90,6 +114,22 @@ class GridModel : public DataGeneric
         }
 
         void add_gen_slackbus(int gen_id);
+
+        //pickle
+        GridModel::StateRes get_state() const ;
+        void set_state(GridModel::StateRes & my_state) ;
+        template<class T>
+        void check_size(const T& my_state)
+        {
+            // currently un used
+            unsigned int size_th = 6;
+            if (my_state.size() != size_th)
+            {
+                std::cout << "LightSim::GridModel state size " << my_state.size() << " instead of "<< size_th << std::endl;
+                // TODO more explicit error message
+                throw std::runtime_error("Invalid state when loading LightSim::GridModel");
+            }
+        }
 
         //powerflows
         // dc powerflow
@@ -381,7 +421,7 @@ class GridModel : public DataGeneric
         // TODO have version of the stuff above for the public api, indexed with "me" and not "solver"
 
         // to solve the newton raphson
-        KLUSolver _solver;
+        ChooseSolver _solver;
 
         // specific grid2op
         int n_sub_;

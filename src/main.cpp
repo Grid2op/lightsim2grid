@@ -11,12 +11,20 @@
 #include <pybind11/stl.h>
 
 #include "KLUSolver.h"
+#include "SparseLUSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(lightsim2grid_cpp, m) {
+PYBIND11_MODULE(lightsim2grid_cpp, m)
+{
+    py::enum_<SolverType>(m, "SolverType")
+        .value("SparseLU", SolverType::SparseLU)
+        .value("KLU", SolverType::KLU)
+        .export_values();
+
+    #ifdef KLU_SOLVER_AVAILABLE
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
         .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
@@ -29,6 +37,20 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
         .def("do_newton", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+    #endif
+
+    py::class_<SparseLUSolver>(m, "SparseLUSolver")
+        .def(py::init<>())
+        .def("get_J", &SparseLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &SparseLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &SparseLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &SparseLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &SparseLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &SparseLUSolver::converged)  // whether the solver has converged
+        .def("do_newton", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
 
     // converters
@@ -42,8 +64,32 @@ PYBIND11_MODULE(lightsim2grid_cpp, m) {
     py::class_<GridModel>(m, "GridModel")
         .def(py::init<>())
         .def("copy", &GridModel::copy)
-        // general parameters
 
+        // pickle
+        .def(py::pickle(
+                        [](const GridModel &gm) { // __getstate__
+                            // Return a tuple that fully encodes the state of the object
+                            return py::make_tuple(gm.get_state());
+                        },
+                        [](py::tuple py_state) { // __setstate__
+                            if (py_state.size() != 1){
+                                std::cout << "GridModel.__setstate__ : state size " << py_state.size() << std::endl;
+                                throw std::runtime_error("Invalid state size when loading GridModel.__setstate__");
+                                }
+                            // Create a new C++ instance
+                            GridModel gm = GridModel();
+                            // TODO check the size of the input tuple!
+
+                            // now set the status
+                            GridModel::StateRes state = py_state[0].cast<GridModel::StateRes>();
+                            gm.set_state(state);
+                            return gm;
+        }))
+
+        // general parameters
+        // solver control
+        .def("change_solver", &GridModel::change_solver)  // change the solver to use (KLU - faster or SparseLU - available everywhere)
+        .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
         // init the grid
         .def("init_bus", &GridModel::init_bus)
         .def("init_powerlines", &GridModel::init_powerlines)

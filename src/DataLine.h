@@ -9,6 +9,8 @@
 #ifndef DATALINE_H
 #define DATALINE_H
 
+#include <iostream>
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
@@ -20,6 +22,15 @@
 class DataLine : public DataGeneric
 {
     public:
+    typedef std::tuple<
+               std::vector<double>, // branch_r
+               std::vector<double>, // branch_x
+               std::vector<std::complex<double> >, // branch_h
+               std::vector<int>, // branch_from_id
+               std::vector<int>, // branch_to_id
+               std::vector<bool> // status_
+               >  StateRes;
+
     DataLine() {};
 
     void init(const Eigen::VectorXd & branch_r,
@@ -28,6 +39,22 @@ class DataLine : public DataGeneric
               const Eigen::VectorXi & branch_from_id,
               const Eigen::VectorXi & branch_to_id
               );
+
+    // pickle
+    DataLine::StateRes get_state() const;
+    void set_state(DataLine::StateRes & my_state );
+    template<class T>
+    void check_size(const T& my_state)
+    {
+        //currently unused
+        unsigned int size_th = 6;
+        if (my_state.size() != size_th)
+        {
+            std::cout << "LightSim::DataLine state size " << my_state.size() << " instead of "<< size_th << std::endl;
+            // TODO more explicit error message
+            throw std::runtime_error("Invalid state when loading LightSim::DataLine");
+        }
+    }
 
     int nb() { return powerlines_r_.size(); }
 

@@ -19,8 +19,23 @@
 
 class DataLoad : public DataGeneric
 {
+    // TODO make a single class for load and shunt and just specialize the part where the
+    // TODO powerflow equations are located (when i update the Y matrix)
+
     public:
+    typedef std::tuple<
+       std::vector<double>, // p_mw
+       std::vector<double>, // q_mvar
+       std::vector<int>, // bus_id
+       std::vector<bool> // status
+       >  StateRes;
+
     DataLoad() {};
+
+    // pickle (python)
+    DataLoad::StateRes get_state() const;
+    void set_state(DataLoad::StateRes & my_state );
+
 
     void init(const Eigen::VectorXd & loads_p,
               const Eigen::VectorXd & loads_q,

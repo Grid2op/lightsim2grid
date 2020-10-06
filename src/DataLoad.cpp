@@ -17,6 +17,34 @@ void DataLoad::init(const Eigen::VectorXd & loads_p,
     status_ = std::vector<bool>(loads_p.size(), true);
 }
 
+
+DataLoad::StateRes DataLoad::get_state() const
+{
+     std::vector<double> p_mw(p_mw_.begin(), p_mw_.end());
+     std::vector<double> q_mvar(q_mvar_.begin(), q_mvar_.end());
+     std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
+     std::vector<bool> status = status_;
+     DataLoad::StateRes res(p_mw, q_mvar, bus_id, status);
+     return res;
+}
+void DataLoad::set_state(DataLoad::StateRes & my_state )
+{
+    reset_results();
+
+    std::vector<double> & p_mw = std::get<0>(my_state);
+    std::vector<double> & q_mvar = std::get<1>(my_state);
+    std::vector<int> & bus_id = std::get<2>(my_state);
+    std::vector<bool> & status = std::get<3>(my_state);
+    // TODO check sizes
+
+    // input data
+    p_mw_ = Eigen::VectorXd::Map(&p_mw[0], p_mw.size());
+    q_mvar_ = Eigen::VectorXd::Map(&q_mvar[0], q_mvar.size());
+    bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
+    status_ = status;
+}
+
+
 void DataLoad::fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     int nb_load = nb();
     int bus_id_me, bus_id_solver;

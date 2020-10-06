@@ -28,6 +28,40 @@ void DataGen::init(const Eigen::VectorXd & generators_p,
     status_ = std::vector<bool>(generators_p.size(), true);
 }
 
+
+DataGen::StateRes DataGen::get_state() const
+{
+     std::vector<double> p_mw(p_mw_.begin(), p_mw_.end());
+     std::vector<double> vm_pu(vm_pu_.begin(), vm_pu_.end());
+     std::vector<double> min_q(min_q_.begin(), min_q_.end());
+     std::vector<double> max_q(max_q_.begin(), max_q_.end());
+     std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
+     std::vector<bool> status = status_;
+     DataGen::StateRes res(p_mw, vm_pu, min_q, max_q, bus_id, status);
+     return res;
+}
+void DataGen::set_state(DataGen::StateRes & my_state )
+{
+    reset_results();
+
+    std::vector<double> & p_mw = std::get<0>(my_state);
+    std::vector<double> & vm_pu = std::get<1>(my_state);
+    std::vector<double> & min_q = std::get<2>(my_state);
+    std::vector<double> & max_q = std::get<3>(my_state);
+    std::vector<int> & bus_id = std::get<4>(my_state);
+    std::vector<bool> & status = std::get<5>(my_state);
+    // TODO check sizes
+
+    // input data
+    p_mw_ = Eigen::VectorXd::Map(&p_mw[0], p_mw.size());
+    vm_pu_ = Eigen::VectorXd::Map(&vm_pu[0], vm_pu.size());
+    min_q_ = Eigen::VectorXd::Map(&min_q[0], min_q.size());
+    max_q_ = Eigen::VectorXd::Map(&max_q[0], max_q.size());
+    bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
+    status_ = status;
+}
+
+
 void DataGen::fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     int nb_gen = nb();
     int bus_id_me, bus_id_solver;
