@@ -5,13 +5,11 @@ import setuptools
 import os
 import warnings
 
-__version__ = "0.2.4"
+__version__ = "0.3.0"
 KLU_SOLVER_AVAILABLE = False
 
 # courtesy to
 # https://github.com/pybind/python_example/blob/master/setup.py
-
-
 class get_pybind_include(object):
     """Helper class to determine the pybind11 include path
     The purpose of this class is to postpone importing pybind11
@@ -97,11 +95,11 @@ class BuildExt(build_ext):
             ext.extra_link_args += link_opts
         build_ext.build_extensions(self)
 
+
+# Try to link against SuiteSparse (if available)
+# check that they exist
 suitesparse_path = os.path.abspath("./SuiteSparse")
 eigen_path = os.path.abspath(".")
-
-# library to link against (require the "make" command to have run)
-# check that they exist
 LIBS = ["{}/KLU/Lib/libklu.a",
         "{}/BTF/Lib/libbtf.a",
         "{}/AMD/Lib/libamd.a",
@@ -115,6 +113,7 @@ for el in LIBS:
     if not os.path.exists(el):
         exists_libs = False
 if exists_libs:
+    # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
     KLU_SOLVER_AVAILABLE = True
 
     # include directory
@@ -127,7 +126,7 @@ if exists_libs:
                            ]
     INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
 else:
-    # suitesparse, and in particular the KLU solver is not available.
+    # suitesparse, and in particular the KLU linear solver is not available.
     # we'll use a default solver (a bit slower)
     LIBS = []
     INCLUDE_suitesparse = []
@@ -150,14 +149,17 @@ include_dirs += INCLUDE
 extra_compile_args_tmp = ["-DNDEBUG"]
 if sys.platform.startswith('linux'):
     extra_compile_args_tmp = ["-fext-numeric-literals"]
-    extra_compile_args_tmp = []
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
     # macos and windows does not use gcc, so this is not working on these platforms
+    extra_compile_args_tmp = []
 elif sys.platform.startswith("darwin"):
     # extra_compile_args_tmp = ["-fsized-deallocation"]
     extra_compile_args_tmp = []
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
+elif sys.platform.startswith("win32"):
+    extra_compile_args_tmp = ["-D_USE_MATH_DEFINES"]
+    # otherwise windows compiler does not import "M_PI" from the math header
 
 
 # for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
@@ -183,6 +185,27 @@ ext_modules = [
     )
 ]
 
+pkgs = {
+    "required": [
+        'pybind11>=2.4',
+        "pandapower",
+        "numpy",
+        "scipy",
+        "grid2op"
+    ],
+    "extras": {
+        "docs": [
+            "numpydoc>=0.9.2",
+            "sphinx>=2.4.4",
+            "sphinx-rtd-theme>=0.4.3",
+            "sphinxcontrib-trio>=1.1.0",
+            "autodocsumm>=0.1.13",
+            # "m2r"
+            "recommonmark",
+        ]
+    }
+}
+
 setup(name='LightSim2Grid',
       version=__version__,
       author='Benjamin Donnot',
@@ -193,7 +216,8 @@ setup(name='LightSim2Grid',
                        'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '
                        'its usage.',
       ext_modules=ext_modules,
-      install_requires=['pybind11>=2.4', "pandapower", "numpy", "scipy", "grid2op"],
+      install_requires=pkgs["required"],
+      extras_require=pkgs["extras"],
       setup_requires=['pybind11>=2.4'],
       cmdclass={'build_ext': BuildExt},
       zip_safe=False,
