@@ -21,6 +21,11 @@ Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::KLU>()
         return _solver_klu.get_V();
     #endif
 }
+template<>
+Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>()
+{
+    return _solver_gaussseidel.get_V();
+}
 
 
 template<SolverType ST>
@@ -46,6 +51,18 @@ bool ChooseSolver::do_newton_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix
                        )
 {
     return _solver_lu.do_newton(Ybus, V, Sbus, pv, pq, max_iter, tol);
+}
+template<>
+bool ChooseSolver::do_newton_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
+                       Eigen::VectorXcd & V,
+                       const Eigen::VectorXcd & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
+                       int max_iter,
+                       double tol
+                       )
+{
+    return _solver_gaussseidel.do_newton(Ybus, V, Sbus, pv, pq, max_iter, tol);
 }
 template<>
 bool ChooseSolver::do_newton_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
@@ -76,6 +93,11 @@ Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::SparseLU>()
     return _solver_lu.get_J();
 }
 template<>
+Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>()
+{
+    return _solver_gaussseidel.get_J();
+}
+template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
@@ -97,6 +119,11 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::SparseLU>()
     return _solver_lu.get_Va();
 }
 template<>
+Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>()
+{
+    return _solver_gaussseidel.get_Va();
+}
+template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
@@ -115,6 +142,11 @@ template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>()
 {
     return _solver_lu.get_Vm();
+}
+template<>
+Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>()
+{
+    return _solver_gaussseidel.get_Vm();
 }
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::KLU>()

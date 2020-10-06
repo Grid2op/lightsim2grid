@@ -100,7 +100,8 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
 
     def test_dir(self):
-        self.skipTest("SparseLUSolver is not installed")
+        if not SparseLUSolver_AVAILBLE:
+            self.skipTest("SparseLUSolver is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

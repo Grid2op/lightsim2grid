@@ -14,8 +14,9 @@
 // import newton raphson solvers using different linear algebra solvers
 #include "KLUSolver.h"
 #include "SparseLUSolver.h"
+#include "GaussSeidelSolver.h"
 
-enum class SolverType { SparseLU, KLU};
+enum class SolverType { SparseLU, KLU, GaussSeidel};
 
 class ChooseSolver
 {
@@ -45,6 +46,7 @@ class ChooseSolver
         {
             // reset all the solvers available
             _solver_lu.reset();
+            _solver_gaussseidel.reset();
             #ifdef KLU_SOLVER_AVAILABLE
                 _solver_klu.reset();
             #endif  // KLU_SOLVER_AVAILABLE
@@ -96,6 +98,7 @@ class ChooseSolver
         SolverType _solver_type;
         SolverType _type_used_for_nr;
         SparseLUSolver _solver_lu;
+        SparseLUSolver _solver_gaussseidel;
         #ifdef KLU_SOLVER_AVAILABLE
             KLUSolver _solver_klu;
         #endif  // KLU_SOLVER_AVAILABLE
@@ -109,6 +112,8 @@ template<>
 Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::SparseLU>();
 template<>
 Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::KLU>();
+template<>
+Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>();
 
 template<>
 bool ChooseSolver::do_newton_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
@@ -128,19 +133,34 @@ bool ChooseSolver::do_newton_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdou
                        int max_iter,
                        double tol
                        );
+template<>
+bool ChooseSolver::do_newton_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
+                       Eigen::VectorXcd & V,
+                       const Eigen::VectorXcd & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
+                       int max_iter,
+                       double tol
+                       );
 
 template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::SparseLU>();
 template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::KLU>();
+template<>
+Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>();
 
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::SparseLU>();
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::KLU>();
 template<>
+Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>();
+template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>();
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::KLU>();
+template<>
+Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>();
 
 #endif  //CHOOSESOLVER_H

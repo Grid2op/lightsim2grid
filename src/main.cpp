@@ -12,6 +12,7 @@
 
 #include "KLUSolver.h"
 #include "SparseLUSolver.h"
+#include "GaussSeidelSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
 
@@ -19,9 +20,12 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
+
+    // solvers
     py::enum_<SolverType>(m, "SolverType")
         .value("SparseLU", SolverType::SparseLU)
         .value("KLU", SolverType::KLU)
+        .value("GaussSeidel", SolverType::GaussSeidel)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
@@ -51,6 +55,19 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("do_newton", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
+    py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver")
+        .def(py::init<>())
+        .def("get_J", &GaussSeidelSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &GaussSeidelSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &GaussSeidelSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &GaussSeidelSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &GaussSeidelSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &GaussSeidelSolver::reset)  // reset the solver to its original state
+        .def("converged", &GaussSeidelSolver::converged)  // whether the solver has converged
+        .def("do_newton", &GaussSeidelSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &GaussSeidelSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &GaussSeidelSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
 
     // converters

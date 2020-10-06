@@ -99,7 +99,8 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
 
     def test_dir(self):
-        self.skipTest("KLU is not installed")
+        if not KLU_AVAILBLE:
+            self.skipTest("KLU is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)
