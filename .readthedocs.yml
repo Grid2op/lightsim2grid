@@ -1,5 +1,11 @@
 version: 2
 
+submodules:
+  include:
+     - SuiteSparse
+     - eigen
+  recursive: true
+
 python:
     version: 3.6
     install:
