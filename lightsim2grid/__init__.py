@@ -1,6 +1,6 @@
 __version__ = "0.3.0"
 
-__all__ = ["compute_powerflow", "newtonpf"]
+__all__ = ["newtonpf"]
 try:
     from lightsim2grid.LightSimBackend import LightSimBackend
     __all__.append("LightSimBackend")
