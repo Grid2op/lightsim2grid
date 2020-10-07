@@ -172,8 +172,8 @@ class MakeTests(unittest.TestCase):
 
         ppopt = {"PF_TOL": self.tol, "PF_MAX_IT_GS": self.max_it, "VERBOSE": False}
 
-        has_conv = self.solver.do_newton(self.Ybus, self.V_init, self.Sbus, self.pv,
-                                         self.pq, self.max_it, self.tol)
+        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.pv,
+                                          self.pq, self.max_it, self.tol)
         # start = time.time()
         Vgs, convergedgs, max_itgs = gausspf(copy.deepcopy(self.Ybus), copy.deepcopy(self.Sbus),
                                              copy.deepcopy(self.V_init),
