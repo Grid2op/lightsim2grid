@@ -87,7 +87,7 @@ class MakeTests(unittest.TestCase):
 
     def solver_aux(self):
         self.solver.reset()
-        has_conv = self.solver.do_newton(self.Ybus, self.V_init, self.Sbus, self.pv, self.pq, self.max_it, self.tol)
+        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.pv, self.pq, self.max_it, self.tol)
         assert has_conv, "the load flow has diverged for {}".format(self.path)
         J = self.solver.get_J()
         Va = self.solver.get_Va()
@@ -100,7 +100,8 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
 
     def test_dir(self):
-        self.skipTest("SparseLUSolver is not installed")
+        if not SparseLUSolver_AVAILBLE:
+            self.skipTest("SparseLUSolver is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

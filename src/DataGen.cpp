@@ -163,8 +163,15 @@ void DataGen::set_vm(Eigen::VectorXcd & V, const std::vector<int> & id_grid_to_s
             //TODO improve error message with the gen_id
             throw std::runtime_error("One generator is connected to a disconnected bus.");
         }
+
+        // scale the input V such that abs(V) = Vm for this generator
         double tmp = std::abs(V(bus_id_solver));
-        if(tmp == 0.) tmp = 1.0;
+        if(tmp == 0.)
+        {
+            // if it was 0. i force it to 1. (otherwise the rest of the computation would make it O. still)
+            V(bus_id_solver) = 1.0;
+            tmp = 1.0;
+        }
         tmp = 1.0 / tmp;
         tmp *= vm_pu_(gen_id);
         V(bus_id_solver) *= tmp;
