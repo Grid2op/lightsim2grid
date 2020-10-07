@@ -305,6 +305,7 @@ class GridModel : public DataGeneric
         // void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
 
         // ac powerflows
+        Eigen::VectorXcd pre_process_solver(const Eigen::VectorXcd & Vinit);
         void init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus, Eigen::VectorXcd & Sbus,
                        std::vector<int> & id_me_to_solver, std::vector<int>& id_solver_to_me,
                        int & slack_bus_id_solver);
@@ -313,6 +314,10 @@ class GridModel : public DataGeneric
         void fillpv_pq(const std::vector<int>& id_me_to_solver);
 
         // results
+        /**process the results from the solver to this instance
+        **/
+        void process_results(bool conv, Eigen::VectorXcd & res, const Eigen::VectorXcd & Vinit);
+
         /**
         Compute the results vector from the Va, Vm post powerflow
         **/

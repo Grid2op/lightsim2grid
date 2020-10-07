@@ -1,3 +1,11 @@
+// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 #include "ChooseSolver.h"
 #include <iostream>
 // template specialization
@@ -29,19 +37,19 @@ Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>()
 
 
 template<SolverType ST>
-bool ChooseSolver::do_newton_tmp(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
-                       const Eigen::VectorXi & pv,
-                       const Eigen::VectorXi & pq,
-                       int max_iter,
-                       double tol
-                       )
+bool ChooseSolver::compute_pf_tmp(const Eigen::SparseMatrix<cdouble> & Ybus,
+                                  Eigen::VectorXcd & V,
+                                  const Eigen::VectorXcd & Sbus,
+                                  const Eigen::VectorXi & pv,
+                                  const Eigen::VectorXi & pq,
+                                  int max_iter,
+                                  double tol
+                                  )
 {
     throw std::runtime_error("Unknown solver type.");
 }
 template<>
-bool ChooseSolver::do_newton_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
+bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
@@ -50,10 +58,10 @@ bool ChooseSolver::do_newton_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix
                        double tol
                        )
 {
-    return _solver_lu.do_newton(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    return _solver_lu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
 }
 template<>
-bool ChooseSolver::do_newton_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
+bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
@@ -62,10 +70,10 @@ bool ChooseSolver::do_newton_tmp<SolverType::GaussSeidel>(const Eigen::SparseMat
                        double tol
                        )
 {
-    return _solver_gaussseidel.do_newton(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    return _solver_gaussseidel.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
 }
 template<>
-bool ChooseSolver::do_newton_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
+bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
@@ -76,9 +84,9 @@ bool ChooseSolver::do_newton_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdou
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("do_newton: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("compute_pf: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
-        return _solver_klu.do_newton(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return _solver_klu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
     #endif
 }
 
@@ -95,7 +103,7 @@ Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::SparseLU>()
 template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>()
 {
-    return _solver_gaussseidel.get_J();
+    throw std::runtime_error("get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");
 }
 template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::KLU>()
@@ -167,6 +175,8 @@ Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V(){
          return get_V_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_V_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::GaussSeidel){
+         return get_V_tmp<SolverType::GaussSeidel>();
     }else{
         throw std::runtime_error("Unknown solver type.");
     }
@@ -179,6 +189,8 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va(){
          return get_Va_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_Va_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::GaussSeidel){
+         return get_Va_tmp<SolverType::GaussSeidel>();
     }else{
         throw std::runtime_error("Unknown solver type.");
     }
@@ -190,26 +202,30 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm(){
          return get_Vm_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_Vm_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::GaussSeidel){
+         return get_Vm_tmp<SolverType::GaussSeidel>();
     }else{
         throw std::runtime_error("Unknown solver type.");
     }
 }
 
-bool ChooseSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
-                             Eigen::VectorXcd & V,
-                             const Eigen::VectorXcd & Sbus,
-                             const Eigen::VectorXi & pv,
-                             const Eigen::VectorXi & pq,
-                             int max_iter,
-                             double tol
-                             )
+bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
+                              Eigen::VectorXcd & V,
+                              const Eigen::VectorXcd & Sbus,
+                              const Eigen::VectorXi & pv,
+                              const Eigen::VectorXi & pq,
+                              int max_iter,
+                              double tol
+                              )
 {
     _type_used_for_nr = _solver_type;
     if(_solver_type == SolverType::SparseLU)
     {
-        return do_newton_tmp<SolverType::SparseLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::SparseLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::KLU){
-        return do_newton_tmp<SolverType::KLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::KLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    }else if(_solver_type == SolverType::GaussSeidel){
+        return compute_pf_tmp<SolverType::GaussSeidel>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else{
         throw std::runtime_error("Unknown solver type.");
     }
@@ -222,6 +238,8 @@ Eigen::SparseMatrix<double> ChooseSolver::get_J(){
          return get_J_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_J_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::GaussSeidel){
+         return get_J_tmp<SolverType::GaussSeidel>();
     }else{
         throw std::runtime_error("Unknown solver type.");
     }

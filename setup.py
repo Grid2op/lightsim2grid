@@ -170,7 +170,7 @@ extra_compile_args = extra_compile_args_tmp
 src_files = ['src/main.cpp', "src/SparseLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
              "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
              "src/DataLoad.cpp", "src/DataGen.cpp", "src/BaseNRSolver.cpp", "src/ChooseSolver.cpp",
-             "src/GaussSeidelSolver.cpp"]
+             "src/GaussSeidelSolver.cpp", "src/BaseSolver.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")

@@ -38,9 +38,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &KLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
         .def("reset", &KLUSolver::reset)  // reset the solver to its original state
         .def("converged", &KLUSolver::converged)  // whether the solver has converged
-        .def("do_newton", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("compute_pf", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+        .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     #endif
 
     py::class_<SparseLUSolver>(m, "SparseLUSolver")
@@ -52,9 +52,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &SparseLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
         .def("reset", &SparseLUSolver::reset)  // reset the solver to its original state
         .def("converged", &SparseLUSolver::converged)  // whether the solver has converged
-        .def("do_newton", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("compute_pf", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+        .def("solve", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
     py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver")
         .def(py::init<>())
@@ -65,9 +65,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &GaussSeidelSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
         .def("reset", &GaussSeidelSolver::reset)  // reset the solver to its original state
         .def("converged", &GaussSeidelSolver::converged)  // whether the solver has converged
-        .def("do_newton", &GaussSeidelSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("compute_pf", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
         .def("get_timers", &GaussSeidelSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &GaussSeidelSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+        .def("solve", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
 
     // converters

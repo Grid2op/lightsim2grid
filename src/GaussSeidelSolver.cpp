@@ -8,17 +8,14 @@
 
 #include "GaussSeidelSolver.h"
 
-
-const cdouble GaussSeidelSolver::my_i = {0., 1.};
-
-bool GaussSeidelSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                  Eigen::VectorXcd & V,
-                                  const Eigen::VectorXcd & Sbus,
-                                  const Eigen::VectorXi & pv,
-                                  const Eigen::VectorXi & pq,
-                                  int max_iter,
-                                  double tol
-                                  )
+bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
+                                   Eigen::VectorXcd & V,
+                                   const Eigen::VectorXcd & Sbus,
+                                   const Eigen::VectorXi & pv,
+                                   const Eigen::VectorXi & pq,
+                                   int max_iter,
+                                   double tol
+                                   )
 {
     /**
     pv: id of the pv buses
@@ -170,42 +167,4 @@ void GaussSeidelSolver::one_iter_all_at_once(Eigen::VectorXcd & tmp_Sbus,
         int k = pv.coeff(k_tmp);
         V_.coeffRef(k) *= Vm_.coeff(k) / std::abs(V_.coeff(k));
     }
-}
-
-void GaussSeidelSolver::reset(){
-    //NEW
-    n_ = -1;
-    Vm_ = Eigen::VectorXd();  // voltage magnitude
-    Va_= Eigen::VectorXd();  // voltage angle
-    V_= Eigen::VectorXcd();  // voltage angle
-    nr_iter_ = 0;  // number of iteration performs by the algorithm
-    err_ = -1; //error message:
-    // reset timers
-    reset_timer();
-}
-
-Eigen::VectorXd GaussSeidelSolver::_evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Ybus,
-                                                const Eigen::VectorXcd & V,
-                                                const Eigen::VectorXcd & Sbus,
-                                                const Eigen::VectorXi & pv,
-                                                const Eigen::VectorXi & pq)
-{
-    auto timer = CustTimer();
-    auto npv = pv.size();
-    auto npq = pq.size();
-
-    // compute the mismatch
-    Eigen::VectorXcd tmp = Ybus * V;  // this is a vector
-    tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - Sbus.array();
-    auto real_ = mis.real();
-    auto imag_ = mis.imag();
-
-    // build and fill the result
-    Eigen::VectorXd res(npv + 2*npq);
-    res.segment(0,npv) = real_(pv);
-    res.segment(npv,npq) = real_(pq);
-    res.segment(npv+npq, npq) = imag_(pq);
-    timer_Fx_ += timer.duration();
-    return res;
 }

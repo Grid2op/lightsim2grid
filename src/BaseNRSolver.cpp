@@ -8,16 +8,14 @@
 
 #include "BaseNRSolver.h"
 
-const cdouble BaseNRSolver::my_i = {0., 1.};
-
-bool BaseNRSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
-                             Eigen::VectorXcd & V,
-                             const Eigen::VectorXcd & Sbus,
-                             const Eigen::VectorXi & pv,
-                             const Eigen::VectorXi & pq,
-                             int max_iter,
-                             double tol
-                             )
+bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
+                              Eigen::VectorXcd & V,
+                              const Eigen::VectorXcd & Sbus,
+                              const Eigen::VectorXi & pv,
+                              const Eigen::VectorXi & pq,
+                              int max_iter,
+                              double tol
+                              )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -101,19 +99,12 @@ bool BaseNRSolver::do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
 
 
 void BaseNRSolver::reset(){
-    //NEW
-    n_ = -1;
-    Vm_ = Eigen::VectorXd();  // voltage magnitude
-    Va_= Eigen::VectorXd();  // voltage angle
+    BaseSolver::reset();
+    // reset specific attributes
     J_ = Eigen::SparseMatrix<double>();  // the jacobian matrix
     dS_dVm_ = Eigen::SparseMatrix<cdouble>();
     dS_dVa_ = Eigen::SparseMatrix<cdouble>();
     need_factorize_ = true;
-    nr_iter_ = 0;  // number of iteration performs by the Newton Raphson algorithm
-    err_ = -1; //error message:
-
-    // reset timers
-    reset_timer();
 }
 
 void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
@@ -334,30 +325,4 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybu
     }
     J_.makeCompressed();
     timer_fillJ_ += timer.duration();
-}
-
-Eigen::VectorXd BaseNRSolver::_evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Ybus,
-                                        const Eigen::VectorXcd & V,
-                                        const Eigen::VectorXcd & Sbus,
-                                        const Eigen::VectorXi & pv,
-                                        const Eigen::VectorXi & pq)
-{
-    auto timer = CustTimer();
-    auto npv = pv.size();
-    auto npq = pq.size();
-
-    // compute the mismatch
-    Eigen::VectorXcd tmp = Ybus * V;  // this is a vector
-    tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - Sbus.array();
-    auto real_ = mis.real();
-    auto imag_ = mis.imag();
-
-    // build and fill the result
-    Eigen::VectorXd res(npv + 2*npq);
-    res.segment(0,npv) = real_(pv);
-    res.segment(npv,npq) = real_(pq);
-    res.segment(npv+npq, npq) = imag_(pq);
-    timer_Fx_ += timer.duration();
-    return res;
 }

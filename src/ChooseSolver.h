@@ -18,6 +18,9 @@
 
 enum class SolverType { SparseLU, KLU, GaussSeidel};
 
+
+// NB: when adding a new solver, you need to specialize the *tmp method (eg get_Va_tmp)
+// and also to "forward" the specialisation (adding the if(solvertype==XXX)) in the compute_pf, get_V, get_J, get_Va, get_Vm
 class ChooseSolver
 {
     public:
@@ -53,14 +56,14 @@ class ChooseSolver
         }
 
         // forward to the right solver used
-        bool do_newton(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
-                       const Eigen::VectorXi & pv,
-                       const Eigen::VectorXi & pq,
-                       int max_iter,
-                       double tol
-                       );
+        bool compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
+                        Eigen::VectorXcd & V,
+                        const Eigen::VectorXcd & Sbus,
+                        const Eigen::VectorXi & pv,
+                        const Eigen::VectorXi & pq,
+                        int max_iter,
+                        double tol
+                        );
         Eigen::Ref<Eigen::VectorXcd> get_V();
         Eigen::SparseMatrix<double> get_J();
         Eigen::Ref<Eigen::VectorXd> get_Va();
@@ -85,14 +88,14 @@ class ChooseSolver
         Eigen::Ref<Eigen::VectorXd> get_Vm_tmp();
 
         template<SolverType ST>
-        bool do_newton_tmp(const Eigen::SparseMatrix<cdouble> & Ybus,
-                           Eigen::VectorXcd & V,
-                           const Eigen::VectorXcd & Sbus,
-                           const Eigen::VectorXi & pv,
-                           const Eigen::VectorXi & pq,
-                           int max_iter,
-                           double tol
-                           );
+        bool compute_pf_tmp(const Eigen::SparseMatrix<cdouble> & Ybus,
+                            Eigen::VectorXcd & V,
+                            const Eigen::VectorXcd & Sbus,
+                            const Eigen::VectorXi & pv,
+                            const Eigen::VectorXi & pq,
+                            int max_iter,
+                            double tol
+                            );
 
     protected:
         SolverType _solver_type;
@@ -116,7 +119,7 @@ template<>
 Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>();
 
 template<>
-bool ChooseSolver::do_newton_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
+bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
@@ -125,7 +128,7 @@ bool ChooseSolver::do_newton_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix
                        double tol
                        );
 template<>
-bool ChooseSolver::do_newton_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
+bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
@@ -134,7 +137,7 @@ bool ChooseSolver::do_newton_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdou
                        double tol
                        );
 template<>
-bool ChooseSolver::do_newton_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
+bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
                        Eigen::VectorXcd & V,
                        const Eigen::VectorXcd & Sbus,
                        const Eigen::VectorXi & pv,
