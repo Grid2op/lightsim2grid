@@ -175,3 +175,4 @@ test_pickle.pickle
 test_pickle.py
 documentation
 .boring_bug.py.swp
+test_dcpf.py
