@@ -1,6 +1,9 @@
 __version__ = "0.3.0"
 
-__all__ = ["newtonpf"]
+__all__ = ["newtonpf", "SolverType"]
+
+from lightsim2grid.initGridModel import SolverType
+
 try:
     from lightsim2grid.LightSimBackend import LightSimBackend
     __all__.append("LightSimBackend")

@@ -57,3 +57,39 @@ bool BaseSolver::_check_for_convergence(const Eigen::VectorXd & F,
     timer_check_ += timer.duration();
     return res;
 }
+
+int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
+                                     const Eigen::VectorXi & pq,
+                                     unsigned int nb_bus)
+{
+    // pv: list of index of pv nodes
+    // pq: list of index of pq nodes
+    // nb_bus: total number of bus in the grid
+    // returns: res: the id of the unique slack bus (throw an error if no slack bus is found)
+    // /!\ does not support multiple slack bus!!!
+
+    int res=-1;
+    // run through both pv and pq nodes and declare they are not slack bus
+    std::vector<bool> tmp(nb_bus, true);
+    for(unsigned int k=0; k < pv.size(); ++k)
+    {
+        tmp[pv[k]] = false;
+    }
+    for(unsigned int k=0; k < pq.size(); ++k)
+    {
+        tmp[pq[k]] = false;
+    }
+    // run through all buses
+    for(unsigned int k=0; k < nb_bus; ++k)
+    {
+        if(tmp[k])
+        {
+            res = k;
+            break;
+        }
+    }
+    if(res == -1){
+        throw std::runtime_error("No slack bus is found in your grid");
+    }
+    return res;
+}

@@ -47,11 +47,11 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
         // https://www.sanfoundry.com/cpp-program-implement-gauss-seidel-method/
         // https://fr.mathworks.com/matlabcentral/fileexchange/14089-gauss-seidel-load-flow-analysis
         // https://github.com/rwl/PYPOWER/blob/master/pypower/gausspf.py
-//        one_iter_all_at_once(tmp_Sbus, Ybus, pv, pq);
 
-        auto timer = CustTimer();
+        auto timer2 = CustTimer();
+        // one_iter_all_at_once(tmp_Sbus, Ybus, pv, pq);
         one_iter(tmp_Sbus, Ybus, pv, pq);
-        timer_solve_ += timer.duration();
+        timer_solve_ += timer2.duration();
 
         // #####################
         // stopping criteria

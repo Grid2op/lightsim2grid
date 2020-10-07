@@ -28,6 +28,12 @@
 #include "Utils.h"
 
 // TODO make err_ more explicit: use an enum
+
+/**
+This class represents a solver to compute powerflow.
+
+It can be derived for different usecase, for example for DC powerflow, AC powerflow using Newton Raphson method etc.
+**/
 class BaseSolver
 {
     public:
@@ -104,6 +110,10 @@ class BaseSolver
                       const Eigen::VectorXi & pv,
                       const Eigen::VectorXi & pq
                       );
+
+        int extract_slack_bus_id(const Eigen::VectorXi & pv,
+                                 const Eigen::VectorXi & pq,
+                                 unsigned int nb_bus);
 
     protected:
         // solver initialization

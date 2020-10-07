@@ -15,12 +15,15 @@
 #include "KLUSolver.h"
 #include "SparseLUSolver.h"
 #include "GaussSeidelSolver.h"
+#include "DCSolver.h"
 
-enum class SolverType { SparseLU, KLU, GaussSeidel};
+enum class SolverType { SparseLU, KLU, GaussSeidel, DC};
 
 
 // NB: when adding a new solver, you need to specialize the *tmp method (eg get_Va_tmp)
 // and also to "forward" the specialisation (adding the if(solvertype==XXX)) in the compute_pf, get_V, get_J, get_Va, get_Vm
+// and the "available_solvers" (add it to the list)
+// and to add a attribute with the proper class and the reset method
 class ChooseSolver
 {
     public:
@@ -30,6 +33,8 @@ class ChooseSolver
         {
             std::vector<SolverType> res;
             res.push_back(SolverType::SparseLU);
+            res.push_back(SolverType::GaussSeidel);
+            res.push_back(SolverType::DC);
             #ifdef KLU_SOLVER_AVAILABLE
                 res.push_back(SolverType::KLU);
             #endif
@@ -50,6 +55,7 @@ class ChooseSolver
             // reset all the solvers available
             _solver_lu.reset();
             _solver_gaussseidel.reset();
+            _solver_dc.reset();
             #ifdef KLU_SOLVER_AVAILABLE
                 _solver_klu.reset();
             #endif  // KLU_SOLVER_AVAILABLE
@@ -100,8 +106,11 @@ class ChooseSolver
     protected:
         SolverType _solver_type;
         SolverType _type_used_for_nr;
+
+        // all types
         SparseLUSolver _solver_lu;
-        SparseLUSolver _solver_gaussseidel;
+        GaussSeidelSolver _solver_gaussseidel;
+        DCSolver _solver_dc;
         #ifdef KLU_SOLVER_AVAILABLE
             KLUSolver _solver_klu;
         #endif  // KLU_SOLVER_AVAILABLE
@@ -117,6 +126,8 @@ template<>
 Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::KLU>();
 template<>
 Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>();
+template<>
+Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::DC>();
 
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
@@ -145,6 +156,15 @@ bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMa
                        int max_iter,
                        double tol
                        );
+template<>
+bool ChooseSolver::compute_pf_tmp<SolverType::DC>(const Eigen::SparseMatrix<cdouble> & Ybus,
+                       Eigen::VectorXcd & V,
+                       const Eigen::VectorXcd & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
+                       int max_iter,
+                       double tol
+                       );
 
 template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::SparseLU>();
@@ -152,6 +172,8 @@ template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::KLU>();
 template<>
 Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>();
+template<>
+Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::DC>();
 
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::SparseLU>();
@@ -160,10 +182,14 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::KLU>();
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>();
 template<>
+Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::DC>();
+template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>();
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::KLU>();
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>();
+template<>
+Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::DC>();
 
 #endif  //CHOOSESOLVER_H
