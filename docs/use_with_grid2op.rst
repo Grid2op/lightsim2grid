@@ -118,48 +118,72 @@ In this section we will expose some brief benchmarks about the use of lightsim2g
 The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
 
 All of them has been run on a computer with a `Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz` processor. The command
-to run the benchmark is (once `cd` in the [benchmark](./benchmarks) folder folder):
+to run the benchmark is (once `cd` in the [benchmark](./benchmarks) folder):
 
 .. code-block:: bash
 
-    python3 do_nothing.py --name l2rpn_case14_sandbox  # for environment based on IEEE 14 grid
-    python3 do_nothing.py --name l2rpn_neurips_2020_track2  --no_test  # for environment based on IEEE 118 grid
-
-We compare 3 different backends:
-
-- **PP**: PandaPowerBackend (default grid2op backend)
-- **LS+SLU** (LightSimBackend+SparseLU): the grid2op backend based on lightsim2grid that uses the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform)
-- **LS+KLU** (LightSimBackend+KLU): the grid2op backend based on lightsim2grid that uses the linear solver
-  "KLU" from the SuiteSparse c package, available only (for now) on Linux and Mac Os.
-
-Computation time
-~~~~~~~~~~~~~~~~~~~
-
-In this first subsection we compare the computation time from a grid2op point of view (number of step
-per second) and the time the solver take to perform a powerflow (counting the resolution time and
-not the time to update the grid or run all the checks perform by grid2op).
-
-+------------+--------------------+--------------------+-------------------------------+-------------------------------+
-|            | IEEE 14 (it / s)   |  IEEE 118 (it / s) |  IEEE 14 (powerflow time, ms) | IEEE 118 (powerflow time, ms) |
-+============+====================+====================+===============================+===============================+
-| PP         |   68.5             |  42.2              |   12.1                        |  14.3                         |
-+------------+--------------------+--------------------+-------------------------------+-------------------------------+
-| LS+SLU     |   880              |  458               |   0.20                        |  1.08                         |
-+------------+--------------------+--------------------+-------------------------------+-------------------------------+
-| LS+KLU     |   880              |  596               |   0.17                        |  0.62                         |
-+------------+--------------------+--------------------+-------------------------------+-------------------------------+
-
+    python3 benchmark_solvers.py --name l2rpn_case14_sandbox --no_test --number 1000
+    python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --number 1000
 
 (results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
 
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-From a grid2op perspective, lightsim2grid allows to compute 880 steps each second on the case 14 and "only" 68.5
+We compare 4 different backends:
+
+- **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks
+- **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
+  method to compute the powerflows
+- **LS+SLU** (LightSimBackend+SparseLU): the grid2op backend based on lightsim2grid that uses the
+  "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
+  Eigen c++ library (available on all platform)
+- **LS+KLU** (LightSimBackend+KLU): he grid2op backend based on lightsim2grid that uses the
+  "Newton Raphson" algorithm coupled with the linear solver
+  "KLU" from the SuiteSparse c package, available only (for now) on Linux and Mac OS.
+
+Computation time
+~~~~~~~~~~~~~~~~~~~
+
+In this first subsection we compare the computation times:
+
+- **grid2op speed** from a grid2op point of view
+  (this include the time to compute the powerflow, plus the time to modify the powergrid plus the
+  time to read back the data once the powerflow has run plus the time to update the environment and
+  the observations etc.)
+- **grid2op powerflow time** corresponds to the time the solver take to perform a powerflow
+  as seen from grid2op (counting the resolution time and some time to check the validity of the results but
+  not the time to update the grid nor the grid2op environment).
+- **solver powerflow time** corresponds to only the time spend in the solver itself. It does not take into
+  account any of the checking, nor the reading back of the data etc.
+
+
+First on an environment based on the IEEE case 14 grid:
+
+================  ======================  =============================  ============================
+case14_sandbox      grid2op speed (it/s)    grid2op powerflow time (ms)    solver powerflow time (ms)
+================  ======================  =============================  ============================
+PP                                    65                         12.6                         12.6
+LS+GS                                671                          0.504                        0.381
+LS+SLU                               826                          0.223                        0.0947
+LS+KLU                               864                          0.179                        0.0532
+================  ======================  =============================  ============================
+
+From a grid2op perspective, lightsim2grid allows to compute 860 steps each second on the case 14 and "only" 68.5
 for the default PandaPower Backend, leading to a speed up of **~13** in this case (lightsim2grid is 13 times faster
 than Pandapower). For such a small environment, there is no difference in using KLU linear solver (not available on
 Windows based machine) compared to using the SparseLU solver of Eigen.
+
+Then on an environment based on the IEEE case 118:
+
+=====================  ======================  =============================  ============================
+neurips_2020_track2      grid2op speed (it/s)    grid2op powerflow time (ms)    solver powerflow time (ms)
+=====================  ======================  =============================  ============================
+PP                                         41                         14.4                          14.4
+LS+GS                                       5                        195                           195
+LS+SLU                                    465                          1.1                           0.826
+LS+KLU                                    604                          0.627                         0.352
+=====================  ======================  =============================  ============================
 
 For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU)
 [for now only available on linux and MacOS] is **~14** time faster than
@@ -168,8 +192,8 @@ times faster than using the default backend [using sparseLU linear solver is app
 
 If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
 initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 575 different states) approximately **0.62 ms**
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **14.3 ms** when using
+grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.35 ms**
+to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **14.4 ms** when using
 the PandaPowerBackend.
 
 Differences
@@ -180,33 +204,41 @@ Using the same command, we report the maximum value of the differences between d
 - `gen_p` : the generators active production values
 - `gen_q`: the generators reactive production values
 
-Note that only the maximum values across all the steps (1000 for the IEEE case 14 and 525 for the IEEE case 118)
-and across all the lines (or generators) is displayed. This is then an upper bound.
+Note that only the maximum values (of the absolute differences) across all the steps (1000 for the IEEE case 14 and
+1000 for the IEEE case 118)
+and across all the lines (or generators) is displayed.
 
 We report only the difference compared with the baseline which is pandapower (PP).
 
 Here are the results for the IEEE case 14 (max over 1000 powerflows):
-+------------+--------------------+--------------------+-------------------------------+
-|            | IEEE 14 aor        |  IEEE 14 gen_p     |  IEEE 14 gen_q                |
-+============+====================+====================+===============================+
-| PP         |   0.00             |  0.00              |  0.00                         |
-+------------+--------------------+--------------------+-------------------------------+
-| LS+SLU     |   0.00             |  0.00              |   0.00                        |
-+------------+--------------------+--------------------+-------------------------------+
-| LS+KLU     |   4.48e-12         |  0.00              |   9.54e-7                     |
-+------------+--------------------+--------------------+-------------------------------+
 
-Here are the results for the IEEE case 118 (max over 575 powerflows):
-+------------+--------------------+--------------------+-------------------------------+
-|            | IEEE 118 aor       |  IEEE 118 gen_p    |  IEEE 118 gen_q               |
-+============+====================+====================+===============================+
-| PP         |   0.00             |  0.00              |  0.00                         |
-+------------+--------------------+--------------------+-------------------------------+
-| LS+SLU     |   0.00             |  0.00              |   0.00                        |
-+------------+--------------------+--------------------+-------------------------------+
-| LS+KLU     |   4.57e-12         |  0.00              |   9.54e-7                     |
-+------------+--------------------+--------------------+-------------------------------+
+============================  ==============  ==============  ================
+case14_sandbox (1000 iter)      Δ aor (amps)    Δ gen_p (MW)    Δ gen_q (MVAr)
+============================  ==============  ==============  ================
+PP                                   0              0                 0
+LS+GS                                6.1e-05        7.63e-06          1.91e-06
+LS+SLU                               0              0                 0
+LS+KLU                               0              0                 0
+============================  ==============  ==============  ================
 
+Here are the results for the IEEE case 118 (max over 1000 powerflows):
+
+=================================  ==============  ==============  ================
+neurips_2020_track2 (1000 iter)      Δ aor (amps)    Δ gen_p (MW)    Δ gen_q (MVAr)
+=================================  ==============  ==============  ================
+PP                                        0              0                 0
+LS+GS                                     6.1e-05        3.81e-06          1.53e-05
+LS+SLU                                    0              0                 9.54e-07
+LS+KLU                                    0              0                 9.54e-07
+=================================  ==============  ==============  ================
+
+As we can see on all the tables above, the difference when using lightsim and pandapower is rather
+small, even when using a different algorithm to solve the powerflow (LS + GS corresponds to
+using Gauss Seidel as opposed to using Newton Raphson solver)
+
+When using Newton Raphson solvers, the difference in absolute values when using lightsim2grid compared
+with using PandaPowerBackend is neglectible: less than 1e-06 in all cases (and 0.00 when comparing the
+flows on the powerline for both environments).
 
 * :ref:`genindex`
 * :ref:`modindex`

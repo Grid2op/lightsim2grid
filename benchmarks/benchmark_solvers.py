@@ -89,6 +89,11 @@ def main(max_ts, ENV_NAME, test=True):
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
     res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
     print(res_use_with_grid2op_1)
+    print()
+
+    res_github_readme = tabulate(tab, headers=hds,  tablefmt="github")
+    print(res_github_readme)
+    print()
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
     tab = [["PP", "0.00", "0.00", "0.00"]]
