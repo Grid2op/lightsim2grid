@@ -193,11 +193,47 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("get_Va: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("get_Vm: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_Vm();
     #endif
 }
+
+template<SolverType ST>
+double ChooseSolver::get_computation_time_tmp()
+{
+    throw std::runtime_error("Unknown solver type.");
+}
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::SparseLU>()
+{
+    const auto & res =  _solver_lu.get_timers();
+    return std::get<3>(res);
+}
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::GaussSeidel>()
+{
+    const auto & res =  _solver_gaussseidel.get_timers();
+    return std::get<3>(res);
+}
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::KLU>()
+{
+    #ifndef KLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("get_computation_time: Impossible to use the KLU solver, that is not available on your plaform.");
+    #else
+        const auto & res =  _solver_klu.get_timers();
+        return std::get<3>(res);
+    #endif
+}
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::DC>()
+{
+   const auto & res =  _solver_dc.get_timers();
+   return std::get<3>(res);
+}
+//TODO refactor all the functions above by making a template function "get_solver"
 
 // function definition
 Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V(){
@@ -282,6 +318,23 @@ Eigen::SparseMatrix<double> ChooseSolver::get_J(){
          return get_J_tmp<SolverType::GaussSeidel>();
     }else if(_solver_type == SolverType::DC){
          return get_J_tmp<SolverType::DC>();
+    }else{
+        throw std::runtime_error("Unknown solver type.");
+    }
+}
+
+double ChooseSolver::get_computation_time()
+{
+    check_right_solver();
+    if(_solver_type == SolverType::SparseLU)
+    {
+         return get_computation_time_tmp<SolverType::SparseLU>();
+    }else if(_solver_type == SolverType::KLU){
+         return get_computation_time_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::GaussSeidel){
+         return get_computation_time_tmp<SolverType::GaussSeidel>();
+    }else if(_solver_type == SolverType::DC){
+         return get_computation_time_tmp<SolverType::DC>();
     }else{
         throw std::runtime_error("Unknown solver type.");
     }

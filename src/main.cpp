@@ -119,6 +119,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // solver control
         .def("change_solver", &GridModel::change_solver)  // change the solver to use (KLU - faster or SparseLU - available everywhere)
         .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
+        .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
+        .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
+
         // init the grid
         .def("init_bus", &GridModel::init_bus)
         .def("init_powerlines", &GridModel::init_powerlines)

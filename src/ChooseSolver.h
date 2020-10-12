@@ -62,6 +62,7 @@ class ChooseSolver
         }
 
         // forward to the right solver used
+        //TODO inline all of that
         bool compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
                         Eigen::VectorXcd & V,
                         const Eigen::VectorXcd & Sbus,
@@ -74,6 +75,7 @@ class ChooseSolver
         Eigen::SparseMatrix<double> get_J();
         Eigen::Ref<Eigen::VectorXd> get_Va();
         Eigen::Ref<Eigen::VectorXd> get_Vm();
+        double get_computation_time();
 
     private:
         void check_right_solver()
@@ -92,6 +94,9 @@ class ChooseSolver
 
         template<SolverType ST>
         Eigen::Ref<Eigen::VectorXd> get_Vm_tmp();
+
+        template<SolverType ST>
+        double get_computation_time_tmp();
 
         template<SolverType ST>
         bool compute_pf_tmp(const Eigen::SparseMatrix<cdouble> & Ybus,
@@ -191,5 +196,11 @@ template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>();
 template<>
 Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::DC>();
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::KLU>();
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::GaussSeidel>();
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::DC>();
 
 #endif  //CHOOSESOLVER_H

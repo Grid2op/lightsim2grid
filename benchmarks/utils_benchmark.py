@@ -7,10 +7,19 @@
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
 import time
+import re
 import numpy as np
 from tqdm import tqdm
 import argparse
+from grid2op.Environment import MultiMixEnvironment
 import pdb
+
+
+def get_env_name_displayed(env_name):
+    res = re.sub("^l2rpn_", "", env_name)
+    res = re.sub("_small$", "", res)
+    res = re.sub("_large$", "", res)
+    return res
 
 
 def print_res(env_klu, env_pp,
@@ -35,21 +44,40 @@ def print_res(env_klu, env_pp,
     print("Absolute value of the difference (max) for gen_q: {}".format(np.max(np.abs(gen_q_klu - gen_q_pp))))
 
 
-def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False):
+def get_rest(env_pp, env_KLU, env_SLU, env_GS):
+    pass
+
+
+def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_solver=False, env_seed=None):
+    if with_type_solver:
+        print(f"begin: {env.backend._grid.get_solver_type()}")
     nb_rows = min(env.chronics_handler.max_timestep(), max_ts)
     aor = np.zeros((nb_rows, env.n_line))
     gen_p = np.zeros((nb_rows, env.n_gen))
     gen_q = np.zeros((nb_rows, env.n_gen))
+    need_reset = False
+    if isinstance(env, MultiMixEnvironment):
+        # get the first (in alphabetical order) env in case of multimix
+        env = env[next(iter(sorted(env.keys())))]
+    if env_seed is not None:
+        env.seed(env_seed)
+        need_reset = True
+
     if chron_id is not None:
         # reset the environment
         env.chronics_handler.tell_id(chron_id-1)
         # deactivate the forecast (not used here)
         if not keep_forecast:
             env.deactivate_forecast()
-        # reset it
+        need_reset = True
+
+    if need_reset:
         obs = env.reset()
     else:
         obs = env.get_obs()
+
+    if with_type_solver:
+        print(f"after reset: {env.backend._grid.get_solver_type()}")
     done = False
     reward = env.reward_range[0]
     nb_ts = 0
@@ -71,6 +99,8 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False):
             prev_act = act
     end_ = time.time()
     total_time = end_ - beg_
+    if with_type_solver:
+        print(f"end: {env.backend._grid.get_solver_type()}")
     return nb_ts, total_time, aor, gen_p, gen_q
 
 

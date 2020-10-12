@@ -71,6 +71,7 @@ class GridModel : public DataGeneric
             _solver.change_solver(type);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
+        SolverType get_solver_type() {return _solver.get_type(); }
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
@@ -236,6 +237,7 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<double> get_J(){
             return _solver.get_J();
         }
+        double get_computation_time(){ return _solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage.

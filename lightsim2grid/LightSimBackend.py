@@ -89,6 +89,8 @@ class LightSimBackend(Backend):
 
         # available solver in lightsim
         self.available_solvers = []
+        self.comp_time = 0.  # computation time of just the powerflow
+        self.__current_solver_type = None
 
     def set_solver_type(self, solver_type):
         """
@@ -104,6 +106,10 @@ class LightSimBackend(Backend):
         By default, the fastest AC solver is used for your platform. This means that if KLU is available, then it is used
         otherwise it's SparseLU.
 
+        This has to be set for every backend that you want to use. For example, you have to set it
+        in the backend of the `_obs_env` of the observation and if you are using "grid2op.MultMixEnv` you
+        have to set it in all mixes!
+
         Parameters
         ----------
         solver_type: lightsim2grid.SolverType
@@ -116,9 +122,10 @@ class LightSimBackend(Backend):
         if solver_type not in self.available_solvers:
             raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
                                f"solvers are {self.available_solvers}")
-        self._grid.change_solver(solver_type)
+        self.__current_solver_type = copy.deepcopy(solver_type)
+        self._grid.change_solver(self.__current_solver_type)
 
-    def set_max_iter(self, max_iter):
+    def set_solver_max_iter(self, max_iter):
         """
         Set the maximum number of iteration the solver is allowed to perform.
 
@@ -136,6 +143,12 @@ class LightSimBackend(Backend):
         ----------
         max_iter: ``int``
             Maximum number of iteration the powerflow can run. It should be number >= 1
+
+        Notes
+        -------
+        This has to be set for every backend that you want to use. For example, you have to set it
+        in the backend of the `_obs_env` of the observation and if you are using "grid2op.MultMixEnv` you
+        have to set it in all mixes!
 
         """
         try:
@@ -158,6 +171,12 @@ class LightSimBackend(Backend):
         ----------
         new_tol: ``float``
             The new tolerance to use (should be a float > 0)
+
+        Notes
+        -------
+        This has to be set for every backend that you want to use. For example, you have to set it
+        in the backend of the `_obs_env` of the observation and if you are using "grid2op.MultMixEnv` you
+        have to set it in all mixes!
         """
         try:
             new_tol = float(new_tol)
@@ -177,6 +196,8 @@ class LightSimBackend(Backend):
         if SolverType.KLU in self.available_solvers:
             # use the faster KLU is available
             self._grid.change_solver(SolverType.KLU)
+        if self.__current_solver_type is None:
+            self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
 
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen
@@ -444,10 +465,6 @@ class LightSimBackend(Backend):
                     self._grid.deactivate_result_computation()
                     V = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
-                    # V2 = self._grid.dc_pf_old(copy.deepcopy(self.V), self.max_it, self.tol)
-                    # if np.max(np.abs(V-V2) > 1e-7):
-                    #     import pdb
-                    #     pdb.set_trace()
 
                     if V.shape[0] == 0:
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
@@ -457,6 +474,7 @@ class LightSimBackend(Backend):
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                     raise DivergingPowerFlow("divergence of powerflow")
 
+            self.comp_time += self._grid.get_computation_time()
             self.V[:] = V
             lpor, lqor, lvor, laor = self._grid.get_lineor_res()
             lpex, lqex, lvex, laex = self._grid.get_lineex_res()
@@ -488,7 +506,7 @@ class LightSimBackend(Backend):
                 raise DivergingPowerFlow("One generator is disconnected")
 
             res = True
-        except Exception as e:
+        except Exception as exc_:
             # of the powerflow has not converged, results are Nan
             self._fill_nans()
             res = False
@@ -583,11 +601,16 @@ class LightSimBackend(Backend):
         else:
             self._grid.deactivate_trafo(id_ - self.__nb_powerline)
 
+    def get_current_solver_type(self):
+        return self.__current_solver_type
+
     def reset(self, grid_path, grid_filename=None):
         self.V = None
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
+        self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
+        self.comp_time = 0.
 
     def get_action_to_set(self):
         line_status = self.get_line_status()
