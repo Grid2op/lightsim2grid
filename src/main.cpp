@@ -175,6 +175,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
 
+        // TODO optimize that for speed, results are copied apparently
         .def("get_loads_res", &GridModel::get_loads_res)
         .def("get_loads_status", &GridModel::get_loads_status)
         .def("get_shunts_res", &GridModel::get_shunts_res)

@@ -13,7 +13,9 @@
 Some typedef and other structures define here and used everywhere else
 **/
 typedef std::complex<double> cdouble;
-typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple3d;
-typedef std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> tuple4d;
+//typedef Eigen::Ref<Eigen::VectorXd> EigenPythonNumType;  // Eigen::VectorXd
+typedef Eigen::VectorXd EigenPythonNumType;  // Eigen::VectorXd
+typedef std::tuple<EigenPythonNumType, EigenPythonNumType, EigenPythonNumType> tuple3d;
+typedef std::tuple<EigenPythonNumType, EigenPythonNumType, EigenPythonNumType, EigenPythonNumType> tuple4d;
 
 #endif // UTILS_H
