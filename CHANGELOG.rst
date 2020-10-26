@@ -9,10 +9,10 @@ Change Log
 - distribute pypi package
 - make dc approx available on all platform
 
-[0.3.1] - 2020-10-xx
+[0.4.0] - 2020-10-26
 ---------------------
-- [ADDED] a proper DC solver
-- [ADDED] the gauss seidel method for AC powerflow is now available
+- [ADDED] the Gauss Seidel method for AC powerflow is now available
+- [ADDED] possibility to change easily the solver types from python side
 
 [0.3.0] - 2020-10-06
 -------------------------

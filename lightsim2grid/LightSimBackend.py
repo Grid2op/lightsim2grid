@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
+import warnings
 import numpy as np
 
 from grid2op.Action import CompleteAction
@@ -83,7 +84,7 @@ class LightSimBackend(Backend):
         self.dim_topo = -1
         self._init_action_to_set = None
         self._backend_action_class = None
-        self.cst_1  = dt_float(1.0)
+        self.cst_1 = dt_float(1.0)
         self.__me_at_init = None
         self.__init_topo_vect = None
 
@@ -451,6 +452,9 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         try:
             if is_dc:
+                msg_ = "LightSimBackend: the support of the DC approximation is fully supported at the moment"
+                warnings.warn(msg_)
+                raise RuntimeError(msg_)
                 if self.V is None:
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
@@ -486,15 +490,15 @@ class LightSimBackend(Backend):
             self.v_or[:] = np.concatenate((lvor, tvor))
             self.a_or[:] = 1000. * np.concatenate((laor, taor))
 
-            self.a_or[~np.isfinite(self.a_or)] = 0.
-            self.v_or[~np.isfinite(self.v_or)] = 0.
-            self.a_ex[~np.isfinite(self.a_ex)] = 0.
-            self.v_ex[~np.isfinite(self.v_ex)] = 0.
-
             self.p_ex[:] = np.concatenate((lpex, tpex))
             self.q_ex[:] = np.concatenate((lqex, tqex))
             self.v_ex[:] = np.concatenate((lvex, tvex))
             self.a_ex[:] = 1000. * np.concatenate((laex, taex))
+
+            self.a_or[~np.isfinite(self.a_or)] = 0.
+            self.v_or[~np.isfinite(self.v_or)] = 0.
+            self.a_ex[~np.isfinite(self.a_ex)] = 0.
+            self.v_ex[~np.isfinite(self.v_ex)] = 0.
 
             self.load_p[:], self.load_q[:], self.load_v[:] = self._grid.get_loads_res()
             self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
