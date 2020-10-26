@@ -58,7 +58,7 @@ class GridModel : public DataGeneric
                 int
                 >  StateRes;
 
-        GridModel():need_reset_(true){};
+        GridModel():need_reset_(true),compute_results_(true){};
         GridModel(const GridModel & other);
         GridModel copy(){
             GridModel res(*this);
@@ -71,6 +71,11 @@ class GridModel : public DataGeneric
             _solver.change_solver(type);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
+        SolverType get_solver_type() {return _solver.get_type(); }
+
+        // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
+        void deactivate_result_computation(){compute_results_=false;}
+        void reactivate_result_computation(){compute_results_=true;}
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
@@ -133,6 +138,10 @@ class GridModel : public DataGeneric
 
         //powerflows
         // dc powerflow
+        Eigen::VectorXcd dc_pf_old(const Eigen::VectorXcd & Vinit,
+                                   int max_iter,  // not used for DC
+                                   double tol  // not used for DC
+                                   );
         Eigen::VectorXcd dc_pf(const Eigen::VectorXcd & Vinit,
                                int max_iter,  // not used for DC
                                double tol  // not used for DC
@@ -228,6 +237,7 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<double> get_J(){
             return _solver.get_J();
         }
+        double get_computation_time(){ return _solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage.
@@ -305,6 +315,7 @@ class GridModel : public DataGeneric
         // void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
 
         // ac powerflows
+        Eigen::VectorXcd pre_process_solver(const Eigen::VectorXcd & Vinit, bool is_ac);
         void init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus, Eigen::VectorXcd & Sbus,
                        std::vector<int> & id_me_to_solver, std::vector<int>& id_solver_to_me,
                        int & slack_bus_id_solver);
@@ -313,6 +324,10 @@ class GridModel : public DataGeneric
         void fillpv_pq(const std::vector<int>& id_me_to_solver);
 
         // results
+        /**process the results from the solver to this instance
+        **/
+        void process_results(bool conv, Eigen::VectorXcd & res, const Eigen::VectorXcd & Vinit);
+
         /**
         Compute the results vector from the Va, Vm post powerflow
         **/
@@ -376,6 +391,7 @@ class GridModel : public DataGeneric
         // member of the grid
         // static const int _deactivated_bus_id;
         bool need_reset_;
+        bool compute_results_;
 
         // powersystem representation
         // 1. bus

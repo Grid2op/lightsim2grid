@@ -5,19 +5,21 @@ Change Log
 - improve speed
 - improve documentation
 - configure circleci
-- configure read the docs
 - easier building (get rid of the "make" part)
-- build on windows
 - distribute pypi package
-- try to implement an easier powerflow (for example gauss siedel) to make it available on all platform
 - make dc approx available on all platform
+
+[0.4.0] - 2020-10-26
+---------------------
+- [ADDED] the Gauss Seidel method for AC powerflow is now available
+- [ADDED] possibility to change easily the solver types from python side
 
 [0.3.0] - 2020-10-06
 -------------------------
-- [ADDING] Support for pickle for the lightsim Backend.
-- [ADDING] LightSim should now be compatible with windows (implementation of a powerflow mode without
+- [ADDED] Support for pickle for the lightsim Backend.
+- [ADDED] LightSim should now be compatible with windows (implementation of a powerflow mode without
   using the SuiteSparse KLU linear solver but rather the Eigen SparseLU one)
-- [ADDING] start of the documentation.
+- [ADDED] start of the documentation.
 
 [0.2.4] - 2020-08-xx
 --------------------

@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
+import warnings
 import numpy as np
 
 from grid2op.Action import CompleteAction
@@ -83,9 +84,108 @@ class LightSimBackend(Backend):
         self.dim_topo = -1
         self._init_action_to_set = None
         self._backend_action_class = None
-        self.cst_1  = dt_float(1.0)
+        self.cst_1 = dt_float(1.0)
         self.__me_at_init = None
         self.__init_topo_vect = None
+
+        # available solver in lightsim
+        self.available_solvers = []
+        self.comp_time = 0.  # computation time of just the powerflow
+        self.__current_solver_type = None
+
+    def set_solver_type(self, solver_type):
+        """
+        Change the type of solver you want to use.
+
+        Note that a powergrid should have been loaded for this function to work.
+
+        This function does not modify :attr:`LightSimBackend.max_iter` nor :attr:`LightSimBackend.tol`. You might want
+        to modify these values depending on the solver you are using.
+
+        Notes
+        ------
+        By default, the fastest AC solver is used for your platform. This means that if KLU is available, then it is used
+        otherwise it's SparseLU.
+
+        This has to be set for every backend that you want to use. For example, you have to set it
+        in the backend of the `_obs_env` of the observation and if you are using "grid2op.MultMixEnv` you
+        have to set it in all mixes!
+
+        Parameters
+        ----------
+        solver_type: lightsim2grid.SolverType
+            The new type of solver you want to use. See backend.available_solvers for a list of available solver
+            on your machine.
+        """
+        if not isinstance(solver_type, SolverType):
+            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
+                               f"{type(solver_type)}")
+        if solver_type not in self.available_solvers:
+            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
+                               f"solvers are {self.available_solvers}")
+        self.__current_solver_type = copy.deepcopy(solver_type)
+        self._grid.change_solver(self.__current_solver_type)
+
+    def set_solver_max_iter(self, max_iter):
+        """
+        Set the maximum number of iteration the solver is allowed to perform.
+
+        We do not recommend to modify the default value (10), unless you are using the GaussSeidel powerflow.
+        This powerflow being slower, we do not recommend to use it.
+
+        Recommendation:
+
+        - for SolverType.SparseLU: 10
+        - for SolverType.GaussSeidel: 10000
+        - for SolverType.DC: this has no effect
+        - for SolverType.SparseKLU: 10
+
+        Parameters
+        ----------
+        max_iter: ``int``
+            Maximum number of iteration the powerflow can run. It should be number >= 1
+
+        Notes
+        -------
+        This has to be set for every backend that you want to use. For example, you have to set it
+        in the backend of the `_obs_env` of the observation and if you are using "grid2op.MultMixEnv` you
+        have to set it in all mixes!
+
+        """
+        try:
+            max_iter = int(max_iter)
+        except Exception as exc_:
+            raise BackendError(f"Impossible to convert \"max_iter={max_iter}\" to an integer with exception \"{exc_}\"")
+        if max_iter < 1:
+            raise BackendError("max_iter should be a strictly positive integer (integer >= 1)")
+        self.max_it = max_iter
+
+    def set_tol(self, new_tol):
+        """
+        Set the tolerance of the powerflow. This means that the powerflow will stop when the Kirchhoff's Circuit Laws
+        are met up to a tolerance of "new_tol".
+
+        Decrease the tolerance might speed up the computation of the powerflow but will decrease the accuracy. We do
+        not recommend to modify the default value of 1e-8.
+
+        Parameters
+        ----------
+        new_tol: ``float``
+            The new tolerance to use (should be a float > 0)
+
+        Notes
+        -------
+        This has to be set for every backend that you want to use. For example, you have to set it
+        in the backend of the `_obs_env` of the observation and if you are using "grid2op.MultMixEnv` you
+        have to set it in all mixes!
+        """
+        try:
+            new_tol = float(new_tol)
+        except Exception as exc_:
+            raise BackendError(f"Impossible to convert \"new_tol={new_tol}\" to an float with error \"{exc_}\"")
+        if new_tol <= 0:
+            raise BackendError("new_tol should be a strictly positive float (float > 0)")
+        self.tol = new_tol
 
     def load_grid(self, path=None, filename=None):
 
@@ -93,9 +193,12 @@ class LightSimBackend(Backend):
         self.init_pp_backend.load_grid(path, filename)
 
         self._grid = init(self.init_pp_backend._grid)
-        available_solvers = self._grid.available_solvers()
-        if SolverType.KLU in available_solvers:
+        self.available_solvers = self._grid.available_solvers()
+        if SolverType.KLU in self.available_solvers:
+            # use the faster KLU is available
             self._grid.change_solver(SolverType.KLU)
+        if self.__current_solver_type is None:
+            self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
 
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen
@@ -349,58 +452,65 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         try:
             if is_dc:
-                raise NotImplementedError("Not fully implemented at the moment.")
+                msg_ = "LightSimBackend: the support of the DC approximation is fully supported at the moment"
+                warnings.warn(msg_)
+                raise RuntimeError(msg_)
                 if self.V is None:
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
-                self.V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                if V.shape[0] == 0:
+                    raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
             else:
                 if self.V is None:
                     # init from dc approx in this case
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * 1.04
 
                 if self.initdc:
-                    V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                    self._grid.deactivate_result_computation()
+                    V = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
+                    self._grid.reactivate_result_computation()
+
                     if V.shape[0] == 0:
-                        # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
                     self.V[:] = V
                 V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                     raise DivergingPowerFlow("divergence of powerflow")
-                self.V[:] = V
-                # self.V[self.V == 0.] = 1.
-                lpor, lqor, lvor, laor = self._grid.get_lineor_res()
-                lpex, lqex, lvex, laex = self._grid.get_lineex_res()
-                tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
-                tpex, tqex, tvex, taex = self._grid.get_trafolv_res()
 
-                self.p_or[:] = np.concatenate((lpor, tpor))
-                self.q_or[:] = np.concatenate((lqor, tqor))
-                self.v_or[:] = np.concatenate((lvor, tvor))
-                self.a_or[:] = 1000. * np.concatenate((laor, taor))
+            self.comp_time += self._grid.get_computation_time()
+            self.V[:] = V
+            lpor, lqor, lvor, laor = self._grid.get_lineor_res()
+            lpex, lqex, lvex, laex = self._grid.get_lineex_res()
+            tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
+            tpex, tqex, tvex, taex = self._grid.get_trafolv_res()
 
-                self.a_or[~np.isfinite(self.a_or)] = 0.
-                self.v_or[~np.isfinite(self.v_or)] = 0.
-                self.a_ex[~np.isfinite(self.a_ex)] = 0.
-                self.v_ex[~np.isfinite(self.v_ex)] = 0.
+            self.p_or[:] = np.concatenate((lpor, tpor))
+            self.q_or[:] = np.concatenate((lqor, tqor))
+            self.v_or[:] = np.concatenate((lvor, tvor))
+            self.a_or[:] = 1000. * np.concatenate((laor, taor))
 
-                self.p_ex[:] = np.concatenate((lpex, tpex))
-                self.q_ex[:] = np.concatenate((lqex, tqex))
-                self.v_ex[:] = np.concatenate((lvex, tvex))
-                self.a_ex[:] = 1000. * np.concatenate((laex, taex))
+            self.p_ex[:] = np.concatenate((lpex, tpex))
+            self.q_ex[:] = np.concatenate((lqex, tqex))
+            self.v_ex[:] = np.concatenate((lvex, tvex))
+            self.a_ex[:] = 1000. * np.concatenate((laex, taex))
 
-                self.load_p[:], self.load_q[:], self.load_v[:] = self._grid.get_loads_res()
-                self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
-                self.next_prod_p[:] = self.prod_p
+            self.a_or[~np.isfinite(self.a_or)] = 0.
+            self.v_or[~np.isfinite(self.v_or)] = 0.
+            self.a_ex[~np.isfinite(self.a_ex)] = 0.
+            self.v_ex[~np.isfinite(self.v_ex)] = 0.
 
-                if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
-                    raise DivergingPowerFlow("One load is disconnected")
-                if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
-                    raise DivergingPowerFlow("One generator is disconnected")
+            self.load_p[:], self.load_q[:], self.load_v[:] = self._grid.get_loads_res()
+            self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
+            self.next_prod_p[:] = self.prod_p
 
-                res = True
-        except Exception as e:
+            if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
+                raise DivergingPowerFlow("One load is disconnected")
+            if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
+                raise DivergingPowerFlow("One generator is disconnected")
+
+            res = True
+        except Exception as exc_:
             # of the powerflow has not converged, results are Nan
             self._fill_nans()
             res = False
@@ -495,11 +605,16 @@ class LightSimBackend(Backend):
         else:
             self._grid.deactivate_trafo(id_ - self.__nb_powerline)
 
+    def get_current_solver_type(self):
+        return self.__current_solver_type
+
     def reset(self, grid_path, grid_filename=None):
         self.V = None
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
+        self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
+        self.comp_time = 0.
 
     def get_action_to_set(self):
         line_status = self.get_line_status()

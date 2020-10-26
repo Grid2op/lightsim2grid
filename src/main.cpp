@@ -12,6 +12,7 @@
 
 #include "KLUSolver.h"
 #include "SparseLUSolver.h"
+#include "GaussSeidelSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
 
@@ -19,9 +20,13 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
+
+    // solvers
     py::enum_<SolverType>(m, "SolverType")
         .value("SparseLU", SolverType::SparseLU)
         .value("KLU", SolverType::KLU)
+        .value("GaussSeidel", SolverType::GaussSeidel)
+        .value("DC", SolverType::DC)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
@@ -34,9 +39,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &KLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
         .def("reset", &KLUSolver::reset)  // reset the solver to its original state
         .def("converged", &KLUSolver::converged)  // whether the solver has converged
-        .def("do_newton", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("compute_pf", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &KLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+        .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     #endif
 
     py::class_<SparseLUSolver>(m, "SparseLUSolver")
@@ -48,9 +53,33 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &SparseLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
         .def("reset", &SparseLUSolver::reset)  // reset the solver to its original state
         .def("converged", &SparseLUSolver::converged)  // whether the solver has converged
-        .def("do_newton", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("compute_pf", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &SparseLUSolver::do_newton, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+        .def("solve", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
+    py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver")
+        .def(py::init<>())
+        .def("get_Va", &GaussSeidelSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &GaussSeidelSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &GaussSeidelSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &GaussSeidelSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &GaussSeidelSolver::reset)  // reset the solver to its original state
+        .def("converged", &GaussSeidelSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        .def("get_timers", &GaussSeidelSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
+    py::class_<DCSolver>(m, "DCSolver")
+        .def(py::init<>())
+        .def("get_Va", &DCSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &DCSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &DCSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &DCSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &DCSolver::reset)  // reset the solver to its original state
+        .def("converged", &DCSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
 
     // converters
@@ -90,6 +119,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // solver control
         .def("change_solver", &GridModel::change_solver)  // change the solver to use (KLU - faster or SparseLU - available everywhere)
         .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
+        .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
+        .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
+
         // init the grid
         .def("init_bus", &GridModel::init_bus)
         .def("init_powerlines", &GridModel::init_powerlines)
@@ -143,6 +175,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
 
+        // TODO optimize that for speed, results are copied apparently
         .def("get_loads_res", &GridModel::get_loads_res)
         .def("get_loads_status", &GridModel::get_loads_status)
         .def("get_shunts_res", &GridModel::get_shunts_res)
@@ -162,7 +195,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_Sbus", &GridModel::get_Sbus)
         .def("get_pv", &GridModel::get_pv)
         .def("get_pq", &GridModel::get_pq)
+
+        .def("deactivate_result_computation", &GridModel::deactivate_result_computation)
+        .def("reactivate_result_computation", &GridModel::reactivate_result_computation)
         .def("dc_pf", &GridModel::dc_pf)
+        .def("dc_pf_old", &GridModel::dc_pf_old)
         .def("ac_pf", &GridModel::ac_pf)
         .def("compute_newton", &GridModel::ac_pf)
 

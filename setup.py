@@ -5,7 +5,7 @@ import setuptools
 import os
 import warnings
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 KLU_SOLVER_AVAILABLE = False
 
 # courtesy to
@@ -148,28 +148,33 @@ include_dirs += INCLUDE
 # compiler options
 extra_compile_args_tmp = ["-DNDEBUG"]
 if sys.platform.startswith('linux'):
-    extra_compile_args_tmp = ["-fext-numeric-literals"]
+    # extra_compile_args_tmp = ["-fext-numeric-literals"]
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
-    # macos and windows does not use gcc, so this is not working on these platforms
-    extra_compile_args_tmp = []
+    extra_compile_args_tmp += []
 elif sys.platform.startswith("darwin"):
     # extra_compile_args_tmp = ["-fsized-deallocation"]
-    extra_compile_args_tmp = []
+    extra_compile_args_tmp += []
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
 elif sys.platform.startswith("win32"):
-    extra_compile_args_tmp = ["-D_USE_MATH_DEFINES"]
+    extra_compile_args_tmp += ["-D_USE_MATH_DEFINES"]
     # otherwise windows compiler does not import "M_PI" from the math header
 
 
 # for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
-# why we deactivated it
-# -march=native is here to use the vectorization of the code offered by Eigen
-# extra_compile_args = ["-march=native"] + extra_compile_args_tmp
+# why we deactivated it by default
+# extra_compile_args_tmp += ["-march=native"]
+
+# if you have installed some BLAS or LAPACKE libraries (on ubuntu sudo apt-get install libblas-dev liblapacke-dev)
+# you can also trigger their use when using eigen.
+# extra_compile_args_tmp += ["-DEIGEN_USE_BLAS", "-DEIGEN_USE_LAPACKE"]
+
 extra_compile_args = extra_compile_args_tmp
 src_files = ['src/main.cpp', "src/SparseLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
              "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
-             "src/DataLoad.cpp", "src/DataGen.cpp", "src/BaseNRSolver.cpp", "src/ChooseSolver.cpp"]
+             "src/DataLoad.cpp", "src/DataGen.cpp", "src/BaseNRSolver.cpp", "src/ChooseSolver.cpp",
+             "src/GaussSeidelSolver.cpp", "src/BaseSolver.cpp", "src/DCSolver.cpp"]
+
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")

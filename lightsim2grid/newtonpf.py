@@ -72,7 +72,7 @@ def newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
     # initialize the solver
-    # TODO have that in options maybe.
+    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
     if KLU_solver_available:
         solver = KLUSolver()
     else:
