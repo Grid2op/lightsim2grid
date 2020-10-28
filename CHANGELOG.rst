@@ -12,7 +12,9 @@ Change Log
 [0.4.1] 2020-11-xx
 -------------------
 - [FIXED] a compilation issue on macos
-- [FIXED] an import issue (with `
+- [FIXED] an import issue (with `lightsim2grid.SolverType`)
+- [UPDATED] github issue template
+
 [0.4.0] - 2020-10-26
 ---------------------
 - [ADDED] the Gauss Seidel method for AC powerflow is now available
