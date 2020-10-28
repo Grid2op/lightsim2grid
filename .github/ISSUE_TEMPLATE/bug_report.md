@@ -12,6 +12,15 @@ assignees: ''
  - System: `windows, osx, ubuntu16.04, ...`
  - Additional system information
 
+**Note**: If the bug concerns an installation issue, you have to provide us with the output of:
+```commandline
+pip install -U .
+```
+AND
+```commandline
+python3 setup.py build
+```
+
 ## Bug description
 <!--A clear and concise description of what the bug is.-->
 
@@ -27,21 +36,21 @@ Here put the command line we have to execute-->
 ```
 
 ### Code snippet
-<!--Expose the python code you want us to test-->
+<!--Expose the python code you want us to test, remove if not relevant-->
 ```python
-import grid2op
+import lightsim2grid
 
 ... # Some code 
 ```
 
 ## Current output
-<!--Describe the output you have-->
+<!--Describe the output you have, remove if not relevant-->
 ```
 The output of the code snippet above
 ```
 
 ## Expected output
-<!--Describe the output you desire-->
+<!--Describe the output you desire, remove if not relevant-->
 ```
 The expected output and/or expected behavior description
 ```

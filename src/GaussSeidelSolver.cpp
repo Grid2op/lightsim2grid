@@ -98,7 +98,7 @@ void GaussSeidelSolver::one_iter(Eigen::VectorXcd & tmp_Sbus,
     {
         int k = pv.coeff(k_tmp);
         // update Sbus
-        tmp = Ybus.row(k) * V_;  // Ybus[k,:] * V
+        tmp = static_cast<cdouble>(Ybus.row(k) * V_);  // Ybus[k,:] * V
         tmp = std::conj(tmp);  // conj(Ybus[k,:] * V)
         tmp *= V_.coeff(k);  // (V[k] * conj(Ybus[k,:] * V))
         tmp = my_i * std::imag(tmp);
