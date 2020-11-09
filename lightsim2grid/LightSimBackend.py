@@ -298,6 +298,7 @@ class LightSimBackend(Backend):
         self.n_shunt = self.init_pp_backend.n_shunt
         self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
         self.name_shunt = self.init_pp_backend.name_shunt
+        self._sh_vnkv = self.init_pp_backend._sh_vnkv
         self.shunts_data_available = self.init_pp_backend.shunts_data_available
 
         # number of object per bus, to activate, deactivate them
@@ -439,7 +440,7 @@ class LightSimBackend(Backend):
                     self._grid.deactivate_shunt(sh_id)
                 else:
                     self._grid.reactivate_shunt(sh_id)
-                    self._grid.change_bus_shunt(sh_id, new_bus)
+                    self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] * new_bus)
 
         # and now change the overall topology
         self._grid.update_topo(backendAction.current_topo.changed,
@@ -595,7 +596,7 @@ class LightSimBackend(Backend):
         shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(self.n_shunt)], dtype=dt_int)
         res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)
         res_bus[shunt_bus >= self.__nb_bus_before] = 2
-        return (tmp[0], tmp[1], tmp[2], res_bus)
+        return tmp[0].astype(dt_float), tmp[1].astype(dt_float), tmp[2].astype(dt_float), res_bus
 
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1
@@ -616,19 +617,19 @@ class LightSimBackend(Backend):
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
 
-    def get_action_to_set(self):
-        line_status = self.get_line_status()
-        line_status = 2 * line_status - 1
-        line_status = line_status.astype(dt_int)
-        topo_vect = self.get_topo_vect()
-
-        prod_p, _, prod_v = self.generators_info()
-        load_p, load_q, _ = self.loads_info()
-        complete_action_class = CompleteAction.init_grid(self.init_pp_backend)
-        set_me = complete_action_class()
-        set_me.update({"set_line_status": 1 * line_status,
-                       "set_bus": 1 * topo_vect})
-
-        injs = {"prod_p": prod_p, "prod_v": prod_v, "load_p": load_p, "load_q": load_q}
-        set_me.update({"injection": injs})
-        return set_me
+    # def get_action_to_set(self):
+    #     line_status = self.get_line_status()
+    #     line_status = 2 * line_status - 1
+    #     line_status = line_status.astype(dt_int)
+    #     topo_vect = self.get_topo_vect()
+    #
+    #     prod_p, _, prod_v = self.generators_info()
+    #     load_p, load_q, _ = self.loads_info()
+    #     complete_action_class = CompleteAction.init_grid(self.init_pp_backend)
+    #     set_me = complete_action_class()
+    #     set_me.update({"set_line_status": 1 * line_status,
+    #                    "set_bus": 1 * topo_vect})
+    #
+    #     injs = {"prod_p": prod_p, "prod_v": prod_v, "load_p": load_p, "load_q": load_q}
+    #     set_me.update({"injection": injs})
+    #     return set_me

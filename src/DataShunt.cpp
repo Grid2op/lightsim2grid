@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataShunt.h"
+#include <iostream>
 
 void DataShunt::init(const Eigen::VectorXd & shunt_p_mw,
                      const Eigen::VectorXd & shunt_q_mvar,
@@ -83,10 +84,10 @@ void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, cons
 }
 
 void DataShunt::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                               const Eigen::Ref<Eigen::VectorXd> & Vm,
-                               const Eigen::Ref<Eigen::VectorXcd> & V,
-                               const std::vector<int> & id_grid_to_solver,
-                               const Eigen::VectorXd & bus_vn_kv)
+                                const Eigen::Ref<Eigen::VectorXd> & Vm,
+                                const Eigen::Ref<Eigen::VectorXcd> & V,
+                                const std::vector<int> & id_grid_to_solver,
+                                const Eigen::VectorXd & bus_vn_kv)
 {
     int nb_shunt = p_mw_.size();
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);

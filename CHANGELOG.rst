@@ -4,16 +4,18 @@ Change Log
 --------
 - improve speed
 - improve documentation
-- configure circleci
+- configure circleci (+ test compilation on clang, gcc and mscvc)
 - easier building (get rid of the "make" part)
 - distribute pypi package
-- make dc approx available on all platform
+- code helm powerflow method
+- interface with gridpack (to enforce q limits for example)
 
 [0.4.1] 2020-11-xx
 -------------------
 - [FIXED] a compilation issue on macos
 - [FIXED] an import issue (with `lightsim2grid.SolverType`)
 - [UPDATED] github issue template
+- [FIXED] a broken handling of shunt modification (wrong bus was assigned)
 
 [0.4.0] - 2020-10-26
 ---------------------
