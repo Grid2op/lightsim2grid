@@ -14,7 +14,6 @@
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
-#include <complex>      // std::complex, std::conj
 #include <cmath>  // for PI
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
@@ -42,7 +41,7 @@ class GridModel : public DataGeneric
 {
     public:
         typedef std::tuple<
-                std::vector<double>,  // bus_vn_kv
+                std::vector<real_type>,  // bus_vn_kv
                 std::vector<bool>,  // bus_status
                 // powerlines
                 DataLine::StateRes ,
@@ -78,42 +77,42 @@ class GridModel : public DataGeneric
         void reactivate_result_computation(){compute_results_=true;}
 
         // All methods to init this data model, all need to be pair unit when applicable
-        void init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo);
+        void init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo);
 
-        void init_powerlines(const Eigen::VectorXd & branch_r,
-                             const Eigen::VectorXd & branch_x,
-                             const Eigen::VectorXcd & branch_h,
+        void init_powerlines(const RealVect & branch_r,
+                             const RealVect & branch_x,
+                             const CplxVect & branch_h,
                              const Eigen::VectorXi & branch_from_id,
                              const Eigen::VectorXi & branch_to_id
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
         }
-        void init_shunt(const Eigen::VectorXd & shunt_p_mw,
-                        const Eigen::VectorXd & shunt_q_mvar,
+        void init_shunt(const RealVect & shunt_p_mw,
+                        const RealVect & shunt_q_mvar,
                         const Eigen::VectorXi & shunt_bus_id){
             shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
         }
-        void init_trafo(const Eigen::VectorXd & trafo_r,
-                        const Eigen::VectorXd & trafo_x,
-                        const Eigen::VectorXcd & trafo_b,
-                        const Eigen::VectorXd & trafo_tap_step_pct,
-//                        const Eigen::VectorXd & trafo_tap_step_degree,  //TODO handle that too!
-                        const Eigen::VectorXd & trafo_tap_pos,
+        void init_trafo(const RealVect & trafo_r,
+                        const RealVect & trafo_x,
+                        const CplxVect & trafo_b,
+                        const RealVect & trafo_tap_step_pct,
+//                        const RealVect & trafo_tap_step_degree,  //TODO handle that too!
+                        const RealVect & trafo_tap_pos,
                         const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & trafo_hv_id,
                         const Eigen::VectorXi & trafo_lv_id
                         ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
         }
-        void init_generators(const Eigen::VectorXd & generators_p,
-                             const Eigen::VectorXd & generators_v,
-                             const Eigen::VectorXd & generators_min_q,
-                             const Eigen::VectorXd & generators_max_q,
+        void init_generators(const RealVect & generators_p,
+                             const RealVect & generators_v,
+                             const RealVect & generators_min_q,
+                             const RealVect & generators_max_q,
                              const Eigen::VectorXi & generators_bus_id){
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
         }
-        void init_loads(const Eigen::VectorXd & loads_p,
-                        const Eigen::VectorXd & loads_q,
+        void init_loads(const RealVect & loads_p,
+                        const RealVect & loads_q,
                         const Eigen::VectorXi & loads_bus_id){
             loads_.init(loads_p, loads_q, loads_bus_id);
         }
@@ -138,20 +137,22 @@ class GridModel : public DataGeneric
 
         //powerflows
         // dc powerflow
-        Eigen::VectorXcd dc_pf_old(const Eigen::VectorXcd & Vinit,
+        CplxVect dc_pf_old(const CplxVect & Vinit,
                                    int max_iter,  // not used for DC
-                                   double tol  // not used for DC
+                                   real_type tol  // not used for DC
                                    );
-        Eigen::VectorXcd dc_pf(const Eigen::VectorXcd & Vinit,
+        CplxVect dc_pf(const CplxVect & Vinit,
                                int max_iter,  // not used for DC
-                               double tol  // not used for DC
+                               real_type tol  // not used for DC
                                );
 
         // ac powerflow
-        Eigen::VectorXcd ac_pf(const Eigen::VectorXcd & Vinit,
+        CplxVect ac_pf(const CplxVect & Vinit,
                                int max_iter,
-                               double tol);
+                               real_type tol);
 
+        // check the kirchoff law
+        CplxVect check_solution(const CplxVect & V);
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         //still connected to it, it will throw an exception
@@ -180,24 +181,24 @@ class GridModel : public DataGeneric
         void deactivate_load(int load_id) {loads_.deactivate(load_id, need_reset_); }
         void reactivate_load(int load_id) {loads_.reactivate(load_id, need_reset_); }
         void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
-        void change_p_load(int load_id, double new_p) {loads_.change_p(load_id, new_p, need_reset_); }
-        void change_q_load(int load_id, double new_q) {loads_.change_q(load_id, new_q, need_reset_); }
+        void change_p_load(int load_id, real_type new_p) {loads_.change_p(load_id, new_p, need_reset_); }
+        void change_q_load(int load_id, real_type new_q) {loads_.change_q(load_id, new_q, need_reset_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, need_reset_); }
         void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, need_reset_); }
         void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
-        void change_p_gen(int gen_id, double new_p) {generators_.change_p(gen_id, new_p, need_reset_); }
-        void change_v_gen(int gen_id, double new_v_pu) {generators_.change_v(gen_id, new_v_pu, need_reset_); }
+        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p(gen_id, new_p, need_reset_); }
+        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v(gen_id, new_v_pu, need_reset_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
 
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, need_reset_); }
         void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, need_reset_); }
         void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, need_reset_, bus_vn_kv_.size());  }
-        void change_p_shunt(int shunt_id, double new_p) {shunts_.change_p(shunt_id, new_p, need_reset_); }
-        void change_q_shunt(int shunt_id, double new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
+        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, need_reset_); }
+        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
 
         // All results access
@@ -216,10 +217,10 @@ class GridModel : public DataGeneric
 
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
-        Eigen::SparseMatrix<cdouble> get_Ybus(){
+        Eigen::SparseMatrix<cplx_type> get_Ybus(){
             return Ybus_;
         }
-        Eigen::VectorXcd get_Sbus(){
+        CplxVect get_Sbus(){
             return Sbus_;
         }
         Eigen::VectorXi get_pv(){
@@ -228,16 +229,16 @@ class GridModel : public DataGeneric
         Eigen::VectorXi get_pq(){
             return bus_pq_;
         }
-        Eigen::Ref<Eigen::VectorXd> get_Va(){
+        Eigen::Ref<RealVect> get_Va(){
             return _solver.get_Va();
         }
-        Eigen::Ref<Eigen::VectorXd> get_Vm(){
+        Eigen::Ref<RealVect> get_Vm(){
             return _solver.get_Vm();
         }
-        Eigen::SparseMatrix<double> get_J(){
+        Eigen::SparseMatrix<real_type> get_J(){
             return _solver.get_J();
         }
-        double get_computation_time(){ return _solver.get_computation_time();}
+        real_type get_computation_time(){ return _solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage.
@@ -312,21 +313,21 @@ class GridModel : public DataGeneric
 
         // compute admittance matrix
         // dc powerflow
-        // void init_dcY(Eigen::SparseMatrix<double> & dcYbus);
+        // void init_dcY(Eigen::SparseMatrix<real_type> & dcYbus);
 
         // ac powerflows
-        Eigen::VectorXcd pre_process_solver(const Eigen::VectorXcd & Vinit, bool is_ac);
-        void init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus, Eigen::VectorXcd & Sbus,
+        CplxVect pre_process_solver(const CplxVect & Vinit, bool is_ac);
+        void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & Sbus,
                        std::vector<int> & id_me_to_solver, std::vector<int>& id_solver_to_me,
                        int & slack_bus_id_solver);
-        void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus_me(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
+        void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
+        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver);
 
         // results
         /**process the results from the solver to this instance
         **/
-        void process_results(bool conv, Eigen::VectorXcd & res, const Eigen::VectorXcd & Vinit);
+        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit);
 
         /**
         Compute the results vector from the Va, Vm post powerflow
@@ -354,7 +355,7 @@ class GridModel : public DataGeneric
             {
                 if(has_changed(el_id))
                 {
-                    (this->*fun)(el_id, static_cast<double>(new_values[el_id]));
+                    (this->*fun)(el_id, static_cast<real_type>(new_values[el_id]));
                 }
             }
         }
@@ -395,7 +396,7 @@ class GridModel : public DataGeneric
 
         // powersystem representation
         // 1. bus
-        Eigen::VectorXd bus_vn_kv_;
+        RealVect bus_vn_kv_;
         std::vector<bool> bus_status_;
 
         // always have the length of the number of buses,
@@ -429,8 +430,8 @@ class GridModel : public DataGeneric
         int slack_bus_id_solver_;
 
         // as matrix, for the solver
-        Eigen::SparseMatrix<cdouble> Ybus_;
-        Eigen::VectorXcd Sbus_;
+        Eigen::SparseMatrix<cplx_type> Ybus_;
+        CplxVect Sbus_;
         Eigen::VectorXi bus_pv_;  // id are the solver internal id and NOT the initial id
         Eigen::VectorXi bus_pq_;  // id are the solver internal id and NOT the initial id
 

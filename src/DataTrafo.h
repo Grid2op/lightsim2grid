@@ -21,23 +21,23 @@ class DataTrafo : public DataGeneric
 {
     public:
     typedef std::tuple<
-               std::vector<double>, // branch_r
-               std::vector<double>, // branch_x
-               std::vector<std::complex<double> >, // branch_h
+               std::vector<real_type>, // branch_r
+               std::vector<real_type>, // branch_x
+               std::vector<cplx_type >, // branch_h
                std::vector<int>, // branch_from_id
                std::vector<int>, // branch_to_id
                std::vector<bool> , // status_
-               std::vector<double> // ratio_
+               std::vector<real_type> // ratio_
            >  StateRes;
 
     DataTrafo() {};
 
-    void init(const Eigen::VectorXd & trafo_r,
-                           const Eigen::VectorXd & trafo_x,
-                           const Eigen::VectorXcd & trafo_b,
-                           const Eigen::VectorXd & trafo_tap_step_pct,
-            //                        const Eigen::VectorXd & trafo_tap_step_degree,
-                           const Eigen::VectorXd & trafo_tap_pos,
+    void init(const RealVect & trafo_r,
+                           const RealVect & trafo_x,
+                           const CplxVect & trafo_b,
+                           const RealVect & trafo_tap_step_pct,
+            //                        const RealVect & trafo_tap_step_degree,
+                           const RealVect & trafo_tap_pos,
                            const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                            const Eigen::VectorXi & trafo_hv_id,
                            const Eigen::VectorXi & trafo_lv_id
@@ -54,17 +54,17 @@ class DataTrafo : public DataGeneric
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
 
-    virtual void fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    virtual void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
-    void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                         const Eigen::Ref<Eigen::VectorXd> & Vm,
-                         const Eigen::Ref<Eigen::VectorXcd> & V,
+    void compute_results(const Eigen::Ref<RealVect> & Va,
+                         const Eigen::Ref<RealVect> & Vm,
+                         const Eigen::Ref<CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
-                         const Eigen::VectorXd & bus_vn_kv);
+                         const RealVect & bus_vn_kv);
     void reset_results();
-    virtual double get_p_slack(int slack_bus_id);
-    virtual void get_q(std::vector<double>& q_by_bus);
+    virtual real_type get_p_slack(int slack_bus_id);
+    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
@@ -72,25 +72,25 @@ class DataTrafo : public DataGeneric
 
     protected:
         // physical properties
-        Eigen::VectorXd r_;
-        Eigen::VectorXd x_;
-        Eigen::VectorXcd h_;
+        RealVect r_;
+        RealVect x_;
+        CplxVect h_;
 
         // input data
         Eigen::VectorXi bus_hv_id_;
         Eigen::VectorXi bus_lv_id_;
         std::vector<bool> status_;
-        Eigen::VectorXd ratio_;
+        RealVect ratio_;
 
         //output data
-        Eigen::VectorXd res_p_hv_;  // in MW
-        Eigen::VectorXd res_q_hv_;  // in MVar
-        Eigen::VectorXd res_v_hv_;  // in kV
-        Eigen::VectorXd res_a_hv_;  // in kA
-        Eigen::VectorXd res_p_lv_;  // in MW
-        Eigen::VectorXd res_q_lv_;  // in MVar
-        Eigen::VectorXd res_v_lv_;  // in kV
-        Eigen::VectorXd res_a_lv_;  // in kA
+        RealVect res_p_hv_;  // in MW
+        RealVect res_q_hv_;  // in MVar
+        RealVect res_v_hv_;  // in kV
+        RealVect res_a_hv_;  // in kA
+        RealVect res_p_lv_;  // in MW
+        RealVect res_q_lv_;  // in MVar
+        RealVect res_v_lv_;  // in kV
+        RealVect res_a_lv_;  // in kA
 };
 
 #endif  //DATATRAFO_H

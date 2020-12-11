@@ -25,7 +25,7 @@ class BaseNRSolver : public BaseSolver
         ~BaseNRSolver(){}
 
         virtual
-        Eigen::SparseMatrix<double> get_J(){
+        Eigen::SparseMatrix<real_type> get_J(){
             return J_;
         }
 
@@ -39,13 +39,13 @@ class BaseNRSolver : public BaseSolver
         }
 
         virtual
-        bool compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                        Eigen::VectorXcd & V,
-                        const Eigen::VectorXcd & Sbus,
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                        CplxVect & V,
+                        const CplxVect & Sbus,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
-                        double tol
+                        real_type tol
                         ) ;
 
         virtual
@@ -56,23 +56,23 @@ class BaseNRSolver : public BaseSolver
         void initialize()=0;
 
         virtual
-        void solve(Eigen::VectorXd & b, bool has_just_been_inialized)=0;
+        void solve(RealVect & b, bool has_just_been_inialized)=0;
 
-        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
-                       const Eigen::Ref<const Eigen::VectorXcd > & V);
+        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+                       const Eigen::Ref<const CplxVect > & V);
 
         void _get_values_J(int & nb_obj_this_col,
                            std::vector<int> & inner_index,
-                           std::vector<double> & values,
-                           const Eigen::SparseMatrix<double> & mat,  // ex. dS_dVa_r
+                           std::vector<real_type> & values,
+                           const Eigen::SparseMatrix<real_type> & mat,  // ex. dS_dVa_r
                            const std::vector<int> & index_row_inv, // ex. pvpq_inv
                            const Eigen::VectorXi & index_col, // ex. pvpq
                            int col_id,
                            int row_lag  // 0 for J11 for example, n_pvpq for J12
                            );
 
-        void fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                  const Eigen::VectorXcd & V,
+        void fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                  const CplxVect & V,
                                   const Eigen::VectorXi & pq,
                                   const Eigen::VectorXi & pvpq,
                                   const std::vector<int> & pq_inv,
@@ -82,9 +82,9 @@ class BaseNRSolver : public BaseSolver
     protected:
 
         // solution of the problem
-        Eigen::SparseMatrix<double> J_;  // the jacobian matrix
-        Eigen::SparseMatrix<cdouble> dS_dVm_;
-        Eigen::SparseMatrix<cdouble> dS_dVa_;
+        Eigen::SparseMatrix<real_type> J_;  // the jacobian matrix
+        Eigen::SparseMatrix<cplx_type> dS_dVm_;
+        Eigen::SparseMatrix<cplx_type> dS_dVa_;
         bool need_factorize_;
 
         // timers
@@ -98,11 +98,11 @@ class BaseNRSolver : public BaseSolver
         BaseNRSolver & operator=( const BaseNRSolver & ) ;
 
     private:
-        Eigen::SparseMatrix<cdouble>
-            _make_diagonal_matrix(const Eigen::Ref<const Eigen::VectorXcd > & diag_val){
+        Eigen::SparseMatrix<cplx_type>
+            _make_diagonal_matrix(const Eigen::Ref<const CplxVect > & diag_val){
             // TODO their might be a more efficient way to do that
             auto n = diag_val.size();
-            Eigen::SparseMatrix<cdouble> res(n,n);
+            Eigen::SparseMatrix<cplx_type> res(n,n);
             // first method, without a loop of mine
             res.setIdentity();  // segfault if attempt to use this function without this
             res.diagonal() = diag_val;

@@ -14,7 +14,6 @@
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
-#include <complex>      // std::complex, std::conj
 #include <cmath>  // for PI
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
@@ -25,7 +24,7 @@
 #include "Eigen/SparseLU"
 
 #include "CustTimer.h"
-#include "Utils.h"
+#include "BaseConstants.h"
 
 // TODO make err_ more explicit: use an enum
 
@@ -34,20 +33,20 @@ This class represents a solver to compute powerflow.
 
 It can be derived for different usecase, for example for DC powerflow, AC powerflow using Newton Raphson method etc.
 **/
-class BaseSolver
+class BaseSolver : public BaseConstants
 {
     public:
-        BaseSolver():n_(-1),err_(-1),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
+        BaseSolver():BaseConstants(),n_(-1),err_(-1),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
 
         ~BaseSolver(){}
 
-        Eigen::Ref<Eigen::VectorXd> get_Va(){
+        Eigen::Ref<RealVect> get_Va(){
             return Va_;
         }
-        Eigen::Ref<Eigen::VectorXd> get_Vm(){
+        Eigen::Ref<RealVect> get_Vm(){
             return Vm_;
         }
-        Eigen::Ref<Eigen::VectorXcd> get_V(){
+        Eigen::Ref<CplxVect> get_V(){
             return V_;
         }
         int get_error(){
@@ -67,13 +66,13 @@ class BaseSolver
         }
 
         virtual
-        bool compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                        Eigen::VectorXcd & V,
-                        const Eigen::VectorXcd & Sbus,
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                        CplxVect & V,
+                        const CplxVect & Sbus,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
-                        double tol
+                        real_type tol
                         ) = 0 ;
 
         virtual
@@ -91,22 +90,22 @@ class BaseSolver
             timer_total_nr_ = 0.;
         }
 
-        Eigen::VectorXd _evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Ybus,
-                                     const Eigen::VectorXcd & V,
-                                     const Eigen::VectorXcd & Sbus,
-                                     const Eigen::VectorXi & pv,
-                                     const Eigen::VectorXi & pq);
+        RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+                              const CplxVect & V,
+                              const CplxVect & Sbus,
+                              const Eigen::VectorXi & pv,
+                              const Eigen::VectorXi & pq);
 
-        bool _check_for_convergence(const Eigen::VectorXd & F,
-                                    double tol);
+        bool _check_for_convergence(const RealVect & F,
+                                    real_type tol);
 
-        void one_iter_all_at_once(Eigen::VectorXcd & tmp_Sbus,
-                                  const Eigen::SparseMatrix<cdouble> & Ybus,
+        void one_iter_all_at_once(CplxVect & tmp_Sbus,
+                                  const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   const Eigen::VectorXi & pv,
                                   const Eigen::VectorXi & pq
                                   );
-        void one_iter(Eigen::VectorXcd & tmp_Sbus,
-                      const Eigen::SparseMatrix<cdouble> & Ybus,
+        void one_iter(CplxVect & tmp_Sbus,
+                      const Eigen::SparseMatrix<cplx_type> & Ybus,
                       const Eigen::VectorXi & pv,
                       const Eigen::VectorXi & pq
                       );
@@ -120,11 +119,11 @@ class BaseSolver
         int n_;
 
         // solution of the problem
-        Eigen::VectorXd Vm_;  // voltage magnitude
-        Eigen::VectorXd Va_;  // voltage angle
-        Eigen::VectorXcd V_;  // voltage angle
+        RealVect Vm_;  // voltage magnitude
+        RealVect Va_;  // voltage angle
+        CplxVect V_;  // complex voltage
 
-        int nr_iter_;  // number of iteration performs by the Newton Raphson algorithm
+        int nr_iter_;  // number of iteration performs by the solver (may vary depending on the solver)
         int err_; //error message:
         // -1 : the solver has not been initialized (call initialize in this case)
         // 0 everything ok
@@ -138,8 +137,6 @@ class BaseSolver
          double timer_solve_;
          double timer_check_;
          double timer_total_nr_;
-
-         static const cdouble my_i;
 
     private:
         // no copy allowed

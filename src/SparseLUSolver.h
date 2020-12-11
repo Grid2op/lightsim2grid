@@ -14,7 +14,6 @@
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
-#include <complex>      // std::complex, std::conj
 #include <cmath>  // for PI
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
@@ -49,12 +48,12 @@ class SparseLUSolver : public BaseNRSolver
         void initialize();
 
         virtual
-        void solve(Eigen::VectorXd & b, bool has_just_been_inialized);
+        void solve(RealVect & b, bool has_just_been_inialized);
 
 
     private:
         // solver initialization
-        Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >  solver_;
+        Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  solver_;
 
         // no copy allowed
         SparseLUSolver( const SparseLUSolver & ) ;

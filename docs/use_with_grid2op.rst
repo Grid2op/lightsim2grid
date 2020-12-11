@@ -132,9 +132,11 @@ make use of all the available cores, which would increase the number of steps th
 
 We compare 4 different backends:
 
-- **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks
+- **PP**: PandaPowerBackend (default grid2op backend) which is the **reference** in our benchmarks
 - **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
   method to compute the powerflows
+- **LS+GS A** (LightSimBackend+Gauss Seidel A): the grid2op backend based on lightsim2grid that uses a variant of the
+  gauss seidel method to compute the powerflows
 - **LS+SLU** (LightSimBackend+SparseLU): the grid2op backend based on lightsim2grid that uses the
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
   Eigen c++ library (available on all platform)
@@ -163,10 +165,11 @@ First on an environment based on the IEEE case 14 grid:
 ================  ======================  =============================  ============================
 case14_sandbox      grid2op speed (it/s)    grid2op powerflow time (ms)    solver powerflow time (ms)
 ================  ======================  =============================  ============================
-PP                                    65                         12.6                         12.6
-LS+GS                                671                          0.504                        0.381
-LS+SLU                               826                          0.223                        0.0947
-LS+KLU                               864                          0.179                        0.0532
+PP                                    66                         11.9                         11.9
+LS+GS                                726                          0.674                        0.554
+LS+GS A                              834                          0.529                        0.412
+LS+SLU                              1108                          0.216                        0.0941
+LS+KLU                              1101                          0.183                        0.0562
 ================  ======================  =============================  ============================
 
 From a grid2op perspective, lightsim2grid allows to compute 860 steps each second on the case 14 and "only" 68.5
@@ -179,10 +182,11 @@ Then on an environment based on the IEEE case 118:
 =====================  ======================  =============================  ============================
 neurips_2020_track2      grid2op speed (it/s)    grid2op powerflow time (ms)    solver powerflow time (ms)
 =====================  ======================  =============================  ============================
-PP                                         41                         14.4                          14.4
-LS+GS                                       5                        195                           195
-LS+SLU                                    465                          1.1                           0.826
-LS+KLU                                    604                          0.627                         0.352
+PP                                         38                         15                            15
+LS+GS                                       5                        190                           190
+LS+GS A                                    32                         29.5                          29.2
+LS+SLU                                    485                          1.17                          0.865
+LS+KLU                                    697                          0.633                         0.353
 =====================  ======================  =============================  ============================
 
 For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU)
@@ -217,9 +221,11 @@ case14_sandbox (1000 iter)      Δ aor (amps)    Δ gen_p (MW)    Δ gen_q (MVAr
 ============================  ==============  ==============  ================
 PP                                   0              0                 0
 LS+GS                                6.1e-05        7.63e-06          1.91e-06
+LS+GS A                              6.1e-05        7.63e-06          1.91e-06
 LS+SLU                               0              0                 0
 LS+KLU                               0              0                 0
 ============================  ==============  ==============  ================
+
 
 Here are the results for the IEEE case 118 (max over 1000 powerflows):
 
@@ -228,9 +234,11 @@ neurips_2020_track2 (1000 iter)      Δ aor (amps)    Δ gen_p (MW)    Δ gen_q 
 =================================  ==============  ==============  ================
 PP                                        0              0                 0
 LS+GS                                     6.1e-05        3.81e-06          1.53e-05
+LS+GS A                                   6.1e-05        3.81e-06          1.53e-05
 LS+SLU                                    0              0                 9.54e-07
 LS+KLU                                    0              0                 9.54e-07
 =================================  ==============  ==============  ================
+
 
 As we can see on all the tables above, the difference when using lightsim and pandapower is rather
 small, even when using a different algorithm to solve the powerflow (LS + GS corresponds to

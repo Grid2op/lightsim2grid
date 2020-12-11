@@ -23,20 +23,20 @@ class DataGen: public DataGeneric
 {
     public:
     typedef std::tuple<
-       std::vector<double>, // p_mw
-       std::vector<double>, // vm_pu_
-       std::vector<double>, // min_q_
-       std::vector<double>, // max_q_
+       std::vector<real_type>, // p_mw
+       std::vector<real_type>, // vm_pu_
+       std::vector<real_type>, // min_q_
+       std::vector<real_type>, // max_q_
        std::vector<int>, // bus_id
        std::vector<bool> // status
        >  StateRes;
 
     DataGen() {};
 
-    void init(const Eigen::VectorXd & generators_p,
-              const Eigen::VectorXd & generators_v,
-              const Eigen::VectorXd & generators_min_q,
-              const Eigen::VectorXd & generators_max_q,
+    void init(const RealVect & generators_p,
+              const RealVect & generators_v,
+              const RealVect & generators_min_q,
+              const RealVect & generators_max_q,
               const Eigen::VectorXi & generators_bus_id
               );
 
@@ -50,32 +50,32 @@ class DataGen: public DataGeneric
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
-    void change_p(int gen_id, double new_p, bool & need_reset);
-    void change_v(int gen_id, double new_v_pu, bool & need_reset);
+    void change_p(int gen_id, real_type new_p, bool & need_reset);
+    void change_v(int gen_id, real_type new_v_pu, bool & need_reset);
 
-    virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillpv(std::vector<int>& bus_pv,
                         std::vector<bool> & has_bus_been_added,
                         int slack_bus_id_solver,
                         const std::vector<int> & id_grid_to_solver);
     void init_q_vector(int nb_bus); // delta_q_per_gen_
 
-    void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                         const Eigen::Ref<Eigen::VectorXd> & Vm,
-                         const Eigen::Ref<Eigen::VectorXcd> & V,
+    void compute_results(const Eigen::Ref<RealVect> & Va,
+                         const Eigen::Ref<RealVect> & Vm,
+                         const Eigen::Ref<CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
-                         const Eigen::VectorXd & bus_vn_kv);
+                         const RealVect & bus_vn_kv);
     void reset_results();
-    void set_q(const std::vector<double> & q_by_bus);
+    void set_q(const std::vector<real_type> & q_by_bus);
     int get_slack_bus_id(int gen_id);
-    virtual void set_p_slack(int slack_bus_id, double p_slack);
+    virtual void set_p_slack(int slack_bus_id, real_type p_slack);
 
-    void get_vm_for_dc(Eigen::VectorXd & Vm);
+    void get_vm_for_dc(RealVect & Vm);
     /**
     this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
     the ac powerflow
     **/
-    void set_vm(Eigen::VectorXcd & V, const std::vector<int> & id_grid_to_solver);
+    void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     const std::vector<bool>& get_status() const {return status_;}
@@ -89,22 +89,22 @@ class DataGen: public DataGeneric
         // physical properties
 
         // input data
-        Eigen::VectorXd p_mw_;
-        Eigen::VectorXd vm_pu_;
-        Eigen::VectorXd min_q_;
-        Eigen::VectorXd max_q_;
+        RealVect p_mw_;
+        RealVect vm_pu_;
+        RealVect min_q_;
+        RealVect max_q_;
         Eigen::VectorXi bus_id_;
         std::vector<bool> status_;
 
         // intermediate data
-        Eigen::VectorXd total_q_min_per_bus_;
-        Eigen::VectorXd total_q_max_per_bus_;
+        RealVect total_q_min_per_bus_;
+        RealVect total_q_max_per_bus_;
         Eigen::VectorXi total_gen_per_bus_;
 
         //output data
-        Eigen::VectorXd res_p_;  // in MW
-        Eigen::VectorXd res_q_;  // in MVar
-        Eigen::VectorXd res_v_;  // in kV
+        RealVect res_p_;  // in MW
+        RealVect res_q_;  // in MVar
+        RealVect res_v_;  // in kV
 };
 
 #endif  //DATAGEN_H

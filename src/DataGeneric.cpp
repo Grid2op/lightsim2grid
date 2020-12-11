@@ -10,17 +10,16 @@
 #include <iostream>
 
 const int DataGeneric::_deactivated_bus_id = -1;
-const cdouble DataGeneric::my_i = {0., 1.};
 
 // TODO all functions bellow are generic ! Make a base class for that
-void DataGeneric::_get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v){
-    const double _1_sqrt_3 = 1.0 / std::sqrt(3.);
-    Eigen::VectorXd p2q2 = p.array() * p.array() + q.array() * q.array();
+void DataGeneric::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v){
+    const real_type _1_sqrt_3 = 1.0 / std::sqrt(3.);
+    RealVect p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
 
     // modification in case of disconnected powerlines
     // because i don't want to divide by 0. below
-    Eigen::VectorXd v_tmp = v;
+    RealVect v_tmp = v;
     for(auto & el: v_tmp){
         if(el == 0.) el = 1.0;
     }
@@ -60,15 +59,15 @@ int DataGeneric::_get_bus(int el_id, const std::vector<bool> & status_, const Ei
     return res;
 }
 
-void DataGeneric::v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
-                                const Eigen::Ref<Eigen::VectorXd> & Vm,
+void DataGeneric::v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
+                                const Eigen::Ref<RealVect> & Vm,
                                 const std::vector<bool> & status,
                                 int nb_element,
                                 const Eigen::VectorXi & bus_me_id,
                                 const std::vector<int> & id_grid_to_solver,
-                                const Eigen::VectorXd & bus_vn_kv,
-                                Eigen::VectorXd & v){
-    v = Eigen::VectorXd::Constant(nb_element, -1.0);
+                                const RealVect & bus_vn_kv,
+                                RealVect & v){
+    v = RealVect::Constant(nb_element, -1.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) continue;
@@ -77,7 +76,7 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
         if(bus_solver_id == _deactivated_bus_id){
             throw std::runtime_error("DataGeneric::v_kv_from_vpu: An element is connected to a disconnected bus");
         }
-        double bus_vn_kv_me = bus_vn_kv(el_bus_me_id);
+        real_type bus_vn_kv_me = bus_vn_kv(el_bus_me_id);
         v(el_id) = Vm(bus_solver_id) * bus_vn_kv_me;
     }
 }

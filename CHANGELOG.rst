@@ -1,10 +1,12 @@
 Change Log
 ===========
+
 [TODO]
 --------
+- switch c++ to float32 instead
 - improve speed
 - improve documentation
-- configure circleci (+ test compilation on clang, gcc and mscvc)
+- configure circleci (+ test compilation on clang, gcc and msvc)
 - easier building (get rid of the "make" part)
 - distribute pypi package
 - code helm powerflow method
@@ -16,6 +18,8 @@ Change Log
 - [FIXED] an import issue (with `lightsim2grid.SolverType`)
 - [UPDATED] github issue template
 - [FIXED] a broken handling of shunt modification (wrong bus was assigned)
+- [ADDED] a variant of the Gauss Seidel method which does the update in a "synchronous" fashion
+- [ADDED] a function that, given a complex vector is able to check kicchoff's law violation.
 
 [0.4.0] - 2020-10-26
 ---------------------

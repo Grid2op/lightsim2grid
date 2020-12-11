@@ -62,7 +62,7 @@ GridModel::GridModel(const GridModel & other)
 //pickle
 GridModel::StateRes GridModel::get_state() const
 {
-    std::vector<double> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
+    std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
     auto res_line = powerlines_.get_state();
     auto res_shunt = shunts_.get_state();
     auto res_trafo = trafos_.get_state();
@@ -90,7 +90,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    std::vector<double> & bus_vn_kv = std::get<0>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<0>(my_state);
     std::vector<bool> & bus_status = std::get<1>(my_state);
 
     // powerlines
@@ -109,7 +109,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 
     // buses
     // 1. bus_vn_kv_
-    bus_vn_kv_ = Eigen::VectorXd::Map(&bus_vn_kv[0], bus_vn_kv.size());
+    bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
     // 2. bus status
     bus_status_ = bus_status;
 
@@ -131,7 +131,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 };
 
 //init
-void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_trafo){
+void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
     /**
     initialize the bus_vn_kv_ member
     and
@@ -145,8 +145,8 @@ void GridModel::init_bus(const Eigen::VectorXd & bus_vn_kv, int nb_line, int nb_
 
 void GridModel::reset()
 {
-    Ybus_ = Eigen::SparseMatrix<cdouble>();
-    Sbus_ = Eigen::VectorXcd();
+    Ybus_ = Eigen::SparseMatrix<cplx_type>();
+    Sbus_ = CplxVect();
     id_me_to_solver_ = std::vector<int>();
     id_solver_to_me_ = std::vector<int>();
     slack_bus_id_solver_ = -1;
@@ -158,9 +158,9 @@ void GridModel::reset()
     _solver.reset();
 }
 
-Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
+CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                   int max_iter,
-                                  double tol)
+                                  real_type tol)
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
@@ -168,10 +168,10 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
         throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both connected and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).");
     }
     bool conv = false;
-    Eigen::VectorXcd res = Eigen::VectorXcd();
+    CplxVect res = CplxVect();
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    Eigen::VectorXcd V = pre_process_solver(Vinit, true);
+    CplxVect V = pre_process_solver(Vinit, true);
 
     // start the solver
     conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
@@ -183,7 +183,25 @@ Eigen::VectorXcd GridModel::ac_pf(const Eigen::VectorXcd & Vinit,
     return res;
 };
 
-Eigen::VectorXcd GridModel::pre_process_solver(const Eigen::VectorXcd & Vinit, bool is_ac)
+CplxVect GridModel::check_solution(const CplxVect & V_proposed)
+{
+    // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
+    CplxVect V = pre_process_solver(V_proposed, true);
+
+    // compute the mismatch
+    CplxVect tmp = Ybus_ * V;  // this is a vector
+    tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * tmp.array() - Sbus_.array();
+
+    // store results
+    CplxVect res = CplxVect();
+    process_results(true, res, V);
+
+    return mis;
+};
+
+
+CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
 
@@ -198,17 +216,17 @@ Eigen::VectorXcd GridModel::pre_process_solver(const Eigen::VectorXcd & Vinit, b
     fillSbus_me(Sbus_, is_ac, id_me_to_solver_, slack_bus_id_solver_);
 
     int nb_bus_solver = id_solver_to_me_.size();
-    Eigen::VectorXcd V = Eigen::VectorXcd::Constant(nb_bus_solver, 1.04);
+    CplxVect V = CplxVect::Constant(nb_bus_solver, 1.04);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
         int bus_me_id = id_solver_to_me_[bus_solver_id];  //POSSIBLE SEGFAULT
-        cdouble tmp = Vinit(bus_me_id);
+        cplx_type tmp = Vinit(bus_me_id);
         V(bus_solver_id) = tmp;
         // TODO save this V somewhere
     }
     generators_.set_vm(V, id_me_to_solver_);
     return V;
 }
-void GridModel::process_results(bool conv, Eigen::VectorXcd & res, const Eigen::VectorXcd & Vinit)
+void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit)
 {
     if (conv){
         if(compute_results_){
@@ -216,9 +234,9 @@ void GridModel::process_results(bool conv, Eigen::VectorXcd & res, const Eigen::
             compute_results();
         }
         need_reset_ = false;
-        Eigen::VectorXcd res_tmp = _solver.get_V();
+        CplxVect res_tmp = _solver.get_V();
         // convert back the results to "big" vector
-        res = Eigen::VectorXcd::Constant(Vinit.size(), 0.);
+        res = CplxVect::Constant(Vinit.size(), 0.);
         int nb_bus = bus_vn_kv_.size();
         for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
             if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
@@ -235,8 +253,8 @@ void GridModel::process_results(bool conv, Eigen::VectorXcd & res, const Eigen::
         need_reset_ = true;  // in this case, the powerflow diverge, so i need to recompute Ybus next time
     }
 }
-void GridModel::init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus,
-                          Eigen::VectorXcd & Sbus,
+void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+                          CplxVect & Sbus,
                           std::vector<int>& id_me_to_solver,
                           std::vector<int>& id_solver_to_me,
                           int & slack_bus_id_solver){
@@ -257,10 +275,10 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus,
     }
     int nb_bus = id_solver_to_me.size();
 
-    Ybus = Eigen::SparseMatrix<cdouble>(nb_bus, nb_bus);
+    Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus, nb_bus);
     Ybus.reserve(nb_bus + 2*powerlines_.nb() + 2*trafos_.nb());
 
-    Sbus = Eigen::VectorXcd::Constant(nb_bus, 0.);
+    Sbus = CplxVect::Constant(nb_bus, 0.);
     slack_bus_id_solver = id_me_to_solver[slack_bus_id_];
     if(slack_bus_id_solver == _deactivated_bus_id){
         //TODO improve error message with the gen_id
@@ -268,14 +286,14 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cdouble> & Ybus,
     }
 }
 
-void GridModel::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int>& id_me_to_solver){
+void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver){
     /**
     Supposes that the powerlines, shunt and transformers are initialized.
     And it fills the Ybus matrix.
     **/
 
     // init the Ybus matrix
-    std::vector<Eigen::Triplet<cdouble> > tripletList;
+    std::vector<Eigen::Triplet<cplx_type> > tripletList;
     tripletList.reserve(bus_vn_kv_.size() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
     powerlines_.fillYbus(tripletList, ac, id_me_to_solver);
     shunts_.fillYbus(tripletList, ac, id_me_to_solver);
@@ -286,7 +304,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std:
     res.makeCompressed();
 }
 
-void GridModel::fillSbus_me(Eigen::VectorXcd & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
+void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
 {
     // init the Sbus vector
     powerlines_.fillSbus(res, ac, id_me_to_solver);
@@ -296,7 +314,7 @@ void GridModel::fillSbus_me(Eigen::VectorXcd & res, bool ac, const std::vector<i
     generators_.fillSbus(res, ac, id_me_to_solver);
 
     // handle slack bus
-    double sum_active = res.sum().real();
+    real_type sum_active = res.sum().real();
     res.coeffRef(slack_bus_id_solver) -= sum_active;
 }
 
@@ -345,14 +363,14 @@ void GridModel::compute_results(){
     generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
 
     //handle_slack_bus
-    double p_slack = powerlines_.get_p_slack(slack_bus_id_);
+    real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);
     p_slack += trafos_.get_p_slack(slack_bus_id_);
     p_slack += loads_.get_p_slack(slack_bus_id_);
     p_slack += shunts_.get_p_slack(slack_bus_id_);
     generators_.set_p_slack(gen_slackbus_, p_slack);
 
     // handle gen_q now
-    std::vector<double> q_by_bus = std::vector<double>(bus_vn_kv_.size(), 0.);
+    std::vector<real_type> q_by_bus = std::vector<real_type>(bus_vn_kv_.size(), 0.);
     powerlines_.get_q(q_by_bus);
     trafos_.get_q(q_by_bus);
     loads_.get_q(q_by_bus);
@@ -369,9 +387,9 @@ void GridModel::reset_results(){
     generators_.reset_results();
 }
 
-Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
+CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
                                       int max_iter,  // not used for DC
-                                      double tol  // not used for DC
+                                      real_type tol  // not used for DC
                                       )
 {
     // TODO refactor that with ac pf, this is mostly done, but only mostly...
@@ -380,8 +398,8 @@ Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
         std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
         throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there.)");
     }
-    Eigen::SparseMatrix<cdouble> dcYbus_tmp;
-    Eigen::VectorXcd Sbus_tmp;
+    Eigen::SparseMatrix<cplx_type> dcYbus_tmp;
+    CplxVect Sbus_tmp;
     std::vector<int> id_me_to_solver;
     std::vector<int> id_solver_to_me;
     int slack_bus_id_solver;
@@ -405,35 +423,35 @@ Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
     // remove the slack bus from Ybus
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     dcYbus_tmp.makeCompressed();
-    Eigen::SparseMatrix<double> dcYbus = Eigen::SparseMatrix<double>(nb_bus_solver - 1, nb_bus_solver - 1);
-    std::vector<Eigen::Triplet<double> > tripletList;
+    Eigen::SparseMatrix<real_type> dcYbus = Eigen::SparseMatrix<real_type>(nb_bus_solver - 1, nb_bus_solver - 1);
+    std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(dcYbus_tmp.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
-        for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dcYbus_tmp, k); it; ++it)
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dcYbus_tmp, k); it; ++it)
         {
             int row_res = it.row();
             if(row_res == slack_bus_id_solver) continue;
             row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
             int col_res = it.col();
             col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
-            tripletList.push_back(Eigen::Triplet<double> (row_res, col_res, std::real(it.value())));
+            tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }
     }
     dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
     dcYbus.makeCompressed();
 
     // initialize the solver
-    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >   solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >   solver;
     solver.analyzePattern(dcYbus);
     solver.factorize(dcYbus);
     if(solver.info() != Eigen::Success) {
         // matrix is not connected
-        return Eigen::VectorXcd();
+        return CplxVect();
     }
 
     // remove the slack bus from Sbus
-    Eigen::VectorXd Sbus = Eigen::VectorXd::Constant(nb_bus_solver - 1, 0.);
+    RealVect Sbus = RealVect::Constant(nb_bus_solver - 1, 0.);
     for (int k=0; k < nb_bus_solver; ++k){
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
         int col_res = k;
@@ -442,16 +460,16 @@ Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
     }
 
     // solve for theta: Sbus = dcY . theta
-    Eigen::VectorXd Va_dc = solver.solve(Sbus);
+    RealVect Va_dc = solver.solve(Sbus);
     if(solver.info() != Eigen::Success) {
         // solving failed, this should not happen in dc ...
-        return Eigen::VectorXcd();
+        return CplxVect();
     }
 
     // retrieve back the results in the proper shape
     int nb_bus_me = bus_vn_kv_.size();
     int bus_id_solver;
-    Eigen::VectorXd Va = Eigen::VectorXd::Constant(nb_bus_me, 0.);
+    RealVect Va = RealVect::Constant(nb_bus_me, 0.);
     // fill Va from dc approx
     for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
         if(bus_id_me == slack_bus_id_) continue;  // slack bus is handled elsewhere
@@ -468,7 +486,7 @@ Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
     Va.array() +=  std::arg(Vinit(slack_bus_id_));
 
     // fill Vm either Vinit if pq or Vm if pv (TODO)
-    Eigen::VectorXd Vm;
+    RealVect Vm;
     if(false){
         Vm = Vinit.array().abs();  // fill Vm = Vinit for all
         // put Vm = 0. for disconnected bus
@@ -482,7 +500,7 @@ Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
         Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
     }
     else{
-        Vm = Eigen::VectorXd::Constant(Vinit.size(), 1.0);
+        Vm = RealVect::Constant(Vinit.size(), 1.0);
         for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
             if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
             Vm(bus_id_me) = 0.;
@@ -492,12 +510,12 @@ Eigen::VectorXcd GridModel::dc_pf_old(const Eigen::VectorXcd & Vinit,
     //END of the SOLVER PART
 
     //TODO handle Vm = Vm (gen) for connected generators
-    return Vm.array() * (Va.array().cos().cast<cdouble>() + my_i * Va.array().sin().cast<cdouble>());
+    return Vm.array() * (Va.array().cos().cast<cplx_type>() + my_i * Va.array().sin().cast<cplx_type>());
 }
 
-Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
+CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                                   int max_iter,  // not used for DC
-                                  double tol  // not used for DC
+                                  real_type tol  // not used for DC
                                   )
 {
     int nb_bus = bus_vn_kv_.size();
@@ -509,10 +527,10 @@ Eigen::VectorXcd GridModel::dc_pf(const Eigen::VectorXcd & Vinit,
     _solver.change_solver(SolverType::DC);
 
     bool conv = false;
-    Eigen::VectorXcd res = Eigen::VectorXcd();
+    CplxVect res = CplxVect();
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    Eigen::VectorXcd V = pre_process_solver(Vinit, false);
+    CplxVect V = pre_process_solver(Vinit, false);
 
     // start the solver
     conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);

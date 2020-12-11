@@ -8,24 +8,22 @@
 
 #include "BaseSolver.h"
 
-const cdouble BaseSolver::my_i = {0., 1.};
-
 void BaseSolver::reset(){
     // reset timers
     reset_timer();
 
     //reset the attribute
     n_ = -1;
-    Vm_ = Eigen::VectorXd();  // voltage magnitude
-    Va_= Eigen::VectorXd();  // voltage angle
-    V_= Eigen::VectorXcd();  // voltage angle
+    Vm_ = RealVect();  // voltage magnitude
+    Va_= RealVect();  // voltage angle
+    V_= RealVect();  // voltage angle
     nr_iter_ = 0;  // number of iteration performs by the algorithm
     err_ = -1; //error message:
 }
 
-Eigen::VectorXd BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Ybus,
-                                         const Eigen::VectorXcd & V,
-                                         const Eigen::VectorXcd & Sbus,
+RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+                                         const CplxVect & V,
+                                         const CplxVect & Sbus,
                                          const Eigen::VectorXi & pv,
                                          const Eigen::VectorXi & pq)
 {
@@ -34,14 +32,14 @@ Eigen::VectorXd BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Y
     auto npq = pq.size();
 
     // compute the mismatch
-    Eigen::VectorXcd tmp = Ybus * V;  // this is a vector
+    CplxVect tmp = Ybus * V;  // this is a vector
     tmp = tmp.array().conjugate();  // i take the conjugate
     auto mis = V.array() * tmp.array() - Sbus.array();
     auto real_ = mis.real();
     auto imag_ = mis.imag();
 
     // build and fill the result
-    Eigen::VectorXd res(npv + 2*npq);
+    RealVect res(npv + 2*npq);
     res.segment(0,npv) = real_(pv);
     res.segment(npv,npq) = real_(pq);
     res.segment(npv+npq, npq) = imag_(pq);
@@ -49,8 +47,8 @@ Eigen::VectorXd BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cdouble> &  Y
     return res;
 }
 
-bool BaseSolver::_check_for_convergence(const Eigen::VectorXd & F,
-                                        double tol)
+bool BaseSolver::_check_for_convergence(const RealVect & F,
+                                        real_type tol)
 {
     auto timer = CustTimer();
     bool res =  F.lpNorm<Eigen::Infinity>()  < tol;

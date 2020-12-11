@@ -8,13 +8,13 @@
 
 #include "BaseNRSolver.h"
 
-bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                              Eigen::VectorXcd & V,
-                              const Eigen::VectorXcd & Sbus,
+bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                              CplxVect & V,
+                              const CplxVect & Sbus,
                               const Eigen::VectorXi & pv,
                               const Eigen::VectorXi & pq,
                               int max_iter,
-                              double tol
+                              real_type tol
                               )
 {
     /**
@@ -43,7 +43,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
     // first check, if the problem is already solved, i stop there
-    Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
@@ -68,21 +68,20 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
             res = false;
             break;
         }
-        auto dx = -1.0*F;
-
+        auto dx = -F;
 
         Vm_ = V_.array().abs();  // update Vm and Va again in case
         Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
         // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
-        if (n_pv > 0) Va_(pv) += dx.segment(0,n_pv);
+        if (n_pv > 0) Va_(pv) += dx.segment(0, n_pv);
         if (n_pq > 0){
             Va_(pq) += dx.segment(n_pv,n_pq);
             Vm_(pq) += dx.segment(n_pv+n_pq, n_pq);
         }
 
         // TODO change here for not having to cast all the time ... maybe
-        V_ = Vm_.array() * (Va_.array().cos().cast<cdouble>() + my_i * Va_.array().sin().cast<cdouble>() );
+        V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
 
         F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
         bool tmp = F.allFinite();
@@ -101,18 +100,18 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
 void BaseNRSolver::reset(){
     BaseSolver::reset();
     // reset specific attributes
-    J_ = Eigen::SparseMatrix<double>();  // the jacobian matrix
-    dS_dVm_ = Eigen::SparseMatrix<cdouble>();
-    dS_dVa_ = Eigen::SparseMatrix<cdouble>();
+    J_ = Eigen::SparseMatrix<real_type>();  // the jacobian matrix
+    dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
+    dS_dVa_ = Eigen::SparseMatrix<cplx_type>();
     need_factorize_ = true;
 }
 
-void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
-                          const Eigen::Ref<const Eigen::VectorXcd > & V){
+void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+                             const Eigen::Ref<const CplxVect > & V){
     auto timer = CustTimer();
     auto size_dS = V.size();
-    Eigen::VectorXcd Vnorm = V.array() / V.array().abs();
-    Eigen::VectorXcd Ibus = Ybus * V;
+    CplxVect Vnorm = V.array() / V.array().abs();
+    CplxVect Ibus = Ybus * V;
 
     // TODO see if i can reuse previous values, i am not sure
     dS_dVm_ = Ybus;
@@ -120,7 +119,7 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble>
 
     // i fill the buffer columns per columns
     for (int k=0; k < size_dS; ++k){
-        for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dS_dVm_,k); it; ++it)
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dS_dVm_,k); it; ++it)
         {
             it.valueRef() *= Vnorm(it.col());  // dS_dVm[k] *= Vnorm[Yj[k]]
             it.valueRef() = std::conj(it.valueRef()) * V(it.row());  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
@@ -132,14 +131,14 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble>
     }
 
     for (int k=0; k < size_dS; ++k){
-        for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dS_dVa_,k); it; ++it)
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dS_dVa_,k); it; ++it)
         {
             it.valueRef() *= V(it.col());  // dS_dVa[k] *= V[Yj[k]]
             if(it.col() == it.row()){
                 // diagonal element
                 it.valueRef() -= Ibus(it.row());  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
             }
-            cdouble tmp = my_i * V(it.row());
+            cplx_type tmp = my_i * V(it.row());
             it.valueRef() = std::conj(-it.valueRef()) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
         }
     }
@@ -150,8 +149,8 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cdouble>
 
 void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
                               std::vector<int> & inner_index,
-                              std::vector<double> & values,
-                              const Eigen::SparseMatrix<double> & mat,  // ex. dS_dVa_r
+                              std::vector<real_type> & values,
+                              const Eigen::SparseMatrix<real_type> & mat,  // ex. dS_dVa_r
                               const std::vector<int> & index_row_inv, // ex. pvpq_inv
                               const Eigen::VectorXi & index_col, // ex. pvpq
                               int col_id,
@@ -186,8 +185,8 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
     }
 }
 
-void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                        const Eigen::VectorXcd & V,
+void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                        const CplxVect & V,
                                         const Eigen::VectorXi & pq,
                                         const Eigen::VectorXi & pvpq,
                                         const std::vector<int> & pq_inv,
@@ -208,10 +207,10 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybu
 
     auto timer = CustTimer();
     _dSbus_dV(Ybus, V);
-    Eigen::SparseMatrix<double> dS_dVa_r = dS_dVa_.real();
-    Eigen::SparseMatrix<double> dS_dVa_i = dS_dVa_.imag();
-    Eigen::SparseMatrix<double> dS_dVm_r = dS_dVm_.real();
-    Eigen::SparseMatrix<double> dS_dVm_i = dS_dVm_.imag();
+    Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
+    Eigen::SparseMatrix<real_type> dS_dVa_i = dS_dVa_.imag();
+    Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
+    Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
 
     const int n_pvpq = pvpq.size();
     const int n_pq = pq.size();
@@ -225,7 +224,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybu
         // i can do that because the matrix will ALWAYS have the same non zero coefficients.
         // in this if, i allocate it in a "large enough" place to avoid copy when first filling it
         need_insert = true;
-        J_ = Eigen::SparseMatrix<double>(size_j,size_j);
+        J_ = Eigen::SparseMatrix<real_type>(size_j,size_j);
         // pre allocate a large enough matrix
         J_.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros()));
         // from an experiment, outerIndexPtr is inialized, with the number of columns
@@ -235,7 +234,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybu
     // i fill the buffer columns per columns
     int nb_obj_this_col = 0;
     std::vector<int> inner_index;
-    std::vector<double> values;
+    std::vector<real_type> values;
 
     // TODO use the loop provided above (in dS) if J is already initialized
     // fill n_pvpq leftmost columns
@@ -272,7 +271,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybu
 //                    }
 //                }else{
 //                    int in_ind=0;
-//                    for (Eigen::SparseMatrix<double>::InnerIterator it(J_,col_id); it; ++it, ++in_ind)
+//                    for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_,col_id); it; ++it, ++in_ind)
 //                    {
 ////                        int row_id = inner_index[it.row()];
 //                        it.valueRef() = values[it.row()];
@@ -316,7 +315,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cdouble> & Ybu
 //                    }
 //                }else{
 //                    int in_ind=0;
-//                    for (Eigen::SparseMatrix<double>::InnerIterator it(J_, col_id + n_pvpq); it; ++it, ++in_ind)
+//                    for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id + n_pvpq); it; ++it, ++in_ind)
 //                    {
 //                        int row_id = inner_index[it.row()];
 //                        it.valueRef() = values[row_id];

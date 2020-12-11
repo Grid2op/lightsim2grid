@@ -24,7 +24,7 @@ void SparseLUSolver::initialize(){
     timer_solve_ += timer.duration();
 }
 
-void SparseLUSolver::solve(Eigen::VectorXd & b, bool has_just_been_inialized){
+void SparseLUSolver::solve(RealVect & b, bool has_just_been_inialized){
     // NEW
 
     // solves (for x) the linear system J.x = b
@@ -43,7 +43,7 @@ void SparseLUSolver::solve(Eigen::VectorXd & b, bool has_just_been_inialized){
         }
     }
     if(!stop){
-        Eigen::VectorXd Va = solver_.solve(b);  //NEW
+        RealVect Va = solver_.solve(b);  //NEW
         if (solver_.info() != Eigen::Success) {
             err_ = 3;
         }

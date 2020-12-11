@@ -69,21 +69,33 @@ def main(max_ts, ENV_NAME, test=True):
         gs_comp_time = env_lightsim.backend.comp_time
         gs_time_pf = env_lightsim._time_powerflow
 
+    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types:
+        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidelSynch)
+        env_lightsim.backend.set_solver_max_iter(10000)
+        nb_ts_gsa, time_gsa, aor_gsa, gen_p_gsa, gen_q_gsa = run_env(env_lightsim, max_ts, agent, chron_id=0,
+                                                                     with_type_solver=wst, env_seed=0)
+        gsa_comp_time = env_lightsim.backend.comp_time
+        gsa_time_pf = env_lightsim._time_powerflow
+
     # NOW PRINT THE RESULTS
     env_name = get_env_name_displayed(ENV_NAME)
     hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op powerflow time (ms)", f"solver powerflow time (ms)"]
     tab = [["PP", int(nb_ts_pp/time_pp),
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}"]]
-    if lightsim2grid.SolverType.GaussSeidel:
+    if lightsim2grid.SolverType.GaussSeidel in solver_types:
         tab.append(["LS+GS", int(nb_ts_gs/time_gs),
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"])
-    if lightsim2grid.SolverType.SparseLU:
+    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types:
+        tab.append(["LS+GS A", int(nb_ts_gsa/time_gsa),
+                    f"{1000.*gsa_time_pf/nb_ts_gsa:.2e}",
+                    f"{1000.*gsa_comp_time/nb_ts_gsa:.2e}"])
+    if lightsim2grid.SolverType.SparseLU in solver_types:
         tab.append(["LS+SLU", int(nb_ts_slu/time_slu),
                     f"{1000.*slu_time_pf/nb_ts_slu:.2e}",
                     f"{1000.*slu_comp_time/nb_ts_slu:.2e}"])
-    if lightsim2grid.SolverType.KLU:
+    if lightsim2grid.SolverType.KLU in solver_types:
         tab.append(["LS+KLU", int(nb_ts_klu/time_klu),
                     f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
@@ -97,17 +109,22 @@ def main(max_ts, ENV_NAME, test=True):
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
     tab = [["PP", "0.00", "0.00", "0.00"]]
-    if lightsim2grid.SolverType.GaussSeidel:
+    if lightsim2grid.SolverType.GaussSeidel in solver_types:
         tab.append(["LS+GS",
                     f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.SparseLU:
+    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types:
+        tab.append(["LS+GS A",
+                    f"{np.max(np.abs(aor_gsa - aor_pp)):.2e}",
+                    f"{np.max(np.abs(gen_p_gsa - gen_p_pp)):.2e}",
+                    f"{np.max(np.abs(gen_q_gsa - gen_q_pp)):.2e}"])
+    if lightsim2grid.SolverType.SparseLU in solver_types:
         tab.append(["LS+SLU",
                     f"{np.max(np.abs(aor_slu - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_slu - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_slu - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.KLU:
+    if lightsim2grid.SolverType.KLU in solver_types:
         tab.append(["LS+KLU",
                     f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",

@@ -8,13 +8,13 @@
 
 #include "GaussSeidelSolver.h"
 
-bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                   Eigen::VectorXcd & V,
-                                   const Eigen::VectorXcd & Sbus,
+bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                   CplxVect & V,
+                                   const CplxVect & Sbus,
                                    const Eigen::VectorXi & pv,
                                    const Eigen::VectorXi & pq,
                                    int max_iter,
-                                   double tol
+                                   real_type tol
                                    )
 {
     /**
@@ -33,11 +33,11 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
     // first check, if the problem is already solved, i stop there
-    Eigen::VectorXd F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
-    Eigen::VectorXcd tmp_Sbus = Sbus;
+    CplxVect tmp_Sbus = Sbus;
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
 
@@ -49,7 +49,7 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
         // https://github.com/rwl/PYPOWER/blob/master/pypower/gausspf.py
 
         auto timer2 = CustTimer();
-        // one_iter_all_at_once(tmp_Sbus, Ybus, pv, pq);
+        // RealVect_all_at_once(tmp_Sbus, Ybus, pv, pq);
         one_iter(tmp_Sbus, Ybus, pv, pq);
         timer_solve_ += timer2.duration();
 
@@ -71,13 +71,13 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     return res;
 }
 
-void GaussSeidelSolver::one_iter(Eigen::VectorXcd & tmp_Sbus,
-                                 const Eigen::SparseMatrix<cdouble> & Ybus,
+void GaussSeidelSolver::one_iter(CplxVect & tmp_Sbus,
+                                 const Eigen::SparseMatrix<cplx_type> & Ybus,
                                  const Eigen::VectorXi & pv,
                                  const Eigen::VectorXi & pq)
 {
     // do an update with the standard GS algorithm
-    cdouble tmp;
+    cplx_type tmp;
 
     int n_pv = pv.size();
     int n_pq = pq.size();
@@ -88,7 +88,7 @@ void GaussSeidelSolver::one_iter(Eigen::VectorXcd & tmp_Sbus,
         int k = pq.coeff(k_tmp);
         tmp = tmp_Sbus.coeff(k) / V_.coeff(k);
         tmp = std::conj(tmp);
-        tmp -= static_cast<cdouble>(Ybus.row(k) * V_);
+        tmp -= static_cast<cplx_type>(Ybus.row(k) * V_);
         tmp /= Ybus.coeff(k,k);
         V_.coeffRef(k) += tmp;
     }
@@ -98,7 +98,7 @@ void GaussSeidelSolver::one_iter(Eigen::VectorXcd & tmp_Sbus,
     {
         int k = pv.coeff(k_tmp);
         // update Sbus
-        tmp = static_cast<cdouble>(Ybus.row(k) * V_);  // Ybus[k,:] * V
+        tmp = static_cast<cplx_type>(Ybus.row(k) * V_);  // Ybus[k,:] * V
         tmp = std::conj(tmp);  // conj(Ybus[k,:] * V)
         tmp *= V_.coeff(k);  // (V[k] * conj(Ybus[k,:] * V))
         tmp = my_i * std::imag(tmp);
@@ -107,57 +107,8 @@ void GaussSeidelSolver::one_iter(Eigen::VectorXcd & tmp_Sbus,
         // update V
         tmp = tmp_Sbus.coeff(k) / V_.coeff(k);
         tmp = std::conj(tmp);
-        tmp -= static_cast<cdouble>(Ybus.row(k) * V_);
+        tmp -= static_cast<cplx_type>(Ybus.row(k) * V_);
         tmp /= Ybus.coeff(k,k);
-        V_.coeffRef(k) += tmp;
-    }
-
-    // make sure the voltage magnitudes are not modified at pv buses
-    for(int k_tmp=0; k_tmp<n_pv; ++k_tmp)
-    {
-        int k = pv.coeff(k_tmp);
-        V_.coeffRef(k) *= Vm_.coeff(k) / std::abs(V_.coeff(k));
-    }
-}
-
-void GaussSeidelSolver::one_iter_all_at_once(Eigen::VectorXcd & tmp_Sbus,
-                                             const Eigen::SparseMatrix<cdouble> & Ybus,
-                                             const Eigen::VectorXi & pv,
-                                             const Eigen::VectorXi & pq)
-{
-    // do an update with all nodes being updated at the same time (different than the original GaussSeidel)
-    cdouble tmp;
-
-    int n_pv = pv.size();
-    int n_pq = pq.size();
-
-    // Eigen::VectorXcd tmp_YbusV;  // Ybus[k, :] * V
-    // Eigen::VectorXcd tmp_conj_Sbus_V;  //  conj(Sbus[k] / V[k])
-    Eigen::VectorXcd tmp_YbusV = Ybus * V_;
-    Eigen::VectorXcd tmp_conj_Sbus_V = tmp_Sbus.array() / V_.array();
-    tmp_conj_Sbus_V = tmp_conj_Sbus_V.array().conjugate();
-
-    // update PQ buses
-    for(int k_tmp=0; k_tmp<n_pq; ++k_tmp)
-    {
-        int k = pq.coeff(k_tmp);
-        tmp = (tmp_conj_Sbus_V.coeff(k) -  tmp_YbusV.coeff(k)) / Ybus.coeff(k,k);
-        V_.coeffRef(k) += tmp;
-    }
-
-    // update PV buses
-    for(int k_tmp=0; k_tmp<n_pv; ++k_tmp)
-    {
-        int k = pv.coeff(k_tmp);
-        // update Sbus
-        tmp = tmp_YbusV.coeff(k);  // Ybus[k,:] * V
-        tmp = std::conj(tmp);  // conj(Ybus[k,:] * V)
-        tmp *= V_.coeff(k);  // (V[k] * conj(Ybus[k,:] * V))
-        tmp = my_i * std::imag(tmp);
-        tmp_Sbus.coeffRef(k) = std::real(tmp_Sbus.coeff(k)) + tmp;
-
-        // update V
-        tmp = (tmp_conj_Sbus_V(k) -  tmp_YbusV(k)) / Ybus.coeff(k,k);
         V_.coeffRef(k) += tmp;
     }
 

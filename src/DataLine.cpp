@@ -8,9 +8,9 @@
 
 #include "DataLine.h"
 
-void DataLine::init(const Eigen::VectorXd & branch_r,
-                    const Eigen::VectorXd & branch_x,
-                    const Eigen::VectorXcd & branch_h,
+void DataLine::init(const RealVect & branch_r,
+                    const RealVect & branch_x,
+                    const CplxVect & branch_h,
                     const Eigen::VectorXi & branch_from_id,
                     const Eigen::VectorXi & branch_to_id
                     )
@@ -37,9 +37,9 @@ void DataLine::init(const Eigen::VectorXd & branch_r,
 
 DataLine::StateRes DataLine::get_state() const
 {
-     std::vector<double> branch_r(powerlines_r_.begin(), powerlines_r_.end());
-     std::vector<double> branch_x(powerlines_x_.begin(), powerlines_x_.end());
-     std::vector<std::complex<double> > branch_h(powerlines_h_.begin(), powerlines_h_.end());
+     std::vector<real_type> branch_r(powerlines_r_.begin(), powerlines_r_.end());
+     std::vector<real_type> branch_x(powerlines_x_.begin(), powerlines_x_.end());
+     std::vector<cplx_type > branch_h(powerlines_h_.begin(), powerlines_h_.end());
      std::vector<int > branch_from_id(bus_or_id_.begin(), bus_or_id_.end());
      std::vector<int > branch_to_id(bus_ex_id_.begin(), bus_ex_id_.end());
      std::vector<bool> status = status_;
@@ -50,18 +50,18 @@ void DataLine::set_state(DataLine::StateRes & my_state)
 {
     reset_results();
 
-    std::vector<double> & branch_r = std::get<0>(my_state);
-    std::vector<double> & branch_x = std::get<1>(my_state);
-    std::vector<std::complex<double> > & branch_h = std::get<2>(my_state);
+    std::vector<real_type> & branch_r = std::get<0>(my_state);
+    std::vector<real_type> & branch_x = std::get<1>(my_state);
+    std::vector<cplx_type > & branch_h = std::get<2>(my_state);
     std::vector<int> & branch_from_id = std::get<3>(my_state);
     std::vector<int> & branch_to_id = std::get<4>(my_state);
     std::vector<bool> & status = std::get<5>(my_state);
     // TODO check sizes
 
     // now assign the values
-    powerlines_r_ = Eigen::VectorXd::Map(&branch_r[0], branch_r.size());
-    powerlines_x_ = Eigen::VectorXd::Map(&branch_x[0], branch_x.size());
-    powerlines_h_ = Eigen::VectorXcd::Map(&branch_h[0], branch_h.size());
+    powerlines_r_ = RealVect::Map(&branch_r[0], branch_r.size());
+    powerlines_x_ = RealVect::Map(&branch_x[0], branch_x.size());
+    powerlines_h_ = CplxVect::Map(&branch_h[0], branch_h.size());
 
     // input data
     bus_or_id_ = Eigen::VectorXi::Map(&branch_from_id[0], branch_from_id.size());
@@ -69,7 +69,7 @@ void DataLine::set_state(DataLine::StateRes & my_state)
     status_ = status;
 }
 
-void DataLine::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
@@ -94,31 +94,31 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, co
         }
 
         // convert subsceptance to half subsceptance, applied on each ends
-        cdouble h = 0.;
+        cplx_type h = 0.;
         if(ac){
             h = powerlines_h_(line_id); // yes it's the correct one
-            h = my_i * 0.5 * h;
+            h = my_i * my_half_ * h;
         }
 
         // compute the admittance y
-        cdouble y = 0.;
-        cdouble z = powerlines_x_(line_id);
+        cplx_type y = 0.;
+        cplx_type z = powerlines_x_(line_id);
         if(ac){
             z *= my_i;
             z += powerlines_r_(line_id);
         }
-        if (z !=0. ) y = 1.0 / z;
+        if (z != my_zero_) y = my_one_ / z;
 
         // fill non diagonal coefficient
-        res.push_back(Eigen::Triplet<cdouble> (bus_or_solver_id, bus_ex_solver_id, -y));
-        res.push_back(Eigen::Triplet<cdouble> (bus_ex_solver_id, bus_or_solver_id, -y));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_ex_solver_id, -y));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, -y));
         // fill diagonal coefficient
-        cdouble tmp = y + h;
-        res.push_back(Eigen::Triplet<cdouble> (bus_or_solver_id, bus_or_solver_id, tmp));
-        res.push_back(Eigen::Triplet<cdouble> (bus_ex_solver_id, bus_ex_solver_id, tmp));
+        cplx_type tmp = y + h;
+        res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, tmp));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, tmp));
     }
 }
-void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
@@ -143,27 +143,27 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const
         }
 
         // convert subsceptance to half subsceptance, applied on each ends
-        cdouble h = 0.;
+        cplx_type h = 0.;
         if(ac){
             h = powerlines_h_(line_id); // yes it's the correct one
-            h = my_i * 0.5 * h;
+            h = my_i * my_half_ * h;
         }
 
         // compute the admittance y
-        cdouble y = 0.;
-        cdouble z = powerlines_x_(line_id);
+        cplx_type y = 0.;
+        cplx_type z = powerlines_x_(line_id);
         if(ac){
             z *= my_i;
             z += powerlines_r_(line_id);
         }
-        if (z !=0. ) y = 1.0 / z;
+        if (z != my_zero_ ) y = my_one_ / z;
 
         // fill non diagonal coefficient
         res.coeffRef(bus_or_solver_id, bus_ex_solver_id) -= y; // * base_for_pu_from;
         res.coeffRef(bus_ex_solver_id, bus_or_solver_id) -= y; // * base_for_pu_to;
 
         // fill diagonal coefficient
-        cdouble tmp = y + h;
+        cplx_type tmp = y + h;
         res.coeffRef(bus_or_solver_id, bus_or_solver_id) += tmp;
         res.coeffRef(bus_ex_solver_id, bus_ex_solver_id) += tmp;
     }
@@ -171,42 +171,42 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const
 
 void DataLine::reset_results()
 {
-    res_powerline_por_ = Eigen::VectorXd();  // in MW
-    res_powerline_qor_ = Eigen::VectorXd();  // in MVar
-    res_powerline_vor_ = Eigen::VectorXd();  // in kV
-    res_powerline_aor_ = Eigen::VectorXd();  // in kA
-    res_powerline_pex_ = Eigen::VectorXd();  // in MW
-    res_powerline_qex_ = Eigen::VectorXd();  // in MVar
-    res_powerline_vex_ = Eigen::VectorXd();  // in kV
-    res_powerline_aex_ = Eigen::VectorXd();  // in kA
+    res_powerline_por_ = RealVect();  // in MW
+    res_powerline_qor_ = RealVect();  // in MVar
+    res_powerline_vor_ = RealVect();  // in kV
+    res_powerline_aor_ = RealVect();  // in kA
+    res_powerline_pex_ = RealVect();  // in MW
+    res_powerline_qex_ = RealVect();  // in MVar
+    res_powerline_vex_ = RealVect();  // in kV
+    res_powerline_aex_ = RealVect();  // in kA
 }
 
 
-void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                               const Eigen::Ref<Eigen::VectorXd> & Vm,
-                               const Eigen::Ref<Eigen::VectorXcd> & V,
+void DataLine::compute_results(const Eigen::Ref<RealVect> & Va,
+                               const Eigen::Ref<RealVect> & Vm,
+                               const Eigen::Ref<CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
-                               const Eigen::VectorXd & bus_vn_kv)
+                               const RealVect & bus_vn_kv)
 {
     // it needs to be initialized at 0.
     int nb_element = nb();
-    res_powerline_por_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MW
-    res_powerline_qor_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
-    res_powerline_vor_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
-    res_powerline_aor_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
-    res_powerline_pex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MW
-    res_powerline_qex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in MVar
-    res_powerline_vex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kV
-    res_powerline_aex_ = Eigen::VectorXd::Constant(nb_element, 0.0);  // in kA
+    res_powerline_por_ = RealVect::Constant(nb_element, my_zero_);  // in MW
+    res_powerline_qor_ = RealVect::Constant(nb_element, my_zero_);  // in MVar
+    res_powerline_vor_ = RealVect::Constant(nb_element, my_zero_);  // in kV
+    res_powerline_aor_ = RealVect::Constant(nb_element, my_zero_);  // in kA
+    res_powerline_pex_ = RealVect::Constant(nb_element, my_zero_);  // in MW
+    res_powerline_qex_ = RealVect::Constant(nb_element, my_zero_);  // in MVar
+    res_powerline_vex_ = RealVect::Constant(nb_element, my_zero_);  // in kV
+    res_powerline_aex_ = RealVect::Constant(nb_element, my_zero_);  // in kA
     for(int line_id = 0; line_id < nb_element; ++line_id){
         // don't do anything if the element is disconnected
         if(!status_[line_id]) continue;
 
         //physical properties
-        double r = powerlines_r_(line_id);
-        double x = powerlines_x_(line_id);
-        cdouble h = my_i * 0.5 * powerlines_h_(line_id);
-        cdouble y = 1.0 / (r + my_i * x);
+        real_type r = powerlines_r_(line_id);
+        real_type x = powerlines_x_(line_id);
+        cplx_type h = my_i * my_half_ * powerlines_h_(line_id);
+        cplx_type y = my_one_ / (r + my_i * x);
 
         // connectivity
         int bus_or_id_me = bus_or_id_(line_id);
@@ -221,17 +221,17 @@ void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
         }
 
         // results of the powerflow
-        cdouble Eor = V(bus_or_solver_id);
-        cdouble Eex = V(bus_ex_solver_id);
+        cplx_type Eor = V(bus_or_solver_id);
+        cplx_type Eex = V(bus_ex_solver_id);
 
         // powerline equations
-        cdouble I_orex = (y + h) * Eor - y * Eex;
-        cdouble I_exor = (y + h) * Eex - y * Eor;
+        cplx_type I_orex = (y + h) * Eor - y * Eex;
+        cplx_type I_exor = (y + h) * Eex - y * Eor;
 
         I_orex = std::conj(I_orex);
         I_exor = std::conj(I_exor);
-        cdouble s_orex = Eor * I_orex;
-        cdouble s_exor = Eex * I_exor;
+        cplx_type s_orex = Eor * I_orex;
+        cplx_type s_exor = Eex * I_exor;
 
         res_powerline_por_(line_id) = std::real(s_orex);
         res_powerline_qor_(line_id) = std::imag(s_orex);
@@ -239,10 +239,10 @@ void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
         res_powerline_qex_(line_id) = std::imag(s_exor);
 
         // retrieve voltages magnitude in kv instead of pu
-        double v_or = Vm(bus_or_solver_id);
-        double v_ex = Vm(bus_ex_solver_id);
-        double bus_vn_kv_or = bus_vn_kv(bus_or_id_me);
-        double bus_vn_kv_ex = bus_vn_kv(bus_ex_id_me);
+        real_type v_or = Vm(bus_or_solver_id);
+        real_type v_ex = Vm(bus_ex_solver_id);
+        real_type bus_vn_kv_or = bus_vn_kv(bus_or_id_me);
+        real_type bus_vn_kv_ex = bus_vn_kv(bus_ex_id_me);
         res_powerline_vor_(line_id) = v_or * bus_vn_kv_or;
         res_powerline_vex_(line_id) = v_ex * bus_vn_kv_ex;
     }
@@ -250,10 +250,10 @@ void DataLine::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
 }
 
-double DataLine::get_p_slack(int slack_bus_id)
+real_type DataLine::get_p_slack(int slack_bus_id)
 {
     int nb_element = nb();
-    double res = 0.;
+    real_type res = 0.;
     for(int line_id = 0; line_id < nb_element; ++line_id)
     {
         if(!status_[line_id]) continue;
@@ -263,7 +263,7 @@ double DataLine::get_p_slack(int slack_bus_id)
     return res;
 }
 
-void DataLine::get_q(std::vector<double>& q_by_bus)
+void DataLine::get_q(std::vector<real_type>& q_by_bus)
 {
     int nb_element = nb();
     for(int el_id = 0; el_id < nb_element; ++el_id)

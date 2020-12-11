@@ -19,13 +19,13 @@ class DCSolver: public BaseSolver
         ~DCSolver(){}
 
         virtual
-        bool compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                        Eigen::VectorXcd & V,
-                        const Eigen::VectorXcd & Sbus,
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                        CplxVect & V,
+                        const CplxVect & Sbus,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
-                        double tol
+                        real_type tol
                         );
 
     private:

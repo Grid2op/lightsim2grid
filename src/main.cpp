@@ -10,9 +10,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 
-#include "KLUSolver.h"
-#include "SparseLUSolver.h"
-#include "GaussSeidelSolver.h"
+#include "ChooseSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
 
@@ -27,6 +25,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("KLU", SolverType::KLU)
         .value("GaussSeidel", SolverType::GaussSeidel)
         .value("DC", SolverType::DC)
+        .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
@@ -174,6 +173,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // get back the results
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
+        .def("check_solution", &GridModel::check_solution)
 
         // TODO optimize that for speed, results are copied apparently
         .def("get_loads_res", &GridModel::get_loads_res)

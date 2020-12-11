@@ -14,29 +14,28 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "Utils.h"
+#include "BaseConstants.h"
 
 /**
 Base class for every object that can be manipulated
 **/
-class DataGeneric
+class DataGeneric : public BaseConstants
 {
     public:
 
-        virtual void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
-        virtual void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
-        virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
+        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
+        virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
+        virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             int slack_bus_id_solver,
                             const std::vector<int> & id_grid_to_solver) {};
-        virtual double get_p_slack(int slack_bus_id) {return 0.;}
-        virtual void set_p_slack(int gen_slackbus, double p_slack) {};
-        virtual void get_q(std::vector<double>& q_by_bus) {};
+        virtual real_type get_p_slack(int slack_bus_id) {return my_zero_;}
+        virtual void set_p_slack(int gen_slackbus, real_type p_slack) {};
+        virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
     protected:
         static const int _deactivated_bus_id;
-        static const cdouble my_i;
 
         /**
         activation / deactivation of elements
@@ -49,18 +48,18 @@ class DataGeneric
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
         **/
-        void _get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v);
+        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v);
 
         /**
         **/
-        void v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
-                           const Eigen::Ref<Eigen::VectorXd> & Vm,
+        void v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
+                           const Eigen::Ref<RealVect> & Vm,
                            const std::vector<bool> & status,
                            int nb_element,
                            const Eigen::VectorXi & bus_me_id,
                            const std::vector<int> & id_grid_to_solver,
-                           const Eigen::VectorXd & bus_vn_kv,
-                           Eigen::VectorXd & v);
+                           const RealVect & bus_vn_kv,
+                           RealVect & v);
 
 };
 

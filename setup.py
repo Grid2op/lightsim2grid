@@ -47,7 +47,7 @@ def has_flag(compiler, flagname):
 
 def cpp_flag(compiler):
     """Return the -std=c++[11/14/17] compiler flag.
-    The newer version is prefered over c++11 (when it is available).
+    The newer version is preferred over c++11 (when it is available).
 
     @author: Sylvain Corlay
     """
@@ -170,10 +170,23 @@ elif sys.platform.startswith("win32"):
 # extra_compile_args_tmp += ["-DEIGEN_USE_BLAS", "-DEIGEN_USE_LAPACKE"]
 
 extra_compile_args = extra_compile_args_tmp
-src_files = ['src/main.cpp', "src/SparseLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
-             "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
-             "src/DataLoad.cpp", "src/DataGen.cpp", "src/BaseNRSolver.cpp", "src/ChooseSolver.cpp",
-             "src/GaussSeidelSolver.cpp", "src/BaseSolver.cpp", "src/DCSolver.cpp"]
+src_files = ['src/main.cpp',
+             "src/SparseLUSolver.cpp",
+             "src/BaseConstants.cpp",
+             "src/GridModel.cpp",
+             "src/DataConverter.cpp",
+             "src/DataLine.cpp",
+             "src/DataGeneric.cpp",
+             "src/DataShunt.cpp",
+             "src/DataTrafo.cpp",
+             "src/DataLoad.cpp",
+             "src/DataGen.cpp",
+             "src/BaseNRSolver.cpp",
+             "src/ChooseSolver.cpp",
+             "src/GaussSeidelSolver.cpp",
+             "src/GaussSeidelSynchSolver.cpp",
+             "src/BaseSolver.cpp",
+             "src/DCSolver.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
