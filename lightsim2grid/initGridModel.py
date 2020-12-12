@@ -80,7 +80,7 @@ def init(pp_net):
     model.init_powerlines(line_r, line_x, line_h,
                           pp_net.line["from_bus"].values,
                           pp_net.line["to_bus"].values
-                               )
+                          )
     for line_id, sh_status in enumerate(pp_net.line["in_service"].values):
         if not sh_status:
             # powerline is deactivated

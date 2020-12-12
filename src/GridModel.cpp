@@ -198,19 +198,9 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
 
     // now check reactive values for buses where there are generators and active values of slack bus
     // test for iterator though generator
-    int i_test = 0;
-    for(const auto & el: generators_)
+    for(const auto & gen: generators_)
     {
-        std::cout << "reached gen id " << i_test << "connected " << el.connected << " , " << el.target_p_mw << std::endl;
-        i_test++;
-    }
-    // end test
-
-    int nb_gen = generators_.nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        int bus_id = generators_.get_bus(gen_id);
-        if(bus_id == _deactivated_bus_id)
+        if(!gen.connected)
         {
             // the generator is disconnected, I do nothing
             continue;
@@ -218,34 +208,30 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
         if(check_q_limits)
         {
             // i need to check the reactive can be absorbed / produced by the generator
-            real_type qmin = generators_.get_qmin(gen_id);
-            real_type qmax = generators_.get_qmax(gen_id);
-            real_type react_this_bus = std::imag(res.coeff(bus_id));
             real_type new_q = my_zero_;
-            if((react_this_bus >= qmin) && (react_this_bus <= qmax))
+            real_type react_this_bus = std::imag(res.coeff(gen.bus_id));
+            if((react_this_bus >= gen.min_q_mvar) && (react_this_bus <= gen.max_q_mvar))
             {
                 // this generator is able to handle all reactive
                 new_q = my_zero_;
-            }else if(react_this_bus < qmin){
+            }else if(react_this_bus < gen.min_q_mvar){
                 // generator cannot absorb enough reactive power
-                new_q = qmin - react_this_bus; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
+                new_q = gen.min_q_mvar - react_this_bus; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
             }else{
                 // generator cannot produce enough reactive power
-                new_q = qmax - react_this_bus;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
+                new_q = gen.max_q_mvar - react_this_bus;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
             }
-            res.coeffRef(bus_id) = {std::real(res.coeff(bus_id)), new_q};
+            res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), new_q};
         }else{
             // the q value for the bus at which the generator is connected will be 0
-            res.coeffRef(bus_id) = {std::real(res.coeff(bus_id)), my_zero_};
+            res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), my_zero_};
         }
-        if(gen_id == gen_slackbus_)
+        if(gen.id == gen_slackbus_)
         {
             // slack bus, by definition, can handle all active value
-            res.coeffRef(bus_id) = {my_zero_, std::imag(res.coeff(bus_id))};
+            res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
         }
-
     }
-
     return res;
 };
 

@@ -194,6 +194,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // get back the results
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
+        .def("get_J", &GridModel::get_J)
         .def("check_solution", &GridModel::check_solution)
 
         // TODO optimize that for speed, results are copied apparently

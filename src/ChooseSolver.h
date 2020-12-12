@@ -83,7 +83,7 @@ class ChooseSolver
     private:
         void check_right_solver()
         {
-            if(_solver_type != _type_used_for_nr) throw std::runtime_error("Solver mismatch between the performing of the newton raphson and the retrieval of the result.");
+            if(_solver_type != _type_used_for_nr) throw std::runtime_error("ChooseSolver: Solver mismatch: current solver is not the last solver used to perform a powerflow");
         }
 
         template<SolverType ST>
