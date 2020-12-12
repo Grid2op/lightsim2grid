@@ -16,6 +16,7 @@
 
 #include "BaseConstants.h"
 
+
 // TODO make this class iterable ! with operator begin, end and an iterator
 /**
 Base class for every object that can be manipulated

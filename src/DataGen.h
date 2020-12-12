@@ -22,6 +22,93 @@
 class DataGen: public DataGeneric
 {
     public:
+    class GenInfo
+    {
+        public:
+            // members
+            int id;  // id of the generator
+            bool connected;
+            int bus_id;
+            real_type target_p_mw;
+            real_type target_vm_pu;
+            real_type min_q_mvar;
+            real_type max_q_mvar;
+            bool has_res;
+            real_type res_p;
+            real_type res_q;
+            real_type res_v;
+
+            GenInfo(const DataGen & r_data_gen, int my_id):
+            id(-1),
+            connected(false),
+            target_p_mw(0.),
+            target_vm_pu(0.),
+            min_q_mvar(0.),
+            max_q_mvar(0.),
+            has_res(false),
+            res_p(0.),
+            res_q(0.),
+            res_v(0.)
+            {
+                if((my_id >= 0) & (my_id < r_data_gen.nb()))
+                {
+                    id = my_id;
+                    connected = r_data_gen.status_[my_id];
+                    bus_id = r_data_gen.bus_id_[my_id];
+                    target_p_mw = r_data_gen.p_mw_.coeff(my_id);
+                    target_vm_pu = r_data_gen.vm_pu_.coeff(my_id);
+                    min_q_mvar = r_data_gen.min_q_.coeff(my_id);
+                    max_q_mvar = r_data_gen.max_q_.coeff(my_id);
+
+                    has_res = r_data_gen.res_p_.size() > 0;
+                    if(has_res)
+                    {
+                        res_p = r_data_gen.res_p_.coeff(my_id);
+                        res_q = r_data_gen.res_q_.coeff(my_id);
+                        res_v = r_data_gen.res_v_.coeff(my_id);
+                    }
+                }
+            }
+    };
+
+    private:
+    // iterator type
+    class DataGenConstIterator
+    {
+        protected:
+            const DataGen * const _p_data_gen;
+
+        public:
+            int my_id;
+            GenInfo my_info;
+
+            // functions
+            DataGenConstIterator(const DataGen * const data_gen, int id):
+                _p_data_gen(data_gen),
+                my_id(id),
+                my_info(*data_gen, id)
+                {};
+
+            const GenInfo& operator*() const { return my_info; }
+            bool operator==(const DataGenConstIterator& other) const { return (_p_data_gen == other._p_data_gen) & (my_id == other.my_id); }
+            bool operator!=(const DataGenConstIterator& other) const { return !(*this == other); }
+            DataGenConstIterator& operator++()
+            {
+                ++my_id;
+                my_info = GenInfo(*_p_data_gen, my_id);
+                return *this;
+            }
+            DataGenConstIterator& operator--()
+            {
+                --my_id;
+                my_info = GenInfo(*_p_data_gen, my_id);
+                return *this;
+            }
+            int size() const { return _p_data_gen->nb(); }
+    };
+    // end iterator type
+
+    public:
     typedef std::tuple<
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // vm_pu_
@@ -33,6 +120,7 @@ class DataGen: public DataGeneric
 
     DataGen() {};
 
+    // TODO add pmin and pmax here !
     void init(const RealVect & generators_p,
               const RealVect & generators_v,
               const RealVect & generators_min_q,
@@ -40,7 +128,24 @@ class DataGen: public DataGeneric
               const Eigen::VectorXi & generators_bus_id
               );
 
-    int nb() { return p_mw_.size(); }
+    int nb() const { return p_mw_.size(); }
+
+    // iterator
+    typedef DataGenConstIterator const_iterator_type;
+    const_iterator_type begin() const {return DataGenConstIterator(this, 0); }
+    const_iterator_type end() const {return DataGenConstIterator(this, nb()); }
+    GenInfo operator[](int id) const
+    {
+        if(id < 0)
+        {
+            throw std::range_error("You cannot ask for a negative generator");
+        }
+        if(id >= nb())
+        {
+            throw std::range_error("Generator out of bound. Not enough generator on the grid.");
+        }
+        return GenInfo(*this, id);
+    }
 
     // pickle
     DataGen::StateRes get_state() const;

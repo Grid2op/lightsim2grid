@@ -197,6 +197,15 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     CplxVect res = _get_results_back_to_orig_nodes(mis, V_proposed.size());
 
     // now check reactive values for buses where there are generators and active values of slack bus
+    // test for iterator though generator
+    int i_test = 0;
+    for(const auto & el: generators_)
+    {
+        std::cout << "reached gen id " << i_test << "connected " << el.connected << " , " << el.target_p_mw << std::endl;
+        i_test++;
+    }
+    // end test
+
     int nb_gen = generators_.nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {

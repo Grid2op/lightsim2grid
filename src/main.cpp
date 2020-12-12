@@ -81,6 +81,26 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
 
+    py::class_<DataGen>(m, "DataGen")
+        .def("__len__", [](const DataGen & data) { return data.nb(); })
+        .def("__getitem__", [](const DataGen & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataGen & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataGen::GenInfo>(m, "GenInfo")
+        .def_readonly("id", &DataGen::GenInfo::id)
+        .def_readonly("connected", &DataGen::GenInfo::connected)
+        .def_readonly("bus_id", &DataGen::GenInfo::bus_id)
+        .def_readonly("target_p_mw", &DataGen::GenInfo::target_p_mw)
+        .def_readonly("target_vm_pu", &DataGen::GenInfo::target_vm_pu)
+        .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar)
+        .def_readonly("max_q_mvar", &DataGen::GenInfo::max_q_mvar)
+        .def_readonly("has_res", &DataGen::GenInfo::has_res)
+        .def_readonly("res_p", &DataGen::GenInfo::res_p)
+        .def_readonly("res_q", &DataGen::GenInfo::res_q)
+        .def_readonly("res_v", &DataGen::GenInfo::res_v);
+
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
         .def(py::init<>())
@@ -162,6 +182,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_gen", &GridModel::get_bus_gen)
         .def("change_p_gen", &GridModel::change_p_gen)
         .def("change_v_gen", &GridModel::change_v_gen)
+        .def("get_generators", &GridModel::get_generators)
 
         .def("deactivate_shunt", &GridModel::deactivate_shunt)
         .def("reactivate_shunt", &GridModel::reactivate_shunt)

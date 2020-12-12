@@ -200,6 +200,7 @@ class GridModel : public DataGeneric
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, need_reset_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
+        const DataGen & get_generators() const {return generators_;}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
