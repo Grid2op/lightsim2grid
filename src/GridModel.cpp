@@ -183,7 +183,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     return res;
 };
 
-CplxVect GridModel::check_solution(const CplxVect & V_proposed)
+CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     CplxVect V = pre_process_solver(V_proposed, true);
@@ -194,10 +194,50 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed)
     auto mis = V.array() * tmp.array() - Sbus_.array();
 
     // store results
-    CplxVect res = CplxVect();
-    process_results(true, res, V);
+    CplxVect res = _get_results_back_to_orig_nodes(mis, V_proposed.size());
 
-    return mis;
+    // now check reactive values for buses where there are generators and active values of slack bus
+    int nb_gen = generators_.nb();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        int bus_id = generators_.get_bus(gen_id);
+        if(bus_id == _deactivated_bus_id)
+        {
+            // the generator is disconnected, I do nothing
+            continue;
+        }
+        if(check_q_limits)
+        {
+            // i need to check the reactive can be absorbed / produced by the generator
+            real_type qmin = generators_.get_qmin(gen_id);
+            real_type qmax = generators_.get_qmax(gen_id);
+            real_type react_this_bus = std::imag(res.coeff(bus_id));
+            real_type new_q = my_zero_;
+            if((react_this_bus >= qmin) && (react_this_bus <= qmax))
+            {
+                // this generator is able to handle all reactive
+                new_q = my_zero_;
+            }else if(react_this_bus < qmin){
+                // generator cannot absorb enough reactive power
+                new_q = qmin - react_this_bus; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
+            }else{
+                // generator cannot produce enough reactive power
+                new_q = qmax - react_this_bus;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
+            }
+            res.coeffRef(bus_id) = {std::real(res.coeff(bus_id)), new_q};
+        }else{
+            // the q value for the bus at which the generator is connected will be 0
+            res.coeffRef(bus_id) = {std::real(res.coeff(bus_id)), my_zero_};
+        }
+        if(gen_id == gen_slackbus_)
+        {
+            // slack bus, by definition, can handle all active value
+            res.coeffRef(bus_id) = {my_zero_, std::imag(res.coeff(bus_id))};
+        }
+
+    }
+
+    return res;
 };
 
 
@@ -226,6 +266,23 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac)
     generators_.set_vm(V, id_me_to_solver_);
     return V;
 }
+
+CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, int size)
+{
+    CplxVect res = CplxVect::Constant(size, 0.);
+    int nb_bus = bus_vn_kv_.size();
+    for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
+        if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+        int bus_id_solver = id_me_to_solver_[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            //TODO improve error message with the gen_id
+            throw std::runtime_error("One bus is connected in GridModel and disconnected in Solver");
+        }
+        res(bus_id_me) = res_tmp(bus_id_solver);
+    }
+    return res;
+}
+
 void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit)
 {
     if (conv){
@@ -234,19 +291,9 @@ void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vini
             compute_results();
         }
         need_reset_ = false;
-        CplxVect res_tmp = _solver.get_V();
+        const CplxVect & res_tmp = _solver.get_V();
         // convert back the results to "big" vector
-        res = CplxVect::Constant(Vinit.size(), 0.);
-        int nb_bus = bus_vn_kv_.size();
-        for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
-            if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-            int bus_id_solver = id_me_to_solver_[bus_id_me];
-            if(bus_id_solver == _deactivated_bus_id){
-                //TODO improve error message with the gen_id
-                throw std::runtime_error("One bus is connected in GridModel and disconnected in Solver");
-            }
-            res(bus_id_me) = res_tmp(bus_id_solver);
-        }
+        res = _get_results_back_to_orig_nodes(res_tmp, Vinit.size());
     } else {
         //powerflow diverge
         reset_results();

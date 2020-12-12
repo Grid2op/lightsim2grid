@@ -152,7 +152,7 @@ class GridModel : public DataGeneric
                                real_type tol);
 
         // check the kirchoff law
-        CplxVect check_solution(const CplxVect & V);
+        CplxVect check_solution(const CplxVect & V, bool check_q_limits);
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         //still connected to it, it will throw an exception
@@ -388,6 +388,7 @@ class GridModel : public DataGeneric
             }
         }
 
+        CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp, int size);
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
