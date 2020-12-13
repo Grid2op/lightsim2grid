@@ -31,6 +31,7 @@
 #include "DataTrafo.h"
 #include "DataLoad.h"
 #include "DataGen.h"
+#include "DataSGen.h"
 
 
 // import newton raphson solvers using different linear algebra solvers
@@ -53,6 +54,8 @@ class GridModel : public DataGeneric
                 DataGen::StateRes,
                 // loads
                 DataLoad::StateRes,
+                // loads
+                DataSGen::StateRes,
                 // slack bus generator id
                 int
                 >  StateRes;
@@ -96,13 +99,15 @@ class GridModel : public DataGeneric
                         const RealVect & trafo_x,
                         const CplxVect & trafo_b,
                         const RealVect & trafo_tap_step_pct,
-//                        const RealVect & trafo_tap_step_degree,  //TODO handle that too!
+            //                        const RealVect & trafo_tap_step_degree,
                         const RealVect & trafo_tap_pos,
+                        const RealVect & trafo_shift_degree,
                         const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & trafo_hv_id,
                         const Eigen::VectorXi & trafo_lv_id
                         ){
-            trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+            trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
+                         trafo_tap_hv, trafo_hv_id, trafo_lv_id);
         }
         void init_generators(const RealVect & generators_p,
                              const RealVect & generators_v,
@@ -115,6 +120,15 @@ class GridModel : public DataGeneric
                         const RealVect & loads_q,
                         const Eigen::VectorXi & loads_bus_id){
             loads_.init(loads_p, loads_q, loads_bus_id);
+        }
+        void init_sgens(const RealVect & sgen_p,
+                        const RealVect & sgen_q,
+                        const RealVect & sgen_pmin,
+                        const RealVect & sgen_pmax,
+                        const RealVect & sgen_qmin,
+                        const RealVect & sgen_qmax,
+                        const Eigen::VectorXi & sgen_bus_id){
+            sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
         }
 
         void add_gen_slackbus(int gen_id);
@@ -201,6 +215,14 @@ class GridModel : public DataGeneric
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
         const DataGen & get_generators() const {return generators_;}
+
+        //static gen
+        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, need_reset_); }
+        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, need_reset_); }
+        void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p(sgen_id, new_p, need_reset_); }
+        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, need_reset_); }
+        int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
@@ -425,6 +447,9 @@ class GridModel : public DataGeneric
 
         // 6. loads
         DataLoad loads_;
+
+        // 6. static generators (P,Q generators)
+        DataSGen sgens_;
 
         // 7. slack bus
         int gen_slackbus_;

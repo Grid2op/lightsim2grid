@@ -62,7 +62,14 @@ class DataGeneric : public BaseConstants
                            const std::vector<int> & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
                            RealVect & v);
-
+        /**
+        check the size of the elements
+        **/
+        template<class T>
+        void check_size(const T & container, int size, const std::string & container_name)
+        {
+            if(container.size() != size) throw std::runtime_error(container_name + " do not have the proper size");
+        }
 };
 
 #endif // DATAGENERIC_H

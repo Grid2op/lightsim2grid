@@ -19,6 +19,15 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
+/**
+This class represents the list of all generators.
+
+The convention used for the generator is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/gen.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model
+**/
 class DataGen: public DataGeneric
 {
     public:
@@ -34,9 +43,9 @@ class DataGen: public DataGeneric
             real_type min_q_mvar;
             real_type max_q_mvar;
             bool has_res;
-            real_type res_p;
-            real_type res_q;
-            real_type res_v;
+            real_type res_p_mw;
+            real_type res_q_mvar;
+            real_type res_v_kv;
 
             GenInfo(const DataGen & r_data_gen, int my_id):
             id(-1),
@@ -46,9 +55,9 @@ class DataGen: public DataGeneric
             min_q_mvar(0.),
             max_q_mvar(0.),
             has_res(false),
-            res_p(0.),
-            res_q(0.),
-            res_v(0.)
+            res_p_mw(0.),
+            res_q_mvar(0.),
+            res_v_kv(0.)
             {
                 if((my_id >= 0) & (my_id < r_data_gen.nb()))
                 {
@@ -63,9 +72,9 @@ class DataGen: public DataGeneric
                     has_res = r_data_gen.res_p_.size() > 0;
                     if(has_res)
                     {
-                        res_p = r_data_gen.res_p_.coeff(my_id);
-                        res_q = r_data_gen.res_q_.coeff(my_id);
-                        res_v = r_data_gen.res_v_.coeff(my_id);
+                        res_p_mw = r_data_gen.res_p_.coeff(my_id);
+                        res_q_mvar = r_data_gen.res_q_.coeff(my_id);
+                        res_v_kv = r_data_gen.res_v_.coeff(my_id);
                     }
                 }
             }

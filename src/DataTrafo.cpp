@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataTrafo.h"
+#include <iostream>
 
 void DataTrafo::init(const RealVect & trafo_r,
                            const RealVect & trafo_x,
@@ -14,6 +15,7 @@ void DataTrafo::init(const RealVect & trafo_r,
                            const RealVect & trafo_tap_step_pct,
             //                        const RealVect & trafo_tap_step_degree,
                            const RealVect & trafo_tap_pos,
+                           const RealVect & trafo_shift_degree,
                            const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                            const Eigen::VectorXi & trafo_hv_id,
                            const Eigen::VectorXi & trafo_lv_id
@@ -23,13 +25,31 @@ void DataTrafo::init(const RealVect & trafo_r,
     INPUT DATA ARE ALREADY PAIR UNIT !!
     DOES NOT WORK WITH POWERLINES
     **/
-    //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
-    RealVect ratio = 1.0 + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array() * (2*trafo_tap_hv.array().cast<real_type>() - 1.0);
+    int size = trafo_r.size();
+    DataGeneric::check_size(trafo_r, size, "trafo_r");
+    DataGeneric::check_size(trafo_x, size, "trafo_x");
+    DataGeneric::check_size(trafo_b, size, "trafo_b");
+    DataGeneric::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
+    DataGeneric::check_size(trafo_tap_pos, size, "trafo_tap_pos");
+    DataGeneric::check_size(trafo_shift_degree, size, "trafo_shift_degree");
+    DataGeneric::check_size(trafo_tap_hv, size, "trafo_tap_hv");
+    DataGeneric::check_size(trafo_hv_id, size, "trafo_hv_id");
+    DataGeneric::check_size(trafo_lv_id, size, "trafo_lv_id");
 
+    //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
+
+    RealVect ratio = 1.0 + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
+    for(int i = 0; i < trafo_tap_hv.size(); ++i)
+    {
+        // in the equation i do as if the ratio was on the lv side (so ratio = hv / lv) if it's given in
+        // the hv side, i need to invert it.
+        if(trafo_tap_hv[i]) ratio[i] = my_one_ / ratio[i];
+    }
     r_ = trafo_r;
     x_ = trafo_x;
     h_ = trafo_b;
     ratio_ = ratio;
+    shift_ = trafo_shift_degree / 180. * my_pi;  // do not forget conversion degree / rad here !
     bus_hv_id_ = trafo_hv_id;
     bus_lv_id_ = trafo_lv_id;
     status_ = std::vector<bool>(trafo_r.size(), true);
@@ -44,7 +64,8 @@ DataTrafo::StateRes DataTrafo::get_state() const
      std::vector<int > bus_lv_id(bus_lv_id_.begin(), bus_lv_id_.end());
      std::vector<bool> status = status_;
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
-     DataTrafo::StateRes res(branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio);
+     std::vector<real_type> shift(shift_.begin(), shift_.end());
+     DataTrafo::StateRes res(branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, shift);
      return res;
 }
 void DataTrafo::set_state(DataTrafo::StateRes & my_state)
@@ -58,22 +79,34 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
     std::vector<int> & bus_lv_id = std::get<4>(my_state);
     std::vector<bool> & status = std::get<5>(my_state);
     std::vector<real_type> & ratio = std::get<6>(my_state);
-    // TODO check sizes
+    std::vector<real_type> & shift = std::get<7>(my_state);
+
+    int size = branch_r.size();
+    DataGeneric::check_size(branch_r, size, "branch_r");
+    DataGeneric::check_size(branch_x, size, "branch_x");
+    DataGeneric::check_size(branch_h, size, "branch_h");
+    DataGeneric::check_size(bus_hv_id, size, "bus_hv_id");
+    DataGeneric::check_size(bus_lv_id, size, "bus_lv_id");
+    DataGeneric::check_size(status, size, "status");
+    DataGeneric::check_size(ratio, size, "ratio");
+    DataGeneric::check_size(shift, size, "shift");
 
     // now assign the values
-    r_ = RealVect::Map(&branch_r[0], branch_r.size());
-    x_ = RealVect::Map(&branch_x[0], branch_x.size());
-    h_ = CplxVect::Map(&branch_h[0], branch_h.size());
+    r_ = RealVect::Map(&branch_r[0], size);
+    x_ = RealVect::Map(&branch_x[0], size);
+    h_ = CplxVect::Map(&branch_h[0], size);
 
     // input data
-    bus_hv_id_ = Eigen::VectorXi::Map(&bus_hv_id[0], bus_hv_id.size());
-    bus_lv_id_ = Eigen::VectorXi::Map(&bus_lv_id[0], bus_lv_id.size());
+    bus_hv_id_ = Eigen::VectorXi::Map(&bus_hv_id[0], size);
+    bus_lv_id_ = Eigen::VectorXi::Map(&bus_lv_id[0], size);
     status_ = status;
-    ratio_  = RealVect::Map(&ratio[0], ratio.size());
+    ratio_  = RealVect::Map(&ratio[0], size);
+    shift_  = RealVect::Map(&shift[0], size);
 }
 
 void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
+    //TODO this is no more used!!!!
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if"
     int nb_trafo = nb();
@@ -122,7 +155,7 @@ void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, co
             r = my_one_; // in dc, r = 1.0 here (same voltage both side)
         }
         tmp += h;
-        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += tmp / r ;
+        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += tmp / r;
         res.coeffRef(bus_lv_solver_id, bus_lv_solver_id) += tmp * r;
     }
 }
@@ -150,6 +183,9 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac,
 
         // get the transformers ratio
         real_type r = ratio_(trafo_id);
+        real_type alpha = shift_(trafo_id);
+        cplx_type eialpha = std::exp(alpha * my_i); // exp(j * alpha)
+        cplx_type eimalpha = std::exp(-alpha * my_i); // exp( - j * alpha)
 
         // subsecptance
         cplx_type h = 0.;
@@ -169,8 +205,8 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac,
 
         // fill non diagonal coefficient
         cplx_type tmp = y / r;
-        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_lv_solver_id, -tmp));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_hv_solver_id, -tmp));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_lv_solver_id, -tmp * eialpha));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_hv_solver_id, -tmp * eimalpha));
 
         // fill diagonal coefficient
         if(!ac){

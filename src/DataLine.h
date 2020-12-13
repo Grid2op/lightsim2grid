@@ -19,6 +19,16 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
+/**
+This class is a container for all the powerlines on the grid.
+
+The convention used for the generator is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/line.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/line.html#electric-model
+
+**/
 class DataLine : public DataGeneric
 {
     public:

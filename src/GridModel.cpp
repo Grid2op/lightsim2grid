@@ -38,6 +38,9 @@ GridModel::GridModel(const GridModel & other)
     // 6. loads
     loads_ = other.loads_;
 
+    // 6. loads
+    sgens_ = other.sgens_;
+
     // 7. slack bus
     gen_slackbus_ = other.gen_slackbus_;
     slack_bus_id_ = other.slack_bus_id_;
@@ -68,6 +71,7 @@ GridModel::StateRes GridModel::get_state() const
     auto res_trafo = trafos_.get_state();
     auto res_gen = generators_.get_state();
     auto res_load = loads_.get_state();
+    auto res_sgen = sgens_.get_state();
 
     GridModel::StateRes res(bus_vn_kv,
                             bus_status_,
@@ -76,6 +80,7 @@ GridModel::StateRes GridModel::get_state() const
                             res_trafo,
                             res_gen,
                             res_load,
+                            res_sgen,
                             gen_slackbus_
                             );
     return res;
@@ -103,7 +108,9 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     DataGen::StateRes & state_gens = std::get<5>(my_state);
     // loads
     DataLoad::StateRes & state_loads = std::get<6>(my_state);
-    int gen_slackbus = std::get<7>(my_state);
+    // loads
+    DataSGen::StateRes & state_sgens= std::get<7>(my_state);
+    int gen_slackbus = std::get<8>(my_state);
 
     // assign it to this instance
 
@@ -124,6 +131,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     generators_.set_state(state_gens);
     // 5. loads
     loads_.set_state(state_loads);
+    // 6. static generators
+    sgens_.set_state(state_sgens);
 
     // other stuff
     gen_slackbus_ = gen_slackbus;
@@ -341,6 +350,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     shunts_.fillYbus(tripletList, ac, id_me_to_solver);
     trafos_.fillYbus(tripletList, ac, id_me_to_solver);
     loads_.fillYbus(tripletList, ac, id_me_to_solver);
+    sgens_.fillYbus(tripletList, ac, id_me_to_solver);
     generators_.fillYbus(tripletList, ac, id_me_to_solver);
     res.setFromTriplets(tripletList.begin(), tripletList.end());
     res.makeCompressed();
@@ -353,6 +363,7 @@ void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_
     shunts_.fillSbus(res, ac, id_me_to_solver);
     trafos_.fillSbus(res, ac, id_me_to_solver);
     loads_.fillSbus(res, ac, id_me_to_solver);
+    sgens_.fillSbus(res, ac, id_me_to_solver);
     generators_.fillSbus(res, ac, id_me_to_solver);
 
     // handle slack bus
@@ -375,6 +386,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
     shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
+    sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
 
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
@@ -399,6 +411,8 @@ void GridModel::compute_results(){
     trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for loads
     loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    // for static gen
+    sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for shunts
     shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for prods
@@ -408,6 +422,7 @@ void GridModel::compute_results(){
     real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);
     p_slack += trafos_.get_p_slack(slack_bus_id_);
     p_slack += loads_.get_p_slack(slack_bus_id_);
+    p_slack += sgens_.get_p_slack(slack_bus_id_);
     p_slack += shunts_.get_p_slack(slack_bus_id_);
     generators_.set_p_slack(gen_slackbus_, p_slack);
 
@@ -416,6 +431,7 @@ void GridModel::compute_results(){
     powerlines_.get_q(q_by_bus);
     trafos_.get_q(q_by_bus);
     loads_.get_q(q_by_bus);
+    sgens_.get_q(q_by_bus);
     shunts_.get_q(q_by_bus);
 
     generators_.set_q(q_by_bus);
@@ -426,6 +442,7 @@ void GridModel::reset_results(){
     shunts_.reset_results();
     trafos_.reset_results();
     loads_.reset_results();
+    sgens_.reset_results();
     generators_.reset_results();
 }
 

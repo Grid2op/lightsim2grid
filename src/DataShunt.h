@@ -17,6 +17,15 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
+/**
+This class is a container for all shunts on the grid.
+
+The convention used for the shunt is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/shunt.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
+**/
 class DataShunt : public DataGeneric
 {
     public:

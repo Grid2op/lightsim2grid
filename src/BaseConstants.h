@@ -19,6 +19,7 @@ class BaseConstants
 {
     protected:
         static const cplx_type my_i;
+        static const real_type my_pi;
         static const real_type my_half_;
         static const real_type my_one_;
         static const real_type my_two_;

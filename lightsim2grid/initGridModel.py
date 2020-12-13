@@ -11,6 +11,7 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 """
 
 import numpy as np
+import warnings
 from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
 
 
@@ -46,6 +47,36 @@ def init(pp_net):
         The initialize gridmodel
 
     """
+    # check for things not supported and raise if needed
+    if pp_net.trafo3w.shape[0]:
+        raise RuntimeError("Unsupported element found (Three Winding Transformer - \"pp_net.trafo3w\") "
+                           "in pandapower network")
+    if pp_net.switch.shape[0]:
+        warnings.warn("There are switches on the pandapower network, they will not be used in lightsim2grid.")
+    if pp_net.motor.shape[0]:
+        raise RuntimeError("Unsupported element found (motor - \"pp_net.motor\") in pandapower network")
+    if pp_net.asymmetric_load.shape[0]:
+        raise RuntimeError("Unsupported element found (Asymmetric Load - \"pp_net.asymmetric_load\") "
+                           "in pandapower network")
+    # if pp_net.sgen.shape[0]:
+    #     raise RuntimeError("Unsupported element found (Static Generator - \"pp_net.sgen\") "
+    #                        "in pandapower network")
+    if pp_net.impedance.shape[0]:
+        raise RuntimeError("Unsupported element found (Impedance - \"pp_net.impedance\") "
+                           "in pandapower network")
+    if pp_net.ward.shape[0]:
+        raise RuntimeError("Unsupported element found (Ward - \"pp_net.ward\") "
+                           "in pandapower network")
+    if pp_net.xward.shape[0]:
+        raise RuntimeError("Unsupported element found (Extended Ward - \"pp_net.xward\") "
+                           "in pandapower network")
+    if pp_net.dcline.shape[0]:
+        raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "
+                           "in pandapower network")
+    if pp_net.storage.shape[0]:
+        raise RuntimeError("Unsupported element found (Storage - \"pp_net.storage\") "
+                           "in pandapower network")
+
     # initialize and use converters
     converter = PandaPowerConverter()
     converter.set_sn_mva(pp_net.sn_mva)  # TODO raise an error if not set !
@@ -59,6 +90,9 @@ def init(pp_net):
             pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"],
             pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"]
         )
+
+    if np.any(pp_net.trafo["tap_neutral"].values != 0.):
+        raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
     trafo_r, trafo_x, trafo_b = \
         converter.get_trafo_param(pp_net.trafo["vn_hv_kv"].values,
                                   pp_net.trafo["vn_lv_kv"].values,
@@ -81,8 +115,8 @@ def init(pp_net):
                           pp_net.line["from_bus"].values,
                           pp_net.line["to_bus"].values
                           )
-    for line_id, sh_status in enumerate(pp_net.line["in_service"].values):
-        if not sh_status:
+    for line_id, is_connected in enumerate(pp_net.line["in_service"].values):
+        if not is_connected:
             # powerline is deactivated
             model.deactivate_powerline(line_id)
 
@@ -91,30 +125,46 @@ def init(pp_net):
                      pp_net.shunt["q_mvar"].values,
                      pp_net.shunt["bus"].values
                      )
-    for sh_id, sh_status in enumerate(pp_net.shunt["in_service"].values):
-        if not sh_status:
+    for sh_id, is_connected in enumerate(pp_net.shunt["in_service"].values):
+        if not is_connected:
             # shunt is deactivated
             model.deactivate_shunt(sh_id)
 
     # handle the trafos
     tap_step_pct = pp_net.trafo["tap_step_percent"].values
+    if np.any(~np.isfinite(tap_step_pct)):
+        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_percent\"], they have been replaced by 0")
     tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
 
     tap_pos = pp_net.trafo["tap_pos"].values
+    if np.any(~np.isfinite(tap_pos)):
+        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_pos\"], they have been replaced by 0")
     tap_pos[~np.isfinite(tap_pos)] = 0.
 
+    shift_ = pp_net.trafo["shift_degree"].values
+    if np.any(~np.isfinite(tap_pos)):
+        warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
+    shift_[~np.isfinite(shift_)] = 0.
+
     is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
-    is_tap_hv_side[~np.isfinite(tap_pos)] = True
+    if np.any(~np.isfinite(is_tap_hv_side)):
+        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
+    is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+
+    if np.any(pp_net.trafo["tap_phase_shifter"].values):
+        raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
+                           "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
     model.init_trafo(trafo_r,
                      trafo_x,
                      trafo_b,
                      tap_step_pct,
                      tap_pos,
+                     shift_,
                      is_tap_hv_side,
                      pp_net.trafo["hv_bus"].values,
                      pp_net.trafo["lv_bus"].values)
-    for tr_id, sh_status in enumerate(pp_net.trafo["in_service"].values):
-        if not sh_status:
+    for tr_id, is_connected in enumerate(pp_net.trafo["in_service"].values):
+        if not is_connected:
             # trafo is deactivated
             model.deactivate_trafo(tr_id)
 
@@ -122,11 +172,25 @@ def init(pp_net):
     model.init_loads(pp_net.load["p_mw"].values,
                      pp_net.load["q_mvar"].values,
                      pp_net.load["bus"].values
-                          )
-    for load_id, sh_status in enumerate(pp_net.load["in_service"].values):
-        if not sh_status:
+                     )
+    for load_id, is_connected in enumerate(pp_net.load["in_service"].values):
+        if not is_connected:
             # load is deactivated
             model.deactivate_load(load_id)
+
+    # handle static generators (PQ generator)
+    model.init_sgens(pp_net.sgen["p_mw"].values,
+                     pp_net.sgen["q_mvar"].values,
+                     pp_net.sgen["min_p_mw"].values,
+                     pp_net.sgen["max_p_mw"].values,
+                     pp_net.sgen["min_q_mvar"].values,
+                     pp_net.sgen["max_q_mvar"].values,
+                     pp_net.sgen["bus"].values
+                     )
+    for sgen_id, is_connected in enumerate(pp_net.sgen["in_service"].values):
+        if not is_connected:
+            # load is deactivated
+            model.deactivate_sgen(sgen_id)
 
     # handle generators
     model.init_generators(pp_net.gen["p_mw"].values,
@@ -135,14 +199,17 @@ def init(pp_net):
                           pp_net.gen["max_q_mvar"].values,
                           pp_net.gen["bus"].values
                           )
-    for gen_id, sh_status in enumerate(pp_net.gen["in_service"].values):
-        if not sh_status:
+    for gen_id, is_connected in enumerate(pp_net.gen["in_service"].values):
+        if not is_connected:
             # generator is deactivated
             model.deactivate_gen(gen_id)
 
     # deal with slack bus
     # TODO handle that better maybe, and warn only one slack bus is implemented
     if np.any(pp_net.gen["slack"].values):
+        if np.sum(pp_net.gen["slack"].values) >= 2:
+            warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
+                          "slack bus of pandapower will be used.")
         slack_gen_id = np.where(pp_net.gen["slack"].values)[0]
         model.change_v_gen(slack_gen_id, pp_net.gen["vm_pu"][slack_gen_id])
     else:
@@ -150,6 +217,10 @@ def init(pp_net):
 
         # first i try to see if a generator is connected to a slack bus
         slack_bus_id = pp_net.ext_grid["bus"].values[0]
+        if pp_net.ext_grid.shape[0] >= 2:
+            warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
+                          "slack bus of pandapower will be used.")
+
         if np.any(pp_net.gen["bus"].values == slack_bus_id):
             slack_gen_id = np.where(pp_net.gen["bus"].values == slack_bus_id)[0]
         else:

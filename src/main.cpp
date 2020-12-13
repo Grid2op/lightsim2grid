@@ -97,9 +97,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar)
         .def_readonly("max_q_mvar", &DataGen::GenInfo::max_q_mvar)
         .def_readonly("has_res", &DataGen::GenInfo::has_res)
-        .def_readonly("res_p", &DataGen::GenInfo::res_p)
-        .def_readonly("res_q", &DataGen::GenInfo::res_q)
-        .def_readonly("res_v", &DataGen::GenInfo::res_v);
+        .def_readonly("res_p_mw", &DataGen::GenInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataGen::GenInfo::res_q_mvar)
+        .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv);
 
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
@@ -148,6 +148,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_trafo", &GridModel::init_trafo)
         .def("init_generators", &GridModel::init_generators)
         .def("init_loads", &GridModel::init_loads)
+        .def("init_sgens", &GridModel::init_sgens)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
 
         // modify the grid
@@ -190,6 +191,13 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_shunt", &GridModel::get_bus_shunt)
         .def("change_p_shunt", &GridModel::change_p_shunt)
         .def("change_q_shunt", &GridModel::change_q_shunt)
+
+        .def("deactivate_sgen", &GridModel::deactivate_sgen)
+        .def("reactivate_sgen", &GridModel::reactivate_sgen)
+        .def("change_bus_sgen", &GridModel::change_bus_sgen)
+        .def("get_bus_sgen", &GridModel::get_bus_sgen)
+        .def("change_p_sgen", &GridModel::change_p_sgen)
+        .def("change_q_sgen", &GridModel::change_q_sgen)
 
         // get back the results
         .def("get_Va", &GridModel::get_Va)

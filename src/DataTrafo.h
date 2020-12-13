@@ -17,6 +17,17 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
+/**
+This class is a container for all transformers on the grid.
+Transformers are modeled "in pi" here. If your trafo are given in a "t" model (like in pandapower
+for example) use the DataConverter class.
+
+The convention used for the transformer is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/trafo.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
+**/
 class DataTrafo : public DataGeneric
 {
     public:
@@ -27,7 +38,8 @@ class DataTrafo : public DataGeneric
                std::vector<int>, // branch_from_id
                std::vector<int>, // branch_to_id
                std::vector<bool> , // status_
-               std::vector<real_type> // ratio_
+               std::vector<real_type>, // ratio_
+               std::vector<real_type> // shift_
            >  StateRes;
 
     DataTrafo() {};
@@ -38,6 +50,7 @@ class DataTrafo : public DataGeneric
                            const RealVect & trafo_tap_step_pct,
             //                        const RealVect & trafo_tap_step_degree,
                            const RealVect & trafo_tap_pos,
+                           const RealVect & trafo_shift_degree,
                            const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                            const Eigen::VectorXi & trafo_hv_id,
                            const Eigen::VectorXi & trafo_lv_id
@@ -80,7 +93,8 @@ class DataTrafo : public DataGeneric
         Eigen::VectorXi bus_hv_id_;
         Eigen::VectorXi bus_lv_id_;
         std::vector<bool> status_;
-        RealVect ratio_;
+        RealVect ratio_;  // transformer ratio (on the lv side!)
+        RealVect shift_;  // phase shifter (in radian !)
 
         //output data
         RealVect res_p_hv_;  // in MW
