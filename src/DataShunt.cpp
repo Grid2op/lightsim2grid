@@ -64,6 +64,28 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac,
         res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, -tmp));
     }
 }
+
+void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver)  // in DC i need that
+{
+    if(ac) return;  // in AC I do not do that
+    std::cout << " ok i use this function" << std::endl;
+    // - bus[:, GS] / baseMVA  # in pandapower
+    // yish=gish+jbish -> so g is the MW !
+    int nb_shunt = q_mvar_.size();
+    cplx_type tmp;
+    int bus_id_me, bus_id_solver;
+    for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+        // i don't do anything if the shunt is disconnected
+        if(!status_[shunt_id]) continue;
+        bus_id_me = bus_id_(shunt_id);
+        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            throw std::runtime_error("GridModel::fillSbus: A shunt is connected to a disconnected bus.");
+        }
+        Sbus.coeffRef(bus_id_solver) -= p_mw_(shunt_id);
+    }
+}
+
 void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
     int nb_shunt = q_mvar_.size();
     cplx_type tmp;

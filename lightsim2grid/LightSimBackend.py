@@ -457,23 +457,23 @@ class LightSimBackend(Backend):
                 warnings.warn(msg_)
                 raise RuntimeError(msg_)
                 if self.V is None:
-                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
+                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
             else:
-                if self.V is None:
+                if (self.V is None) or (self.V.shape[0] == 0):
                     # init from dc approx in this case
-                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * 1.04
+                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
 
                 if self.initdc:
                     self._grid.deactivate_result_computation()
                     V = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
-
                     if V.shape[0] == 0:
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
                     self.V[:] = V
+
                 V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
@@ -513,6 +513,8 @@ class LightSimBackend(Backend):
             res = True
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
+            import pdb
+            pdb.set_trace()
             self._fill_nans()
             res = False
 

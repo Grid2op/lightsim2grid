@@ -39,6 +39,7 @@ class DataTrafo : public DataGeneric
                std::vector<int>, // branch_to_id
                std::vector<bool> , // status_
                std::vector<real_type>, // ratio_
+               std::vector<bool> , // is_tap_hv_side
                std::vector<real_type> // shift_
            >  StateRes;
 
@@ -51,7 +52,7 @@ class DataTrafo : public DataGeneric
             //                        const RealVect & trafo_tap_step_degree,
                            const RealVect & trafo_tap_pos,
                            const RealVect & trafo_shift_degree,
-                           const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                           const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                            const Eigen::VectorXi & trafo_hv_id,
                            const Eigen::VectorXi & trafo_lv_id
               );
@@ -88,12 +89,13 @@ class DataTrafo : public DataGeneric
         RealVect r_;
         RealVect x_;
         CplxVect h_;
+        std::vector<bool> is_tap_hv_side_;  // whether the tap is hav side or not
 
         // input data
         Eigen::VectorXi bus_hv_id_;
         Eigen::VectorXi bus_lv_id_;
         std::vector<bool> status_;
-        RealVect ratio_;  // transformer ratio (on the lv side!)
+        RealVect ratio_;  // transformer ratio
         RealVect shift_;  // phase shifter (in radian !)
 
         //output data

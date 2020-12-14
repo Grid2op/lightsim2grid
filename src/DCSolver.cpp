@@ -99,15 +99,15 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // save the results
     Va_ = Va_dc;
     // add the Voltage setpoints of the generator
-    Vm_ = RealVect::Constant(V.size(), my_one_);
-    Vm_(pv) = V(pv).array().abs();
+    Vm_ = V.array().abs(); // RealVect::Constant(V.size(), my_one_);
+    //    Vm_(pv) = V(pv).array().abs();
     Vm_(slack_bus_id_solver) = std::abs(V(slack_bus_id_solver));
 
     // now compute the resulting complex voltage
     V_ = (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>());
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
-
+    V = V_;
     timer_total_nr_ += timer.duration();
     return true;
 }

@@ -60,7 +60,7 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
     std::vector<real_type> & q_max = std::get<5>(my_state);
     std::vector<int> & bus_id = std::get<6>(my_state);
     std::vector<bool> & status = std::get<7>(my_state);
-    int size = p_mw.size();
+    auto size = p_mw.size();
     DataGeneric::check_size(p_mw, size, "p_mw");
     DataGeneric::check_size(q_mvar, size, "q_mvar");
     DataGeneric::check_size(p_min, size, "p_min");

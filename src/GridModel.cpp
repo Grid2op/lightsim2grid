@@ -12,6 +12,8 @@ GridModel::GridModel(const GridModel & other)
 {
     reset();
 
+    init_vm_pu_ = other.init_vm_pu_;
+
     // assign the right solver
     _solver.change_solver(other._solver.get_type());
     compute_results_ = other.compute_results_;
@@ -73,7 +75,8 @@ GridModel::StateRes GridModel::get_state() const
     auto res_load = loads_.get_state();
     auto res_sgen = sgens_.get_state();
 
-    GridModel::StateRes res(bus_vn_kv,
+    GridModel::StateRes res(init_vm_pu_,
+                            bus_vn_kv,
                             bus_status_,
                             res_line,
                             res_shunt,
@@ -95,22 +98,23 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    std::vector<real_type> & bus_vn_kv = std::get<0>(my_state);
-    std::vector<bool> & bus_status = std::get<1>(my_state);
+    init_vm_pu_ = std::get<0>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<1>(my_state);
+    std::vector<bool> & bus_status = std::get<2>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<2>(my_state);
+    DataLine::StateRes & state_lines = std::get<3>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<3>(my_state);
+    DataShunt::StateRes & state_shunts = std::get<4>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<4>(my_state);
+    DataTrafo::StateRes & state_trafos = std::get<5>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<5>(my_state);
+    DataGen::StateRes & state_gens = std::get<6>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<6>(my_state);
+    DataLoad::StateRes & state_loads = std::get<7>(my_state);
     // loads
-    DataSGen::StateRes & state_sgens= std::get<7>(my_state);
-    int gen_slackbus = std::get<8>(my_state);
+    DataSGen::StateRes & state_sgens= std::get<8>(my_state);
+    int gen_slackbus = std::get<9>(my_state);
 
     // assign it to this instance
 
@@ -260,7 +264,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac)
     fillSbus_me(Sbus_, is_ac, id_me_to_solver_, slack_bus_id_solver_);
 
     int nb_bus_solver = id_solver_to_me_.size();
-    CplxVect V = CplxVect::Constant(nb_bus_solver, 1.04);
+    CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
         int bus_me_id = id_solver_to_me_[bus_solver_id];  //POSSIBLE SEGFAULT
         cplx_type tmp = Vinit(bus_me_id);
@@ -273,7 +277,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac)
 
 CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, int size)
 {
-    CplxVect res = CplxVect::Constant(size, 0.);
+    CplxVect res = CplxVect::Constant(size, {init_vm_pu_, my_zero_});
     int nb_bus = bus_vn_kv_.size();
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
         if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
@@ -304,6 +308,7 @@ void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vini
         need_reset_ = true;  // in this case, the powerflow diverge, so i need to recompute Ybus next time
     }
 }
+
 void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                           CplxVect & Sbus,
                           std::vector<int>& id_me_to_solver,
@@ -359,12 +364,12 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
 void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
 {
     // init the Sbus vector
-    powerlines_.fillSbus(res, ac, id_me_to_solver);
-    shunts_.fillSbus(res, ac, id_me_to_solver);
-    trafos_.fillSbus(res, ac, id_me_to_solver);
-    loads_.fillSbus(res, ac, id_me_to_solver);
-    sgens_.fillSbus(res, ac, id_me_to_solver);
-    generators_.fillSbus(res, ac, id_me_to_solver);
+    powerlines_.fillSbus(res, true, id_me_to_solver);
+    shunts_.fillSbus(res, true, id_me_to_solver);
+    trafos_.fillSbus(res, true, id_me_to_solver);
+    loads_.fillSbus(res, true, id_me_to_solver);
+    sgens_.fillSbus(res, true, id_me_to_solver);
+    generators_.fillSbus(res, true, id_me_to_solver);
 
     // handle slack bus
     real_type sum_active = res.sum().real();
@@ -447,9 +452,9 @@ void GridModel::reset_results(){
 }
 
 CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
-                                      int max_iter,  // not used for DC
-                                      real_type tol  // not used for DC
-                                      )
+                              int max_iter,  // not used for DC
+                              real_type tol  // not used for DC
+                              )
 {
     // TODO refactor that with ac pf, this is mostly done, but only mostly...
     int nb_bus = bus_vn_kv_.size();
@@ -573,9 +578,9 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
 }
 
 CplxVect GridModel::dc_pf(const CplxVect & Vinit,
-                                  int max_iter,  // not used for DC
-                                  real_type tol  // not used for DC
-                                  )
+                          int max_iter,  // not used for DC
+                          real_type tol  // not used for DC
+                          )
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){

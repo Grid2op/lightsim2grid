@@ -42,6 +42,7 @@ class GridModel : public DataGeneric
 {
     public:
         typedef std::tuple<
+                real_type,  // init_vm_pu
                 std::vector<real_type>,  // bus_vn_kv
                 std::vector<bool>,  // bus_status
                 // powerlines
@@ -60,7 +61,7 @@ class GridModel : public DataGeneric
                 int
                 >  StateRes;
 
-        GridModel():need_reset_(true),compute_results_(true){};
+        GridModel():need_reset_(true),compute_results_(true),init_vm_pu_(1.04){};
         GridModel(const GridModel & other);
         GridModel copy(){
             GridModel res(*this);
@@ -81,6 +82,8 @@ class GridModel : public DataGeneric
 
         // All methods to init this data model, all need to be pair unit when applicable
         void init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo);
+        void set_init_vm_pu(real_type init_vm_pu) {init_vm_pu_ = init_vm_pu; }
+        real_type get_init_vm_pu() {return init_vm_pu_;}
 
         void init_powerlines(const RealVect & branch_r,
                              const RealVect & branch_x,
@@ -102,7 +105,7 @@ class GridModel : public DataGeneric
             //                        const RealVect & trafo_tap_step_degree,
                         const RealVect & trafo_tap_pos,
                         const RealVect & trafo_shift_degree,
-                        const Eigen::Vector<bool, Eigen::Dynamic> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                        const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & trafo_hv_id,
                         const Eigen::VectorXi & trafo_lv_id
                         ){
@@ -417,6 +420,7 @@ class GridModel : public DataGeneric
         // static const int _deactivated_bus_id;
         bool need_reset_;
         bool compute_results_;
+        real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
 
         // powersystem representation
         // 1. bus

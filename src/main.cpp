@@ -143,6 +143,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
+        .def("set_init_vm_pu", &GridModel::set_init_vm_pu)
+        .def("get_init_vm_pu", &GridModel::get_init_vm_pu)
         .def("init_powerlines", &GridModel::init_powerlines)
         .def("init_shunt", &GridModel::init_shunt)
         .def("init_trafo", &GridModel::init_trafo)
