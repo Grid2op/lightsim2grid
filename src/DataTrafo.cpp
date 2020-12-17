@@ -310,11 +310,9 @@ void DataTrafo::compute_results(const Eigen::Ref<RealVect> & Va,
         cplx_type Ehv = V(bus_hv_solver_id);
         cplx_type Elv = V(bus_lv_solver_id);
 
-//        cplx_type tmp = y / ratio_me;
-
         // powerline equations
-        cplx_type I_hvlv = (y + h) / ratio_me * Ehv - y * eialpha * Elv ;
-        cplx_type I_lvhv = (y + h) * ratio_me * Elv - y * eimalpha * Ehv;
+        cplx_type I_hvlv = (y + h) / ratio_me * eimalpha * Ehv - y * Elv ;
+        cplx_type I_lvhv = (y + h) * ratio_me * eialpha * Elv - y * Ehv;
 
         I_hvlv = std::conj(I_hvlv);
         I_lvhv = std::conj(I_lvhv);

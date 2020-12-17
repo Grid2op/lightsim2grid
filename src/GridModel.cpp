@@ -371,9 +371,12 @@ void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_
     sgens_.fillSbus(res, true, id_me_to_solver);
     generators_.fillSbus(res, true, id_me_to_solver);
 
-    // handle slack bus
-    real_type sum_active = res.sum().real();
-    res.coeffRef(slack_bus_id_solver) -= sum_active;
+    // handle slack bus (in ac only)
+    if(ac)
+    {
+        real_type sum_active = res.sum().real();
+        res.coeffRef(slack_bus_id_solver) -= sum_active;
+    }
 }
 
 void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
