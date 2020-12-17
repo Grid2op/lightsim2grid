@@ -22,6 +22,10 @@ def _aux_add_sgen(model, pp_net):
     -------
 
     """
+    if "parallel" in pp_net.sgen and np.any(pp_net.sgen["parallel"].values != 1):
+        raise RuntimeError("Cannot handle 'parallel' sgen columns. Please duplicate the rows if that is the case. "
+                           "Some pp_net.sgen[\"parallel\"] != 1 it is not handled by lightsim yet.")
+
     if pp_net.sgen.shape[0] == 0:
         # nothing to do if no static generators
         return

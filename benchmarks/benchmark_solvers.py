@@ -42,7 +42,9 @@ def main(max_ts, ENV_NAME, test=True):
                    data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
     agent = DoNothingAgent(action_space=env_pp.action_space)
     nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
+    pp_comp_time = env_pp.backend.comp_time
     pp_time_pf = env_pp._time_powerflow
+
     wst = True  # print extra info in the run_env function
     env_lightsim = make(ENV_NAME, backend=LightSimBackend(), param=param, test=test,
                         data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
@@ -82,7 +84,7 @@ def main(max_ts, ENV_NAME, test=True):
     hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op powerflow time (ms)", f"solver powerflow time (ms)"]
     tab = [["PP", int(nb_ts_pp/time_pp),
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
-            f"{1000.*pp_time_pf/nb_ts_pp:.2e}"]]
+            f"{1000.*pp_comp_time/nb_ts_pp:.2e}"]]
     if lightsim2grid.SolverType.GaussSeidel in solver_types:
         tab.append(["LS+GS", int(nb_ts_gs/time_gs),
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",

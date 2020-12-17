@@ -17,11 +17,12 @@ Change Log
 - [FIXED] a compilation issue on macos
 - [FIXED] an import issue (with `lightsim2grid.SolverType`)
 - [FIXED] a bug that lead to the wrong computation of the ratio of the trafo when the tap on hv side.
+- [FIXED] wrong timing was measured in the "solver powerflow time" of pandapower.
 - [UPDATED] github issue template
 - [FIXED] a broken handling of shunt modification (wrong bus was assigned)
 - [ADDED] a variant of the Gauss Seidel method which does the update in a "synchronous" fashion
 - [ADDED] a function that, given a complex vector is able to check kicchoff's law violation.
-- [ADDED] Support for phase shifter (modeled as trafo with an extra parameter shift)
+- [ADDED] Support for phase shifter (modeled as trafo with an extra parameter `shift`)
 
 [0.4.0] - 2020-10-26
 ---------------------

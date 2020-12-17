@@ -16,6 +16,44 @@
 
 #include "BaseConstants.h"
 
+// iterator type
+template<class DataType>
+class DataConstIterator
+{
+    protected:
+        typedef typename DataType::DataInfo DataInfo;
+
+        const DataType * const _p_data_;
+        int my_id;
+
+    public:
+        DataInfo my_info;
+
+        // functions
+        DataConstIterator(const DataType * const data_, int id):
+            _p_data_(data_),
+            my_id(id),
+            my_info(*data_, id)
+            {};
+
+        const DataInfo& operator*() const { return my_info; }
+        bool operator==(const DataConstIterator<DataType> & other) const { return (_p_data_ == other._p_data_) & (my_id == other.my_id); }
+        bool operator!=(const DataConstIterator<DataType> & other) const { return !(*this == other); }
+        DataConstIterator<DataType> & operator++()
+        {
+            ++my_id;
+            my_info = DataInfo(*_p_data_, my_id);
+            return *this;
+        }
+        DataConstIterator<DataType> & operator--()
+        {
+            --my_id;
+            my_info = DataInfo(*_p_data_, my_id);
+            return *this;
+        }
+        int size() const { return _p_data_->nb(); }
+};
+// end iterator type
 
 // TODO make this class iterable ! with operator begin, end and an iterator
 /**

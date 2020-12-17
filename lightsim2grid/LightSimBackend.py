@@ -513,8 +513,6 @@ class LightSimBackend(Backend):
             res = True
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
-            import pdb
-            pdb.set_trace()
             self._fill_nans()
             res = False
 

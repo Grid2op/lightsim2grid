@@ -67,8 +67,6 @@ def init(pp_net):
     model = GridModel()
     if "_options" in pp_net:
         if "init_vm_pu" in pp_net["_options"]:
-            if pp_net["_options"]["init_vm_pu"] is not None:
-                import pdb
                 model.set_init_vm_pu(pp_net["_options"]["init_vm_pu"])
 
     tmp_bus_ind = np.argsort(pp_net.bus.index)

@@ -5,6 +5,7 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+import numpy as np
 
 
 def _aux_add_shunt(model, pp_net):
@@ -20,6 +21,10 @@ def _aux_add_shunt(model, pp_net):
     -------
 
     """
+    if "parallel" in pp_net.shunt and np.any(pp_net.shunt["parallel"].values != 1):
+        raise RuntimeError("Cannot handle 'parallel' sgen columns. Please duplicate the rows if that is the case. "
+                           "Some pp_net.sgen[\"parallel\"] != 1 it is not handled by lightsim yet.")
+
     model.init_shunt(pp_net.shunt["p_mw"].values,
                      pp_net.shunt["q_mvar"].values,
                      pp_net.shunt["bus"].values

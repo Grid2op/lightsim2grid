@@ -20,14 +20,15 @@ void PandaPowerConverter::_check_init(){
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param(const RealVect & trafo_vn_hv,
-                                                const RealVect & trafo_vn_lv,
+           PandaPowerConverter::get_trafo_param(const RealVect & trafo_vn_hv,  // adjusted for phase shifter and tap side
+                                                const RealVect & trafo_vn_lv, // adjusted for phase shifter and tap side
+                                                const RealVect & vn_hv,  // nominal voltage of hv bus
+                                                const RealVect & vn_lv,  // nominal voltage of lv bus
                                                 const RealVect & trafo_vk_percent,
                                                 const RealVect & trafo_vkr_percent,
                                                 const RealVect & trafo_sn_trafo_mva,
                                                 const RealVect & trafo_pfe_kw,
-                                                const RealVect & trafo_i0_pct,
-                                                const RealVect & trafo_lv_id_vn_kv)
+                                                const RealVect & trafo_i0_pct)
 {
     //TODO only for "trafo model = t"
     //TODO supposes that the step start at 0 for "no ratio"
@@ -37,34 +38,48 @@ std::tuple<RealVect,
     int nb_trafo = trafo_vn_lv.size();
 
     RealVect vn_trafo_lv = trafo_vn_lv;
-    const RealVect & vn_lv = trafo_lv_id_vn_kv;
 
     // compute r and x
-    RealVect tmp = vn_trafo_lv.array() / vn_lv.array();
-    tmp = tmp.array() * tmp.array();
-    RealVect tap_lv = tmp * sn_mva_;
+    // tap_lv = np.square(vn_trafo_lv / vn_lv) * sn_mva  # adjust for low voltage side voltage converter
+    RealVect vn_trafo_lv_1_vn_lv_sq = vn_trafo_lv.array() / vn_lv.array();
+    vn_trafo_lv_1_vn_lv_sq = vn_trafo_lv_1_vn_lv_sq.array() * vn_trafo_lv_1_vn_lv_sq.array();
+    RealVect tap_lv = vn_trafo_lv_1_vn_lv_sq * sn_mva_; // tap_lv = np.square(vn_trafo_lv / vn_lv) * sn_mva
+
+    // z_sc = vk_percent / 100. / sn_trafo_mva * tap_lv
     RealVect _1_sn_trafo_mva = my_one_ / trafo_sn_trafo_mva.array();
     RealVect z_sc = 0.01 * trafo_vk_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
+    // r_sc = vkr_percent / 100. / sn_trafo_mva * tap_lv
     RealVect r_sc = 0.01 * trafo_vkr_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
+    // x_sc = np.sign(z_sc) * np.sqrt(z_sc ** 2 - r_sc ** 2)
     RealVect tmp2 = z_sc.array()*z_sc.array() - r_sc.array() * r_sc.array();
     RealVect x_sc = z_sc.cwiseSign().array() * tmp2.cwiseSqrt().array();
 
     // compute h, the subsceptance
-    RealVect baseR = trafo_lv_id_vn_kv.array() * trafo_lv_id_vn_kv.array();
+    // baseR = np.square(vn_lv) / sn_mva
+    RealVect baseR = vn_lv.array() * vn_lv.array();
     baseR.array() /= sn_mva_;
+    // pfe = get_trafo_values(trafo_df, "pfe_kw") * 1e-3
     RealVect pfe =  trafo_pfe_kw.array() * 1e-3;
 
     // Calculate subsceptance ###
-    RealVect vnl_squared = trafo_vn_lv.array() * trafo_vn_lv.array();
-    RealVect b_real = pfe.array() / vnl_squared.array() * baseR.array();
+    // vnl_squared = vn_lv_kv ** 2
+    RealVect vnl_squared = vn_lv.array() * vn_lv.array();
+    // b_real = pfe / vnl_squared * baseR
+    RealVect b_real = pfe.array() * baseR.array() / vnl_squared.array();
+    // b_img = (i0 / 100. * sn) ** 2 - pfe ** 2
     tmp2 = (trafo_i0_pct.array() * 0.01 * trafo_sn_trafo_mva.array());
     RealVect b_img =  tmp2.array() * tmp2.array() - pfe.array() * pfe.array();
 
+    // b_img[b_img < 0] = 0
     for(int i = 0; i<nb_trafo; ++i) {if (b_img(i) < 0.)  b_img(i) = 0.;}
+    //  b_img = np.sqrt(b_img) * baseR / vnl_squared
     b_img = b_img.cwiseSqrt();
     b_img.array() *= baseR.array() / vnl_squared.array();
+    // y = - b_real * 1j - b_img * np.sign(i0)
     CplxVect y = - my_i * b_real.array().cast<cplx_type>() - b_img.array().cast<cplx_type>() * trafo_i0_pct.cwiseSign().array();
-    CplxVect b_sc = y.array() / tmp.array().cast<cplx_type>();
+    // return y / np.square(vn_trafo_lv / vn_lv_kv) * parallel
+    CplxVect b_sc = y.array() / vn_trafo_lv_1_vn_lv_sq.array().cast<cplx_type>();
+
 
     //transform trafo from t model to pi model, of course...
     // (remove that if trafo model is not t, but directly pi)
@@ -76,13 +91,14 @@ std::tuple<RealVect,
         cplx_type zab_triangle = zSum_triangle / zc_star;
         cplx_type zbc_triangle = zSum_triangle / za_star;
 
-        r_sc(i) = zab_triangle.real();
-        x_sc(i) = zab_triangle.imag();
+        r_sc(i) = std::real(zab_triangle);
+        x_sc(i) = std::imag(zab_triangle);
         b_sc(i) = -my_two_ * my_i / zbc_triangle;
     }
 
     std::tuple<RealVect, RealVect, CplxVect> res =
         std::tuple<RealVect, RealVect, CplxVect>(std::move(r_sc), std::move(x_sc), std::move(b_sc));
+
     return res;
 }
 

@@ -61,6 +61,44 @@ class MakeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gen_info = data_gen[self.env.n_gen]
 
+    def aux_trafo_ok(self, el, trafo_id, tol, data_ref):
+        """trafo_id: id for the trafo in grid2Op"""
+        p_or, q_or, v_or, a_or = data_ref
+        assert el.connected is True, f"gen {trafo_id} is not connected"
+        assert el.bus_hv_id == self.env.backend.line_or_to_subid[trafo_id], \
+            f"trafo {trafo_id} is connected to wrong bus (hv side)"
+        assert el.bus_lv_id == self.env.backend.line_ex_to_subid[trafo_id], \
+            f"trafo {trafo_id} is connected to wrong bus (lv side)"
+        assert el.has_res, f"trafo {trafo_id} don't have any results"
+        assert np.abs(el.res_p_hv_mw - p_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong p_or"
+        assert np.abs(el.res_q_hv_mvar - q_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong q_or"
+        assert np.abs(el.res_a_hv_a - 0.001 * a_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong a_or"
+
+    def test_getters_trafo(self):
+        """test that the trafo getter return the right values"""
+        data_trafos = self.env.backend._grid.get_trafos()
+        p_or, q_or, v_or, a_or = self.env.backend.lines_or_info()
+        nb_trafo = 5
+        nb_line = 15
+        data_ref = (p_or, q_or, v_or, a_or)
+        assert len(data_trafos) == nb_trafo
+        tol = 1e-5
+        for el in data_trafos:
+            trafo_id = el.id
+            self.aux_trafo_ok(el, trafo_id + nb_line, tol, data_ref)
+
+            with self.assertRaises(AttributeError):
+                # this should not be possible
+                el.bus_id = 2
+
+        gen_info = data_trafos[0]
+        self.aux_trafo_ok(gen_info, 0 + nb_line, tol, data_ref)
+        with self.assertRaises(ValueError):
+            gen_info = data_trafos[-1]
+
+        with self.assertRaises(ValueError):
+            gen_info = data_trafos[nb_trafo]
+
 
 if __name__ == "__main__":
     unittest.main()

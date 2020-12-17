@@ -180,3 +180,7 @@ test_case6495rte.json
 test_case6515rte.json
 test_rte_2848.json
 test_rte_files.py
+test_rte_converters.py
+test_case14.json
+test_case118.json
+test_case2848rte.json

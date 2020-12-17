@@ -80,7 +80,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
-
+    // iterator for generators
     py::class_<DataGen>(m, "DataGen")
         .def("__len__", [](const DataGen & data) { return data.nb(); })
         .def("__getitem__", [](const DataGen & data, int k){return data[k]; } )
@@ -100,6 +100,35 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_p_mw", &DataGen::GenInfo::res_p_mw)
         .def_readonly("res_q_mvar", &DataGen::GenInfo::res_q_mvar)
         .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv);
+
+    // iterator for trafos
+    py::class_<DataTrafo>(m, "DataTrafo")
+        .def("__len__", [](const DataTrafo & data) { return data.nb(); })
+        .def("__getitem__", [](const DataTrafo & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataTrafo & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataTrafo::TrafoInfo>(m, "TrafoInfo")
+        .def_readonly("id", &DataTrafo::TrafoInfo::id)
+        .def_readonly("connected", &DataTrafo::TrafoInfo::connected)
+        .def_readonly("bus_hv_id", &DataTrafo::TrafoInfo::bus_hv_id)
+        .def_readonly("bus_lv_id", &DataTrafo::TrafoInfo::bus_lv_id)
+        .def_readonly("r", &DataTrafo::TrafoInfo::r)
+        .def_readonly("x", &DataTrafo::TrafoInfo::x)
+        .def_readonly("h", &DataTrafo::TrafoInfo::h)
+        .def_readonly("is_tap_hv_side", &DataTrafo::TrafoInfo::is_tap_hv_side)
+        .def_readonly("ratio", &DataTrafo::TrafoInfo::ratio)
+        .def_readonly("shift", &DataTrafo::TrafoInfo::shift)
+        .def_readonly("has_res", &DataTrafo::TrafoInfo::has_res)
+        .def_readonly("res_p_hv_mw", &DataTrafo::TrafoInfo::res_p_hv_mw)
+        .def_readonly("res_q_hv_mvar", &DataTrafo::TrafoInfo::res_q_hv_mvar)
+        .def_readonly("res_v_hv_kv", &DataTrafo::TrafoInfo::res_v_hv_kv)
+        .def_readonly("res_a_hv_a", &DataTrafo::TrafoInfo::res_a_hv_a)
+        .def_readonly("res_p_lv_mw", &DataTrafo::TrafoInfo::res_p_lv_mw)
+        .def_readonly("res_q_lv_mvar", &DataTrafo::TrafoInfo::res_q_lv_mvar)
+        .def_readonly("res_v_lv_kv", &DataTrafo::TrafoInfo::res_v_lv_kv)
+        .def_readonly("res_a_lv_a", &DataTrafo::TrafoInfo::res_a_lv_a);
 
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
@@ -171,6 +200,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv)
         .def("get_bus_trafo_hv", &GridModel::get_bus_trafo_hv)
         .def("get_bus_trafo_lv", &GridModel::get_bus_trafo_lv)
+        .def("get_trafos", &GridModel::get_trafos)
 
         .def("deactivate_load", &GridModel::deactivate_load)
         .def("reactivate_load", &GridModel::reactivate_load)

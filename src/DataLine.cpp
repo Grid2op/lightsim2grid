@@ -112,14 +112,20 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, 
         // fill non diagonal coefficient
         res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_ex_solver_id, -y));
         res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, -y));
+
         // fill diagonal coefficient
-        cplx_type tmp = y + h;
+        cplx_type tmp = y;
+        if(ac) tmp += h;
+        // else tmp += std::imag(h); // todo ???? still don't know !
+
         res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, tmp));
         res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, tmp));
     }
 }
 void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
+
+    //TODO this is no more used!!!! see the other fillYbus
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
     int nb_line = powerlines_r_.size();
@@ -142,6 +148,7 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, con
             throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
         }
 
+       //TODO this is no more used!!!! see the other fillYbus
         // convert subsceptance to half subsceptance, applied on each ends
         cplx_type h = 0.;
         if(ac){
@@ -158,14 +165,22 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, con
         }
         if (z != my_zero_ ) y = my_one_ / z;
 
+        //TODO this is no more used!!!! see the other fillYbus
         // fill non diagonal coefficient
         res.coeffRef(bus_or_solver_id, bus_ex_solver_id) -= y; // * base_for_pu_from;
         res.coeffRef(bus_ex_solver_id, bus_or_solver_id) -= y; // * base_for_pu_to;
 
         // fill diagonal coefficient
-        cplx_type tmp = y + h;
+        cplx_type tmp = y;
+        if(ac){
+            tmp += h;
+        }
+
+        //TODO this is no more used!!!! see the other fillYbus
         res.coeffRef(bus_or_solver_id, bus_or_solver_id) += tmp;
         res.coeffRef(bus_ex_solver_id, bus_ex_solver_id) += tmp;
+
+        //TODO this is no more used!!!! see the other fillYbus
     }
 }
 

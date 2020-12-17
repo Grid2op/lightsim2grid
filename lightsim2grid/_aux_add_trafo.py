@@ -23,6 +23,9 @@ def _aux_add_trafo(converter, model, pp_net):
     -------
 
     """
+    if "parallel" in pp_net.trafo and np.any(pp_net.trafo["parallel"].values != 1):
+        raise RuntimeError("Cannot handle 'parallel' trafo columns. Please duplicate the rows if that is the case. "
+                           "Some pp_net.trafo[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     #### find the right trafo parameters
     tap_neutral = pp_net.trafo["tap_neutral"].values
@@ -31,15 +34,21 @@ def _aux_add_trafo(converter, model, pp_net):
     tap_neutral[~np.isfinite(tap_neutral)] = 0.
     if np.any(tap_neutral != 0.):
         raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
+
+    # TODO add the first two lines (the function _calc_tap_from_dataframe) to the converter !
+    from pandapower.build_branch import _calc_tap_from_dataframe
+    vn_trafo_hv, vn_trafo_lv, shift = _calc_tap_from_dataframe(pp_net, pp_net.trafo)
+
     trafo_r, trafo_x, trafo_b = \
-        converter.get_trafo_param(pp_net.trafo["vn_hv_kv"].values,
-                                  pp_net.trafo["vn_lv_kv"].values,
+        converter.get_trafo_param(vn_trafo_hv,
+                                  vn_trafo_lv,
+                                  pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
                                   pp_net.trafo["vk_percent"].values,
                                   pp_net.trafo["vkr_percent"].values,
                                   pp_net.trafo["sn_mva"].values,
                                   pp_net.trafo["pfe_kw"].values,
                                   pp_net.trafo["i0_percent"].values,
-                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"]
                                   )
 
     ### add them to the grid

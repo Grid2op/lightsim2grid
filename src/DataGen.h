@@ -50,6 +50,7 @@ class DataGen: public DataGeneric
             GenInfo(const DataGen & r_data_gen, int my_id):
             id(-1),
             connected(false),
+            bus_id(-1),
             target_p_mw(0.),
             target_vm_pu(0.),
             min_q_mvar(0.),
@@ -79,43 +80,10 @@ class DataGen: public DataGeneric
                 }
             }
     };
+    typedef GenInfo DataInfo;
 
     private:
-    // iterator type
-    class DataGenConstIterator
-    {
-        protected:
-            const DataGen * const _p_data_gen;
-
-        public:
-            int my_id;
-            GenInfo my_info;
-
-            // functions
-            DataGenConstIterator(const DataGen * const data_gen, int id):
-                _p_data_gen(data_gen),
-                my_id(id),
-                my_info(*data_gen, id)
-                {};
-
-            const GenInfo& operator*() const { return my_info; }
-            bool operator==(const DataGenConstIterator& other) const { return (_p_data_gen == other._p_data_gen) & (my_id == other.my_id); }
-            bool operator!=(const DataGenConstIterator& other) const { return !(*this == other); }
-            DataGenConstIterator& operator++()
-            {
-                ++my_id;
-                my_info = GenInfo(*_p_data_gen, my_id);
-                return *this;
-            }
-            DataGenConstIterator& operator--()
-            {
-                --my_id;
-                my_info = GenInfo(*_p_data_gen, my_id);
-                return *this;
-            }
-            int size() const { return _p_data_gen->nb(); }
-    };
-    // end iterator type
+    typedef DataConstIterator<DataGen> DataGenConstIterator;
 
     public:
     typedef std::tuple<

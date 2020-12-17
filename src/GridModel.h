@@ -193,6 +193,7 @@ class GridModel : public DataGeneric
         void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
+        const DataTrafo & get_trafos() const {return trafos_;}
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, need_reset_); }

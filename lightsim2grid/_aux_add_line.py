@@ -23,6 +23,9 @@ def _aux_add_line(converter, model, pp_net):
     -------
 
     """
+    if "parallel" in pp_net.line and np.any(pp_net.line["parallel"].values != 1):
+        raise RuntimeError("Cannot handle 'parallel' lines columns. Please duplicate the rows if that is the case. "
+                           "Some pp_net.line[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     #### find the right powerline parameters
     line_r, line_x, line_h = \

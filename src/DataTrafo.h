@@ -31,6 +31,86 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 class DataTrafo : public DataGeneric
 {
     public:
+        class TrafoInfo
+        {
+            public:
+                // members
+                int id;  // id of the generator
+                bool connected;
+                int bus_hv_id;
+                int bus_lv_id;
+                real_type r;
+                real_type x;
+                cplx_type h;
+                bool is_tap_hv_side;
+                real_type ratio;
+                real_type shift;
+
+                bool has_res;
+                real_type res_p_hv_mw;
+                real_type res_q_hv_mvar;
+                real_type res_v_hv_kv;
+                real_type res_a_hv_a;
+                real_type res_p_lv_mw;
+                real_type res_q_lv_mvar;
+                real_type res_v_lv_kv;
+                real_type res_a_lv_a;
+
+                TrafoInfo(const DataTrafo & r_data_trafo, int my_id):
+                id(-1),
+                connected(false),
+                bus_hv_id(-1),
+                bus_lv_id(-1),
+                r(-1.0),
+                x(-1.0),
+                h({0., 0.}),
+                is_tap_hv_side(true),
+                ratio(-1.0),
+                shift(-1.0),
+                has_res(false),
+                res_p_hv_mw(0.),
+                res_q_hv_mvar(0.),
+                res_v_hv_kv(0.),
+                res_a_hv_a(0.),
+                res_p_lv_mw(0.),
+                res_q_lv_mvar(0.),
+                res_v_lv_kv(0.),
+                res_a_lv_a(0.)
+                {
+                    if((my_id >= 0) & (my_id < r_data_trafo.nb()))
+                    {
+                        id = my_id;
+                        connected = r_data_trafo.status_[my_id];
+                        bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
+                        bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
+                        r = r_data_trafo.r_.coeff(my_id);
+                        x = r_data_trafo.x_.coeff(my_id);
+                        h = r_data_trafo.h_.coeff(my_id);
+                        is_tap_hv_side = r_data_trafo.is_tap_hv_side_[my_id];
+                        ratio = r_data_trafo.ratio_.coeff(my_id);
+                        shift = r_data_trafo.shift_.coeff(my_id);
+
+                        has_res = r_data_trafo.res_p_hv_.size() > 0;
+                        if(has_res)
+                        {
+                            res_p_hv_mw = r_data_trafo.res_p_hv_.coeff(my_id);
+                            res_q_hv_mvar = r_data_trafo.res_q_hv_.coeff(my_id);
+                            res_v_hv_kv = r_data_trafo.res_v_hv_.coeff(my_id);
+                            res_a_hv_a = r_data_trafo.res_a_hv_.coeff(my_id);
+                            res_p_lv_mw = r_data_trafo.res_p_lv_.coeff(my_id);
+                            res_q_lv_mvar = r_data_trafo.res_q_lv_.coeff(my_id);
+                            res_v_lv_kv = r_data_trafo.res_v_lv_.coeff(my_id);
+                            res_a_lv_a = r_data_trafo.res_a_lv_.coeff(my_id);
+                        }
+                    }
+                }
+        };
+        typedef TrafoInfo DataInfo;
+
+    private:
+        typedef DataConstIterator<DataTrafo> DataTrafoConstIterator;
+
+    public:
     typedef std::tuple<
                std::vector<real_type>, // branch_r
                std::vector<real_type>, // branch_x
@@ -56,11 +136,30 @@ class DataTrafo : public DataGeneric
                            const Eigen::VectorXi & trafo_hv_id,
                            const Eigen::VectorXi & trafo_lv_id
               );
+    //pickle
     DataTrafo::StateRes get_state() const;
     void set_state(DataTrafo::StateRes & my_state );
 
-    int nb() { return r_.size(); }
+    int nb() const { return r_.size(); }
 
+    // make it iterable
+    typedef DataTrafoConstIterator const_iterator_type;
+    const_iterator_type begin() const {return DataTrafoConstIterator(this, 0); }
+    const_iterator_type end() const {return DataTrafoConstIterator(this, nb()); }
+    TrafoInfo operator[](int id) const
+    {
+        if(id < 0)
+        {
+            throw std::range_error("You cannot ask for a negative generator");
+        }
+        if(id >= nb())
+        {
+            throw std::range_error("Generator out of bound. Not enough generator on the grid.");
+        }
+        return TrafoInfo(*this, id);
+    }
+
+    // method used within lightsim
     void deactivate(int trafo_id, bool & need_reset) {_deactivate(trafo_id, status_, need_reset);}
     void reactivate(int trafo_id, bool & need_reset) {_reactivate(trafo_id, status_, need_reset);}
     void change_bus_hv(int trafo_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}

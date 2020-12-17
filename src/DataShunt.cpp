@@ -55,7 +55,9 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac,
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = p_mw_(shunt_id) + my_i * q_mvar_(shunt_id);
+        tmp = {p_mw_(shunt_id), my_zero_};
+        if(ac) tmp += my_i * q_mvar_(shunt_id);
+
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
@@ -88,6 +90,7 @@ void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
 
 void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
     int nb_shunt = q_mvar_.size();
+    //TODO this is no more used!!!! see the other fillYbus
     cplx_type tmp;
     int bus_id_me, bus_id_solver;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
@@ -103,6 +106,7 @@ void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, co
         }
         res.coeffRef(bus_id_solver, bus_id_solver) -= tmp;
     }
+    //TODO this is no more used!!!! see the other fillYbus
 }
 
 void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
