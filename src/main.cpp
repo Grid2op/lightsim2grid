@@ -68,6 +68,18 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &GaussSeidelSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
+    py::class_<GaussSeidelSynchSolver>(m, "GaussSeidelSynchSolver")
+        .def(py::init<>())
+        .def("get_Va", &GaussSeidelSynchSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &GaussSeidelSynchSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &GaussSeidelSynchSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &GaussSeidelSynchSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &GaussSeidelSynchSolver::reset)  // reset the solver to its original state
+        .def("converged", &GaussSeidelSynchSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &GaussSeidelSynchSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        .def("get_timers", &GaussSeidelSynchSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &GaussSeidelSynchSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
     py::class_<DCSolver>(m, "DCSolver")
         .def(py::init<>())
         .def("get_Va", &DCSolver::get_Va)  // get the voltage angle vector (vector of double)
