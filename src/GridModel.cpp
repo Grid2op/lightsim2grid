@@ -366,7 +366,7 @@ void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_
     // init the Sbus vector
     powerlines_.fillSbus(res, true, id_me_to_solver);
     shunts_.fillSbus(res, true, id_me_to_solver);
-    trafos_.fillSbus(res, true, id_me_to_solver);
+    trafos_.fillSbus(res, ac, id_me_to_solver);
     loads_.fillSbus(res, true, id_me_to_solver);
     sgens_.fillSbus(res, true, id_me_to_solver);
     generators_.fillSbus(res, true, id_me_to_solver);

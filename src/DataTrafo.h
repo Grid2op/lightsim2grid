@@ -169,6 +169,7 @@ class DataTrafo : public DataGeneric
 
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
 
     void compute_results(const Eigen::Ref<RealVect> & Va,
                          const Eigen::Ref<RealVect> & Vm,
