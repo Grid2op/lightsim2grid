@@ -221,6 +221,9 @@ pkgs = {
             "autodocsumm>=0.1.13",
             # "m2r"
             "recommonmark",
+        ],
+        "benchmark": [
+            "tabulate"
         ]
     }
 }
