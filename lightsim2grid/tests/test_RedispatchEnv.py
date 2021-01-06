@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 import unittest
+import warnings
 
 from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 
@@ -30,7 +31,10 @@ class TestRedispatch(HelperTests, BaseTestRedispatch):
         BaseTestRedispatch.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_path(self):
         return PATH_DATA_TEST_PP
@@ -49,7 +53,10 @@ class TestRedispatchChangeNothingEnvironment(HelperTests, BaseTestRedispatchChan
         BaseTestRedispatchChangeNothingEnvironment.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_path(self):
         return PATH_DATA_TEST_PP
@@ -68,7 +75,10 @@ class TestRedispTooLowHigh(HelperTests, BaseTestRedispTooLowHigh):
         BaseTestRedispTooLowHigh.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestDispatchRampingIllegalETC(HelperTests, BaseTestDispatchRampingIllegalETC):
@@ -81,7 +91,10 @@ class TestDispatchRampingIllegalETC(HelperTests, BaseTestDispatchRampingIllegalE
         BaseTestDispatchRampingIllegalETC.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestLoadingAcceptAlmostZeroSumRedisp(HelperTests, BaseTestLoadingAcceptAlmostZeroSumRedisp):
@@ -94,7 +107,10 @@ class TestLoadingAcceptAlmostZeroSumRedisp(HelperTests, BaseTestLoadingAcceptAlm
         BaseTestLoadingAcceptAlmostZeroSumRedisp.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 if __name__ == "__main__":

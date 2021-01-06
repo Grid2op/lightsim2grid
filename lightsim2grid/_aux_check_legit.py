@@ -32,9 +32,6 @@ def _aux_check_legit(pp_net):
     if "asymmetric_load" in pp_net and pp_net.asymmetric_load.shape[0]:
         raise RuntimeError("Unsupported element found (Asymmetric Load - \"pp_net.asymmetric_load\") "
                            "in pandapower network")
-    # if pp_net.sgen.shape[0]:
-    #     raise RuntimeError("Unsupported element found (Static Generator - \"pp_net.sgen\") "
-    #                        "in pandapower network")
     if "impedance" in pp_net and pp_net.impedance.shape[0]:
         raise RuntimeError("Unsupported element found (Impedance - \"pp_net.impedance\") "
                            "in pandapower network")
@@ -54,6 +51,8 @@ def _aux_check_legit(pp_net):
     if pp_net.sn_mva != 1.:
         raise RuntimeError("Pandapower network with sn_mva != 1 are not supported yet, especially in the "
                            "conversion for some trafo (and probably somewhere else too)")
-    if pp_net["_options"]["trafo_model"] != "t":
+    if "_options" in pp_net and \
+       "trafo_model" in pp_net["_options"] and \
+       pp_net["_options"]["trafo_model"] != "t":
         raise RuntimeError("Cannot handle pp_net with trafo not modeled in \"t\". Please change "
                            "your network and load it again.")

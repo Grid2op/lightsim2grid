@@ -20,8 +20,10 @@ void PandaPowerConverter::_check_init(){
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param(const RealVect & trafo_vn_hv,  // adjusted for phase shifter and tap side
-                                                const RealVect & trafo_vn_lv, // adjusted for phase shifter and tap side
+           PandaPowerConverter::get_trafo_param(const RealVect & tap_step_pct,
+                                                const RealVect & tap_pos,
+                                                const RealVect & tap_angles,
+                                                const std::vector<bool> & is_tap_hv_side,
                                                 const RealVect & vn_hv,  // nominal voltage of hv bus
                                                 const RealVect & vn_lv,  // nominal voltage of lv bus
                                                 const RealVect & trafo_vk_percent,
@@ -30,14 +32,33 @@ std::tuple<RealVect,
                                                 const RealVect & trafo_pfe_kw,
                                                 const RealVect & trafo_i0_pct)
 {
-    //TODO only for "trafo model = t"
-    //TODO supposes that the step start at 0 for "no ratio"
+    //TODO consistency: move this class outside of here
     _check_init();
 
-    //TODO consistency: move this class outside of here
-    int nb_trafo = trafo_vn_lv.size();
+    int nb_trafo = tap_step_pct.size();
+    // TODO check all vectors have the same size
 
-    RealVect vn_trafo_lv = trafo_vn_lv;
+    // compute the adjusted for phase shifter and tap side
+    auto tap_steps = 0.01 * tap_step_pct.array() * tap_pos.array();
+    auto du_hv = vn_hv.array() * tap_steps.array();
+    auto du_lv = vn_lv.array() * tap_steps.array();
+    RealVect trafo_vn_hv = vn_hv;
+    RealVect trafo_vn_lv = vn_lv;
+    for(int i = 0; i < nb_trafo; ++i)
+    {
+        if(is_tap_hv_side[i]) {
+            // adjust the voltage hv side
+            double tmp_cos = vn_hv.coeff(i) + du_hv.coeff(i) * cos(tap_angles.coeff(i));
+            double tmp_sin = du_hv.coeff(i) * sin(tap_angles.coeff(i));
+            trafo_vn_hv.coeffRef(i) = sqrt(tmp_cos * tmp_cos + tmp_sin * tmp_sin);
+        }else{
+            // adjust the voltage lv side
+            double tmp_cos = vn_lv.coeff(i) + du_lv.coeff(i) * cos(tap_angles.coeff(i));
+            double tmp_sin = du_lv.coeff(i) * sin(tap_angles.coeff(i));
+            trafo_vn_lv.coeffRef(i) = sqrt(tmp_cos * tmp_cos + tmp_sin * tmp_sin);
+        }
+    }
+    const RealVect & vn_trafo_lv = trafo_vn_lv;
 
     // compute r and x
     // tap_lv = np.square(vn_trafo_lv / vn_lv) * sn_mva  # adjust for low voltage side voltage converter

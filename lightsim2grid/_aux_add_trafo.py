@@ -27,42 +27,26 @@ def _aux_add_trafo(converter, model, pp_net):
         raise RuntimeError("Cannot handle 'parallel' trafo columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.trafo[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
-    #### find the right trafo parameters
-    tap_neutral = pp_net.trafo["tap_neutral"].values
+    # fix the missing values
+    tap_neutral = 1.0 * pp_net.trafo["tap_neutral"].values
     if np.any(~np.isfinite(tap_neutral)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_neutral\"], they have been replaced by 0")
     tap_neutral[~np.isfinite(tap_neutral)] = 0.
+
     if np.any(tap_neutral != 0.):
         raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
 
-    # TODO add the first two lines (the function _calc_tap_from_dataframe) to the converter !
-    from pandapower.build_branch import _calc_tap_from_dataframe
-    vn_trafo_hv, vn_trafo_lv, shift = _calc_tap_from_dataframe(pp_net, pp_net.trafo)
-
-    trafo_r, trafo_x, trafo_b = \
-        converter.get_trafo_param(vn_trafo_hv,
-                                  vn_trafo_lv,
-                                  pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
-                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                                  pp_net.trafo["vk_percent"].values,
-                                  pp_net.trafo["vkr_percent"].values,
-                                  pp_net.trafo["sn_mva"].values,
-                                  pp_net.trafo["pfe_kw"].values,
-                                  pp_net.trafo["i0_percent"].values,
-                                  )
-
-    ### add them to the grid
-    tap_step_pct = pp_net.trafo["tap_step_percent"].values
+    tap_step_pct = 1.0 * pp_net.trafo["tap_step_percent"].values
     if np.any(~np.isfinite(tap_step_pct)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_percent\"], they have been replaced by 0")
     tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
 
-    tap_pos = pp_net.trafo["tap_pos"].values
+    tap_pos = 1.0 * pp_net.trafo["tap_pos"].values
     if np.any(~np.isfinite(tap_pos)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_pos\"], they have been replaced by 0")
     tap_pos[~np.isfinite(tap_pos)] = 0.
 
-    shift_ = pp_net.trafo["shift_degree"].values
+    shift_ = 1.0 * pp_net.trafo["shift_degree"].values
     if np.any(~np.isfinite(tap_pos)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
@@ -75,6 +59,29 @@ def _aux_add_trafo(converter, model, pp_net):
     if np.any(pp_net.trafo["tap_phase_shifter"].values):
         raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
                            "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
+
+    tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
+    if np.any(~np.isfinite(tap_pos)):
+        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
+    tap_angles_[~np.isfinite(tap_angles_)] = 0.
+    tap_angles_ = np.deg2rad(tap_angles_)
+
+    # compute physical parameters
+    trafo_r, trafo_x, trafo_b = \
+        converter.get_trafo_param(tap_step_pct,
+                                  tap_pos,
+                                  tap_angles_,  # in radian !
+                                  is_tap_hv_side,
+                                  pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                  pp_net.trafo["vk_percent"].values,
+                                  pp_net.trafo["vkr_percent"].values,
+                                  pp_net.trafo["sn_mva"].values,
+                                  pp_net.trafo["pfe_kw"].values,
+                                  pp_net.trafo["i0_percent"].values,
+                                  )
+
+    # initialize the grid
     model.init_trafo(trafo_r,
                      trafo_x,
                      trafo_b,

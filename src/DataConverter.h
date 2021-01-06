@@ -35,8 +35,10 @@ class PandaPowerConverter : public BaseConstants
         std::tuple<RealVect,
                    RealVect,
                    CplxVect>
-           get_trafo_param(const RealVect & trafo_vn_hv,  // adjusted for phase shifter and tap side
-                           const RealVect & trafo_vn_lv, // adjusted for phase shifter and tap side
+           get_trafo_param(const RealVect & tap_step_pct,
+                           const RealVect & tap_pos,
+                           const RealVect & tap_angles,
+                           const std::vector<bool> & is_tap_hv_side,
                            const RealVect & vn_hv,  // nominal voltage of hv bus
                            const RealVect & vn_lv,  // nominal voltage of lv bus
                            const RealVect & trafo_vk_percent,

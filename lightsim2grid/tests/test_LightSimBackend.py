@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of Grid2Op, Grid2Op a testbed platform to model sequential decision making in power systems.
 import unittest
+import warnings
 
 from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 
@@ -23,7 +24,10 @@ from lightsim2grid.LightSimBackend import LightSimBackend
 
 class TestNames(HelperTests, BaseTestNames):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_path(self):
         return PATH_DATA_TEST_INIT
@@ -31,7 +35,10 @@ class TestNames(HelperTests, BaseTestNames):
 
 class TestLoadingCase(HelperTests, BaseTestLoadingCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_path(self):
         return PATH_DATA_TEST
@@ -56,7 +63,10 @@ class TestLoadingBackendFunc(HelperTests, BaseTestLoadingBackendFunc):
         BaseTestLoadingBackendFunc.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_path(self):
         return PATH_DATA_TEST
@@ -74,7 +84,10 @@ class TestTopoAction(HelperTests, BaseTestTopoAction):
         BaseTestTopoAction.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_path(self):
         return PATH_DATA_TEST
@@ -92,7 +105,10 @@ class TestEnvPerformsCorrectCascadingFailures(HelperTests, BaseTestEnvPerformsCo
         BaseTestEnvPerformsCorrectCascadingFailures.tearDown(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
     def get_casefile(self):
         return "test_case14.json"
@@ -103,12 +119,18 @@ class TestEnvPerformsCorrectCascadingFailures(HelperTests, BaseTestEnvPerformsCo
 
 class TestChangeBusAffectRightBus(HelperTests, BaseTestChangeBusAffectRightBus):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestShuntAction(HelperTests, BaseTestShuntAction):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestResetEqualsLoadGrid(HelperTests, BaseTestResetEqualsLoadGrid):
@@ -116,27 +138,42 @@ class TestResetEqualsLoadGrid(HelperTests, BaseTestResetEqualsLoadGrid):
         BaseTestResetEqualsLoadGrid.setUp(self)
 
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestVoltageOWhenDisco(HelperTests, BaseTestVoltageOWhenDisco):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestChangeBusSlack(HelperTests, BaseTestChangeBusSlack):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestIssuesTest(HelperTests, BaseIssuesTest):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 class TestStatusAction(HelperTests, BaseStatusActions):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
 
 
 if __name__ == "__main__":

@@ -15,7 +15,9 @@ class TestPickle(unittest.TestCase):
     def test_save_load(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = make("rte_case5_example", test=True, backend=LightSimBackend())
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                self.env = make("rte_case5_example", test=True, backend=LightSimBackend())
             with tempfile.TemporaryDirectory() as tmpdir:
                 with open(os.path.join(tmpdir, "test_pickle.pickle"), "wb") as f:
                     pickle.dump(self.env.backend, f)

@@ -106,7 +106,7 @@ LIBS = ["{}/KLU/Lib/libklu.a",
         "{}/COLAMD/Lib/libcolamd.a",
         "{}/CXSparse/Lib/libcxsparse.a",
         "{}/SuiteSparse_config/libsuitesparseconfig.a"
-       ]
+        ]
 LIBS = [el.format(suitesparse_path) for el in LIBS]
 exists_libs = True
 for el in LIBS:

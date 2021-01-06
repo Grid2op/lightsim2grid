@@ -426,7 +426,7 @@ class GridModel : public DataGeneric
         // powersystem representation
         // 1. bus
         RealVect bus_vn_kv_;
-        std::vector<bool> bus_status_;
+        std::vector<bool> bus_status_;  // for each bus, gives its status. true if connected, false otherwise
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.

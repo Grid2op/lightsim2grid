@@ -12,7 +12,7 @@ Change Log
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 
-[0.4.1] 2020-11-xx
+[0.4.1] 2021-01-xx
 -------------------
 - [FIXED] a compilation issue on macos
 - [FIXED] an import issue (with `lightsim2grid.SolverType`)

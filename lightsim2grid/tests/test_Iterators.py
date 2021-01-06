@@ -35,9 +35,9 @@ class MakeTests(unittest.TestCase):
         q_max_ref = self.env.backend.init_pp_backend._grid.gen["max_q_mvar"].values[gen_id]
         assert np.abs(el.max_q_mvar - q_max_ref) <= tol, f"gen {gen_id} has wrong qmax"
         assert el.has_res is True, f"gen {gen_id} has no results available"
-        assert np.abs(el.res_p - gen_p[gen_id]) <= tol, f"gen {gen_id} has wrong res_p"
-        assert np.abs(el.res_q - gen_q[gen_id]) <= tol, f"gen {gen_id} has wrong res_q"
-        assert np.abs(el.res_v - gen_v[gen_id]) <= tol, f"gen {gen_id} has wrong res_v"
+        assert np.abs(el.res_p_mw - gen_p[gen_id]) <= tol, f"gen {gen_id} has wrong res_p"
+        assert np.abs(el.res_q_mvar - gen_q[gen_id]) <= tol, f"gen {gen_id} has wrong res_q"
+        assert np.abs(el.res_v_kv - gen_v[gen_id]) <= tol, f"gen {gen_id} has wrong res_v"
 
     def test_getters_gen(self):
         """test that the generators getter return the right values"""

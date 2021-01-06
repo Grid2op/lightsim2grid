@@ -199,6 +199,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
+    int nb_bus = V_proposed.size();
     CplxVect V = pre_process_solver(V_proposed, true);
 
     // compute the mismatch
@@ -229,21 +230,29 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
                 new_q = my_zero_;
             }else if(react_this_bus < gen.min_q_mvar){
                 // generator cannot absorb enough reactive power
-                new_q = gen.min_q_mvar - react_this_bus; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
+                new_q = react_this_bus - gen.min_q_mvar; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
             }else{
                 // generator cannot produce enough reactive power
-                new_q = gen.max_q_mvar - react_this_bus;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
+                new_q = react_this_bus - gen.max_q_mvar;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
             }
             res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), new_q};
         }else{
             // the q value for the bus at which the generator is connected will be 0
             res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), my_zero_};
         }
+
         if(gen.id == gen_slackbus_)
         {
             // slack bus, by definition, can handle all active value
             res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
         }
+    }
+
+    // set to 0 the error on the disconnected bus (it is not initialized at 0.0 in _get_results_back_to_orig_nodes)
+    for(int bus_id = 0; bus_id < nb_bus; ++bus_id)
+    {
+        if(bus_status_[bus_id]) continue;
+        res.coeffRef(bus_id) = my_zero_;
     }
     return res;
 };

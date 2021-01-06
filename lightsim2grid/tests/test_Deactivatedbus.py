@@ -2,13 +2,13 @@ import os
 import unittest
 import copy
 import numpy as np
-import pdb
 from scipy import sparse
 from lightsim2grid.initGridModel import init
 import pandapower.networks as pn
 import pandapower as pp
-
+import warnings
 from test_GridModel import BaseTests
+import pdb
 
 
 class MakeACTestsDisco(BaseTests, unittest.TestCase):
@@ -20,7 +20,11 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
         self.net_ref = copy.deepcopy(self.net)
         self.net_datamodel = copy.deepcopy(self.net)
         self.n_bus = self.net.bus.shape[0]
-        self.model = init(self.net)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.model = init(self.net)
+
         self.model.deactivate_bus(self.last_real_bus)
 
         self.max_it = 10
@@ -46,7 +50,9 @@ class MakeDCTestsDisco(BaseTests, unittest.TestCase):
         self.net_ref = copy.deepcopy(self.net)
         self.net_datamodel = copy.deepcopy(self.net)
         self.n_bus = self.net.bus.shape[0]
-        self.model = init(self.net)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.model = init(self.net)
         self.model.deactivate_bus(self.last_real_bus)
 
         self.max_it = 10

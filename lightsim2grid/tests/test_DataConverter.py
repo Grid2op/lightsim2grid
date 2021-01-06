@@ -26,8 +26,8 @@ class MakeTests(unittest.TestCase):
             net.bus.loc[net.line["from_bus"]]["vn_kv"],
             net.bus.loc[net.line["to_bus"]]["vn_kv"]
             )
-        res_r = np.array([0.001 , 0.0005, 0.001 , 0.0008, 0.0005, 0.0005, 0.001 , 0.0007, 0.0012, 0.0002, 0.002])
-        res_x = np.array([0.002 , 0.002 , 0.003 , 0.003 , 0.0025, 0.001 , 0.003 , 0.002 , 0.0026, 0.001 , 0.004 ])
+        res_r = np.array([0.001, 0.0005, 0.001, 0.0008, 0.0005, 0.0005, 0.001, 0.0007, 0.0012, 0.0002, 0.002])
+        res_x = np.array([0.002, 0.002, 0.003, 0.003, 0.0025, 0.001, 0.003, 0.002, 0.0026, 0.001, 0.004])
         res_h = np.array([4.+0.j, 4.+0.j, 6.+0.j, 6.+0.j, 6.+0.j, 2.+0.j, 4.+0.j, 5.+0.j, 5.+0.j, 2.+0.j, 8.+0.j])
         self.assert_equal(line_r, res_r)
         self.assert_equal(line_x, res_x)
@@ -176,14 +176,32 @@ class MakeTests(unittest.TestCase):
         self.assert_equal(line_x, res_x)
         self.assert_equal(line_h, res_h)
 
-        trafo_r, trafo_x, trafo_b = self.converter.get_trafo_param(net.trafo["vn_hv_kv"].values,
-                                                                   net.trafo["vn_lv_kv"].values,
-                                                                   net.trafo["vk_percent"].values,
-                                                                   net.trafo["vkr_percent"].values,
-                                                                   net.trafo["sn_mva"].values,
-                                                                   net.trafo["pfe_kw"].values,
-                                                                   net.trafo["i0_percent"].values,
-                                                                   net.bus.loc[net.trafo["lv_bus"]]["vn_kv"]
+        pp_net = net
+        # fix the missing values
+        tap_step_pct = 1.0 * pp_net.trafo["tap_step_percent"].values
+        tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
+
+        tap_pos = 1.0 * pp_net.trafo["tap_pos"].values
+        tap_pos[~np.isfinite(tap_pos)] = 0.
+
+        is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
+        is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+
+        tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
+        tap_angles_[~np.isfinite(tap_angles_)] = 0.
+        tap_angles_ = np.deg2rad(tap_angles_)
+
+        trafo_r, trafo_x, trafo_b = self.converter.get_trafo_param(tap_step_pct,
+                                                                   tap_pos,
+                                                                   tap_angles_,  # in radian !
+                                                                   is_tap_hv_side,
+                                                                   pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                                                   pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                                                   pp_net.trafo["vk_percent"].values,
+                                                                   pp_net.trafo["vkr_percent"].values,
+                                                                   pp_net.trafo["sn_mva"].values,
+                                                                   pp_net.trafo["pfe_kw"].values,
+                                                                   pp_net.trafo["i0_percent"].values,
                                                                    )
         trafo_r_res = np.array([0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 2.81494977e-04,
                                3.39887086e-06, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00,

@@ -8,6 +8,8 @@
 import warnings
 import numpy as np
 
+SOME_KIND_OF_INF_FOR_PMIN_PMAX = 99999.
+
 
 def _aux_add_sgen(model, pp_net):
     """
@@ -33,7 +35,7 @@ def _aux_add_sgen(model, pp_net):
     if "min_p_mw" in pp_net.sgen:
         min_p_mw = pp_net.sgen["min_p_mw"].values
     else:
-        min_p_mw = np.zeros(pp_net.sgen.shape)
+        min_p_mw = np.zeros(pp_net.sgen.shape[0]) - SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(min_p_mw)):
         warnings.warn("There were some Nan in the pp_net.sgen[\"min_p_mw\"], they have been replaced by 0")
     min_p_mw[~np.isfinite(min_p_mw)] = 0.
@@ -41,7 +43,7 @@ def _aux_add_sgen(model, pp_net):
     if "max_p_mw" in pp_net.sgen:
         max_p_mw = pp_net.sgen["max_p_mw"].values
     else:
-        max_p_mw = np.zeros(pp_net.sgen.shape)
+        max_p_mw = np.zeros(pp_net.sgen.shape[0]) + SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(max_p_mw)):
         warnings.warn("There were some Nan in the pp_net.sgen[\"max_p_mw\"], they have been replaced by 0")
     max_p_mw[~np.isfinite(max_p_mw)] = 0.
@@ -49,7 +51,7 @@ def _aux_add_sgen(model, pp_net):
     if "min_q_mvar" in pp_net.sgen:
         min_q_mvar = pp_net.sgen["min_q_mvar"].values
     else:
-        min_q_mvar = np.zeros(pp_net.sgen.shape)
+        min_q_mvar = np.zeros(pp_net.sgen.shape[0]) - SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(min_q_mvar)):
         warnings.warn("There were some Nan in the pp_net.sgen[\"min_q_mvar\"], they have been replaced by 0")
     min_q_mvar[~np.isfinite(min_q_mvar)] = 0.
@@ -57,7 +59,7 @@ def _aux_add_sgen(model, pp_net):
     if "max_q_mvar" in pp_net.sgen:
         max_q_mvar = pp_net.sgen["max_q_mvar"].values
     else:
-        max_q_mvar = np.zeros(pp_net.sgen.shape)
+        max_q_mvar = np.zeros(pp_net.sgen.shape[0]) + SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(max_q_mvar)):
         warnings.warn("There were some Nan in the pp_net.sgen[\"max_q_mvar\"], they have been replaced by 0")
     max_q_mvar[~np.isfinite(max_q_mvar)] = 0.
