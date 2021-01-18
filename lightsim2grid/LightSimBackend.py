@@ -411,7 +411,8 @@ class LightSimBackend(Backend):
         """
         Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
         """
-        active_bus, (prod_p, prod_v, load_p, load_q), topo__, shunts__ = backendAction()
+        active_bus, (prod_p, prod_v, load_p, load_q, storage), topo__, shunts__ = backendAction()
+        # TODO storage
 
         # handle active bus
         self._grid.update_bus_status(self.__nb_bus_before, backendAction.activated_bus)
