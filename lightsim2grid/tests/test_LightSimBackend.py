@@ -16,6 +16,7 @@ from grid2op.tests.BaseBackendTest import BaseTestTopoAction, BaseTestEnvPerform
 from grid2op.tests.BaseBackendTest import BaseTestChangeBusAffectRightBus, BaseTestShuntAction
 from grid2op.tests.BaseBackendTest import BaseTestResetEqualsLoadGrid, BaseTestVoltageOWhenDisco, BaseTestChangeBusSlack
 from grid2op.tests.BaseBackendTest import BaseIssuesTest, BaseStatusActions
+from grid2op.tests.BaseBackendTest import BaseTestStorageAction
 
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP
@@ -169,6 +170,14 @@ class TestIssuesTest(HelperTests, BaseIssuesTest):
 
 
 class TestStatusAction(HelperTests, BaseStatusActions):
+    def make_backend(self, detailed_infos_for_cascading_failures=False):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        return bk
+
+
+class TestStorageAction(HelperTests, BaseTestStorageAction):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

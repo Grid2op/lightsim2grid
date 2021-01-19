@@ -25,6 +25,10 @@ https://pandapower.readthedocs.io/en/latest/elements/load.html
 
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/load.html#electric-model
+
+NOTE: this class is also used for the storage units! So storage units are modeled as load
+which entails that negative storage: the unit is discharging, power is injected in the grid,
+positive storage: the unit is charging, power is taken from the grid.
 **/
 class DataLoad : public DataGeneric
 {

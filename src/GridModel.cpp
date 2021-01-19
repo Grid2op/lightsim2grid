@@ -68,14 +68,17 @@ GridModel::GridModel(const GridModel & other)
 GridModel::StateRes GridModel::get_state() const
 {
     std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
+    std::string version = VERSION_INFO;
     auto res_line = powerlines_.get_state();
     auto res_shunt = shunts_.get_state();
     auto res_trafo = trafos_.get_state();
     auto res_gen = generators_.get_state();
     auto res_load = loads_.get_state();
     auto res_sgen = sgens_.get_state();
+    auto res_sgen = storages_.get_state();
 
-    GridModel::StateRes res(init_vm_pu_,
+    GridModel::StateRes res(version,
+                            init_vm_pu_,
                             bus_vn_kv,
                             bus_status_,
                             res_line,

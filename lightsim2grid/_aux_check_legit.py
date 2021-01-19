@@ -44,9 +44,10 @@ def _aux_check_legit(pp_net):
     if "dcline" in pp_net and pp_net.dcline.shape[0]:
         raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "
                            "in pandapower network")
-    if "storage" in pp_net and pp_net.storage.shape[0]:
-        raise RuntimeError("Unsupported element found (Storage - \"pp_net.storage\") "
-                           "in pandapower network")
+
+    # if "storage" in pp_net and pp_net.storage.shape[0]:
+    #     raise RuntimeError("Unsupported element found (Storage - \"pp_net.storage\") "
+    #                        "in pandapower network")
 
     if pp_net.sn_mva != 1.:
         raise RuntimeError("Pandapower network with sn_mva != 1 are not supported yet, especially in the "

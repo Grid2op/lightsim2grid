@@ -42,6 +42,7 @@ class GridModel : public DataGeneric
 {
     public:
         typedef std::tuple<
+                std::string, // version
                 real_type,  // init_vm_pu
                 std::vector<real_type>,  // bus_vn_kv
                 std::vector<bool>,  // bus_status
@@ -55,8 +56,10 @@ class GridModel : public DataGeneric
                 DataGen::StateRes,
                 // loads
                 DataLoad::StateRes,
-                // loads
+                // static generators
                 DataSGen::StateRes,
+                // storage units
+                DataLoad::StateRes,
                 // slack bus generator id
                 int
                 >  StateRes;
@@ -132,6 +135,11 @@ class GridModel : public DataGeneric
                         const RealVect & sgen_qmax,
                         const Eigen::VectorXi & sgen_bus_id){
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
+        }
+        void init_storages(const RealVect & loads_p,
+                        const RealVect & loads_q,
+                        const Eigen::VectorXi & loads_bus_id){
+            loads_.init(loads_p, loads_q, loads_bus_id);
         }
 
         void add_gen_slackbus(int gen_id);
@@ -228,6 +236,14 @@ class GridModel : public DataGeneric
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, need_reset_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
 
+        //load
+        void deactivate_storage(int load_id) {storages_.deactivate(load_id, need_reset_); }
+        void reactivate_storage(int load_id) {storages_.reactivate(load_id, need_reset_); }
+        void change_bus_storage(int load_id, int new_bus_id) {storages_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_p_storage(int load_id, real_type new_p) {storages_.change_p(load_id, new_p, need_reset_); }
+        void change_q_storage(int load_id, real_type new_q) {storages_.change_q(load_id, new_q, need_reset_); }
+        int get_bus_storage(int load_id) {return storages_.get_bus(load_id);}
+
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
         const std::vector<bool>& get_loads_status() const { return loads_.get_status();}
@@ -241,6 +257,8 @@ class GridModel : public DataGeneric
         tuple4d get_trafohv_res() const {return trafos_.get_res_hv();}
         tuple4d get_trafolv_res() const {return trafos_.get_res_lv();}
         const std::vector<bool>& get_trafo_status() const { return trafos_.get_status();}
+        tuple3d get_storages_res() const {return storages_.get_res();}
+        const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
 
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
@@ -280,6 +298,8 @@ class GridModel : public DataGeneric
                             Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         void update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                          Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
 
         void set_load_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > load_pos_topo_vect)
         {
@@ -305,6 +325,10 @@ class GridModel : public DataGeneric
         {
             trafo_lv_pos_topo_vect_.array() = trafo_lv_pos_topo_vect;
         }
+        void set_storage_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > storage_pos_topo_vect)
+        {
+            storage_pos_topo_vect_.array() = storage_pos_topo_vect;
+        }
 
         void set_load_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > load_to_subid)
         {
@@ -329,6 +353,10 @@ class GridModel : public DataGeneric
         void set_trafo_lv_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_lv_to_subid)
         {
             trafo_lv_to_subid_.array() = trafo_lv_to_subid;
+        }
+        void set_storage_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > storage_to_subid)
+        {
+            storage_to_subid_.array() = storage_to_subid;
         }
         void set_n_sub(int n_sub)
         {
@@ -456,7 +484,11 @@ class GridModel : public DataGeneric
         // 6. static generators (P,Q generators)
         DataSGen sgens_;
 
-        // 7. slack bus
+        // 7. storage units
+        DataLoad storages_;
+
+        // 8. slack bus
+        // TODO multiple slack bus
         int gen_slackbus_;
         int slack_bus_id_;
         int slack_bus_id_solver_;
@@ -480,6 +512,7 @@ class GridModel : public DataGeneric
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_ex_pos_topo_vect_;
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_hv_pos_topo_vect_;
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_lv_pos_topo_vect_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> storage_pos_topo_vect_;
 
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> load_to_subid_;
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> gen_to_subid_;
@@ -487,6 +520,7 @@ class GridModel : public DataGeneric
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_ex_to_subid_;
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_hv_to_subid_;
         Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_lv_to_subid_;
+        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> storage_to_subid_;
 
 };
 
