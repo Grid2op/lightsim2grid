@@ -136,10 +136,10 @@ class GridModel : public DataGeneric
                         const Eigen::VectorXi & sgen_bus_id){
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
         }
-        void init_storages(const RealVect & loads_p,
-                        const RealVect & loads_q,
-                        const Eigen::VectorXi & loads_bus_id){
-            loads_.init(loads_p, loads_q, loads_bus_id);
+        void init_storages(const RealVect & storages_p,
+                           const RealVect & storages_q,
+                           const Eigen::VectorXi & storages_bus_id){
+            storages_.init(storages_p, storages_q, storages_bus_id);
         }
 
         void add_gen_slackbus(int gen_id);
@@ -236,13 +236,24 @@ class GridModel : public DataGeneric
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, need_reset_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
 
-        //load
-        void deactivate_storage(int load_id) {storages_.deactivate(load_id, need_reset_); }
-        void reactivate_storage(int load_id) {storages_.reactivate(load_id, need_reset_); }
-        void change_bus_storage(int load_id, int new_bus_id) {storages_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
-        void change_p_storage(int load_id, real_type new_p) {storages_.change_p(load_id, new_p, need_reset_); }
-        void change_q_storage(int load_id, real_type new_q) {storages_.change_q(load_id, new_q, need_reset_); }
-        int get_bus_storage(int load_id) {return storages_.get_bus(load_id);}
+        //storage units
+        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, need_reset_); }
+        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, need_reset_); }
+        void change_bus_storage(int storage_id, int new_bus_id) {storages_.change_bus(storage_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_p_storage(int storage_id, real_type new_p) {
+//            if(new_p == 0.)
+//            {
+//                std::cout << " i deactivated storage with ID " << storage_id << std::endl;
+//                storages_.change_p(storage_id, new_p, need_reset_);
+//                deactivate_storage(storage_id);  // requirement from grid2op, might be discussed
+//            }else{
+//                reactivate_storage(storage_id);  // requirement from grid2op, might be discussed
+//                storages_.change_p(storage_id, new_p, need_reset_);
+//            }
+               storages_.change_p(storage_id, new_p, need_reset_);
+            }
+        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q(storage_id, new_q, need_reset_); }
+        int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id);}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}

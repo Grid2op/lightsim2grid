@@ -40,8 +40,11 @@ GridModel::GridModel(const GridModel & other)
     // 6. loads
     loads_ = other.loads_;
 
-    // 6. loads
+    // 6. static generators
     sgens_ = other.sgens_;
+
+    // 6. storage units
+    storages_ = other.storages_;
 
     // 7. slack bus
     gen_slackbus_ = other.gen_slackbus_;
@@ -55,6 +58,7 @@ GridModel::GridModel(const GridModel & other)
     line_ex_pos_topo_vect_ = other.line_ex_pos_topo_vect_;
     trafo_hv_pos_topo_vect_ = other.trafo_hv_pos_topo_vect_;
     trafo_lv_pos_topo_vect_ = other.trafo_lv_pos_topo_vect_;
+    storage_pos_topo_vect_ = other.storage_pos_topo_vect_;
 
     load_to_subid_ = other.load_to_subid_;
     gen_to_subid_ = other.gen_to_subid_;
@@ -62,6 +66,7 @@ GridModel::GridModel(const GridModel & other)
     line_ex_to_subid_ = other.line_ex_to_subid_;
     trafo_hv_to_subid_ = other.trafo_hv_to_subid_;
     trafo_lv_to_subid_ = other.trafo_lv_to_subid_;
+    storage_to_subid_ = other.storage_to_subid_;
 }
 
 //pickle
@@ -75,7 +80,7 @@ GridModel::StateRes GridModel::get_state() const
     auto res_gen = generators_.get_state();
     auto res_load = loads_.get_state();
     auto res_sgen = sgens_.get_state();
-    auto res_sgen = storages_.get_state();
+    auto res_storage = storages_.get_state();
 
     GridModel::StateRes res(version,
                             init_vm_pu_,
@@ -87,6 +92,7 @@ GridModel::StateRes GridModel::get_state() const
                             res_gen,
                             res_load,
                             res_sgen,
+                            res_storage,
                             gen_slackbus_
                             );
     return res;
@@ -101,23 +107,30 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    init_vm_pu_ = std::get<0>(my_state);
-    std::vector<real_type> & bus_vn_kv = std::get<1>(my_state);
-    std::vector<bool> & bus_status = std::get<2>(my_state);
+    std::string version = std::get<0>(my_state);
+    if(version != VERSION_INFO)
+    {
+        throw("Wrong version. You tried to load a lightsim model saved with a different version that this one. It is not possible.");
+    }
+    init_vm_pu_ = std::get<1>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<2>(my_state);
+    std::vector<bool> & bus_status = std::get<3>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<3>(my_state);
+    DataLine::StateRes & state_lines = std::get<4>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<4>(my_state);
+    DataShunt::StateRes & state_shunts = std::get<5>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<5>(my_state);
+    DataTrafo::StateRes & state_trafos = std::get<6>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<6>(my_state);
+    DataGen::StateRes & state_gens = std::get<7>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<7>(my_state);
-    // loads
-    DataSGen::StateRes & state_sgens= std::get<8>(my_state);
-    int gen_slackbus = std::get<9>(my_state);
+    DataLoad::StateRes & state_loads = std::get<8>(my_state);
+    // static gen
+    DataSGen::StateRes & state_sgens= std::get<9>(my_state);
+    // storage units
+    DataLoad::StateRes & state_storages = std::get<10>(my_state);
+    int gen_slackbus = std::get<11>(my_state);
 
     // assign it to this instance
 
@@ -140,6 +153,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     loads_.set_state(state_loads);
     // 6. static generators
     sgens_.set_state(state_sgens);
+    // 7. storage units
+    storages_.set_state(state_storages);
 
     // other stuff
     gen_slackbus_ = gen_slackbus;
@@ -368,6 +383,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     trafos_.fillYbus(tripletList, ac, id_me_to_solver);
     loads_.fillYbus(tripletList, ac, id_me_to_solver);
     sgens_.fillYbus(tripletList, ac, id_me_to_solver);
+    storages_.fillYbus(tripletList, ac, id_me_to_solver);
     generators_.fillYbus(tripletList, ac, id_me_to_solver);
     res.setFromTriplets(tripletList.begin(), tripletList.end());
     res.makeCompressed();
@@ -381,6 +397,7 @@ void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_
     trafos_.fillSbus(res, ac, id_me_to_solver);
     loads_.fillSbus(res, true, id_me_to_solver);
     sgens_.fillSbus(res, true, id_me_to_solver);
+    storages_.fillSbus(res, true, id_me_to_solver);
     generators_.fillSbus(res, true, id_me_to_solver);
 
     // handle slack bus (in ac only)
@@ -406,6 +423,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
     shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
+    storages_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
     generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
 
@@ -433,6 +451,8 @@ void GridModel::compute_results(){
     loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for static gen
     sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    // for storage units
+    storages_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for shunts
     shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
     // for prods
@@ -443,6 +463,7 @@ void GridModel::compute_results(){
     p_slack += trafos_.get_p_slack(slack_bus_id_);
     p_slack += loads_.get_p_slack(slack_bus_id_);
     p_slack += sgens_.get_p_slack(slack_bus_id_);
+    p_slack += storages_.get_p_slack(slack_bus_id_);
     p_slack += shunts_.get_p_slack(slack_bus_id_);
     generators_.set_p_slack(gen_slackbus_, p_slack);
 
@@ -451,6 +472,7 @@ void GridModel::compute_results(){
     powerlines_.get_q(q_by_bus);
     trafos_.get_q(q_by_bus);
     loads_.get_q(q_by_bus);
+    storages_.get_q(q_by_bus);
     sgens_.get_q(q_by_bus);
     shunts_.get_q(q_by_bus);
 
@@ -463,6 +485,7 @@ void GridModel::reset_results(){
     trafos_.reset_results();
     loads_.reset_results();
     sgens_.reset_results();
+    storages_.reset_results();
     generators_.reset_results();
 }
 
@@ -683,6 +706,12 @@ void GridModel::update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eig
 {
     update_continuous_values(has_changed, new_values, &GridModel::change_q_load);
 }
+void GridModel::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                              Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
+{
+    update_continuous_values(has_changed, new_values, &GridModel::change_p_storage);
+}
+
 void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                             Eigen::Ref<Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
@@ -698,7 +727,14 @@ void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen:
                         &GridModel::change_bus_gen,
                         &GridModel::deactivate_gen
                         );
-    // NB we suppose that if a powerline is disconnected, then both its ends are
+    update_topo_generic(has_changed, new_values,
+                        storage_pos_topo_vect_, storage_to_subid_,
+                        &GridModel::reactivate_storage,
+                        &GridModel::change_bus_storage,
+                        &GridModel::deactivate_storage
+                        );
+
+    // NB we suppose that if a powerline (or a trafo) is disconnected, then both its ends are
     // and same for trafo, obviously
     update_topo_generic(has_changed, new_values,
                         line_or_pos_topo_vect_, line_or_to_subid_,

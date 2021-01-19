@@ -21,6 +21,7 @@ from lightsim2grid._aux_add_gen import _aux_add_gen
 from lightsim2grid._aux_add_shunt import _aux_add_shunt
 from lightsim2grid._aux_check_legit import _aux_check_legit
 from lightsim2grid._aux_add_slack import _aux_add_slack
+from lightsim2grid._aux_add_storage import _aux_add_storage
 
 
 def init(pp_net):
@@ -91,6 +92,9 @@ def init(pp_net):
 
     # handle generators
     _aux_add_gen(model, pp_net)
+
+    # handle storage units
+    _aux_add_storage(model, pp_net)
 
     # deal with slack bus
     _aux_add_slack(model, pp_net)

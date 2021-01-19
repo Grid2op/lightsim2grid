@@ -184,3 +184,4 @@ test_rte_converters.py
 test_case14.json
 test_case118.json
 test_case2848rte.json
+lightsim2grid/tests/timer.py

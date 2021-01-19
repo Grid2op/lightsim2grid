@@ -26,6 +26,11 @@ class LightSimBackend(Backend):
 
         # lazy loading becuase otherwise somehow it crashes...
         from grid2op.Backend import PandaPowerBackend
+        from grid2op.Space import GridObjects  # lazy import
+        self.__has_storage = hasattr(GridObjects, "n_storage")
+        if not self.__has_storage:
+            warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
+                          "feature that will be removed in further lightsim2grid version.")
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -71,6 +76,10 @@ class LightSimBackend(Backend):
         self.prod_p = None
         self.prod_q = None
         self.prod_v = None
+
+        self.storage_p = None
+        self.storage_q = None
+        self.storage_v = None
 
         self.thermal_limit_a = None
 
@@ -224,6 +233,15 @@ class LightSimBackend(Backend):
         self.name_load = self.init_pp_backend.name_load
         self.name_line = self.init_pp_backend.name_line
         self.name_sub = self.init_pp_backend.name_sub
+
+        # TODO storage check grid2op version and see if storage is available !
+        if self.__has_storage:
+            self.n_storage = self.init_pp_backend.n_storage
+            self.storage_to_subid = self.init_pp_backend.storage_to_subid
+            self.storage_pu_to_kv = self.init_pp_backend.storage_pu_to_kv
+            self.name_storage = self.init_pp_backend.name_storage
+            self.storage_to_sub_pos = self.init_pp_backend.storage_to_sub_pos
+
         self._compute_pos_big_topo()
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
@@ -271,12 +289,18 @@ class LightSimBackend(Backend):
         self._grid.set_line_ex_pos_topo_vect(self.line_ex_pos_topo_vect[:self.__nb_powerline])
         self._grid.set_trafo_hv_pos_topo_vect(self.line_or_pos_topo_vect[self.__nb_powerline:])
         self._grid.set_trafo_lv_pos_topo_vect(self.line_ex_pos_topo_vect[self.__nb_powerline:])
+
         self._grid.set_load_to_subid(self.load_to_subid)
         self._grid.set_gen_to_subid(self.gen_to_subid)
         self._grid.set_line_or_to_subid(self.line_or_to_subid[:self.__nb_powerline])
         self._grid.set_line_ex_to_subid(self.line_ex_to_subid[:self.__nb_powerline])
         self._grid.set_trafo_hv_to_subid(self.line_or_to_subid[self.__nb_powerline:])
         self._grid.set_trafo_lv_to_subid(self.line_ex_to_subid[self.__nb_powerline:])
+
+        # TODO storage check grid2op version and see if storage is available !
+        if self.__has_storage:
+            self._grid.set_storage_to_subid(self.storage_to_subid)
+            self._grid.set_storage_pos_topo_vect(self.storage_pos_topo_vect)
 
         nm_ = "load"
         for load_id, pos_big_topo  in enumerate(self.load_pos_topo_vect):
@@ -290,6 +314,12 @@ class LightSimBackend(Backend):
         nm_ = "lineex"
         for l_id, pos_big_topo  in enumerate(self.line_ex_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
+
+        # TODO storage check grid2op version and see if storage is available !
+        if self.__has_storage:
+            nm_ = "storage"
+            for l_id, pos_big_topo  in enumerate(self.storage_pos_topo_vect):
+                self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
 
         self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
@@ -324,6 +354,12 @@ class LightSimBackend(Backend):
         self.prod_p = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
         self.prod_q = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
         self.prod_v = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
+
+        # TODO storage check grid2op version and see if storage is available !
+        if self.__has_storage:
+            self.storage_p = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_q = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_v = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
 
         self._count_object_per_bus()
         self.__me_at_init = self._grid.copy()
@@ -411,7 +447,7 @@ class LightSimBackend(Backend):
         """
         Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
         """
-        active_bus, (prod_p, prod_v, load_p, load_q, storage), topo__, shunts__ = backendAction()
+        active_bus, *_, topo__, shunts__ = backendAction()
         # TODO storage
 
         # handle active bus
@@ -426,6 +462,9 @@ class LightSimBackend(Backend):
                                   backendAction.load_p.values)
         self._grid.update_loads_q(backendAction.load_q.changed,
                                   backendAction.load_q.values)
+        if self.__has_storage:
+            self._grid.update_storages_p(backendAction.storage_power.changed,
+                                         backendAction.storage_power.values)
 
         # handle shunts
         if self.shunts_data_available:
@@ -452,6 +491,8 @@ class LightSimBackend(Backend):
         # TODO have been correctly called before calling the function self._grid.update_topo
 
     def runpf(self, is_dc=False):
+        my_exc_ = None
+        res = False
         try:
             if is_dc:
                 msg_ = "LightSimBackend: the support of the DC approximation is fully supported at the moment"
@@ -504,19 +545,26 @@ class LightSimBackend(Backend):
 
             self.load_p[:], self.load_q[:], self.load_v[:] = self._grid.get_loads_res()
             self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
+            if self.__has_storage:
+                self.storage_p[:], self.storage_q[:], self.storage_v[:] = self._grid.get_storages_res()
             self.next_prod_p[:] = self.prod_p
 
             if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
                 raise DivergingPowerFlow("One load is disconnected")
             if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
                 raise DivergingPowerFlow("One generator is disconnected")
+            # TODO storage case of divergence !
 
             res = True
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
             self._fill_nans()
             res = False
+            my_exc_ = exc_
 
+        # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
+        if self.__has_storage:
+            res = res, my_exc_
         return res
 
     def _fill_nans(self):
@@ -537,6 +585,10 @@ class LightSimBackend(Backend):
         self.prod_q[:] = np.NaN
         self.prod_v[:] = np.NaN
         self.topo_vect[:] = np.NaN
+        if self.__has_storage:
+            self.storage_p[:] = np.NaN
+            self.storage_q[:] = np.NaN
+            self.storage_v[:] = np.NaN
         res = False
 
     def copy(self):
@@ -591,6 +643,11 @@ class LightSimBackend(Backend):
 
     def lines_ex_info(self):
         return self.cst_1 * self.p_ex, self.cst_1 * self.q_ex, self.cst_1 * self.v_ex, self.cst_1 * self.a_ex
+
+    def storages_info(self):
+        if not self.__has_storage:
+            raise RuntimeError("Storage units are not supported with your grid2op version")
+        return self.cst_1 * self.storage_p, self.cst_1 * self.storage_q, self.cst_1 * self.storage_v
 
     def shunt_info(self):
         tmp = self._grid.get_shunts_res()

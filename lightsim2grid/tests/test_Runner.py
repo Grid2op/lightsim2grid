@@ -18,6 +18,24 @@ from grid2op.Agent import RecoPowerlineAgent
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 
+import timeit
+
+DETAILED_TIMER_INFO = False
+
+
+def timer(verbose):
+    def timer_inner(function):
+        def new_function(*args, **kwargs):
+            if verbose:
+                print('"{name}"'.format(name=function.__name__))
+            start_time = timeit.default_timer()
+            function(*args, **kwargs)
+            elapsed = timeit.default_timer() - start_time
+            if verbose:
+                print('\t\t"{name}", {time:.3f}s'.format(name=function.__name__, time=elapsed))
+        return new_function
+    return timer_inner
+
 
 class TestRunner(HelperTests):
     """Test that i can use all functionalities of the grid2op runner (including execution in multi processing)"""
@@ -61,13 +79,15 @@ class TestRunner(HelperTests):
                                  max_iter=self.max_iter,
                                  name_env="test_runner_env")
 
+    @timer(DETAILED_TIMER_INFO)
     def test_one_episode(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            _, cum_reward, timestep = self.runner.run_one_episode(max_iter=self.max_iter)
+            _, cum_reward, timestep, ep_data = self.runner.run_one_episode(max_iter=self.max_iter)
         assert int(timestep) == self.max_iter
         assert np.abs(cum_reward - self.real_reward) <= self.tol_one
 
+    @timer(DETAILED_TIMER_INFO)
     def test_one_process_par(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -79,6 +99,7 @@ class TestRunner(HelperTests):
         assert el3 == 10
         assert el4 == 10
 
+    @timer(DETAILED_TIMER_INFO)
     def test_2episode(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -88,6 +109,7 @@ class TestRunner(HelperTests):
             assert int(timestep) == self.max_iter
             assert np.abs(cum_reward - self.real_reward) <= self.tol_one
 
+    @timer(DETAILED_TIMER_INFO)
     def test_2episode_2process(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -97,6 +119,7 @@ class TestRunner(HelperTests):
             assert int(timestep) == self.max_iter
             assert np.abs(cum_reward - self.real_reward) <= self.tol_one
 
+    @timer(DETAILED_TIMER_INFO)
     def test_complex_agent(self):
         nb_episode = 4
         with warnings.catch_warnings():

@@ -26,10 +26,10 @@ def _aux_add_storage(model, pp_net):
                            "Please duplicate the rows if that is the case. "
                            "Some pp_net.storage[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
-    model.init_storagess(pp_net.storage["p_mw"].values,
-                         pp_net.storage["q_mvar"].values,
-                         pp_net.storage["bus"].values
-                         )
+    model.init_storages(pp_net.storage["p_mw"].values,
+                        pp_net.storage["q_mvar"].values,
+                        pp_net.storage["bus"].values
+                        )
     for stor_id, is_connected in enumerate(pp_net.storage["in_service"].values):
         if not is_connected:
             # load is deactivated

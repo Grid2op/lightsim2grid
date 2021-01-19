@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 import warnings
 import pdb
 
-MAX_TS = 1000  # does not work on ieee118 (pp diverge at 455s)
+MAX_TS = 1000  # does not work on ieee118 (pp diverge at 455steps)
 MAX_TS = 100
 
 
@@ -171,11 +171,10 @@ class TestAgentAllMove(ABC):
     def _get_env_name(self):
         pass
 
-    def _run_env(self, env):
+    def _run_env(self, env, agent):
         aor = np.zeros((self.max_ts, env.n_line))
         gen_p = np.zeros((self.max_ts, env.n_gen))
         gen_q = np.zeros((self.max_ts, env.n_gen))
-        agent = self.agent_class(action_space=env.action_space, env_name=self._get_env_name())
         obs = env.get_obs()
         done = False
         reward = env.reward_range[0]
@@ -201,13 +200,18 @@ class TestAgentAllMove(ABC):
                       backend=backend,
                       gamerules_class=AlwaysLegal,
                       data_feeding_kwargs={"chunk_size": 128, "max_iter": MAX_TS}) as env:
-                nb_ts_klu, aor_klu, gen_p_klu, gen_q_klu = self._run_env(env)
+                # make the agent only once, ast it takes roughly 2-3 mins for the case118
+                # due to the enumeration of all the topologies
+                agent = self.agent_class(action_space=env.action_space, env_name=self._get_env_name())
+                nb_ts_klu, aor_klu, gen_p_klu, gen_q_klu = self._run_env(env, agent)
             with make(env_name,
                       test=True,
                       param=self.param,
                       gamerules_class=AlwaysLegal,
                       data_feeding_kwargs={"chunk_size": 128, "max_iter": MAX_TS}) as env:
-                nb_ts_pp, aor_pp, gen_p_pp, gen_q_pp = self._run_env(env)
+                agent.nb_act_done = 0  # reset it
+                agent.act_this = True  # reset it
+                nb_ts_pp, aor_pp, gen_p_pp, gen_q_pp = self._run_env(env, agent)
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}: lightsim: {}, pp: {}" \
                                       "".format(env_name, nb_ts_klu, nb_ts_pp)
@@ -236,14 +240,14 @@ class Testcase14(TestAgentAllMove, unittest.TestCase):
         return "rte_case14_realistic"
 
 
-# takes a looooong time
+# # takes a looooong time
 class Testcase118(TestAgentAllMove, unittest.TestCase):
     def _get_env_name(self):
         return "rte_case118_example"
 
 
 # requires additional data to be downloaded
-# class TestcaseSandbox(TestDN, unittest.TestCase):
+# class TestcaseSandbox(TestAgentAllMove, unittest.TestCase):
 #    def _get_env_name(self):
 #        return "l2rpn_case14_sandbox"
 
