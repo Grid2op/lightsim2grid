@@ -10,16 +10,17 @@ import warnings
 
 from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 
+from grid2op.Space import GridObjects  # lazy import
+__has_storage = hasattr(GridObjects, "n_storage")
+
 from grid2op.tests.helper_path_test import HelperTests
 from grid2op.tests.BaseBackendTest import BaseTestNames, BaseTestLoadingCase, BaseTestLoadingBackendFunc
 from grid2op.tests.BaseBackendTest import BaseTestTopoAction, BaseTestEnvPerformsCorrectCascadingFailures
 from grid2op.tests.BaseBackendTest import BaseTestChangeBusAffectRightBus, BaseTestShuntAction
 from grid2op.tests.BaseBackendTest import BaseTestResetEqualsLoadGrid, BaseTestVoltageOWhenDisco, BaseTestChangeBusSlack
 from grid2op.tests.BaseBackendTest import BaseIssuesTest, BaseStatusActions
-from grid2op.tests.BaseBackendTest import BaseTestStorageAction
-from grid2op.Space import GridObjects  # lazy import
-
-__has_storage = hasattr(GridObjects, "n_storage")
+if __has_storage:
+    from grid2op.tests.BaseBackendTest import BaseTestStorageAction
 
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP
