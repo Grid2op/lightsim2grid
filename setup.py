@@ -228,22 +228,25 @@ pkgs = {
     }
 }
 
+this_directory = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
+
 setup(name='LightSim2Grid',
       version=__version__,
       author='Benjamin Donnot',
       author_email='benjamin.donnot@rte-france.com',
       url='https://github.com/BDonnot/lightsim2grid/',
       description='LightSim2Grid implements a c++ backend targeting the Grid2Op platform.',
-      long_description='LightSim2Grid implements a backend for the Grid2Op platform written in c++ using state of the '
-                       'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '
-                       'its usage.',
+      long_description=long_description,
+      long_description_content_type='text/markdown',
       ext_modules=ext_modules,
       install_requires=pkgs["required"],
       extras_require=pkgs["extras"],
       setup_requires=['pybind11>=2.4'],
       cmdclass={'build_ext': BuildExt},
       zip_safe=False,
-      packages=['lightsim2grid'],
+      packages=setuptools.find_packages(),
       keywords='pandapower powergrid simulator KLU Eigen c++',
       classifiers=[
             'Development Status :: 4 - Beta',
