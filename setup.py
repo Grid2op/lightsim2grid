@@ -224,6 +224,12 @@ pkgs = {
         ],
         "benchmark": [
             "tabulate"
+        ],
+        "recommended": [
+            "grid2op>=1.5.0"
+        ],
+        "test": [
+            "grid2op>=1.5.0"
         ]
     }
 }

@@ -595,6 +595,7 @@ class LightSimBackend(Backend):
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
         __me_at_init = self.__me_at_init
+        inippbackend = self.init_pp_backend
         if __me_at_init is None:
             # __me_at_init is defined as being the copy of the grid,
             # if it's not defined then i can define it here.
@@ -602,13 +603,16 @@ class LightSimBackend(Backend):
 
         self._grid = None
         self.__me_at_init = None
-        inippbackend = self.init_pp_backend._grid
-        self.init_pp_backend._grid = None
+        self.init_pp_backend = None
         res = copy.deepcopy(self)
+
+        res._grid = mygrid.copy()
+        res.__me_at_init = __me_at_init.copy()
+        res.init_pp_backend = inippbackend.copy()
+
         self._grid = mygrid
-        self.init_pp_backend._grid = inippbackend
-        res._grid = self._grid.copy()
-        self.__me_at_init = __me_at_init.copy()
+        self.init_pp_backend = inippbackend
+        self.__me_at_init = __me_at_init
         return res
 
     def get_line_status(self):

@@ -19,6 +19,9 @@ from grid2op.tests.BaseBackendTest import BaseTestTopoAction, BaseTestEnvPerform
 from grid2op.tests.BaseBackendTest import BaseTestChangeBusAffectRightBus, BaseTestShuntAction
 from grid2op.tests.BaseBackendTest import BaseTestResetEqualsLoadGrid, BaseTestVoltageOWhenDisco, BaseTestChangeBusSlack
 from grid2op.tests.BaseBackendTest import BaseIssuesTest, BaseStatusActions
+from grid2op.tests.test_Environment import TestLoadingBackendPandaPower, TestResetOk
+from grid2op.tests.test_Environment import TestResetAfterCascadingFailure, TestCascadingFailure
+
 if __has_storage:
     from grid2op.tests.BaseBackendTest import BaseTestStorageAction
 
@@ -188,6 +191,26 @@ if __has_storage:
                 warnings.filterwarnings("ignore")
                 bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
             return bk
+
+
+class TestLoadingBackendLightSim(TestLoadingBackendPandaPower):
+    def get_backend(self):
+        return LightSimBackend()
+
+
+class TestResetOkLS(TestResetOk):
+    def make_backend(self, detailed_infos_for_cascading_failures=False):
+        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+
+
+class TestResetAfterCascadingFailureLS(TestResetAfterCascadingFailure):
+    def make_backend(self, detailed_infos_for_cascading_failures=False):
+        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+
+
+class TestCascadingFailureLS(TestCascadingFailure):
+    def make_backend(self, detailed_infos_for_cascading_failures=False):
+        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
 
 if __name__ == "__main__":

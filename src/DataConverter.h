@@ -8,6 +8,7 @@
 
 #ifndef DATACONVERTER_H
 #define DATACONVERTER_H
+#include <vector>
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
