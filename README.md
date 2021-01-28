@@ -163,10 +163,12 @@ First on an environment based on the IEEE case14 grid:
 | LS+SLU                 |                   1131 |                         0.213 |                       0.0919 |
 | LS+KLU                 |                   1184 |                         0.174 |                       0.0528 |
 
-From a grid2op perspective, lightsim2grid allows to compute 860 steps each second on the case 14 and "only" 68.5
-for the default PandaPower Backend, leading to a speed up of **~13** in this case (lightsim2grid is 13 times faster
-than Pandapower). For such a small environment, there is no difference in using KLU linear solver (not available on
-Windows based machine) compared to using the SparseLU solver of Eigen.
+From a grid2op perspective, lightsim2grid allows to compute up to ~1100 steps each second on the case 14 and
+"only" 66 for the default PandaPower Backend, leading to a speed up of **~17** in this case
+(lightsim2grid is ~17 times faster than Pandapower). For such a small environment, there is no difference in using 
+KLU linear solver (not available on
+Windows based machine) compared to using the SparseLU solver of Eigen (1108 vs 1101 iterations on the reported
+runs, might slightly vary across runs)
 
 Then on an environment based on the IEEE case 118:
 
@@ -178,16 +180,19 @@ Then on an environment based on the IEEE case 118:
 | LS+SLU                |                    485 |                         1.17  |                        0.865 |
 | LS+KLU                |                    697 |                         0.633 |                        0.353 |
 
-For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) 
-[for now only available on linux and MacOS] is **~14** time faster than 
-using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~11**
-times faster than using the default backend [using sparseLU linear solver is approximately 30% slower than using KLU.]
+For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU)
+[for now only available on linux and MacOS] is **~18** time faster than
+using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~13**
+times faster than using the default backend [the `LS+KLU` solver is ~2-3 times faster (`0.353` per powerflow compared
+to `0.865` ms for `LS+SLU`) than the `LS+SLU` solver, but it only translates to `LS+KLU` providing ~40% more
+iterations per second in the total program (`697` vs `485`) mainly because grid2op itself takes some times to modify the
+grid and performs all the check it does.]
 
 If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
 initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.35 ms** 
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **14.4 ms** when using
-the PandaPowerBackend.
+grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.35ms**
+to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **15 ms** when using
+the PandaPowerBackend (speed up of **~43** times)
 
 ## Philosophy
 Lightsim2grid aims at providing a somewhat efficient (in terms of computation speed) backend targeting the 
