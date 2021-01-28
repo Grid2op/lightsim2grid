@@ -106,7 +106,7 @@ def main(max_ts, env_name_input, test=True,
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"])
     if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-        tab.append(["LS+GS A", int(nb_ts_gsa/time_gsa),
+        tab.append(["LS+GS S", int(nb_ts_gsa/time_gsa),
                     f"{1000.*gsa_time_pf/nb_ts_gsa:.2e}",
                     f"{1000.*gsa_comp_time/nb_ts_gsa:.2e}"])
     if lightsim2grid.SolverType.SparseLU in solver_types:
@@ -133,7 +133,7 @@ def main(max_ts, env_name_input, test=True,
                     f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
     if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-        tab.append(["LS+GS A",
+        tab.append(["LS+GS S",
                     f"{np.max(np.abs(aor_gsa - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_gsa - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_gsa - gen_q_pp)):.2e}"])
