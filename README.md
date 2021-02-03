@@ -199,8 +199,8 @@ Lightsim2grid aims at providing a somewhat efficient (in terms of computation sp
 grid2op platform.
 
 It provides a c++ api, compatible with grid2op that is able to compute flows (and voltages and reactive power) from
-a given grid. This grid can be modified according to grid2op mechanism (see more information in the official
-grid2Op documentation `https://grid2op.readthedocs.io/en/latest/index.html`).
+a given grid. This grid can be modified according to grid2op mechanism (see more information in the [official
+grid2Op documentation](https://grid2op.readthedocs.io/en/latest/index.html`) ).
 
 This code do not aim at providing state of the art solver in term of performances nor in terms of realism in the
 modeling of power system elements (*eg* loads, generators, powerlines, transformers, etc.).
@@ -218,8 +218,8 @@ Lightsim2grid codebase is "organized" in 4 different parts:
 4) computes the active power, reactive power, flow on powerllines etc. from the `V` and `Sbus` complex vectors computed
    at step 3).
 
-For now some basic "solver" (*eg* the program that performs points `3)` above) are available, based on the
-Gauss Seidel or the Newton Raphson methods to perform "powerflows". 
+For now some basic "solver" (*eg* the program that performs points `3.` above) are available, based on the
+Gauss Seidel or the Newton-Raphson methods to perform "powerflows". 
 
 Nothing prevents any other "solver" to be used with lightsim2grid and thus with grid2op. For this, you simply need to
 implement, in c++ a "lightsim2grid solver" which mainly consists in defining a function:

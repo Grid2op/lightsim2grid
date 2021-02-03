@@ -117,13 +117,16 @@ def main(max_ts, env_name_input, test=True,
         tab.append(["LS+KLU", int(nb_ts_klu/time_klu),
                     f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
-    res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
-    print(res_use_with_grid2op_1)
-    print()
 
-    res_github_readme = tabulate(tab, headers=hds,  tablefmt="github")
-    print(res_github_readme)
-    print()
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
+        print(res_use_with_grid2op_1)
+        print()
+
+    if TABULATE_AVAIL:
+        res_github_readme = tabulate(tab, headers=hds,  tablefmt="github")
+        print(res_github_readme)
+        print()
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
     tab = [["PP", "0.00", "0.00", "0.00"]]
@@ -148,8 +151,9 @@ def main(max_ts, env_name_input, test=True,
                     f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
 
-    res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
-    print(res_use_with_grid2op_2)
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
+        print(res_use_with_grid2op_2)
 
 
 if __name__ == "__main__":
