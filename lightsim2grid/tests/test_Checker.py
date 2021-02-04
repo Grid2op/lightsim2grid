@@ -37,7 +37,8 @@ class MakeTestsCase14(unittest.TestCase):
         assert mismatch.shape == (2*self.nb_bus, )
         assert np.any(np.abs(mismatch) > self.env.backend.tol)
 
-        mismatch = self.env.backend._grid.check_solution(np.ones(self.env.backend.V.shape[0], dtype=np.complex), qlim)
+        mismatch = self.env.backend._grid.check_solution(np.ones(self.env.backend.V.shape[0],
+                                                                 dtype=complex), qlim)
         assert mismatch.shape == (2*self.nb_bus, )
         assert np.any(np.abs(mismatch) > self.env.backend.tol)
 
@@ -50,7 +51,7 @@ class MakeTestsCase14(unittest.TestCase):
             self.aux_test_check(True)
 
         # and now i check that there are mismatch only due to qlim
-        tol = self.env.backend.tol
+        tol = self.env.backend.tol * self.env.backend.init_pp_backend._grid.sn_mva
         tol_gen_q = 1e-5  # because of the "algo" to compute the gen_q i am using in ls
         qlim = True
         mismatch = self.env.backend._grid.check_solution(self.env.backend.V, qlim)

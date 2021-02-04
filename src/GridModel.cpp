@@ -193,8 +193,8 @@ void GridModel::reset()
 }
 
 CplxVect GridModel::ac_pf(const CplxVect & Vinit,
-                                  int max_iter,
-                                  real_type tol)
+                          int max_iter,
+                          real_type tol)
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
@@ -230,6 +230,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
 
     // store results
     CplxVect res = _get_results_back_to_orig_nodes(mis, V_proposed.size());
+    if(sn_mva_ != 1.) res *= sn_mva_;
 
     // now check reactive values for buses where there are generators and active values of slack bus
     // test for iterator though generator
