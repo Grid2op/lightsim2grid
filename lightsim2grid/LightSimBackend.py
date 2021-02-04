@@ -584,7 +584,7 @@ class LightSimBackend(Backend):
         self.next_prod_p[:] = np.NaN
         self.prod_q[:] = np.NaN
         self.prod_v[:] = np.NaN
-        self.topo_vect[:] = np.NaN
+        self.topo_vect[:] = -1
         if self.__has_storage:
             self.storage_p[:] = np.NaN
             self.storage_q[:] = np.NaN

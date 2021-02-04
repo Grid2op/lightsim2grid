@@ -46,7 +46,10 @@ void DataShunt::set_state(DataShunt::StateRes & my_state )
     status_ = status;
 }
 
-void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                         bool ac,
+                         const std::vector<int> & id_grid_to_solver,
+                         real_type sn_mva){
     int nb_shunt = q_mvar_.size();
     cplx_type tmp;
     int bus_id_me, bus_id_solver;
@@ -63,6 +66,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac,
         if(bus_id_solver == _deactivated_bus_id){
             throw std::runtime_error("GridModel::fillYbusShunt: A shunt is connected to a disconnected bus.");
         }
+        if(sn_mva != 1.) tmp /= sn_mva;
         res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, -tmp));
     }
 }
@@ -113,7 +117,8 @@ void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
                                 const Eigen::Ref<RealVect> & Vm,
                                 const Eigen::Ref<CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
-                                const RealVect & bus_vn_kv)
+                                const RealVect & bus_vn_kv,
+                                real_type sn_mva)
 {
     int nb_shunt = p_mw_.size();
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
@@ -131,8 +136,8 @@ void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
         cplx_type I = y * E;
         I = std::conj(I);
         cplx_type s = E * I;
-        res_p_(shunt_id) = std::real(s);
-        res_q_(shunt_id) = std::imag(s);
+        res_p_(shunt_id) = std::real(s) * sn_mva;
+        res_q_(shunt_id) = std::imag(s) * sn_mva;
     }
 }
 

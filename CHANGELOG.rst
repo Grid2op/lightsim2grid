@@ -21,10 +21,15 @@ Change Log
 - [FIXED] wrong timing was measured in the "solver powerflow time" of pandapower in the benchmarks
 - [FIXED] a broken handling of shunt modification (wrong bus was assigned)
 - [FIXED] an issue in `LightSimBackend.copy` that prevent the copied environment from being reset.
+- [FIXED] errors are now raised when pandapower grid cannot be converted in lightsim2grid (*eg.* when
+  unsupported elements are present)
 - [ADDED] a variant of the Gauss Seidel method which does the update in a "synchronous" fashion
 - [ADDED] a function that, given a complex vector is able to check kicchoff's law violation.
 - [ADDED] Support for phase shifter (modeled as trafo with an extra parameter `shift`)
+- [ADDED] Experimental support for `sn_mva` pandapower parameter.
 - [UPDATED] github issue template
+- [IMPROVED] warnings are issued when some of the pandapowergrid attributes have been automatically replaced
+  when converting to / from pandapower
 
 [0.4.0] - 2020-10-26
 ---------------------

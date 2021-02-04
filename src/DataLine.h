@@ -74,14 +74,19 @@ class DataLine : public DataGeneric
     void change_bus_ex(int powerline_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_ex_id_, need_reset, nb_bus);}
     int get_bus_or(int powerline_id) {return _get_bus(powerline_id, status_, bus_or_id_);}
     int get_bus_ex(int powerline_id) {return _get_bus(powerline_id, status_, bus_ex_id_);}
-    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                          bool ac,
+                          const std::vector<int> & id_grid_to_solver,
+                          real_type sn_mva
+                          );
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<RealVect> & Va,
                          const Eigen::Ref<RealVect> & Vm,
                          const Eigen::Ref<CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv);
+                         const RealVect & bus_vn_kv,
+                         real_type sn_mva);
     void reset_results();
     virtual real_type get_p_slack(int slack_bus_id);
     virtual void get_q(std::vector<real_type>& q_by_bus);

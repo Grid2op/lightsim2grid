@@ -106,7 +106,8 @@ void DataSGen::compute_results(const Eigen::Ref<RealVect> & Va,
                                const Eigen::Ref<RealVect> & Vm,
                                const Eigen::Ref<CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
-                               const RealVect & bus_vn_kv)
+                               const RealVect & bus_vn_kv,
+                               real_type sn_mva)
 {
     int nb_sgen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_sgen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);

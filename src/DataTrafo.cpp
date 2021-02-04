@@ -170,7 +170,10 @@ void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, co
     }
 }
 
-void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                         bool ac,
+                         const std::vector<int> & id_grid_to_solver,
+                         real_type sn_mva)
 {
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if" for ac / dc
@@ -285,7 +288,8 @@ void DataTrafo::compute_results(const Eigen::Ref<RealVect> & Va,
                                 const Eigen::Ref<RealVect> & Vm,
                                 const Eigen::Ref<CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
-                                const RealVect & bus_vn_kv
+                                const RealVect & bus_vn_kv,
+                                real_type sn_mva
                                 )
 {
     // it needs to be initialized at 0.
@@ -352,10 +356,10 @@ void DataTrafo::compute_results(const Eigen::Ref<RealVect> & Va,
         cplx_type s_hvlv = Ehv * I_hvlv;
         cplx_type s_lvhv = Elv * I_lvhv;
 
-        res_p_hv_(trafo_id) = std::real(s_hvlv);
-        res_q_hv_(trafo_id) = std::imag(s_hvlv);
-        res_p_lv_(trafo_id) = std::real(s_lvhv);
-        res_q_lv_(trafo_id) = std::imag(s_lvhv);
+        res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
+        res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
+        res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
+        res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
 
         // retrieve voltages magnitude in kv instead of pu
         real_type v_hv = Vm(bus_hv_solver_id);

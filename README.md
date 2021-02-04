@@ -194,6 +194,8 @@ grid2op environment etc.) we can notice that it takes on average (over 1000 diff
 to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **15 ms** when using
 the PandaPowerBackend (speed up of **~43** times)
 
+(**NB** pandapower performances heavily depends on the pandas version used, we used here pandas version 1.1.4 which
+we found gave the best performances on our machine)
 ## Philosophy
 Lightsim2grid aims at providing a somewhat efficient (in terms of computation speed) backend targeting the 
 grid2op platform.

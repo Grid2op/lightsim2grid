@@ -57,7 +57,10 @@ class DataShunt : public DataGeneric
     void change_q(int shunt_id, real_type new_q, bool & need_reset);
     int get_bus(int shunt_id) {return _get_bus(shunt_id, status_, bus_id_);}
 
-    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                          bool ac,
+                          const std::vector<int> & id_grid_to_solver,
+                          real_type sn_mva);
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // in DC i need that
 
@@ -65,7 +68,8 @@ class DataShunt : public DataGeneric
                          const Eigen::Ref<RealVect> & Vm,
                          const Eigen::Ref<CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv);
+                         const RealVect & bus_vn_kv,
+                         real_type sn_mva);
     void reset_results();
     virtual real_type get_p_slack(int slack_bus_id);
     virtual void get_q(std::vector<real_type>& q_by_bus);

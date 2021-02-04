@@ -184,8 +184,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
-        .def("set_init_vm_pu", &GridModel::set_init_vm_pu)
+        .def("set_init_vm_pu", &GridModel::set_init_vm_pu)  // TODO use python "property" for that
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu)
+        .def("set_sn_mva", &GridModel::set_sn_mva)
+        .def("get_sn_mva", &GridModel::get_sn_mva)
         .def("init_powerlines", &GridModel::init_powerlines)
         .def("init_shunt", &GridModel::init_shunt)
         .def("init_trafo", &GridModel::init_trafo)

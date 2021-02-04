@@ -70,6 +70,8 @@ def init(pp_net):
         if "init_vm_pu" in pp_net["_options"]:
                 model.set_init_vm_pu(pp_net["_options"]["init_vm_pu"])
 
+    model.set_sn_mva(pp_net.sn_mva)
+
     tmp_bus_ind = np.argsort(pp_net.bus.index)
     model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
                    pp_net.line.shape[0],

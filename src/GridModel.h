@@ -44,6 +44,7 @@ class GridModel : public DataGeneric
         typedef std::tuple<
                 std::string, // version
                 real_type,  // init_vm_pu
+                real_type, //sn_mva
                 std::vector<real_type>,  // bus_vn_kv
                 std::vector<bool>,  // bus_status
                 // powerlines
@@ -64,7 +65,7 @@ class GridModel : public DataGeneric
                 int
                 >  StateRes;
 
-        GridModel():need_reset_(true),compute_results_(true),init_vm_pu_(1.04){};
+        GridModel():need_reset_(true),compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
         GridModel(const GridModel & other);
         GridModel copy(){
             GridModel res(*this);
@@ -87,6 +88,8 @@ class GridModel : public DataGeneric
         void init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo);
         void set_init_vm_pu(real_type init_vm_pu) {init_vm_pu_ = init_vm_pu; }
         real_type get_init_vm_pu() {return init_vm_pu_;}
+        void set_sn_mva(real_type sn_mva) {sn_mva_ = sn_mva; }
+        real_type get_sn_mva() {return sn_mva_;}
 
         void init_powerlines(const RealVect & branch_r,
                              const RealVect & branch_x,
@@ -461,6 +464,7 @@ class GridModel : public DataGeneric
         bool need_reset_;
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
+        real_type sn_mva_;
 
         // powersystem representation
         // 1. bus

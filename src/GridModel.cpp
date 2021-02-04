@@ -13,6 +13,7 @@ GridModel::GridModel(const GridModel & other)
     reset();
 
     init_vm_pu_ = other.init_vm_pu_;
+    sn_mva_ = other.sn_mva_;
 
     // assign the right solver
     _solver.change_solver(other._solver.get_type());
@@ -84,6 +85,7 @@ GridModel::StateRes GridModel::get_state() const
 
     GridModel::StateRes res(version,
                             init_vm_pu_,
+                            sn_mva_,
                             bus_vn_kv,
                             bus_status_,
                             res_line,
@@ -113,24 +115,25 @@ void GridModel::set_state(GridModel::StateRes & my_state)
         throw("Wrong version. You tried to load a lightsim model saved with a different version that this one. It is not possible.");
     }
     init_vm_pu_ = std::get<1>(my_state);
-    std::vector<real_type> & bus_vn_kv = std::get<2>(my_state);
-    std::vector<bool> & bus_status = std::get<3>(my_state);
+    sn_mva_ = std::get<2>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<3>(my_state);
+    std::vector<bool> & bus_status = std::get<4>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<4>(my_state);
+    DataLine::StateRes & state_lines = std::get<5>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<5>(my_state);
+    DataShunt::StateRes & state_shunts = std::get<6>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<6>(my_state);
+    DataTrafo::StateRes & state_trafos = std::get<7>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<7>(my_state);
+    DataGen::StateRes & state_gens = std::get<8>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<8>(my_state);
+    DataLoad::StateRes & state_loads = std::get<9>(my_state);
     // static gen
-    DataSGen::StateRes & state_sgens= std::get<9>(my_state);
+    DataSGen::StateRes & state_sgens= std::get<10>(my_state);
     // storage units
-    DataLoad::StateRes & state_storages = std::get<10>(my_state);
-    int gen_slackbus = std::get<11>(my_state);
+    DataLoad::StateRes & state_storages = std::get<11>(my_state);
+    int gen_slackbus = std::get<12>(my_state);
 
     // assign it to this instance
 
@@ -378,34 +381,35 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     // init the Ybus matrix
     std::vector<Eigen::Triplet<cplx_type> > tripletList;
     tripletList.reserve(bus_vn_kv_.size() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
-    powerlines_.fillYbus(tripletList, ac, id_me_to_solver);
-    shunts_.fillYbus(tripletList, ac, id_me_to_solver);
-    trafos_.fillYbus(tripletList, ac, id_me_to_solver);
-    loads_.fillYbus(tripletList, ac, id_me_to_solver);
-    sgens_.fillYbus(tripletList, ac, id_me_to_solver);
-    storages_.fillYbus(tripletList, ac, id_me_to_solver);
-    generators_.fillYbus(tripletList, ac, id_me_to_solver);
+    powerlines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    shunts_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    trafos_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    loads_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    sgens_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    storages_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    generators_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     res.setFromTriplets(tripletList.begin(), tripletList.end());
     res.makeCompressed();
 }
 
-void GridModel::fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
+void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
 {
     // init the Sbus vector
-    powerlines_.fillSbus(res, true, id_me_to_solver);
-    shunts_.fillSbus(res, true, id_me_to_solver);
-    trafos_.fillSbus(res, ac, id_me_to_solver);
-    loads_.fillSbus(res, true, id_me_to_solver);
-    sgens_.fillSbus(res, true, id_me_to_solver);
-    storages_.fillSbus(res, true, id_me_to_solver);
-    generators_.fillSbus(res, true, id_me_to_solver);
+    powerlines_.fillSbus(Sbus, true, id_me_to_solver);
+    shunts_.fillSbus(Sbus, true, id_me_to_solver);
+    trafos_.fillSbus(Sbus, ac, id_me_to_solver);
+    loads_.fillSbus(Sbus, true, id_me_to_solver);
+    sgens_.fillSbus(Sbus, true, id_me_to_solver);
+    storages_.fillSbus(Sbus, true, id_me_to_solver);
+    generators_.fillSbus(Sbus, true, id_me_to_solver);
 
     // handle slack bus (in ac only)
     if(ac)
     {
-        real_type sum_active = res.sum().real();
-        res.coeffRef(slack_bus_id_solver) -= sum_active;
+        real_type sum_active = Sbus.sum().real();
+        Sbus.coeffRef(slack_bus_id_solver) -= sum_active;
     }
+    if (sn_mva_ != 1.0) Sbus /= sn_mva_;
 }
 
 void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
@@ -444,19 +448,19 @@ void GridModel::compute_results(){
     const auto & Vm = _solver.get_Vm();
     const auto & V = _solver.get_V();
     // for powerlines
-    powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for trafo
-    trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for loads
-    loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for static gen
-    sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for storage units
-    storages_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    storages_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for shunts
-    shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for prods
-    generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_);
+    generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
 
     //handle_slack_bus
     real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);

@@ -21,8 +21,12 @@ import pandapower.networks as pn
 # case_name = "test_case6495rte.json"
 # pp.to_json(pn_net, case_name)
 
-case_name = "test_case6495rte.json"
-nb_sub = 6495
+case_name = "/home/benjamin/data_grid2op/l2rpn_case14_sandbox/grid.json"
+nb_sub = 14
+
+# local files
+# case_name = "test_case6495rte.json"
+# nb_sub = 6495
 # case_name = "test_case2848rte.json"
 # nb_sub = 2848
 # case_name = "test_case118.json"
@@ -563,7 +567,6 @@ else:
     v_or_me2 = np.concatenate((lvor, tvor))
     a_or_me2 = 1000. * np.concatenate((laor, taor))
     test_ok = True
-    # pdb.set_trace()
     max_mis = np.max(np.abs(p_or_me2 - por_pp))
     if max_mis > tol:
         test_ok = False
@@ -703,10 +706,10 @@ ratio = _calc_nominal_ratio_from_dataframe(ppc, trafo_df, vn_trafo_hv, vn_trafo_
 r_t, x_t, b_t = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
 
 # todo remove
-matches_hv = vn_trafo_hv_me == vn_trafo_hv
-matches_lv = vn_trafo_lv_me == vn_trafo_lv
-import pdb
-pdb.set_trace()
+# matches_hv = vn_trafo_hv_me == vn_trafo_hv
+# matches_lv = vn_trafo_lv_me == vn_trafo_lv
+# import pdb
+# pdb.set_trace()
 # todo end remove
 
 # check where there are mismatch if any

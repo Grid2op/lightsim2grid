@@ -44,9 +44,10 @@ def _aux_check_legit(pp_net):
     if "dcline" in pp_net and pp_net.dcline.shape[0]:
         raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "
                            "in pandapower network")
+
     if pp_net.sn_mva != 1.:
-        raise RuntimeError("Pandapower network with sn_mva != 1 are not supported yet, especially in the "
-                           "conversion for some trafo (and probably somewhere else too)")
+        warnings.warn("Pandapower network with sn_mva != 1 are not fully supported yet, especially in the "
+                      "conversion for some trafo (and probably somewhere else too)")
     if "_options" in pp_net and \
        "trafo_model" in pp_net["_options"] and \
        pp_net["_options"]["trafo_model"] != "t":

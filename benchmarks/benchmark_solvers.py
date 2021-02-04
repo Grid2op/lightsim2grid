@@ -8,6 +8,7 @@
 
 import numpy as np
 import os
+import warnings
 
 from grid2op import make
 from grid2op.Agent import DoNothingAgent
@@ -28,7 +29,7 @@ try:
     from tabulate import tabulate
     TABULATE_AVAIL = True
 except ImportError:
-    print("The tabluate package is not installed. Some output might not work properly")
+    print("The tabulate package is not installed. Some output might not work properly")
 
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
@@ -39,23 +40,25 @@ def main(max_ts, env_name_input, test=True,
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
-    if re.match("^.*\\.json$", env_name_input) is None:
-        # i provided an environment name
-        env_pp = make(env_name_input, param=param, test=test,
-                      data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-        env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
-                            data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-    else:
-        # I provided an environment path
-        env_pp = make("blank", param=param, test=True,
-                      data_feeding_kwargs={"gridvalueClass": ChangeNothing},
-                      grid_path=env_name_input
-                      )
-        env_lightsim = make("blank", param=param, test=True,
-                            backend=LightSimBackend(),
-                            data_feeding_kwargs={"gridvalueClass": ChangeNothing},
-                            grid_path=env_name_input)
-        _, env_name_input = os.path.split(env_name_input)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        if re.match("^.*\\.json$", env_name_input) is None:
+            # i provided an environment name
+            env_pp = make(env_name_input, param=param, test=test,
+                          data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+            env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
+                                data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+        else:
+            # I provided an environment path
+            env_pp = make("blank", param=param, test=True,
+                          data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                          grid_path=env_name_input
+                          )
+            env_lightsim = make("blank", param=param, test=True,
+                                backend=LightSimBackend(),
+                                data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                grid_path=env_name_input)
+            _, env_name_input = os.path.split(env_name_input)
 
     agent = DoNothingAgent(action_space=env_pp.action_space)
     nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
@@ -121,12 +124,16 @@ def main(max_ts, env_name_input, test=True,
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
         print(res_use_with_grid2op_1)
-        print()
+    else:
+        print(tab)
+    print()
 
     if TABULATE_AVAIL:
         res_github_readme = tabulate(tab, headers=hds,  tablefmt="github")
         print(res_github_readme)
-        print()
+    else:
+        print(tab)
+    print()
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
     tab = [["PP", "0.00", "0.00", "0.00"]]
@@ -154,6 +161,9 @@ def main(max_ts, env_name_input, test=True,
     if TABULATE_AVAIL:
         res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
         print(res_use_with_grid2op_2)
+    else:
+        print(tab)
+    print()
 
 
 if __name__ == "__main__":
