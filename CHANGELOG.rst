@@ -12,7 +12,7 @@ Change Log
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 
-[0.4.1] 2021-yy-xx
+[0.5.0] 2021-yy-xx
 -------------------
 - [FIXED] a compilation issue on macos
 - [FIXED] a compilation issue on windows (missing import of vector in `DataConverter.h`)

@@ -8,17 +8,18 @@ assignees: ''
 ---
 
 ## Environment
- - Grid2op version: `0.x.x`
+ - Grid2op version: `x.y.z` (**eg** 1.4.0)
+ - lightsim version: `x.y.z` (**eg** 0.5.0)
  - System: `windows, osx, ubuntu16.04, ...`
  - Additional system information
 
 **Note**: If the bug concerns an installation issue, you have to provide us with the output of:
 ```commandline
-pip install -U .
+python3 setup.py build
 ```
 AND
 ```commandline
-python3 setup.py build
+pip install -U .
 ```
 
 ## Bug description
@@ -27,6 +28,7 @@ python3 setup.py build
 ## How to reproduce
 <!--Explain in detail how to reproduce your issue. The easier it will be for us to
 reproduce it, the faster we will be able to work on this.-->
+<!-- Bugs with reproducible code are treated in priority.-->
 
 ### Command line
 <!--Ideally, if we execute the following command, the bug will directly be reproduced. 
