@@ -132,7 +132,7 @@ void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
             throw std::runtime_error("DataShunt::compute_results: A shunt is connected to a disconnected bus.");
         }
         cplx_type E = V(bus_solver_id);
-        cplx_type y = -my_one_ * (p_mw_(shunt_id) + my_i * q_mvar_(shunt_id));
+        cplx_type y = -my_one_ * (p_mw_(shunt_id) + my_i * q_mvar_(shunt_id)) / sn_mva;
         cplx_type I = y * E;
         I = std::conj(I);
         cplx_type s = E * I;

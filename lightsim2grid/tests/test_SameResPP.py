@@ -110,7 +110,9 @@ class MyTestCase(unittest.TestCase):
         assert max_mis <= self.tol, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} A"
 
         # "II - Check for possible solver issues"
-        pp.runpp(backend.init_pp_backend._grid, v_debug=True)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(backend.init_pp_backend._grid, v_debug=True)
         v_tmp = backend.init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
         v_tmp *= np.exp(1j * np.pi / 180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
         v_tmp = np.concatenate((v_tmp, v_tmp))
@@ -237,7 +239,9 @@ class MyTestCase(unittest.TestCase):
                                             f"bus index (lightsim): {np.where(error_q > self.tol)[0]}"
 
         # "3) check that the Ybus matrix is same for PP and lightisim in DC"
-        pp.rundcpp(pp_net)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.rundcpp(pp_net)
         Ydc_pp = backend.init_pp_backend._grid._ppc["internal"]["Bbus"]
         Ydc_pp_right_order = Ydc_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
         error_p = np.abs(np.real(Ydc_me) - np.real(Ydc_pp_right_order))

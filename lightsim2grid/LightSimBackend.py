@@ -14,7 +14,7 @@ from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
 from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
 from grid2op.Action._BackendAction import _BackendAction
-from grid2op.dtypes import dt_float, dt_int
+from grid2op.dtypes import dt_float, dt_int, dt_bool
 
 from lightsim2grid.initGridModel import init, SolverType
 
@@ -332,11 +332,11 @@ class LightSimBackend(Backend):
         self.shunts_data_available = self.init_pp_backend.shunts_data_available
 
         # number of object per bus, to activate, deactivate them
-        self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=np.int)
+        self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int)
 
-        self.topo_vect = np.ones(self.dim_topo, dtype=np.int)
+        self.topo_vect = np.ones(self.dim_topo, dtype=dt_int)
         if self.shunts_data_available:
-            self.shunt_topo_vect = np.ones(self.n_shunt, dtype=np.int)
+            self.shunt_topo_vect = np.ones(self.n_shunt, dtype=dt_int)
 
         self.p_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
         self.q_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
@@ -363,7 +363,7 @@ class LightSimBackend(Backend):
 
         self._count_object_per_bus()
         self.__me_at_init = self._grid.copy()
-        self.__init_topo_vect = np.ones(self.dim_topo, dtype=np.int)
+        self.__init_topo_vect = np.ones(self.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
 
     def assert_grid_correct_after_powerflow(self):
@@ -386,7 +386,7 @@ class LightSimBackend(Backend):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
         # todo factor that more properly to update it when it's modified, and not each time
 
-        self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=np.int)
+        self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int)
 
         arr_ = self.topo_vect[self.load_pos_topo_vect] - 1
         # TODO handle -1 here, eventually
@@ -618,7 +618,7 @@ class LightSimBackend(Backend):
     def get_line_status(self):
         l_s = self._grid.get_lines_status()
         t_s = self._grid.get_trafo_status()
-        return np.concatenate((l_s, t_s)).astype(np.bool)
+        return np.concatenate((l_s, t_s)).astype(dt_bool)
 
     def get_line_flow(self):
         return self.a_or

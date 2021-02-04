@@ -44,7 +44,7 @@ class TestDN(unittest.TestCase):
             assert not done, "divergence after disconnection of powerline {}".format(l_id)
             pos_or = backend.line_or_pos_topo_vect[l_id]
             pos_ex = backend.line_ex_pos_topo_vect[l_id]
-            all_rest = np.full(env.action_space.dim_topo, fill_value=True, dtype=np.bool)
+            all_rest = np.full(env.action_space.dim_topo, fill_value=True, dtype=bool)
             all_rest[pos_or] = all_rest[pos_ex] = False
             assert backend.topo_vect[pos_or] == -1
             assert backend.topo_vect[pos_ex] == -1
@@ -57,7 +57,7 @@ class TestDN(unittest.TestCase):
             action = env.action_space.reconnect_powerline(l_id, bus_or=1, bus_ex=1)
             obs, reward, done, info = env.step(action)
             assert not done, "divergence after reconnection of powerline {}".format(l_id)
-            all_rest = np.full(env.action_space.dim_topo, fill_value=True, dtype=np.bool)
+            all_rest = np.full(env.action_space.dim_topo, fill_value=True, dtype=bool)
             assert backend.topo_vect[pos_or] == 1
             assert backend.topo_vect[pos_ex] == 1
             assert np.all(backend.topo_vect[all_rest] == 1)
@@ -68,7 +68,7 @@ class TestDN(unittest.TestCase):
         return
         env = self.env
         backend = env.backend
-        action_restore = env.action_space({"set_bus": {"substations_id": [(2, np.array([1,1,1,1]))]}})
+        action_restore = env.action_space({"set_bus": {"substations_id": [(2, np.array([1, 1, 1, 1]))]}})
 
         l_1 = 4
         l_2 = 6
@@ -92,13 +92,13 @@ class TestDN(unittest.TestCase):
         obs, reward, done, info = env.step(action)
         assert not done, "divergence after disconnection of powerline {}".format(l_id)
 
-        action_reco = action_space({"set_bus": np.ones(action_space.dim_topo, dtype=np.int),
-                                    "set_line_status": np.ones(action_space.n_line, dtype=np.int)})
+        action_reco = action_space({"set_bus": np.ones(action_space.dim_topo, dtype=int),
+                                    "set_line_status": np.ones(action_space.n_line, dtype=int)})
         obs, reward, done, info = env.step(action_reco)
         assert not done, "divergence after disconnection of powerline {}".format(l_id)
         pos_or = backend.line_or_pos_topo_vect[l_id]
         pos_ex = backend.line_ex_pos_topo_vect[l_id]
-        all_rest = np.full(env.action_space.dim_topo, fill_value=True, dtype=np.bool)
+        all_rest = np.full(env.action_space.dim_topo, fill_value=True, dtype=bool)
         assert backend.topo_vect[pos_or] == 1
         assert backend.topo_vect[pos_ex] == 1
         assert np.all(backend.topo_vect[all_rest] == 1)
