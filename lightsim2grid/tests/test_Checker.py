@@ -27,20 +27,22 @@ class MakeTestsCase14(unittest.TestCase):
         self.env.close()
 
     def aux_test_check(self, qlim=False):
+        tol = self.env.backend.tol
+
         # it properly detects when something is working
         mismatch = self.env.backend._grid.check_solution(self.env.backend.V, qlim)
         assert mismatch.shape == (2*self.nb_bus, )
-        assert np.all(np.abs(mismatch) <= self.env.backend.tol)
+        assert np.all(np.abs(mismatch) <= tol)
 
         # it detects mismatch in non working cases
         mismatch = self.env.backend._grid.check_solution(2*self.env.backend.V, qlim)
         assert mismatch.shape == (2*self.nb_bus, )
-        assert np.any(np.abs(mismatch) > self.env.backend.tol)
+        assert np.any(np.abs(mismatch) > tol)
 
         mismatch = self.env.backend._grid.check_solution(np.ones(self.env.backend.V.shape[0],
                                                                  dtype=complex), qlim)
         assert mismatch.shape == (2*self.nb_bus, )
-        assert np.any(np.abs(mismatch) > self.env.backend.tol)
+        assert np.any(np.abs(mismatch) > tol)
 
     def test_check_withoutqlims(self):
         self.aux_test_check(False)
@@ -51,7 +53,7 @@ class MakeTestsCase14(unittest.TestCase):
             self.aux_test_check(True)
 
         # and now i check that there are mismatch only due to qlim
-        tol = self.env.backend.tol * self.env.backend.init_pp_backend._grid.sn_mva
+        tol = self.env.backend.tol
         tol_gen_q = 1e-5  # because of the "algo" to compute the gen_q i am using in ls
         qlim = True
         mismatch = self.env.backend._grid.check_solution(self.env.backend.V, qlim)

@@ -35,7 +35,9 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
         return self.model.ac_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-        pp.runpp(net, init="flat")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
         return
@@ -63,7 +65,9 @@ class MakeDCTestsDisco(BaseTests, unittest.TestCase):
         return self.model.dc_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-        pp.rundcpp(net, init="flat")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.rundcpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
         pass

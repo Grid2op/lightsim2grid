@@ -208,7 +208,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     CplxVect V = pre_process_solver(Vinit, true);
 
     // start the solver
-    conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
+    conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
 
     // store results
     process_results(conv, res, Vinit);
