@@ -29,8 +29,9 @@ class LightSimBackend(Backend):
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
         if not self.__has_storage:
-            warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
-                          "feature that will be removed in further lightsim2grid version.")
+            pass
+            # warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
+            #              "feature that will be removed in further lightsim2grid version.")
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
