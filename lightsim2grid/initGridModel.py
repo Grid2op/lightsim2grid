@@ -11,7 +11,17 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 """
 
 import numpy as np
+import warnings
 from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
+from lightsim2grid._aux_add_sgen import _aux_add_sgen
+from lightsim2grid._aux_add_load import _aux_add_load
+from lightsim2grid._aux_add_trafo import _aux_add_trafo
+from lightsim2grid._aux_add_line import _aux_add_line
+from lightsim2grid._aux_add_gen import _aux_add_gen
+from lightsim2grid._aux_add_shunt import _aux_add_shunt
+from lightsim2grid._aux_check_legit import _aux_check_legit
+from lightsim2grid._aux_add_slack import _aux_add_slack
+from lightsim2grid._aux_add_storage import _aux_add_storage
 
 
 def init(pp_net):
@@ -46,121 +56,49 @@ def init(pp_net):
         The initialize gridmodel
 
     """
+    # check for things not supported and raise if needed
+    _aux_check_legit(pp_net)
+
     # initialize and use converters
     converter = PandaPowerConverter()
     converter.set_sn_mva(pp_net.sn_mva)  # TODO raise an error if not set !
     converter.set_f_hz(pp_net.f_hz)
-    line_r, line_x, line_h = \
-        converter.get_line_param(
-            pp_net.line["r_ohm_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.line["x_ohm_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.line["c_nf_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.line["g_us_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"],
-            pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"]
-        )
-    trafo_r, trafo_x, trafo_b = \
-        converter.get_trafo_param(pp_net.trafo["vn_hv_kv"].values,
-                                  pp_net.trafo["vn_lv_kv"].values,
-                                  pp_net.trafo["vk_percent"].values,
-                                  pp_net.trafo["vkr_percent"].values,
-                                  pp_net.trafo["sn_mva"].values,
-                                  pp_net.trafo["pfe_kw"].values,
-                                  pp_net.trafo["i0_percent"].values,
-                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"]
-                                       )
 
     # set up the data model accordingly
     model = GridModel()
+    if "_options" in pp_net:
+        if "init_vm_pu" in pp_net["_options"]:
+                model.set_init_vm_pu(pp_net["_options"]["init_vm_pu"])
+
+    model.set_sn_mva(pp_net.sn_mva)
+
     tmp_bus_ind = np.argsort(pp_net.bus.index)
     model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
                    pp_net.line.shape[0],
                    pp_net.trafo.shape[0])
 
-    model.init_powerlines(line_r, line_x, line_h,
-                          pp_net.line["from_bus"].values,
-                          pp_net.line["to_bus"].values
-                               )
-    for line_id, sh_status in enumerate(pp_net.line["in_service"].values):
-        if not sh_status:
-            # powerline is deactivated
-            model.deactivate_powerline(line_id)
+    # init the powerlines
+    _aux_add_line(converter, model, pp_net)
 
     # init the shunts
-    model.init_shunt(pp_net.shunt["p_mw"].values,
-                     pp_net.shunt["q_mvar"].values,
-                     pp_net.shunt["bus"].values
-                     )
-    for sh_id, sh_status in enumerate(pp_net.shunt["in_service"].values):
-        if not sh_status:
-            # shunt is deactivated
-            model.deactivate_shunt(sh_id)
+    _aux_add_shunt(model, pp_net)
 
     # handle the trafos
-    tap_step_pct = pp_net.trafo["tap_step_percent"].values
-    tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
-
-    tap_pos = pp_net.trafo["tap_pos"].values
-    tap_pos[~np.isfinite(tap_pos)] = 0.
-
-    is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
-    is_tap_hv_side[~np.isfinite(tap_pos)] = True
-    model.init_trafo(trafo_r,
-                     trafo_x,
-                     trafo_b,
-                     tap_step_pct,
-                     tap_pos,
-                     is_tap_hv_side,
-                     pp_net.trafo["hv_bus"].values,
-                     pp_net.trafo["lv_bus"].values)
-    for tr_id, sh_status in enumerate(pp_net.trafo["in_service"].values):
-        if not sh_status:
-            # trafo is deactivated
-            model.deactivate_trafo(tr_id)
+    _aux_add_trafo(converter, model, pp_net)
 
     # handle loads
-    model.init_loads(pp_net.load["p_mw"].values,
-                     pp_net.load["q_mvar"].values,
-                     pp_net.load["bus"].values
-                          )
-    for load_id, sh_status in enumerate(pp_net.load["in_service"].values):
-        if not sh_status:
-            # load is deactivated
-            model.deactivate_load(load_id)
+    _aux_add_load(model, pp_net)
+
+    # handle static generators (PQ generator)
+    _aux_add_sgen(model, pp_net)
 
     # handle generators
-    model.init_generators(pp_net.gen["p_mw"].values,
-                          pp_net.gen["vm_pu"].values,
-                          pp_net.gen["min_q_mvar"].values,
-                          pp_net.gen["max_q_mvar"].values,
-                          pp_net.gen["bus"].values
-                          )
-    for gen_id, sh_status in enumerate(pp_net.gen["in_service"].values):
-        if not sh_status:
-            # generator is deactivated
-            model.deactivate_gen(gen_id)
+    _aux_add_gen(model, pp_net)
+
+    # handle storage units
+    _aux_add_storage(model, pp_net)
 
     # deal with slack bus
-    # TODO handle that better maybe, and warn only one slack bus is implemented
-    if np.any(pp_net.gen["slack"].values):
-        slack_gen_id = np.where(pp_net.gen["slack"].values)[0]
-        model.change_v_gen(slack_gen_id, pp_net.gen["vm_pu"][slack_gen_id])
-    else:
-        # there is no slack bus in the generator of the pp grid
+    _aux_add_slack(model, pp_net)
 
-        # first i try to see if a generator is connected to a slack bus
-        slack_bus_id = pp_net.ext_grid["bus"].values[0]
-        if np.any(pp_net.gen["bus"].values == slack_bus_id):
-            slack_gen_id = np.where(pp_net.gen["bus"].values == slack_bus_id)[0]
-        else:
-            # no gen is connected to a slack bus, so i create one.
-            gen_p = np.concatenate((pp_net.gen["p_mw"].values, [np.sum(pp_net.load["p_mw"]) - np.sum(pp_net.gen["p_mw"])]))
-            gen_v = np.concatenate((pp_net.gen["vm_pu"].values, [pp_net.ext_grid["vm_pu"].values[0]]))
-            gen_bus = np.concatenate((pp_net.gen["bus"].values, [slack_bus_id]))
-            gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].values, [-999999.]))
-            gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].values, [+99999.]))
-            model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
-            slack_gen_id = pp_net.gen["bus"].shape[0]
-
-    model.add_gen_slackbus(slack_gen_id)
     return model

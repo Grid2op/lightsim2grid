@@ -10,9 +10,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 
-#include "KLUSolver.h"
-#include "SparseLUSolver.h"
-#include "GaussSeidelSolver.h"
+#include "ChooseSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
 
@@ -27,6 +25,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("KLU", SolverType::KLU)
         .value("GaussSeidel", SolverType::GaussSeidel)
         .value("DC", SolverType::DC)
+        .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
@@ -69,6 +68,18 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &GaussSeidelSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
+    py::class_<GaussSeidelSynchSolver>(m, "GaussSeidelSynchSolver")
+        .def(py::init<>())
+        .def("get_Va", &GaussSeidelSynchSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &GaussSeidelSynchSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &GaussSeidelSynchSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &GaussSeidelSynchSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &GaussSeidelSynchSolver::reset)  // reset the solver to its original state
+        .def("converged", &GaussSeidelSynchSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &GaussSeidelSynchSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        .def("get_timers", &GaussSeidelSynchSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &GaussSeidelSynchSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
     py::class_<DCSolver>(m, "DCSolver")
         .def(py::init<>())
         .def("get_Va", &DCSolver::get_Va)  // get the voltage angle vector (vector of double)
@@ -81,6 +92,55 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
+    // iterator for generators
+    py::class_<DataGen>(m, "DataGen")
+        .def("__len__", [](const DataGen & data) { return data.nb(); })
+        .def("__getitem__", [](const DataGen & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataGen & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataGen::GenInfo>(m, "GenInfo")
+        .def_readonly("id", &DataGen::GenInfo::id)
+        .def_readonly("connected", &DataGen::GenInfo::connected)
+        .def_readonly("bus_id", &DataGen::GenInfo::bus_id)
+        .def_readonly("target_p_mw", &DataGen::GenInfo::target_p_mw)
+        .def_readonly("target_vm_pu", &DataGen::GenInfo::target_vm_pu)
+        .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar)
+        .def_readonly("max_q_mvar", &DataGen::GenInfo::max_q_mvar)
+        .def_readonly("has_res", &DataGen::GenInfo::has_res)
+        .def_readonly("res_p_mw", &DataGen::GenInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataGen::GenInfo::res_q_mvar)
+        .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv);
+
+    // iterator for trafos
+    py::class_<DataTrafo>(m, "DataTrafo")
+        .def("__len__", [](const DataTrafo & data) { return data.nb(); })
+        .def("__getitem__", [](const DataTrafo & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataTrafo & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataTrafo::TrafoInfo>(m, "TrafoInfo")
+        .def_readonly("id", &DataTrafo::TrafoInfo::id)
+        .def_readonly("connected", &DataTrafo::TrafoInfo::connected)
+        .def_readonly("bus_hv_id", &DataTrafo::TrafoInfo::bus_hv_id)
+        .def_readonly("bus_lv_id", &DataTrafo::TrafoInfo::bus_lv_id)
+        .def_readonly("r", &DataTrafo::TrafoInfo::r)
+        .def_readonly("x", &DataTrafo::TrafoInfo::x)
+        .def_readonly("h", &DataTrafo::TrafoInfo::h)
+        .def_readonly("is_tap_hv_side", &DataTrafo::TrafoInfo::is_tap_hv_side)
+        .def_readonly("ratio", &DataTrafo::TrafoInfo::ratio)
+        .def_readonly("shift", &DataTrafo::TrafoInfo::shift)
+        .def_readonly("has_res", &DataTrafo::TrafoInfo::has_res)
+        .def_readonly("res_p_hv_mw", &DataTrafo::TrafoInfo::res_p_hv_mw)
+        .def_readonly("res_q_hv_mvar", &DataTrafo::TrafoInfo::res_q_hv_mvar)
+        .def_readonly("res_v_hv_kv", &DataTrafo::TrafoInfo::res_v_hv_kv)
+        .def_readonly("res_a_hv_a", &DataTrafo::TrafoInfo::res_a_hv_a)
+        .def_readonly("res_p_lv_mw", &DataTrafo::TrafoInfo::res_p_lv_mw)
+        .def_readonly("res_q_lv_mvar", &DataTrafo::TrafoInfo::res_q_lv_mvar)
+        .def_readonly("res_v_lv_kv", &DataTrafo::TrafoInfo::res_v_lv_kv)
+        .def_readonly("res_a_lv_a", &DataTrafo::TrafoInfo::res_a_lv_a);
 
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
@@ -124,11 +184,17 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
+        .def("set_init_vm_pu", &GridModel::set_init_vm_pu)  // TODO use python "property" for that
+        .def("get_init_vm_pu", &GridModel::get_init_vm_pu)
+        .def("set_sn_mva", &GridModel::set_sn_mva)
+        .def("get_sn_mva", &GridModel::get_sn_mva)
         .def("init_powerlines", &GridModel::init_powerlines)
         .def("init_shunt", &GridModel::init_shunt)
         .def("init_trafo", &GridModel::init_trafo)
         .def("init_generators", &GridModel::init_generators)
         .def("init_loads", &GridModel::init_loads)
+        .def("init_storages", &GridModel::init_storages)
+        .def("init_sgens", &GridModel::init_sgens)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
 
         // modify the grid
@@ -149,6 +215,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv)
         .def("get_bus_trafo_hv", &GridModel::get_bus_trafo_hv)
         .def("get_bus_trafo_lv", &GridModel::get_bus_trafo_lv)
+        .def("get_trafos", &GridModel::get_trafos)
 
         .def("deactivate_load", &GridModel::deactivate_load)
         .def("reactivate_load", &GridModel::reactivate_load)
@@ -163,6 +230,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_gen", &GridModel::get_bus_gen)
         .def("change_p_gen", &GridModel::change_p_gen)
         .def("change_v_gen", &GridModel::change_v_gen)
+        .def("get_generators", &GridModel::get_generators)
 
         .def("deactivate_shunt", &GridModel::deactivate_shunt)
         .def("reactivate_shunt", &GridModel::reactivate_shunt)
@@ -171,9 +239,25 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_p_shunt", &GridModel::change_p_shunt)
         .def("change_q_shunt", &GridModel::change_q_shunt)
 
+        .def("deactivate_sgen", &GridModel::deactivate_sgen)
+        .def("reactivate_sgen", &GridModel::reactivate_sgen)
+        .def("change_bus_sgen", &GridModel::change_bus_sgen)
+        .def("get_bus_sgen", &GridModel::get_bus_sgen)
+        .def("change_p_sgen", &GridModel::change_p_sgen)
+        .def("change_q_sgen", &GridModel::change_q_sgen)
+
+        .def("deactivate_storage", &GridModel::deactivate_storage)
+        .def("reactivate_storage", &GridModel::reactivate_storage)
+        .def("change_bus_storage", &GridModel::change_bus_storage)
+        .def("get_bus_storage", &GridModel::get_bus_storage)
+        .def("change_p_storage", &GridModel::change_p_storage)
+        .def("change_q_storage", &GridModel::change_q_storage)
+
         // get back the results
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
+        .def("get_J", &GridModel::get_J)
+        .def("check_solution", &GridModel::check_solution)
 
         // TODO optimize that for speed, results are copied apparently
         .def("get_loads_res", &GridModel::get_loads_res)
@@ -188,6 +272,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_trafohv_res", &GridModel::get_trafohv_res)
         .def("get_trafolv_res", &GridModel::get_trafolv_res)
         .def("get_trafo_status", &GridModel::get_trafo_status)
+        .def("get_storages_res", &GridModel::get_storages_res)
+        .def("get_storages_status", &GridModel::get_storages_status)
 
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
@@ -211,6 +297,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("update_loads_p", &GridModel::update_loads_p)
         .def("update_loads_q", &GridModel::update_loads_q)
         .def("update_topo", &GridModel::update_topo)
+        .def("update_storages_p", &GridModel::update_storages_p)
+
         // auxiliary functions
         .def("set_n_sub", &GridModel::set_n_sub)
         .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect)
@@ -219,12 +307,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_line_ex_pos_topo_vect", &GridModel::set_line_ex_pos_topo_vect)
         .def("set_trafo_hv_pos_topo_vect", &GridModel::set_trafo_hv_pos_topo_vect)
         .def("set_trafo_lv_pos_topo_vect", &GridModel::set_trafo_lv_pos_topo_vect)
+        .def("set_storage_pos_topo_vect", &GridModel::set_storage_pos_topo_vect)
         .def("set_load_to_subid", &GridModel::set_load_to_subid)
         .def("set_gen_to_subid", &GridModel::set_gen_to_subid)
         .def("set_line_or_to_subid", &GridModel::set_line_or_to_subid)
         .def("set_line_ex_to_subid", &GridModel::set_line_ex_to_subid)
         .def("set_trafo_hv_to_subid", &GridModel::set_trafo_hv_to_subid)
         .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid)
+        .def("set_storage_to_subid", &GridModel::set_storage_to_subid)
         ;
 
 }

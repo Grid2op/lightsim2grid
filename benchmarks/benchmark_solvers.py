@@ -8,9 +8,12 @@
 
 import numpy as np
 import os
+import warnings
 
 from grid2op import make
 from grid2op.Agent import DoNothingAgent
+from grid2op.Chronics import ChangeNothing
+import re
 try:
     from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 except ImportError:
@@ -26,26 +29,43 @@ try:
     from tabulate import tabulate
     TABULATE_AVAIL = True
 except ImportError:
-    print("The tabluate package is not installed. Some output might not work properly")
-
-import pdb
+    print("The tabulate package is not installed. Some output might not work properly")
 
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
 
 
-def main(max_ts, ENV_NAME, test=True):
+def main(max_ts, env_name_input, test=True,
+         no_gs=False, no_gs_synch=False):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
-    env_pp = make(ENV_NAME, param=param, test=test,
-                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        if re.match("^.*\\.json$", env_name_input) is None:
+            # i provided an environment name
+            env_pp = make(env_name_input, param=param, test=test,
+                          data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+            env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
+                                data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+        else:
+            # I provided an environment path
+            env_pp = make("blank", param=param, test=True,
+                          data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                          grid_path=env_name_input
+                          )
+            env_lightsim = make("blank", param=param, test=True,
+                                backend=LightSimBackend(),
+                                data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                grid_path=env_name_input)
+            _, env_name_input = os.path.split(env_name_input)
+
     agent = DoNothingAgent(action_space=env_pp.action_space)
     nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
+    pp_comp_time = env_pp.backend.comp_time
     pp_time_pf = env_pp._time_powerflow
+
     wst = True  # print extra info in the run_env function
-    env_lightsim = make(ENV_NAME, backend=LightSimBackend(), param=param, test=test,
-                        data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
     solver_types = env_lightsim.backend.available_solvers
     if lightsim2grid.SolverType.KLU in solver_types:
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.KLU)
@@ -61,7 +81,8 @@ def main(max_ts, ENV_NAME, test=True):
                                                                      with_type_solver=wst, env_seed=0)
         slu_comp_time = env_lightsim.backend.comp_time
         slu_time_pf = env_lightsim._time_powerflow
-    if lightsim2grid.SolverType.GaussSeidel in solver_types:
+
+    if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidel)
         env_lightsim.backend.set_solver_max_iter(10000)
         nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs = run_env(env_lightsim, max_ts, agent, chron_id=0,
@@ -69,52 +90,80 @@ def main(max_ts, ENV_NAME, test=True):
         gs_comp_time = env_lightsim.backend.comp_time
         gs_time_pf = env_lightsim._time_powerflow
 
+    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
+        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidelSynch)
+        env_lightsim.backend.set_solver_max_iter(10000)
+        nb_ts_gsa, time_gsa, aor_gsa, gen_p_gsa, gen_q_gsa = run_env(env_lightsim, max_ts, agent, chron_id=0,
+                                                                     with_type_solver=wst, env_seed=0)
+        gsa_comp_time = env_lightsim.backend.comp_time
+        gsa_time_pf = env_lightsim._time_powerflow
+
     # NOW PRINT THE RESULTS
-    env_name = get_env_name_displayed(ENV_NAME)
+    env_name = get_env_name_displayed(env_name_input)
     hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op powerflow time (ms)", f"solver powerflow time (ms)"]
     tab = [["PP", int(nb_ts_pp/time_pp),
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
-            f"{1000.*pp_time_pf/nb_ts_pp:.2e}"]]
-    if lightsim2grid.SolverType.GaussSeidel:
+            f"{1000.*pp_comp_time/nb_ts_pp:.2e}"]]
+    if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
         tab.append(["LS+GS", int(nb_ts_gs/time_gs),
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"])
-    if lightsim2grid.SolverType.SparseLU:
+    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
+        tab.append(["LS+GS S", int(nb_ts_gsa/time_gsa),
+                    f"{1000.*gsa_time_pf/nb_ts_gsa:.2e}",
+                    f"{1000.*gsa_comp_time/nb_ts_gsa:.2e}"])
+    if lightsim2grid.SolverType.SparseLU in solver_types:
         tab.append(["LS+SLU", int(nb_ts_slu/time_slu),
                     f"{1000.*slu_time_pf/nb_ts_slu:.2e}",
                     f"{1000.*slu_comp_time/nb_ts_slu:.2e}"])
-    if lightsim2grid.SolverType.KLU:
+    if lightsim2grid.SolverType.KLU in solver_types:
         tab.append(["LS+KLU", int(nb_ts_klu/time_klu),
                     f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
-    res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
-    print(res_use_with_grid2op_1)
+
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
+        print(res_use_with_grid2op_1)
+    else:
+        print(tab)
     print()
 
-    res_github_readme = tabulate(tab, headers=hds,  tablefmt="github")
-    print(res_github_readme)
+    if TABULATE_AVAIL:
+        res_github_readme = tabulate(tab, headers=hds,  tablefmt="github")
+        print(res_github_readme)
+    else:
+        print(tab)
     print()
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
     tab = [["PP", "0.00", "0.00", "0.00"]]
-    if lightsim2grid.SolverType.GaussSeidel:
+    if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
         tab.append(["LS+GS",
                     f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.SparseLU:
+    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
+        tab.append(["LS+GS S",
+                    f"{np.max(np.abs(aor_gsa - aor_pp)):.2e}",
+                    f"{np.max(np.abs(gen_p_gsa - gen_p_pp)):.2e}",
+                    f"{np.max(np.abs(gen_q_gsa - gen_q_pp)):.2e}"])
+    if lightsim2grid.SolverType.SparseLU in solver_types:
         tab.append(["LS+SLU",
                     f"{np.max(np.abs(aor_slu - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_slu - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_slu - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.KLU:
+    if lightsim2grid.SolverType.KLU in solver_types:
         tab.append(["LS+KLU",
                     f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
 
-    res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
-    print(res_use_with_grid2op_2)
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
+        print(res_use_with_grid2op_2)
+    else:
+        print(tab)
+    print()
 
 
 if __name__ == "__main__":
@@ -128,11 +177,18 @@ if __name__ == "__main__":
                         help='Maximum number of time steps for which the benchmark will be run.')
     parser.add_argument('--no_test', type=str2bool, nargs='?',
                         const=True, default=False,
-                        help='Do not use test environment for the benchmark (default False: use test environment)')
+                        help='Do not use \"test=True\" keyword argument when building the grid2op environments'
+                             ' for the benchmark (default False: use \"test=True\"  environment)')
+    parser.add_argument('--no_gs_synch', type=str2bool, nargs='?',
+                        const=True, default=False,
+                        help='Do not benchmark gauss seidel (synch) method (default: evaluate it)')
+    parser.add_argument('--no_gs', type=str2bool, nargs='?',
+                        const=True, default=False,
+                        help='Do not benchmark gauss seidel (regular) method (default: evaluate it)')
 
     args = parser.parse_args()
 
     max_ts = int(args.number)
     name = str(args.name)
     test_env = not args.no_test
-    main(max_ts, name, test_env)
+    main(max_ts, name, test_env, no_gs =args.no_gs, no_gs_synch=args.no_gs_synch)

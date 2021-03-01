@@ -19,13 +19,23 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
+/**
+This class is a container for all the powerlines on the grid.
+
+The convention used for the generator is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/line.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/line.html#electric-model
+
+**/
 class DataLine : public DataGeneric
 {
     public:
     typedef std::tuple<
-               std::vector<double>, // branch_r
-               std::vector<double>, // branch_x
-               std::vector<std::complex<double> >, // branch_h
+               std::vector<real_type>, // branch_r
+               std::vector<real_type>, // branch_x
+               std::vector<cplx_type>, // branch_h
                std::vector<int>, // branch_from_id
                std::vector<int>, // branch_to_id
                std::vector<bool> // status_
@@ -33,9 +43,9 @@ class DataLine : public DataGeneric
 
     DataLine() {};
 
-    void init(const Eigen::VectorXd & branch_r,
-              const Eigen::VectorXd & branch_x,
-              const Eigen::VectorXcd & branch_h,
+    void init(const RealVect & branch_r,
+              const RealVect & branch_x,
+              const CplxVect & branch_h,
               const Eigen::VectorXi & branch_from_id,
               const Eigen::VectorXi & branch_to_id
               );
@@ -64,17 +74,22 @@ class DataLine : public DataGeneric
     void change_bus_ex(int powerline_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_ex_id_, need_reset, nb_bus);}
     int get_bus_or(int powerline_id) {return _get_bus(powerline_id, status_, bus_or_id_);}
     int get_bus_ex(int powerline_id) {return _get_bus(powerline_id, status_, bus_ex_id_);}
-    virtual void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    virtual void fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                          bool ac,
+                          const std::vector<int> & id_grid_to_solver,
+                          real_type sn_mva
+                          );
+    virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
-    void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                         const Eigen::Ref<Eigen::VectorXd> & Vm,
-                         const Eigen::Ref<Eigen::VectorXcd> & V,
+    void compute_results(const Eigen::Ref<RealVect> & Va,
+                         const Eigen::Ref<RealVect> & Vm,
+                         const Eigen::Ref<CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
-                         const Eigen::VectorXd & bus_vn_kv);
+                         const RealVect & bus_vn_kv,
+                         real_type sn_mva);
     void reset_results();
-    virtual double get_p_slack(int slack_bus_id);
-    virtual void get_q(std::vector<double>& q_by_bus);
+    virtual real_type get_p_slack(int slack_bus_id);
+    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
     tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
@@ -82,9 +97,9 @@ class DataLine : public DataGeneric
 
     protected:
         // physical properties
-        Eigen::VectorXd powerlines_r_;
-        Eigen::VectorXd powerlines_x_;
-        Eigen::VectorXcd powerlines_h_;
+        RealVect powerlines_r_;
+        RealVect powerlines_x_;
+        CplxVect powerlines_h_;
 
         // input data
         Eigen::VectorXi bus_or_id_;
@@ -92,14 +107,14 @@ class DataLine : public DataGeneric
         std::vector<bool> status_;
 
         //output data
-        Eigen::VectorXd res_powerline_por_;  // in MW
-        Eigen::VectorXd res_powerline_qor_;  // in MVar
-        Eigen::VectorXd res_powerline_vor_;  // in kV
-        Eigen::VectorXd res_powerline_aor_;  // in kA
-        Eigen::VectorXd res_powerline_pex_;  // in MW
-        Eigen::VectorXd res_powerline_qex_;  // in MVar
-        Eigen::VectorXd res_powerline_vex_;  // in kV
-        Eigen::VectorXd res_powerline_aex_;  // in kA
+        RealVect res_powerline_por_;  // in MW
+        RealVect res_powerline_qor_;  // in MVar
+        RealVect res_powerline_vor_;  // in kV
+        RealVect res_powerline_aor_;  // in kA
+        RealVect res_powerline_pex_;  // in MW
+        RealVect res_powerline_qex_;  // in MVar
+        RealVect res_powerline_vex_;  // in kV
+        RealVect res_powerline_aex_;  // in kA
 };
 
 #endif  //DATALINE_H

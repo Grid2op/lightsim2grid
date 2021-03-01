@@ -18,6 +18,24 @@ from grid2op.Agent import RecoPowerlineAgent
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 
+import timeit
+
+DETAILED_TIMER_INFO = False
+
+
+def timer(verbose):
+    def timer_inner(function):
+        def new_function(*args, **kwargs):
+            if verbose:
+                print('"{name}"'.format(name=function.__name__))
+            start_time = timeit.default_timer()
+            function(*args, **kwargs)
+            elapsed = timeit.default_timer() - start_time
+            if verbose:
+                print('\t\t"{name}", {time:.3f}s'.format(name=function.__name__, time=elapsed))
+        return new_function
+    return timer_inner
+
 
 class TestRunner(HelperTests):
     """Test that i can use all functionalities of the grid2op runner (including execution in multi processing)"""
@@ -26,7 +44,7 @@ class TestRunner(HelperTests):
         self.path_chron = PATH_ADN_CHRONICS_FOLDER
         self.parameters_path = None
         self.max_iter = 10
-        self.real_reward = dt_float(199.99800)
+        self.real_reward = dt_float(179.99818)
         self.names_chronics_to_backend = {"loads": {"2_C-10.61": 'load_1_0', "3_C151.15": 'load_2_1',
                                                     "14_C63.6": 'load_13_2', "4_C-9.47": 'load_3_3',
                                                     "5_C201.84": 'load_4_4',
@@ -48,21 +66,28 @@ class TestRunner(HelperTests):
                                           }
         self.gridStateclass = Multifolder
         self.backendClass = LightSimBackend
-        self.runner = Runner(init_grid_path=self.init_grid_path,
-                             path_chron=self.path_chron,
-                             parameters_path=self.parameters_path,
-                             names_chronics_to_backend=self.names_chronics_to_backend,
-                             gridStateclass=self.gridStateclass,
-                             backendClass=self.backendClass,
-                             rewardClass=L2RPNReward,
-                             max_iter=self.max_iter,
-                             name_env="test_runner_env")
 
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.runner = Runner(init_grid_path=self.init_grid_path,
+                                 path_chron=self.path_chron,
+                                 parameters_path=self.parameters_path,
+                                 names_chronics_to_backend=self.names_chronics_to_backend,
+                                 gridStateclass=self.gridStateclass,
+                                 backendClass=self.backendClass,
+                                 rewardClass=L2RPNReward,
+                                 max_iter=self.max_iter,
+                                 name_env="test_runner_env")
+
+    @timer(DETAILED_TIMER_INFO)
     def test_one_episode(self):
-        _, cum_reward, timestep = self.runner.run_one_episode(max_iter=self.max_iter)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            _, cum_reward, timestep, ep_data = self.runner.run_one_episode(max_iter=self.max_iter)
         assert int(timestep) == self.max_iter
         assert np.abs(cum_reward - self.real_reward) <= self.tol_one
 
+    @timer(DETAILED_TIMER_INFO)
     def test_one_process_par(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -70,17 +95,21 @@ class TestRunner(HelperTests):
         assert len(res) == 1
         _, el1, el2, el3, el4 = res[0]
         assert el1 == "1"
-        assert np.abs(el2 - 199.9980010986328) <= self.tol_one
+        assert np.abs(el2 - self.real_reward) <= self.tol_one
         assert el3 == 10
         assert el4 == 10
 
+    @timer(DETAILED_TIMER_INFO)
     def test_2episode(self):
-        res = self.runner._run_sequential(nb_episode=2, max_iter=self.max_iter)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            res = self.runner._run_sequential(nb_episode=2, max_iter=self.max_iter)
         assert len(res) == 2
         for i, _, cum_reward, timestep, total_ts in res:
             assert int(timestep) == self.max_iter
             assert np.abs(cum_reward - self.real_reward) <= self.tol_one
 
+    @timer(DETAILED_TIMER_INFO)
     def test_2episode_2process(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -90,6 +119,7 @@ class TestRunner(HelperTests):
             assert int(timestep) == self.max_iter
             assert np.abs(cum_reward - self.real_reward) <= self.tol_one
 
+    @timer(DETAILED_TIMER_INFO)
     def test_complex_agent(self):
         nb_episode = 4
         with warnings.catch_warnings():

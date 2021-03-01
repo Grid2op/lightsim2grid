@@ -4,6 +4,7 @@ import pandapower.networks as pn
 import pandapower as pp
 
 from lightsim2grid.initGridModel import init
+import warnings
 import pdb
 
 
@@ -12,13 +13,19 @@ class BaseTests:
         self.net_ref = pn.case118()
         self.net_datamodel = pn.case118()
 
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(self.net_datamodel)
+
         # initialize constant stuff
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 1e-5  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
 
         # initialize and use converters
-        self.model = init(self.net_datamodel)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.model = init(self.net_datamodel)
 
     def assert_equal(self, tmp, ref, error=""):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
@@ -88,7 +95,9 @@ class BaseTests:
         return self.model.compute_newton(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-        pp.runpp(net, init="flat")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(net, init="flat")
 
     def do_i_skip(self, func_name):
         # self.skipTest("dev")
@@ -353,7 +362,9 @@ class MakeDCTests(BaseTests, unittest.TestCase):
         return self.model.dc_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-        pp.rundcpp(net, init="flat")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.rundcpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
         #self.skipTest("dev")
@@ -378,7 +389,10 @@ class MakeACTests(BaseTests, unittest.TestCase):
         return self.model.ac_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-        pp.runpp(net, init="flat")
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(net, init="flat")
 
     def do_i_skip(self, test_nm):
         pass

@@ -8,13 +8,13 @@
 
 #include "DCSolver.h"
 
-bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                          Eigen::VectorXcd & V,
-                          const Eigen::VectorXcd & Sbus,
+bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                          CplxVect & V,
+                          const CplxVect & Sbus,
                           const Eigen::VectorXi & pv,
                           const Eigen::VectorXi & pq,
                           int max_iter,
-                          double tol
+                          real_type tol
                           )
 {
     // max_iter is ignored
@@ -25,11 +25,11 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     auto timer = CustTimer();
     int nb_bus_solver = Ybus.rows();
 
-    Eigen::SparseMatrix<double> dcYbus = Eigen::SparseMatrix<double>(nb_bus_solver - 1, nb_bus_solver - 1);
+    Eigen::SparseMatrix<real_type> dcYbus = Eigen::SparseMatrix<real_type>(nb_bus_solver - 1, nb_bus_solver - 1);
 
-    Eigen::SparseMatrix<cdouble> dcYbus_tmp = Ybus;
+    Eigen::SparseMatrix<cplx_type> dcYbus_tmp = Ybus;
     dcYbus_tmp.makeCompressed();
-    const Eigen::VectorXcd & Sbus_tmp = Sbus;
+    const CplxVect & Sbus_tmp = Sbus;
 
     // find the slack bus
     int slack_bus_id_solver = extract_slack_bus_id(pv, pq, nb_bus_solver);
@@ -37,25 +37,25 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     // remove the slack bus from Ybus
     // and extract only real part
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
-    std::vector<Eigen::Triplet<double> > tripletList;
+    std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(dcYbus_tmp.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
-        for (Eigen::SparseMatrix<cdouble>::InnerIterator it(dcYbus_tmp, k); it; ++it)
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dcYbus_tmp, k); it; ++it)
         {
             int row_res = it.row();
             if(row_res == slack_bus_id_solver) continue;
             row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
             int col_res = it.col();
             col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
-            tripletList.push_back(Eigen::Triplet<double> (row_res, col_res, std::real(it.value())));
+            tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }
     }
     dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
     dcYbus.makeCompressed();
 
     // initialize the solver
-    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> >  dc_solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  dc_solver;
     dc_solver.analyzePattern(dcYbus);
     dc_solver.factorize(dcYbus);
     if(dc_solver.info() != Eigen::Success) {
@@ -66,7 +66,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     }
 
     // remove the slack bus from Sbus
-    Eigen::VectorXd dcSbus = Eigen::VectorXd::Constant(nb_bus_solver - 1, 0.);
+    RealVect dcSbus = RealVect::Constant(nb_bus_solver - 1, my_zero_);
     for (int k=0; k < nb_bus_solver; ++k){
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
         int col_res = k;
@@ -75,7 +75,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     }
 
     // solve for theta: Sbus = dcY . theta
-    Eigen::VectorXd Va_dc_without_slack = dc_solver.solve(dcSbus);
+    RealVect Va_dc_without_slack = dc_solver.solve(dcSbus);
     if(dc_solver.info() != Eigen::Success) {
         // solving failed, this should not happen in dc ...
         // matrix is not connected
@@ -87,7 +87,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     // retrieve back the results in the proper shape (add back the slack bus)
     // TODO have a better way for this, for example using `.segment(0,npv)`
     // see the BaseSolver.cpp: _evaluate_Fx
-    Eigen::VectorXd Va_dc = Eigen::VectorXd::Constant(nb_bus_solver, 0.);
+    RealVect Va_dc = RealVect::Constant(nb_bus_solver, my_zero_);
     // fill Va from dc approx
     for (int bus_id_with_slack=0; bus_id_with_slack < nb_bus_solver; ++bus_id_with_slack){
         if(bus_id_with_slack == slack_bus_id_solver) continue;  // slack bus is handled elsewhere
@@ -99,15 +99,15 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     // save the results
     Va_ = Va_dc;
     // add the Voltage setpoints of the generator
-    Vm_ = Eigen::VectorXd::Constant(V.size(), 1.0);
-    Vm_(pv) = V(pv).array().abs();
+    Vm_ = V.array().abs(); // RealVect::Constant(V.size(), my_one_);
+    //    Vm_(pv) = V(pv).array().abs();
     Vm_(slack_bus_id_solver) = std::abs(V(slack_bus_id_solver));
 
     // now compute the resulting complex voltage
-    V_ = (Va_.array().cos().cast<cdouble>() + my_i * Va_.array().sin().cast<cdouble>());
+    V_ = (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>());
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
-
+    V = V_;
     timer_total_nr_ += timer.duration();
     return true;
 }

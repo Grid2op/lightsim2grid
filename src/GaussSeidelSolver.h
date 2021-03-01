@@ -19,31 +19,26 @@ class GaussSeidelSolver : public BaseSolver
         ~GaussSeidelSolver(){}
 
         // todo  can be factorized
-        Eigen::SparseMatrix<double> get_J(){
+        Eigen::SparseMatrix<real_type> get_J(){
             throw std::runtime_error("get_J: There is no jacobian in the Gauss Seidel method");
         }
 
         // todo change the name!
-        bool compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                        Eigen::VectorXcd & V,
-                        const Eigen::VectorXcd & Sbus,
+        virtual
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                        CplxVect & V,
+                        const CplxVect & Sbus,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
-                        double tol
+                        real_type tol
                         ) ;
-
 
     protected:
 
-
-        void one_iter_all_at_once(Eigen::VectorXcd & tmp_Sbus,
-                                  const Eigen::SparseMatrix<cdouble> & Ybus,
-                                  const Eigen::VectorXi & pv,
-                                  const Eigen::VectorXi & pq
-                                  );
-        void one_iter(Eigen::VectorXcd & tmp_Sbus,
-                      const Eigen::SparseMatrix<cdouble> & Ybus,
+        virtual
+        void one_iter(CplxVect & tmp_Sbus,
+                      const Eigen::SparseMatrix<cplx_type> & Ybus,
                       const Eigen::VectorXi & pv,
                       const Eigen::VectorXi & pq
                       );

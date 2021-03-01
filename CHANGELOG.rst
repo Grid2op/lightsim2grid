@@ -1,19 +1,35 @@
 Change Log
 ===========
+
 [TODO]
 --------
+- switch c++ to float32 instead
 - improve speed
 - improve documentation
-- configure circleci
+- configure circleci (+ test compilation on clang, gcc and msvc)
 - easier building (get rid of the "make" part)
 - distribute pypi package
-- make dc approx available on all platform
+- code helm powerflow method
+- interface with gridpack (to enforce q limits for example)
 
-[0.4.1] 2020-11-xx
+[0.5.0] 2021-03-01
 -------------------
 - [FIXED] a compilation issue on macos
+- [FIXED] a compilation issue on windows (missing import of vector in `DataConverter.h`)
 - [FIXED] an import issue (with `lightsim2grid.SolverType`)
+- [FIXED] a bug that lead to the wrong computation of the ratio of the trafo when the tap on hv side.
+- [FIXED] wrong timing was measured in the "solver powerflow time" of pandapower in the benchmarks
+- [FIXED] a broken handling of shunt modification (wrong bus was assigned)
+- [FIXED] an issue in `LightSimBackend.copy` that prevent the copied environment from being reset.
+- [FIXED] errors are now raised when pandapower grid cannot be converted in lightsim2grid (*eg.* when
+  unsupported elements are present)
+- [ADDED] a variant of the Gauss Seidel method which does the update in a "synchronous" fashion
+- [ADDED] a function that, given a complex vector is able to check kicchoff's law violation.
+- [ADDED] Support for phase shifter (modeled as trafo with an extra parameter `shift`)
+- [ADDED] Experimental support for `sn_mva` pandapower parameter.
 - [UPDATED] github issue template
+- [IMPROVED] warnings are issued when some of the pandapowergrid attributes have been automatically replaced
+  when converting to / from pandapower
 
 [0.4.0] - 2020-10-26
 ---------------------

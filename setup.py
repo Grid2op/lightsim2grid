@@ -47,7 +47,7 @@ def has_flag(compiler, flagname):
 
 def cpp_flag(compiler):
     """Return the -std=c++[11/14/17] compiler flag.
-    The newer version is prefered over c++11 (when it is available).
+    The newer version is preferred over c++11 (when it is available).
 
     @author: Sylvain Corlay
     """
@@ -84,7 +84,7 @@ class BuildExt(build_ext):
         opts = self.c_opts.get(ct, [])
         link_opts = self.l_opts.get(ct, [])
         if ct == 'unix':
-            opts.append('-DVERSION_INFO="%s"' % self.distribution.get_version())
+            opts.append("-DVERSION_INFO=\"%s\"" % self.distribution.get_version())
             opts.append(cpp_flag(self.compiler))
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
@@ -106,7 +106,7 @@ LIBS = ["{}/KLU/Lib/libklu.a",
         "{}/COLAMD/Lib/libcolamd.a",
         "{}/CXSparse/Lib/libcxsparse.a",
         "{}/SuiteSparse_config/libsuitesparseconfig.a"
-       ]
+        ]
 LIBS = [el.format(suitesparse_path) for el in LIBS]
 exists_libs = True
 for el in LIBS:
@@ -170,10 +170,24 @@ elif sys.platform.startswith("win32"):
 # extra_compile_args_tmp += ["-DEIGEN_USE_BLAS", "-DEIGEN_USE_LAPACKE"]
 
 extra_compile_args = extra_compile_args_tmp
-src_files = ['src/main.cpp', "src/SparseLUSolver.cpp", "src/GridModel.cpp", "src/DataConverter.cpp",
-             "src/DataLine.cpp", "src/DataGeneric.cpp", "src/DataShunt.cpp", "src/DataTrafo.cpp",
-             "src/DataLoad.cpp", "src/DataGen.cpp", "src/BaseNRSolver.cpp", "src/ChooseSolver.cpp",
-             "src/GaussSeidelSolver.cpp", "src/BaseSolver.cpp", "src/DCSolver.cpp"]
+src_files = ['src/main.cpp',
+             "src/SparseLUSolver.cpp",
+             "src/BaseConstants.cpp",
+             "src/GridModel.cpp",
+             "src/DataConverter.cpp",
+             "src/DataLine.cpp",
+             "src/DataGeneric.cpp",
+             "src/DataShunt.cpp",
+             "src/DataTrafo.cpp",
+             "src/DataLoad.cpp",
+             "src/DataGen.cpp",
+             "src/DataSGen.cpp",
+             "src/BaseNRSolver.cpp",
+             "src/ChooseSolver.cpp",
+             "src/GaussSeidelSolver.cpp",
+             "src/GaussSeidelSynchSolver.cpp",
+             "src/BaseSolver.cpp",
+             "src/DCSolver.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
@@ -207,9 +221,22 @@ pkgs = {
             "autodocsumm>=0.1.13",
             # "m2r"
             "recommonmark",
+        ],
+        "benchmark": [
+            "tabulate"
+        ],
+        "recommended": [
+            "grid2op>=1.5.0"
+        ],
+        "test": [
+            "grid2op>=1.5.0"
         ]
     }
 }
+
+this_directory = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
 
 setup(name='LightSim2Grid',
       version=__version__,
@@ -217,16 +244,15 @@ setup(name='LightSim2Grid',
       author_email='benjamin.donnot@rte-france.com',
       url='https://github.com/BDonnot/lightsim2grid/',
       description='LightSim2Grid implements a c++ backend targeting the Grid2Op platform.',
-      long_description='LightSim2Grid implements a backend for the Grid2Op platform written in c++ using state of the '
-                       'art libraries, mainly "c++ Eigen" and "Suitesparse". See "DISCLAIMER.md" for disclaimers about '
-                       'its usage.',
+      long_description=long_description,
+      long_description_content_type='text/markdown',
       ext_modules=ext_modules,
       install_requires=pkgs["required"],
       extras_require=pkgs["extras"],
       setup_requires=['pybind11>=2.4'],
       cmdclass={'build_ext': BuildExt},
       zip_safe=False,
-      packages=['lightsim2grid'],
+      packages=setuptools.find_packages(),
       keywords='pandapower powergrid simulator KLU Eigen c++',
       classifiers=[
             'Development Status :: 4 - Beta',
@@ -239,4 +265,4 @@ setup(name='LightSim2Grid',
             "Intended Audience :: Science/Research",
             "Natural Language :: English"
       ]
-)
+     )

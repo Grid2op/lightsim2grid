@@ -35,7 +35,7 @@ void KLUSolver::initialize(){
     timer_solve_ += timer.duration();
 }
 
-void KLUSolver::solve(Eigen::VectorXd & b, bool has_just_been_inialized){
+void KLUSolver::solve(RealVect & b, bool has_just_been_inialized){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const

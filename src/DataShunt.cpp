@@ -7,9 +7,10 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataShunt.h"
+#include <iostream>
 
-void DataShunt::init(const Eigen::VectorXd & shunt_p_mw,
-                     const Eigen::VectorXd & shunt_q_mvar,
+void DataShunt::init(const RealVect & shunt_p_mw,
+                     const RealVect & shunt_q_mvar,
                      const Eigen::VectorXi & shunt_bus_id)
 {
     p_mw_ = shunt_p_mw;
@@ -21,8 +22,8 @@ void DataShunt::init(const Eigen::VectorXd & shunt_p_mw,
 
 DataShunt::StateRes DataShunt::get_state() const
 {
-     std::vector<double> p_mw(p_mw_.begin(), p_mw_.end());
-     std::vector<double> q_mvar(q_mvar_.begin(), q_mvar_.end());
+     std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
+     std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
      DataShunt::StateRes res(p_mw, q_mvar, bus_id, status);
@@ -32,40 +33,69 @@ void DataShunt::set_state(DataShunt::StateRes & my_state )
 {
     reset_results();
 
-    std::vector<double> & p_mw = std::get<0>(my_state);
-    std::vector<double> & q_mvar = std::get<1>(my_state);
+    std::vector<real_type> & p_mw = std::get<0>(my_state);
+    std::vector<real_type> & q_mvar = std::get<1>(my_state);
     std::vector<int> & bus_id = std::get<2>(my_state);
     std::vector<bool> & status = std::get<3>(my_state);
     // TODO check sizes
 
     // input data
-    p_mw_ = Eigen::VectorXd::Map(&p_mw[0], p_mw.size());
-    q_mvar_ = Eigen::VectorXd::Map(&q_mvar[0], q_mvar.size());
+    p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
+    q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
     status_ = status;
 }
 
-void DataShunt::fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                         bool ac,
+                         const std::vector<int> & id_grid_to_solver,
+                         real_type sn_mva){
     int nb_shunt = q_mvar_.size();
-    cdouble tmp;
+    cplx_type tmp;
     int bus_id_me, bus_id_solver;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = p_mw_(shunt_id) + my_i * q_mvar_(shunt_id);
+        tmp = {p_mw_(shunt_id), my_zero_};
+        if(ac) tmp += my_i * q_mvar_(shunt_id);
+
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             throw std::runtime_error("GridModel::fillYbusShunt: A shunt is connected to a disconnected bus.");
         }
-        res.push_back(Eigen::Triplet<cdouble> (bus_id_solver, bus_id_solver, -tmp));
+        if(sn_mva != 1.) tmp /= sn_mva;
+        res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, -tmp));
     }
 }
-void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver){
+
+void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver)  // in DC i need that
+{
+    if(ac) return;  // in AC I do not do that
+    std::cout << " ok i use this function" << std::endl;
+    // - bus[:, GS] / baseMVA  # in pandapower
+    // yish=gish+jbish -> so g is the MW !
     int nb_shunt = q_mvar_.size();
-    cdouble tmp;
+    cplx_type tmp;
+    int bus_id_me, bus_id_solver;
+    for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+        // i don't do anything if the shunt is disconnected
+        if(!status_[shunt_id]) continue;
+        bus_id_me = bus_id_(shunt_id);
+        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            throw std::runtime_error("GridModel::fillSbus: A shunt is connected to a disconnected bus.");
+        }
+        Sbus.coeffRef(bus_id_solver) -= p_mw_(shunt_id);
+    }
+}
+
+void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
+    int nb_shunt = q_mvar_.size();
+    //TODO this is no more used!!!! see the other fillYbus
+    cplx_type tmp;
     int bus_id_me, bus_id_solver;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
@@ -80,18 +110,20 @@ void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cdouble> & res, bool ac, cons
         }
         res.coeffRef(bus_id_solver, bus_id_solver) -= tmp;
     }
+    //TODO this is no more used!!!! see the other fillYbus
 }
 
-void DataShunt::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                               const Eigen::Ref<Eigen::VectorXd> & Vm,
-                               const Eigen::Ref<Eigen::VectorXcd> & V,
-                               const std::vector<int> & id_grid_to_solver,
-                               const Eigen::VectorXd & bus_vn_kv)
+void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
+                                const Eigen::Ref<RealVect> & Vm,
+                                const Eigen::Ref<CplxVect> & V,
+                                const std::vector<int> & id_grid_to_solver,
+                                const RealVect & bus_vn_kv,
+                                real_type sn_mva)
 {
     int nb_shunt = p_mw_.size();
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-    res_p_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
-    res_q_ = Eigen::VectorXd::Constant(nb_shunt, 0.);
+    res_p_ = RealVect::Constant(nb_shunt, my_zero_);
+    res_q_ = RealVect::Constant(nb_shunt, my_zero_);
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
         if(!status_[shunt_id]) continue;
         int bus_id_me = bus_id_(shunt_id);
@@ -99,23 +131,23 @@ void DataShunt::compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
         if(bus_solver_id == _deactivated_bus_id){
             throw std::runtime_error("DataShunt::compute_results: A shunt is connected to a disconnected bus.");
         }
-        cdouble E = V(bus_solver_id);
-        cdouble y = -1.0 * (p_mw_(shunt_id) + my_i * q_mvar_(shunt_id));
-        cdouble I = y * E;
+        cplx_type E = V(bus_solver_id);
+        cplx_type y = -my_one_ * (p_mw_(shunt_id) + my_i * q_mvar_(shunt_id)) / sn_mva;
+        cplx_type I = y * E;
         I = std::conj(I);
-        cdouble s = E * I;
-        res_p_(shunt_id) = std::real(s);
-        res_q_(shunt_id) = std::imag(s);
+        cplx_type s = E * I;
+        res_p_(shunt_id) = std::real(s) * sn_mva;
+        res_q_(shunt_id) = std::imag(s) * sn_mva;
     }
 }
 
 void DataShunt::reset_results(){
-    res_p_ = Eigen::VectorXd();  // in MW
-    res_q_ = Eigen::VectorXd();  // in MVar
-    res_v_ = Eigen::VectorXd();  // in kV
+    res_p_ = RealVect();  // in MW
+    res_q_ = RealVect();  // in MVar
+    res_v_ = RealVect();  // in kV
 }
 
-void DataShunt::change_p(int shunt_id, double new_p, bool & need_reset)
+void DataShunt::change_p(int shunt_id, real_type new_p, bool & need_reset)
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected shunt");
@@ -124,7 +156,7 @@ void DataShunt::change_p(int shunt_id, double new_p, bool & need_reset)
 
 }
 
-void DataShunt::change_q(int shunt_id, double new_q, bool & need_reset)
+void DataShunt::change_q(int shunt_id, real_type new_q, bool & need_reset)
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
@@ -132,10 +164,10 @@ void DataShunt::change_q(int shunt_id, double new_q, bool & need_reset)
     q_mvar_(shunt_id) = new_q;
 }
 
-double DataShunt::get_p_slack(int slack_bus_id)
+real_type DataShunt::get_p_slack(int slack_bus_id)
 {
     int nb_element = nb();
-    double res = 0.;
+    real_type res = 0.;
     for(int shunt_id = 0; shunt_id < nb_element; ++shunt_id)
     {
         if(!status_[shunt_id]) continue;
@@ -144,7 +176,7 @@ double DataShunt::get_p_slack(int slack_bus_id)
     return res;
 }
 
-void DataShunt::get_q(std::vector<double>& q_by_bus)
+void DataShunt::get_q(std::vector<real_type>& q_by_bus)
 {
     int nb_element = nb();
     for(int shunt_id = 0; shunt_id < nb_element; ++shunt_id)

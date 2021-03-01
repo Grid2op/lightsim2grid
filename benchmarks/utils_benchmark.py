@@ -52,6 +52,9 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
     if with_type_solver:
         print(f"begin: {env.backend._grid.get_solver_type()}")
     nb_rows = min(env.chronics_handler.max_timestep(), max_ts)
+    if nb_rows == -1:
+        # -1 indicated "infinite data"
+        nb_rows = max_ts
     aor = np.zeros((nb_rows, env.n_line))
     gen_p = np.zeros((nb_rows, env.n_gen))
     gen_q = np.zeros((nb_rows, env.n_gen))

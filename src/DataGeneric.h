@@ -14,29 +14,71 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "Utils.h"
+#include "BaseConstants.h"
 
+// iterator type
+template<class DataType>
+class DataConstIterator
+{
+    protected:
+        typedef typename DataType::DataInfo DataInfo;
+
+        const DataType * const _p_data_;
+        int my_id;
+
+    public:
+        DataInfo my_info;
+
+        // functions
+        DataConstIterator(const DataType * const data_, int id):
+            _p_data_(data_),
+            my_id(id),
+            my_info(*data_, id)
+            {};
+
+        const DataInfo& operator*() const { return my_info; }
+        bool operator==(const DataConstIterator<DataType> & other) const { return (_p_data_ == other._p_data_) & (my_id == other.my_id); }
+        bool operator!=(const DataConstIterator<DataType> & other) const { return !(*this == other); }
+        DataConstIterator<DataType> & operator++()
+        {
+            ++my_id;
+            my_info = DataInfo(*_p_data_, my_id);
+            return *this;
+        }
+        DataConstIterator<DataType> & operator--()
+        {
+            --my_id;
+            my_info = DataInfo(*_p_data_, my_id);
+            return *this;
+        }
+        int size() const { return _p_data_->nb(); }
+};
+// end iterator type
+
+// TODO make this class iterable ! with operator begin, end and an iterator
 /**
 Base class for every object that can be manipulated
 **/
-class DataGeneric
+class DataGeneric : public BaseConstants
 {
     public:
 
-        virtual void fillYbus(std::vector<Eigen::Triplet<cdouble> > & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
-        virtual void fillYbus(Eigen::SparseMatrix<cdouble> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
-        virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
+        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                              bool ac,
+                              const std::vector<int> & id_grid_to_solver,
+                              real_type sn_mva) {};
+        virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
+        virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             int slack_bus_id_solver,
                             const std::vector<int> & id_grid_to_solver) {};
-        virtual double get_p_slack(int slack_bus_id) {return 0.;}
-        virtual void set_p_slack(int gen_slackbus, double p_slack) {};
-        virtual void get_q(std::vector<double>& q_by_bus) {};
+        virtual real_type get_p_slack(int slack_bus_id) {return my_zero_;}
+        virtual void set_p_slack(int gen_slackbus, real_type p_slack) {};
+        virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
     protected:
         static const int _deactivated_bus_id;
-        static const cdouble my_i;
 
         /**
         activation / deactivation of elements
@@ -49,19 +91,26 @@ class DataGeneric
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
         **/
-        void _get_amps(Eigen::VectorXd & a, const Eigen::VectorXd & p, const Eigen::VectorXd & q, const Eigen::VectorXd & v);
+        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v);
 
         /**
         **/
-        void v_kv_from_vpu(const Eigen::Ref<Eigen::VectorXd> & Va,
-                           const Eigen::Ref<Eigen::VectorXd> & Vm,
+        void v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
+                           const Eigen::Ref<RealVect> & Vm,
                            const std::vector<bool> & status,
                            int nb_element,
                            const Eigen::VectorXi & bus_me_id,
                            const std::vector<int> & id_grid_to_solver,
-                           const Eigen::VectorXd & bus_vn_kv,
-                           Eigen::VectorXd & v);
-
+                           const RealVect & bus_vn_kv,
+                           RealVect & v);
+        /**
+        check the size of the elements
+        **/
+        template<class T, class intType>
+        void check_size(const T & container, intType size, const std::string & container_name)
+        {
+            if(container.size() != size) throw std::runtime_error(container_name + " do not have the proper size");
+        }
 };
 
 #endif // DATAGENERIC_H

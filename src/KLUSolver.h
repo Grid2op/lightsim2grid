@@ -15,7 +15,6 @@
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
-#include <complex>      // std::complex, std::conj
 #include <cmath>  // for PI
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
@@ -60,7 +59,7 @@ class KLUSolver: public BaseNRSolver
         void initialize();
 
         virtual
-        void solve(Eigen::VectorXd & b, bool has_just_been_inialized);
+        void solve(RealVect & b, bool has_just_been_inialized);
 
     private:
         // solver initialization
@@ -82,20 +81,20 @@ class KLUSolver: public BaseNRSolver
         }
         void solve_old(Eigen::Ref<Eigen::VectorXi> Ap,
                     Eigen::Ref<Eigen::VectorXi> Ai,
-                    Eigen::Ref<Eigen::VectorXd> Ax,
-                    Eigen::Ref<Eigen::VectorXd> b){
+                    Eigen::Ref<RealVect> Ax,
+                    Eigen::Ref<RealVect> b){
             numeric_ = klu_factor(&Ap(0), &Ai(0), &Ax(0), symbolic_, &common_);
             klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
         }
 
         // TODO re add the references here for the last stuff
-        std::tuple<Eigen::VectorXd, Eigen::VectorXcd> one_iter_test(Eigen::SparseMatrix<double> J,
-                              Eigen::Ref<Eigen::VectorXd> F,
+        std::tuple<RealVect, CplxVect> one_iter_test(Eigen::SparseMatrix<real_type> J,
+                              Eigen::Ref<RealVect> F,
                               Eigen::VectorXi pv,
                               Eigen::VectorXi pq,
-                              Eigen::VectorXcd V,
-                              Eigen::SparseMatrix<cdouble>  Ybus,
-                              Eigen::VectorXcd Sbus
+                              CplxVect V,
+                              Eigen::SparseMatrix<cplx_type>  Ybus,
+                              CplxVect Sbus
                               ){
             //TODO do not use, for DEBUG only!!!
             // get the sizes for convenience
@@ -118,15 +117,15 @@ class KLUSolver: public BaseNRSolver
             }
 
             // TODO change here for not having to cast all the time ...
-            V = Vm_.array() * (Va_.array().cos().cast<cdouble>() + my_i * Va_.array().sin().cast<cdouble>() );
+            V = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
 
             F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
-            return std::tuple<Eigen::VectorXd, Eigen::VectorXcd>(F, V);
+            return std::tuple<RealVect, CplxVect>(F, V);
         }
 
-        Eigen::SparseMatrix<double>
-             create_jacobian_matrix_test(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                         const Eigen::VectorXcd & V,
+        Eigen::SparseMatrix<real_type>
+             create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                         const CplxVect & V,
                                          const Eigen::VectorXi & pq,
                                          const Eigen::VectorXi & pvpq
                                          ){
@@ -142,7 +141,7 @@ class KLUSolver: public BaseNRSolver
             return J_;
         }
 
-        bool initialize_test(Eigen::SparseMatrix<double > & J){
+        bool initialize_test(Eigen::SparseMatrix<real_type > & J){
             // default Eigen representation: column major, which is good for klu !
             // J is const here, even if it's not said in klu_analyze
             int n = J.cols(); // should be equal to J_.nrows()
@@ -159,32 +158,32 @@ class KLUSolver: public BaseNRSolver
             return res;
         }
 
-        std::tuple<Eigen::SparseMatrix<cdouble> , Eigen::SparseMatrix<cdouble> >
-                    _get_ds_test(Eigen::SparseMatrix<cdouble> & Ybus,
-                                Eigen::VectorXcd & V){
+        std::tuple<Eigen::SparseMatrix<cplx_type> , Eigen::SparseMatrix<cplx_type> >
+                    _get_ds_test(Eigen::SparseMatrix<cplx_type> & Ybus,
+                                CplxVect & V){
             BaseNRSolver::_dSbus_dV(Ybus, V);
-            auto res = std::tuple<Eigen::SparseMatrix<cdouble> , Eigen::SparseMatrix<cdouble> >(dS_dVm_, dS_dVa_);
+            auto res = std::tuple<Eigen::SparseMatrix<cplx_type> , Eigen::SparseMatrix<cplx_type> >(dS_dVm_, dS_dVa_);
             return res;
         }
 
-        void _dSbus_dV(Eigen::SparseMatrix<cdouble> & dS_dVm,
-                           Eigen::SparseMatrix<cdouble> & dS_dVa,
-                           const Eigen::Ref<const Eigen::SparseMatrix<cdouble> > & Ybus,
-                           const Eigen::Ref<const Eigen::VectorXcd > & V)
+        void _dSbus_dV(Eigen::SparseMatrix<cplx_type> & dS_dVm,
+                           Eigen::SparseMatrix<cplx_type> & dS_dVa,
+                           const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+                           const Eigen::Ref<const CplxVect > & V)
         {
             // "slow" implementation close to pypower, but with sparse matrix
             // TODO check i cannot optimize that with numba code in pandapower instead
             auto timer = CustTimer();
-            Eigen::VectorXcd Ibus = Ybus * V;
-            Eigen::SparseMatrix<cdouble> diagV = _make_diagonal_matrix(V);
+            CplxVect Ibus = Ybus * V;
+            Eigen::SparseMatrix<cplx_type> diagV = _make_diagonal_matrix(V);
 
-            Eigen::VectorXcd Ibus_conj = Ibus.conjugate();
-            Eigen::SparseMatrix<cdouble> diagIbus_conj = _make_diagonal_matrix(Ibus_conj);
+            CplxVect Ibus_conj = Ibus.conjugate();
+            Eigen::SparseMatrix<cplx_type> diagIbus_conj = _make_diagonal_matrix(Ibus_conj);
 
-            Eigen::VectorXcd Vnorm = V.array() / V.array().abs();
-            Eigen::SparseMatrix<cdouble> diagVnorm = _make_diagonal_matrix(Vnorm);
+            CplxVect Vnorm = V.array() / V.array().abs();
+            Eigen::SparseMatrix<cplx_type> diagVnorm = _make_diagonal_matrix(Vnorm);
 
-            Eigen::SparseMatrix<cdouble> tmp = Ybus * diagVnorm;
+            Eigen::SparseMatrix<cplx_type> tmp = Ybus * diagVnorm;
             tmp = tmp.conjugate();
             dS_dVm = diagV * tmp + diagIbus_conj * diagVnorm;
 
@@ -200,11 +199,11 @@ class KLUSolver: public BaseNRSolver
             timer_dSbus_ += timer.duration();
         }
 
-        Eigen::SparseMatrix<cdouble>
-            _make_diagonal_matrix(const Eigen::Ref<const Eigen::VectorXcd > & diag_val){
+        Eigen::SparseMatrix<cplx_type>
+            _make_diagonal_matrix(const Eigen::Ref<const CplxVect > & diag_val){
             // TODO their might be a more efficient way to do that
             auto n = diag_val.size();
-            Eigen::SparseMatrix<cdouble> res(n,n);
+            Eigen::SparseMatrix<cplx_type> res(n,n);
             // first method, without a loop of mine
             res.setIdentity();  // segfault if attempt to use this function without this
             res.diagonal() = diag_val;

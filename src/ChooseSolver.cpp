@@ -10,17 +10,17 @@
 #include <iostream>
 // template specialization
 template<SolverType ST>
-Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp()
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp()
 {
     throw std::runtime_error("Unknown solver type.");
 }
 template<>
-Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::SparseLU>()
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::SparseLU>()
 {
     return _solver_lu.get_V();
 }
 template<>
-Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::KLU>()
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -30,73 +30,90 @@ Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::KLU>()
     #endif
 }
 template<>
-Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>()
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>()
 {
     return _solver_gaussseidel.get_V();
 }
 template<>
-Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V_tmp<SolverType::DC>()
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidelSynch>()
+{
+    return _solver_gaussseidelsynch.get_V();
+}
+template<>
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::DC>()
 {
     return _solver_dc.get_V();
 }
 
 
 template<SolverType ST>
-bool ChooseSolver::compute_pf_tmp(const Eigen::SparseMatrix<cdouble> & Ybus,
-                                  Eigen::VectorXcd & V,
-                                  const Eigen::VectorXcd & Sbus,
+bool ChooseSolver::compute_pf_tmp(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                  CplxVect & V,
+                                  const CplxVect & Sbus,
                                   const Eigen::VectorXi & pv,
                                   const Eigen::VectorXi & pq,
                                   int max_iter,
-                                  double tol
+                                  real_type tol
                                   )
 {
     throw std::runtime_error("Unknown solver type.");
 }
 template<>
-bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
+bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
-                       double tol
+                       real_type tol
                        )
 {
     return _solver_lu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
 }
 template<>
-bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
+bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
-                       double tol
+                       real_type tol
                        )
 {
     return _solver_gaussseidel.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
 }
 template<>
-bool ChooseSolver::compute_pf_tmp<SolverType::DC>(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
+bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidelSynch>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
-                       double tol
+                       real_type tol
+                       )
+{
+    return _solver_gaussseidelsynch.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+}
+template<>
+bool ChooseSolver::compute_pf_tmp<SolverType::DC>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
+                       int max_iter,
+                       real_type tol
                        )
 {
     return _solver_dc.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
 }
 template<>
-bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdouble> & Ybus,
-                       Eigen::VectorXcd & V,
-                       const Eigen::VectorXcd & Sbus,
+bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
-                       double tol
+                       real_type tol
                        )
 {
     #ifndef KLU_SOLVER_AVAILABLE
@@ -108,27 +125,32 @@ bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cdo
 }
 
 template<SolverType ST>
-Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp()
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp()
 {
     throw std::runtime_error("Unknown solver type.");
 }
 template<>
-Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::SparseLU>()
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::SparseLU>()
 {
     return _solver_lu.get_J();
 }
 template<>
-Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::DC>()
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::DC>()
 {
     throw std::runtime_error("get_J: There is not Jacobian matrix for a DC powerflow.");
 }
 template<>
-Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>()
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>()
 {
     throw std::runtime_error("get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");
 }
 template<>
-Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::KLU>()
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::GaussSeidelSynch>()
+{
+    throw std::runtime_error("get_J: There is not Jacobian matrix for the GaussSeidelSynch powerflow.");
+}
+template<>
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -139,27 +161,32 @@ Eigen::SparseMatrix<double> ChooseSolver::get_J_tmp<SolverType::KLU>()
 }
 
 template<SolverType ST>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp()
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp()
 {
     throw std::runtime_error("Unknown solver type.");
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::SparseLU>()
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::SparseLU>()
 {
     return _solver_lu.get_Va();
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>()
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>()
 {
     return _solver_gaussseidel.get_Va();
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::DC>()
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidelSynch>()
+{
+    return _solver_gaussseidelsynch.get_Va();
+}
+template<>
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::DC>()
 {
     return _solver_dc.get_Va();
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::KLU>()
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -169,27 +196,32 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va_tmp<SolverType::KLU>()
     #endif
 }
 template<SolverType ST>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp()
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp()
 {
     throw std::runtime_error("Unknown solver type.");
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>()
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>()
 {
     return _solver_lu.get_Vm();
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::DC>()
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::DC>()
 {
     return _solver_dc.get_Vm();
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>()
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>()
 {
     return _solver_gaussseidel.get_Vm();
 }
 template<>
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidelSynch>()
+{
+    return _solver_gaussseidelsynch.get_Vm();
+}
+template<>
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -217,6 +249,12 @@ double ChooseSolver::get_computation_time_tmp<SolverType::GaussSeidel>()
     return std::get<3>(res);
 }
 template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::GaussSeidelSynch>()
+{
+    const auto & res =  _solver_gaussseidelsynch.get_timers();
+    return std::get<3>(res);
+}
+template<>
 double ChooseSolver::get_computation_time_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
@@ -236,7 +274,7 @@ double ChooseSolver::get_computation_time_tmp<SolverType::DC>()
 //TODO refactor all the functions above by making a template function "get_solver"
 
 // function definition
-Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V(){
+Eigen::Ref<CplxVect> ChooseSolver::get_V(){
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
@@ -245,6 +283,8 @@ Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V(){
          return get_V_tmp<SolverType::KLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_V_tmp<SolverType::GaussSeidel>();
+    }else if(_solver_type == SolverType::GaussSeidelSynch){
+         return get_V_tmp<SolverType::GaussSeidelSynch>();
     }else if(_solver_type == SolverType::DC){
          return get_V_tmp<SolverType::DC>();
     }else{
@@ -252,7 +292,7 @@ Eigen::Ref<Eigen::VectorXcd> ChooseSolver::get_V(){
     }
 }
 
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va(){
+Eigen::Ref<RealVect> ChooseSolver::get_Va(){
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
@@ -261,13 +301,15 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Va(){
          return get_Va_tmp<SolverType::KLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_Va_tmp<SolverType::GaussSeidel>();
+    }else if(_solver_type == SolverType::GaussSeidelSynch){
+         return get_Va_tmp<SolverType::GaussSeidelSynch>();
     }else if(_solver_type == SolverType::DC){
          return get_Va_tmp<SolverType::DC>();
     }else{
         throw std::runtime_error("Unknown solver type.");
     }
 }
-Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm(){
+Eigen::Ref<RealVect> ChooseSolver::get_Vm(){
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
@@ -276,6 +318,8 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm(){
          return get_Vm_tmp<SolverType::KLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_Vm_tmp<SolverType::GaussSeidel>();
+    }else if(_solver_type == SolverType::GaussSeidelSynch){
+         return get_Vm_tmp<SolverType::GaussSeidelSynch>();
     }else if(_solver_type == SolverType::DC){
          return get_Vm_tmp<SolverType::DC>();
     }else{
@@ -283,13 +327,13 @@ Eigen::Ref<Eigen::VectorXd> ChooseSolver::get_Vm(){
     }
 }
 
-bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
-                              Eigen::VectorXcd & V,
-                              const Eigen::VectorXcd & Sbus,
+bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                              CplxVect & V,
+                              const CplxVect & Sbus,
                               const Eigen::VectorXi & pv,
                               const Eigen::VectorXi & pq,
                               int max_iter,
-                              double tol
+                              real_type tol
                               )
 {
     _type_used_for_nr = _solver_type;
@@ -300,6 +344,8 @@ bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
         return compute_pf_tmp<SolverType::KLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::GaussSeidel){
         return compute_pf_tmp<SolverType::GaussSeidel>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    }else if(_solver_type == SolverType::GaussSeidelSynch){
+        return compute_pf_tmp<SolverType::GaussSeidelSynch>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::DC){
         return compute_pf_tmp<SolverType::DC>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else{
@@ -307,7 +353,7 @@ bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cdouble> & Ybus,
     }
 }
 
-Eigen::SparseMatrix<double> ChooseSolver::get_J(){
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J(){
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
@@ -316,6 +362,8 @@ Eigen::SparseMatrix<double> ChooseSolver::get_J(){
          return get_J_tmp<SolverType::KLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_J_tmp<SolverType::GaussSeidel>();
+    }else if(_solver_type == SolverType::GaussSeidelSynch){
+         return get_J_tmp<SolverType::GaussSeidelSynch>();
     }else if(_solver_type == SolverType::DC){
          return get_J_tmp<SolverType::DC>();
     }else{
@@ -333,6 +381,8 @@ double ChooseSolver::get_computation_time()
          return get_computation_time_tmp<SolverType::KLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_computation_time_tmp<SolverType::GaussSeidel>();
+    }else if(_solver_type == SolverType::GaussSeidelSynch){
+         return get_computation_time_tmp<SolverType::GaussSeidelSynch>();
     }else if(_solver_type == SolverType::DC){
          return get_computation_time_tmp<SolverType::DC>();
     }else{

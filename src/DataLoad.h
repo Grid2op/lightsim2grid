@@ -17,6 +17,19 @@
 #include "Utils.h"
 #include "DataGeneric.h"
 
+/**
+This class is a container for all loads on the grid.
+
+The convention used for the generator is the same as in pandapower:
+https://pandapower.readthedocs.io/en/latest/elements/load.html
+
+and for modeling of the Ybus matrix:
+https://pandapower.readthedocs.io/en/latest/elements/load.html#electric-model
+
+NOTE: this class is also used for the storage units! So storage units are modeled as load
+which entails that negative storage: the unit is discharging, power is injected in the grid,
+positive storage: the unit is charging, power is taken from the grid.
+**/
 class DataLoad : public DataGeneric
 {
     // TODO make a single class for load and shunt and just specialize the part where the
@@ -24,8 +37,8 @@ class DataLoad : public DataGeneric
 
     public:
     typedef std::tuple<
-       std::vector<double>, // p_mw
-       std::vector<double>, // q_mvar
+       std::vector<real_type>, // p_mw
+       std::vector<real_type>, // q_mvar
        std::vector<int>, // bus_id
        std::vector<bool> // status
        >  StateRes;
@@ -37,8 +50,8 @@ class DataLoad : public DataGeneric
     void set_state(DataLoad::StateRes & my_state );
 
 
-    void init(const Eigen::VectorXd & loads_p,
-              const Eigen::VectorXd & loads_q,
+    void init(const RealVect & loads_p,
+              const RealVect & loads_q,
               const Eigen::VectorXi & loads_bus_id
               );
 
@@ -48,19 +61,20 @@ class DataLoad : public DataGeneric
     void reactivate(int load_id, bool & need_reset) {_reactivate(load_id, status_, need_reset);}
     void change_bus(int load_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(load_id, new_bus_id, bus_id_, need_reset, nb_bus);}
     int get_bus(int load_id) {return _get_bus(load_id, status_, bus_id_);}
-    void change_p(int load_id, double new_p, bool & need_reset);
-    void change_q(int load_id, double new_q, bool & need_reset);
+    void change_p(int load_id, real_type new_p, bool & need_reset);
+    void change_q(int load_id, real_type new_q, bool & need_reset);
 
-    virtual void fillSbus(Eigen::VectorXcd & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
 
-    void compute_results(const Eigen::Ref<Eigen::VectorXd> & Va,
-                         const Eigen::Ref<Eigen::VectorXd> & Vm,
-                         const Eigen::Ref<Eigen::VectorXcd> & V,
+    void compute_results(const Eigen::Ref<RealVect> & Va,
+                         const Eigen::Ref<RealVect> & Vm,
+                         const Eigen::Ref<CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
-                         const Eigen::VectorXd & bus_vn_kv);
+                         const RealVect & bus_vn_kv,
+                         real_type sn_mva);
     void reset_results();
-    virtual double get_p_slack(int slack_bus_id);
-    virtual void get_q(std::vector<double>& q_by_bus);
+    virtual real_type get_p_slack(int slack_bus_id);
+    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     const std::vector<bool>& get_status() const {return status_;}
@@ -69,15 +83,15 @@ class DataLoad : public DataGeneric
         // physical properties
 
         // input data
-        Eigen::VectorXd p_mw_;
-        Eigen::VectorXd q_mvar_;
+        RealVect p_mw_;
+        RealVect q_mvar_;
         Eigen::VectorXi bus_id_;
         std::vector<bool> status_;
 
         //output data
-        Eigen::VectorXd res_p_;  // in MW
-        Eigen::VectorXd res_q_;  // in MVar
-        Eigen::VectorXd res_v_;  // in kV
+        RealVect res_p_;  // in MW
+        RealVect res_q_;  // in MVar
+        RealVect res_v_;  // in kV
 };
 
 #endif  //DATALOAD_H
