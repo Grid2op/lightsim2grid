@@ -25,7 +25,6 @@ jobs:
                     pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
-                    cd lightsim2grid
                     git submodule init
                     git submodule update
                     make
