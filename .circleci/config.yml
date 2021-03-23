@@ -26,7 +26,8 @@ executors:
         docker:
             - image: silkeh/clang:7
     windows_exec:
-        windows: circleci/windows@2.3.0
+        windows:
+            - image: circleci/windows@2.3.0
 
 jobs:
     compile_gcc10:
