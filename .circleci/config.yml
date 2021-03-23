@@ -25,6 +25,8 @@ executors:
     clang7:
         docker:
             - image: silkeh/clang:7
+    windows_exec:
+        windows: circleci/windows@2.3.0
 
 jobs:
     compile_gcc10:
@@ -37,7 +39,6 @@ jobs:
             - run:
                   command: |
                       source venv_test/bin/activate
-                      pip install -U numba
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -55,7 +56,6 @@ jobs:
             - run:
                   command: |
                       source venv_test/bin/activate
-                      pip install -U numba
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -73,7 +73,6 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -91,7 +90,6 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -109,7 +107,6 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -127,7 +124,6 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -145,7 +141,6 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -163,13 +158,28 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U numba
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
                     git submodule update
                     make
                     CC=clang python setup.py build
+                    python -m pip install -U .
+    compile_windows:
+        executor: windows_exec
+        steps:
+            - checkout
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    python setup.py build
                     python -m pip install -U .
 
 workflows:
@@ -184,3 +194,4 @@ workflows:
           - compile_clang8
           - compile_gcc7
           - compile_clang7
+          - compile_windows
