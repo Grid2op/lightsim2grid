@@ -6,11 +6,11 @@ executors:
             - image: gcc:8
       gcc_7:
           docker:
-                - image: gcc:7
+            - image: gcc:7
       gcc_6:
           docker:
-                - image: gcc:6
-                  
+            - image: gcc:6
+
 jobs:
     compile_gcc8:
         executor: gcc_8
