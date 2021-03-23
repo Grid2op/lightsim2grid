@@ -16,6 +16,15 @@ executors:
     clang10:
         docker:
             - image: silkeh/clang:10
+    clang9:
+        docker:
+            - image: silkeh/clang:9
+    clang8:
+        docker:
+            - image: silkeh/clang:8
+    clang7:
+        docker:
+            - image: silkeh/clang:7
 
 jobs:
     compile_gcc10:
@@ -106,7 +115,61 @@ jobs:
                     git submodule init
                     git submodule update
                     make
-                    CC=gcc python setup.py build
+                    CC=clang python setup.py build
+                    python -m pip install -U .
+    compile_clang9:
+        executor: clang9
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U numba
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    python -m pip install -U .
+    compile_clang8:
+        executor: clang8
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U numba
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    python -m pip install -U .
+    compile_clang7:
+        executor: clang7
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U numba
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
                     python -m pip install -U .
 
 workflows:
@@ -114,7 +177,7 @@ workflows:
     compile:
         jobs:
           - compile_gcc10
+          - compile_clang10
           - compile_gcc9
           - compile_gcc8
           - compile_gcc7
-          - compile_clang10
