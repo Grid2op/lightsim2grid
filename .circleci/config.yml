@@ -1,5 +1,9 @@
 version: 2.1
 
+orbs:
+    win: circleci/windows@2.2.0 # The Windows orb give you everything you need to start using the Windows executor.
+
+
 executors:
     gcc_10:
         docker:
@@ -25,9 +29,6 @@ executors:
     clang7:
         docker:
             - image: silkeh/clang:7
-    windows_exec:
-        windows:
-            - image: circleci/windows@2.3.0
 
 jobs:
     compile_gcc10:
@@ -167,7 +168,7 @@ jobs:
                     CC=clang python setup.py build
                     python -m pip install -U .
     compile_windows:
-        executor: windows_exec
+        executor: win/default  # executor type
         steps:
             - checkout
             - run: python3 -m pip install virtualenv
