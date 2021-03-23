@@ -16,7 +16,7 @@ jobs:
         executor: gcc_8
         steps:
             - checkout
-            - run: apt install -y python3
+            - run: apt-get update && apt-get install python3-pip -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
@@ -24,6 +24,7 @@ jobs:
                     source venv_test/bin/activate
                     pip install -U numba
                     pip install -U grid2op
+                    pip install -U pybind11
                     cd lightsim2grid
                     git submodule init
                     git submodule update
