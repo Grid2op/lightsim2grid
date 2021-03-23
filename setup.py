@@ -54,7 +54,8 @@ def cpp_flag(compiler):
     flags = ['-std=c++17', '-std=c++14', '-std=c++11']
 
     for flag in flags:
-        if has_flag(compiler, flag): return flag
+        if has_flag(compiler, flag):
+            return flag
 
     raise RuntimeError('Unsupported compiler -- at least C++11 support '
                        'is needed!')
@@ -81,6 +82,13 @@ class BuildExt(build_ext):
 
     def build_extensions(self):
         ct = self.compiler.compiler_type
+
+        # for debug option
+        print()
+        print("Compiler options used:")
+        print(self.compiler.compiler)
+        print()
+
         opts = self.c_opts.get(ct, [])
         link_opts = self.l_opts.get(ct, [])
         if ct == 'unix':
@@ -94,7 +102,6 @@ class BuildExt(build_ext):
             ext.extra_compile_args += opts
             ext.extra_link_args += link_opts
         build_ext.build_extensions(self)
-
 
 # Try to link against SuiteSparse (if available)
 # check that they exist
