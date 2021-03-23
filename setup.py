@@ -84,10 +84,11 @@ class BuildExt(build_ext):
         ct = self.compiler.compiler_type
 
         # for debug option
-        print()
-        print("Compiler options used:")
-        print(self.compiler.compiler)
-        print()
+        if hasattr(self.compiler, "compiler"):
+            print()
+            print("Compiler options used:")
+            print(self.compiler.compiler)
+            print()
 
         opts = self.c_opts.get(ct, [])
         link_opts = self.l_opts.get(ct, [])
