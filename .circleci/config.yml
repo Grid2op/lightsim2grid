@@ -13,9 +13,9 @@ executors:
     gcc_7:
         docker:
             - image: gcc:7
-    gcc_6:
+    clang11:
         docker:
-            - image: gcc:6
+            - image: silkeh/clang:11
 
 jobs:
     compile_gcc10:
@@ -90,8 +90,8 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
-    compile_gcc6:
-        executor: gcc_6
+    compile_clang11:
+        executor: clang11
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -117,4 +117,3 @@ workflows:
           - compile_gcc9
           - compile_gcc8
           - compile_gcc7
-          - compile_gcc6
