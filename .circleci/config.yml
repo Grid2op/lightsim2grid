@@ -179,5 +179,8 @@ workflows:
           - compile_gcc10
           - compile_clang10
           - compile_gcc9
+          - compile_clang9
           - compile_gcc8
+          - compile_clang8
           - compile_gcc7
+          - compile_clang7
