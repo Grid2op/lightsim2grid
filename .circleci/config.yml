@@ -171,8 +171,8 @@ jobs:
         executor: win/default  # executor type
         steps:
             - checkout
-            - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
+            - run: py -m pip install virtualenv
+            - run: py -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
@@ -181,8 +181,8 @@ jobs:
                     git submodule init
                     git submodule update
                     make
-                    python setup.py build
-                    python -m pip install -U .
+                    py setup.py build
+                    py -m pip install -U .
 
 workflows:
     version: 2.1
