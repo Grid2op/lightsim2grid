@@ -12,6 +12,12 @@ Change Log
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 
+[0.5.1] 2021-xx-yy
+-------------------
+- [FIXED] yet another compilation issue with clang (see
+  `Issue 22 <https://github.com/BDonnot/lightsim2grid/issues/22>`_)
+- [ADDED] circleci to check compilation for gcc (clang coming soon)
+
 [0.5.0] 2021-03-01
 -------------------
 - [FIXED] a compilation issue on macos

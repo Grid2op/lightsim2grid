@@ -1,6 +1,12 @@
 version: 2.1
 
 executors:
+    gcc_10:
+        docker:
+            - image: gcc:10
+    gcc_9:
+        docker:
+            - image: gcc:9
     gcc_8:
         docker:
             - image: gcc:8
@@ -12,8 +18,80 @@ executors:
             - image: gcc:6
 
 jobs:
+    compile_gcc10:
+        executor: gcc_10
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install -U numba
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
+    compile_gcc9:
+        executor: gcc_9
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install -U numba
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
     compile_gcc8:
         executor: gcc_8
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U numba
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=gcc python setup.py build
+                    python -m pip install -U .
+    compile_gcc7:
+        executor: gcc_7
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U numba
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=gcc python setup.py build
+                    python -m pip install -U .
+    compile_gcc6:
+        executor: gcc_6
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -35,4 +113,8 @@ workflows:
     version: 2.1
     compile:
         jobs:
+          - compile_gcc10
+          - compile_gcc9
           - compile_gcc8
+          - compile_gcc7
+          - compile_gcc6
