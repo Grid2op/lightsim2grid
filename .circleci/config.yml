@@ -13,9 +13,9 @@ executors:
     gcc_7:
         docker:
             - image: gcc:7
-    clang11:
+    clang10:
         docker:
-            - image: silkeh/clang:11
+            - image: silkeh/clang:10
 
 jobs:
     compile_gcc10:
@@ -90,8 +90,8 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
-    compile_clang11:
-        executor: clang11
+    compile_clang10:
+        executor: clang10
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
