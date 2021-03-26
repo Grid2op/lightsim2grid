@@ -402,6 +402,8 @@ if you want to use it again, you will have to download it again (see section `2.
 Finally, you can see the official documentation in case you need to uninstall docker completely from your system.
 
 ## Miscellaneous
+
+### Local testing
 And some official tests, to make sure the solver returns the same results as pandapower
 are performed in "lightsim2grid/tests"
 ```bash
@@ -420,3 +422,8 @@ cd Grid2Op
 pip3 install -U -e .
 cd ..
 ```
+### Tests performed automatically
+
+Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
+
+These tests include, for now, compilation on gcc (version 7, 8, 9 and 10) and clang (version 7, 8, 9 and 10).

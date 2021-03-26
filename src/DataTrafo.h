@@ -63,7 +63,7 @@ class DataTrafo : public DataGeneric
                 bus_lv_id(-1),
                 r(-1.0),
                 x(-1.0),
-                h({0., 0.}),
+                h(0., 0.),
                 is_tap_hv_side(true),
                 ratio(-1.0),
                 shift(-1.0),
