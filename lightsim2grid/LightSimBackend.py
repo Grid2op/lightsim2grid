@@ -328,7 +328,11 @@ class LightSimBackend(Backend):
         self.n_shunt = self.init_pp_backend.n_shunt
         self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
         self.name_shunt = self.init_pp_backend.name_shunt
-        self._sh_vnkv = self.init_pp_backend._sh_vnkv
+
+        if hasattr(self.init_pp_backend, "_sh_vnkv"):
+            # attribute has been added in grid2op ~1.3 or 1.4
+            self._sh_vnkv = self.init_pp_backend._sh_vnkv
+
         self.shunts_data_available = self.init_pp_backend.shunts_data_available
 
         # number of object per bus, to activate, deactivate them
@@ -379,8 +383,34 @@ class LightSimBackend(Backend):
         self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self)
         self._backend_action_class = _BackendAction.init_grid(self)
         self._init_action_to_set = self._backend_action_class()
-        _init_action_to_set = self.get_action_to_set()
+        try:
+            # feature added in grid2op 1.4 or 1.5
+            _init_action_to_set = self.get_action_to_set()
+        except TypeError:
+
+            _init_action_to_set = self._get_action_to_set_deprecated()
         self._init_action_to_set += _init_action_to_set
+
+    def _get_action_to_set_deprecated(self):
+        warnings.warn("DEPRECATION: grid2op <=1.4 is not well supported with lightsim2grid. Lots of bugs have been"
+                      "fixed since then. Please upgrade to grid2op >= 1.5",
+                      DeprecationWarning)
+        line_status = self.get_line_status()
+        line_status = 2 * line_status - 1
+        line_status = line_status.astype(dt_int)
+        topo_vect = self.get_topo_vect()
+        prod_p, _, prod_v = self.generators_info()
+        load_p, load_q, _ = self.loads_info()
+        complete_action_class = CompleteAction.init_grid(self)
+        set_me = complete_action_class()
+        set_me.update({"set_line_status": line_status,
+                       "set_bus": topo_vect})
+
+        #injs = {"prod_p": prod_p, "prod_v": prod_v,
+        #              "load_p": load_p, "load_q": load_q}}
+
+        # set_me.update({"injection": injs})
+        return set_me
 
     def _count_object_per_bus(self):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
