@@ -131,7 +131,7 @@ python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-Results were obtained with grid2op version 1.4.0.
+Results were obtained with grid2op version 1.5.0.
 
 
 We compare 5 different solvers:
@@ -155,47 +155,49 @@ We compare 5 different solvers:
 
 First on an environment based on the IEEE case14 grid:
 
-| rte_case14_realistic   |   grid2op speed (it/s) |   grid2op powerflow time (ms) |   solver powerflow time (ms) |
-|------------------------|------------------------|-------------------------------|------------------------------|
-| PP                     |                     67 |                        11.7   |                      11.7    |
-| LS+GS                  |                    853 |                         0.506 |                       0.389  |
-| LS+GS S                |                    830 |                         0.536 |                       0.419  |
-| LS+SLU                 |                   1131 |                         0.213 |                       0.0919 |
-| LS+KLU                 |                   1184 |                         0.174 |                       0.0528 |
+| case14_sandbox   |   grid2op speed (it/s) |   grid2op powerflow time (ms) |   solver powerflow time (ms) |
+|------------------|------------------------|-------------------------------|------------------------------|
+| PP               |                     67 |                        11.5   |                       4.38   |
+| LS+GS            |                    779 |                         0.481 |                       0.356  |
+| LS+GS S          |                    759 |                         0.51  |                       0.383  |
+| LS+SLU           |                    988 |                         0.205 |                       0.0771 |
+| LS+KLU           |                   1018 |                         0.177 |                       0.0473 |
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~1100 steps each second on the case 14 and
-"only" 66 for the default PandaPower Backend, leading to a speed up of **~17** in this case
-(lightsim2grid is ~17 times faster than Pandapower). For such a small environment, there is no difference in using 
+From a grid2op perspective, lightsim2grid allows to compute up to ~1000 steps each second on the case 14 and
+"only" 67 for the default PandaPower Backend, leading to a speed up of **~17** in this case
+(lightsim2grid is ~15 times faster than Pandapower). For such a small environment, there is no difference in using 
 KLU linear solver (not available on
-Windows based machine) compared to using the SparseLU solver of Eigen (1108 vs 1101 iterations on the reported
+Windows based machine) compared to using the SparseLU solver of Eigen (1018 vs 988 iterations on the reported
 runs, might slightly vary across runs)
 
 Then on an environment based on the IEEE case 118:
 
 | neurips_2020_track2   |   grid2op speed (it/s) |   grid2op powerflow time (ms) |   solver powerflow time (ms) |
 |-----------------------|------------------------|-------------------------------|------------------------------|
-| PP                    |                     38 |                        15     |                       15     |
-| LS+GS                 |                      5 |                       190     |                      190     |
-| LS+GS S               |                     32 |                        29.5   |                       29.2   |
-| LS+SLU                |                    485 |                         1.17  |                        0.865 |
-| LS+KLU                |                    697 |                         0.633 |                        0.353 |
+| PP                    |                     38 |                        13.9   |                        5.71  |
+| LS+GS                 |                      4 |                       201     |                      201     |
+| LS+GS S               |                     29 |                        32.3   |                       32     |
+| LS+SLU                |                    546 |                         0.932 |                        0.645 |
+| LS+KLU                |                    673 |                         0.586 |                        0.298 |
 
 For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU)
 [for now only available on linux and MacOS] is **~18** time faster than
-using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~13**
-times faster than using the default backend [the `LS+KLU` solver is ~2-3 times faster (`0.353` per powerflow compared
-to `0.865` ms for `LS+SLU`) than the `LS+SLU` solver, but it only translates to `LS+KLU` providing ~40% more
-iterations per second in the total program (`697` vs `485`) mainly because grid2op itself takes some times to modify the
+using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~14**
+times faster than using the default backend [the `LS+KLU` solver is ~2-3 times faster than the `LS+SLU` solver 
+(`0.298` ms per powerflow for `L2+KLU`  compared to `0.645` ms for `LS+SLU`), but it only translates to `LS+KLU` 
+providing ~20-25% more
+iterations per second in the total program (`673` vs `546`) mainly because grid2op itself takes some times to modify the
 grid and performs all the check it does.]
 
 If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
 initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.35ms**
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **15 ms** when using
-the PandaPowerBackend (speed up of **~43** times)
+grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.30ms**
+to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **5.7 ms** when using
+the PandaPowerBackend (speed up of **~20** times)
 
-(**NB** pandapower performances heavily depends on the pandas version used, we used here pandas version 1.1.4 which
-we found gave the best performances on our machine)
+**NB** pandapower performances heavily depends on the pandas version used, we used here pandas version 1.1.4 which
+we found gave the best performances on our machine.
+
 ## Philosophy
 Lightsim2grid aims at providing a somewhat efficient (in terms of computation speed) backend targeting the 
 grid2op platform.
