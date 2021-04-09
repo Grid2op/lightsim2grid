@@ -74,11 +74,10 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver)  // in DC i need that
 {
     if(ac) return;  // in AC I do not do that
-    std::cout << " ok i use this function" << std::endl;
+    // std::cout << " ok i use this function" << std::endl;
     // - bus[:, GS] / baseMVA  # in pandapower
     // yish=gish+jbish -> so g is the MW !
     int nb_shunt = q_mvar_.size();
-    cplx_type tmp;
     int bus_id_me, bus_id_solver;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
@@ -122,6 +121,7 @@ void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
 {
     int nb_shunt = p_mw_.size();
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
+    v_deg_from_va(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = RealVect::Constant(nb_shunt, my_zero_);
     res_q_ = RealVect::Constant(nb_shunt, my_zero_);
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){

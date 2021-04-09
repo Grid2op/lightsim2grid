@@ -114,6 +114,7 @@ void DataGen::compute_results(const Eigen::Ref<RealVect> & Va,
 {
     int nb_gen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
+    v_deg_from_va(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = p_mw_;
     // res_q_ = q_mvar_;
 }
@@ -122,6 +123,7 @@ void DataGen::reset_results(){
     res_p_ = RealVect();  // in MW
     res_q_ = RealVect();  // in MVar
     res_v_ = RealVect();  // in kV
+    res_theta_ = RealVect();  // in deg
 }
 
 void DataGen::get_vm_for_dc(RealVect & Vm){

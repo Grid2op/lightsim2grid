@@ -720,6 +720,9 @@ void GridModel::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 
 void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                             Eigen::Ref<Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
+    int nb_bus = bus_status_.size();
+    for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
+
     update_topo_generic(has_changed, new_values,
                         load_pos_topo_vect_, load_to_subid_,
                         &GridModel::reactivate_load,

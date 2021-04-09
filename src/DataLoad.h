@@ -77,6 +77,7 @@ class DataLoad : public DataGeneric
     virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    const RealVect & get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:
@@ -92,6 +93,7 @@ class DataLoad : public DataGeneric
         RealVect res_p_;  // in MW
         RealVect res_q_;  // in MVar
         RealVect res_v_;  // in kV
+        RealVect res_theta_;  // in degree
 };
 
 #endif  //DATALOAD_H

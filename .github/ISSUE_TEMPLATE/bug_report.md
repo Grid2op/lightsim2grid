@@ -22,6 +22,9 @@ AND
 pip install -U .
 ```
 
+<!--NB when you include the logs to reproduce your issue, you might want to 
+remove the path on which the installation occrured on you computer..-->
+
 ## Bug description
 <!--A clear and concise description of what the bug is.-->
 

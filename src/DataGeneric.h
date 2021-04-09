@@ -94,6 +94,7 @@ class DataGeneric : public BaseConstants
         void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v);
 
         /**
+        convert v from pu to v in kv (and assign it to the right element...)
         **/
         void v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
                            const Eigen::Ref<RealVect> & Vm,
@@ -103,6 +104,20 @@ class DataGeneric : public BaseConstants
                            const std::vector<int> & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
                            RealVect & v);
+
+
+        /**
+        compute va in degree from va in rad.
+        **/
+        void v_deg_from_va(const Eigen::Ref<RealVect> & Va,
+                           const Eigen::Ref<RealVect> & Vm,
+                           const std::vector<bool> & status,
+                           int nb_element,
+                           const Eigen::VectorXi & bus_me_id,
+                           const std::vector<int> & id_grid_to_solver,
+                           const RealVect & bus_vn_kv,
+                           RealVect & v);
+
         /**
         check the size of the elements
         **/

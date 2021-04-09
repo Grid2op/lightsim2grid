@@ -275,6 +275,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_storages_res", &GridModel::get_storages_res)
         .def("get_storages_status", &GridModel::get_storages_status)
 
+        .def("get_gen_theta", &GridModel::get_gen_theta)
+        .def("get_load_theta", &GridModel::get_load_theta)
+        .def("get_shunt_theta", &GridModel::get_shunt_theta)
+        .def("get_storage_theta", &GridModel::get_storage_theta)
+        .def("get_lineor_theta", &GridModel::get_lineor_theta)
+        .def("get_lineex_theta", &GridModel::get_lineex_theta)
+        .def("get_trafohv_theta", &GridModel::get_trafohv_theta)
+        .def("get_trafolv_theta", &GridModel::get_trafolv_theta)
+
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("get_Ybus", &GridModel::get_Ybus)

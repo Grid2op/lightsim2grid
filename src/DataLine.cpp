@@ -217,6 +217,8 @@ void DataLine::compute_results(const Eigen::Ref<RealVect> & Va,
     res_powerline_qex_ = RealVect::Constant(nb_element, my_zero_);  // in MVar
     res_powerline_vex_ = RealVect::Constant(nb_element, my_zero_);  // in kV
     res_powerline_aex_ = RealVect::Constant(nb_element, my_zero_);  // in kA
+    res_powerline_thetaor_ = RealVect::Constant(nb_element, my_zero_);  // in kV
+    res_powerline_thetaex_ = RealVect::Constant(nb_element, my_zero_);  // in kV
     for(int line_id = 0; line_id < nb_element; ++line_id){
         // don't do anything if the element is disconnected
         if(!status_[line_id]) continue;
@@ -264,6 +266,9 @@ void DataLine::compute_results(const Eigen::Ref<RealVect> & Va,
         real_type bus_vn_kv_ex = bus_vn_kv(bus_ex_id_me);
         res_powerline_vor_(line_id) = v_or * bus_vn_kv_or;
         res_powerline_vex_(line_id) = v_ex * bus_vn_kv_ex;
+
+        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * 180. / my_pi;
+        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * 180. / my_pi;
     }
     _get_amps(res_powerline_aor_, res_powerline_por_, res_powerline_qor_, res_powerline_vor_);
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
