@@ -24,7 +24,7 @@ class LightSimBackend(Backend):
         Backend.__init__(self,
                          detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
-        # lazy loading becuase otherwise somehow it crashes...
+        # lazy loading because it crashes...
         from grid2op.Backend import PandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
