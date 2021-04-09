@@ -93,6 +93,9 @@ class DataLine : public DataGeneric
 
     tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
     tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
+
+    const RealVect & get_theta_or() const {return res_powerline_thetaor_;}
+    const RealVect & get_theta_ex() const {return res_powerline_thetaex_;}
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:
@@ -115,6 +118,8 @@ class DataLine : public DataGeneric
         RealVect res_powerline_qex_;  // in MVar
         RealVect res_powerline_vex_;  // in kV
         RealVect res_powerline_aex_;  // in kA
+        RealVect res_powerline_thetaor_; // in degree
+        RealVect res_powerline_thetaex_; // in degree
 };
 
 #endif  //DATALINE_H

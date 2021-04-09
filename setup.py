@@ -5,7 +5,7 @@ import setuptools
 import os
 import warnings
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 KLU_SOLVER_AVAILABLE = False
 
 # courtesy to

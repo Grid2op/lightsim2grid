@@ -80,3 +80,25 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
         v(el_id) = Vm(bus_solver_id) * bus_vn_kv_me;
     }
 }
+
+
+void DataGeneric::v_deg_from_va(const Eigen::Ref<RealVect> & Va,
+                                const Eigen::Ref<RealVect> & Vm,
+                                const std::vector<bool> & status,
+                                int nb_element,
+                                const Eigen::VectorXi & bus_me_id,
+                                const std::vector<int> & id_grid_to_solver,
+                                const RealVect & bus_vn_kv,
+                                RealVect & theta){
+    theta = RealVect::Constant(nb_element, 0.0);
+    for(int el_id = 0; el_id < nb_element; ++el_id){
+        // if the element is disconnected, i leave it like that
+        if(!status[el_id]) continue;
+        int el_bus_me_id = bus_me_id(el_id);
+        int bus_solver_id = id_grid_to_solver[el_bus_me_id];
+        if(bus_solver_id == _deactivated_bus_id){
+            throw std::runtime_error("DataGeneric::v_kv_from_vpu: An element is connected to a disconnected bus");
+        }
+        theta(el_id) = Va(bus_solver_id) * 180. / my_pi;
+    }
+}

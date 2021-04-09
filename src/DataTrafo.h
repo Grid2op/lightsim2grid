@@ -51,10 +51,12 @@ class DataTrafo : public DataGeneric
                 real_type res_q_hv_mvar;
                 real_type res_v_hv_kv;
                 real_type res_a_hv_a;
+                real_type res_theta_hv_deg;
                 real_type res_p_lv_mw;
                 real_type res_q_lv_mvar;
                 real_type res_v_lv_kv;
                 real_type res_a_lv_a;
+                real_type res_theta_lv_deg;
 
                 TrafoInfo(const DataTrafo & r_data_trafo, int my_id):
                 id(-1),
@@ -72,10 +74,12 @@ class DataTrafo : public DataGeneric
                 res_q_hv_mvar(0.),
                 res_v_hv_kv(0.),
                 res_a_hv_a(0.),
+                res_theta_hv_deg(0.),
                 res_p_lv_mw(0.),
                 res_q_lv_mvar(0.),
                 res_v_lv_kv(0.),
-                res_a_lv_a(0.)
+                res_a_lv_a(0.),
+                res_theta_lv_deg(0.)
                 {
                     if((my_id >= 0) & (my_id < r_data_trafo.nb()))
                     {
@@ -101,6 +105,8 @@ class DataTrafo : public DataGeneric
                             res_q_lv_mvar = r_data_trafo.res_q_lv_.coeff(my_id);
                             res_v_lv_kv = r_data_trafo.res_v_lv_.coeff(my_id);
                             res_a_lv_a = r_data_trafo.res_a_lv_.coeff(my_id);
+                            res_theta_hv_deg = r_data_trafo.res_theta_lv_.coeff(my_id);
+                            res_theta_lv_deg = r_data_trafo.res_theta_hv_.coeff(my_id);
                         }
                     }
                 }
@@ -186,6 +192,9 @@ class DataTrafo : public DataGeneric
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
+    const RealVect & get_theta_hv() const {return res_theta_hv_;}
+    const RealVect & get_theta_lv() const {return res_theta_lv_;}
+
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:
@@ -211,6 +220,8 @@ class DataTrafo : public DataGeneric
         RealVect res_q_lv_;  // in MVar
         RealVect res_v_lv_;  // in kV
         RealVect res_a_lv_;  // in kA
+        RealVect res_theta_hv_;  // in degree
+        RealVect res_theta_lv_;  // in degree
 };
 
 #endif  //DATATRAFO_H

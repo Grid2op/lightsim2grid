@@ -302,6 +302,8 @@ void DataTrafo::compute_results(const Eigen::Ref<RealVect> & Va,
     res_q_lv_ = RealVect::Constant(nb_element, 0.0);  // in MVar
     res_v_lv_ = RealVect::Constant(nb_element, 0.0);  // in kV
     res_a_lv_ = RealVect::Constant(nb_element, 0.0);  // in kA
+    res_theta_hv_ = RealVect::Constant(nb_element, 0.0);  // in degree
+    res_theta_lv_ = RealVect::Constant(nb_element, 0.0);  // in degree
     for(int trafo_id = 0; trafo_id < nb_element; ++trafo_id){
         // don't do anything if the element is disconnected
         if(!status_[trafo_id]) continue;
@@ -368,6 +370,10 @@ void DataTrafo::compute_results(const Eigen::Ref<RealVect> & Va,
         real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);
         res_v_hv_(trafo_id) = v_hv * bus_vn_kv_hv;
         res_v_lv_(trafo_id) = v_lv * bus_vn_kv_lv;
+
+        res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * 180. / my_pi;
+        res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * 180. / my_pi;
+
     }
     _get_amps(res_a_hv_, res_p_hv_, res_q_hv_, res_v_hv_);
     _get_amps(res_a_lv_, res_p_lv_, res_q_lv_, res_v_lv_);

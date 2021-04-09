@@ -74,6 +74,7 @@ void DataLoad::compute_results(const Eigen::Ref<RealVect> & Va,
 {
     int nb_load = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_load, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
+    v_deg_from_va(Va, Vm, status_, nb_load, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = p_mw_;
     res_q_ = q_mvar_;
 }

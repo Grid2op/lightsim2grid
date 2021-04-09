@@ -353,6 +353,5 @@ class MyTestCase(unittest.TestCase):
         assert np.all(all_equals_real_b), f"\t Error: some trafo (real) b are not equal, max error: " \
                                           f"{np.max(np.abs(val_reb_pp - val_reb_me)):.5f}"
 
-
 if __name__ == '__main__':
     unittest.main()

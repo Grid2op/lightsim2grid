@@ -6,17 +6,20 @@ Change Log
 - switch c++ to float32 instead
 - improve speed
 - improve documentation
-- configure circleci (+ test compilation on clang, gcc and msvc)
 - easier building (get rid of the "make" part)
 - distribute pypi package
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 
-[0.5.1] 2021-xx-yy
+[0.5.1] 2021-04-09
 -------------------
 - [FIXED] yet another compilation issue with clang (see
   `Issue 22 <https://github.com/BDonnot/lightsim2grid/issues/22>`_)
-- [ADDED] circleci to check compilation for gcc (clang coming soon)
+- [ADDED] circleci to check compilation for gcc
+- [ADDED] circleci to check compilation for clang
+- [ADDED] circleci to check compilation for msvc
+- [ADDED] function to read the voltage angle from the backend
+- [ADDED] compatibility with grid2op 1.5.0 (up to an issue with the storage units)
 
 [0.5.0] 2021-03-01
 -------------------

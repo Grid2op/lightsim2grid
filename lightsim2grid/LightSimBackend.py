@@ -103,6 +103,40 @@ class LightSimBackend(Backend):
         self.comp_time = 0.  # computation time of just the powerflow
         self.__current_solver_type = None
 
+        # hack for the storage unit:
+        # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
+        # that it produces / absorbs nothing, then that's fine
+        # this behaviour in lightsim (c++ side) would be detected as a non connex grid and raise
+        # a diverging powerflow
+        # i "fake" to disconnect storage with these properties
+        # TODO hummm we need to clarify that ! pandapower automatically disconnect this stuff  too ! This is super weird
+        # TODO and should rather be handled in pandapower backend
+        # backend SHOULD not do these kind of stuff
+        self._idx_hack_storage = []
+
+    def get_theta(self):
+        """
+
+        Returns
+        -------
+        line_or_theta: ``numpy.ndarray``
+            For each orgin side of powerline, gives the voltage angle
+        line_ex_theta: ``numpy.ndarray``
+            For each extremity side of powerline, gives the voltage angle
+        load_theta: ``numpy.ndarray``
+            Gives the voltage angle to the bus at which each load is connected
+        gen_theta: ``numpy.ndarray``
+            Gives the voltage angle to the bus at which each generator is connected
+        storage_theta: ``numpy.ndarray``
+            Gives the voltage angle to the bus at which each storage unit is connected
+        """
+        line_or_theta = np.concatenate((self._grid.get_lineor_theta(), self._grid.get_trafohv_theta()))
+        line_ex_theta = np.concatenate((self._grid.get_lineex_theta(), self._grid.get_trafolv_theta()))
+        load_theta = self.cst_1 * self._grid.get_load_theta()
+        gen_theta = self.cst_1 * self._grid.get_gen_theta()
+        storage_theta = self.cst_1 * self._grid.get_storage_theta()
+        return line_or_theta, line_ex_theta, load_theta, gen_theta, storage_theta
+
     def set_solver_type(self, solver_type):
         """
         Change the type of solver you want to use.
@@ -196,11 +230,13 @@ class LightSimBackend(Backend):
         if new_tol <= 0:
             raise BackendError("new_tol should be a strictly positive float (float > 0)")
         self.tol = new_tol
+        self._idx_hack_storage = np.zeros(0, dtype=dt_int)
 
     def load_grid(self, path=None, filename=None):
 
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
+        self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
 
         self._grid = init(self.init_pp_backend._grid)
         self.available_solvers = self._grid.available_solvers()
@@ -242,8 +278,16 @@ class LightSimBackend(Backend):
             self.storage_pu_to_kv = self.init_pp_backend.storage_pu_to_kv
             self.name_storage = self.init_pp_backend.name_storage
             self.storage_to_sub_pos = self.init_pp_backend.storage_to_sub_pos
+            self.storage_type = self.init_pp_backend.storage_type
+            self.storage_Emin = self.init_pp_backend.storage_Emin
+            self.storage_Emax = self.init_pp_backend.storage_Emax
+            self.storage_max_p_prod = self.init_pp_backend.storage_max_p_prod
+            self.storage_max_p_absorb = self.init_pp_backend.storage_max_p_absorb
+            self.storage_marginal_cost = self.init_pp_backend.storage_marginal_cost
+            self.storage_loss = self.init_pp_backend.storage_loss
+            self.storage_discharging_efficiency = self.init_pp_backend.storage_discharging_efficiency
+            self.storage_charging_efficiency = self.init_pp_backend.storage_charging_efficiency
 
-        self._compute_pos_big_topo()
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
         self.thermal_limit_a = copy.deepcopy(self.init_pp_backend.thermal_limit_a)
@@ -281,6 +325,8 @@ class LightSimBackend(Backend):
                                              tmp.reshape(-1, 1)), axis=-1)
 
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
+
+        self._compute_pos_big_topo()
 
         # set up the "lightsim grid" accordingly
         self._grid.set_n_sub(self.__nb_bus_before)
@@ -388,7 +434,6 @@ class LightSimBackend(Backend):
             # feature added in grid2op 1.4 or 1.5
             _init_action_to_set = self.get_action_to_set()
         except TypeError:
-
             _init_action_to_set = self._get_action_to_set_deprecated()
         self._init_action_to_set += _init_action_to_set
 
@@ -406,11 +451,6 @@ class LightSimBackend(Backend):
         set_me = complete_action_class()
         set_me.update({"set_line_status": line_status,
                        "set_bus": topo_vect})
-
-        #injs = {"prod_p": prod_p, "prod_v": prod_v,
-        #              "load_p": load_p, "load_q": load_q}}
-
-        # set_me.update({"injection": injs})
         return set_me
 
     def _count_object_per_bus(self):
@@ -445,34 +485,9 @@ class LightSimBackend(Backend):
             arr_ = self.shunt_to_subid[is_connected] + self.__nb_bus_before * (arr_[is_connected] - 1)
             self.nb_obj_per_bus[arr_] += 1
 
-    def _deactivate_unused_bus(self):
-        for bus_id, nb in enumerate(self.nb_obj_per_bus):
-            if nb == 0:
-                self._grid.deactivate_bus(bus_id)
-            else:
-                self._grid.reactivate_bus(bus_id)
-
     def close(self):
         self.init_pp_backend.close()
         self._grid = None
-
-    def _convert_id_topo(self, id_big_topo):
-        """
-        convert an id of the big topo vector into:
-
-        - the id of the object in its "only object" (eg if id_big_topo represents load 2, then it will be 2)
-        - the type of object among: "load", "gen", "lineor" and "lineex"
-
-        """
-        return self._big_topo_to_obj[id_big_topo]
-
-    def _switch_bus_me(self, tmp):
-        """
-        return 1 if tmp is 2 else 2 if tmp is one
-        """
-        if tmp == -1:
-            return tmp
-        return (1 - tmp) + 2
 
     def apply_action(self, backendAction):
         """
@@ -482,7 +497,7 @@ class LightSimBackend(Backend):
         # TODO storage
 
         # handle active bus
-        self._grid.update_bus_status(self.__nb_bus_before, backendAction.activated_bus)
+        # self._grid.update_bus_status(self.__nb_bus_before, backendAction.activated_bus)
 
         # update the injections
         self._grid.update_gens_p(backendAction.prod_p.changed,
@@ -494,6 +509,10 @@ class LightSimBackend(Backend):
         self._grid.update_loads_q(backendAction.load_q.changed,
                                   backendAction.load_q.values)
         if self.__has_storage:
+            # TODO
+            # reactivate the storage that i deactivate because of the "hack". See
+            # for stor_id in self._idx_hack_storage:
+            #     self._grid.reactivate_storage(stor_id)
             self._grid.update_storages_p(backendAction.storage_power.changed,
                                          backendAction.storage_power.values)
 
@@ -514,9 +533,23 @@ class LightSimBackend(Backend):
                     self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] * new_bus)
 
         # and now change the overall topology
-        self._grid.update_topo(backendAction.current_topo.changed,
-                               backendAction.current_topo.values)
+        # TODO hack for storage units: if 0. production i pretend they are disconnected on the
+        # TODO c++ side
+        # this is to deal with the test that "if a storage unit is alone on a bus, but produces 0, then it's fine)
+        # if self.__has_storage and self.n_storage > 0:
+        #     chgt = copy.copy(backendAction.current_topo.changed)
+        #     my_val = 1 * backendAction.current_topo.values
+        #     self._idx_hack_storage = np.where((backendAction.storage_power.values == 0.))[0]
+        #     idx_storage_topo = self.storage_pos_topo_vect[self._idx_hack_storage]
+        #     changed[idx_storage_topo] = my_val[idx_storage_topo] != -1
+        #     my_val[idx_storage_topo] = -1
+        # else:
+        #     self._idx_hack_storage = []
+        #     chgt = backendAction.current_topo.changed
+        #     my_val = backendAction.current_topo.values
+        # self._grid.update_topo(changed, my_val)
         chgt = backendAction.current_topo.changed
+        self._grid.update_topo(chgt, backendAction.current_topo.values)
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
         # TODO have been correctly called before calling the function self._grid.update_topo
@@ -681,7 +714,8 @@ class LightSimBackend(Backend):
 
     def storages_info(self):
         if not self.__has_storage:
-            raise RuntimeError("Storage units are not supported with your grid2op version")
+            raise RuntimeError("Storage units are not supported with your grid2op version. Please upgrade to "
+                               "grid2op >1.5")
         return self.cst_1 * self.storage_p, self.cst_1 * self.storage_q, self.cst_1 * self.storage_v
 
     def shunt_info(self):
@@ -709,20 +743,3 @@ class LightSimBackend(Backend):
         self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
-
-    # def get_action_to_set(self):
-    #     line_status = self.get_line_status()
-    #     line_status = 2 * line_status - 1
-    #     line_status = line_status.astype(dt_int)
-    #     topo_vect = self.get_topo_vect()
-    #
-    #     prod_p, _, prod_v = self.generators_info()
-    #     load_p, load_q, _ = self.loads_info()
-    #     complete_action_class = CompleteAction.init_grid(self.init_pp_backend)
-    #     set_me = complete_action_class()
-    #     set_me.update({"set_line_status": 1 * line_status,
-    #                    "set_bus": 1 * topo_vect})
-    #
-    #     injs = {"prod_p": prod_p, "prod_v": prod_v, "load_p": load_p, "load_q": load_q}
-    #     set_me.update({"injection": injs})
-    #     return set_me

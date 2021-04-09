@@ -10,7 +10,7 @@
 
 # skip "manylinux1_i686" because of a "PRE_CMD"
 # cd ..  # TODO change that to be more consistant and less system dependant
-for PLAT in manylinux1_x86_64 manylinux2010_x86_64; do
+for PLAT in manylinux1_x86_64 manylinux2010_x86_64 manylinux2014_x86_64; do
     # update docker image
     DOCKER_IMAGE=quay.io/pypa/$PLAT
     docker pull $DOCKER_IMAGE

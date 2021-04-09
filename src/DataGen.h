@@ -46,6 +46,7 @@ class DataGen: public DataGeneric
             real_type res_p_mw;
             real_type res_q_mvar;
             real_type res_v_kv;
+            real_type res_theta_deg;
 
             GenInfo(const DataGen & r_data_gen, int my_id):
             id(-1),
@@ -58,7 +59,8 @@ class DataGen: public DataGeneric
             has_res(false),
             res_p_mw(0.),
             res_q_mvar(0.),
-            res_v_kv(0.)
+            res_v_kv(0.),
+            res_theta_deg(0.)
             {
                 if((my_id >= 0) & (my_id < r_data_gen.nb()))
                 {
@@ -76,6 +78,7 @@ class DataGen: public DataGeneric
                         res_p_mw = r_data_gen.res_p_.coeff(my_id);
                         res_q_mvar = r_data_gen.res_q_.coeff(my_id);
                         res_v_kv = r_data_gen.res_v_.coeff(my_id);
+                        res_theta_deg = r_data_gen.res_theta_.coeff(my_id);
                     }
                 }
             }
@@ -163,6 +166,8 @@ class DataGen: public DataGeneric
     void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    const RealVect & get_theta() const {return res_theta_;}
+
     const std::vector<bool>& get_status() const {return status_;}
 
     void cout_v(){
@@ -190,6 +195,7 @@ class DataGen: public DataGeneric
         RealVect res_p_;  // in MW
         RealVect res_q_;  // in MVar
         RealVect res_v_;  // in kV
+        RealVect res_theta_;  // in deg (and not rad)
 };
 
 #endif  //DATAGEN_H

@@ -121,6 +121,7 @@ void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
 {
     int nb_shunt = p_mw_.size();
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
+    v_deg_from_va(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = RealVect::Constant(nb_shunt, my_zero_);
     res_q_ = RealVect::Constant(nb_shunt, my_zero_);
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){

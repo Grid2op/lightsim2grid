@@ -7,6 +7,8 @@
 # This file is part of Grid2Op, Grid2Op a testbed platform to model sequential decision making in power systems.
 import unittest
 import warnings
+import grid2op
+import numpy as np
 
 from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 
@@ -186,6 +188,10 @@ class TestStatusAction(HelperTests, BaseStatusActions):
 
 if __has_storage:
     class TestStorageAction(HelperTests, BaseTestStorageAction):
+        def setUp(self):
+            self.tests_skipped = ["test_storage_action_topo"]  # TODO this test is super weird ! It's like we impose
+            # TODO a behaviour from pandapower (weird one) to all backends...
+
         def make_backend(self, detailed_infos_for_cascading_failures=False):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
@@ -211,6 +217,35 @@ class TestResetAfterCascadingFailureLS(TestResetAfterCascadingFailure):
 class TestCascadingFailureLS(TestCascadingFailure):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+
+
+class TestTheta(unittest.TestCase):
+    def setUp(self) -> None:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env_pp = grid2op.make("l2rpn_case14_sandbox", test=True)
+            self.env_ls = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+
+    def _check_obs(self, obs_ls, obs_pp):
+        for attr_nm in ["theta_or", "theta_ex", "load_theta", "gen_theta", "storage_theta"]:
+            theta_ls = getattr(obs_ls, attr_nm)
+            theta_pp = getattr(obs_pp, attr_nm)
+            assert theta_ls.shape == theta_pp.shape
+            if theta_ls.shape[0]:
+                assert np.max(np.abs(theta_ls - theta_pp)) <= 1e-5, f"error for theta for {attr_nm}"
+
+    def test_theta(self):
+        # test in regular circumstances
+        obs_ls = self.env_ls.reset()
+        obs_pp = self.env_pp.reset()
+        self._check_obs(obs_ls, obs_pp)
+
+        # test after a topological change
+        sub_id = 4
+        act = self.env_pp.action_space({"set_bus": {"substations_id": [(sub_id, [1, 2, 2, 1, 1])]}})
+        obs_ls, *_ = self.env_ls.step(act)
+        obs_pp, *_ = self.env_pp.step(act)
+        self._check_obs(obs_ls, obs_pp)
 
 
 if __name__ == "__main__":

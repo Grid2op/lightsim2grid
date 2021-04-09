@@ -274,6 +274,15 @@ class GridModel : public DataGeneric
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
 
+        const RealVect & get_gen_theta() const  {return generators_.get_theta();}
+        const RealVect & get_load_theta() const  {return loads_.get_theta();}
+        const RealVect & get_shunt_theta() const  {return shunts_.get_theta();}
+        const RealVect & get_storage_theta() const  {return storages_.get_theta();}
+        const RealVect & get_lineor_theta() const {return powerlines_.get_theta_or();}
+        const RealVect & get_lineex_theta() const {return powerlines_.get_theta_ex();}
+        const RealVect & get_trafohv_theta() const {return trafos_.get_theta_hv();}
+        const RealVect & get_trafolv_theta() const {return trafos_.get_theta_lv();}
+
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
         Eigen::SparseMatrix<cplx_type> get_Ybus(){
@@ -300,7 +309,7 @@ class GridModel : public DataGeneric
         real_type get_computation_time(){ return _solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
-        // this is not recommended to use it outside of its intended usage.
+        // this is not recommended to use it outside of its intended usage within grid2op !
         void update_bus_status(int nb_bus_before, Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
         void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
@@ -440,18 +449,25 @@ class GridModel : public DataGeneric
             for(int el_id = 0; el_id < vect_pos.rows(); ++el_id)
             {
                 int el_pos = vect_pos(el_id);
-                if(has_changed(el_pos))
-                {
-                    int new_bus = new_values(el_pos);
-                    if(new_bus > 0){
-                        // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
-                        int init_bus_me = vect_subid(el_id);
-                        int new_bus_backend = new_bus == 1 ? init_bus_me : init_bus_me + n_sub_ ;
+                int new_bus = new_values(el_pos);
+                if(new_bus > 0){
+                    // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                    int init_bus_me = vect_subid(el_id);
+                    int new_bus_backend = new_bus == 1 ? init_bus_me : init_bus_me + n_sub_ ;
+                    bus_status_[new_bus_backend] = true;
+                    if(has_changed(el_pos))
+                    {
                         (this->*fun_react)(el_id); // eg reactivate_load(load_id);
                         (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
-                    } else{
+                    }
+                } else{
+                    if(has_changed(el_pos))
+                    {
                         // new bus is negative, we deactivate it
                         (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
+                        // bus_status_ is set to "false" in GridModel.update_topo
+                        // and a bus is activated if (and only if) one element is connected to it.
+                        // I must not set `bus_status_[new_bus_backend] = false;` in this case !
                     }
                 }
             }
