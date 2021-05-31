@@ -10,10 +10,10 @@
 
 void PandaPowerConverter::_check_init(){
     if(sn_mva_ <= 0.){
-        throw std::runtime_error("PandaPowerConverter sn_mva has not been initialized");
+        throw std::runtime_error("PandaPowerConverter::_check_init: sn_mva has not been initialized");
     }
     if(f_hz_ <= 0.){
-        throw std::runtime_error("PandaPowerConverter f_hz has not been initialized");
+        throw std::runtime_error("PandaPowerConverter::_check_init: f_hz has not been initialized");
     }
 }
 

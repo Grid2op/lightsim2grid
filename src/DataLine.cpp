@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataLine.h"
+#include <sstream>
 
 void DataLine::init(const RealVect & branch_r,
                     const RealVect & branch_x,
@@ -88,12 +89,20 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         int bus_or_id_me = bus_or_id_(line_id);
         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
         if(bus_or_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillYbusBranch: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         int bus_ex_id_me = bus_ex_id_(line_id);
         int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
         if(bus_ex_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillYbusBranch: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
 
         // convert subsceptance to half subsceptance, applied on each ends
@@ -143,12 +152,20 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, con
         int bus_or_id_me = bus_or_id_(line_id);
         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
         if(bus_or_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillYbus_spmat: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         int bus_ex_id_me = bus_ex_id_(line_id);
         int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
         if(bus_ex_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataLine::fillYbusBranch: A line is connected (or) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillYbus_spmat: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
 
        //TODO this is no more used!!!! see the other fillYbus
@@ -233,12 +250,20 @@ void DataLine::compute_results(const Eigen::Ref<RealVect> & Va,
         int bus_or_id_me = bus_or_id_(line_id);
         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
         if(bus_or_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::res_powerlines: A powerline or a trafo is connected (or) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLine::compute_results: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         int bus_ex_id_me = bus_ex_id_(line_id);
         int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
         if(bus_ex_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::res_powerlines: A powerline or a trafo is connected (ex) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLine::compute_results: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
 
         // results of the powerflow

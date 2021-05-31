@@ -11,6 +11,10 @@ Change Log
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 
+[0.5.2] 2021-xx-yy
+-------------------
+- [IMPROVED] more explicit error messages when the building of the Ybus matrix fails.
+
 [0.5.1] 2021-04-09
 -------------------
 - [FIXED] yet another compilation issue with clang (see

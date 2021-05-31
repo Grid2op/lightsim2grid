@@ -8,6 +8,7 @@
 
 #include "DataTrafo.h"
 #include <iostream>
+#include <sstream>
 
 void DataTrafo::init(const RealVect & trafo_r,
                            const RealVect & trafo_x,
@@ -186,12 +187,20 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         int bus_hv_id_me = bus_hv_id_(trafo_id);
         int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
         if(bus_hv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (hv) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillYbus: the trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         int bus_lv_id_me = bus_lv_id_(trafo_id);
         int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
         if(bus_lv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (lv) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillYbus: the trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
 
         // TODO time optim all that could be done once and for all
@@ -269,14 +278,20 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
         bus_id_me = bus_lv_id_(trafo_id);
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
-            //TODO improve error message with the trafo_id
-            throw std::runtime_error("One trafo is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillSbus: the trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         bus_id_me = bus_hv_id_(trafo_id);
         bus_id_solver_hv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_hv == _deactivated_bus_id){
-            //TODO improve error message with the trafo_id
-            throw std::runtime_error("One trafo is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillSbus: the trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
 
         Sbus.coeffRef(bus_id_solver_hv) += tmp;
@@ -337,12 +352,20 @@ void DataTrafo::compute_results(const Eigen::Ref<RealVect> & Va,
         int bus_hv_id_me = bus_hv_id_(trafo_id);
         int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
         if(bus_hv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataTrafo::compute_results: A trafo is connected (hv) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::compute_results: the trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         int bus_lv_id_me = bus_lv_id_(trafo_id);
         int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
         if(bus_lv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataTrafo::compute_results: A trafo is connected (lv) to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::compute_results: the trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
 
         // results of the powerflow
