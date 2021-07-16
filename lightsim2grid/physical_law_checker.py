@@ -62,8 +62,10 @@ class PhysicalLawChecker:
         from grid2op.Environment.MultiMixEnv import MultiMixEnvironment
         if isinstance(grid2op_env, Environment):
             env_path = grid2op_env.get_path_env()
+            gridobj_ref = type(grid2op_env)
         elif isinstance(grid2op_env, MultiMixEnvironment):
             env_path = grid2op_env.current_env.get_path_env()
+            gridobj_ref = type(grid2op_env.current_env)
         else:
             raise RuntimeError("Only grid2op Environment and MultiMixEnvironment are supported at the moment.")
         grid_path = os.path.join(env_path, "grid.json")
@@ -71,7 +73,7 @@ class PhysicalLawChecker:
             raise RuntimeError("Unable to locate the environment grid file. This feature will not work.")
 
         self.init_env = grid2op_env
-        self._this_backend = LightSimBackend.init_grid(type(grid2op_env))()
+        self._this_backend = LightSimBackend.init_grid(gridobj_ref)()
         self._this_backend.load_grid(grid_path)
 
     def check_solution(self, vcomplex, grid2op_obs, with_qlim=False):

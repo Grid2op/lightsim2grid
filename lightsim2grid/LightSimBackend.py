@@ -519,18 +519,19 @@ class LightSimBackend(Backend):
         # handle shunts
         if self.shunts_data_available:
             shunt_p, shunt_q, shunt_bus = backendAction.shunt_p, backendAction.shunt_q, backendAction.shunt_bus
-            for sh_id, new_p in shunt_p:
-                self._grid.change_p_shunt(sh_id, new_p)
-            for sh_id, new_q in shunt_q:
-                self._grid.change_q_shunt(sh_id, new_q)
-
             # shunt topology
+            # (need to be done before to avoid error like "impossible to set reactive value of a disconnected shunt")
             for sh_id, new_bus in shunt_bus:
                 if new_bus == -1:
                     self._grid.deactivate_shunt(sh_id)
                 else:
                     self._grid.reactivate_shunt(sh_id)
                     self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] * new_bus)
+
+            for sh_id, new_p in shunt_p:
+                self._grid.change_p_shunt(sh_id, new_p)
+            for sh_id, new_q in shunt_q:
+                self._grid.change_q_shunt(sh_id, new_q)
 
         # and now change the overall topology
         # TODO hack for storage units: if 0. production i pretend they are disconnected on the
@@ -721,8 +722,9 @@ class LightSimBackend(Backend):
     def shunt_info(self):
         tmp = self._grid.get_shunts_res()
         shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(self.n_shunt)], dtype=dt_int)
-        res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)
-        res_bus[shunt_bus >= self.__nb_bus_before] = 2
+        res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)  # by default all shunts are on bus one
+        res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
+        res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
         return tmp[0].astype(dt_float), tmp[1].astype(dt_float), tmp[2].astype(dt_float), res_bus
 
     def _disconnect_line(self, id_):
