@@ -47,8 +47,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
         exc_ << " while the grid counts ";
         exc_ << el_bus_ids.size();
         exc_ << " such elements (id too high)";
-        throw std::runtime_error(exc_.str());
-
+        throw std::out_of_range(exc_.str());
     }
     if(el_id < 0)
     {
@@ -56,8 +55,9 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
         exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
         exc_ << el_id;
         exc_ << " (id should be >= 0)";
-        throw std::runtime_error(exc_.str());
+        throw std::out_of_range(exc_.str());
     }
+
     // throw error: bus id does not exist
     if(new_bus_me_id >= nb_bus)
     {
@@ -67,14 +67,14 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
         exc_ << " There are only ";
         exc_ << nb_bus;
         exc_ << " distinct buses on this grid.";
-        throw std::runtime_error(exc_.str());
+        throw std::out_of_range(exc_.str());
     }
     if(new_bus_me_id < 0)
     {
         std::ostringstream exc_;
         exc_ << "DataGeneric::_change_bus: new bus id should be >=0 and not ";
         exc_ << new_bus_me_id;
-        throw std::runtime_error(exc_.str());
+        throw std::out_of_range(exc_.str());
     }
     int & bus_me_id = el_bus_ids(el_id);
     if(bus_me_id != new_bus_me_id) need_reset = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver

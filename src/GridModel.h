@@ -196,6 +196,7 @@ class GridModel : public DataGeneric
         void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
+        const DataLine & get_lines() const {return powerlines_;}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, need_reset_); }
@@ -394,7 +395,12 @@ class GridModel : public DataGeneric
         // void init_dcY(Eigen::SparseMatrix<real_type> & dcYbus);
 
         // ac powerflows
-        CplxVect pre_process_solver(const CplxVect & Vinit, bool is_ac);
+        /**
+        computes Ybus_ and Sbus_. It has different flags to have more control on the purpose for this "computation"
+        is_ac indicates if you want to perform and AC powerflow or a DC powerflow and reset_solver indicates
+        if you will perform a powerflow after it or not. (usually put ``true`` here).
+        **/
+        CplxVect pre_process_solver(const CplxVect & Vinit, bool is_ac, bool reset_solver);
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & Sbus,
                        std::vector<int> & id_me_to_solver, std::vector<int>& id_solver_to_me,
                        int & slack_bus_id_solver);
@@ -419,7 +425,7 @@ class GridModel : public DataGeneric
         /**
         reset the solver, and all its results
         **/
-        void reset();
+        void reset(bool reset_solver);
 
         /**
         optimization for grid2op

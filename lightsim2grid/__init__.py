@@ -12,3 +12,11 @@ try:
 except ImportError:
     # grid2op is not installed, the Backend will not be available
     pass
+
+try:
+    from lightsim2grid.physical_law_checker import PhysicalLawChecker
+    __all__.append("PhysicalLawChecker")
+except ImportError as exc_:
+    # grid2op is not installed, the Backend will not be available
+    pass
+    print(exc_)

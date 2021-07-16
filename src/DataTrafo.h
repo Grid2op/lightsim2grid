@@ -156,11 +156,11 @@ class DataTrafo : public DataGeneric
     {
         if(id < 0)
         {
-            throw std::range_error("You cannot ask for a negative generator");
+            throw std::range_error("You cannot ask for a transformer with negative id");
         }
         if(id >= nb())
         {
-            throw std::range_error("Generator out of bound. Not enough generator on the grid.");
+            throw std::range_error("Generator out of bound. Not enough transformers on the grid.");
         }
         return TrafoInfo(*this, id);
     }
