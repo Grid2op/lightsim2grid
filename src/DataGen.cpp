@@ -8,6 +8,7 @@
 
 #include "DataGen.h"
 #include <iostream>
+#include <sstream>
 
 void DataGen::init(const RealVect & generators_p,
                    const RealVect & generators_v,
@@ -20,10 +21,25 @@ void DataGen::init(const RealVect & generators_p,
     bus_id_ = generators_bus_id;
     min_q_ = generators_min_q;
     max_q_ = generators_max_q;
-    if(min_q_.size() != max_q_.size()) throw std::runtime_error("Impossible to initialize generator with not the same size for min_q and max_q");
+    if(min_q_.size() != max_q_.size())
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGen::init: Impossible to initialize generator with generators_min_q of size ";
+        exc_ << min_q_.size();
+        exc_ << " and generators_max_q of size ";
+        exc_ << max_q_.size();
+        exc_ << ". Both should match";
+        throw std::runtime_error(exc_.str());
+    }
     int nb_gen = min_q_.size();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if (min_q_(gen_id) > max_q_(gen_id)) throw std::runtime_error("Impossible to initialize generator min_q being above max_q");
+        if (min_q_(gen_id) > max_q_(gen_id))
+        {
+            std::ostringstream exc_;
+            exc_ << "DataGen::init: Impossible to initialize generator min_q being above max_q for generator ";
+            exc_ << gen_id;
+            throw std::runtime_error(exc_.str());
+        }
     }
     status_ = std::vector<bool>(generators_p.size(), true);
 }
@@ -73,8 +89,11 @@ void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_gri
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One generator is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataGen::fillSbus: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
         }
         tmp = p_mw_(gen_id);
         Sbus.coeffRef(bus_id_solver) += tmp;
@@ -95,8 +114,11 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One generator is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataGen::fillpv: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
         }
         if(bus_id_solver == slack_bus_id_solver) continue;  // slack bus is not PV
         if(has_bus_been_added[bus_id_solver]) continue; // i already added this bus
@@ -141,14 +163,28 @@ void DataGen::get_vm_for_dc(RealVect & Vm){
 void DataGen::change_p(int gen_id, real_type new_p, bool & need_reset)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
-    if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected generator");
+    if(!my_status)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGen::change_p: Impossible to change the active value of a disconnected generator (check gen. id ";
+        exc_ << gen_id;
+        exc_ << ")";
+        throw std::runtime_error(exc_.str());
+    }
     p_mw_(gen_id) = new_p;
 }
 
 void DataGen::change_v(int gen_id, real_type new_v_pu, bool & need_reset)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
-    if(!my_status) throw std::runtime_error("Impossible to change the voltage setpoint of a disconnected generator");
+    if(!my_status)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGen::change_p: Impossible to change the voltage setpoint of a disconnected generator (check gen. id ";
+        exc_ << gen_id;
+        exc_ << ")";
+        throw std::runtime_error(exc_.str());
+    }
     vm_pu_(gen_id) = new_v_pu;
 }
 
@@ -163,8 +199,11 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One generator is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataGen::set_vm: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
         }
 
         // scale the input V such that abs(V) = Vm for this generator
@@ -183,14 +222,14 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
 
 int DataGen::get_slack_bus_id(int gen_id){
     bool status = status_.at(gen_id);  // also to ensure gen_id is consistent with number of gen
-    if(!status) throw std::runtime_error("Generator for slack bus is deactivated");
+    if(!status) throw std::runtime_error("DataGen::get_slack_bus_id: Generator for slack bus is deactivated");
     int res = bus_id_(gen_id);
     return res;
 }
 
 void DataGen::set_p_slack(int slack_bus_id, real_type p_slack){
     bool status = status_.at(slack_bus_id);  // also to ensure gen_id is consistent with number of gen
-    if(!status) throw std::runtime_error("Generator for slack bus is deactivated");
+    if(!status) throw std::runtime_error("DataGen::set_p_slack: Generator for slack bus is deactivated");
     res_p_(slack_bus_id) = p_slack;
 }
 

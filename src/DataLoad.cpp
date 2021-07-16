@@ -7,6 +7,8 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataLoad.h"
+#include <sstream>
+
 void DataLoad::init(const RealVect & loads_p,
                     const RealVect & loads_q,
                     const Eigen::VectorXi & loads_bus_id)
@@ -56,8 +58,11 @@ void DataLoad::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_gr
         bus_id_me = bus_id_(load_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One load is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataLoad::fillSbus: the load with id ";
+            exc_ << load_id;
+            exc_ << " is connected to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         tmp = static_cast<cplx_type>(p_mw_(load_id));
         if(ac) tmp += my_i * q_mvar_(load_id);
@@ -88,14 +93,28 @@ void DataLoad::reset_results(){
 void DataLoad::change_p(int load_id, real_type new_p, bool & need_reset)
 {
     bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
-    if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected load");
+    if(!my_status)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataLoad::change_p: Impossible to change the active value of a disconnected load (check load id ";
+        exc_ << load_id;
+        exc_ << ")";
+        throw std::runtime_error(exc_.str());
+    }
     p_mw_(load_id) = new_p;
 }
 
 void DataLoad::change_q(int load_id, real_type new_q, bool & need_reset)
 {
     bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
-    if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected load");
+    if(!my_status)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataLoad::change_q: Impossible to change the reactive value of a disconnected load (check load id ";
+        exc_ << load_id;
+        exc_ << ")";
+        throw std::runtime_error(exc_.str());
+    }
     q_mvar_(load_id) = new_q;
 }
 

@@ -87,7 +87,7 @@ int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
         }
     }
     if(res == -1){
-        throw std::runtime_error("No slack bus is found in your grid");
+        throw std::runtime_error("BaseSolver::extract_slack_bus_id: No slack bus is found in your grid");
     }
     return res;
 }

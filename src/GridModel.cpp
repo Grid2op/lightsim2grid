@@ -112,7 +112,13 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     std::string version = std::get<0>(my_state);
     if(version != VERSION_INFO)
     {
-        throw("Wrong version. You tried to load a lightsim model saved with a different version that this one. It is not possible.");
+        std::ostringstream exc_;
+        exc_ << "GridModel::set_state: Wrong version. You tried to load a lightsim model saved with version ";
+        exc_ << VERSION_INFO;
+        exc_ << " while currently using the package on version ";
+        exc_ << version;
+        exc_ << "It is not possible.";
+        throw std::runtime_error(exc_.str());
     }
     init_vm_pu_ = std::get<1>(my_state);
     sn_mva_ = std::get<2>(my_state);
@@ -198,8 +204,11 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both connected and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).");
+        std::ostringstream exc_;
+        exc_ << "GridModel::ac_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
+        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+        throw std::runtime_error(exc_.str());
     }
     bool conv = false;
     CplxVect res = CplxVect();
@@ -314,8 +323,11 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, in
         if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
         int bus_id_solver = id_me_to_solver_[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One bus is connected in GridModel and disconnected in Solver");
+            std::ostringstream exc_;
+            exc_ << "GridModel::_get_results_back_to_orig_nodes: the bus with id ";
+            exc_ << bus_id_me;
+            exc_ << " is connected to a disconnected bus (solver side)";
+            throw std::runtime_error(exc_.str());
         }
         res(bus_id_me) = res_tmp(bus_id_solver);
     }
@@ -502,8 +514,11 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     // TODO refactor that with ac pf, this is mostly done, but only mostly...
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there.)");
+        std::ostringstream exc_;
+        exc_ << "GridModel::dc_pf_old: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
+        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+        throw std::runtime_error(exc_.str());
     }
     Eigen::SparseMatrix<cplx_type> dcYbus_tmp;
     CplxVect Sbus_tmp;
@@ -627,8 +642,11 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both connected and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).");
+        std::ostringstream exc_;
+        exc_ << "GridModel::dc_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
+        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+        throw std::runtime_error(exc_.str());
     }
     SolverType solver_type = _solver.get_type();
     _solver.change_solver(SolverType::DC);
@@ -667,8 +685,20 @@ int GridModel::nb_bus() const
 }
 
 void GridModel::add_gen_slackbus(int gen_id){
-    if(gen_id < 0) throw std::runtime_error("Slack bus should be an id of a generator, thus positive");
-    if(gen_id > generators_.nb()) throw std::runtime_error("Slack bus should be an id of a generator, your id is to high.");
+    if(gen_id < 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "GridModel::add_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
+        exc_ << gen_id;
+        throw std::runtime_error(exc_.str());
+    }
+    if(gen_id > generators_.nb())
+    {
+        std::ostringstream exc_;
+        exc_ << "GridModel::add_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
+        exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
+        throw std::runtime_error(exc_.str());
+    }
     gen_slackbus_ = gen_id;
 }
 

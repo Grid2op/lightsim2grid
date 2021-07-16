@@ -12,7 +12,7 @@
 template<SolverType ST>
 Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp()
 {
-    throw std::runtime_error("Unknown solver type.");
+    throw std::runtime_error("ChooseSolver::get_V_tmp: Unknown solver type.");
 }
 template<>
 Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::SparseLU>()
@@ -24,7 +24,7 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("get_V: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("ChooseSolver::get_V_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_V();
     #endif
@@ -56,7 +56,7 @@ bool ChooseSolver::compute_pf_tmp(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   real_type tol
                                   )
 {
-    throw std::runtime_error("Unknown solver type.");
+    throw std::runtime_error("ChooseSolver::compute_pf_tmp: Unknown solver type.");
 }
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -118,7 +118,7 @@ bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cpl
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("compute_pf: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("ChooseSolver::compute_pf_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
     #endif
@@ -127,7 +127,7 @@ bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cpl
 template<SolverType ST>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp()
 {
-    throw std::runtime_error("Unknown solver type.");
+    throw std::runtime_error("ChooseSolver::get_J_tmp: Unknown solver type.");
 }
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::SparseLU>()
@@ -137,24 +137,24 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::SparseLU>()
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::DC>()
 {
-    throw std::runtime_error("get_J: There is not Jacobian matrix for a DC powerflow.");
+    throw std::runtime_error("ChooseSolver::get_J_tmp: There is not Jacobian matrix for a DC powerflow.");
 }
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>()
 {
-    throw std::runtime_error("get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");
+    throw std::runtime_error("ChooseSolver::get_J_tmp: There is not Jacobian matrix for the GaussSeidel powerflow.");
 }
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::GaussSeidelSynch>()
 {
-    throw std::runtime_error("get_J: There is not Jacobian matrix for the GaussSeidelSynch powerflow.");
+    throw std::runtime_error("hooseSolver::get_J_tmp: There is not Jacobian matrix for the GaussSeidelSynch powerflow.");
 }
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("get_J: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("ChooseSolver::get_J_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_J();
     #endif
@@ -163,7 +163,7 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::KLU>()
 template<SolverType ST>
 Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp()
 {
-    throw std::runtime_error("Unknown solver type.");
+    throw std::runtime_error("ChooseSolver::get_Va_tmp: Unknown solver type.");
 }
 template<>
 Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::SparseLU>()
@@ -190,7 +190,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("get_Va: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("ChooseSolver::get_Va_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_Va();
     #endif
@@ -198,7 +198,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>()
 template<SolverType ST>
 Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp()
 {
-    throw std::runtime_error("Unknown solver type.");
+    throw std::runtime_error("ChooseSolver::get_Vm_tmp: Unknown solver type.");
 }
 template<>
 Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>()
@@ -225,7 +225,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("get_Vm: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("ChooseSolver::get_Vm_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_Vm();
     #endif
@@ -234,7 +234,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
 template<SolverType ST>
 double ChooseSolver::get_computation_time_tmp()
 {
-    throw std::runtime_error("Unknown solver type.");
+    throw std::runtime_error("ChooseSolver::get_computation_time_tmp: Unknown solver type.");
 }
 template<>
 double ChooseSolver::get_computation_time_tmp<SolverType::SparseLU>()
@@ -259,7 +259,7 @@ double ChooseSolver::get_computation_time_tmp<SolverType::KLU>()
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
-        throw std::runtime_error("get_computation_time: Impossible to use the KLU solver, that is not available on your plaform.");
+        throw std::runtime_error("ChooseSolver::get_computation_time_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         const auto & res =  _solver_klu.get_timers();
         return std::get<3>(res);
@@ -288,7 +288,7 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V(){
     }else if(_solver_type == SolverType::DC){
          return get_V_tmp<SolverType::DC>();
     }else{
-        throw std::runtime_error("Unknown solver type.");
+        throw std::runtime_error("ChooseSolver::get_V: Unknown solver type.");
     }
 }
 
@@ -306,7 +306,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va(){
     }else if(_solver_type == SolverType::DC){
          return get_Va_tmp<SolverType::DC>();
     }else{
-        throw std::runtime_error("Unknown solver type.");
+        throw std::runtime_error("ChooseSolver::get_Va: Unknown solver type.");
     }
 }
 Eigen::Ref<RealVect> ChooseSolver::get_Vm(){
@@ -323,7 +323,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Vm(){
     }else if(_solver_type == SolverType::DC){
          return get_Vm_tmp<SolverType::DC>();
     }else{
-        throw std::runtime_error("Unknown solver type.");
+        throw std::runtime_error("ChooseSolver::get_Vm: Unknown solver type.");
     }
 }
 
@@ -349,7 +349,7 @@ bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     }else if(_solver_type == SolverType::DC){
         return compute_pf_tmp<SolverType::DC>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else{
-        throw std::runtime_error("Unknown solver type.");
+        throw std::runtime_error("ChooseSolver::compute_pf: Unknown solver type.");
     }
 }
 
@@ -367,7 +367,7 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J(){
     }else if(_solver_type == SolverType::DC){
          return get_J_tmp<SolverType::DC>();
     }else{
-        throw std::runtime_error("Unknown solver type.");
+        throw std::runtime_error("ChooseSolver::get_J: Unknown solver type.");
     }
 }
 
@@ -386,6 +386,6 @@ double ChooseSolver::get_computation_time()
     }else if(_solver_type == SolverType::DC){
          return get_computation_time_tmp<SolverType::DC>();
     }else{
-        throw std::runtime_error("Unknown solver type.");
+        throw std::runtime_error("ChooseSolver::get_computation_time: Unknown solver type.");
     }
 }
