@@ -19,6 +19,7 @@ Change Log
 - [ADDED] now able to retrieve the powerlines parameters python side.
 - [IMPROVED] more explicit error messages when the building of the Ybus matrix fails.
 - [IMPROVED] now the solver is not reset when using the `backend._grid.check_solution`
+- [IMPROVED] upgrade SuiteSparse to version `v5.10.1`
 
 [0.5.1] 2021-04-09
 -------------------
