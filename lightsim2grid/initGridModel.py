@@ -68,7 +68,7 @@ def init(pp_net):
     model = GridModel()
     if "_options" in pp_net:
         if "init_vm_pu" in pp_net["_options"]:
-                model.set_init_vm_pu(pp_net["_options"]["init_vm_pu"])
+            model.set_init_vm_pu(pp_net["_options"]["init_vm_pu"])
 
     model.set_sn_mva(pp_net.sn_mva)
 

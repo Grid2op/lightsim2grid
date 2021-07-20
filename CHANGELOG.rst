@@ -15,6 +15,7 @@ Change Log
 -------------------
 - [FIXED] `GridModel` now properly throw "out_of_range" exception when trying to change the bus of non existing
   elements
+- [FIXED] wrong units were displayed for the iterators for lines and transformers.
 - [ADDED] now able to retrieve the powerlines parameters python side.
 - [IMPROVED] more explicit error messages when the building of the Ybus matrix fails.
 - [IMPROVED] now the solver is not reset when using the `backend._grid.check_solution`
