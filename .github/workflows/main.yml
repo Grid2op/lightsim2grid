@@ -111,7 +111,7 @@ jobs:
       - name: Compile SuiteSparse
         if: matrix.config.name == 'darwin'
         run: make
-        
+
       - name: Build wheel
         run: python setup.py bdist_wheel
 
