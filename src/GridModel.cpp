@@ -74,7 +74,9 @@ GridModel::GridModel(const GridModel & other)
 GridModel::StateRes GridModel::get_state() const
 {
     std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
-    std::string version = VERSION_INFO;
+    int version_major = VERSION_MAJOR;
+    int version_medium = VERSION_MEDIUM;
+    int version_minor = VERSION_MINOR;
     auto res_line = powerlines_.get_state();
     auto res_shunt = shunts_.get_state();
     auto res_trafo = trafos_.get_state();
@@ -83,7 +85,9 @@ GridModel::StateRes GridModel::get_state() const
     auto res_sgen = sgens_.get_state();
     auto res_storage = storages_.get_state();
 
-    GridModel::StateRes res(version,
+    GridModel::StateRes res(version_major,
+                            version_medium,
+                            version_minor,
                             init_vm_pu_,
                             sn_mva_,
                             bus_vn_kv,
@@ -109,37 +113,39 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    std::string version = std::get<0>(my_state);
-    if(version != VERSION_INFO)
+    int version_major = std::get<0>(my_state);
+    int version_medium = std::get<1>(my_state);
+    int version_minor = std::get<2>(my_state);
+    if(version_major != VERSION_MAJOR | version_medium != VERSION_MEDIUM | version_minor != VERSION_MINOR)
     {
         std::ostringstream exc_;
-        exc_ << "GridModel::set_state: Wrong version. You tried to load a lightsim model saved with version ";
-        exc_ << VERSION_INFO;
+        exc_ << "GridModel::set_state: Wrong version. You tried to load a lightsim2grid model saved with version ";
+        exc_ << version_major << "." << version_medium << "." << version_minor;
         exc_ << " while currently using the package on version ";
-        exc_ << version;
-        exc_ << "It is not possible.";
+        exc_ << VERSION_MAJOR << "." << VERSION_MEDIUM << "." << VERSION_MINOR;
+        exc_ << "It is not possible. Please reinstall it.";
         throw std::runtime_error(exc_.str());
     }
-    init_vm_pu_ = std::get<1>(my_state);
-    sn_mva_ = std::get<2>(my_state);
-    std::vector<real_type> & bus_vn_kv = std::get<3>(my_state);
-    std::vector<bool> & bus_status = std::get<4>(my_state);
+    init_vm_pu_ = std::get<3>(my_state);
+    sn_mva_ = std::get<4>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<5>(my_state);
+    std::vector<bool> & bus_status = std::get<6>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<5>(my_state);
+    DataLine::StateRes & state_lines = std::get<7>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<6>(my_state);
+    DataShunt::StateRes & state_shunts = std::get<8>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<7>(my_state);
+    DataTrafo::StateRes & state_trafos = std::get<9>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<8>(my_state);
+    DataGen::StateRes & state_gens = std::get<10>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<9>(my_state);
+    DataLoad::StateRes & state_loads = std::get<11>(my_state);
     // static gen
-    DataSGen::StateRes & state_sgens= std::get<10>(my_state);
+    DataSGen::StateRes & state_sgens= std::get<12>(my_state);
     // storage units
-    DataLoad::StateRes & state_storages = std::get<11>(my_state);
-    int gen_slackbus = std::get<12>(my_state);
+    DataLoad::StateRes & state_storages = std::get<13>(my_state);
+    int gen_slackbus = std::get<14>(my_state);
 
     // assign it to this instance
 
