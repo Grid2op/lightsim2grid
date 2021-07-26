@@ -1,0 +1,5 @@
+pybind11>=2.4
+pandapower
+numpy
+scipy
+grid2op
