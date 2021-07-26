@@ -18,6 +18,8 @@
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
+#include "Utils.h"
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"

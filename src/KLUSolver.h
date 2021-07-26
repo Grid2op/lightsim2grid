@@ -19,6 +19,7 @@
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
+#include "Utils.h"
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
@@ -30,7 +31,6 @@ extern "C" {
 }
 
 #include "CustTimer.h"
-#include "Utils.h"
 #include "BaseNRSolver.h"
 /**
 class to handle the solver using newton-raphson method, using KLU algorithm and sparse matrices.

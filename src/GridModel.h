@@ -16,6 +16,8 @@
 #include <chrono>
 #include <cmath>  // for PI
 
+#include "Utils.h"
+
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Eigen/Core"
@@ -24,7 +26,6 @@
 #include "Eigen/SparseLU"
 
 // import data classes
-#include "Utils.h"
 #include "DataGeneric.h"
 #include "DataLine.h"
 #include "DataShunt.h"
