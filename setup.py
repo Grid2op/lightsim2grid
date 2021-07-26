@@ -66,8 +66,10 @@ elif sys.platform.startswith("darwin"):
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
 elif sys.platform.startswith("win32"):
-    extra_compile_args_tmp += ["-D_USE_MATH_DEFINES", f'-DVERSION_INFO=\\"{__version__}\\"']
-    # otherwise windows compiler does not import "M_PI" from the math header
+    extra_compile_args_tmp += [# otherwise windows compiler does not import "M_PI" from the math header
+                               "-D_USE_MATH_DEFINES",
+                               # add the version of the package in a correct way
+                               '/DVERSION_INFO=\\"%s\\"' % __version__]
 
 
 # for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
