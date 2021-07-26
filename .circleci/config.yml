@@ -192,7 +192,7 @@ workflows:
           - compile_gcc9
           - compile_clang9
           - compile_gcc8
-          - compile_clang8
+          - compile_clang11
           - compile_gcc7
-          - compile_clang7
+          - compile_clang12
           - compile_windows
