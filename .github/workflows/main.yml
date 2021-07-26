@@ -110,10 +110,8 @@ jobs:
 
       - name: Compile SuiteSparse
         if: matrix.config.name == 'darwin'
-        run: |
-          brew install --with-toolchain llvm
-          make
-
+        run: make
+        
       - name: Build wheel
         run: python setup.py bdist_wheel
 
