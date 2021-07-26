@@ -5,104 +5,10 @@ import setuptools
 import os
 import warnings
 
+from pybind11.setup_helpers import Pybind11Extension, build_ext
+
 __version__ = "0.5.1"
 KLU_SOLVER_AVAILABLE = False
-
-# courtesy to
-# https://github.com/pybind/python_example/blob/master/setup.py
-class get_pybind_include(object):
-    """Helper class to determine the pybind11 include path
-    The purpose of this class is to postpone importing pybind11
-    until it is actually installed, so that the ``get_include()``
-    method can be invoked.
-
-    @author: Sylvain Corlay
-    """
-
-    def __init__(self, user=False):
-        self.user = user
-
-    def __str__(self):
-        import pybind11
-        return pybind11.get_include(self.user)
-
-
-# As of Python 3.6, CCompiler has a `has_flag` method.
-# cf http://bugs.python.org/issue26689
-def has_flag(compiler, flagname):
-    """Return a boolean indicating whether a flag name is supported on
-    the specified compiler.
-
-    @author: Sylvain Corlay
-    """
-    import tempfile
-    with tempfile.NamedTemporaryFile('w', suffix='.cpp') as f:
-        f.write('int main (int argc, char **argv) { return 0; }')
-        try:
-            compiler.compile([f.name], extra_postargs=[flagname])
-        except setuptools.distutils.errors.CompileError:
-            return False
-    return True
-
-
-def cpp_flag(compiler):
-    """Return the -std=c++[11/14/17] compiler flag.
-    The newer version is preferred over c++11 (when it is available).
-
-    @author: Sylvain Corlay
-    """
-    flags = ['-std=c++17', '-std=c++14', '-std=c++11']
-
-    for flag in flags:
-        if has_flag(compiler, flag):
-            return flag
-
-    raise RuntimeError('Unsupported compiler -- at least C++11 support '
-                       'is needed!')
-
-
-class BuildExt(build_ext):
-    """
-    A custom build extension for adding compiler-specific options.
-    @author: Sylvain Corlay
-    """
-    c_opts = {
-        'msvc': ['/EHsc'],
-        'unix': [],
-    }
-    l_opts = {
-        'msvc': [],
-        'unix': [],
-    }
-
-    if sys.platform == 'darwin':
-        darwin_opts = ['-stdlib=libc++', '-mmacosx-version-min=10.7']
-        c_opts['unix'] += darwin_opts
-        l_opts['unix'] += darwin_opts
-
-    def build_extensions(self):
-        ct = self.compiler.compiler_type
-
-        # for debug option
-        if hasattr(self.compiler, "compiler"):
-            print()
-            print("Compiler options used:")
-            print(self.compiler.compiler)
-            print()
-
-        opts = self.c_opts.get(ct, [])
-        link_opts = self.l_opts.get(ct, [])
-        if ct == 'unix':
-            opts.append("-DVERSION_INFO=\"%s\"" % self.distribution.get_version())
-            opts.append(cpp_flag(self.compiler))
-            if has_flag(self.compiler, '-fvisibility=hidden'):
-                opts.append('-fvisibility=hidden')
-        elif ct == 'msvc':
-            opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
-        for ext in self.extensions:
-            ext.extra_compile_args += opts
-            ext.extra_link_args += link_opts
-        build_ext.build_extensions(self)
 
 # Try to link against SuiteSparse (if available)
 # check that they exist
@@ -146,11 +52,7 @@ else:
 INCLUDE = INCLUDE_suitesparse
 INCLUDE.append("{}/eigen".format(eigen_path))
 
-include_dirs = [
-                # Path to pybind11 headers
-                get_pybind_include(),
-                get_pybind_include(user=True)
-]
+include_dirs = []
 include_dirs += INCLUDE
 
 # compiler options
@@ -202,11 +104,10 @@ if KLU_SOLVER_AVAILABLE:
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
 
 ext_modules = [
-    Extension(
+    Pybind11Extension(
         'lightsim2grid_cpp',
         src_files,
         include_dirs=include_dirs,
-        language='c++',
         extra_objects=LIBS,
         extra_compile_args=extra_compile_args
     )
@@ -258,7 +159,7 @@ setup(name='LightSim2Grid',
       install_requires=pkgs["required"],
       extras_require=pkgs["extras"],
       setup_requires=['pybind11>=2.4'],
-      cmdclass={'build_ext': BuildExt},
+      cmdclass={'build_ext': build_ext},
       zip_safe=False,
       packages=setuptools.find_packages(),
       keywords='pandapower powergrid simulator KLU Eigen c++',

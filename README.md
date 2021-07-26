@@ -429,7 +429,9 @@ cd ..
 
 Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
 
-These tests include, for now, compilation on gcc (version 7, 8, 9 and 10) and clang (version 7, 8, 9 and 10).
+These tests include, for now, compilation on gcc (version 7, 8, 9 and 10) and clang (version 9, 10, 11 and 12).
+
+**NB** Older version of clang are not tested regularly, but light2imgrid used to work on these versions.
 
 ### Known issues
 
