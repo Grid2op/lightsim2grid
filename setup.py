@@ -4,7 +4,6 @@ import sys
 import setuptools
 import os
 import warnings
-
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 __version__ = "0.5.1"
@@ -60,14 +59,14 @@ extra_compile_args_tmp = ["-DNDEBUG"]
 if sys.platform.startswith('linux'):
     # extra_compile_args_tmp = ["-fext-numeric-literals"]
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
-    extra_compile_args_tmp += []
+    extra_compile_args_tmp += [f"-DVERSION_INFO=\"{__version__}\""]
 elif sys.platform.startswith("darwin"):
     # extra_compile_args_tmp = ["-fsized-deallocation"]
-    extra_compile_args_tmp += []
+    extra_compile_args_tmp += [f"-DVERSION_INFO=\"{__version__}\""]
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
 elif sys.platform.startswith("win32"):
-    extra_compile_args_tmp += ["-D_USE_MATH_DEFINES"]
+    extra_compile_args_tmp += ["-D_USE_MATH_DEFINES", f'/DVERSION_INFO=\\"{__version__}\\"']
     # otherwise windows compiler does not import "M_PI" from the math header
 
 
