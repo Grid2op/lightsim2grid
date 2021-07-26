@@ -435,8 +435,16 @@ These tests include, for now, compilation on gcc (version 7, 8, 9 and 10) and cl
 
 ### Known issues
 
+#### Storage units
 There are discrepency in the handling of storage units, when the are not asked to produce / consume anything (setpoint
 is 0.) between pandapower and lightsim2grid only in the case where the storage unit is alone on its bus.
 
 Pandapower does not detect it and the episode can continue. On the other side, lightsim2grid detects it and raise an
 error because in that case the grid is not connex anymore (which is the desired behaviour).
+
+#### Compilation issue
+
+On the clang compiler (default one on MacOS computer) it is sometime require to downgrade the pybind11 version
+to 2.6.2 to install the package.
+
+You can downgrade pybind11 with: `python -m pip install -U pybind11==2.6.2`

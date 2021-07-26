@@ -5,6 +5,9 @@ orbs:
 
 
 executors:
+    gcc_11:
+        docker:
+            - image: gcc:11
     gcc_10:
         docker:
             - image: gcc:10
@@ -14,9 +17,6 @@ executors:
     gcc_8:
         docker:
             - image: gcc:8
-    gcc_7:
-        docker:
-            - image: gcc:7
     clang12:
         docker:
             - image: silkeh/clang:12
@@ -82,8 +82,8 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
-    compile_gcc7:
-        executor: gcc_7
+    compile_gcc11:
+        executor: gcc_11
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -110,7 +110,7 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     pip install -U grid2op
-                    pip install -U pybind11
+                    pip install -U pybind11==2.6.2
                     git submodule init
                     git submodule update
                     make
@@ -193,6 +193,6 @@ workflows:
           - compile_clang9
           - compile_gcc8
           - compile_clang11
-          - compile_gcc7
+          - compile_gcc11
           - compile_clang12
           - compile_windows
