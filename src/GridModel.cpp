@@ -10,7 +10,7 @@
 
 GridModel::GridModel(const GridModel & other)
 {
-    reset();
+    reset(true);
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -74,7 +74,9 @@ GridModel::GridModel(const GridModel & other)
 GridModel::StateRes GridModel::get_state() const
 {
     std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
-    std::string version = VERSION_INFO;
+    int version_major = VERSION_MAJOR;
+    int version_medium = VERSION_MEDIUM;
+    int version_minor = VERSION_MINOR;
     auto res_line = powerlines_.get_state();
     auto res_shunt = shunts_.get_state();
     auto res_trafo = trafos_.get_state();
@@ -83,7 +85,9 @@ GridModel::StateRes GridModel::get_state() const
     auto res_sgen = sgens_.get_state();
     auto res_storage = storages_.get_state();
 
-    GridModel::StateRes res(version,
+    GridModel::StateRes res(version_major,
+                            version_medium,
+                            version_minor,
                             init_vm_pu_,
                             sn_mva_,
                             bus_vn_kv,
@@ -104,36 +108,44 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
-    reset();
+    reset(true);
     need_reset_ = true;
     compute_results_ = true;
 
     // extract data from the state
-    std::string version = std::get<0>(my_state);
-    if(version != VERSION_INFO)
+    int version_major = std::get<0>(my_state);
+    int version_medium = std::get<1>(my_state);
+    int version_minor = std::get<2>(my_state);
+    if(version_major != VERSION_MAJOR | version_medium != VERSION_MEDIUM | version_minor != VERSION_MINOR)
     {
-        throw("Wrong version. You tried to load a lightsim model saved with a different version that this one. It is not possible.");
+        std::ostringstream exc_;
+        exc_ << "GridModel::set_state: Wrong version. You tried to load a lightsim2grid model saved with version ";
+        exc_ << version_major << "." << version_medium << "." << version_minor;
+        exc_ << " while currently using the package on version ";
+        exc_ << VERSION_MAJOR << "." << VERSION_MEDIUM << "." << VERSION_MINOR;
+        exc_ << "It is not possible. Please reinstall it.";
+        throw std::runtime_error(exc_.str());
     }
-    init_vm_pu_ = std::get<1>(my_state);
-    sn_mva_ = std::get<2>(my_state);
-    std::vector<real_type> & bus_vn_kv = std::get<3>(my_state);
-    std::vector<bool> & bus_status = std::get<4>(my_state);
+    init_vm_pu_ = std::get<3>(my_state);
+    sn_mva_ = std::get<4>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<5>(my_state);
+    std::vector<bool> & bus_status = std::get<6>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<5>(my_state);
+    DataLine::StateRes & state_lines = std::get<7>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<6>(my_state);
+    DataShunt::StateRes & state_shunts = std::get<8>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<7>(my_state);
+    DataTrafo::StateRes & state_trafos = std::get<9>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<8>(my_state);
+    DataGen::StateRes & state_gens = std::get<10>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<9>(my_state);
+    DataLoad::StateRes & state_loads = std::get<11>(my_state);
     // static gen
-    DataSGen::StateRes & state_sgens= std::get<10>(my_state);
+    DataSGen::StateRes & state_sgens= std::get<12>(my_state);
     // storage units
-    DataLoad::StateRes & state_storages = std::get<11>(my_state);
-    int gen_slackbus = std::get<12>(my_state);
+    DataLoad::StateRes & state_storages = std::get<13>(my_state);
+    int gen_slackbus = std::get<14>(my_state);
 
     // assign it to this instance
 
@@ -177,7 +189,7 @@ void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
 }
 
-void GridModel::reset()
+void GridModel::reset(bool reset_solver)
 {
     Ybus_ = Eigen::SparseMatrix<cplx_type>();
     Sbus_ = CplxVect();
@@ -189,7 +201,7 @@ void GridModel::reset()
     need_reset_ = true;
 
     // reset the solvers
-    _solver.reset();
+    if (reset_solver) _solver.reset();
 }
 
 CplxVect GridModel::ac_pf(const CplxVect & Vinit,
@@ -198,14 +210,17 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both connected and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).");
+        std::ostringstream exc_;
+        exc_ << "GridModel::ac_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
+        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+        throw std::runtime_error(exc_.str());
     }
     bool conv = false;
     CplxVect res = CplxVect();
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    CplxVect V = pre_process_solver(Vinit, true);
+    CplxVect V = pre_process_solver(Vinit, true, true);
 
     // start the solver
     conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
@@ -221,7 +236,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     int nb_bus = V_proposed.size();
-    CplxVect V = pre_process_solver(V_proposed, true);
+    CplxVect V = pre_process_solver(V_proposed, true, false);
 
     // compute the mismatch
     CplxVect tmp = Ybus_ * V;  // this is a vector
@@ -280,12 +295,12 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
 };
 
 
-CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac)
+CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac, bool reset_solver)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
 
     // if(need_reset_){ // TODO optimization when it's not mandatory to start from scratch
-    reset();
+    reset(reset_solver);
     slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
     init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
     fillYbus(Ybus_, is_ac, id_me_to_solver_);
@@ -314,8 +329,11 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, in
         if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
         int bus_id_solver = id_me_to_solver_[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One bus is connected in GridModel and disconnected in Solver");
+            std::ostringstream exc_;
+            exc_ << "GridModel::_get_results_back_to_orig_nodes: the bus with id ";
+            exc_ << bus_id_me;
+            exc_ << " is connected to a disconnected bus (solver side)";
+            throw std::runtime_error(exc_.str());
         }
         res(bus_id_me) = res_tmp(bus_id_solver);
     }
@@ -502,8 +520,11 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     // TODO refactor that with ac pf, this is mostly done, but only mostly...
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both conencted and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there.)");
+        std::ostringstream exc_;
+        exc_ << "GridModel::dc_pf_old: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
+        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+        throw std::runtime_error(exc_.str());
     }
     Eigen::SparseMatrix<cplx_type> dcYbus_tmp;
     CplxVect Sbus_tmp;
@@ -627,8 +648,11 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
 {
     int nb_bus = bus_vn_kv_.size();
     if(Vinit.size() != nb_bus){
-        std::cout << "Vinit.size() " << Vinit.size() << " nb_bus: " << nb_bus << std::endl;
-        throw std::runtime_error("Size of the Vinit should be the same as the total number of buses (both connected and disconnected). (fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).");
+        std::ostringstream exc_;
+        exc_ << "GridModel::dc_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
+        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+        throw std::runtime_error(exc_.str());
     }
     SolverType solver_type = _solver.get_type();
     _solver.change_solver(SolverType::DC);
@@ -637,7 +661,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     CplxVect res = CplxVect();
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    CplxVect V = pre_process_solver(Vinit, false);
+    CplxVect V = pre_process_solver(Vinit, false, true);
 
     // start the solver
     conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
@@ -667,8 +691,20 @@ int GridModel::nb_bus() const
 }
 
 void GridModel::add_gen_slackbus(int gen_id){
-    if(gen_id < 0) throw std::runtime_error("Slack bus should be an id of a generator, thus positive");
-    if(gen_id > generators_.nb()) throw std::runtime_error("Slack bus should be an id of a generator, your id is to high.");
+    if(gen_id < 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "GridModel::add_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
+        exc_ << gen_id;
+        throw std::runtime_error(exc_.str());
+    }
+    if(gen_id > generators_.nb())
+    {
+        std::ostringstream exc_;
+        exc_ << "GridModel::add_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
+        exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
+        throw std::runtime_error(exc_.str());
+    }
     gen_slackbus_ = gen_id;
 }
 

@@ -200,6 +200,8 @@ class TestAgentAllMove(ABC):
                       backend=backend,
                       gamerules_class=AlwaysLegal,
                       data_feeding_kwargs={"chunk_size": 128, "max_iter": MAX_TS}) as env:
+                env.seed(0)  # for stochastic environments
+                obs = env.reset()
                 # make the agent only once, ast it takes roughly 2-3 mins for the case118
                 # due to the enumeration of all the topologies
                 agent = self.agent_class(action_space=env.action_space, env_name=self._get_env_name())
@@ -210,11 +212,15 @@ class TestAgentAllMove(ABC):
                       param=self.param,
                       gamerules_class=AlwaysLegal,
                       data_feeding_kwargs={"chunk_size": 128, "max_iter": MAX_TS}) as env:
+                env.seed(0)  # for stochastic environments
+                obs = env.reset()
                 agent.nb_act_done = 0  # reset the agent
                 agent.act_this = True  # reset the agent
                 nb_ts_pp, aor_pp, gen_p_pp, gen_q_pp = self._run_env(env, agent)
 
         if env_name == "rte_case14_realistic":
+            self.tol = 2e-4
+        elif env_name == "l2rpn_case14_sandbox":
             self.tol = 2e-4
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}: lightsim: {}, pp: {}" \
@@ -250,15 +256,14 @@ class TestcaseNeurips(TestAgentAllMove, unittest.TestCase):
 
 
 # # takes a looooong time
-class Testcase118(TestAgentAllMove, unittest.TestCase):
+# class Testcase118(TestAgentAllMove, unittest.TestCase):
+#     def _get_env_name(self):
+#         return "rte_case118_example"
+
+
+class TestcaseSandbox(TestAgentAllMove, unittest.TestCase):
     def _get_env_name(self):
-        return "rte_case118_example"
-
-
-# requires additional data to be downloaded
-# class TestcaseSandbox(TestAgentAllMove, unittest.TestCase):
-#    def _get_env_name(self):
-#        return "l2rpn_case14_sandbox"
+        return "l2rpn_case14_sandbox"
 
 
 if __name__ == "__main__":

@@ -11,6 +11,17 @@ Change Log
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 
+[0.5.2] 2021-07-26
+-------------------
+- [FIXED] `GridModel` now properly throw "out_of_range" exception when trying to change the bus of non existing
+  elements
+- [FIXED] wrong units were displayed for the iterators for lines and transformers.
+- [ADDED] now able to retrieve the powerlines parameters python side.
+- [IMPROVED] more explicit error messages when the building of the `Ybus` matrix fails.
+- [IMPROVED] now the solver is not reset when using the `backend._grid.check_solution`
+- [IMPROVED] upgrade SuiteSparse to version `v5.10.1`
+- [IMPROVED] upgrade eigen to version `3.4-rc1`
+
 [0.5.1] 2021-04-09
 -------------------
 - [FIXED] yet another compilation issue with clang (see

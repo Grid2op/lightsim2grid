@@ -9,12 +9,14 @@
 #ifndef DATATRAFO_H
 #define DATATRAFO_H
 
+#include "Utils.h"
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "Utils.h"
+
 #include "DataGeneric.h"
 
 /**
@@ -39,23 +41,23 @@ class DataTrafo : public DataGeneric
                 bool connected;
                 int bus_hv_id;
                 int bus_lv_id;
-                real_type r;
-                real_type x;
-                cplx_type h;
+                real_type r_pu;
+                real_type x_pu;
+                cplx_type h_pu;
                 bool is_tap_hv_side;
                 real_type ratio;
-                real_type shift;
+                real_type shift_rad;
 
                 bool has_res;
                 real_type res_p_hv_mw;
                 real_type res_q_hv_mvar;
                 real_type res_v_hv_kv;
-                real_type res_a_hv_a;
+                real_type res_a_hv_ka;
                 real_type res_theta_hv_deg;
                 real_type res_p_lv_mw;
                 real_type res_q_lv_mvar;
                 real_type res_v_lv_kv;
-                real_type res_a_lv_a;
+                real_type res_a_lv_ka;
                 real_type res_theta_lv_deg;
 
                 TrafoInfo(const DataTrafo & r_data_trafo, int my_id):
@@ -63,22 +65,22 @@ class DataTrafo : public DataGeneric
                 connected(false),
                 bus_hv_id(-1),
                 bus_lv_id(-1),
-                r(-1.0),
-                x(-1.0),
-                h(0., 0.),
+                r_pu(-1.0),
+                x_pu(-1.0),
+                h_pu(0., 0.),
                 is_tap_hv_side(true),
                 ratio(-1.0),
-                shift(-1.0),
+                shift_rad(-1.0),
                 has_res(false),
                 res_p_hv_mw(0.),
                 res_q_hv_mvar(0.),
                 res_v_hv_kv(0.),
-                res_a_hv_a(0.),
+                res_a_hv_ka(0.),
                 res_theta_hv_deg(0.),
                 res_p_lv_mw(0.),
                 res_q_lv_mvar(0.),
                 res_v_lv_kv(0.),
-                res_a_lv_a(0.),
+                res_a_lv_ka(0.),
                 res_theta_lv_deg(0.)
                 {
                     if((my_id >= 0) & (my_id < r_data_trafo.nb()))
@@ -87,12 +89,12 @@ class DataTrafo : public DataGeneric
                         connected = r_data_trafo.status_[my_id];
                         bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
                         bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
-                        r = r_data_trafo.r_.coeff(my_id);
-                        x = r_data_trafo.x_.coeff(my_id);
-                        h = r_data_trafo.h_.coeff(my_id);
+                        r_pu = r_data_trafo.r_.coeff(my_id);
+                        x_pu = r_data_trafo.x_.coeff(my_id);
+                        h_pu = r_data_trafo.h_.coeff(my_id);
                         is_tap_hv_side = r_data_trafo.is_tap_hv_side_[my_id];
                         ratio = r_data_trafo.ratio_.coeff(my_id);
-                        shift = r_data_trafo.shift_.coeff(my_id);
+                        shift_rad = r_data_trafo.shift_.coeff(my_id);
 
                         has_res = r_data_trafo.res_p_hv_.size() > 0;
                         if(has_res)
@@ -100,11 +102,11 @@ class DataTrafo : public DataGeneric
                             res_p_hv_mw = r_data_trafo.res_p_hv_.coeff(my_id);
                             res_q_hv_mvar = r_data_trafo.res_q_hv_.coeff(my_id);
                             res_v_hv_kv = r_data_trafo.res_v_hv_.coeff(my_id);
-                            res_a_hv_a = r_data_trafo.res_a_hv_.coeff(my_id);
+                            res_a_hv_ka = r_data_trafo.res_a_hv_.coeff(my_id);
                             res_p_lv_mw = r_data_trafo.res_p_lv_.coeff(my_id);
                             res_q_lv_mvar = r_data_trafo.res_q_lv_.coeff(my_id);
                             res_v_lv_kv = r_data_trafo.res_v_lv_.coeff(my_id);
-                            res_a_lv_a = r_data_trafo.res_a_lv_.coeff(my_id);
+                            res_a_lv_ka = r_data_trafo.res_a_lv_.coeff(my_id);
                             res_theta_hv_deg = r_data_trafo.res_theta_lv_.coeff(my_id);
                             res_theta_lv_deg = r_data_trafo.res_theta_hv_.coeff(my_id);
                         }
@@ -156,11 +158,11 @@ class DataTrafo : public DataGeneric
     {
         if(id < 0)
         {
-            throw std::range_error("You cannot ask for a negative generator");
+            throw std::range_error("You cannot ask for a transformer with negative id");
         }
         if(id >= nb())
         {
-            throw std::range_error("Generator out of bound. Not enough generator on the grid.");
+            throw std::range_error("Generator out of bound. Not enough transformers on the grid.");
         }
         return TrafoInfo(*this, id);
     }

@@ -1,4 +1,4 @@
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 __all__ = ["newtonpf", "SolverType", "solver"]
 
@@ -12,3 +12,11 @@ try:
 except ImportError:
     # grid2op is not installed, the Backend will not be available
     pass
+
+try:
+    from lightsim2grid.physical_law_checker import PhysicalLawChecker
+    __all__.append("PhysicalLawChecker")
+except ImportError as exc_:
+    # grid2op is not installed, the Backend will not be available
+    pass
+    print(exc_)

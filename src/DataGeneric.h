@@ -9,6 +9,8 @@
 #ifndef DATAGENERIC_H
 #define DATAGENERIC_H
 
+#include "Utils.h"
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"

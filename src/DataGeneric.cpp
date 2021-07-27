@@ -8,6 +8,7 @@
 
 #include "DataGeneric.h"
 #include <iostream>
+#include <sstream>
 
 const int DataGeneric::_deactivated_bus_id = -1;
 
@@ -38,11 +39,43 @@ void DataGeneric::_deactivate(int el_id, std::vector<bool> & status, bool & need
 void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, bool & need_reset, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
-    if(el_id >= el_bus_ids.size()) throw std::out_of_range("change_bus: id too high");
-    if(el_id < 0) throw std::out_of_range("change_bus: id too low");
+    if(el_id >= el_bus_ids.size())
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
+        exc_ << el_id;
+        exc_ << " while the grid counts ";
+        exc_ << el_bus_ids.size();
+        exc_ << " such elements (id too high)";
+        throw std::out_of_range(exc_.str());
+    }
+    if(el_id < 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
+        exc_ << el_id;
+        exc_ << " (id should be >= 0)";
+        throw std::out_of_range(exc_.str());
+    }
+
     // throw error: bus id does not exist
-    if(new_bus_me_id >= nb_bus) throw std::out_of_range("change_bus: not enough bus to connect object to bus id");
-    if(new_bus_me_id < 0) throw std::out_of_range("change_bus: negative bus id");
+    if(new_bus_me_id >= nb_bus)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGeneric::_change_bus: Cannot change an element to bus ";
+        exc_ << new_bus_me_id;
+        exc_ << " There are only ";
+        exc_ << nb_bus;
+        exc_ << " distinct buses on this grid.";
+        throw std::out_of_range(exc_.str());
+    }
+    if(new_bus_me_id < 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "DataGeneric::_change_bus: new bus id should be >=0 and not ";
+        exc_ << new_bus_me_id;
+        throw std::out_of_range(exc_.str());
+    }
     int & bus_me_id = el_bus_ids(el_id);
     if(bus_me_id != new_bus_me_id) need_reset = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
     bus_me_id = new_bus_me_id;
@@ -74,7 +107,11 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataGeneric::v_kv_from_vpu: An element is connected to a disconnected bus");
+            std::ostringstream exc_;
+            exc_ << "DataGeneric::v_kv_from_vpu: The element of id ";
+            exc_ << bus_solver_id;
+            exc_ << " is connected to a disconnected bus";
+            throw std::runtime_error(exc_.str());
         }
         real_type bus_vn_kv_me = bus_vn_kv(el_bus_me_id);
         v(el_id) = Vm(bus_solver_id) * bus_vn_kv_me;
@@ -97,7 +134,11 @@ void DataGeneric::v_deg_from_va(const Eigen::Ref<RealVect> & Va,
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataGeneric::v_kv_from_vpu: An element is connected to a disconnected bus");
+            std::ostringstream exc_;
+            exc_ << "DataGeneric::v_deg_from_va: The element of id ";
+            exc_ << bus_solver_id;
+            exc_ << " is connected to a disconnected bus";
+            throw std::runtime_error(exc_.str());
         }
         theta(el_id) = Va(bus_solver_id) * 180. / my_pi;
     }

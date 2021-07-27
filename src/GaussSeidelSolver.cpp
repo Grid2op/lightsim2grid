@@ -49,7 +49,6 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         // https://github.com/rwl/PYPOWER/blob/master/pypower/gausspf.py
 
         auto timer2 = CustTimer();
-        // RealVect_all_at_once(tmp_Sbus, Ybus, pv, pq);
         one_iter(tmp_Sbus, Ybus, pv, pq);
         timer_solve_ += timer2.duration();
 

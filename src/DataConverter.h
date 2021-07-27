@@ -10,6 +10,8 @@
 #define DATACONVERTER_H
 #include <vector>
 
+#include "Utils.h"
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 

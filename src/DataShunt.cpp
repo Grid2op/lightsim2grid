@@ -64,7 +64,11 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
-            throw std::runtime_error("GridModel::fillYbusShunt: A shunt is connected to a disconnected bus.");
+            std::ostringstream exc_;
+            exc_ << "DataShunt::fillYbus: the shunt with id ";
+            exc_ << shunt_id;
+            exc_ << " is connected to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
         }
         if(sn_mva != 1.) tmp /= sn_mva;
         res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, -tmp));

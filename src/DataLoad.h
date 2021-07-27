@@ -9,12 +9,13 @@
 #ifndef DATALOAD_H
 #define DATALOAD_H
 
+#include "Utils.h"
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "Utils.h"
 #include "DataGeneric.h"
 
 /**

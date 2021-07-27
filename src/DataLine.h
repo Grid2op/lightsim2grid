@@ -11,12 +11,13 @@
 
 #include <iostream>
 
+#include "Utils.h"
+
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "Utils.h"
 #include "DataGeneric.h"
 
 /**
@@ -31,6 +32,83 @@ https://pandapower.readthedocs.io/en/latest/elements/line.html#electric-model
 **/
 class DataLine : public DataGeneric
 {
+    public:
+        class LineInfo
+        {
+            public:
+                // members
+                int id;  // id of the line
+                bool connected;
+                int bus_or_id;
+                int bus_ex_id;
+                real_type r_pu;
+                real_type x_pu;
+                cplx_type h_pu;
+
+                bool has_res;
+                real_type res_p_or_mw;
+                real_type res_q_or_mvar;
+                real_type res_v_or_kv;
+                real_type res_a_or_ka;
+                real_type res_theta_or_deg;
+                real_type res_p_ex_mw;
+                real_type res_q_ex_mvar;
+                real_type res_v_ex_kv;
+                real_type res_a_ex_ka;
+                real_type res_theta_ex_deg;
+
+                LineInfo(const DataLine & r_data_line, int my_id):
+                id(-1),
+                connected(false),
+                bus_or_id(-1),
+                bus_ex_id(-1),
+                r_pu(-1.0),
+                x_pu(-1.0),
+                h_pu(0., 0.),
+                has_res(false),
+                res_p_or_mw(0.),
+                res_q_or_mvar(0.),
+                res_v_or_kv(0.),
+                res_a_or_ka(0.),
+                res_theta_or_deg(0.),
+                res_p_ex_mw(0.),
+                res_q_ex_mvar(0.),
+                res_v_ex_kv(0.),
+                res_a_ex_ka(0.),
+                res_theta_ex_deg(0.)
+                {
+                    if((my_id >= 0) & (my_id < r_data_line.nb()))
+                    {
+                        id = my_id;
+                        connected = r_data_line.status_[my_id];
+                        bus_or_id = r_data_line.bus_or_id_.coeff(my_id);
+                        bus_ex_id = r_data_line.bus_ex_id_.coeff(my_id);
+                        r_pu = r_data_line.powerlines_r_.coeff(my_id);
+                        x_pu = r_data_line.powerlines_x_.coeff(my_id);
+                        h_pu = r_data_line.powerlines_h_.coeff(my_id);
+
+                        has_res = r_data_line.res_powerline_por_.size() > 0;
+                        if(has_res)
+                        {
+                            res_p_or_mw = r_data_line.res_powerline_por_.coeff(my_id);
+                            res_q_or_mvar = r_data_line.res_powerline_qor_.coeff(my_id);
+                            res_v_or_kv = r_data_line.res_powerline_vor_.coeff(my_id);
+                            res_a_or_ka = r_data_line.res_powerline_aor_.coeff(my_id);
+                            res_p_ex_mw = r_data_line.res_powerline_pex_.coeff(my_id);
+                            res_q_ex_mvar = r_data_line.res_powerline_qex_.coeff(my_id);
+                            res_v_ex_kv = r_data_line.res_powerline_vex_.coeff(my_id);
+                            res_a_ex_ka = r_data_line.res_powerline_aex_.coeff(my_id);
+                            res_theta_or_deg = r_data_line.res_powerline_thetaor_.coeff(my_id);
+                            res_theta_ex_deg = r_data_line.res_powerline_thetaex_.coeff(my_id);
+                        }
+                    }
+                }
+        };
+        typedef LineInfo DataInfo;
+
+    private:
+        typedef DataConstIterator<DataLine> DataLineConstIterator;
+
     public:
     typedef std::tuple<
                std::vector<real_type>, // branch_r
@@ -66,7 +144,24 @@ class DataLine : public DataGeneric
         }
     }
 
-    int nb() { return powerlines_r_.size(); }
+    int nb() const { return powerlines_r_.size(); }
+
+    // make it iterable
+    typedef DataLineConstIterator const_iterator_type;
+    const_iterator_type begin() const {return DataLineConstIterator(this, 0); }
+    const_iterator_type end() const {return DataLineConstIterator(this, nb()); }
+    LineInfo operator[](int id) const
+    {
+        if(id < 0)
+        {
+            throw std::range_error("You cannot ask for line with negative id");
+        }
+        if(id >= nb())
+        {
+            throw std::range_error("Generator out of bound. Not enough powerlines on the grid.");
+        }
+        return LineInfo(*this, id);
+    }
 
     void deactivate(int powerline_id, bool & need_reset) {_deactivate(powerline_id, status_, need_reset);}
     void reactivate(int powerline_id, bool & need_reset) {_reactivate(powerline_id, status_, need_reset);}
