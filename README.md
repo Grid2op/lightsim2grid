@@ -43,7 +43,7 @@ Suppose you somehow get:
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
 ```python
-from lighsim2grid.newtonpf import newtonpf
+from lightsim2grid.newtonpf import newtonpf
 V, converged, iterations, J = newtonpf(Ybus, V, Sbus, pv, pq, ppci, options)
 ```
 
@@ -51,7 +51,7 @@ This function uses the KLU algorithm and a c++ implementation of a Newton solver
 
 ## Installation (from source, recommended)
 You need to:
-- clone this repository and get the code of Eigen and SparseSuite (mandatory for compilation)
+- clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional)
 - (optional) compile a piece of SparseSuite
 - install the package
 

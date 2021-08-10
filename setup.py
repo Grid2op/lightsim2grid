@@ -6,7 +6,7 @@ import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.5.2"
+__version__ = "0.5.3.rc0"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -114,11 +114,9 @@ ext_modules = [
 
 pkgs = {
     "required": [
-        'pybind11>=2.4',
         "pandapower",
         "numpy",
-        "scipy",
-        "grid2op"
+        "scipy"
     ],
     "extras": {
         "docs": [

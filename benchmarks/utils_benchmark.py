@@ -75,12 +75,19 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
         need_reset = True
 
     if need_reset:
+        print("i call reset from utils_benchmark")
         obs = env.reset()
     else:
         obs = env.get_obs()
 
+    # don't forget to reset the timers
+    env.backend.comp_time = 0.
+    # it's not 0. because a powerflow is run when the backend is reset, and this is one more powerflow than the
+    # number of steps
+
     if with_type_solver:
         print(f"after reset: {env.backend._grid.get_solver_type()}")
+
     done = False
     reward = env.reward_range[0]
     nb_ts = 0

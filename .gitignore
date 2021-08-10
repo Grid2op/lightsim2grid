@@ -188,4 +188,6 @@ lightsim2grid/tests/timer.py
 wheelhouse/*.whl
 benchmarks/ase6495rte.json
 benchmarks/case6495rte.json
+test_dir
+
 

@@ -21,7 +21,7 @@ void SparseLUSolver::initialize(){
         err_ = 1;
     }
     need_factorize_ = false;
-    timer_solve_ += timer.duration();
+    timer_initialize_ += timer.duration();
 }
 
 void SparseLUSolver::solve(RealVect & b, bool has_just_been_inialized){

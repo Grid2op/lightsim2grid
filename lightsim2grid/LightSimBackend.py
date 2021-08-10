@@ -494,10 +494,6 @@ class LightSimBackend(Backend):
         Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
         """
         active_bus, *_, topo__, shunts__ = backendAction()
-        # TODO storage
-
-        # handle active bus
-        # self._grid.update_bus_status(self.__nb_bus_before, backendAction.activated_bus)
 
         # update the injections
         self._grid.update_gens_p(backendAction.prod_p.changed,
