@@ -1,6 +1,4 @@
 wheel
 pybind11>=2.4
 numpy
-scipy
 pandapower
-grid2op

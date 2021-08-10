@@ -14,7 +14,7 @@ Change Log
 
 [0.5.3] 2021-xx-yy
 -------------------
-- [FIXED] minor issues in the time measurments
+- [FIXED] minor issues in the benchmark (some time measurments were wrong)
 - [IMPROVED] trying to make the package available on pypi
 
 [0.5.2] 2021-07-26

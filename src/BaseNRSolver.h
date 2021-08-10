@@ -17,7 +17,7 @@ Base class for Newton Raphson based solver
 class BaseNRSolver : public BaseSolver
 {
     public:
-        BaseNRSolver():need_factorize_(true), timer_dSbus_(0.), timer_fillJ_(0.), timer_initialize_(0.) {}
+        BaseNRSolver():need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
 
         ~BaseNRSolver(){}
 

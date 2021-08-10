@@ -120,9 +120,7 @@ ext_modules = [
 
 pkgs = {
     "required": [
-        "pandapower",
-        "numpy",
-        "scipy"
+        "pandapower"
     ],
     "extras": {
         "docs": [
@@ -135,7 +133,9 @@ pkgs = {
             "recommonmark",
         ],
         "benchmark": [
-            "tabulate"
+            "tabulate",
+            "grid2op>=1.5.0",
+            "numpy"
         ],
         "recommended": [
             "grid2op>=1.5.0"
@@ -161,9 +161,11 @@ setup(name='LightSim2Grid',
       ext_modules=ext_modules,
       install_requires=pkgs["required"],
       extras_require=pkgs["extras"],
-      setup_requires=['pybind11>=2.4'],
+      # setup_requires=['pybind11>=2.4'],  # in the pyproject.toml directly now
       cmdclass={'build_ext': build_ext},
       zip_safe=False,
+      license='MPL 2.0',
+      platforms=["Windows", "Linux", "Mac OS-X", "Unix"],
       packages=setuptools.find_packages(),
       keywords='pandapower powergrid simulator KLU Eigen c++',
       classifiers=[
