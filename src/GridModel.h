@@ -43,7 +43,9 @@ class GridModel : public DataGeneric
 {
     public:
         typedef std::tuple<
-                std::string, // version
+                int, // version major
+                int, // version medium
+                int, // version minor
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
                 std::vector<real_type>,  // bus_vn_kv

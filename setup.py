@@ -54,20 +54,23 @@ INCLUDE.append("{}/eigen".format(eigen_path))
 include_dirs = []
 include_dirs += INCLUDE
 
+# extract the version information
+VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR = __version__.split(".")[:3]
+
 # compiler options
 extra_compile_args_tmp = ["-DNDEBUG"]
 if sys.platform.startswith('linux'):
     # extra_compile_args_tmp = ["-fext-numeric-literals"]
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
-    extra_compile_args_tmp += [f"-DVERSION_INFO=\"{__version__}\""]
+    extra_compile_args_tmp += []
 elif sys.platform.startswith("darwin"):
     # extra_compile_args_tmp = ["-fsized-deallocation"]
-    extra_compile_args_tmp += [f"-DVERSION_INFO=\"{__version__}\""]
+    extra_compile_args_tmp += []
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
 elif sys.platform.startswith("win32"):
-    extra_compile_args_tmp += ["-D_USE_MATH_DEFINES", f'-DVERSION_INFO=\"{__version__}\"']
-    # otherwise windows compiler does not import "M_PI" from the math header
+    extra_compile_args_tmp += [# otherwise windows compiler does not import "M_PI" from the math header
+                               "-D_USE_MATH_DEFINES"]
 
 
 # for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
@@ -77,8 +80,11 @@ elif sys.platform.startswith("win32"):
 # if you have installed some BLAS or LAPACKE libraries (on ubuntu sudo apt-get install libblas-dev liblapacke-dev)
 # you can also trigger their use when using eigen.
 # extra_compile_args_tmp += ["-DEIGEN_USE_BLAS", "-DEIGEN_USE_LAPACKE"]
-
 extra_compile_args = extra_compile_args_tmp
+# add the version information
+extra_compile_args += [f"-DVERSION_MAJOR={VERSION_MAJOR}",
+                       f"-DVERSION_MEDIUM={VERSION_MEDIUM}",
+                       f"-DVERSION_MINOR={VERSION_MINOR}"]
 src_files = ['src/main.cpp',
              "src/SparseLUSolver.cpp",
              "src/BaseConstants.cpp",
