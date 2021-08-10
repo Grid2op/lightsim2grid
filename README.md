@@ -128,6 +128,8 @@ python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --
 ```
 (results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
 
+(to run these benchmarks, some data will automatically be downloaded, but this requires an internet access)
+
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 

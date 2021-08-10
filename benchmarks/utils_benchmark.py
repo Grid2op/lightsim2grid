@@ -75,7 +75,6 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
         need_reset = True
 
     if need_reset:
-        print("i call reset from utils_benchmark")
         obs = env.reset()
     else:
         obs = env.get_obs()

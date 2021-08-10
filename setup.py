@@ -11,33 +11,49 @@ KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
 # check that they exist
-suitesparse_path = os.path.abspath("./SuiteSparse")
+# suitesparse_path = os.path.abspath("./SuiteSparse")
 eigen_path = os.path.abspath(".")
-LIBS = ["{}/KLU/Lib/libklu.a",
-        "{}/BTF/Lib/libbtf.a",
-        "{}/AMD/Lib/libamd.a",
-        "{}/COLAMD/Lib/libcolamd.a",
-        "{}/CXSparse/Lib/libcxsparse.a",
-        "{}/SuiteSparse_config/libsuitesparseconfig.a"
-        ]
-LIBS = [el.format(suitesparse_path) for el in LIBS]
+# LIBS = ["{}/KLU/Lib/libklu.a",
+#         "{}/BTF/Lib/libbtf.a",
+#         "{}/AMD/Lib/libamd.a",
+#         "{}/COLAMD/Lib/libcolamd.a",
+#         "{}/CXSparse/Lib/libcxsparse.a",
+#         "{}/SuiteSparse_config/libsuitesparseconfig.a"
+#         ]
+# LIBS = [el.format(suitesparse_path) for el in LIBS]
+# exists_libs = True
+# for el in LIBS:
+#     if not os.path.exists(el):
+#         exists_libs = False
+
+suitesparse_path = os.path.abspath("./build_cmake/built/")
+LIBS = ["libklu.a",
+        "libbtf.a",
+        "libamd.a",
+        "libcolamd.a",
+        "libcxsparse.a",
+        "libsuitesparseconfig.a"]
+LIBS = [os.path.join(suitesparse_path, "lib", el) for el in LIBS]
+
 exists_libs = True
 for el in LIBS:
     if not os.path.exists(el):
         exists_libs = False
+
 if exists_libs:
     # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
     KLU_SOLVER_AVAILABLE = True
 
     # include directory
-    INCLUDE_suitesparse = ["{}/SuiteSparse_config",
-                           "{}/CXSparse/Include",
-                           "{}/AMD/Include",
-                           "{}/BTF/Include",
-                           "{}/COLAMD/Include",
-                           "{}/KLU/Include"
-                           ]
-    INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
+    # INCLUDE_suitesparse = ["{}/SuiteSparse_config",
+    #                        "{}/CXSparse/Include",
+    #                        "{}/AMD/Include",
+    #                        "{}/BTF/Include",
+    #                        "{}/COLAMD/Include",
+    #                        "{}/KLU/Include"
+    #                        ]
+    # INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
+    INCLUDE_suitesparse = [os.path.join(suitesparse_path, "include", "suitesparse")]
 else:
     # suitesparse, and in particular the KLU linear solver is not available.
     # we'll use a default solver (a bit slower)
