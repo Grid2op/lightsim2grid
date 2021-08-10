@@ -10,52 +10,63 @@ __version__ = "0.5.3.rc0"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
-# check that they exist
-# suitesparse_path = os.path.abspath("./SuiteSparse")
-eigen_path = os.path.abspath(".")
-# LIBS = ["{}/KLU/Lib/libklu.a",
-#         "{}/BTF/Lib/libbtf.a",
-#         "{}/AMD/Lib/libamd.a",
-#         "{}/COLAMD/Lib/libcolamd.a",
-#         "{}/CXSparse/Lib/libcxsparse.a",
-#         "{}/SuiteSparse_config/libsuitesparseconfig.a"
-#         ]
-# LIBS = [el.format(suitesparse_path) for el in LIBS]
-# exists_libs = True
-# for el in LIBS:
-#     if not os.path.exists(el):
-#         exists_libs = False
-
-suitesparse_path = os.path.abspath("./build_cmake/built/")
-LIBS = ["libklu.a",
-        "libbtf.a",
-        "libamd.a",
-        "libcolamd.a",
-        "libcxsparse.a",
-        "libsuitesparseconfig.a"]
-LIBS = [os.path.join(suitesparse_path, "lib", el) for el in LIBS]
-
-exists_libs = True
-for el in LIBS:
+# check that they exist (if SuiteSparse has been built with "make")
+suitesparse_path_make = os.path.abspath("./SuiteSparse")
+LIBS_MAKE = ["{}/KLU/Lib/libklu.a",
+             "{}/BTF/Lib/libbtf.a",
+             "{}/AMD/Lib/libamd.a",
+             "{}/COLAMD/Lib/libcolamd.a",
+             "{}/CXSparse/Lib/libcxsparse.a",
+             "{}/SuiteSparse_config/libsuitesparseconfig.a"
+             ]
+LIBS_MAKE = [el.format(suitesparse_path_make) for el in LIBS_MAKE]
+exists_libs_make = True
+for el in LIBS_MAKE:
     if not os.path.exists(el):
-        exists_libs = False
+        exists_libs_make = False
 
-if exists_libs:
+# check that they exist (if SuiteSparse has been built with "cmake")
+suitesparse_path_cmake = os.path.abspath("./build_cmake/built/")
+LIBS_CMAKE = ["libklu.a",
+              "libbtf.a",
+              "libamd.a",
+              "libcolamd.a",
+              "libcxsparse.a",
+              "libsuitesparseconfig.a"]
+LIBS_CMAKE = [os.path.join(suitesparse_path_cmake, "lib", el) for el in LIBS_CMAKE]
+
+exists_libs_cmake = True
+for el in LIBS_CMAKE:
+    if not os.path.exists(el):
+        exists_libs_cmake = False
+
+if exists_libs_make:
     # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
     KLU_SOLVER_AVAILABLE = True
 
     # include directory
-    # INCLUDE_suitesparse = ["{}/SuiteSparse_config",
-    #                        "{}/CXSparse/Include",
-    #                        "{}/AMD/Include",
-    #                        "{}/BTF/Include",
-    #                        "{}/COLAMD/Include",
-    #                        "{}/KLU/Include"
-    #                        ]
-    # INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
-    INCLUDE_suitesparse = [os.path.join(suitesparse_path, "include", "suitesparse")]
+    INCLUDE_suitesparse = ["{}/SuiteSparse_config",
+                           "{}/CXSparse/Include",
+                           "{}/AMD/Include",
+                           "{}/BTF/Include",
+                           "{}/COLAMD/Include",
+                           "{}/KLU/Include"
+                           ]
+    INCLUDE_suitesparse = [el.format(suitesparse_path_make) for el in INCLUDE_suitesparse]
+
+    # compiled libraries location
+    LIBS = LIBS_MAKE
+elif exists_libs_cmake:
+    # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
+    KLU_SOLVER_AVAILABLE = True
+
+    # include directory
+    INCLUDE_suitesparse = [os.path.join(suitesparse_path_cmake, "include", "suitesparse")]
+
+    # compiled libraries location
+    LIBS = LIBS_CMAKE
 else:
-    # suitesparse, and in particular the KLU linear solver is not available.
+    # SuiteSparse, and in particular the KLU linear solver is not available.
     # we'll use a default solver (a bit slower)
     LIBS = []
     INCLUDE_suitesparse = []
@@ -65,6 +76,9 @@ else:
                   "will still be a huge benefit.")
 
 INCLUDE = INCLUDE_suitesparse
+
+# now add the Eigen library (header only)
+eigen_path = os.path.abspath(".")
 INCLUDE.append("{}/eigen".format(eigen_path))
 
 include_dirs = []
