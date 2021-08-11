@@ -135,6 +135,18 @@ def main():
     suitsparse_source_code = os.path.abspath(".")
     suitsparse_source_code = os.path.split(suitsparse_source_code)[0]
     suitsparse_source_code = os.path.join(suitsparse_source_code, "SuiteSparse")
+
+    # handle the "SuiteSparse_config" directory, where i need to link 2 files
+    dirnm = "SuiteSparse_config"
+    curr_dir = os.path.join(os.path.join(this_path, dirnm))
+    suitsparse_source_dir = os.path.join(suitsparse_source_code, dirnm)
+    if not os.path.exists(suitsparse_source_dir) or not os.path.isdir(suitsparse_source_dir):
+        raise RuntimeError(f"\"{suitsparse_source_dir}\" should be a suitesparse directory.")
+    for fn in ["SuiteSparse_config.c", "SuiteSparse_config.h"]:
+        os.symlink(os.path.join(suitsparse_source_dir, fn),
+                   os.path.join(curr_dir, fn))
+
+    # handle the files for all libs
     for dirnm in ("AMD", "BTF", "COLAMD", "CXSparse", "KLU"):
         curr_dir = os.path.join(os.path.join(this_path, dirnm))
         sp_source = os.path.join(suitsparse_source_code, dirnm)
