@@ -119,8 +119,8 @@ jobs:
           python generate_c_files.py
           mkdir build
           cd build
-          cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_CONFIGURATION_TYPE=Release ..
-          cmake --build --config Release . --target install
+          cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release --target install
 
       - name: Build wheel
         run: python setup.py bdist_wheel
