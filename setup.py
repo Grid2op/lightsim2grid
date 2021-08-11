@@ -51,7 +51,8 @@ for ext in ["a", "lib"]:
     if exists_libs_cmake:
         break
 
-assert exists_libs_cmake or exists_libs_make, "impossible to find SuiteSparse on platform"
+assert exists_libs_cmake or exists_libs_make, f"impossible to find SuiteSparse on your platform. " \
+                                              f"{os.listdir('./build_cmake')}"
 
 if exists_libs_make:
     # you will be able to use "SuiteSparse" and the faster "KLU" linear solver

@@ -121,7 +121,7 @@ jobs:
           cd build
           cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..
           cmake --build . --config Release
-          cmake --build . --config Release --target install
+          cmake --install . --prefix ..\built
           cd ..
           cd ..
           python setup.py build
