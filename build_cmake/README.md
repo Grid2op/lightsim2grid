@@ -20,7 +20,7 @@ of this repo (`lightsim2grid/build_cmake`). Then:
 1) you need to make sure to have clone the submodule, and in particular the
   "SuiteSparse" submodule, otherwise this will not work
 2) generate the right sources (small hack to get cmake to work correctly):
-   `python3 makefile2wrappers.py`
+   `python3 generate_c_files.py`
 3) create a "build" subdirectory, and cd there: `mkdir build; cd build`
 4) prepare the compilation with cmake: `cmake .. -DCMAKE_INSTALL_PREFIX=../built` 
    **NB** It is mandatory to install the libraries there, otherwise they will not be detected

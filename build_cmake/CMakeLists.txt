@@ -221,44 +221,6 @@ if(WITH_CUDA)
 	endif(${CUDA_FOUND})
 endif()
 
-hunter_add_package(LAPACK) # only in effect if HUNTER_ENABLED is set
-# prefer LAPACK config file
-if (WIN32)
-  set(LAPACK_DIR "lapack_windows/x64/" CACHE PATH "LAPACK directory" )
-endif()
-
-find_package(LAPACK CONFIG)
-if (LAPACK_FOUND AND TARGET blas AND TARGET lapack)
-  message(STATUS "found lapack and blas config file. Linking targets lapack and blas")
-  message(STATUS "- LAPACK_CONFIG: ${LAPACK_CONFIG}")
-  set(SuiteSparse_LINKER_LAPACK_BLAS_LIBS lapack blas)
-  # for suitesparse-config file set method used to find LAPACK (and BLAS)
-  set(SuiteSparse_LAPACK_used_CONFIG YES)
-else()
-  # missing config file or targets, try BLAS and LAPACK
-  find_package(BLAS)
-  find_package(LAPACK)
-  if (BLAS_FOUND AND LAPACK_FOUND)
-    message(STATUS "found lapack and blas config file. Linking targets lapack and blas")
-    message(STATUS "- LAPACK_LIBRARIES: ${LAPACK_LIBRARIES}")
-    message(STATUS "- BLAS_LIBRARIES:   ${BLAS_LIBRARIES}")
-    set(SuiteSparse_LINKER_LAPACK_BLAS_LIBS ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
-    # for suitesparse-config file set method used to find LAPACK (and BLAS)
-    set(SuiteSparse_LAPACK_used_CONFIG NO)
-  else () # LAPACK is not found
-    message(FATAL_ERROR "lapack not found")
-  endif()
-endif()
-
-if(BUILD_METIS)
-	set(SuiteSparse_LINKER_METIS_LIBS "metis")
-	## namespaced library target for config
-	set(SuiteSparse_EXPORTED_METIS_LIBS "SuiteSparse::metis")
-else()
-	set(SuiteSparse_LINKER_METIS_LIBS "")
-	set(SuiteSparse_EXPORTED_METIS_LIBS "")
-endif()
-
 add_subdirectory(SuiteSparse)
 
 macro(get_SuiteSparse_Version)
