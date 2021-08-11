@@ -1,0 +1,3 @@
+# source extracted from running "make" on a compatible platform
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -c ../Source/colamd.c
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -DDLONG -c ../Source/colamd.c -o colamd_l.o

@@ -11,6 +11,7 @@ Change Log
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
 - have a solver with "NICSLU" (https://github.com/chenxm1986/nicslu) if available on the platform
+- maybe have a look at suitesparse "sliplu" tools ?
 
 [0.5.3] 2021-xx-yy
 -------------------
