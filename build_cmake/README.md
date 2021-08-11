@@ -29,3 +29,10 @@ of this repo (`lightsim2grid/build_cmake`). Then:
 5) compile the SuiteSparse package: `cmake --build . --config Release`
 6) "install" it (which means: "move the libraries and the header at the right place): 
    `cmake --build . --config Release --target install`
+   
+**NB** Some of these files relies on symbolic links "symlink" and you might need root privilege on windows to
+build them. We will try to have a workaround for that at some point.
+
+**NB** On windows, the anti virus program (*eg* Avast, Windows Defender, MacAffee, etc.) might cause trouble during
+the compilation. You might need to disable it temporarily during the compilation, or to add the proper exception 
+to visual c++, cmake and possibly other programs.

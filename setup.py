@@ -6,7 +6,7 @@ import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.5.3.rc1"
+__version__ = "0.5.3.rc2"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -50,6 +50,8 @@ for ext in ["a", "lib"]:
 
     if exists_libs_cmake:
         break
+
+assert exists_libs_cmake or exists_libs_make, "impossible to find SuiteSparse on platform"
 
 if exists_libs_make:
     # you will be able to use "SuiteSparse" and the faster "KLU" linear solver

@@ -120,7 +120,11 @@ jobs:
           mkdir build
           cd build
           cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release
           cmake --build . --config Release --target install
+          cd ..
+          cd ..
+          python setup.py build
 
       - name: Build wheel
         run: python setup.py bdist_wheel
