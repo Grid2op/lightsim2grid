@@ -143,8 +143,11 @@ def main():
     if not os.path.exists(suitsparse_source_dir) or not os.path.isdir(suitsparse_source_dir):
         raise RuntimeError(f"\"{suitsparse_source_dir}\" should be a suitesparse directory.")
     for fn in ["SuiteSparse_config.c", "SuiteSparse_config.h"]:
-        os.symlink(os.path.join(suitsparse_source_dir, fn),
-                   os.path.join(curr_dir, fn))
+        src_file = os.path.join(suitsparse_source_dir, fn)
+        if not os.path.exists(src_file) or not\
+            os.path.isfile(src_file):
+            raise RuntimeError(f"Impossible to find file \"{src_file}\".")
+        shutil.copy(src_file, os.path.join(curr_dir, fn))
 
     # handle the files for all libs
     for dirnm in ("AMD", "BTF", "COLAMD", "CXSparse", "KLU"):
