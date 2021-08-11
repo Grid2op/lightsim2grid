@@ -10,6 +10,13 @@ Change Log
 - distribute pypi package
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
+- have a solver with "NICSLU" (https://github.com/chenxm1986/nicslu) if available on the platform
+- maybe have a look at suitesparse "sliplu" tools ?
+
+[0.5.3] 2021-xx-yy
+-------------------
+- [FIXED] minor issues in the benchmark (some time measurments were wrong)
+- [IMPROVED] trying to make the package available on pypi
 
 [0.5.2] 2021-07-26
 -------------------

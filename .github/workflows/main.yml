@@ -108,9 +108,23 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Compile SuiteSparse
+      - name: Compile SuiteSparse make
         if: matrix.config.name == 'darwin'
         run: make
+
+      - name: Compile SuiteSparse cmake
+        if: matrix.config.name == 'windows'
+        run: |
+          cd build_cmake
+          python generate_c_files.py
+          mkdir build
+          cd build
+          cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release
+          cmake --install . --prefix ..\built
+          cd ..
+          cd ..
+          python setup.py build
 
       - name: Build wheel
         run: python setup.py bdist_wheel

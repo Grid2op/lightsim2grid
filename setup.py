@@ -6,26 +6,53 @@ import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.5.2"
+__version__ = "0.5.3.rc2"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
-# check that they exist
-suitesparse_path = os.path.abspath("./SuiteSparse")
-eigen_path = os.path.abspath(".")
-LIBS = ["{}/KLU/Lib/libklu.a",
-        "{}/BTF/Lib/libbtf.a",
-        "{}/AMD/Lib/libamd.a",
-        "{}/COLAMD/Lib/libcolamd.a",
-        "{}/CXSparse/Lib/libcxsparse.a",
-        "{}/SuiteSparse_config/libsuitesparseconfig.a"
-        ]
-LIBS = [el.format(suitesparse_path) for el in LIBS]
-exists_libs = True
-for el in LIBS:
+# check that they exist (if SuiteSparse has been built with "make")
+suitesparse_path_make = os.path.abspath("./SuiteSparse")
+LIBS_MAKE = ["{}/KLU/Lib/libklu.a",
+             "{}/BTF/Lib/libbtf.a",
+             "{}/AMD/Lib/libamd.a",
+             "{}/COLAMD/Lib/libcolamd.a",
+             "{}/CXSparse/Lib/libcxsparse.a",
+             "{}/SuiteSparse_config/libsuitesparseconfig.a"
+             ]
+LIBS_MAKE = [el.format(suitesparse_path_make) for el in LIBS_MAKE]
+exists_libs_make = True
+for el in LIBS_MAKE:
     if not os.path.exists(el):
-        exists_libs = False
-if exists_libs:
+        exists_libs_make = False
+
+# check that they exist (if SuiteSparse has been built with "cmake" on macos / linux or windows)
+suitesparse_path_cmake = os.path.abspath("./build_cmake/built/")
+for ext in ["a", "lib"]:
+    LIBS_CMAKE = [f"libklu.{ext}",
+                  f"libbtf.{ext}",
+                  f"libamd.{ext}",
+                  f"libcolamd.{ext}",
+                  f"libcxsparse.{ext}"]
+    if ext == "a":
+        # unix like system
+        LIBS_CMAKE.append(f"libsuitesparseconfig.{ext}")
+    else:
+        # windows like system
+        LIBS_CMAKE.append(f"suitesparseconfig.{ext}")
+
+    LIBS_CMAKE = [os.path.join(suitesparse_path_cmake, "lib", el) for el in LIBS_CMAKE]
+
+    exists_libs_cmake = True
+    for el in LIBS_CMAKE:
+        if not os.path.exists(el):
+            exists_libs_cmake = False
+            break
+
+    if exists_libs_cmake:
+        break
+
+
+if exists_libs_make:
     # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
     KLU_SOLVER_AVAILABLE = True
 
@@ -37,9 +64,21 @@ if exists_libs:
                            "{}/COLAMD/Include",
                            "{}/KLU/Include"
                            ]
-    INCLUDE_suitesparse = [el.format(suitesparse_path) for el in INCLUDE_suitesparse]
+    INCLUDE_suitesparse = [el.format(suitesparse_path_make) for el in INCLUDE_suitesparse]
+
+    # compiled libraries location
+    LIBS = LIBS_MAKE
+elif exists_libs_cmake:
+    # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
+    KLU_SOLVER_AVAILABLE = True
+
+    # include directory
+    INCLUDE_suitesparse = [os.path.join(suitesparse_path_cmake, "include", "suitesparse")]
+
+    # compiled libraries location
+    LIBS = LIBS_CMAKE
 else:
-    # suitesparse, and in particular the KLU linear solver is not available.
+    # SuiteSparse, and in particular the KLU linear solver is not available.
     # we'll use a default solver (a bit slower)
     LIBS = []
     INCLUDE_suitesparse = []
@@ -49,6 +88,9 @@ else:
                   "will still be a huge benefit.")
 
 INCLUDE = INCLUDE_suitesparse
+
+# now add the Eigen library (header only)
+eigen_path = os.path.abspath(".")
 INCLUDE.append("{}/eigen".format(eigen_path))
 
 include_dirs = []
@@ -120,11 +162,7 @@ ext_modules = [
 
 pkgs = {
     "required": [
-        'pybind11>=2.4',
-        "pandapower",
-        "numpy",
-        "scipy",
-        "grid2op"
+        "pandapower"
     ],
     "extras": {
         "docs": [
@@ -137,7 +175,9 @@ pkgs = {
             "recommonmark",
         ],
         "benchmark": [
-            "tabulate"
+            "tabulate",
+            "grid2op>=1.5.0",
+            "numpy"
         ],
         "recommended": [
             "grid2op>=1.5.0"
@@ -163,9 +203,11 @@ setup(name='LightSim2Grid',
       ext_modules=ext_modules,
       install_requires=pkgs["required"],
       extras_require=pkgs["extras"],
-      setup_requires=['pybind11>=2.4'],
+      # setup_requires=['pybind11>=2.4'],  # in the pyproject.toml directly now
       cmdclass={'build_ext': build_ext},
       zip_safe=False,
+      license='MPL 2.0',
+      platforms=["Windows", "Linux", "Mac OS-X", "Unix"],
       packages=setuptools.find_packages(),
       keywords='pandapower powergrid simulator KLU Eigen c++',
       classifiers=[

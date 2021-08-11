@@ -1,4 +1,4 @@
-__version__ = "0.5.2"
+__version__ = "0.5.3.rc1"
 
 __all__ = ["newtonpf", "SolverType", "solver"]
 

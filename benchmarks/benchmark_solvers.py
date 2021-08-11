@@ -74,6 +74,7 @@ def main(max_ts, env_name_input, test=True,
                                                                      with_type_solver=wst, env_seed=0)
         klu_comp_time = env_lightsim.backend.comp_time
         klu_time_pf = env_lightsim._time_powerflow
+
     if lightsim2grid.SolverType.SparseLU in solver_types:
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.SparseLU)
         env_lightsim.backend.set_solver_max_iter(10)
@@ -101,23 +102,23 @@ def main(max_ts, env_name_input, test=True,
     # NOW PRINT THE RESULTS
     env_name = get_env_name_displayed(env_name_input)
     hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op powerflow time (ms)", f"solver powerflow time (ms)"]
-    tab = [["PP", int(nb_ts_pp/time_pp),
+    tab = [["PP", f"{nb_ts_pp/time_pp:.2e}",
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
             f"{1000.*pp_comp_time/nb_ts_pp:.2e}"]]
     if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
-        tab.append(["LS+GS", int(nb_ts_gs/time_gs),
+        tab.append(["LS+GS", f"{nb_ts_gs/time_gs:.2e}",
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"])
     if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-        tab.append(["LS+GS S", int(nb_ts_gsa/time_gsa),
+        tab.append(["LS+GS S", f"{nb_ts_gsa/time_gsa:.2e}",
                     f"{1000.*gsa_time_pf/nb_ts_gsa:.2e}",
                     f"{1000.*gsa_comp_time/nb_ts_gsa:.2e}"])
     if lightsim2grid.SolverType.SparseLU in solver_types:
-        tab.append(["LS+SLU", int(nb_ts_slu/time_slu),
+        tab.append(["LS+SLU", f"{nb_ts_slu/time_slu:.2e}",
                     f"{1000.*slu_time_pf/nb_ts_slu:.2e}",
                     f"{1000.*slu_comp_time/nb_ts_slu:.2e}"])
     if lightsim2grid.SolverType.KLU in solver_types:
-        tab.append(["LS+KLU", int(nb_ts_klu/time_klu),
+        tab.append(["LS+KLU", f"{nb_ts_klu/time_klu:.2e}",
                     f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
 

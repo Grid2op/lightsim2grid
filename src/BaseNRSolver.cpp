@@ -93,6 +93,14 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         res = false;
     }
     timer_total_nr_ += timer.duration();
+//    std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
+//              << "\n\t timer_dSbus_: " << timer_dSbus_
+//              << "\n\t timer_fillJ_: " << timer_fillJ_
+//              << "\n\t timer_Fx_: " << timer_Fx_
+//              << "\n\t timer_check_: " << timer_check_
+//              << "\n\t timer_solve_: " << timer_solve_
+//              << "\n\t timer_total_nr_: " << timer_total_nr_
+//              << "\n\n";
     return res;
 }
 

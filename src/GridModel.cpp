@@ -116,7 +116,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     int version_major = std::get<0>(my_state);
     int version_medium = std::get<1>(my_state);
     int version_minor = std::get<2>(my_state);
-    if(version_major != VERSION_MAJOR | version_medium != VERSION_MEDIUM | version_minor != VERSION_MINOR)
+    if((version_major != VERSION_MAJOR )| (version_medium != VERSION_MEDIUM) | (version_minor != VERSION_MINOR))
     {
         std::ostringstream exc_;
         exc_ << "GridModel::set_state: Wrong version. You tried to load a lightsim2grid model saved with version ";

@@ -43,22 +43,33 @@ Suppose you somehow get:
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
 ```python
-from lighsim2grid.newtonpf import newtonpf
+from lightsim2grid.newtonpf import newtonpf
 V, converged, iterations, J = newtonpf(Ybus, V, Sbus, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
 
-## Installation (from source, recommended)
+## Installation (from pypi official repository, recommended)
+
+Since version 0.5.3, lightsim2grid is can be installed like most python packages, with a call to:
+`python -m pip install lightsim2grid`
+
+It includes faster grid2op backend and the `SuiteSparse` faster `KLU` solver, even on windows. This is definitely the 
+easiest method to install lightsim2grid on your system and have it running without too much issues.
+
+Note though that these packages have been compiled on a different platform that the one you are using. You might still
+get some benefit (in terms of performances) to install it from your on your machine.
+
+## Installation (from source, for more advanced user)
 You need to:
-- clone this repository and get the code of Eigen and SparseSuite (mandatory for compilation)
+- clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional)
 - (optional) compile a piece of SparseSuite
 - install the package
 
 ### Important note
-This package relies on the excellent pybind11 package to integrate c++ code into python easily. 
+This package relies on the excellent `pybind11` package to integrate c++ code into python easily. 
 
-So to install lightsim2grid you need pybind and its requirement, which include a working compiler: for example 
+So to install lightsim2grid you need `pybind11` and its requirement, which include a working compiler: for example 
 (as of writing) 
 gcc (default on ubuntu, version >= 4.8), clang (default on MacOS, version >= 5.0.0) or 
 Microsoft visual studio (Microsoft Visual Studio 2015 Update 3 or newer). 
@@ -83,25 +94,52 @@ git submodule update
 ```
 
 ### (optional) Compilation of SuiteSparse
-SuiteSparse comes with the faster KLU linear solver. Since version 0.3.0 this requirement has been removed. This entails
-that on linux / macos you can still benefit from the faster KLU solver. On windows you will still benefit from the
+SuiteSparse comes with the faster KLU linear solver. 
+
+Since version 0.3.0 this requirement has been removed. This entails
+that on linux / macos you can still benefit from the faster KLU solver. You can still benefit from the
 speed up of lightsim (versus the default PandaPowerBackend) but this speed up will be less than if you manage
 to compile SuiteSparse (see the subsection [Benchmark](#benchmark) for more information).
 
 **NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a 
-Newton Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
+Newton-Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
 difference in the two version (with KLU and without) is that the linear equation solver is different. Up to the
 double float precision, both results (with and without KLU) should match.
 
-We only detail the compilation on a system using "make" (so most likely GNU-Linux and MacOS). If you manage to
-do this step on Windows, you can continue (and let us know!). If you don't feel comfortable with this, we
+We only detail the compilation on a system using "make" (so most likely GNU-Linux and MacOS). If you don't feel 
+comfortable with this, either you can ignore it, or you have also the possibility to use the
 provided a docker version. See the next section [Installation Using Docker](#installation-using-docker) 
 for more information.
+
+#### (optional) option A. Compilation of SuiteSparse using "make"
+This is the easiest method to compile SuiteSparse on your system but unfortunately it only works on OS where "make" is
+available (*eg* Linux or MacOS) but this will not work on Windows... The compilation on windows is covered in the next
+paragraph 
+[(optional) option B. Compilation of SuiteSparse using "cmake"](#\(optional\)-option-B.-Compilation-of-SuiteSparse-using-"cmake")
+
+Anyway, in this case, it's super easy. Just do:
 
 ```commandline
 # compile static libraries of SparseSuite
 make
 ```
+And you are good to go. Nothing more.
+
+#### (optional) option B. Compilation of SuiteSparse using "cmake"
+This works on most platform including MacOS, Linux and Windows.
+
+It requires to install the free `cmake` program and to do a bit more works than for other system. This is why we
+only recommend to use it on Windows.
+
+The main steps (for windows, somme commands needs to be adapted on linux / macos) are:
+1) `cd build_cmake`
+2) `py generate_c_files.py`
+3) `mkdir build` and cd there: `cd build`
+4) `cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..`
+5) `cmake --build . --config Release`
+6) `cmake --build . --config Release --target install`
+
+For more information, feel free to read the dedicated [README](build_cmake/README.md).
 
 ### 2. Installation of the python package
 Now you simply need to install the lightsim2grid package this way, like any python package:
@@ -127,6 +165,8 @@ python3 benchmark_solvers.py --name l2rpn_case14_sandbox --no_test --number 1000
 python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --number 1000
 ```
 (results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
+
+(to run these benchmarks, some data will automatically be downloaded, but this requires an internet access)
 
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)

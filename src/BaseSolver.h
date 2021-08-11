@@ -85,7 +85,7 @@ class BaseSolver : public BaseConstants
         }
 
     protected:
-        void reset_timer(){
+        virtual void reset_timer(){
             timer_Fx_ = 0.;
             timer_solve_ = 0.;
             timer_check_ = 0.;

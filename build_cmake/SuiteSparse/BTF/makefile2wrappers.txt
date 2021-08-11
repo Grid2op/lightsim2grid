@@ -1,0 +1,7 @@
+# source extracted from running "make" on a compatible platform
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -c ../Source/btf_order.c -o btf_order.o
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -c ../Source/btf_maxtrans.c -o btf_maxtrans.o
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -c ../Source/btf_strongcomp.c -o btf_strongcomp.o
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -DDLONG -c ../Source/btf_order.c -o btf_l_order.o
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -DDLONG -c ../Source/btf_maxtrans.c -o btf_l_maxtrans.o
+gcc    -O3 -fexceptions -fPIC -fopenmp -I../Include -I../../SuiteSparse_config -DDLONG -c ../Source/btf_strongcomp.c -o btf_l_strongcomp.o
