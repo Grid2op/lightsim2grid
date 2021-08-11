@@ -241,7 +241,7 @@ class LightSimBackend(Backend):
         self._grid = init(self.init_pp_backend._grid)
         self.available_solvers = self._grid.available_solvers()
         if SolverType.KLU in self.available_solvers:
-            # use the faster KLU is available
+            # use the faster KLU if available
             self._grid.change_solver(SolverType.KLU)
         if self.__current_solver_type is None:
             self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())

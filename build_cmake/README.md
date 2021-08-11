@@ -22,9 +22,10 @@ of this repo (`lightsim2grid/build_cmake`). Then:
 2) generate the right sources (small hack to get cmake to work correctly):
    `python3 generate_c_files.py`
 3) create a "build" subdirectory, and cd there: `mkdir build; cd build`
-4) prepare the compilation with cmake: `cmake .. -DCMAKE_INSTALL_PREFIX=../built` 
+4) prepare the compilation with cmake: (on windows) 
+  `cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_CONFIGURATION_TYPE=Release ..` 
    **NB** It is mandatory to install the libraries there, otherwise they will not be detected
    by the installation script of lightsim2grid
-5) compile the SuiteSparse package: `cmake --build .`
+5) compile the SuiteSparse package: `cmake --build --config Release .`
 6) "install" it (which means: "move the libraries and the header at the right place): 
-   `cmake --build . --target install`
+   `cmake --build --config Release . --target install`

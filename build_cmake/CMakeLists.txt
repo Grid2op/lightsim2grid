@@ -82,7 +82,7 @@ if(MSVC)
 endif(MSVC)
 
 ## check if we can build metis
-set(BUILD_METIS_DEFAULT ON)
+set(BUILD_METIS_DEFAULT OFF)
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse/metis-5.1.0/CMakeLists.txt")
 	set(BUILD_METIS_DEFAULT OFF)
 endif()

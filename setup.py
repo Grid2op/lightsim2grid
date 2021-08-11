@@ -25,20 +25,31 @@ for el in LIBS_MAKE:
     if not os.path.exists(el):
         exists_libs_make = False
 
-# check that they exist (if SuiteSparse has been built with "cmake")
+# check that they exist (if SuiteSparse has been built with "cmake" on macos / linux or windows)
 suitesparse_path_cmake = os.path.abspath("./build_cmake/built/")
-LIBS_CMAKE = ["libklu.a",
-              "libbtf.a",
-              "libamd.a",
-              "libcolamd.a",
-              "libcxsparse.a",
-              "libsuitesparseconfig.a"]
-LIBS_CMAKE = [os.path.join(suitesparse_path_cmake, "lib", el) for el in LIBS_CMAKE]
+for ext in ["a", "lib"]:
+    LIBS_CMAKE = [f"libklu.{ext}",
+                  f"libbtf.{ext}",
+                  f"libamd.{ext}",
+                  f"libcolamd.{ext}",
+                  f"libcxsparse.{ext}"]
+    if ext == "a":
+        # unix like system
+        LIBS_CMAKE.append(f"libsuitesparseconfig.{ext}")
+    else:
+        # windows like system
+        LIBS_CMAKE.append(f"suitesparseconfig.{ext}")
 
-exists_libs_cmake = True
-for el in LIBS_CMAKE:
-    if not os.path.exists(el):
-        exists_libs_cmake = False
+    LIBS_CMAKE = [os.path.join(suitesparse_path_cmake, "lib", el) for el in LIBS_CMAKE]
+
+    exists_libs_cmake = True
+    for el in LIBS_CMAKE:
+        if not os.path.exists(el):
+            exists_libs_cmake = False
+            break
+
+    if exists_libs_cmake:
+        break
 
 if exists_libs_make:
     # you will be able to use "SuiteSparse" and the faster "KLU" linear solver
