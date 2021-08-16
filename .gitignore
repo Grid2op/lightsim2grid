@@ -210,3 +210,4 @@ build_cmake/SuiteSparse/KLU/Lib
 build_cmake/SuiteSparse/KLU/Source
 build_cmake/SuiteSparse/SuiteSparse_config/SuiteSparse_config.c
 build_cmake/SuiteSparse/SuiteSparse_config/SuiteSparse_config.h
+lightsim2grid/tests/pn.case6470rte.json
