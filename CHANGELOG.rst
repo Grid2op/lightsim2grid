@@ -9,13 +9,14 @@ Change Log
 - easier building (get rid of the "make" part)
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
-- have a solver with "NICSLU" (https://github.com/chenxm1986/nicslu) if available on the platform
 - maybe have a look at suitesparse "sliplu" tools ?
 
 [0.5.4] 2021-xx-yy
 ------------------
 - [FIXED] a bug for static generator (wrong signed convention were used in some part of the c++ code). This has
   no impact at all for provided grid2op environments.
+- [ADDED] experimental support for the NICSLU linear solver (requires a proper license and library, see
+  https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment.
 
 [0.5.3] 2021-08-11
 -------------------

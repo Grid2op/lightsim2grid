@@ -212,6 +212,10 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     J21 = dS_dVa[array([pq]).T, pvpq].imag
     J22 = dS_dVm[array([pq]).T, pq].imag
     **/
+    // TODO loop through the index in right order and call
+    // insert
+    // https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#a0f42824d4a06ee1d1f6afbc4551c5896
+    // it's O(1) !
 
     auto timer = CustTimer();
     _dSbus_dV(Ybus, V);

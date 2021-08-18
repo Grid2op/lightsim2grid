@@ -30,6 +30,16 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>()
     #endif
 }
 template<>
+Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::NICSLU>()
+{
+    #ifndef NICSLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("ChooseSolver::get_V_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
+    #else
+        return _solver_nicslu.get_V();
+    #endif
+}
+template<>
 Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>()
 {
     return _solver_gaussseidel.get_V();
@@ -123,6 +133,23 @@ bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cpl
         return _solver_klu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
     #endif
 }
+template<>
+bool ChooseSolver::compute_pf_tmp<SolverType::NICSLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
+                       int max_iter,
+                       real_type tol
+                       )
+{
+    #ifndef NICSLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("ChooseSolver::compute_pf_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
+    #else
+        return _solver_nicslu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    #endif
+}
 
 template<SolverType ST>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp()
@@ -157,6 +184,16 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::KLU>()
         throw std::runtime_error("ChooseSolver::get_J_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_J();
+    #endif
+}
+template<>
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::NICSLU>()
+{
+    #ifndef NICSLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("ChooseSolver::get_J_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
+    #else
+        return _solver_nicslu.get_J();
     #endif
 }
 
@@ -195,6 +232,16 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>()
         return _solver_klu.get_Va();
     #endif
 }
+template<>
+Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::NICSLU>()
+{
+    #ifndef NICSLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("ChooseSolver::get_Va_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
+    #else
+        return _solver_nicslu.get_Va();
+    #endif
+}
 template<SolverType ST>
 Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp()
 {
@@ -228,6 +275,16 @@ Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
         throw std::runtime_error("ChooseSolver::get_Vm_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
         return _solver_klu.get_Vm();
+    #endif
+}
+template<>
+Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::NICSLU>()
+{
+    #ifndef NICSLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("ChooseSolver::get_Vm_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
+    #else
+        return _solver_nicslu.get_Vm();
     #endif
 }
 
@@ -266,6 +323,17 @@ double ChooseSolver::get_computation_time_tmp<SolverType::KLU>()
     #endif
 }
 template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::NICSLU>()
+{
+    #ifndef NICSLU_SOLVER_AVAILABLE
+        // I asked result of KLU solver without the required libraries
+        throw std::runtime_error("ChooseSolver::get_computation_time_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
+    #else
+        const auto & res =  _solver_nicslu.get_timers();
+        return std::get<3>(res);
+    #endif
+}
+template<>
 double ChooseSolver::get_computation_time_tmp<SolverType::DC>()
 {
    const auto & res =  _solver_dc.get_timers();
@@ -281,6 +349,8 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V(){
          return get_V_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_V_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::NICSLU){
+         return get_V_tmp<SolverType::NICSLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_V_tmp<SolverType::GaussSeidel>();
     }else if(_solver_type == SolverType::GaussSeidelSynch){
@@ -299,6 +369,8 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va(){
          return get_Va_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_Va_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::NICSLU){
+         return get_Va_tmp<SolverType::NICSLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_Va_tmp<SolverType::GaussSeidel>();
     }else if(_solver_type == SolverType::GaussSeidelSynch){
@@ -316,6 +388,8 @@ Eigen::Ref<RealVect> ChooseSolver::get_Vm(){
          return get_Vm_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_Vm_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::NICSLU){
+         return get_Vm_tmp<SolverType::NICSLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_Vm_tmp<SolverType::GaussSeidel>();
     }else if(_solver_type == SolverType::GaussSeidelSynch){
@@ -342,6 +416,8 @@ bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         return compute_pf_tmp<SolverType::SparseLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::KLU){
         return compute_pf_tmp<SolverType::KLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    }else if(_solver_type == SolverType::NICSLU){
+        return compute_pf_tmp<SolverType::NICSLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::GaussSeidel){
         return compute_pf_tmp<SolverType::GaussSeidel>(Ybus, V, Sbus, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::GaussSeidelSynch){
@@ -360,6 +436,8 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J(){
          return get_J_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_J_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::NICSLU){
+         return get_J_tmp<SolverType::NICSLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_J_tmp<SolverType::GaussSeidel>();
     }else if(_solver_type == SolverType::GaussSeidelSynch){
@@ -379,6 +457,8 @@ double ChooseSolver::get_computation_time()
          return get_computation_time_tmp<SolverType::SparseLU>();
     }else if(_solver_type == SolverType::KLU){
          return get_computation_time_tmp<SolverType::KLU>();
+    }else if(_solver_type == SolverType::NICSLU){
+         return get_computation_time_tmp<SolverType::NICSLU>();
     }else if(_solver_type == SolverType::GaussSeidel){
          return get_computation_time_tmp<SolverType::GaussSeidel>();
     }else if(_solver_type == SolverType::GaussSeidelSynch){

@@ -150,6 +150,41 @@ if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
 
+# Try to locate the NICSLU sparse linaer solver
+if "PATH_NICSLU" in os.environ:
+    # user indicate the path for the NICSLU library (see https://github.com/chenxm1986/nicslu)
+    # eg "/home/user/Documents/nicslu/nicslu202103/"
+
+    path_nicslu = os.path.abspath(os.environ["PATH_NICSLU"])
+    include_nicslu = True
+    # check for appropriate license
+    if not os.path.exists(path_nicslu):
+        include_nicslu = False
+    if include_nicslu and not os.path.exists(os.path.join(path_nicslu, "license")):
+        # license not located at the right directory
+        include_nicslu = False
+    if include_nicslu and not os.path.exists(os.path.join(path_nicslu, "license", "nicslu.lic")):
+        # no license found
+        include_nicslu = False
+    libnicslu_path = None
+    if include_nicslu:
+        if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
+            libnicslu_path = os.path.join(path_nicslu, "linux/lib_centos6_x64_gcc482_fma/int32/libnicslu.so")
+            if not os.path.exists(libnicslu_path):
+                include_nicslu = False
+                libnicslu_path = None
+        elif sys.platform.startswith("win"):
+            libnicslu_path = os.path.join(path_nicslu, "windows/lib_win7_x64_fma/int32/nicslu.lib")
+            if not os.path.exists(libnicslu_path):
+                include_nicslu = False
+                libnicslu_path = None
+
+    if include_nicslu and libnicslu_path is not None:
+        LIBS.append(os.path.join(path_nicslu,libnicslu_path))
+        include_dirs.append(os.path.join(path_nicslu, "include"))
+        src_files.append("src/NICSLUSolver.cpp")
+        extra_compile_args_tmp.append("-DNICSLU_SOLVER_AVAILABLE")
+
 ext_modules = [
     Pybind11Extension(
         'lightsim2grid_cpp',

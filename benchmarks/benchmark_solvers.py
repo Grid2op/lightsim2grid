@@ -34,6 +34,8 @@ except ImportError:
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
 
+NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
+
 
 def main(max_ts, env_name_input, test=True,
          no_gs=False, no_gs_synch=False):
@@ -74,6 +76,17 @@ def main(max_ts, env_name_input, test=True,
                                                                      with_type_solver=wst, env_seed=0)
         klu_comp_time = env_lightsim.backend.comp_time
         klu_time_pf = env_lightsim._time_powerflow
+
+    if lightsim2grid.SolverType.NICSLU in solver_types and NICSLU_LICENSE_AVAIL:
+        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.NICSLU)
+        env_lightsim.backend.set_solver_max_iter(10)
+        nb_ts_nicslu, time_nicslu, aor_nicslu, gen_p_nicslu, gen_q_nicslu = run_env(env_lightsim,
+                                                                                    max_ts,
+                                                                                    agent, chron_id=0,
+                                                                                    with_type_solver=wst,
+                                                                                    env_seed=0)
+        nicslu_comp_time = env_lightsim.backend.comp_time
+        nicslu_time_pf = env_lightsim._time_powerflow
 
     if lightsim2grid.SolverType.SparseLU in solver_types:
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.SparseLU)
@@ -121,6 +134,10 @@ def main(max_ts, env_name_input, test=True,
         tab.append(["LS+KLU", f"{nb_ts_klu/time_klu:.2e}",
                     f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
+    if lightsim2grid.SolverType.NICSLU in solver_types:
+        tab.append(["LS+NICSLU", f"{nb_ts_nicslu/time_nicslu:.2e}",
+                    f"{1000.*nicslu_time_pf/nb_ts_nicslu:.2e}",
+                    f"{1000.*nicslu_comp_time/nb_ts_nicslu:.2e}"])
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
@@ -158,6 +175,11 @@ def main(max_ts, env_name_input, test=True,
                     f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
+    if lightsim2grid.SolverType.NICSLU in solver_types:
+        tab.append(["LS+NICSLU",
+                    f"{np.max(np.abs(aor_nicslu - aor_pp)):.2e}",
+                    f"{np.max(np.abs(gen_p_nicslu - gen_p_pp)):.2e}",
+                    f"{np.max(np.abs(gen_q_nicslu - gen_q_pp)):.2e}"])
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")

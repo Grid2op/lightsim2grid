@@ -24,8 +24,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("SparseLU", SolverType::SparseLU)
         .value("KLU", SolverType::KLU)
         .value("GaussSeidel", SolverType::GaussSeidel)
-        .value("DC", SolverType::DC)
         .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
+        .value("DC", SolverType::DC)
+        .value("NICSLU", SolverType::NICSLU)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
@@ -41,7 +42,22 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("compute_pf", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
-    #endif
+    #endif  // KLU_SOLVER_AVAILABLE
+
+    #ifdef NICSLU_SOLVER_AVAILABLE
+    py::class_<NICSLUSolver>(m, "NICSLUSolver")
+        .def(py::init<>())
+        .def("get_J", &NICSLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &NICSLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &NICSLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &NICSLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &NICSLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &NICSLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &NICSLUSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &NICSLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+    #endif  // NICSLU_SOLVER_AVAILABLE
 
     py::class_<SparseLUSolver>(m, "SparseLUSolver")
         .def(py::init<>())
