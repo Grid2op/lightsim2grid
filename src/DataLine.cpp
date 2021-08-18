@@ -134,7 +134,9 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, tmp));
     }
 }
-void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res,
+                              bool ac,
+                              const std::vector<int> & id_grid_to_solver)
 {
 
     //TODO this is no more used!!!! see the other fillYbus
@@ -217,9 +219,9 @@ void DataLine::reset_results()
 }
 
 
-void DataLine::compute_results(const Eigen::Ref<RealVect> & Va,
-                               const Eigen::Ref<RealVect> & Vm,
-                               const Eigen::Ref<CplxVect> & V,
+void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
+                               const Eigen::Ref<const RealVect> & Vm,
+                               const Eigen::Ref<const CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
                                const RealVect & bus_vn_kv,
                                real_type sn_mva)

@@ -93,14 +93,14 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         res = false;
     }
     timer_total_nr_ += timer.duration();
-//    std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
-//              << "\n\t timer_dSbus_: " << timer_dSbus_
-//              << "\n\t timer_fillJ_: " << timer_fillJ_
-//              << "\n\t timer_Fx_: " << timer_Fx_
-//              << "\n\t timer_check_: " << timer_check_
-//              << "\n\t timer_solve_: " << timer_solve_
-//              << "\n\t timer_total_nr_: " << timer_total_nr_
-//              << "\n\n";
+    // std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
+    //           << "\n\t timer_dSbus_: " << timer_dSbus_
+    //           << "\n\t timer_fillJ_: " << timer_fillJ_
+    //           << "\n\t timer_Fx_: " << timer_Fx_
+    //           << "\n\t timer_check_: " << timer_check_
+    //           << "\n\t timer_solve_: " << timer_solve_
+    //           << "\n\t timer_total_nr_: " << timer_total_nr_
+    //           << "\n\n";
     return res;
 }
 
@@ -212,10 +212,6 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     J21 = dS_dVa[array([pq]).T, pvpq].imag
     J22 = dS_dVm[array([pq]).T, pq].imag
     **/
-    // TODO loop through the index in right order and call
-    // insert
-    // https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#a0f42824d4a06ee1d1f6afbc4551c5896
-    // it's O(1) !
 
     auto timer = CustTimer();
     _dSbus_dV(Ybus, V);
@@ -229,19 +225,26 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
 
     const int size_j = n_pvpq + n_pq;
 
+    // Method (1) seems to be faster than the others
     bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
     if(J_.cols() != size_j)
     {
-        // optim : if the matrix was already computed, i don't initalize it, i instead reuse as much as i can
+        // optim : if the matrix was already computed, i don't initialize it, i instead reuse as much as i can
         // i can do that because the matrix will ALWAYS have the same non zero coefficients.
         // in this if, i allocate it in a "large enough" place to avoid copy when first filling it
         need_insert = true;
         J_ = Eigen::SparseMatrix<real_type>(size_j,size_j);
         // pre allocate a large enough matrix
         J_.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros()));
-        // from an experiment, outerIndexPtr is inialized, with the number of columns
+        // from an experiment, outerIndexPtr is initialized, with the number of columns
         // innerIndexPtr and valuePtr are not.
     }
+    // else{  // HERE FOR PERF OPTIM (2) / (3)
+    //     J_.setZero();  // HERE FOR PERF OPTIM (2)  / (3)
+    // }  // HERE FOR PERF OPTIM (2)  / (3)
+
+    // std::vector<Eigen::Triplet<double> >coeffs;  // HERE FOR PERF OPTIM (3)
+    // coeffs.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros()));  // HERE FOR PERF OPTIM (3)
 
     // i fill the buffer columns per columns
     int nb_obj_this_col = 0;
@@ -272,23 +275,11 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
         // "efficient" insert of the element in the matrix
         for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             int row_id = inner_index[in_ind];
-            if(need_insert) J_.insert(row_id, col_id) = values[in_ind];
-            else J_.coeffRef(row_id, col_id) = values[in_ind];
+            if(need_insert) J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            else J_.coeffRef(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            // J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (2)
+            // coeffs.push_back(Eigen::Triplet<double>(row_id, col_id, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
-//                if(need_insert){
-//                    for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
-//                        int row_id = inner_index[in_ind];
-//                        J_.insert(row_id, col_id) = values[in_ind];
-//                        // else J_.coeffRef(row_id, col_id) = values[in_ind];
-//                    }
-//                }else{
-//                    int in_ind=0;
-//                    for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_,col_id); it; ++it, ++in_ind)
-//                    {
-////                        int row_id = inner_index[it.row()];
-//                        it.valueRef() = values[it.row()];
-//                    }
-//                }
     }
 
     //TODO make same for the second part (have a funciton for previous loop)
@@ -316,24 +307,13 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
         // "efficient" insert of the element in the matrix
         for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             int row_id = inner_index[in_ind];
-            if(need_insert) J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
-            else J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];
+            if(need_insert) J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            else J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            // J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (2)
+            // coeffs.push_back(Eigen::Triplet<double>(row_id, col_id + n_pvpq, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
-//                if(need_insert){
-//                    for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
-//                        int row_id = inner_index[in_ind];
-//                        J_.insert(row_id, col_id + n_pvpq) = values[in_ind];
-//                        // else J_.coeffRef(row_id, col_id) = values[in_ind];
-//                    }
-//                }else{
-//                    int in_ind=0;
-//                    for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id + n_pvpq); it; ++it, ++in_ind)
-//                    {
-//                        int row_id = inner_index[it.row()];
-//                        it.valueRef() = values[row_id];
-//                    }
-//                }
     }
+    // J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     J_.makeCompressed();
     timer_fillJ_ += timer.duration();
 }

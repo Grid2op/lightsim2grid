@@ -92,8 +92,8 @@ int DataGeneric::_get_bus(int el_id, const std::vector<bool> & status_, const Ei
     return res;
 }
 
-void DataGeneric::v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
-                                const Eigen::Ref<RealVect> & Vm,
+void DataGeneric::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
+                                const Eigen::Ref<const RealVect> & Vm,
                                 const std::vector<bool> & status,
                                 int nb_element,
                                 const Eigen::VectorXi & bus_me_id,
@@ -119,8 +119,8 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
 }
 
 
-void DataGeneric::v_deg_from_va(const Eigen::Ref<RealVect> & Va,
-                                const Eigen::Ref<RealVect> & Vm,
+void DataGeneric::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
+                                const Eigen::Ref<const RealVect> & Vm,
                                 const std::vector<bool> & status,
                                 int nb_element,
                                 const Eigen::VectorXi & bus_me_id,

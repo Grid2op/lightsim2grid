@@ -301,6 +301,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_q_storage", &GridModel::change_q_storage)
 
         // get back the results
+        .def("get_V", &GridModel::get_V)
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
         .def("get_J", &GridModel::get_J)

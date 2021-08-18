@@ -42,13 +42,13 @@ class BaseSolver : public BaseConstants
 
         ~BaseSolver(){}
 
-        Eigen::Ref<RealVect> get_Va(){
+        Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
         }
-        Eigen::Ref<RealVect> get_Vm(){
+        Eigen::Ref<const RealVect> get_Vm() const{
             return Vm_;
         }
-        Eigen::Ref<CplxVect> get_V(){
+        Eigen::Ref<const CplxVect> get_V() const{
             return V_;
         }
         int get_error(){

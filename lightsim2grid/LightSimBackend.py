@@ -130,8 +130,16 @@ class LightSimBackend(Backend):
         storage_theta: ``numpy.ndarray``
             Gives the voltage angle to the bus at which each storage unit is connected
         """
-        line_or_theta = np.concatenate((self._grid.get_lineor_theta(), self._grid.get_trafohv_theta()))
-        line_ex_theta = np.concatenate((self._grid.get_lineex_theta(), self._grid.get_trafolv_theta()))
+        line_or_theta = np.empty(self.n_line)
+        line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
+        line_or_theta[self.__nb_powerline:] = self._grid.get_trafohv_theta()
+
+        line_ex_theta = np.empty(self.n_line)
+        line_ex_theta[:self.__nb_powerline] = self._grid.get_lineex_theta()
+        line_ex_theta[self.__nb_powerline:] = self._grid.get_trafolv_theta()
+
+        # line_or_theta = np.concatenate((self._grid.get_lineor_theta(), self._grid.get_trafohv_theta()))
+        # line_ex_theta = np.concatenate((self._grid.get_lineex_theta(), self._grid.get_trafolv_theta()))
         load_theta = self.cst_1 * self._grid.get_load_theta()
         gen_theta = self.cst_1 * self._grid.get_gen_theta()
         storage_theta = self.cst_1 * self._grid.get_storage_theta()
@@ -584,20 +592,39 @@ class LightSimBackend(Backend):
 
             self.comp_time += self._grid.get_computation_time()
             self.V[:] = V
-            lpor, lqor, lvor, laor = self._grid.get_lineor_res()
-            lpex, lqex, lvex, laex = self._grid.get_lineex_res()
-            tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
-            tpex, tqex, tvex, taex = self._grid.get_trafolv_res()
+            # lpor, lqor, lvor, laor = self._grid.get_lineor_res()
+            # lpex, lqex, lvex, laex = self._grid.get_lineex_res()
+            # tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
+            # tpex, tqex, tvex, taex = self._grid.get_trafolv_res()
+            (self.p_or[:self.__nb_powerline],
+             self.q_or[:self.__nb_powerline],
+             self.v_or[:self.__nb_powerline],
+             self.a_or[:self.__nb_powerline]) = self._grid.get_lineor_res()
+            (self.p_or[self.__nb_powerline:],
+             self.q_or[self.__nb_powerline:],
+             self.v_or[self.__nb_powerline:],
+             self.a_or[self.__nb_powerline:]) = self._grid.get_trafohv_res()
+            (self.p_ex[:self.__nb_powerline],
+             self.q_ex[:self.__nb_powerline],
+             self.v_ex[:self.__nb_powerline],
+             self.a_ex[:self.__nb_powerline]) = self._grid.get_lineex_res()
+            (self.p_ex[self.__nb_powerline:],
+             self.q_ex[self.__nb_powerline:],
+             self.v_ex[self.__nb_powerline:],
+             self.a_ex[self.__nb_powerline:]) = self._grid.get_trafolv_res()
 
-            self.p_or[:] = np.concatenate((lpor, tpor))
-            self.q_or[:] = np.concatenate((lqor, tqor))
-            self.v_or[:] = np.concatenate((lvor, tvor))
-            self.a_or[:] = 1000. * np.concatenate((laor, taor))
+            self.a_or *= 1000.  # amps in lightsim, kA expected in grid2op
+            self.a_ex *= 1000.  # amps in lightsim, kA expected in grid2op
 
-            self.p_ex[:] = np.concatenate((lpex, tpex))
-            self.q_ex[:] = np.concatenate((lqex, tqex))
-            self.v_ex[:] = np.concatenate((lvex, tvex))
-            self.a_ex[:] = 1000. * np.concatenate((laex, taex))
+            # self.p_or[:] = np.concatenate((lpor, tpor))
+            # self.q_or[:] = np.concatenate((lqor, tqor))
+            # self.v_or[:] = np.concatenate((lvor, tvor))
+            # self.a_or[:] = 1000. * np.concatenate((laor, taor))
+            #
+            # self.p_ex[:] = np.concatenate((lpex, tpex))
+            # self.q_ex[:] = np.concatenate((lqex, tqex))
+            # self.v_ex[:] = np.concatenate((lvex, tvex))
+            # self.a_ex[:] = 1000. * np.concatenate((laex, taex))
 
             self.a_or[~np.isfinite(self.a_or)] = 0.
             self.v_or[~np.isfinite(self.v_or)] = 0.

@@ -67,9 +67,9 @@ class DataLoad : public DataGeneric
 
     virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
 
-    void compute_results(const Eigen::Ref<RealVect> & Va,
-                         const Eigen::Ref<RealVect> & Vm,
-                         const Eigen::Ref<CplxVect> & V,
+    void compute_results(const Eigen::Ref<const RealVect> & Va,
+                         const Eigen::Ref<const RealVect> & Vm,
+                         const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
                          real_type sn_mva);
@@ -78,7 +78,7 @@ class DataLoad : public DataGeneric
     virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
-    const RealVect & get_theta() const {return res_theta_;}
+    Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:

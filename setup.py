@@ -180,10 +180,10 @@ if "PATH_NICSLU" in os.environ:
                 libnicslu_path = None
 
     if include_nicslu and libnicslu_path is not None:
-        LIBS.append(os.path.join(path_nicslu,libnicslu_path))
+        LIBS.append(os.path.join(path_nicslu, libnicslu_path))
         include_dirs.append(os.path.join(path_nicslu, "include"))
         src_files.append("src/NICSLUSolver.cpp")
-        extra_compile_args_tmp.append("-DNICSLU_SOLVER_AVAILABLE")
+        extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
 
 ext_modules = [
     Pybind11Extension(

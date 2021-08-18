@@ -116,9 +116,9 @@ void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, co
     //TODO this is no more used!!!! see the other fillYbus
 }
 
-void DataShunt::compute_results(const Eigen::Ref<RealVect> & Va,
-                                const Eigen::Ref<RealVect> & Vm,
-                                const Eigen::Ref<CplxVect> & V,
+void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
+                                const Eigen::Ref<const RealVect> & Vm,
+                                const Eigen::Ref<const CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
                                 const RealVect & bus_vn_kv,
                                 real_type sn_mva)

@@ -278,43 +278,47 @@ class GridModel : public DataGeneric
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
 
-        const RealVect & get_gen_theta() const  {return generators_.get_theta();}
-        const RealVect & get_load_theta() const  {return loads_.get_theta();}
-        const RealVect & get_shunt_theta() const  {return shunts_.get_theta();}
-        const RealVect & get_storage_theta() const  {return storages_.get_theta();}
-        const RealVect & get_lineor_theta() const {return powerlines_.get_theta_or();}
-        const RealVect & get_lineex_theta() const {return powerlines_.get_theta_ex();}
-        const RealVect & get_trafohv_theta() const {return trafos_.get_theta_hv();}
-        const RealVect & get_trafolv_theta() const {return trafos_.get_theta_lv();}
+        Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
+        Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
+        Eigen::Ref<const RealVect> get_shunt_theta() const  {return shunts_.get_theta();}
+        Eigen::Ref<const RealVect> get_storage_theta() const  {return storages_.get_theta();}
+        Eigen::Ref<const RealVect> get_lineor_theta() const {return powerlines_.get_theta_or();}
+        Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_ex();}
+        Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_hv();}
+        Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_lv();}
 
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
         Eigen::SparseMatrix<cplx_type> get_Ybus(){
-            return Ybus_;
+            return Ybus_;  // This is copied to python
         }
-        CplxVect get_Sbus(){
+        Eigen::Ref<CplxVect> get_Sbus(){
             return Sbus_;
         }
-        Eigen::VectorXi get_pv(){
+        Eigen::Ref<const Eigen::VectorXi> get_pv() const{
             return bus_pv_;
         }
-        Eigen::VectorXi get_pq(){
+        Eigen::Ref<const Eigen::VectorXi> get_pq() const{
             return bus_pq_;
         }
-        Eigen::Ref<RealVect> get_Va(){
+        Eigen::Ref<const CplxVect> get_V() const{
+            return _solver.get_V();
+        }
+        Eigen::Ref<const RealVect> get_Va() const{
             return _solver.get_Va();
         }
-        Eigen::Ref<RealVect> get_Vm(){
+        Eigen::Ref<const RealVect> get_Vm() const{
             return _solver.get_Vm();
         }
         Eigen::SparseMatrix<real_type> get_J(){
-            return _solver.get_J();
+            return _solver.get_J();  // This is copied to python
         }
         real_type get_computation_time(){ return _solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
-        void update_bus_status(int nb_bus_before, Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
+        void update_bus_status(int nb_bus_before,
+                               Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
         void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         void update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,

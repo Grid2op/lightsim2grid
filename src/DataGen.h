@@ -148,9 +148,9 @@ class DataGen: public DataGeneric
                         const std::vector<int> & id_grid_to_solver);
     void init_q_vector(int nb_bus); // delta_q_per_gen_
 
-    void compute_results(const Eigen::Ref<RealVect> & Va,
-                         const Eigen::Ref<RealVect> & Vm,
-                         const Eigen::Ref<CplxVect> & V,
+    void compute_results(const Eigen::Ref<const RealVect> & Va,
+                         const Eigen::Ref<const RealVect> & Vm,
+                         const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
                          real_type sn_mva);
@@ -167,7 +167,7 @@ class DataGen: public DataGeneric
     void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
-    const RealVect & get_theta() const {return res_theta_;}
+    Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
 
     const std::vector<bool>& get_status() const {return status_;}
 

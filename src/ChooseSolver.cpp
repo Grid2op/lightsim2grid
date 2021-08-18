@@ -10,17 +10,17 @@
 #include <iostream>
 // template specialization
 template<SolverType ST>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp() const
 {
     throw std::runtime_error("ChooseSolver::get_V_tmp: Unknown solver type.");
 }
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::SparseLU>()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::SparseLU>() const
 {
     return _solver_lu.get_V();
 }
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>() const
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -30,7 +30,7 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>()
     #endif
 }
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::NICSLU>()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::NICSLU>() const
 {
     #ifndef NICSLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -40,17 +40,17 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::NICSLU>()
     #endif
 }
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>() const
 {
     return _solver_gaussseidel.get_V();
 }
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidelSynch>()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidelSynch>() const
 {
     return _solver_gaussseidelsynch.get_V();
 }
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::DC>()
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::DC>() const
 {
     return _solver_dc.get_V();
 }
@@ -198,32 +198,32 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::NICSLU>()
 }
 
 template<SolverType ST>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp() const
 {
     throw std::runtime_error("ChooseSolver::get_Va_tmp: Unknown solver type.");
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::SparseLU>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::SparseLU>() const
 {
     return _solver_lu.get_Va();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>() const
 {
     return _solver_gaussseidel.get_Va();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidelSynch>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidelSynch>() const
 {
     return _solver_gaussseidelsynch.get_Va();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::DC>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::DC>() const
 {
     return _solver_dc.get_Va();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>() const
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -233,7 +233,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>()
     #endif
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::NICSLU>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::NICSLU>() const
 {
     #ifndef NICSLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -243,32 +243,32 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::NICSLU>()
     #endif
 }
 template<SolverType ST>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp() const
 {
     throw std::runtime_error("ChooseSolver::get_Vm_tmp: Unknown solver type.");
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>() const
 {
     return _solver_lu.get_Vm();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::DC>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::DC>() const
 {
     return _solver_dc.get_Vm();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>() const
 {
     return _solver_gaussseidel.get_Vm();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidelSynch>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidelSynch>() const
 {
     return _solver_gaussseidelsynch.get_Vm();
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>() const
 {
     #ifndef KLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -278,7 +278,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>()
     #endif
 }
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::NICSLU>()
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::NICSLU>() const
 {
     #ifndef NICSLU_SOLVER_AVAILABLE
         // I asked result of KLU solver without the required libraries
@@ -342,7 +342,7 @@ double ChooseSolver::get_computation_time_tmp<SolverType::DC>()
 //TODO refactor all the functions above by making a template function "get_solver"
 
 // function definition
-Eigen::Ref<CplxVect> ChooseSolver::get_V(){
+Eigen::Ref<const CplxVect> ChooseSolver::get_V() const {
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
@@ -362,7 +362,7 @@ Eigen::Ref<CplxVect> ChooseSolver::get_V(){
     }
 }
 
-Eigen::Ref<RealVect> ChooseSolver::get_Va(){
+Eigen::Ref<const RealVect> ChooseSolver::get_Va() const {
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
@@ -381,7 +381,7 @@ Eigen::Ref<RealVect> ChooseSolver::get_Va(){
         throw std::runtime_error("ChooseSolver::get_Va: Unknown solver type.");
     }
 }
-Eigen::Ref<RealVect> ChooseSolver::get_Vm(){
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm() const {
     check_right_solver();
     if(_solver_type == SolverType::SparseLU)
     {
