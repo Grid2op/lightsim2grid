@@ -185,6 +185,11 @@ if "PATH_NICSLU" in os.environ:
         src_files.append("src/NICSLUSolver.cpp")
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
 
+if "__COUT_TIMES" in os.environ:
+    # to add extra info in cout for the computation times, we do not recommend to use it !
+    if os.environ["__COUT_TIMES"] == "1":
+        extra_compile_args.append("-D__COUT_TIMES")
+
 ext_modules = [
     Pybind11Extension(
         'lightsim2grid_cpp',

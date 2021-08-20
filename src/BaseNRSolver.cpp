@@ -93,14 +93,16 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         res = false;
     }
     timer_total_nr_ += timer.duration();
-    // std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
-    //           << "\n\t timer_dSbus_: " << timer_dSbus_
-    //           << "\n\t timer_fillJ_: " << timer_fillJ_
-    //           << "\n\t timer_Fx_: " << timer_Fx_
-    //           << "\n\t timer_check_: " << timer_check_
-    //           << "\n\t timer_solve_: " << timer_solve_
-    //           << "\n\t timer_total_nr_: " << timer_total_nr_
-    //           << "\n\n";
+    #ifdef __COUT_TIMES
+        std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
+                  << "\n\t timer_dSbus_: " << timer_dSbus_
+                  << "\n\t timer_fillJ_: " << timer_fillJ_
+                  << "\n\t timer_Fx_: " << timer_Fx_
+                  << "\n\t timer_check_: " << timer_check_
+                  << "\n\t timer_solve_: " << timer_solve_
+                  << "\n\t timer_total_nr_: " << timer_total_nr_
+                  << "\n\n";
+    #endif // __COUT_TIMES
     return res;
 }
 
@@ -117,41 +119,82 @@ void BaseNRSolver::reset(){
 void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                              const Eigen::Ref<const CplxVect > & V){
     auto timer = CustTimer();
-    auto size_dS = V.size();
-    CplxVect Vnorm = V.array() / V.array().abs();
-    CplxVect Ibus = Ybus * V;
+    const auto size_dS = V.size();
+    const CplxVect Vnorm = V.array() / V.array().abs();
+    const CplxVect Ibus = Ybus * V;
 
-    // TODO see if i can reuse previous values, i am not sure
     dS_dVm_ = Ybus;
     dS_dVa_ = Ybus;
 
-    // i fill the buffer columns per columns
-    for (int k=0; k < size_dS; ++k){
-        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dS_dVm_,k); it; ++it)
-        {
-            it.valueRef() *= Vnorm(it.col());  // dS_dVm[k] *= Vnorm[Yj[k]]
-            it.valueRef() = std::conj(it.valueRef()) * V(it.row());  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
-            if(it.col() == it.row()){
-                // diagonal element
-                it.valueRef() += std::conj(Ibus(it.row())) * Vnorm(it.row()); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus) * Vnorm
-            }
-        }
-    }
+    // TODO remove that on release mode !
+    // if (!Ybus.isCompressed()) throw std::runtime_error("Ybus should be in compressed mode !");
 
-    for (int k=0; k < size_dS; ++k){
-        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dS_dVa_,k); it; ++it)
-        {
-            it.valueRef() *= V(it.col());  // dS_dVa[k] *= V[Yj[k]]
-            if(it.col() == it.row()){
-                // diagonal element
-                it.valueRef() -= Ibus(it.row());  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+    // std::cout << "dS_dVm_.isCompressed()" << dS_dVm_.isCompressed() << std::endl;
+    if(false){
+        cplx_type * ds_dvm_x_ptr = dS_dVm_.valuePtr();
+        cplx_type * ds_dva_x_ptr = dS_dVa_.valuePtr();
+        unsigned int pos_el = 0;
+        for (int col_=0; col_ < size_dS; ++col_){
+            for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_); it; ++it)
+            {
+                // std::cout << "beg " << ds_dvm_x_ptr[pos_el] << std::endl;
+                const int row_id = it.row();
+                const int col_id = it.col();
+                cplx_type & ds_dvm_el = ds_dvm_x_ptr[pos_el];
+                cplx_type & ds_dva_el = ds_dva_x_ptr[pos_el];
+                // std::cout << "col_id: " << col_id << " col_: " << col_ << std::endl;
+                ds_dvm_el *= Vnorm(col_id);  // dS_dVm[k] *= Vnorm[Yj[k]]
+                ds_dvm_el = std::conj(ds_dvm_el) * V(row_id);  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+
+                ds_dva_el *= V(col_id);  // dS_dVa[k] *= V[Yj[k]]
+
+                if(col_id == row_id)
+                {
+                    ds_dvm_el += std::conj(Ibus(row_id)) * Vnorm(row_id); // dS_dVm[k] += conj(Ibus) * Vnorm
+                    ds_dva_x_ptr[pos_el] -= Ibus(row_id);  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+                }
+                cplx_type tmp = my_i * V(row_id);
+                ds_dva_el = std::conj(-ds_dva_el) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
+
+                // std::cout << "end " << ds_dvm_x_ptr[pos_el] << std::endl;
+                // std::cout << "ds_dvm_x_ptr[" << col_id << "," << row_id << "] = " << ds_dvm_x_ptr[pos_el] << std::endl;
+                // go to next element
+                ++pos_el;
             }
-            cplx_type tmp = my_i * V(it.row());
-            it.valueRef() = std::conj(-it.valueRef()) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
         }
     }
-    dS_dVa_.makeCompressed();
-    dS_dVm_.makeCompressed();
+    // #ifdef __OLD_dSbus_dV
+    if(true){
+        // TODO remove this piece of code
+        // i fill the buffer columns per columns
+        for (int k=0; k < size_dS; ++k){
+            for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dS_dVm_,k); it; ++it)
+            {
+                it.valueRef() *= Vnorm(it.col());  // dS_dVm[k] *= Vnorm[Yj[k]]
+                it.valueRef() = std::conj(it.valueRef()) * V(it.row());  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+                if(it.col() == it.row()){
+                    // diagonal element
+                    it.valueRef() += std::conj(Ibus(it.row())) * Vnorm(it.row()); // dS_dVm[k] += buffer[r] # buffer being conj(Ibus) * Vnorm
+                }
+            }
+        }
+
+        for (int k=0; k < size_dS; ++k){
+            for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dS_dVa_,k); it; ++it)
+            {
+                it.valueRef() *= V(it.col());  // dS_dVa[k] *= V[Yj[k]]
+                if(it.col() == it.row()){
+                    // diagonal element
+                    it.valueRef() -= Ibus(it.row());  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+                }
+                cplx_type tmp = my_i * V(it.row());
+                it.valueRef() = std::conj(-it.valueRef()) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
+            }
+        }
+        dS_dVa_.makeCompressed();
+        dS_dVm_.makeCompressed();
+    }
+    // #endif  // __OLD_dSbus_dV
     timer_dSbus_ += timer.duration();
 }
 
@@ -215,18 +258,19 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
 
     auto timer = CustTimer();
     _dSbus_dV(Ybus, V);
-    Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
-    Eigen::SparseMatrix<real_type> dS_dVa_i = dS_dVa_.imag();
-    Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
-    Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
 
     const int n_pvpq = pvpq.size();
     const int n_pq = pq.size();
-
     const int size_j = n_pvpq + n_pq;
 
-    // Method (1) seems to be faster than the others
     bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
+
+    const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
+    const Eigen::SparseMatrix<real_type> dS_dVa_i = dS_dVa_.imag();
+    const Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
+    const Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
+
+    // Method (1) seems to be faster than the others
     if(J_.cols() != size_j)
     {
         // optim : if the matrix was already computed, i don't initialize it, i instead reuse as much as i can
