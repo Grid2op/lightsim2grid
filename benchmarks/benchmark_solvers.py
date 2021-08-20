@@ -23,7 +23,7 @@ except ImportError:
 from grid2op.Parameters import Parameters
 import lightsim2grid
 from lightsim2grid.LightSimBackend import LightSimBackend
-from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed
+from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
     from tabulate import tabulate
@@ -113,8 +113,11 @@ def main(max_ts, env_name_input, test=True,
         gsa_time_pf = env_lightsim._time_powerflow
 
     # NOW PRINT THE RESULTS
+    print("Configuration:")
+    print_configuration()
+
     env_name = get_env_name_displayed(env_name_input)
-    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op powerflow time (ms)", f"solver powerflow time (ms)"]
+    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"solver powerflow time (ms)"]
     tab = [["PP", f"{nb_ts_pp/time_pp:.2e}",
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
             f"{1000.*pp_comp_time/nb_ts_pp:.2e}"]]
@@ -154,7 +157,7 @@ def main(max_ts, env_name_input, test=True,
     print()
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
-    tab = [["PP", "0.00", "0.00", "0.00"]]
+    tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
     if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
         tab.append(["LS+GS",
                     f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",

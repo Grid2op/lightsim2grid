@@ -123,3 +123,36 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+def print_configuration():
+    try:
+        import platform
+        print(f"- system: {platform.system()} {platform.release()}")
+    except ImportError:
+        print(f"- system: please install the `platform` to have this information")
+
+    try:
+        import distro
+        print(f"- OS: {distro.linux_distribution(full_distribution_name=False)[0]} "
+              f"{distro.linux_distribution(full_distribution_name=False)[1]}")
+    except ImportError:
+        print(f"- OS: please install the `distro` to have this information")
+
+    try:
+        import cpuinfo
+        info_ = cpuinfo.get_cpu_info()
+        print(f"- processor: {info_['brand_raw']}")
+        print(f"- python version: {info_['python_version']}")
+    except ImportError:
+        print(f"- processor: please install the `py-cpuinfo` to have this information")
+        print(f"- python version: please install the `py-cpuinfo` to have this information")
+
+    import pandas as pd
+    import pandapower as pp
+    import lightsim2grid
+    print(f"- numpy version: {np.__version__}")
+    print(f"- pandas version: {pd.__version__}")
+    print(f"- pandapower version: {pp.__version__}")
+    print(f"- lightsim2grid version: {lightsim2grid.__version__}")
+    print()

@@ -217,7 +217,9 @@ pkgs = {
         "benchmark": [
             "tabulate",
             "grid2op>=1.5.0",
-            "numpy"
+            "numpy",
+            "distro",
+            "py-cpuinfo"
         ],
         "recommended": [
             "grid2op>=1.5.0"
