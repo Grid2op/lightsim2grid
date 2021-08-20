@@ -1,3 +1,11 @@
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 from grid2op import make
 from grid2op.Agent import AgentWithConverter
 from grid2op.Parameters import Parameters
@@ -222,6 +230,10 @@ class TestAgentAllMove(ABC):
             self.tol = 2e-4
         elif env_name == "l2rpn_case14_sandbox":
             self.tol = 2e-4
+        elif env_name == "rte_case5_example":
+            self.tol = 2e-4
+        elif env_name == "l2rpn_neurips_2020_track1":
+            self.tol = 4e-5
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}: lightsim: {}, pp: {}" \
                                       "".format(env_name, nb_ts_klu, nb_ts_pp)

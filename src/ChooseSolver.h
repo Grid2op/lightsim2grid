@@ -12,13 +12,18 @@
 #include<vector>
 
 // import newton raphson solvers using different linear algebra solvers
-#include "KLUSolver.h"
+#ifdef KLU_SOLVER_AVAILABLE
+    #include "KLUSolver.h"
+#endif
+#ifdef NICSLU_SOLVER_AVAILABLE
+    #include "NICSLUSolver.h"
+#endif
 #include "SparseLUSolver.h"
 #include "GaussSeidelSolver.h"
 #include "GaussSeidelSynchSolver.h"
 #include "DCSolver.h"
 
-enum class SolverType { SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch};
+enum class SolverType { SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU};
 
 
 // NB: when adding a new solver, you need to specialize the *tmp method (eg get_Va_tmp)
@@ -36,19 +41,29 @@ class ChooseSolver
             res.push_back(SolverType::SparseLU);
             res.push_back(SolverType::GaussSeidel);
             res.push_back(SolverType::DC);
+            res.push_back(SolverType::GaussSeidelSynch);
             #ifdef KLU_SOLVER_AVAILABLE
                 res.push_back(SolverType::KLU);
             #endif
-            res.push_back(SolverType::GaussSeidelSynch);
+            #ifdef NICSLU_SOLVER_AVAILABLE
+                res.push_back(SolverType::NICSLU);
+            #endif
             return res;
         }
         SolverType get_type() const {return _solver_type;}
         void change_solver(const SolverType & type)
         {
             if(type == _solver_type) return;
+            std::string msg;
             #ifndef KLU_SOLVER_AVAILABLE
                 // TODO better handling of that :-/
-                if(type == SolverType::KLU) throw std::runtime_error("Impossible to change for the KLU solver, that is not available on your platform.");
+                msg = "Impossible to change for the KLU solver, that is not available on your platform.";
+                if(type == SolverType::KLU) throw std::runtime_error(msg);
+            #endif
+            #ifndef NICSLU_SOLVER_AVAILABLE
+                // TODO better handling of that :-/
+                msg = "Impossible to change for the NICSLU solver, that is not available on your platform.";
+                if(type == SolverType::NICSLU) throw std::runtime_error(msg);
             #endif
             _solver_type = type;
         }
@@ -61,6 +76,9 @@ class ChooseSolver
             #ifdef KLU_SOLVER_AVAILABLE
                 _solver_klu.reset();
             #endif  // KLU_SOLVER_AVAILABLE
+            #ifdef NICSLU_SOLVER_AVAILABLE
+                _solver_nicslu.reset();
+            #endif  // NICSLU_SOLVER_AVAILABLE
             _solver_gaussseidelsynch.reset();
         }
 
@@ -74,29 +92,29 @@ class ChooseSolver
                         int max_iter,
                         real_type tol
                         );
-        Eigen::Ref<CplxVect> get_V();
+        Eigen::Ref<const CplxVect> get_V() const;
+        Eigen::Ref<const RealVect> get_Va() const;
+        Eigen::Ref<const RealVect> get_Vm() const;
         Eigen::SparseMatrix<real_type> get_J();
-        Eigen::Ref<RealVect> get_Va();
-        Eigen::Ref<RealVect> get_Vm();
         double get_computation_time();
 
     private:
-        void check_right_solver()
+        void check_right_solver() const
         {
             if(_solver_type != _type_used_for_nr) throw std::runtime_error("ChooseSolver: Solver mismatch: current solver is not the last solver used to perform a powerflow");
         }
 
         template<SolverType ST>
-        Eigen::Ref<CplxVect> get_V_tmp();
+        Eigen::Ref<const CplxVect> get_V_tmp() const;
+
+        template<SolverType ST>
+        Eigen::Ref<const RealVect> get_Va_tmp() const;
+
+        template<SolverType ST>
+        Eigen::Ref<const RealVect> get_Vm_tmp() const;
 
         template<SolverType ST>
         Eigen::SparseMatrix<real_type> get_J_tmp();
-
-        template<SolverType ST>
-        Eigen::Ref<RealVect> get_Va_tmp();
-
-        template<SolverType ST>
-        Eigen::Ref<RealVect> get_Vm_tmp();
 
         template<SolverType ST>
         double get_computation_time_tmp();
@@ -123,6 +141,9 @@ class ChooseSolver
         #ifdef KLU_SOLVER_AVAILABLE
             KLUSolver _solver_klu;
         #endif  // KLU_SOLVER_AVAILABLE
+        #ifdef NICSLU_SOLVER_AVAILABLE
+            KLUSolver _solver_nicslu;
+        #endif  // NICSLU_SOLVER_AVAILABLE
 
 };
 
@@ -130,15 +151,17 @@ class ChooseSolver
 // template specialization
 
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::SparseLU>();
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::SparseLU>() const;
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>();
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::KLU>() const;
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>();
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::NICSLU>() const;
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidelSynch>();
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidel>() const;
 template<>
-Eigen::Ref<CplxVect> ChooseSolver::get_V_tmp<SolverType::DC>();
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::GaussSeidelSynch>() const;
+template<>
+Eigen::Ref<const CplxVect> ChooseSolver::get_V_tmp<SolverType::DC>() const;
 
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -151,6 +174,15 @@ bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatri
                        );
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                       CplxVect & V,
+                       const CplxVect & Sbus,
+                       const Eigen::VectorXi & pv,
+                       const Eigen::VectorXi & pq,
+                       int max_iter,
+                       real_type tol
+                       );
+template<>
+bool ChooseSolver::compute_pf_tmp<SolverType::NICSLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
                        const Eigen::VectorXi & pv,
@@ -191,6 +223,8 @@ Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::SparseLU>();
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::KLU>();
 template<>
+Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::NICSLU>();
+template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::GaussSeidel>();
 template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::GaussSeidelSynch>();
@@ -198,31 +232,35 @@ template<>
 Eigen::SparseMatrix<real_type> ChooseSolver::get_J_tmp<SolverType::DC>();
 
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::SparseLU>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::SparseLU>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::KLU>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::NICSLU>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidelSynch>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidel>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Va_tmp<SolverType::DC>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::GaussSeidelSynch>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Va_tmp<SolverType::DC>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::SparseLU>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::KLU>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidelSynch>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidel>() const;
 template<>
-Eigen::Ref<RealVect> ChooseSolver::get_Vm_tmp<SolverType::DC>();
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::GaussSeidelSynch>() const;
+template<>
+Eigen::Ref<const RealVect> ChooseSolver::get_Vm_tmp<SolverType::DC>() const;
 
 // computation times
 template<>
 double ChooseSolver::get_computation_time_tmp<SolverType::SparseLU>();
 template<>
 double ChooseSolver::get_computation_time_tmp<SolverType::KLU>();
+template<>
+double ChooseSolver::get_computation_time_tmp<SolverType::NICSLU>();
 template<>
 double ChooseSolver::get_computation_time_tmp<SolverType::GaussSeidel>();
 template<>

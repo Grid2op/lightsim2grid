@@ -67,7 +67,7 @@ class BaseNRSolver : public BaseSolver
         void _get_values_J(int & nb_obj_this_col,
                            std::vector<int> & inner_index,
                            std::vector<real_type> & values,
-                           const Eigen::SparseMatrix<real_type> & mat,  // ex. dS_dVa_r
+                           const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                            const std::vector<int> & index_row_inv, // ex. pvpq_inv
                            const Eigen::VectorXi & index_col, // ex. pvpq
                            int col_id,
@@ -81,6 +81,30 @@ class BaseNRSolver : public BaseSolver
                                   const std::vector<int> & pq_inv,
                                   const std::vector<int> & pvpq_inv
                                   );
+        void fill_jacobian_matrix_kown_sparsity_pattern(
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
+                 const Eigen::SparseMatrix<cplx_type> & Ybus,
+                 const CplxVect & V,
+                 const Eigen::VectorXi & pq,
+                 const Eigen::VectorXi & pvpq,
+                 const std::vector<int> & pq_inv,
+                 const std::vector<int> & pvpq_inv
+                 );
+        void fill_jacobian_matrix_unkown_sparsity_pattern(
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
+                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
+                 const Eigen::SparseMatrix<cplx_type> & Ybus,
+                 const CplxVect & V,
+                 const Eigen::VectorXi & pq,
+                 const Eigen::VectorXi & pvpq,
+                 const std::vector<int> & pq_inv,
+                 const std::vector<int> & pvpq_inv
+                 );
 
     protected:
 

@@ -64,6 +64,7 @@ get some benefit (in terms of performances) to install it from your on your mach
 You need to:
 - clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional)
 - (optional) compile a piece of SparseSuite
+- (optional) [experimental] retrieve and get a proper license for the NICSLU linear solver (see https://github.com/chenxm1986/nicslu)
 - install the package
 
 ### Important note
@@ -140,6 +141,28 @@ The main steps (for windows, somme commands needs to be adapted on linux / macos
 6) `cmake --build . --config Release --target install`
 
 For more information, feel free to read the dedicated [README](build_cmake/README.md).
+
+### (optional) Include NICSLU linear solver (experimental)
+Another linear solver that can be used with lighsim2grid is the "NICSLU" linear solver that might, in some cases, be
+even faster than the KLU linear solver. This can lead to more speed up if using lighsim2grid.
+
+To use it, you need to:
+
+1) retrieve the sources (only available as a freeware) from https://github.com/chenxm1986/nicslu and save
+   it on your machine. Say you clone this github repository in `NICSLU_GIT` 
+   (*eg* NICSLU_GIT="/home/user/Documents/nicslu/"). Also note that you need to check that your usage
+   is compliant with their license !
+2) define the "PATH_NICSLU" environment variable **before** compiling lightsim2grid, on linux you can do
+   `export PATH_NICSLU=NICSLU_GIT/nicsluDATE` 
+   (for example `export PATH_NICSLU=/home/user/Documents/nicslu/nicslu202103` if you cloned the repository 
+   as the example of `step 1)` and use the version of nicslu compiled by the author on March 2021 [version 
+   distributed at time of writing the readme] )
+
+And this is it. Lightsim will be able to use this linear solver.
+
+Be carefull though, you require a license file in order to use it. As of now, the best way is to copy paste the license
+file at the same location that the one you execute python from (*ie* you need to copy paste it each time). We will 
+try to find another solution.
 
 ### 2. Installation of the python package
 Now you simply need to install the lightsim2grid package this way, like any python package:

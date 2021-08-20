@@ -21,7 +21,7 @@ GridModel::GridModel(const GridModel & other)
 
     // copy the powersystem representation
     // 1. bus
-    bus_vn_kv_.array() = other.bus_vn_kv_;
+    bus_vn_kv_ = other.bus_vn_kv_;
     bus_status_ = other.bus_status_;
 
     // 2. powerline
@@ -466,6 +466,7 @@ void GridModel::compute_results(){
     const auto & Va = _solver.get_Va();
     const auto & Vm = _solver.get_Vm();
     const auto & V = _solver.get_V();
+
     // for powerlines
     powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
     // for trafo

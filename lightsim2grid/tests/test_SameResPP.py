@@ -1,3 +1,11 @@
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 import unittest
 import tempfile
 import pandapower as pp
@@ -25,6 +33,7 @@ class MyTestCase(unittest.TestCase):
 
     def test_case14(self):
         case = pn.case14()
+        self.tol = 2e-3
         self._aux_test(case)
 
     def test_case39(self):
@@ -37,6 +46,7 @@ class MyTestCase(unittest.TestCase):
 
     def test_case1888rte(self):
         case = pn.case1888rte()
+        self.tol = 3e-4
         self._aux_test(case)
 
     # def test_case300(self):
@@ -266,7 +276,7 @@ class MyTestCase(unittest.TestCase):
         v_or_me2 = np.concatenate((lvor, tvor))
         a_or_me2 = 1000. * np.concatenate((laor, taor))
         test_ok = True
-        # pdb.set_trace()
+
         max_mis = np.max(np.abs(p_or_me2 - por_pp))
         assert np.max(error_q) <= self.tol, f"\t Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
         max_mis = np.max(np.abs(q_or_me2 - qor_pp))

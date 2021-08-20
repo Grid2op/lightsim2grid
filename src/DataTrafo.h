@@ -182,9 +182,9 @@ class DataTrafo : public DataGeneric
                           real_type sn_mva);
     virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
 
-    void compute_results(const Eigen::Ref<RealVect> & Va,
-                         const Eigen::Ref<RealVect> & Vm,
-                         const Eigen::Ref<CplxVect> & V,
+    void compute_results(const Eigen::Ref<const RealVect> & Va,
+                         const Eigen::Ref<const RealVect> & Vm,
+                         const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
                          real_type sn_mva);
@@ -194,8 +194,8 @@ class DataTrafo : public DataGeneric
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
-    const RealVect & get_theta_hv() const {return res_theta_hv_;}
-    const RealVect & get_theta_lv() const {return res_theta_lv_;}
+    Eigen::Ref<const RealVect> get_theta_hv() const {return res_theta_hv_;}
+    Eigen::Ref<const RealVect> get_theta_lv() const {return res_theta_lv_;}
 
     const std::vector<bool>& get_status() const {return status_;}
 

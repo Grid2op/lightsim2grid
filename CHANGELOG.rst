@@ -9,8 +9,18 @@ Change Log
 - easier building (get rid of the "make" part)
 - code helm powerflow method
 - interface with gridpack (to enforce q limits for example)
-- have a solver with "NICSLU" (https://github.com/chenxm1986/nicslu) if available on the platform
 - maybe have a look at suitesparse "sliplu" tools ?
+
+[0.5.4] 2021-08-20
+------------------
+- [FIXED] a bug for static generator (wrong signed convention were used in some part of the c++ code). This has
+  no impact at all for provided grid2op environments.
+- [FIXED] An issue where the backend could get "stuck" in a wrong state because of the way the Vinit was computed (see
+  `Issue 30 <https://github.com/BDonnot/lightsim2grid/issues/30>`_)
+- [ADDED] experimental support for the `NICSLU` linear solver (requires a proper license and library, see
+  https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment.
+- [IMPROVED] minor performance improvements for the solvers based on Newton Raphson (faster filling of the Jacobian
+  matrix after the first iteration)
 
 [0.5.3] 2021-08-11
 -------------------
@@ -18,7 +28,7 @@ Change Log
 - [ADDED] lightsim2grid package now can be distributed on pypi
 - [ADDED] compilation of SuiteSparse using cmake
 - [ADDED] compatibility with the KLU linear solver on windows based systems.
-- [IMPROVED] trying to make the package available on pypi
+- [IMPROVED] the package should now be available on pypi
 
 [0.5.2] 2021-07-26
 -------------------
@@ -72,7 +82,7 @@ Change Log
   using the SuiteSparse KLU linear solver but rather the Eigen SparseLU one)
 - [ADDED] start of the documentation.
 
-[0.2.4] - 2020-08-xx
+[0.2.4] - 2020-08-20
 --------------------
 - [FIXED] issue for copying environment
 

@@ -49,8 +49,14 @@ def get_rest(env_pp, env_KLU, env_SLU, env_GS):
 
 
 def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_solver=False, env_seed=None):
+    pbar_desc = None
     if with_type_solver:
-        print(f"begin: {env.backend._grid.get_solver_type()}")
+        try:
+            pbar_desc = f"{env.backend._grid.get_solver_type()}".split(".")[1]
+        except Exception:
+            # it just means I will not be able to print the fancy name on the progress bar...
+            pass
+
     nb_rows = min(env.chronics_handler.max_timestep(), max_ts)
     if nb_rows == -1:
         # -1 indicated "infinite data"
@@ -84,15 +90,12 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
     # it's not 0. because a powerflow is run when the backend is reset, and this is one more powerflow than the
     # number of steps
 
-    if with_type_solver:
-        print(f"after reset: {env.backend._grid.get_solver_type()}")
-
     done = False
     reward = env.reward_range[0]
     nb_ts = 0
     prev_act = None
     beg_ = time.time()
-    with tqdm(total=nb_rows) as pbar:
+    with tqdm(total=nb_rows, desc=pbar_desc) as pbar:
         while not done:
             act = agent.act(obs, reward, done)
             obs, reward, done, info = env.step(act)
@@ -108,8 +111,6 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
             prev_act = act
     end_ = time.time()
     total_time = end_ - beg_
-    if with_type_solver:
-        print(f"end: {env.backend._grid.get_solver_type()}")
     return nb_ts, total_time, aor, gen_p, gen_q
 
 
@@ -122,3 +123,36 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+def print_configuration():
+    try:
+        import platform
+        print(f"- system: {platform.system()} {platform.release()}")
+    except ImportError:
+        print(f"- system: please install the `platform` to have this information")
+
+    try:
+        import distro
+        print(f"- OS: {distro.linux_distribution(full_distribution_name=False)[0]} "
+              f"{distro.linux_distribution(full_distribution_name=False)[1]}")
+    except ImportError:
+        print(f"- OS: please install the `distro` to have this information")
+
+    try:
+        import cpuinfo
+        info_ = cpuinfo.get_cpu_info()
+        print(f"- processor: {info_['brand_raw']}")
+        print(f"- python version: {info_['python_version']}")
+    except ImportError:
+        print(f"- processor: please install the `py-cpuinfo` to have this information")
+        print(f"- python version: please install the `py-cpuinfo` to have this information")
+
+    import pandas as pd
+    import pandapower as pp
+    import lightsim2grid
+    print(f"- numpy version: {np.__version__}")
+    print(f"- pandas version: {pd.__version__}")
+    print(f"- pandapower version: {pp.__version__}")
+    print(f"- lightsim2grid version: {lightsim2grid.__version__}")
+    print()

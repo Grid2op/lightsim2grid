@@ -23,7 +23,7 @@ except ImportError:
 from grid2op.Parameters import Parameters
 import lightsim2grid
 from lightsim2grid.LightSimBackend import LightSimBackend
-from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed
+from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
     from tabulate import tabulate
@@ -33,6 +33,8 @@ except ImportError:
 
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
+
+NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
 
 def main(max_ts, env_name_input, test=True,
@@ -75,6 +77,17 @@ def main(max_ts, env_name_input, test=True,
         klu_comp_time = env_lightsim.backend.comp_time
         klu_time_pf = env_lightsim._time_powerflow
 
+    if lightsim2grid.SolverType.NICSLU in solver_types and NICSLU_LICENSE_AVAIL:
+        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.NICSLU)
+        env_lightsim.backend.set_solver_max_iter(10)
+        nb_ts_nicslu, time_nicslu, aor_nicslu, gen_p_nicslu, gen_q_nicslu = run_env(env_lightsim,
+                                                                                    max_ts,
+                                                                                    agent, chron_id=0,
+                                                                                    with_type_solver=wst,
+                                                                                    env_seed=0)
+        nicslu_comp_time = env_lightsim.backend.comp_time
+        nicslu_time_pf = env_lightsim._time_powerflow
+
     if lightsim2grid.SolverType.SparseLU in solver_types:
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.SparseLU)
         env_lightsim.backend.set_solver_max_iter(10)
@@ -100,8 +113,11 @@ def main(max_ts, env_name_input, test=True,
         gsa_time_pf = env_lightsim._time_powerflow
 
     # NOW PRINT THE RESULTS
+    print("Configuration:")
+    print_configuration()
+
     env_name = get_env_name_displayed(env_name_input)
-    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op powerflow time (ms)", f"solver powerflow time (ms)"]
+    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"solver powerflow time (ms)"]
     tab = [["PP", f"{nb_ts_pp/time_pp:.2e}",
             f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
             f"{1000.*pp_comp_time/nb_ts_pp:.2e}"]]
@@ -121,6 +137,10 @@ def main(max_ts, env_name_input, test=True,
         tab.append(["LS+KLU", f"{nb_ts_klu/time_klu:.2e}",
                     f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
                     f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
+    if lightsim2grid.SolverType.NICSLU in solver_types:
+        tab.append(["LS+NICSLU", f"{nb_ts_nicslu/time_nicslu:.2e}",
+                    f"{1000.*nicslu_time_pf/nb_ts_nicslu:.2e}",
+                    f"{1000.*nicslu_comp_time/nb_ts_nicslu:.2e}"])
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
@@ -137,7 +157,7 @@ def main(max_ts, env_name_input, test=True,
     print()
 
     hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
-    tab = [["PP", "0.00", "0.00", "0.00"]]
+    tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
     if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
         tab.append(["LS+GS",
                     f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
@@ -158,6 +178,11 @@ def main(max_ts, env_name_input, test=True,
                     f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
                     f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
                     f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
+    if lightsim2grid.SolverType.NICSLU in solver_types:
+        tab.append(["LS+NICSLU",
+                    f"{np.max(np.abs(aor_nicslu - aor_pp)):.2e}",
+                    f"{np.max(np.abs(gen_p_nicslu - gen_p_pp)):.2e}",
+                    f"{np.max(np.abs(gen_q_nicslu - gen_q_pp)):.2e}"])
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")

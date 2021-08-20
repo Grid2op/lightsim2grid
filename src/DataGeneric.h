@@ -98,8 +98,8 @@ class DataGeneric : public BaseConstants
         /**
         convert v from pu to v in kv (and assign it to the right element...)
         **/
-        void v_kv_from_vpu(const Eigen::Ref<RealVect> & Va,
-                           const Eigen::Ref<RealVect> & Vm,
+        void v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
+                           const Eigen::Ref<const RealVect> & Vm,
                            const std::vector<bool> & status,
                            int nb_element,
                            const Eigen::VectorXi & bus_me_id,
@@ -111,8 +111,8 @@ class DataGeneric : public BaseConstants
         /**
         compute va in degree from va in rad.
         **/
-        void v_deg_from_va(const Eigen::Ref<RealVect> & Va,
-                           const Eigen::Ref<RealVect> & Vm,
+        void v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
+                           const Eigen::Ref<const RealVect> & Vm,
                            const std::vector<bool> & status,
                            int nb_element,
                            const Eigen::VectorXi & bus_me_id,
