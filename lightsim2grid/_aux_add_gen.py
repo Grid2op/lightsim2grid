@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 import numpy as np
 
+
 def _aux_add_gen(model, pp_net):
     """
     Add the generators of the pp_net into the lightsim2grid "model"

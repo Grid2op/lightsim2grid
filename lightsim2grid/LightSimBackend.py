@@ -84,13 +84,6 @@ class LightSimBackend(Backend):
 
         self.thermal_limit_a = None
 
-        self._iref_slack = None
-        self._id_bus_added = None
-        self._fact_mult_gen = -1
-        self._what_object_where = None
-        self._number_true_line = -1
-        self._corresp_name_fun = {}
-        self._get_vector_inj = {}
         self.dim_topo = -1
         self._init_action_to_set = None
         self._backend_action_class = None
@@ -571,31 +564,30 @@ class LightSimBackend(Backend):
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
+                    raise DivergingPowerFlow("Divergence of powerflow (non connected grid)")
             else:
                 if (self.V is None) or (self.V.shape[0] == 0):
-                    # init from dc approx in this case
+                    # create the vector V as it is not created
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
 
                 if self.initdc:
                     self._grid.deactivate_result_computation()
-                    V = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
+                    # if I init with dc values, it should depends on previous state
+                    self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
+                    Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
-                    if V.shape[0] == 0:
+                    if Vdc.shape[0] == 0:
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
-                    self.V[:] = V
-
-                V = self._grid.ac_pf(self.V, self.max_it, self.tol)
+                    V_init = Vdc
+                else:
+                    V_init = copy.deepcopy(self.V)
+                V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 if V.shape[0] == 0:
                     # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
-                    raise DivergingPowerFlow("divergence of powerflow")
+                    raise DivergingPowerFlow(f"divergence of powerflow (more than {self.max_it} iterations)")
 
             self.comp_time += self._grid.get_computation_time()
             self.V[:] = V
-            # lpor, lqor, lvor, laor = self._grid.get_lineor_res()
-            # lpex, lqex, lvex, laex = self._grid.get_lineex_res()
-            # tpor, tqor, tvor, taor = self._grid.get_trafohv_res()
-            # tpex, tqex, tvex, taex = self._grid.get_trafolv_res()
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
              self.v_or[:self.__nb_powerline],
@@ -615,16 +607,6 @@ class LightSimBackend(Backend):
 
             self.a_or *= 1000.  # amps in lightsim, kA expected in grid2op
             self.a_ex *= 1000.  # amps in lightsim, kA expected in grid2op
-
-            # self.p_or[:] = np.concatenate((lpor, tpor))
-            # self.q_or[:] = np.concatenate((lqor, tqor))
-            # self.v_or[:] = np.concatenate((lvor, tvor))
-            # self.a_or[:] = 1000. * np.concatenate((laor, taor))
-            #
-            # self.p_ex[:] = np.concatenate((lpex, tpex))
-            # self.q_ex[:] = np.concatenate((lqex, tqex))
-            # self.v_ex[:] = np.concatenate((lvex, tvex))
-            # self.a_ex[:] = 1000. * np.concatenate((laex, taex))
 
             self.a_or[~np.isfinite(self.a_or)] = 0.
             self.v_or[~np.isfinite(self.v_or)] = 0.
@@ -677,7 +659,7 @@ class LightSimBackend(Backend):
             self.storage_p[:] = np.NaN
             self.storage_q[:] = np.NaN
             self.storage_v[:] = np.NaN
-        res = False
+        self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
 
     def copy(self):
         # i can perform a regular copy, everything has been initialized
@@ -692,11 +674,48 @@ class LightSimBackend(Backend):
         self._grid = None
         self.__me_at_init = None
         self.init_pp_backend = None
-        res = copy.deepcopy(self)
 
+        ####################
+        # res = copy.deepcopy(self)  # super slow
+        res = type(self).__new__(type(self))
+
+        # copy the regular attribute
+        res.__has_storage = self.__has_storage
+        res.__current_solver_type = self.__current_solver_type
+        res.__nb_powerline = self.__nb_powerline
+        res.__nb_bus_before = self.__nb_bus_before
+        res.cst_1 = dt_float(1.0)
+        li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
+                           "nb_bus_total", "initdc",
+                           "_big_topo_to_obj", "max_it", "tol", "dim_topo",
+                           "_idx_hack_storage"]
+        for attr_nm in li_regular_attr:
+            setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
+
+        # copy the numpy array
+        res.__nb_bus_before = copy.deepcopy(self.__nb_bus_before)
+        li_attr_npy = ["thermal_limit_a", "_sh_vnkv", "_init_bus_load", "_init_bus_gen",
+                       "_init_bus_lor", "_init_bus_lex", "nb_obj_per_bus", "next_prod_p", "topo_vect",
+                       "shunt_topo_vect", "V", "prod_pu_to_kv", "load_pu_to_kv", "lines_or_pu_to_kv",
+                       "lines_ex_pu_to_kv",
+                       "p_or", "q_or", "v_or", "a_or",
+                       "p_ex", "q_ex", "v_ex", "a_ex",
+                       "load_p", "load_q", "load_v",
+                       "prod_p", "prod_q", "prod_v",
+                       "storage_p", "storage_q", "storage_v",
+                       ]
+        for attr_nm in li_attr_npy:
+            setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
+        ###############
+
+        # handle the most complicated
         res._grid = mygrid.copy()
-        res.__me_at_init = __me_at_init.copy()
-        res.init_pp_backend = inippbackend.copy()
+        res.__me_at_init = __me_at_init.copy()  # this is const
+        res.init_pp_backend = inippbackend  # this is const
+        res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
+        res._backend_action_class = self._backend_action_class  # this is const
+        res.__init_topo_vect = self.__init_topo_vect
+        res.available_solvers = self.available_solvers
 
         self._grid = mygrid
         self.init_pp_backend = inippbackend
@@ -762,7 +781,6 @@ class LightSimBackend(Backend):
         return self.__current_solver_type
 
     def reset(self, grid_path, grid_filename=None):
-        self.V = None
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
         self._grid.change_solver(self.__current_solver_type)

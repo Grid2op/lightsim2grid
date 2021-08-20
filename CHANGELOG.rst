@@ -15,6 +15,8 @@ Change Log
 ------------------
 - [FIXED] a bug for static generator (wrong signed convention were used in some part of the c++ code). This has
   no impact at all for provided grid2op environments.
+- [FIXED] An issue where the backend could get "stuck" in a wrong state because of the way the Vinit was computed (see
+  `Issue 30 <https://github.com/BDonnot/lightsim2grid/issues/30>`_)
 - [ADDED] experimental support for the NICSLU linear solver (requires a proper license and library, see
   https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment.
 

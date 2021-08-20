@@ -21,7 +21,7 @@ GridModel::GridModel(const GridModel & other)
 
     // copy the powersystem representation
     // 1. bus
-    bus_vn_kv_.array() = other.bus_vn_kv_;
+    bus_vn_kv_ = other.bus_vn_kv_;
     bus_status_ = other.bus_status_;
 
     // 2. powerline
