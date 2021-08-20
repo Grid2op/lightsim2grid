@@ -230,6 +230,10 @@ class TestAgentAllMove(ABC):
             self.tol = 2e-4
         elif env_name == "l2rpn_case14_sandbox":
             self.tol = 2e-4
+        elif env_name == "rte_case5_example":
+            self.tol = 2e-4
+        elif env_name == "l2rpn_neurips_2020_track1":
+            self.tol = 4e-5
 
         assert nb_ts_klu == nb_ts_pp, "not same number of timesteps for {}: lightsim: {}, pp: {}" \
                                       "".format(env_name, nb_ts_klu, nb_ts_pp)

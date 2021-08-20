@@ -33,6 +33,7 @@ class MyTestCase(unittest.TestCase):
 
     def test_case14(self):
         case = pn.case14()
+        self.tol = 2e-3
         self._aux_test(case)
 
     def test_case39(self):
@@ -45,6 +46,7 @@ class MyTestCase(unittest.TestCase):
 
     def test_case1888rte(self):
         case = pn.case1888rte()
+        self.tol = 3e-4
         self._aux_test(case)
 
     # def test_case300(self):
@@ -274,7 +276,7 @@ class MyTestCase(unittest.TestCase):
         v_or_me2 = np.concatenate((lvor, tvor))
         a_or_me2 = 1000. * np.concatenate((laor, taor))
         test_ok = True
-        # pdb.set_trace()
+
         max_mis = np.max(np.abs(p_or_me2 - por_pp))
         assert np.max(error_q) <= self.tol, f"\t Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
         max_mis = np.max(np.abs(q_or_me2 - qor_pp))
