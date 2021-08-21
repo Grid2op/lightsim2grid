@@ -151,8 +151,10 @@ def print_configuration():
     import pandas as pd
     import pandapower as pp
     import lightsim2grid
+    import grid2op
     print(f"- numpy version: {np.__version__}")
     print(f"- pandas version: {pd.__version__}")
     print(f"- pandapower version: {pp.__version__}")
     print(f"- lightsim2grid version: {lightsim2grid.__version__}")
+    print(f"- grid version: {grid2op.__version__}")
     print()
