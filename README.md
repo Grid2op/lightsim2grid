@@ -488,6 +488,37 @@ Finally, you can see the official documentation in case you need to uninstall do
 
 ## Miscellaneous
 
+### Customization of the compilation
+#### Enable NICSLU
+For that, you need to declare the environment variables `PATH_NICSLU` that points to a valid installation of
+the NICSLU package (see https://github.com/chenxm1986/nicslu). 
+For example: `export PATH_NICSLU=/home/user/Documents/nicslu/nicslu202103`
+
+#### Enable 03 optimization
+By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
+to specify the `__COMPLILE_O3` environment variable: `set __COMPLILE_O3=1` before the compilation (so before
+`python3 setup.py build` or `python -m pip install -e .`)
+
+This compilation argument will increase the compilation time, but will make the package faster.
+
+#### Enable "-march=native" optimization
+By default, for portability, we do not compile with `-march=native` flags. This lead to some error on some platform.
+If you want to further improve the performances.
+
+You can `set __COMPILE_MARCHNATIVE=1` to enable it before the compilation (so before
+`python3 setup.py build` or `python -m pip install -e .`)
+
+### Profile the code
+This is a work in progress for now. And it is far from perfect, and probably only work on linux.
+
+See https://github.com/xflash96/pybind11_package_example/blob/main/tutorial.md#perf for more details.
+
+```commandline
+cd benchmarks
+perf record ./test_profile.py
+perf report
+```
+
 ### Local testing
 And some official tests, to make sure the solver returns the same results as pandapower
 are performed in "lightsim2grid/tests"

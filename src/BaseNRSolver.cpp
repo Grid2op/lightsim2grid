@@ -68,6 +68,10 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
             res = false;
             break;
         }
+        #ifdef __COUT_TIMES
+            auto timer2 = CustTimer();
+        #endif  // __COUT_TIMES
+
         auto dx = -F;
 
         Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -82,6 +86,10 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
 
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
+
+        #ifdef __COUT_TIMES
+            std::cout << "\t\t timer for computing V in the NR loop: " << timer2.duration() << std::endl;
+        #endif  // __COUT_TIMES
 
         F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
         bool tmp = F.allFinite();
@@ -110,8 +118,8 @@ void BaseNRSolver::reset(){
     BaseSolver::reset();
     // reset specific attributes
     J_ = Eigen::SparseMatrix<real_type>();  // the jacobian matrix
-    dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
-    dS_dVa_ = Eigen::SparseMatrix<cplx_type>();
+    dS_dVm_ = Eigen::SparseMatrix<cplx_type>();  // derivatives with respect to Vm
+    dS_dVa_ = Eigen::SparseMatrix<cplx_type>();  // derivatives with respect to Va
     need_factorize_ = true;
 }
 
@@ -129,24 +137,33 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_typ
     cplx_type * ds_dva_x_ptr = dS_dVa_.valuePtr();
     unsigned int pos_el = 0;
     for (int col_=0; col_ < size_dS; ++col_){
+        const cplx_type V_col = V(col_);
+        const cplx_type Vnorm_col = Vnorm(col_);
         for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_); it; ++it)
         {
+            // used variables
             const int row_id = it.row();
-            const int col_id = it.col();
+            const cplx_type V_row = V(row_id);
+            const cplx_type Vnorm_row = Vnorm(row_id);
+            const cplx_type Ibus_row = Ibus(row_id);
+            const cplx_type tmp = my_i * V_row;
+
+            // results values
             cplx_type & ds_dvm_el = ds_dvm_x_ptr[pos_el];
             cplx_type & ds_dva_el = ds_dva_x_ptr[pos_el];
 
-            ds_dvm_el *= Vnorm(col_id);  // dS_dVm[k] *= Vnorm[Yj[k]]
-            ds_dvm_el = std::conj(ds_dvm_el) * V(row_id);  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+            // perform the computation
+            ds_dvm_el *= Vnorm_col;  // dS_dVm[k] *= Vnorm[Yj[k]]
+            ds_dvm_el = std::conj(ds_dvm_el) * V_row;  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
 
-            ds_dva_el *= V(col_id);  // dS_dVa[k] *= V[Yj[k]]
+            ds_dva_el *= V_col;  // dS_dVa[k] *= V[Yj[k]]
 
-            if(col_id == row_id)
+            if(col_ == row_id)
             {
-                ds_dvm_el += std::conj(Ibus(row_id)) * Vnorm(row_id); // dS_dVm[k] += conj(Ibus) * Vnorm
-                ds_dva_x_ptr[pos_el] -= Ibus(row_id);  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+                // diagonal coefficients
+                ds_dvm_el += std::conj(Ibus_row) * Vnorm_row; // dS_dVm[k] += conj(Ibus) * Vnorm
+                ds_dva_x_ptr[pos_el] -= Ibus_row;  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
             }
-            cplx_type tmp = my_i * V(row_id);
             ds_dva_el = std::conj(-ds_dva_el) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
 
             // go to next element
@@ -232,20 +249,30 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     // TODO so that it's easier to retrieve in the next few lines !
     if(J_.cols() != size_j)
     {
-        // auto timer2 = CustTimer();
+        #ifdef __COUT_TIMES
+            auto timer2 = CustTimer();
+        #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
         fill_jacobian_matrix_unkown_sparsity_pattern(dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
                                                      Ybus, V, pq, pvpq, pq_inv, pvpq_inv
                                                      );
-        // std::cout << "fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
+        #ifdef __COUT_TIMES
+            std::cout << "\t\tfill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
+        #endif  // __COUT_TIMES
     }else{
         // the sparsity pattern of J_ is already known, i can reuse it to fill it
         // properly and faster
-        // auto timer3 = CustTimer();
+
+        #ifdef __COUT_TIMES
+            auto timer3 = CustTimer();
+        #endif  // __COUT_TIMES
         fill_jacobian_matrix_kown_sparsity_pattern(dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
                                                      Ybus, V, pq, pvpq, pq_inv, pvpq_inv
                                                      );
-        // std::cout << "fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
+
+        #ifdef __COUT_TIMES
+            std::cout << "\t\tfill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
+        #endif  // __COUT_TIMES
     }
     timer_fillJ_ += timer.duration();
 }
@@ -422,10 +449,10 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
     const int n_row = J_.cols();
     unsigned int pos_el = 0;
     for (int col_=0; col_ < n_row; ++col_){
+        const int col_id = col_;  // it's equal to "col_"
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_); it; ++it)
         {
             const int row_id = it.row();
-            const int col_id = it.col();  // it's equal to "col_"
             real_type & this_el = J_x_ptr[pos_el];
             // std::cout << "filling J_[" << row_id <<" ,"<< col_id << "]" << std::endl;
             if((col_id < n_pvpq) && (row_id < n_pvpq)){
@@ -452,7 +479,8 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
                 const int row_id_dS_dVm_r = pvpq[row_id];
                 const int col_id_dS_dVm_r = pq[col_id - n_pvpq];
                 this_el = dS_dVm_r.coeff(row_id_dS_dVm_r, col_id_dS_dVm_r);
-            }else if((col_id >= n_pvpq) && (row_id >= n_pvpq)){
+            }else {
+                // if((col_id >= n_pvpq) && (row_id >= n_pvpq))
                 // this is the J22 part (dS_dVm_i)
                 const int row_id_dS_dVm_i = pq[row_id - n_pvpq];
                 const int col_id_dS_dVm_i = pq[col_id - n_pvpq];

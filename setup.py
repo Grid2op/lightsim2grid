@@ -190,6 +190,14 @@ if "__COUT_TIMES" in os.environ:
     if os.environ["__COUT_TIMES"] == "1":
         extra_compile_args.append("-D__COUT_TIMES")
 
+if "__COMPLILE_O3" in os.environ:
+    if os.environ["__COMPLILE_O3"] == "1":
+        extra_compile_args.append("-O3")
+
+if "__COMPILE_MARCHNATIVE" in os.environ:
+    if os.environ["__COMPILE_MARCHNATIVE"] == "1":
+        extra_compile_args.append("-march=native")
+
 ext_modules = [
     Pybind11Extension(
         'lightsim2grid_cpp',

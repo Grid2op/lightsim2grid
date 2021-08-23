@@ -55,7 +55,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     dcYbus.makeCompressed();
 
     // initialize the solver
-    Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  dc_solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<real_type>>  dc_solver;
     dc_solver.analyzePattern(dcYbus);
     dc_solver.factorize(dcYbus);
     if(dc_solver.info() != Eigen::Success) {
