@@ -7,9 +7,16 @@ Change Log
 - improve speed
 - improve documentation
 - easier building (get rid of the "make" part)
-- code helm powerflow method
+- code `helm` powerflow method
+- code NR with dense matrices
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
+
+[0.5.5] 2021-xx-yy
+-------------------
+- [IMPROVED] running speed of Newton Raphson solvers
+- [IMPROVED] upgrade to SuiteSparse `v5.10.1`
+- [IMPROVED] upgrade to eigen `3.4.0` (stable release)
 
 [0.5.4] 2021-08-20
 ------------------
