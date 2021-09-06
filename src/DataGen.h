@@ -109,7 +109,7 @@ class DataGen: public DataGeneric
               const Eigen::VectorXi & generators_bus_id
               );
 
-    int nb() const { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     // iterator
     typedef DataGenConstIterator const_iterator_type;

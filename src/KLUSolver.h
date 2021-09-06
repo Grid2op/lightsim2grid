@@ -131,8 +131,8 @@ class KLUSolver: public BaseNRSolver
                                          ){
 
             // DO NOT USE, FOR DEBUG ONLY!
-            int n_pvpq = pvpq.size();
-            int n_pq = pvpq.size();
+            const auto & n_pvpq = pvpq.size();
+            const auto & n_pq = pvpq.size();
             std::vector<int> pvpq_inv(V.size(), -1);
             for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
             std::vector<int> pq_inv(V.size(), -1);
@@ -144,7 +144,7 @@ class KLUSolver: public BaseNRSolver
         bool initialize_test(Eigen::SparseMatrix<real_type > & J){
             // default Eigen representation: column major, which is good for klu !
             // J is const here, even if it's not said in klu_analyze
-            int n = J.cols(); // should be equal to J_.nrows()
+            const int n = static_cast<int>(J.cols()); // should be equal to J_.nrows()
             err_ = 0; // reset error message
             klu_common common = klu_common();
             bool res = true;

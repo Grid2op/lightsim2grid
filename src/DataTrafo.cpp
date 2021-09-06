@@ -26,7 +26,7 @@ void DataTrafo::init(const RealVect & trafo_r,
     INPUT DATA ARE ALREADY PAIR UNIT !!
     DOES NOT WORK WITH POWERLINES
     **/
-    int size = trafo_r.size();
+    const int size = static_cast<int>(trafo_r.size());
     DataGeneric::check_size(trafo_r, size, "trafo_r");
     DataGeneric::check_size(trafo_x, size, "trafo_x");
     DataGeneric::check_size(trafo_b, size, "trafo_b");
@@ -117,7 +117,7 @@ void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, co
 
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if"
-    int nb_trafo = nb();
+    const int nb_trafo = nb();
     for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
         // i don't do anything if the trafo is disconnected
         if(!status_[trafo_id]) continue;
@@ -178,7 +178,7 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 {
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if" for ac / dc
-    int nb_trafo = nb();
+    const int nb_trafo = nb();
     for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
         // i don't do anything if the trafo is disconnected
         if(!status_[trafo_id]) continue;
@@ -261,7 +261,7 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 
 void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     if(ac) return;
-    int nb_trafo = nb();
+    const int nb_trafo = nb();
     int bus_id_me, bus_id_solver_hv, bus_id_solver_lv;
     cplx_type tmp;
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
@@ -308,7 +308,7 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
                                 )
 {
     // it needs to be initialized at 0.
-    int nb_element = nb();
+    const int nb_element = nb();
     res_p_hv_ = RealVect::Constant(nb_element, 0.0);  // in MW
     res_q_hv_ = RealVect::Constant(nb_element, 0.0);  // in MVar
     res_v_hv_ = RealVect::Constant(nb_element, 0.0);  // in kV
@@ -415,7 +415,7 @@ void DataTrafo::reset_results(){
 
 real_type DataTrafo::get_p_slack(int slack_bus_id)
 {
-    int nb_element = nb();
+    const int nb_element = nb();
     real_type res = 0.;
     for(int line_id = 0; line_id < nb_element; ++line_id)
     {
@@ -428,7 +428,7 @@ real_type DataTrafo::get_p_slack(int slack_bus_id)
 
 void DataTrafo::get_q(std::vector<real_type>& q_by_bus)
 {
-    int nb_element = nb();
+    const int nb_element = nb();
     for(int el_id = 0; el_id < nb_element; ++el_id)
     {
         if(!status_[el_id]) continue;

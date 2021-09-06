@@ -148,7 +148,7 @@ class DataTrafo : public DataGeneric
     DataTrafo::StateRes get_state() const;
     void set_state(DataTrafo::StateRes & my_state );
 
-    int nb() const { return r_.size(); }
+    int nb() const { return static_cast<int>(r_.size()); }
 
     // make it iterable
     typedef DataTrafoConstIterator const_iterator_type;

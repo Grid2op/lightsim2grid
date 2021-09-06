@@ -77,7 +77,7 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
-    int nb_line = powerlines_r_.size();
+    const int nb_line = static_cast<int>(powerlines_r_.size());
 
     //diagonal coefficients
     for(int line_id =0; line_id < nb_line; ++line_id){
@@ -142,7 +142,7 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res,
     //TODO this is no more used!!!! see the other fillYbus
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
-    int nb_line = powerlines_r_.size();
+    const int nb_line = static_cast<int>(powerlines_r_.size());
 
     //diagonal coefficients
     for(int line_id =0; line_id < nb_line; ++line_id){

@@ -50,7 +50,7 @@ class DataShunt : public DataGeneric
     void set_state(DataShunt::StateRes & my_state );
 
 
-    int nb() { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     void deactivate(int shunt_id, bool & need_reset) {_deactivate(shunt_id, status_, need_reset);}
     void reactivate(int shunt_id, bool & need_reset) {_reactivate(shunt_id, status_, need_reset);}

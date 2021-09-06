@@ -15,7 +15,7 @@ void DataSGen::init(const RealVect & sgen_p,
                     const RealVect & sgen_qmax,
                     const Eigen::VectorXi & sgen_bus_id)
 {
-    int size = sgen_p.size();
+    int size = static_cast<int>(sgen_p.size());
     DataGeneric::check_size(sgen_p, size, "sgen_p");
     DataGeneric::check_size(sgen_q, size, "sgen_q");
     DataGeneric::check_size(sgen_pmin, size, "sgen_pmin");
@@ -83,7 +83,7 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
 
 
 void DataSGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
-    int nb_sgen = nb();
+    const int nb_sgen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
     for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id){
@@ -112,7 +112,7 @@ void DataSGen::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const RealVect & bus_vn_kv,
                                real_type sn_mva)
 {
-    int nb_sgen = nb();
+    const int nb_sgen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_sgen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     v_deg_from_va(Va, Vm, status_, nb_sgen, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = p_mw_;
@@ -155,7 +155,7 @@ void DataSGen::change_q(int sgen_id, real_type new_q, bool & need_reset)
 
 real_type DataSGen::get_p_slack(int slack_bus_id)
 {
-    int nb_element = nb();
+    const int nb_element = nb();
     real_type res = 0.;
     for(int sgen_id = 0; sgen_id < nb_element; ++sgen_id)
     {
@@ -167,7 +167,7 @@ real_type DataSGen::get_p_slack(int slack_bus_id)
 
 void DataSGen::get_q(std::vector<real_type>& q_by_bus)
 {
-    int nb_element = nb();
+    const int nb_element = nb();
     for(int sgen_id = 0; sgen_id < nb_element; ++sgen_id)
     {
         if(!status_[sgen_id]) continue;

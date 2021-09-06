@@ -195,8 +195,8 @@ class GridModel : public DataGeneric
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, need_reset_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, need_reset_); }
-        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
-        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
         const DataLine & get_lines() const {return powerlines_;}
@@ -204,8 +204,8 @@ class GridModel : public DataGeneric
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, need_reset_); }
         void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, need_reset_); }
-        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
-        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
         const DataTrafo & get_trafos() const {return trafos_;}
@@ -213,7 +213,7 @@ class GridModel : public DataGeneric
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, need_reset_); }
         void reactivate_load(int load_id) {loads_.reactivate(load_id, need_reset_); }
-        void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p(load_id, new_p, need_reset_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q(load_id, new_q, need_reset_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
@@ -221,7 +221,7 @@ class GridModel : public DataGeneric
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, need_reset_); }
         void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, need_reset_); }
-        void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
         void change_p_gen(int gen_id, real_type new_p) {generators_.change_p(gen_id, new_p, need_reset_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v(gen_id, new_v_pu, need_reset_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
@@ -229,7 +229,7 @@ class GridModel : public DataGeneric
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, need_reset_); }
         void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, need_reset_); }
-        void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, need_reset_, bus_vn_kv_.size());  }
+        void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size()));  }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, need_reset_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, need_reset_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
@@ -238,7 +238,7 @@ class GridModel : public DataGeneric
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, need_reset_); }
         void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, need_reset_); }
-        void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p(sgen_id, new_p, need_reset_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, need_reset_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
@@ -246,7 +246,7 @@ class GridModel : public DataGeneric
         //storage units
         void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, need_reset_); }
         void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, need_reset_); }
-        void change_bus_storage(int storage_id, int new_bus_id) {storages_.change_bus(storage_id, new_bus_id, need_reset_, bus_vn_kv_.size()); }
+        void change_bus_storage(int storage_id, int new_bus_id) {storages_.change_bus(storage_id, new_bus_id, need_reset_, static_cast<int>(bus_vn_kv_.size())); }
         void change_p_storage(int storage_id, real_type new_p) {
 //            if(new_p == 0.)
 //            {

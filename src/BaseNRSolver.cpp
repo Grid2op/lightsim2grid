@@ -28,11 +28,11 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
-    int n_pv = pv.size();
-    int n_pq = pq.size();
+    const int n_pv = static_cast<int>(pv.size());
+    const int n_pq = static_cast<int>(pq.size());
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << pv, pq;
-    int n_pvpq = pvpq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
     std::vector<int> pvpq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
@@ -138,7 +138,7 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_typ
     for (int col_id=0; col_id < size_dS; ++col_id){
         for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_id); it; ++it)
         {
-            const int row_id = it.row();
+            const int row_id = static_cast<int>(it.row());
             const cplx_type el_ybus = it.value();
             cplx_type & ds_dvm_el = ds_dvm_x_ptr[pos_el];
             cplx_type & ds_dva_el = ds_dva_x_ptr[pos_el];
@@ -230,8 +230,8 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     auto timer = CustTimer();
     _dSbus_dV(Ybus, V);
 
-    const int n_pvpq = pvpq.size();
-    const int n_pq = pq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
+    const int n_pq = static_cast<int>(pq.size());
     const int size_j = n_pvpq + n_pq;
 
     // TODO to gain a bit more time below, try to compute directly, in _dSbus_dV(Ybus, V);
@@ -303,8 +303,8 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
 
     **/
     bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
-    const int n_pvpq = pvpq.size();
-    const int n_pq = pq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
+    const int n_pq = static_cast<int>(pq.size());
     const int size_j = n_pvpq + n_pq;
 
     const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
@@ -415,16 +415,16 @@ void BaseNRSolver::fill_value_map(
         const std::vector<int> & pvpq_inv
         )
 {
-    const int n_pvpq = pvpq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
     value_map_ = std::vector<cplx_type*> (J_.nonZeros());
 
-    const int n_row = J_.cols();
+    const int n_row = static_cast<int>(J_.cols());
     unsigned int pos_el = 0;
     for (int col_=0; col_ < n_row; ++col_){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_); it; ++it)
         {
-            const int row_id = it.row();
-            const int col_id = it.col();  // it's equal to "col_"
+            const int row_id = static_cast<int>(it.row());
+            const int col_id = static_cast<int>(it.col());  // it's equal to "col_"
             // real_type & this_el = J_x_ptr[pos_el];
             if((col_id < n_pvpq) && (row_id < n_pvpq)){
                 // this is the J11 part (dS_dVa_r)
@@ -505,15 +505,15 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
 
     **/
 
-    const int n_pvpq = pvpq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
 
     real_type * J_x_ptr = J_.valuePtr();
-    const int n_cols = J_.cols();  // equal to nrow
+    const int n_cols = static_cast<int>(J_.cols());  // equal to nrow
     unsigned int pos_el = 0;
     for (int col_id=0; col_id < n_cols; ++col_id){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
         {
-            const int row_id = it.row();
+            const int row_id = static_cast<int>(it.row());
             if((col_id < n_pvpq) && (row_id < n_pvpq)){
                 // this is the J11 part (dS_dVa_r)
                 J_x_ptr[pos_el] = std::real(*value_map_[pos_el]);

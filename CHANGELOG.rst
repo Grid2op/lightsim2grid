@@ -14,9 +14,12 @@ Change Log
 
 [0.5.5] 2021-xx-yy
 -------------------
-- [IMPROVED] running speed of Newton Raphson solvers
+- [IMPROVED] running speed of Newton Raphson solvers with better filling of sparse matrices
 - [IMPROVED] upgrade to SuiteSparse `v5.10.1`
 - [IMPROVED] upgrade to eigen `3.4.0` (stable release)
+- [IMPROVED] clean the compilation warnings on microsoft windows (force the conversion from
+  `Eigen::EigenBase<Derived>::Index` to `int` using `static_cast`)
+- [IMPROVED] add the proper optimization flag for windows (`/O2` instead of `-03` on linux / macos)
 
 [0.5.4] 2021-08-20
 ------------------

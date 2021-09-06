@@ -78,8 +78,8 @@ void GaussSeidelSolver::one_iter(CplxVect & tmp_Sbus,
     // do an update with the standard GS algorithm
     cplx_type tmp;
 
-    int n_pv = pv.size();
-    int n_pq = pq.size();
+    const int n_pv = static_cast<int>(pv.size());
+    const int n_pq = static_cast<int>(pq.size());
 
     // update PQ buses
     for(int k_tmp=0; k_tmp<n_pq; ++k_tmp)
