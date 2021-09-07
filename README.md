@@ -342,6 +342,20 @@ windows based machine, the SuiteSparse library cannot be easily compiled, and th
 It would be totally fine if some "lightsim2grid" solvers are available only if some packages are installed on the
 machine for example.
 
+## Citing
+
+If you use this package in one of your work, please cite:
+```
+@misc{lightsim2grid,
+    author = {B. Donnot},
+    title = {{Lightsim2grid - A c++ backend targeting the Grid2Op platform. }},
+    year = {2020},
+    publisher = {GitHub},
+    journal = {GitHub repository},
+    howpublished = {\url{https://GitHub.com/bdonnot/lightsim2grid}},
+}
+```
+
 ## Installation (using docker)
 In this section we cover the use of docker with grid2op.
 
@@ -377,7 +391,6 @@ For this tutorial, we suppose you have a script named `my_script.py` located in 
 `DIR_PATH` (*e.g.* on windows you can have `DIR_PATH` looking like "c:\User\MyName\L2RPNCompeitionCode" or 
 on Linux `DIR_PATH` will look like "/home/MyName/L2RPNCompeitionCode", this path is your choice, you can name it
 the way you like)
-
 
 #### 3.1) Start a docker container
 You first need to start a docker container and tell docker that the container can access your local files with the 
