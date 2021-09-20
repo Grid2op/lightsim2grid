@@ -35,7 +35,7 @@ std::tuple<RealVect,
     //TODO consistency: move this class outside of here
     _check_init();
 
-    int nb_trafo = tap_step_pct.size();
+    const int nb_trafo = static_cast<int>(tap_step_pct.size());
     // TODO check all vectors have the same size
 
     // compute the adjusted for phase shifter and tap side
@@ -135,7 +135,7 @@ std::tuple<RealVect,
 {
     //TODO does not use c at the moment!
     _check_init();
-    int nb_line = branch_r.size();
+    const int nb_line = static_cast<int>(branch_r.size());
     RealVect branch_from_pu = branch_from_kv.array() * branch_from_kv.array() / sn_mva_;
 
     RealVect powerlines_r = branch_r.array() / branch_from_pu.array();

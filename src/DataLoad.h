@@ -56,7 +56,7 @@ class DataLoad : public DataGeneric
               const Eigen::VectorXi & loads_bus_id
               );
 
-    int nb() { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     void deactivate(int load_id, bool & need_reset) {_deactivate(load_id, status_, need_reset);}
     void reactivate(int load_id, bool & need_reset) {_reactivate(load_id, status_, need_reset);}

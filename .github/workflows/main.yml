@@ -51,6 +51,7 @@ jobs:
 
       - name: Build wheel
         run: |
+          export __O3_OPTIM=1
           python3 setup.py bdist_wheel
           auditwheel repair dist/*.whl
 
@@ -110,7 +111,10 @@ jobs:
 
       - name: Compile SuiteSparse make
         if: matrix.config.name == 'darwin'
-        run: make
+        run: |
+          make
+          export __O3_OPTIM=1
+          python3 setup.py build
 
       - name: Compile SuiteSparse cmake
         if: matrix.config.name == 'windows'
@@ -124,6 +128,7 @@ jobs:
           cmake --install . --prefix ..\built
           cd ..
           cd ..
+          set __O3_OPTIM=1
           python setup.py build
 
       - name: Build wheel

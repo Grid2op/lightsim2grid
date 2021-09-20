@@ -28,11 +28,11 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
-    int n_pv = pv.size();
-    int n_pq = pq.size();
+    const int n_pv = static_cast<int>(pv.size());
+    const int n_pq = static_cast<int>(pq.size());
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << pv, pq;
-    int n_pvpq = pvpq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
     std::vector<int> pvpq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
@@ -68,10 +68,6 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
             res = false;
             break;
         }
-        #ifdef __COUT_TIMES
-            auto timer2 = CustTimer();
-        #endif  // __COUT_TIMES
-
         auto dx = -F;
 
         Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -86,10 +82,6 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
 
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
-
-        #ifdef __COUT_TIMES
-            std::cout << "\t\t timer for computing V in the NR loop: " << timer2.duration() << std::endl;
-        #endif  // __COUT_TIMES
 
         F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
         bool tmp = F.allFinite();
@@ -118,8 +110,8 @@ void BaseNRSolver::reset(){
     BaseSolver::reset();
     // reset specific attributes
     J_ = Eigen::SparseMatrix<real_type>();  // the jacobian matrix
-    dS_dVm_ = Eigen::SparseMatrix<cplx_type>();  // derivatives with respect to Vm
-    dS_dVa_ = Eigen::SparseMatrix<cplx_type>();  // derivatives with respect to Va
+    dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
+    dS_dVa_ = Eigen::SparseMatrix<cplx_type>();
     need_factorize_ = true;
 }
 
@@ -129,41 +121,44 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_typ
     const auto size_dS = V.size();
     const CplxVect Vnorm = V.array() / V.array().abs();
     const CplxVect Ibus = Ybus * V;
+    const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
 
-    dS_dVm_ = Ybus;
-    dS_dVa_ = Ybus;
+    if (dS_dVm_.cols() != Ybus.cols())
+    {
+        // initiliaze the matrices once (especially for the sparsity pattern)
+        // as I will use pointers to reference these elements later one, once initialize they need to be
+        // fixed
+        dS_dVm_ = Ybus;
+        dS_dVa_ = Ybus;
+    }
 
     cplx_type * ds_dvm_x_ptr = dS_dVm_.valuePtr();
     cplx_type * ds_dva_x_ptr = dS_dVa_.valuePtr();
     unsigned int pos_el = 0;
-    for (int col_=0; col_ < size_dS; ++col_){
-        const cplx_type V_col = V(col_);
-        const cplx_type Vnorm_col = Vnorm(col_);
-        for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_); it; ++it)
+    for (int col_id=0; col_id < size_dS; ++col_id){
+        for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_id); it; ++it)
         {
-            // used variables
-            const int row_id = it.row();
-            const cplx_type V_row = V(row_id);
-            const cplx_type Vnorm_row = Vnorm(row_id);
-            const cplx_type Ibus_row = Ibus(row_id);
-            const cplx_type tmp = my_i * V_row;
-
-            // results values
+            const int row_id = static_cast<int>(it.row());
+            const cplx_type el_ybus = it.value();
             cplx_type & ds_dvm_el = ds_dvm_x_ptr[pos_el];
             cplx_type & ds_dva_el = ds_dva_x_ptr[pos_el];
 
-            // perform the computation
-            ds_dvm_el *= Vnorm_col;  // dS_dVm[k] *= Vnorm[Yj[k]]
-            ds_dvm_el = std::conj(ds_dvm_el) * V_row;  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
+            // assign the right value (the one in ybus)
+            ds_dvm_el = el_ybus;
+            ds_dva_el = el_ybus;
 
-            ds_dva_el *= V_col;  // dS_dVa[k] *= V[Yj[k]]
+            // now compute the derivatives properly
+            ds_dvm_el *= Vnorm(col_id);  // dS_dVm[k] *= Vnorm[Yj[k]]
+            ds_dvm_el = std::conj(ds_dvm_el) * V(row_id);  // dS_dVm[k] = conj(dS_dVm[k]) * V[r]
 
-            if(col_ == row_id)
+            ds_dva_el *= V(col_id);  // dS_dVa[k] *= V[Yj[k]]
+
+            if(col_id == row_id)
             {
-                // diagonal coefficients
-                ds_dvm_el += std::conj(Ibus_row) * Vnorm_row; // dS_dVm[k] += conj(Ibus) * Vnorm
-                ds_dva_x_ptr[pos_el] -= Ibus_row;  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
+                ds_dvm_el += conjIbus_Vnorm(row_id); // std::conj(Ibus(row_id)) * Vnorm(row_id); // dS_dVm[k] += conj(Ibus) * Vnorm
+                ds_dva_x_ptr[pos_el] -= Ibus(row_id);  // dS_dVa[k] = -Ibus[r] + dS_dVa[k]
             }
+            cplx_type tmp = my_i * V(row_id);
             ds_dva_el = std::conj(-ds_dva_el) * tmp;  // dS_dVa[k] = conj(-dS_dVa[k]) * (1j * V[r])
 
             // go to next element
@@ -187,7 +182,6 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
     This function will fill the "inner_index" and "values" with the non zero values
     present in the matrix "mat" for the column of the J matrix with id "col_id"
     which corresponds to the column "index_col(col_id)" of the matrix mat.
-
     The rows need to be converted using another vector too. For example, row "j" of J
     need to be filled with element k of matrix "mat" with k such that "index_row[j] = k"
     Hence, we pass as the argument of this function the "inverse" of index_row, which is such
@@ -235,53 +229,49 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     auto timer = CustTimer();
     _dSbus_dV(Ybus, V);
 
-    const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
-    const Eigen::SparseMatrix<real_type> dS_dVa_i = dS_dVa_.imag();
-    const Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
-    const Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
-
-    const int n_pvpq = pvpq.size();
-    const int n_pq = pq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
+    const int n_pq = static_cast<int>(pq.size());
     const int size_j = n_pvpq + n_pq;
 
     // TODO to gain a bit more time below, try to compute directly, in _dSbus_dV(Ybus, V);
     // TODO the `dS_dVa_[pvpq, pvpq]`
     // TODO so that it's easier to retrieve in the next few lines !
     if(J_.cols() != size_j)
+    // if(true)
     {
         #ifdef __COUT_TIMES
             auto timer2 = CustTimer();
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
-        fill_jacobian_matrix_unkown_sparsity_pattern(dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
+        fill_jacobian_matrix_unkown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
                                                      Ybus, V, pq, pvpq, pq_inv, pvpq_inv
                                                      );
         #ifdef __COUT_TIMES
-            std::cout << "\t\tfill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
+            std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
         #endif  // __COUT_TIMES
     }else{
         // the sparsity pattern of J_ is already known, i can reuse it to fill it
-        // properly and faster
-
+        // properly and faster (or not...)
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // __COUT_TIMES
-        fill_jacobian_matrix_kown_sparsity_pattern(dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
-                                                     Ybus, V, pq, pvpq, pq_inv, pvpq_inv
-                                                     );
-
+        fill_jacobian_matrix_kown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
+                                                   //  Ybus,
+                                                   // V,
+                                                   pq, pvpq, pq_inv, pvpq_inv
+                                                   );
         #ifdef __COUT_TIMES
-            std::cout << "\t\tfill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
+            std::cout << "\t\t fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
         #endif  // __COUT_TIMES
     }
     timer_fillJ_ += timer.duration();
 }
 
 void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
         const Eigen::SparseMatrix<cplx_type> & Ybus,
         const CplxVect & V,
         const Eigen::VectorXi & pq,
@@ -293,13 +283,9 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     /**
     This functions fills the jacobian matrix when its sparsity pattern is not know in advance (typically
     the first iteration of the Newton Raphson)
-
     For that we need to perform relatively expensive computation from dS_dV* in order to retrieve it.
-
     This function is NOT optimized for speed...
-
     Remember:
-
     J has the shape
     | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
     | --------- | = dimensions: | ------------------------- |
@@ -309,12 +295,16 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     J12 = dS_dVm[array([pvpq]).T, pq].real
     J21 = dS_dVa[array([pq]).T, pvpq].imag
     J22 = dS_dVm[array([pq]).T, pq].imag
-
     **/
     bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
-    const int n_pvpq = pvpq.size();
-    const int n_pq = pq.size();
+    const int n_pvpq = static_cast<int>(pvpq.size());
+    const int n_pq = static_cast<int>(pq.size());
     const int size_j = n_pvpq + n_pq;
+
+    const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
+    const Eigen::SparseMatrix<real_type> dS_dVa_i = dS_dVa_.imag();
+    const Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
+    const Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
 
     // Method (1) seems to be faster than the others
 
@@ -403,63 +393,38 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     }
     // J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     J_.makeCompressed();
+    fill_value_map(pq, pvpq, pq_inv, pvpq_inv);
 }
 
-void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
-        const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
-        const Eigen::SparseMatrix<cplx_type> & Ybus,
-        const CplxVect & V,
+/**
+fill the value of the `value_map_` that stores pointers to the elements of
+dS_dVa_ and dS_dVm_ to be used to fill J_
+it requires that J_ is initialized, in compressed mode.
+**/
+void BaseNRSolver::fill_value_map(
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq,
         const std::vector<int> & pq_inv,
         const std::vector<int> & pvpq_inv
-    )
+        )
 {
-    /**
-    This functions fills the jacobian matrix when its sparsity pattern is KNOWN in advance (typically
-    the second and next iterations of the Newton Raphson)
+    const int n_pvpq = static_cast<int>(pvpq.size());
+    value_map_ = std::vector<cplx_type*> (J_.nonZeros());
 
-    We don't need to perform heavy computation but just to read the right data from the right matrix!
-
-    This function is optimized for speed. In particular, it does not "uncompress" the J_ matrix and only
-    change the value pointer (not the inner nor outer pointer)
-
-    It is optimized only if J_ is in default Eigen format (column)
-
-    Remember:
-
-    J has the shape
-    | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
-    | --------- | = dimensions: | ------------------------- |
-    | J21 | J22 |               |  (pq, pvpq)  | (pq, pq) |
-    python implementation:
-    J11 = dS_dVa[array([pvpq]).T, pvpq].real
-    J12 = dS_dVm[array([pvpq]).T, pq].real
-    J21 = dS_dVa[array([pq]).T, pvpq].imag
-    J22 = dS_dVm[array([pq]).T, pq].imag
-
-    **/
-
-    const int n_pvpq = pvpq.size();
-
-    real_type * J_x_ptr = J_.valuePtr();
-    const int n_row = J_.cols();
+    const int n_row = static_cast<int>(J_.cols());
     unsigned int pos_el = 0;
     for (int col_=0; col_ < n_row; ++col_){
-        const int col_id = col_;  // it's equal to "col_"
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_); it; ++it)
         {
-            const int row_id = it.row();
-            real_type & this_el = J_x_ptr[pos_el];
-            // std::cout << "filling J_[" << row_id <<" ,"<< col_id << "]" << std::endl;
+            const int row_id = static_cast<int>(it.row());
+            const int col_id = static_cast<int>(it.col());  // it's equal to "col_"
+            // real_type & this_el = J_x_ptr[pos_el];
             if((col_id < n_pvpq) && (row_id < n_pvpq)){
                 // this is the J11 part (dS_dVa_r)
                 const int row_id_dS_dVa_r = pvpq[row_id];
                 const int col_id_dS_dVa_r = pvpq[col_id];
-                this_el = dS_dVa_r.coeff(row_id_dS_dVa_r, col_id_dS_dVa_r);
+                // this_el = dS_dVa_r.coeff(row_id_dS_dVa_r, col_id_dS_dVa_r);
+                value_map_[pos_el] = &dS_dVa_.coeffRef(row_id_dS_dVa_r, col_id_dS_dVa_r);
 
                 // I don't need to perform these checks: if they failed, the element would not be in J_ in the first place
                 // const int is_row_non_null = pq_inv[row_id_dS_dVa_r];
@@ -473,21 +438,82 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
                 // this is the J21 part (dS_dVa_i)
                 const int row_id_dS_dVa_i = pq[row_id - n_pvpq];
                 const int col_id_dS_dVa_i = pvpq[col_id];
-                this_el = dS_dVa_i.coeff(row_id_dS_dVa_i, col_id_dS_dVa_i);
+                // this_el = dS_dVa_i.coeff(row_id_dS_dVa_i, col_id_dS_dVa_i);
+                value_map_[pos_el] = &dS_dVa_.coeffRef(row_id_dS_dVa_i, col_id_dS_dVa_i);
             }else if((col_id >= n_pvpq) && (row_id < n_pvpq)){
                 // this is the J12 part (dS_dVm_r)
                 const int row_id_dS_dVm_r = pvpq[row_id];
                 const int col_id_dS_dVm_r = pq[col_id - n_pvpq];
-                this_el = dS_dVm_r.coeff(row_id_dS_dVm_r, col_id_dS_dVm_r);
-            }else {
-                // if((col_id >= n_pvpq) && (row_id >= n_pvpq))
+                // this_el = dS_dVm_r.coeff(row_id_dS_dVm_r, col_id_dS_dVm_r);
+                value_map_[pos_el] = &dS_dVm_.coeffRef(row_id_dS_dVm_r, col_id_dS_dVm_r);
+            }else if((col_id >= n_pvpq) && (row_id >= n_pvpq)){
                 // this is the J22 part (dS_dVm_i)
                 const int row_id_dS_dVm_i = pq[row_id - n_pvpq];
                 const int col_id_dS_dVm_i = pq[col_id - n_pvpq];
-                this_el = dS_dVm_i.coeff(row_id_dS_dVm_i, col_id_dS_dVm_i);
-
+                // this_el = dS_dVm_i.coeff(row_id_dS_dVm_i, col_id_dS_dVm_i);
+                value_map_[pos_el] = &dS_dVm_.coeffRef(row_id_dS_dVm_i, col_id_dS_dVm_i);
             }
 
+            // go to the next element
+            ++pos_el;
+        }
+    }
+}
+
+void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
+        // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
+        // const Eigen::SparseMatrix<cplx_type> & Ybus,
+        // const CplxVect & V,
+        const Eigen::VectorXi & pq,
+        const Eigen::VectorXi & pvpq,
+        const std::vector<int> & pq_inv,
+        const std::vector<int> & pvpq_inv
+    )
+{
+    /**
+    This functions fills the jacobian matrix when its sparsity pattern is KNOWN in advance (typically
+    the second and next iterations of the Newton Raphson)
+    We don't need to perform heavy computation but just to read the right data from the right matrix!
+    This function is optimized for speed. In particular, it does not "uncompress" the J_ matrix and only
+    change the value pointer (not the inner nor outer pointer)
+    It is optimized only if J_ is in default Eigen format (column)
+    Remember:
+    J has the shape
+    | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
+    | --------- | = dimensions: | ------------------------- |
+    | J21 | J22 |               |  (pq, pvpq)  | (pq, pq) |
+    python implementation:
+    J11 = dS_dVa[array([pvpq]).T, pvpq].real
+    J12 = dS_dVm[array([pvpq]).T, pq].real
+    J21 = dS_dVa[array([pq]).T, pvpq].imag
+    J22 = dS_dVm[array([pq]).T, pq].imag
+    **/
+
+    const int n_pvpq = static_cast<int>(pvpq.size());
+
+    real_type * J_x_ptr = J_.valuePtr();
+    const int n_cols = static_cast<int>(J_.cols());  // equal to nrow
+    unsigned int pos_el = 0;
+    for (int col_id=0; col_id < n_cols; ++col_id){
+        for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
+        {
+            const int row_id = static_cast<int>(it.row());
+            if((col_id < n_pvpq) && (row_id < n_pvpq)){
+                // this is the J11 part (dS_dVa_r)
+                J_x_ptr[pos_el] = std::real(*value_map_[pos_el]);
+            }else if((col_id < n_pvpq) && (row_id >= n_pvpq)){
+                // this is the J21 part (dS_dVa_i)
+                J_x_ptr[pos_el] = std::imag(*value_map_[pos_el]);
+            }else if((col_id >= n_pvpq) && (row_id < n_pvpq)){
+                // this is the J12 part (dS_dVm_r)
+                J_x_ptr[pos_el] = std::real(*value_map_[pos_el]);
+            }else if((col_id >= n_pvpq) && (row_id >= n_pvpq)){
+                // this is the J22 part (dS_dVm_i)
+                J_x_ptr[pos_el] = std::imag(*value_map_[pos_el]);
+            }
             // go to the next element
             ++pos_el;
         }

@@ -23,7 +23,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     //   and for the slack bus both the magnitude and the angle are used.
 
     auto timer = CustTimer();
-    int nb_bus_solver = Ybus.rows();
+    const int nb_bus_solver = static_cast<int>(Ybus.rows());
 
     Eigen::SparseMatrix<real_type> dcYbus = Eigen::SparseMatrix<real_type>(nb_bus_solver - 1, nb_bus_solver - 1);
 
@@ -43,10 +43,10 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
         for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dcYbus_tmp, k); it; ++it)
         {
-            int row_res = it.row();
+            int row_res = static_cast<int>(it.row());
             if(row_res == slack_bus_id_solver) continue;
             row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
-            int col_res = it.col();
+            int col_res = static_cast<int>(it.col());
             col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
             tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }

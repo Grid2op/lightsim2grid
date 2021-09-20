@@ -61,7 +61,7 @@ class DataSGen: public DataGeneric
               const Eigen::VectorXi & sgen_bus_id
               );
 
-    int nb() { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     void deactivate(int sgen_id, bool & need_reset) {_deactivate(sgen_id, status_, need_reset);}
     void reactivate(int sgen_id, bool & need_reset) {_reactivate(sgen_id, status_, need_reset);}

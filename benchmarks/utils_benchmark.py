@@ -156,5 +156,5 @@ def print_configuration():
     print(f"- pandas version: {pd.__version__}")
     print(f"- pandapower version: {pp.__version__}")
     print(f"- lightsim2grid version: {lightsim2grid.__version__}")
-    print(f"- grid version: {grid2op.__version__}")
+    print(f"- grid2op version: {grid2op.__version__}")
     print()

@@ -183,7 +183,7 @@ void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
     and
     initialize the Ybus_ matrix at the proper shape
     **/
-    int nb_bus = bus_vn_kv.size();
+    const int nb_bus = static_cast<int>(bus_vn_kv.size());
     bus_vn_kv_ = bus_vn_kv;  // base_kv
 
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
@@ -208,7 +208,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                           int max_iter,
                           real_type tol)
 {
-    int nb_bus = bus_vn_kv_.size();
+    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
         exc_ << "GridModel::ac_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
@@ -235,7 +235,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    int nb_bus = V_proposed.size();
+    const int nb_bus = static_cast<int>(V_proposed.size());
     CplxVect V = pre_process_solver(V_proposed, true, false);
 
     // compute the mismatch
@@ -244,7 +244,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     auto mis = V.array() * tmp.array() - Sbus_.array();
 
     // store results
-    CplxVect res = _get_results_back_to_orig_nodes(mis, V_proposed.size());
+    CplxVect res = _get_results_back_to_orig_nodes(mis, static_cast<int>(V_proposed.size()));
     if(sn_mva_ != 1.) res *= sn_mva_;
 
     // now check reactive values for buses where there are generators and active values of slack bus
@@ -305,11 +305,11 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac, bool 
     init_Ybus(Ybus_, Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
     fillYbus(Ybus_, is_ac, id_me_to_solver_);
     fillpv_pq(id_me_to_solver_);
-    generators_.init_q_vector(bus_vn_kv_.size());
+    generators_.init_q_vector(static_cast<int>(bus_vn_kv_.size()));
     // }
     fillSbus_me(Sbus_, is_ac, id_me_to_solver_, slack_bus_id_solver_);
 
-    int nb_bus_solver = id_solver_to_me_.size();
+    const int nb_bus_solver = static_cast<int>(id_solver_to_me_.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
         int bus_me_id = id_solver_to_me_[bus_solver_id];  //POSSIBLE SEGFAULT
@@ -324,7 +324,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, bool is_ac, bool 
 CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, int size)
 {
     CplxVect res = CplxVect::Constant(size, {init_vm_pu_, my_zero_});
-    int nb_bus = bus_vn_kv_.size();
+    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
         if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
         int bus_id_solver = id_me_to_solver_[bus_id_me];
@@ -350,7 +350,7 @@ void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vini
         need_reset_ = false;
         const CplxVect & res_tmp = _solver.get_V();
         // convert back the results to "big" vector
-        res = _get_results_back_to_orig_nodes(res_tmp, Vinit.size());
+        res = _get_results_back_to_orig_nodes(res_tmp, static_cast<int>(Vinit.size()));
     } else {
         //powerflow diverge
         reset_results();
@@ -365,7 +365,7 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                           int & slack_bus_id_solver){
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
-    int nb_bus_init = bus_vn_kv_.size();
+    const int nb_bus_init = static_cast<int>(bus_vn_kv_.size());
     id_me_to_solver = std::vector<int>(nb_bus_init, _deactivated_bus_id);  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = std::vector<int>();
     id_solver_to_me.reserve(nb_bus_init);
@@ -378,7 +378,7 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
             ++bus_id_solver;
         }
     }
-    int nb_bus = id_solver_to_me.size();
+    const int nb_bus = static_cast<int>(id_solver_to_me.size());
 
     Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus, nb_bus);
     Ybus.reserve(nb_bus + 2*powerlines_.nb() + 2*trafos_.nb());
@@ -435,7 +435,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
 {
     // init pq and pv vector
     // TODO remove the order here..., i could be faster in this piece of code (looping once through the buses)
-    int nb_bus = id_solver_to_me_.size();  // number of bus in the solver!
+    const int nb_bus = static_cast<int>(id_solver_to_me_.size());  // number of bus in the solver!
     std::vector<int> bus_pq;
     std::vector<int> bus_pv;
     std::vector<bool> has_bus_been_added(nb_bus, false);
@@ -519,8 +519,8 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
                               )
 {
     // TODO refactor that with ac pf, this is mostly done, but only mostly...
-    int nb_bus = bus_vn_kv_.size();
-    if(Vinit.size() != nb_bus){
+    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
+    if(static_cast<int>(Vinit.size()) != nb_bus){
         std::ostringstream exc_;
         exc_ << "GridModel::dc_pf_old: Size of the Vinit should be the same as the total number of buses. Currently:  ";
         exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
@@ -543,7 +543,7 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
 
 
     // extract only connected bus from Vinit
-    int nb_bus_solver = id_solver_to_me.size();
+    const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
 
     // DC SOLVER STARTS HERE
     // TODO all this should rather be one in a "dc solver" instead of here
@@ -559,10 +559,10 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
         if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
         for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dcYbus_tmp, k); it; ++it)
         {
-            int row_res = it.row();
+            int row_res = static_cast<int>(it.row());
             if(row_res == slack_bus_id_solver) continue;
             row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
-            int col_res = it.col();
+            int col_res = static_cast<int>(it.col());
             col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
             tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }
@@ -596,7 +596,7 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     }
 
     // retrieve back the results in the proper shape
-    int nb_bus_me = bus_vn_kv_.size();
+    const int nb_bus_me = static_cast<int>(bus_vn_kv_.size());
     int bus_id_solver;
     RealVect Va = RealVect::Constant(nb_bus_me, 0.);
     // fill Va from dc approx
@@ -647,7 +647,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                           real_type tol  // not used for DC
                           )
 {
-    int nb_bus = bus_vn_kv_.size();
+    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
         exc_ << "GridModel::dc_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
@@ -757,7 +757,7 @@ void GridModel::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 
 void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                             Eigen::Ref<Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    int nb_bus = bus_status_.size();
+    const int nb_bus = static_cast<int>(bus_status_.size());
     for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
 
     update_topo_generic(has_changed, new_values,

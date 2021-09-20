@@ -82,22 +82,22 @@ class BaseNRSolver : public BaseSolver
                                   const std::vector<int> & pvpq_inv
                                   );
         void fill_jacobian_matrix_kown_sparsity_pattern(
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
-                 const Eigen::SparseMatrix<cplx_type> & Ybus,
-                 const CplxVect & V,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
+                 // const Eigen::SparseMatrix<cplx_type> & Ybus,
+                 // const CplxVect & V,
                  const Eigen::VectorXi & pq,
                  const Eigen::VectorXi & pvpq,
                  const std::vector<int> & pq_inv,
                  const std::vector<int> & pvpq_inv
                  );
         void fill_jacobian_matrix_unkown_sparsity_pattern(
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
-                 const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_i,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_r,
+                 // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
                  const Eigen::SparseMatrix<cplx_type> & Ybus,
                  const CplxVect & V,
                  const Eigen::VectorXi & pq,
@@ -105,6 +105,11 @@ class BaseNRSolver : public BaseSolver
                  const std::vector<int> & pq_inv,
                  const std::vector<int> & pvpq_inv
                  );
+
+        void fill_value_map(const Eigen::VectorXi & pq,
+                            const Eigen::VectorXi & pvpq,
+                            const std::vector<int> & pq_inv,
+                            const std::vector<int> & pvpq_inv);
 
     protected:
 
@@ -113,6 +118,10 @@ class BaseNRSolver : public BaseSolver
         Eigen::SparseMatrix<cplx_type> dS_dVm_;
         Eigen::SparseMatrix<cplx_type> dS_dVa_;
         bool need_factorize_;
+
+        // to store the mapping from the element of J_ in dS_dVm_ and dS_dVa_
+        // it does not own any memory at all !
+        std::vector<cplx_type*> value_map_;
 
         // timers
          double timer_initialize_;

@@ -144,7 +144,7 @@ class DataLine : public DataGeneric
         }
     }
 
-    int nb() const { return powerlines_r_.size(); }
+    int nb() const { return static_cast<int>(powerlines_r_.size()); }
 
     // make it iterable
     typedef DataLineConstIterator const_iterator_type;

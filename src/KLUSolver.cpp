@@ -23,7 +23,7 @@ void KLUSolver::initialize(){
     // default Eigen representation: column major, which is good for klu !
     // J is const here, even if it's not said in klu_analyze
     auto timer = CustTimer();
-    n_ = J_.cols(); // should be equal to J_.nrows()
+    n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
     err_ = 0; // reset error message
     common_ = klu_common();
     symbolic_ = klu_analyze(n_, J_.outerIndexPtr(), J_.innerIndexPtr(), &common_);

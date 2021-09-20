@@ -216,3 +216,4 @@ benchmarks/debug_speed_improvments.py
 perf.data
 perf.data.old
 test_profile.py.lprof
+benchmarks/case9241pegase.json
