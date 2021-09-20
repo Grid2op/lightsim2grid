@@ -198,6 +198,18 @@ if "__COMPILE_MARCHNATIVE" in os.environ:
     if os.environ["__COMPILE_MARCHNATIVE"] == "1":
         extra_compile_args.append("-march=native")
 
+if True:
+    path_iidm = "/home/benjamin/Documents/powsybl-iidm4cpp-install/"
+    lib_iidm = [os.path.join(path_iidm, "lib", "libiidm.a")]
+
+    src_files.append("src/IIDMConverter.cpp")
+    extra_compile_args_tmp.append("-DIIDM_CONVERTER_AVAILABLE")
+
+    include_dirs.append(os.path.join(path_iidm, "include"))
+    include_dirs.append("/usr/include/libxml2/")  # for libxml2
+    LIBS += lib_iidm
+
+
 ext_modules = [
     Pybind11Extension(
         'lightsim2grid_cpp',
