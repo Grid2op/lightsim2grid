@@ -112,63 +112,7 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
 
 void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
-    throw std::runtime_error("fillYbus_spmat is no longer used nor updated !");
-    //TODO this is no more used!!!! see the other fillYbus
-
-    //TODO merge that with fillYbusBranch!
-    //TODO template here instead of "if"
-    const int nb_trafo = nb();
-    for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
-        // i don't do anything if the trafo is disconnected
-        if(!status_[trafo_id]) continue;
-
-        // compute from / to
-        int bus_hv_id_me = bus_hv_id_(trafo_id);
-        int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
-        if(bus_hv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (hv) to a disconnected bus.");
-        }
-        int bus_lv_id_me = bus_lv_id_(trafo_id);
-        int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
-        if(bus_lv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (lv) to a disconnected bus.");
-        }
-        //TODO this is no more used!!!! see the other fillYbus
-
-        // get the transformers ratio
-        real_type r = ratio_(trafo_id);
-
-        // subsecptance
-        cplx_type h = {my_zero_, my_zero_} ;
-        if(ac){
-            h = h_(trafo_id);
-            h = my_i * my_half_ * h;
-        }
-        //TODO this is no more used!!!! see the other fillYbus
-
-        // admittance
-        cplx_type y = 0.;
-        cplx_type z = x_(trafo_id);
-        if(ac){
-            z *= my_i;
-            z += r_(trafo_id);
-        }
-        if(z != my_zero_) y = my_one_ / z;
-       //TODO this is no more used!!!! see the other fillYbus
-        // fill non diagonal coefficient
-        cplx_type tmp = y / r;
-        res.coeffRef(bus_hv_solver_id, bus_lv_solver_id) -= tmp ;
-        res.coeffRef(bus_lv_solver_id, bus_hv_solver_id) -= tmp;
-
-        // fill diagonal coefficient
-        if(!ac){
-            r = my_one_; // in dc, r = 1.0 here (same voltage both side)
-        }
-        //TODO this is no more used!!!! see the other fillYbus
-        tmp += h;
-        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += tmp / r;
-        res.coeffRef(bus_lv_solver_id, bus_lv_solver_id) += tmp * r;
-    }
+    throw std::runtime_error("You should not use that!");
 }
 
 void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,

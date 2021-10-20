@@ -130,6 +130,7 @@ dmypy.json
 
 # custom
 .idea/
+.vscode/
 old/F_*.npy
 old/J_*.npy
 old/dx_*.npy

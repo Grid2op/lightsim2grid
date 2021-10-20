@@ -194,6 +194,9 @@ class DataLine : public DataGeneric
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:
+        void _update_model_coeffs();
+
+    protected:
         // physical properties
         RealVect powerlines_r_;
         RealVect powerlines_x_;
@@ -215,6 +218,17 @@ class DataLine : public DataGeneric
         RealVect res_powerline_aex_;  // in kA
         RealVect res_powerline_thetaor_; // in degree
         RealVect res_powerline_thetaex_; // in degree
+
+        // model coefficients
+        CplxVect yac_ff_;
+        CplxVect yac_ft_;
+        CplxVect yac_tf_;
+        CplxVect yac_tt_;
+
+        CplxVect ydc_ff_;
+        CplxVect ydc_ft_;
+        CplxVect ydc_tf_;
+        CplxVect ydc_tt_;
 };
 
 #endif  //DATALINE_H

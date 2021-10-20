@@ -34,6 +34,7 @@ void DataLine::init(const RealVect & branch_r,
     powerlines_r_ = branch_r;
     powerlines_x_ = branch_x;
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
+    _update_model_coeffs();
 }
 
 DataLine::StateRes DataLine::get_state() const
@@ -68,6 +69,40 @@ void DataLine::set_state(DataLine::StateRes & my_state)
     bus_or_id_ = Eigen::VectorXi::Map(&branch_from_id[0], branch_from_id.size());
     bus_ex_id_ = Eigen::VectorXi::Map(&branch_to_id[0], branch_to_id.size());
     status_ = status;
+
+    _update_model_coeffs();
+}
+
+void DataLine::_update_model_coeffs()
+{
+    const int my_size = powerlines_r_.size();
+
+    yac_ff_ = CplxVect::Zero(my_size);
+    yac_ft_ = CplxVect::Zero(my_size);
+    yac_tf_ = CplxVect::Zero(my_size);
+    yac_tt_ = CplxVect::Zero(my_size);
+
+    ydc_ff_ = CplxVect::Zero(my_size);
+    ydc_ft_ = CplxVect::Zero(my_size);
+    ydc_tf_ = CplxVect::Zero(my_size);
+    ydc_tt_ = CplxVect::Zero(my_size);
+    for(int i = 0; i < my_size; ++i)
+    {
+        // for AC
+        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+        const cplx_type ys = 1. / (powerlines_r_(i) + my_i * powerlines_x_(i));
+        const cplx_type h = my_i * powerlines_h_(i) * 0.5;
+        yac_ff_(i) = (ys + h);
+        yac_tt_(i) = (ys + h);
+        yac_tf_(i) = -ys;
+        yac_ft_(i) = -ys;
+    }
+
+}
+
+void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+{
+    throw std::runtime_error("You should not use that!");
 }
 
 void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
@@ -105,6 +140,14 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             throw std::runtime_error(exc_.str());
         }
 
+        if(ac){
+            res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_ex_solver_id, yac_ft_(line_id)));
+            res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, yac_tf_(line_id)));
+            res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, yac_ff_(line_id)));
+            res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, yac_tt_(line_id)));
+            continue;  // TODO for DC with yff, ...
+        } 
+
         // convert subsceptance to half subsceptance, applied on each ends
         cplx_type h = 0.;
         if(ac){
@@ -134,77 +177,6 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, tmp));
     }
 }
-void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res,
-                              bool ac,
-                              const std::vector<int> & id_grid_to_solver)
-{
-
-    //TODO this is no more used!!!! see the other fillYbus
-    // fill the matrix
-    //TODO template here instead of "if" for ac / dc
-    const int nb_line = static_cast<int>(powerlines_r_.size());
-
-    //diagonal coefficients
-    for(int line_id =0; line_id < nb_line; ++line_id){
-        // i only add this if the powerline is connected
-        if(!status_[line_id]) continue;
-
-        // get the from / to bus id
-        // compute from / to
-        int bus_or_id_me = bus_or_id_(line_id);
-        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
-        if(bus_or_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "DataLine::fillYbus_spmat: the line with id ";
-            exc_ << line_id;
-            exc_ << " is connected (or side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        int bus_ex_id_me = bus_ex_id_(line_id);
-        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
-        if(bus_ex_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "DataLine::fillYbus_spmat: the line with id ";
-            exc_ << line_id;
-            exc_ << " is connected (ex side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-
-       //TODO this is no more used!!!! see the other fillYbus
-        // convert subsceptance to half subsceptance, applied on each ends
-        cplx_type h = 0.;
-        if(ac){
-            h = powerlines_h_(line_id); // yes it's the correct one
-            h = my_i * my_half_ * h;
-        }
-
-        // compute the admittance y
-        cplx_type y = 0.;
-        cplx_type z = powerlines_x_(line_id);
-        if(ac){
-            z *= my_i;
-            z += powerlines_r_(line_id);
-        }
-        if (z != my_zero_ ) y = my_one_ / z;
-
-        //TODO this is no more used!!!! see the other fillYbus
-        // fill non diagonal coefficient
-        res.coeffRef(bus_or_solver_id, bus_ex_solver_id) -= y; // * base_for_pu_from;
-        res.coeffRef(bus_ex_solver_id, bus_or_solver_id) -= y; // * base_for_pu_to;
-
-        // fill diagonal coefficient
-        cplx_type tmp = y;
-        if(ac){
-            tmp += h;
-        }
-
-        //TODO this is no more used!!!! see the other fillYbus
-        res.coeffRef(bus_or_solver_id, bus_or_solver_id) += tmp;
-        res.coeffRef(bus_ex_solver_id, bus_ex_solver_id) += tmp;
-
-        //TODO this is no more used!!!! see the other fillYbus
-    }
-}
 
 void DataLine::reset_results()
 {
@@ -227,7 +199,7 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
                                real_type sn_mva)
 {
     // it needs to be initialized at 0.
-    int nb_element = nb();
+    Eigen::Index nb_element = nb();
     res_powerline_por_ = RealVect::Constant(nb_element, my_zero_);  // in MW
     res_powerline_qor_ = RealVect::Constant(nb_element, my_zero_);  // in MVar
     res_powerline_vor_ = RealVect::Constant(nb_element, my_zero_);  // in kV
@@ -238,15 +210,9 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
     res_powerline_aex_ = RealVect::Constant(nb_element, my_zero_);  // in kA
     res_powerline_thetaor_ = RealVect::Constant(nb_element, my_zero_);  // in kV
     res_powerline_thetaex_ = RealVect::Constant(nb_element, my_zero_);  // in kV
-    for(int line_id = 0; line_id < nb_element; ++line_id){
+    for(Eigen::Index line_id = 0; line_id < nb_element; ++line_id){
         // don't do anything if the element is disconnected
         if(!status_[line_id]) continue;
-
-        //physical properties
-        real_type r = powerlines_r_(line_id);
-        real_type x = powerlines_x_(line_id);
-        cplx_type h = my_i * my_half_ * powerlines_h_(line_id);
-        cplx_type y = my_one_ / (r + my_i * x);
 
         // connectivity
         int bus_or_id_me = bus_or_id_(line_id);
@@ -272,9 +238,10 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
         cplx_type Eor = V(bus_or_solver_id);
         cplx_type Eex = V(bus_ex_solver_id);
 
+        // TODO for DC with yff, ...
         // powerline equations
-        cplx_type I_orex = (y + h) * Eor - y * Eex;
-        cplx_type I_exor = (y + h) * Eex - y * Eor;
+        cplx_type I_orex =  yac_ff_(line_id) * Eor + yac_ft_(line_id) * Eex;
+        cplx_type I_exor =  yac_tt_(line_id) * Eex + yac_tf_(line_id) * Eor;
 
         I_orex = std::conj(I_orex);
         I_exor = std::conj(I_exor);
