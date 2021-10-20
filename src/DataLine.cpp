@@ -96,6 +96,9 @@ void DataLine::_update_model_coeffs()
         yac_tt_(i) = (ys + h);
         yac_tf_(i) = -ys;
         yac_ft_(i) = -ys;
+
+        // for DC
+        // TODO for DC with yff, ...
     }
 
 }

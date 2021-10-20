@@ -200,6 +200,9 @@ class DataTrafo : public DataGeneric
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:
+        void _update_model_coeffs();
+        
+    protected:
         // physical properties
         RealVect r_;
         RealVect x_;
@@ -224,6 +227,17 @@ class DataTrafo : public DataGeneric
         RealVect res_a_lv_;  // in kA
         RealVect res_theta_hv_;  // in degree
         RealVect res_theta_lv_;  // in degree
+
+        // model coefficients
+        CplxVect yac_ff_;
+        CplxVect yac_ft_;
+        CplxVect yac_tf_;
+        CplxVect yac_tt_;
+
+        CplxVect ydc_ff_;
+        CplxVect ydc_ft_;
+        CplxVect ydc_tf_;
+        CplxVect ydc_tt_;
 };
 
 #endif  //DATATRAFO_H
