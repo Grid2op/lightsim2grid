@@ -3,8 +3,8 @@ __version__ = "0.5.4"
 __all__ = ["newtonpf", "SolverType", "solver"]
 
 # import directly from c++ module
-from lightsim2grid_cpp import SolverType
 import lightsim2grid.solver
+from lightsim2grid.solver import SolverType
 
 try:
     from lightsim2grid.LightSimBackend import LightSimBackend

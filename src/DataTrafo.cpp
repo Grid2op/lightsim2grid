@@ -121,6 +121,7 @@ void DataTrafo::_update_model_coeffs()
     ydc_ft_ = CplxVect::Zero(my_size);
     ydc_tf_ = CplxVect::Zero(my_size);
     ydc_tt_ = CplxVect::Zero(my_size);
+    dc_x_tau_shift_ = RealVect::Zero(my_size);
     for(Eigen::Index i = 0; i < my_size; ++i)
     {
         // for AC
@@ -153,6 +154,7 @@ void DataTrafo::_update_model_coeffs()
         ydc_tt_(i) = tmp;
         ydc_tf_(i) = -tmp;
         ydc_ft_(i) = -tmp;
+        dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
     }
 }
 
@@ -224,13 +226,6 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
         //  i don't do anything if the load is disconnected
         if(!status_[trafo_id]) continue;
 
-        double shift = shift_[trafo_id];
-        if(shift == 0.) continue;
-
-        double ratio = ratio_[trafo_id];
-        if(!is_tap_hv_side_[trafo_id]) ratio = my_one_ / ratio;
-        tmp = shift / x_[trafo_id] / ratio;
-
         bus_id_me = bus_lv_id_(trafo_id);
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
@@ -250,8 +245,8 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
             throw std::runtime_error(exc_.str());
         }
 
-        Sbus.coeffRef(bus_id_solver_hv) += tmp;
-        Sbus.coeffRef(bus_id_solver_lv) -= tmp;
+        Sbus.coeffRef(bus_id_solver_hv) += dc_x_tau_shift_[trafo_id];
+        Sbus.coeffRef(bus_id_solver_lv) -= dc_x_tau_shift_[trafo_id];
     }
 }
 
@@ -300,35 +295,47 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
             throw std::runtime_error(exc_.str());
         }
 
-        // results of the powerflow
-        cplx_type Ehv = V(bus_hv_solver_id);
-        cplx_type Elv = V(bus_lv_solver_id);
-
-        // TODO for DC with yff, ...
-        // trafo equations
-        cplx_type I_hvlv =  yac_ff_(trafo_id) * Ehv + yac_ft_(trafo_id) * Elv;
-        cplx_type I_lvhv =  yac_tt_(trafo_id) * Elv + yac_tf_(trafo_id) * Ehv;
-
-        I_hvlv = std::conj(I_hvlv);
-        I_lvhv = std::conj(I_lvhv);
-        cplx_type s_hvlv = Ehv * I_hvlv;
-        cplx_type s_lvhv = Elv * I_lvhv;
-
-        res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
-        res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
-        res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
-        res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
-
         // retrieve voltages magnitude in kv instead of pu
         real_type v_hv = Vm(bus_hv_solver_id);
         real_type v_lv = Vm(bus_lv_solver_id);
         real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me);
-        real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);
+        real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);           
+
+        // for voltages
         res_v_hv_(trafo_id) = v_hv * bus_vn_kv_hv;
         res_v_lv_(trafo_id) = v_lv * bus_vn_kv_lv;
 
         res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * 180. / my_pi;
         res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * 180. / my_pi;
+
+        if(ac){
+            // results of the ac powerflow
+            cplx_type Ehv = V(bus_hv_solver_id);
+            cplx_type Elv = V(bus_lv_solver_id);
+
+            // TODO for DC with yff, ...
+            // trafo equations
+            cplx_type I_hvlv =  yac_ff_(trafo_id) * Ehv + yac_ft_(trafo_id) * Elv;
+            cplx_type I_lvhv =  yac_tt_(trafo_id) * Elv + yac_tf_(trafo_id) * Ehv;
+
+            I_hvlv = std::conj(I_hvlv);
+            I_lvhv = std::conj(I_lvhv);
+            cplx_type s_hvlv = Ehv * I_hvlv;
+            cplx_type s_lvhv = Elv * I_lvhv;
+
+            res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
+            res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
+            res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
+            res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
+        }else{
+            // result of the dc powerflow
+            res_p_hv_(trafo_id) = (std::real(ydc_ff_(trafo_id)) * Va(bus_hv_solver_id) + std::real(ydc_ft_(trafo_id)) * Va(bus_lv_solver_id) - dc_x_tau_shift_(trafo_id) ) * sn_mva;
+            res_p_lv_(trafo_id) = (std::real(ydc_tt_(trafo_id)) * Va(bus_lv_solver_id) + std::real(ydc_tf_(trafo_id)) * Va(bus_hv_solver_id) + dc_x_tau_shift_(trafo_id) ) * sn_mva; 
+
+            // for voltages, because vm = 1. pu by hypothesis
+            // res_v_hv_(trafo_id) = bus_vn_kv_hv;
+            // res_v_lv_(trafo_id) = bus_vn_kv_lv;
+        }
 
     }
     _get_amps(res_a_hv_, res_p_hv_, res_q_hv_, res_v_hv_);

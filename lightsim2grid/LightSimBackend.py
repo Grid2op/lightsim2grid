@@ -17,7 +17,8 @@ from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 
 from lightsim2grid.initGridModel import init, SolverType
-
+# import lightsim2grid.solver.SolverType.DCSolver
+# from lightsim2grid.solver import DCSolver
 
 class LightSimBackend(Backend):
     def __init__(self, detailed_infos_for_cascading_failures=False):
@@ -559,10 +560,11 @@ class LightSimBackend(Backend):
             if is_dc:
                 msg_ = "LightSimBackend: the support of the DC approximation is fully supported at the moment"
                 warnings.warn(msg_)
-                raise RuntimeError(msg_)
-                if self.V is None:
-                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
+                # raise RuntimeError(msg_)
+                # if self.V is None:
+                self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                self._grid.change_solver(SolverType.DC)
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow("Divergence of powerflow (non connected grid)")
             else:
@@ -626,11 +628,18 @@ class LightSimBackend(Backend):
             # TODO storage case of divergence !
 
             res = True
+            if is_dc:
+                # set back the solver to its previous state
+                self._grid.change_solver(self.__current_solver_type)
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
             self._fill_nans()
             res = False
             my_exc_ = exc_
+
+            if is_dc:
+                # set back the solver to its previous state
+                self._grid.change_solver(self.__current_solver_type)
 
         # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
         if self.__has_storage:

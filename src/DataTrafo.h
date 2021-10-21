@@ -239,6 +239,7 @@ class DataTrafo : public DataGeneric
         CplxVect ydc_ft_;
         CplxVect ydc_tf_;
         CplxVect ydc_tt_;
+        RealVect dc_x_tau_shift_;
 };
 
 #endif  //DATATRAFO_H
