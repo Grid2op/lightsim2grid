@@ -260,7 +260,8 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
                                 const RealVect & bus_vn_kv,
-                                real_type sn_mva
+                                real_type sn_mva,
+                                bool ac
                                 )
 {
     // it needs to be initialized at 0.

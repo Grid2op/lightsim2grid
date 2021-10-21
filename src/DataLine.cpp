@@ -187,7 +187,8 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const Eigen::Ref<const CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
                                const RealVect & bus_vn_kv,
-                               real_type sn_mva)
+                               real_type sn_mva,
+                               bool ac)
 {
     // it needs to be initialized at 0.
     Eigen::Index nb_element = nb();
@@ -225,11 +226,22 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
             throw std::runtime_error(exc_.str());
         }
 
+        // retrieve voltages magnitude in kv instead of pu
+        real_type v_or = Vm(bus_or_solver_id);
+        real_type v_ex = Vm(bus_ex_solver_id);
+        real_type bus_vn_kv_or = bus_vn_kv(bus_or_id_me);
+        real_type bus_vn_kv_ex = bus_vn_kv(bus_ex_id_me);
+        res_powerline_vor_(line_id) = v_or * bus_vn_kv_or;
+        res_powerline_vex_(line_id) = v_ex * bus_vn_kv_ex;
+
+        // retrieve the voltage angle in degree (instead of radian)
+        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * 180. / my_pi;
+        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * 180. / my_pi;
+
         // results of the powerflow
         cplx_type Eor = V(bus_or_solver_id);
         cplx_type Eex = V(bus_ex_solver_id);
 
-        // TODO for DC with yff, ...
         // powerline equations
         cplx_type I_orex =  yac_ff_(line_id) * Eor + yac_ft_(line_id) * Eex;
         cplx_type I_exor =  yac_tt_(line_id) * Eex + yac_tf_(line_id) * Eor;
@@ -244,16 +256,7 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
         res_powerline_pex_(line_id) = std::real(s_exor) * sn_mva;
         res_powerline_qex_(line_id) = std::imag(s_exor) * sn_mva;
 
-        // retrieve voltages magnitude in kv instead of pu
-        real_type v_or = Vm(bus_or_solver_id);
-        real_type v_ex = Vm(bus_ex_solver_id);
-        real_type bus_vn_kv_or = bus_vn_kv(bus_or_id_me);
-        real_type bus_vn_kv_ex = bus_vn_kv(bus_ex_id_me);
-        res_powerline_vor_(line_id) = v_or * bus_vn_kv_or;
-        res_powerline_vex_(line_id) = v_ex * bus_vn_kv_ex;
 
-        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * 180. / my_pi;
-        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * 180. / my_pi;
     }
     _get_amps(res_powerline_aor_, res_powerline_por_, res_powerline_qor_, res_powerline_vor_);
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);

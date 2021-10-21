@@ -418,12 +418,12 @@ class GridModel : public DataGeneric
         // results
         /**process the results from the solver to this instance
         **/
-        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit);
+        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac);
 
         /**
         Compute the results vector from the Va, Vm post powerflow
         **/
-        void compute_results();
+        void compute_results(bool ac);
         /**
         reset the results in case of divergence of the powerflow.
         **/

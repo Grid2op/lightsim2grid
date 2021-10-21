@@ -153,7 +153,8 @@ class DataGen: public DataGeneric
                          const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
-                         real_type sn_mva);
+                         real_type sn_mva,
+                         bool ac);
     void reset_results();
     void set_q(const std::vector<real_type> & q_by_bus);
     int get_slack_bus_id(int gen_id);

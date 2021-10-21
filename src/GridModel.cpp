@@ -225,8 +225,8 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     // start the solver
     conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
 
-    // store results
-    process_results(conv, res, Vinit);
+    // store results (in ac mode)
+    process_results(conv, res, Vinit, true);
 
     // return the vector of complex voltage at each bus
     return res;
@@ -340,12 +340,12 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, in
     return res;
 }
 
-void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit)
+void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac)
 {
     if (conv){
         if(compute_results_){
             // compute the results of the flows, P,Q,V of loads etc.
-            compute_results();
+            compute_results(ac);
         }
         need_reset_ = false;
         const CplxVect & res_tmp = _solver.get_V();
@@ -459,7 +459,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
     bus_pv_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pv.data(), bus_pv.size());
     bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
 }
-void GridModel::compute_results(){
+void GridModel::compute_results(bool ac){
     // TODO "deactivate" the Q value for DC
 
     // retrieve results from powerflow
@@ -468,19 +468,19 @@ void GridModel::compute_results(){
     const auto & V = _solver.get_V();
 
     // for powerlines
-    powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
     // for trafo
-    trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
     // for loads
-    loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
     // for static gen
-    sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
     // for storage units
-    storages_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    storages_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
     // for shunts
-    shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
     // for prods
-    generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_);
+    generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
 
     //handle_slack_bus
     real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);
@@ -655,7 +655,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
-    SolverType solver_type = _solver.get_type();
+    const SolverType solver_type = _solver.get_type();
     _solver.change_solver(SolverType::DC);
 
     bool conv = false;
@@ -667,8 +667,8 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     // start the solver
     conv = _solver.compute_pf(Ybus_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
 
-    // store results
-    process_results(conv, res, Vinit);
+    // store results (fase -> because I am in dc mode)
+    process_results(conv, res, Vinit, false);
 
     // put back the solver to its original state
     // TODO add a better handling of this!
