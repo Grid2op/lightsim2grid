@@ -98,9 +98,14 @@ void DataLine::_update_model_coeffs()
         yac_ft_(i) = -ys;
 
         // for DC
-        // TODO for DC with yff, ...
+        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
+        // except here I only care about the real part, so I remove the "1/j"
+        cplx_type tmp = 1. / (powerlines_x_(i));
+        ydc_ff_(i) = tmp;
+        ydc_tt_(i) = tmp;
+        ydc_tf_(i) = -tmp;
+        ydc_ft_(i) = -tmp;
     }
-
 }
 
 void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
@@ -143,41 +148,25 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             throw std::runtime_error(exc_.str());
         }
 
+        cplx_type yft, ytf, yff, ytt;
+        
         if(ac){
-            res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_ex_solver_id, yac_ft_(line_id)));
-            res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, yac_tf_(line_id)));
-            res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, yac_ff_(line_id)));
-            res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, yac_tt_(line_id)));
-            continue;  // TODO for DC with yff, ...
-        } 
-
-        // convert subsceptance to half subsceptance, applied on each ends
-        cplx_type h = 0.;
-        if(ac){
-            h = powerlines_h_(line_id); // yes it's the correct one
-            h = my_i * my_half_ * h;
+            // ac mode
+            yft = yac_ft_(line_id);
+            ytf = yac_tf_(line_id);
+            yff = yac_ff_(line_id);
+            ytt = yac_tt_(line_id);
+        }else{
+            // dc mode
+            yft = ydc_ft_(line_id);
+            ytf = ydc_tf_(line_id);
+            yff = ydc_ff_(line_id);
+            ytt = ydc_tt_(line_id);
         }
-
-        // compute the admittance y
-        cplx_type y = 0.;
-        cplx_type z = powerlines_x_(line_id);
-        if(ac){
-            z *= my_i;
-            z += powerlines_r_(line_id);
-        }
-        if (z != my_zero_) y = my_one_ / z;
-
-        // fill non diagonal coefficient
-        res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_ex_solver_id, -y));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, -y));
-
-        // fill diagonal coefficient
-        cplx_type tmp = y;
-        if(ac) tmp += h;
-        // else tmp += std::imag(h); // todo ???? still don't know !
-
-        res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, tmp));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, tmp));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_ex_solver_id, yft));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, ytf));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, yff));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, ytt));
     }
 }
 

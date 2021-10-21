@@ -38,7 +38,8 @@ NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nics
 
 
 def main(max_ts, env_name_input, test=True,
-         no_gs=False, no_gs_synch=False):
+         no_gs=False, no_gs_synch=False,
+         no_pp=False):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
@@ -63,9 +64,10 @@ def main(max_ts, env_name_input, test=True,
             _, env_name_input = os.path.split(env_name_input)
 
     agent = DoNothingAgent(action_space=env_pp.action_space)
-    nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
-    pp_comp_time = env_pp.backend.comp_time
-    pp_time_pf = env_pp._time_powerflow
+    if no_pp is False:
+        nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
+        pp_comp_time = env_pp.backend.comp_time
+        pp_time_pf = env_pp._time_powerflow
 
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
@@ -118,9 +120,11 @@ def main(max_ts, env_name_input, test=True,
 
     env_name = get_env_name_displayed(env_name_input)
     hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"solver powerflow time (ms)"]
-    tab = [["PP", f"{nb_ts_pp/time_pp:.2e}",
-            f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
-            f"{1000.*pp_comp_time/nb_ts_pp:.2e}"]]
+    tab = []
+    if no_pp is False:
+        tab.append(["PP", f"{nb_ts_pp/time_pp:.2e}",
+                    f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
+                    f"{1000.*pp_comp_time/nb_ts_pp:.2e}"])
     if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
         tab.append(["LS+GS", f"{nb_ts_gs/time_gs:.2e}",
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
@@ -156,39 +160,40 @@ def main(max_ts, env_name_input, test=True,
         print(tab)
     print()
 
-    hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
-    tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
-    if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
-        tab.append(["LS+GS",
-                    f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
-                    f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
-                    f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-        tab.append(["LS+GS S",
-                    f"{np.max(np.abs(aor_gsa - aor_pp)):.2e}",
-                    f"{np.max(np.abs(gen_p_gsa - gen_p_pp)):.2e}",
-                    f"{np.max(np.abs(gen_q_gsa - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.SparseLU in solver_types:
-        tab.append(["LS+SLU",
-                    f"{np.max(np.abs(aor_slu - aor_pp)):.2e}",
-                    f"{np.max(np.abs(gen_p_slu - gen_p_pp)):.2e}",
-                    f"{np.max(np.abs(gen_q_slu - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.KLU in solver_types:
-        tab.append(["LS+KLU",
-                    f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
-                    f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
-                    f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
-    if lightsim2grid.SolverType.NICSLU in solver_types:
-        tab.append(["LS+NICSLU",
-                    f"{np.max(np.abs(aor_nicslu - aor_pp)):.2e}",
-                    f"{np.max(np.abs(gen_p_nicslu - gen_p_pp)):.2e}",
-                    f"{np.max(np.abs(gen_q_nicslu - gen_q_pp)):.2e}"])
+    if no_pp is False:
+        hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
+        tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
+        if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
+            tab.append(["LS+GS",
+                        f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
+                        f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
+                        f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
+        if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
+            tab.append(["LS+GS S",
+                        f"{np.max(np.abs(aor_gsa - aor_pp)):.2e}",
+                        f"{np.max(np.abs(gen_p_gsa - gen_p_pp)):.2e}",
+                        f"{np.max(np.abs(gen_q_gsa - gen_q_pp)):.2e}"])
+        if lightsim2grid.SolverType.SparseLU in solver_types:
+            tab.append(["LS+SLU",
+                        f"{np.max(np.abs(aor_slu - aor_pp)):.2e}",
+                        f"{np.max(np.abs(gen_p_slu - gen_p_pp)):.2e}",
+                        f"{np.max(np.abs(gen_q_slu - gen_q_pp)):.2e}"])
+        if lightsim2grid.SolverType.KLU in solver_types:
+            tab.append(["LS+KLU",
+                        f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
+                        f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
+                        f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
+        if lightsim2grid.SolverType.NICSLU in solver_types:
+            tab.append(["LS+NICSLU",
+                        f"{np.max(np.abs(aor_nicslu - aor_pp)):.2e}",
+                        f"{np.max(np.abs(gen_p_nicslu - gen_p_pp)):.2e}",
+                        f"{np.max(np.abs(gen_q_nicslu - gen_q_pp)):.2e}"])
 
-    if TABULATE_AVAIL:
-        res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
-        print(res_use_with_grid2op_2)
-    else:
-        print(tab)
+        if TABULATE_AVAIL:
+            res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
+            print(res_use_with_grid2op_2)
+        else:
+            print(tab)
     print()
 
 
@@ -211,10 +216,15 @@ if __name__ == "__main__":
     parser.add_argument('--no_gs', type=str2bool, nargs='?',
                         const=True, default=False,
                         help='Do not benchmark gauss seidel (regular) method (default: evaluate it)')
+    parser.add_argument('--no_pp', type=str2bool, nargs='?',
+                        const=True, default=False,
+                        help='Do not benchmark pandapower method (default: evaluate it)')
 
     args = parser.parse_args()
 
     max_ts = int(args.number)
     name = str(args.name)
     test_env = not args.no_test
-    main(max_ts, name, test_env, no_gs =args.no_gs, no_gs_synch=args.no_gs_synch)
+    main(max_ts, name, test_env,
+         no_gs=args.no_gs, no_gs_synch=args.no_gs_synch,
+         no_pp=args.no_pp)
