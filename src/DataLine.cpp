@@ -120,10 +120,11 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
-    const int nb_line = static_cast<int>(powerlines_r_.size());
+    const Eigen::Index nb_line = static_cast<int>(powerlines_r_.size());
+    cplx_type yft, ytf, yff, ytt;
 
     //diagonal coefficients
-    for(int line_id =0; line_id < nb_line; ++line_id){
+    for(Eigen::Index line_id =0; line_id < nb_line; ++line_id){
         // i only add this if the powerline is connected
         if(!status_[line_id]) continue;
 
@@ -147,8 +148,6 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             exc_ << " is connected (ex side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-
-        cplx_type yft, ytf, yff, ytt;
         
         if(ac){
             // ac mode
