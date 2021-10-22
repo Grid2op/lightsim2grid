@@ -68,7 +68,7 @@ class GridModel : public DataGeneric
                 int
                 >  StateRes;
 
-        GridModel():need_reset_(true),compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
+        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
         GridModel(const GridModel & other);
         GridModel copy(){
             GridModel res(*this);
@@ -78,6 +78,7 @@ class GridModel : public DataGeneric
         // solver "control"
         void change_solver(const SolverType & type){
             need_reset_ = true;
+            topo_changed_ = true;
             _solver.change_solver(type);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
@@ -167,6 +168,10 @@ class GridModel : public DataGeneric
         }
 
         //powerflows
+        // control the need to refactorize the topology
+        void unset_topo_changed(){topo_changed_ = false;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_topo_changed(){topo_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+
         // dc powerflow
         CplxVect dc_pf_old(const CplxVect & Vinit,
                                    int max_iter,  // not used for DC
@@ -292,7 +297,7 @@ class GridModel : public DataGeneric
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
         Eigen::SparseMatrix<cplx_type> get_Ybus(){
-            return Ybus_;  // This is copied to python
+            return Ybus_ac_;  // This is copied to python
         }
         Eigen::Ref<CplxVect> get_Sbus(){
             return Sbus_;
@@ -409,9 +414,17 @@ class GridModel : public DataGeneric
         is_ac indicates if you want to perform and AC powerflow or a DC powerflow and reset_solver indicates
         if you will perform a powerflow after it or not. (usually put ``true`` here).
         **/
-        CplxVect pre_process_solver(const CplxVect & Vinit, bool is_ac, bool reset_solver);
-        void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, CplxVect & Sbus,
-                       std::vector<int> & id_me_to_solver, std::vector<int>& id_solver_to_me,
+        CplxVect pre_process_solver(const CplxVect & Vinit,
+                                    Eigen::SparseMatrix<cplx_type> & Ybus,
+                                    bool is_ac,
+                                    bool reset_solver);
+        void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+                       std::vector<int> & id_me_to_solver,
+                       std::vector<int>& id_solver_to_me,
+                       int & slack_bus_id_solver);
+        void init_Sbus(CplxVect & Sbus,
+                       std::vector<int> & id_me_to_solver,
+                       std::vector<int>& id_solver_to_me,
                        int & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
@@ -474,6 +487,7 @@ class GridModel : public DataGeneric
                     {
                         (this->*fun_react)(el_id); // eg reactivate_load(load_id);
                         (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
+                        topo_changed_ = true;
                     }
                 } else{
                     if(has_changed(el_pos))
@@ -483,6 +497,7 @@ class GridModel : public DataGeneric
                         // bus_status_ is set to "false" in GridModel.update_topo
                         // and a bus is activated if (and only if) one element is connected to it.
                         // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+                        topo_changed_ = true;
                     }
                 }
             }
@@ -493,6 +508,7 @@ class GridModel : public DataGeneric
         // member of the grid
         // static const int _deactivated_bus_id;
         bool need_reset_;
+        bool topo_changed_;
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         real_type sn_mva_;
@@ -540,7 +556,8 @@ class GridModel : public DataGeneric
         int slack_bus_id_solver_;
 
         // as matrix, for the solver
-        Eigen::SparseMatrix<cplx_type> Ybus_;
+        Eigen::SparseMatrix<cplx_type> Ybus_ac_;
+        Eigen::SparseMatrix<cplx_type> Ybus_dc_;
         CplxVect Sbus_;
         Eigen::VectorXi bus_pv_;  // id are the solver internal id and NOT the initial id
         Eigen::VectorXi bus_pq_;  // id are the solver internal id and NOT the initial id

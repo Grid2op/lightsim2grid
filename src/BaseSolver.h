@@ -83,7 +83,6 @@ class BaseSolver : public BaseConstants
         bool converged(){
             return err_ == 0;
         }
-
     protected:
         virtual void reset_timer(){
             timer_Fx_ = 0.;

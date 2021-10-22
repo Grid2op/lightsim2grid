@@ -65,6 +65,7 @@ def main(max_ts, env_name_input, test=True,
 
     agent = DoNothingAgent(action_space=env_pp.action_space)
     if no_pp is False:
+        print("Start using Pandapower")
         nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
         pp_comp_time = env_pp.backend.comp_time
         pp_time_pf = env_pp._time_powerflow
@@ -72,6 +73,7 @@ def main(max_ts, env_name_input, test=True,
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
     if lightsim2grid.SolverType.KLU in solver_types:
+        print("Start using KLU")
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.KLU)
         env_lightsim.backend.set_solver_max_iter(10)
         nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_lightsim, max_ts, agent, chron_id=0,
@@ -80,6 +82,7 @@ def main(max_ts, env_name_input, test=True,
         klu_time_pf = env_lightsim._time_powerflow
 
     if lightsim2grid.SolverType.NICSLU in solver_types and NICSLU_LICENSE_AVAIL:
+        print("Start using NICSLU")
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.NICSLU)
         env_lightsim.backend.set_solver_max_iter(10)
         nb_ts_nicslu, time_nicslu, aor_nicslu, gen_p_nicslu, gen_q_nicslu = run_env(env_lightsim,
@@ -91,6 +94,7 @@ def main(max_ts, env_name_input, test=True,
         nicslu_time_pf = env_lightsim._time_powerflow
 
     if lightsim2grid.SolverType.SparseLU in solver_types:
+        print("Start using SparseLU")
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.SparseLU)
         env_lightsim.backend.set_solver_max_iter(10)
         nb_ts_slu, time_slu, aor_slu, gen_p_slu, gen_q_slu = run_env(env_lightsim, max_ts, agent, chron_id=0,
@@ -99,6 +103,7 @@ def main(max_ts, env_name_input, test=True,
         slu_time_pf = env_lightsim._time_powerflow
 
     if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
+        print("Start using GaussSeidel")
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidel)
         env_lightsim.backend.set_solver_max_iter(10000)
         nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs = run_env(env_lightsim, max_ts, agent, chron_id=0,
@@ -107,6 +112,7 @@ def main(max_ts, env_name_input, test=True,
         gs_time_pf = env_lightsim._time_powerflow
 
     if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
+        print("Start using GaussSeidelSynch")
         env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidelSynch)
         env_lightsim.backend.set_solver_max_iter(10000)
         nb_ts_gsa, time_gsa, aor_gsa, gen_p_gsa, gen_q_gsa = run_env(env_lightsim, max_ts, agent, chron_id=0,

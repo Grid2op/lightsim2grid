@@ -346,6 +346,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("dc_pf", &GridModel::dc_pf)
         .def("dc_pf_old", &GridModel::dc_pf_old)
         .def("ac_pf", &GridModel::ac_pf)
+        .def("unset_topo_changed", &GridModel::unset_topo_changed)
+        .def("tell_topo_changed", &GridModel::tell_topo_changed)
         .def("compute_newton", &GridModel::ac_pf)
 
          // apply action faster (optimized for grid2op representation)

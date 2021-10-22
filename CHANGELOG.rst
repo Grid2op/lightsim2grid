@@ -14,6 +14,7 @@ Change Log
 
 [0.5.5] 2021-xx-yy
 -------------------
+- [ADDED] possibility to perform dc powerflow
 - [IMPROVED] running speed of Newton Raphson solvers with better filling of sparse matrices
 - [IMPROVED] upgrade to SuiteSparse `v5.10.1`
 - [IMPROVED] upgrade to eigen `3.4.0` (stable release)

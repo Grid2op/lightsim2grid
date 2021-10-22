@@ -47,7 +47,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
-    bool has_just_been_inialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
+    bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, pq, pvpq, pq_inv, pvpq_inv);
@@ -58,11 +58,11 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                 res = false;
                 break;
             }
-            has_just_been_inialized = true;
+            has_just_been_initialized = true;
         }
         //TODO refactorize is called uselessly at the first iteration
-        solve(F, has_just_been_inialized);
-        has_just_been_inialized = false;
+        solve(F, has_just_been_initialized);
+        has_just_been_initialized = false;
         if(err_ != 0){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
