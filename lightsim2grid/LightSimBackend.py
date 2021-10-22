@@ -557,7 +557,8 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         my_exc_ = None
         res = False
-        self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
+        print("new solving")
+        # self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
         try:
             if is_dc:
                 self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()

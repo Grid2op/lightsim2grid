@@ -205,6 +205,7 @@ void GridModel::reset(bool reset_solver)
 
     // reset the solvers
     if (reset_solver) _solver.reset();
+    std::cout << "GridModel::reset called" << std::endl;
 }
 
 CplxVect GridModel::ac_pf(const CplxVect & Vinit,
