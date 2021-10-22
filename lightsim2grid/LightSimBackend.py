@@ -558,10 +558,6 @@ class LightSimBackend(Backend):
         res = False
         try:
             if is_dc:
-                msg_ = "LightSimBackend: the support of the DC approximation is fully supported at the moment"
-                warnings.warn(msg_)
-                # raise RuntimeError(msg_)
-                # if self.V is None:
                 self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
                 self._grid.change_solver(SolverType.DC)

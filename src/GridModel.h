@@ -277,6 +277,8 @@ class GridModel : public DataGeneric
         const std::vector<bool>& get_trafo_status() const { return trafos_.get_status();}
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
+        tuple3d get_sgens_res() const {return sgens_.get_res();}
+        const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
 
         Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
         Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}

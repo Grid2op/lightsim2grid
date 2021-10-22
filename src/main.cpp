@@ -322,6 +322,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_trafo_status", &GridModel::get_trafo_status)
         .def("get_storages_res", &GridModel::get_storages_res)
         .def("get_storages_status", &GridModel::get_storages_status)
+        .def("get_sgens_res", &GridModel::get_sgens_res)
+        .def("get_sgens_status", &GridModel::get_sgens_status)
 
         .def("get_gen_theta", &GridModel::get_gen_theta)
         .def("get_load_theta", &GridModel::get_load_theta)

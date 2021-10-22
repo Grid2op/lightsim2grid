@@ -30,6 +30,7 @@ TIMER_INFO = False  # do i print information regarding computation time
 class TestDCPF(unittest.TestCase):
     def setUp(self) -> None:
         self.tol = 1e-4  # results are equal if they match up to tol
+        self.tol_big = 0.1  # for P = C
 
     def test_case14(self):
         case = pn.case14()
@@ -133,21 +134,25 @@ class TestDCPF(unittest.TestCase):
         assert max_mis <= self.tol, f"Error: load_v do not match, maximum absolute error is {max_mis:.5f} kV"
 
         gen_p, gen_q, gen_v = backend.generators_info()
+        sgen_p, sgen_q, sgen_v = backend._grid.get_sgens_res()
         # pandapower is not correct on dc...
         # max_mis = np.max(np.abs(gen_p - gen_p_pp))
         # assert max_mis <= self.tol, f"Error: gen_p do not match, maximum absolute error is {max_mis:.5f} MW"
-        assert abs(np.sum(gen_p) - np.sum(load_p)) <= self.tol
+        assert abs(np.sum(gen_p) + np.sum(sgen_p) - np.sum(load_p)) <= self.tol_big
         # pandapower also does weird things in dc for gen_q... lightsim2grid puts everything at 0.
         # max_mis = np.max(np.abs(gen_q - gen_q_pp))
         # assert max_mis <= self.tol, f"Error: gen_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
         assert np.max(np.abs(gen_q)) <= self.tol
+        if sgen_q.size:
+            assert np.max(np.abs(sgen_q)) <= self.tol
 
         max_mis = np.max(np.abs(gen_v - gen_v_pp))
         assert max_mis <= self.tol, f"Error: gen_v do not match, maximum absolute error is {max_mis:.5f} kV"
 
         sh_p, sh_q, sh_v, *_ = backend.shunt_info()
-        max_mis = np.max(np.abs(sh_p - sh_p_pp))
-        assert max_mis <= self.tol, f"Error: sh_p do not match, maximum absolute error is {max_mis:.5f} MW"
+        if sh_p.size:
+            max_mis = np.max(np.abs(sh_p - sh_p_pp))
+            assert max_mis <= self.tol, f"Error: sh_p do not match, maximum absolute error is {max_mis:.5f} MW"
         # max_mis = np.max(np.abs(sh_q - sh_q_pp))
         # assert max_mis <= self.tol, f"Error: sh_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
         # again pandapower does weird stuff in dc...
@@ -156,5 +161,3 @@ class TestDCPF(unittest.TestCase):
         # max_mis = np.max(np.abs(sh_v - sh_v_pp))
         # assert max_mis <= self.tol, f"Error: sh_v do not match, maximum absolute error is {max_mis:.5f} kV"
         # again, pandapower put nan for the voltages...
-
-

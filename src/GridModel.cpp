@@ -460,8 +460,6 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
     bus_pq_ = Eigen::Map<Eigen::VectorXi, Eigen::Unaligned>(bus_pq.data(), bus_pq.size());
 }
 void GridModel::compute_results(bool ac){
-    // TODO "deactivate" the Q value for DC
-
     // retrieve results from powerflow
     const auto & Va = _solver.get_Va();
     const auto & Vm = _solver.get_Vm();
