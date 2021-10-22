@@ -156,7 +156,7 @@ class DataGen: public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    void set_q(const std::vector<real_type> & q_by_bus);
+    void set_q(const std::vector<real_type> & q_by_bus, bool ac);
     int get_slack_bus_id(int gen_id);
     virtual void set_p_slack(int slack_bus_id, real_type p_slack);
 

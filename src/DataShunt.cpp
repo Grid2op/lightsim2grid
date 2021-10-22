@@ -142,7 +142,7 @@ void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
         I = std::conj(I);
         cplx_type s = E * I;
         res_p_(shunt_id) = std::real(s) * sn_mva;
-        res_q_(shunt_id) = std::imag(s) * sn_mva;
+        if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
     }
 }
 

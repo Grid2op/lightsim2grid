@@ -493,14 +493,18 @@ void GridModel::compute_results(bool ac){
 
     // handle gen_q now
     std::vector<real_type> q_by_bus = std::vector<real_type>(bus_vn_kv_.size(), 0.);
-    powerlines_.get_q(q_by_bus);
-    trafos_.get_q(q_by_bus);
-    loads_.get_q(q_by_bus);
-    storages_.get_q(q_by_bus);
-    sgens_.get_q(q_by_bus);
-    shunts_.get_q(q_by_bus);
+    if(ac){
+        // I do not bother with reactive in dc mode
+        powerlines_.get_q(q_by_bus);
+        trafos_.get_q(q_by_bus);
+        loads_.get_q(q_by_bus);
+        storages_.get_q(q_by_bus);
+        sgens_.get_q(q_by_bus);
+        shunts_.get_q(q_by_bus);
+    }
 
-    generators_.set_q(q_by_bus);
+    // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
+    generators_.set_q(q_by_bus, ac);
 }
 
 void GridModel::reset_results(){

@@ -249,11 +249,12 @@ void DataGen::init_q_vector(int nb_bus)
     }
 }
 
-void DataGen::set_q(const std::vector<real_type> & q_by_bus)
+void DataGen::set_q(const std::vector<real_type> & q_by_bus, bool ac)
 {
     // for(int bus_id = 0; bus_id < q_by_bus.size(); ++bus_id) std::cout << "bus id " << bus_id << " sum q " << q_by_bus[bus_id] << std::endl;
     const int nb_gen = nb();
     res_q_ = RealVect::Constant(nb_gen, 0.);
+    if(!ac) return;  // do not consider Q values in dc mode
     real_type eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
