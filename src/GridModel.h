@@ -70,10 +70,12 @@ class GridModel : public DataGeneric
 
         GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
         GridModel(const GridModel & other);
-        GridModel copy(){
+        GridModel copy() const{
             GridModel res(*this);
             return res;
         }
+        Eigen::Index total_bus() const {return bus_vn_kv_.size();}
+        const std::vector<int> & id_me_to_ac_solver() const  {return id_me_to_ac_solver_;}
 
         // solver "control"
         void change_solver(const SolverType & type){

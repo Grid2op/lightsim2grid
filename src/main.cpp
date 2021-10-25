@@ -13,6 +13,7 @@
 #include "ChooseSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
+#include "Computers.h"
 
 namespace py = pybind11;
 
@@ -377,5 +378,32 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid)
         .def("set_storage_to_subid", &GridModel::set_storage_to_subid)
         ;
+
+    py::class_<Computers>(m, "Computers")
+        .def(py::init<const GridModel &>())
+
+        // solver control
+        .def("change_solver", &Computers::change_solver)
+        .def("available_solvers", &Computers::available_solvers)
+        .def("get_solver_type", &Computers::get_solver_type)
+
+        // timers
+        .def("total_time", &Computers::total_time)
+        .def("solver_time", &Computers::solver_time)
+        .def("nb_solved", &Computers::nb_solved)
+
+        // status
+        .def("get_status", &Computers::get_status)
+
+        // computation control
+        .def("deactivate_flow_computations", &Computers::deactivate_flow_computations)
+        .def("activate_flow_computations", &Computers::activate_flow_computations)
+
+        // perform the computations
+        .def("compute_Sbuses", &Computers::compute_Sbuses)
+
+        // results (forw now only flow (at each -line origin- or voltages -at each buses)
+        .def("get_flows", &Computers::get_flows)
+        .def("get_voltages", &Computers::get_voltages);
 
 }

@@ -124,9 +124,9 @@ class BaseNRSolver : public BaseSolver
         std::vector<cplx_type*> value_map_;
 
         // timers
-         double timer_initialize_;
-         double timer_dSbus_;
-         double timer_fillJ_;
+        double timer_initialize_;
+        double timer_dSbus_;
+        double timer_fillJ_;
 
     private:
         // no copy allowed

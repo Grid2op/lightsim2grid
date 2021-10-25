@@ -24,34 +24,51 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     **/
     // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
     // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
+    if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
+        std::ostringstream exc_;
+        exc_ << "BaseNRSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
+        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows()<<", "<<Ybus.rows()").";
+        throw std::runtime_error(exc_.str());
+    }
     reset_timer();
     // std::cout << "entering BaseNRSolver::compute_pf" << std::endl;
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
+    std::cout << "here 0" << std::endl;
     // initialize once and for all the "inverse" of these vectors
     const int n_pv = static_cast<int>(pv.size());
     const int n_pq = static_cast<int>(pq.size());
     Eigen::VectorXi pvpq(n_pv + n_pq);
-    pvpq << pv, pq;
+    //  for(int id=0; id < n_pv; ++id) pvpq[id] = pv[id];
+    //  for(int id=0; id < n_pq; ++id) pvpq[id + n_pv] = pq[id];
+    pvpq << pv, pq;  // MAYBE don't use that, it somehow breaks the const correctness !
+    std::cout << "here 1" << std::endl;
     const int n_pvpq = static_cast<int>(pvpq.size());
     std::vector<int> pvpq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+    std::cout << "here 2" << std::endl;
 
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case
     Va_ = V_.array().arg();  // we wrapped around with a negative Vm
+    std::cout << "here 3" << std::endl;
 
     // first check, if the problem is already solved, i stop there
     RealVect F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+    std::cout << "here 4" << std::endl;
+    // std::cout << "Sbus[0] " << Sbus[0] << std::endl;
     bool converged = _check_for_convergence(F, tol);
+    std::cout << "here 5" << std::endl;
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
+        std::cout << "\t iter here 0" << std::endl;
         fill_jacobian_matrix(Ybus, V_, pq, pvpq, pq_inv, pvpq_inv);
+        std::cout << "\t iter here 1" << std::endl;
         if(need_factorize_){
             initialize();
             if(err_ != 0){
@@ -64,9 +81,11 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         }else{
             // std::cout << "no need to factorize" << std::endl;
         }
+        std::cout << "\t iter here 2" << std::endl;
 
         solve(F, has_just_been_initialized);
         // std::cout << "end solve" << std::endl;
+        std::cout << "\t iter here 3" << std::endl;
 
         has_just_been_initialized = false;
         if(err_ != 0){
@@ -89,12 +108,15 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
 
+        std::cout << "\t iter here 4" << std::endl;
         F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
         bool tmp = F.allFinite();
+        std::cout << "\t iter here 5" << std::endl;
         if(!tmp) break; // divergence due to Nans
         converged = _check_for_convergence(F, tol);
-        // std::cout << "end iteration" << std::endl;
+        std::cout << "\t iter here 6" << std::endl;
     }
+    std::cout << "here 6" << std::endl;
     if(!converged){
         err_ = 4;
         res = false;
