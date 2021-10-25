@@ -13,6 +13,7 @@ import pandapower.networks as pn
 import os
 import copy
 import numpy as np
+from pandapower.std_types import parameter_from_std_type
 import scipy
 import warnings
 

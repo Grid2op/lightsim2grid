@@ -416,6 +416,9 @@ class GridModel : public DataGeneric
         **/
         CplxVect pre_process_solver(const CplxVect & Vinit,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
+                                    std::vector<int> & id_me_to_solver,
+                                    std::vector<int> & id_solver_to_me,
+                                    int & slack_bus_id_solver,
                                     bool is_ac,
                                     bool reset_solver);
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -428,12 +431,14 @@ class GridModel : public DataGeneric
                        int & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
-        void fillpv_pq(const std::vector<int>& id_me_to_solver);
+        void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
+                      int slack_bus_id_solver);
 
         // results
         /**process the results from the solver to this instance
         **/
-        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac);
+        void process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac,
+                             std::vector<int> & id_me_to_solver);
 
         /**
         Compute the results vector from the Va, Vm post powerflow
@@ -447,7 +452,7 @@ class GridModel : public DataGeneric
         /**
         reset the solver, and all its results
         **/
-        void reset(bool reset_solver);
+        void reset(bool reset_solver, bool reset_ac, bool reset_dc);
 
         /**
         optimization for grid2op
@@ -503,7 +508,9 @@ class GridModel : public DataGeneric
             }
         }
 
-        CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp, int size);
+        CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
+                                                 std::vector<int> & id_me_to_solver,
+                                                 int size);
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
@@ -520,11 +527,14 @@ class GridModel : public DataGeneric
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.
-        std::vector<int> id_me_to_solver_;
+        std::vector<int> id_me_to_ac_solver_;
         // convert the bus id from the model to the bus id of me.
         // it has a variable size, that depends on the number of connected bus. if "id_model" is an id of a bus
         // sent to the solver, then id_model_to_me_[id_model] is the bus id of this model of the grid.
-        std::vector<int> id_solver_to_me_;
+        std::vector<int> id_ac_solver_to_me_;
+
+        std::vector<int> id_me_to_dc_solver_;
+        std::vector<int> id_dc_solver_to_me_;
 
         // 2. powerline
         DataLine powerlines_;
@@ -553,7 +563,8 @@ class GridModel : public DataGeneric
         // TODO multiple slack bus
         int gen_slackbus_;
         int slack_bus_id_;
-        int slack_bus_id_solver_;
+        int slack_bus_id_ac_solver_;
+        int slack_bus_id_dc_solver_;
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;

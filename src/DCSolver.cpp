@@ -23,9 +23,9 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     //   and for the slack bus both the magnitude and the angle are used.
 
     auto timer = CustTimer();
-    std::cout << "entering DCSolver::compute_pf" << std::endl;
+    // std::cout << "entering DCSolver::compute_pf" << std::endl;
     const int nb_bus_solver = static_cast<int>(Ybus.rows());
-    std::cout << "computed nb_bus_solver << " << nb_bus_solver << std::endl;
+    // std::cout << "computed nb_bus_solver << " << nb_bus_solver << std::endl;
 
     #ifdef __COUT_TIMES
         auto timer_preproc = CustTimer();
@@ -38,7 +38,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
 
     // find the slack bus
     int slack_bus_id_solver = extract_slack_bus_id(pv, pq, nb_bus_solver);
-    std::cout << "slack_bus_id_solver extracted" << std::endl;
+    // std::cout << "slack_bus_id_solver extracted" << std::endl;
 
     // remove the slack bus from Ybus
     // and extract only real part
@@ -59,7 +59,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     }
     dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
     dcYbus.makeCompressed();
-    std::cout << "dcYbus made" << std::endl;
+    // std::cout << "dcYbus made" << std::endl;
     #ifdef __COUT_TIMES
         std::cout << "\t dc: preproc: " << 1000. * timer_preproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES

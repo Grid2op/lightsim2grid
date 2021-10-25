@@ -21,6 +21,8 @@ Change Log
 - [IMPROVED] clean the compilation warnings on microsoft windows (force the conversion from
   `Eigen::EigenBase<Derived>::Index` to `int` using `static_cast`)
 - [IMPROVED] add the proper optimization flag for windows (`/O2` instead of `-03` on linux / macos)
+- [IMPROVED] high performance gain when topology is not changed between steps (gain obtained by 
+  reusing the previous Ybus)
 
 [0.5.4] 2021-08-20
 ------------------

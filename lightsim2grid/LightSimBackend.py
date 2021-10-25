@@ -557,7 +557,6 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         my_exc_ = None
         res = False
-        print("new solving")
         # self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
         try:
             if is_dc:
@@ -795,7 +794,7 @@ class LightSimBackend(Backend):
     def reset(self, grid_path, grid_filename=None):
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
+        self._grid.tell_topo_changed()
         self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
-        self._grid.tell_topo_changed()

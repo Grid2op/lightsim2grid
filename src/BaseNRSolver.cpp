@@ -25,7 +25,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
     // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
     reset_timer();
-    std::cout << "entering BaseNRSolver::compute_pf" << std::endl;
+    // std::cout << "entering BaseNRSolver::compute_pf" << std::endl;
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
@@ -60,11 +60,13 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                 break;
             }
             has_just_been_initialized = true;
-            std::cout << "I just factorized" << std::endl;
-        }else std::cout << "no need to factorize" << std::endl;
+            // std::cout << "I just factorized" << std::endl;
+        }else{
+            // std::cout << "no need to factorize" << std::endl;
+        }
 
         solve(F, has_just_been_initialized);
-        std::cout << "end solve" << std::endl;
+        // std::cout << "end solve" << std::endl;
 
         has_just_been_initialized = false;
         if(err_ != 0){
@@ -91,7 +93,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         bool tmp = F.allFinite();
         if(!tmp) break; // divergence due to Nans
         converged = _check_for_convergence(F, tol);
-        std::cout << "end iteration" << std::endl;
+        // std::cout << "end iteration" << std::endl;
     }
     if(!converged){
         err_ = 4;

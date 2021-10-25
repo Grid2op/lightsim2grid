@@ -10,7 +10,7 @@
 
 GridModel::GridModel(const GridModel & other)
 {
-    reset(true);
+    reset(true, true, true);
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -108,7 +108,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
-    reset(true);
+    reset(true, true, true);
     need_reset_ = true;
     compute_results_ = true;
     topo_changed_ = true;
@@ -190,14 +190,23 @@ void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
 }
 
-void GridModel::reset(bool reset_solver)
+void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 {
-    Ybus_ac_ = Eigen::SparseMatrix<cplx_type>();
-    Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();
+    if(reset_ac){
+        id_me_to_ac_solver_ = std::vector<int>();
+        id_ac_solver_to_me_ = std::vector<int>();
+        slack_bus_id_ac_solver_ = -1;
+        Ybus_ac_ = Eigen::SparseMatrix<cplx_type>();
+    }
+
+    if(reset_dc){
+        id_me_to_dc_solver_ = std::vector<int>();
+        id_dc_solver_to_me_ = std::vector<int>();
+        slack_bus_id_dc_solver_ = -1;
+        Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();
+    }
+
     Sbus_ = CplxVect();
-    id_me_to_solver_ = std::vector<int>();
-    id_solver_to_me_ = std::vector<int>();
-    slack_bus_id_solver_ = -1;
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
     need_reset_ = true;
@@ -205,13 +214,15 @@ void GridModel::reset(bool reset_solver)
 
     // reset the solvers
     if (reset_solver) _solver.reset();
-    std::cout << "GridModel::reset called" << std::endl;
+    // std::cout << "GridModel::reset called" << std::endl;
 }
 
 CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                           int max_iter,
                           real_type tol)
 {
+    // std::cout << "______________________" << std::endl;
+    // std::cout << "computing AC pf" << std::endl;
     const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
@@ -224,13 +235,17 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     CplxVect res = CplxVect();
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    CplxVect V = pre_process_solver(Vinit, Ybus_ac_, true, true);
+    bool is_ac = true;
+    bool reset_solver = topo_changed_;   // I reset the solver only if the topology change
+    CplxVect V = pre_process_solver(Vinit, Ybus_ac_,
+                                    id_me_to_ac_solver_, id_ac_solver_to_me_, slack_bus_id_ac_solver_,
+                                    is_ac, reset_solver);
 
     // start the solver
     conv = _solver.compute_pf(Ybus_ac_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
 
     // store results (in ac mode)
-    process_results(conv, res, Vinit, true);
+    process_results(conv, res, Vinit, true, id_me_to_ac_solver_);
 
     // return the vector of complex voltage at each bus
     return res;
@@ -240,7 +255,11 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
-    CplxVect V = pre_process_solver(V_proposed, Ybus_ac_, true, false);
+    bool is_ac = true;
+    bool reset_solver = false;
+    CplxVect V = pre_process_solver(V_proposed, Ybus_ac_, 
+                                    id_me_to_ac_solver_, id_ac_solver_to_me_, slack_bus_id_ac_solver_,
+                                    is_ac, reset_solver);
 
     // compute the mismatch
     CplxVect tmp = Ybus_ac_ * V;  // this is a vector
@@ -248,7 +267,10 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     auto mis = V.array() * tmp.array() - Sbus_.array();
 
     // store results
-    CplxVect res = _get_results_back_to_orig_nodes(mis, static_cast<int>(V_proposed.size()));
+    CplxVect res = _get_results_back_to_orig_nodes(mis,
+                                                   id_me_to_ac_solver_,
+                                                   static_cast<int>(V_proposed.size())
+                                                   );
     if(sn_mva_ != 1.) res *= sn_mva_;
 
     // now check reactive values for buses where there are generators and active values of slack bus
@@ -300,13 +322,20 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
 
 CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, 
                                        Eigen::SparseMatrix<cplx_type> & Ybus,
+                                       std::vector<int> & id_me_to_solver,
+                                       std::vector<int> & id_solver_to_me,
+                                       int & slack_bus_id_solver,
                                        bool is_ac,
                                        bool reset_solver)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
+    // std::cout << "GridModel::pre_process_solver : topo_changed_ " << topo_changed_ << std::endl;
+    // std::cout << "GridModel::pre_process_solver : reset_solver " << reset_solver << std::endl;
 
+    bool reset_ac = topo_changed_ && is_ac;
+    bool reset_dc = topo_changed_ && !is_ac;
     // if(need_reset_){ // TODO optimization when it's not mandatory to start from scratch
-    if(topo_changed_) reset(reset_solver);  // TODO what if pv and pq changed ? :O
+    if(topo_changed_) reset(reset_solver, reset_ac, reset_dc);  // TODO what if pv and pq changed ? :O
     else{
         // topo is not changed, but i can still reset the solver (TODO: no necessarily needed !)
         if (reset_solver) _solver.reset();
@@ -314,35 +343,44 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
     if(topo_changed_){
         // TODO do not reinit Ybus if the topology does not change
-        init_Ybus(Ybus, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
-        fillYbus(Ybus, is_ac, id_me_to_solver_);
+        init_Ybus(Ybus, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+        fillYbus(Ybus, is_ac, id_me_to_solver);
     }
-    init_Sbus(Sbus_, id_me_to_solver_, id_solver_to_me_, slack_bus_id_solver_);
-    fillpv_pq(id_me_to_solver_); // TODO what if pv and pq changed ? :O
+    // std::cout << "GridModel::pre_process_solver : solver and Ybus init " << std::endl;
+    // std::cout << "id_me_to_solver " << id_me_to_solver.size() << std::endl;
+    // std::cout << "id_solver_to_me " << id_solver_to_me.size() << std::endl;
+    // std::cout << "slack_bus_id_solver " << slack_bus_id_solver << std::endl;
+    // std::cout << "Ybus " << Ybus.nonZeros() << std::endl;
+    init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+    // std::cout << "GridModel::pre_process_solver : SBus init " << std::endl;
+    fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver); // TODO what if pv and pq changed ? :O
+    // std::cout << "GridModel::pre_process_solver : pv|pq init " << std::endl;
     
     generators_.init_q_vector(static_cast<int>(bus_vn_kv_.size()));
     // }
-    fillSbus_me(Sbus_, is_ac, id_me_to_solver_, slack_bus_id_solver_);
+    fillSbus_me(Sbus_, is_ac, id_me_to_solver, slack_bus_id_solver);
 
-    const int nb_bus_solver = static_cast<int>(id_solver_to_me_.size());
+    const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
-        int bus_me_id = id_solver_to_me_[bus_solver_id];  //POSSIBLE SEGFAULT
+        int bus_me_id = id_solver_to_me[bus_solver_id];  //POSSIBLE SEGFAULT
         cplx_type tmp = Vinit(bus_me_id);
         V(bus_solver_id) = tmp;
         // TODO save this V somewhere
     }
-    generators_.set_vm(V, id_me_to_solver_);
+    generators_.set_vm(V, id_me_to_solver);
     return V;
 }
 
-CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, int size)
+CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, 
+                                                    std::vector<int> & id_me_to_solver,
+                                                    int size)
 {
     CplxVect res = CplxVect::Constant(size, {init_vm_pu_, my_zero_});
     const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
         if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-        int bus_id_solver = id_me_to_solver_[bus_id_me];
+        int bus_id_solver = id_me_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::_get_results_back_to_orig_nodes: the bus with id ";
@@ -355,7 +393,8 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, in
     return res;
 }
 
-void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac)
+void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac,
+                                std::vector<int> & id_me_to_solver)
 {
     if (conv){
         if(compute_results_){
@@ -365,7 +404,9 @@ void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vini
         need_reset_ = false;
         const CplxVect & res_tmp = _solver.get_V();
         // convert back the results to "big" vector
-        res = _get_results_back_to_orig_nodes(res_tmp, static_cast<int>(Vinit.size()));
+        res = _get_results_back_to_orig_nodes(res_tmp,
+                                              id_me_to_solver,
+                                              static_cast<int>(Vinit.size()));
     } else {
         //powerflow diverge
         reset_results();
@@ -453,27 +494,31 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
 }
 
-void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver)
+void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
+                          std::vector<int>& id_solver_to_me,
+                          int slack_bus_id_solver)
 {
     // init pq and pv vector
     // TODO remove the order here..., i could be faster in this piece of code (looping once through the buses)
-    const int nb_bus = static_cast<int>(id_solver_to_me_.size());  // number of bus in the solver!
+    const int nb_bus = static_cast<int>(id_solver_to_me.size());  // number of bus in the solver!
     std::vector<int> bus_pq;
     std::vector<int> bus_pv;
     std::vector<bool> has_bus_been_added(nb_bus, false);
 
+    // std::cout << "id_me_to_solver.size(): " << id_me_to_solver.size() << std::endl;
+
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
-    powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
-    shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
-    trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
-    loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
-    storages_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
-    sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
-    generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver_, id_me_to_solver);
+    powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    storages_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
 
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
-        if(bus_id == slack_bus_id_solver_) continue;  // slack bus is not PQ either
+        if(bus_id == slack_bus_id_solver) continue;  // slack bus is not PQ either
         if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
         bus_pq.push_back(bus_id);
         has_bus_been_added[bus_id] = true;  // don't add it a second time
@@ -487,20 +532,21 @@ void GridModel::compute_results(bool ac){
     const auto & Vm = _solver.get_Vm();
     const auto & V = _solver.get_V();
 
+    const std::vector<int> & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
     // for powerlines
-    powerlines_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    powerlines_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for trafo
-    trafos_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    trafos_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for loads
-    loads_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    loads_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for static gen
-    sgens_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    sgens_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for storage units
-    storages_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    storages_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for shunts
-    shunts_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    shunts_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for prods
-    generators_.compute_results(Va, Vm, V, id_me_to_solver_, bus_vn_kv_, sn_mva_, ac);
+    generators_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
 
     //handle_slack_bus
     real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);
@@ -672,6 +718,9 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                           real_type tol  // not used for DC
                           )
 {
+    
+    // std::cout << "______________________" << std::endl;
+    // std::cout << "computing dc pf" << std::endl;
     const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
@@ -687,13 +736,17 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     CplxVect res = CplxVect();
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
-    CplxVect V = pre_process_solver(Vinit, Ybus_dc_, false, true);
+    bool is_ac = false;
+    bool reset_solver = topo_changed_;  // I reset the solver only if the topology change
+    CplxVect V = pre_process_solver(Vinit, Ybus_dc_,
+                                    id_me_to_dc_solver_, id_dc_solver_to_me_, slack_bus_id_dc_solver_,
+                                    is_ac, reset_solver);
 
     // start the solver
     conv = _solver.compute_pf(Ybus_dc_, V, Sbus_, bus_pv_, bus_pq_, max_iter, tol);
 
     // store results (fase -> because I am in dc mode)
-    process_results(conv, res, Vinit, false);
+    process_results(conv, res, Vinit, false, id_me_to_dc_solver_);
 
     // put back the solver to its original state
     // TODO add a better handling of this!
