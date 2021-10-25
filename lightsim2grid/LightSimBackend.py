@@ -560,7 +560,10 @@ class LightSimBackend(Backend):
         # self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
         try:
             if is_dc:
-                self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
+                # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
+                # one everywhere...
+                # But not when it initializes in DC mode... (see below)
+                self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
                 self._grid.change_solver(SolverType.DC)
                 if V.shape[0] == 0:
