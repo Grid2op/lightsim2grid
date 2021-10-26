@@ -19,16 +19,18 @@ class Computers
         
         Computers(const GridModel & init_grid_model):
                 _grid_model(init_grid_model),
+                _Sbuses(),
                 _amps_flows(),
                 _voltages(),
+                _nb_solved(0),
+                _status(1), // 1: success, 0: failure
                 _compute_flows(true),
                 _solver(),
                 _timer_total(0.) ,
                 _timer_solver(0.) ,
-                _timer_pre_proc(0.) ,
-                _nb_solved(0),
-                _status(1) // 1: success, 0: failure
+                _timer_pre_proc(0.) 
                 {
+                    // make sure that my "grid_model" is ready to be used (for ac and dc)
                     Eigen::Index nb_bus = init_grid_model.total_bus();
                     CplxVect V = CplxVect::Constant(nb_bus, 1.);
                     const auto & Vtmp = init_grid_model.get_V();
@@ -73,29 +75,30 @@ class Computers
                            int max_iter,
                            real_type tol);
 
-        Eigen::Ref<const RealMat > get_flows() {return _amps_flows;}
-        Eigen::Ref<const CplxMat > get_voltages() {return _voltages;}
+        Eigen::Ref<const RealMat > get_flows() const {return _amps_flows;}
+        Eigen::Ref<const CplxMat > get_voltages() const {return _voltages;}
+        Eigen::Ref<const CplxMat > get_sbuses() const {return _Sbuses;}
 
     protected:
         template<class T>
         void fill_SBus_real(CplxMat & Sbuses,
                             const T & structure_data,
                             const RealMat & temporal_data,
-                            Eigen::Index step,
-                            const std::vector<int> & id_me_to_ac_solver
+                            const std::vector<int> & id_me_to_ac_solver,
+                            bool add  // if true call += else calls -=
                             ) const 
         {
             auto nb_el = structure_data.nb();
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
             int  bus_id_solver, bus_id_me;
-            cplx_type tmp;
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);
                 bus_id_solver = id_me_to_ac_solver[bus_id_me];
-                tmp = static_cast<cplx_type>(temporal_data.coeff(step, el_id));
-                Sbuses.coeffRef(step, bus_id_solver) += tmp;
+                const auto & tmp = temporal_data.col(el_id).cast<cplx_type>();
+                if(add) Sbuses.col(bus_id_solver) += tmp;
+                else Sbuses.col(bus_id_solver) -= tmp;
             }
         }
 
@@ -103,8 +106,8 @@ class Computers
         void fill_SBus_imag(CplxMat & Sbuses,
                             const T & structure_data,
                             const RealMat & temporal_data,
-                            Eigen::Index step,
-                            const std::vector<int> & id_me_to_ac_solver
+                            const std::vector<int> & id_me_to_ac_solver,
+                            bool add  // if true call += else calls -=
                             ) const 
         {
             auto nb_el = structure_data.nb();
@@ -116,8 +119,9 @@ class Computers
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);
                 bus_id_solver = id_me_to_ac_solver[bus_id_me];
-                tmp = static_cast<cplx_type>(temporal_data.coeff(step, el_id)) * BaseConstants::my_i;
-                Sbuses.coeffRef(step, bus_id_solver) += tmp;
+                const auto & tmp = temporal_data.col(el_id).cast<cplx_type>();
+                if(add) Sbuses.col(bus_id_solver) += BaseConstants::my_i * tmp;
+                else Sbuses.col(bus_id_solver) -= BaseConstants::my_i * tmp;;
             }
         }
 
@@ -131,15 +135,22 @@ class Computers
                                    double tol
                                    );
     private:
+        // inputs
         GridModel _grid_model;
+        CplxMat _Sbuses;
+        // outputs
         RealMat _amps_flows;
         CplxMat _voltages;
+        int _nb_solved;
+        int _status;
+
+        // parameters
         bool _compute_flows;
         ChooseSolver _solver;
+
+        //timers
         double _timer_total;
         double _timer_solver;
         double _timer_pre_proc;
-        int _nb_solved;
-        int _status;
 };
 #endif  //COMPUTERS_H

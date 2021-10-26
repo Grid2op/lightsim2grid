@@ -51,22 +51,19 @@ int Computers::compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
 
     // init the computations
     // now build the Sbus
-    CplxMat Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver);
-    for(Eigen::Index step = 0; step < nb_steps; ++step){
-        // TODO there might be way faster way, in particular we could probably do it
-        // column per column, instead of realying on this outer loop
-        fill_SBus_real(Sbuses, generators, gen_p, step, id_me_to_ac_solver);
-        fill_SBus_real(Sbuses, loads, load_p, step, id_me_to_ac_solver);
-        fill_SBus_real(Sbuses, s_generators, sgen_p, step, id_me_to_ac_solver);
-        fill_SBus_imag(Sbuses, loads, load_q, step, id_me_to_ac_solver);
-    }
-    Sbuses.array() /= static_cast<cplx_type>(sn_mva);
+    _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver);
+    bool add_ = true;
+    fill_SBus_real(_Sbuses, generators, gen_p, id_me_to_ac_solver, add_);
+    fill_SBus_real(_Sbuses, s_generators, sgen_p, id_me_to_ac_solver, add_);
+    add_ = false;
+    fill_SBus_real(_Sbuses, loads, load_p, id_me_to_ac_solver, add_);
+    fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_ac_solver, add_);
+    if(sn_mva != 1.0) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
 
     // init the results matrices
     _voltages = Computers::CplxMat::Zero(nb_steps, nb_total_bus); 
 
     // extract V solver from the given V
-    CplxVect Sbus = Sbuses.row(0); 
     CplxVect Vinit_solver = CplxVect::Constant(nb_buses_solver, {_grid_model.get_init_vm_pu(), 0.});
     Eigen::Index tmp;
     for(Eigen::Index bus_id_grid = 0; bus_id_grid < nb_total_bus; ++bus_id_grid){
@@ -80,9 +77,9 @@ int Computers::compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
     // do the computa   tion for each step
     CplxVect V = Vinit_solver;
     bool conv;
+    CplxVect Sbus;
     for(Eigen::Index i = 0; i < nb_steps; ++i){
-        Sbus = Sbuses.row(i).array(); 
-        CplxVect Vtmp2 = Vinit;
+        Sbus = _Sbuses.row(i).array(); 
         conv = compute_one_powerflow(Ybus, V, Sbus,
                                      bus_pv, bus_pq,
                                      id_ac_solver_to_me,
@@ -117,7 +114,7 @@ bool Computers::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybu
 {
     bool conv = _solver.compute_pf(Ybus, V, Sbus, bus_pv, bus_pq, max_iter, tol);
     if(conv){
-        V.array() = _solver.get_V().array();
+        V = _solver.get_V().array();
         ++_nb_solved;
     }
     return conv;

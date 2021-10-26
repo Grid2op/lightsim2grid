@@ -405,6 +405,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // results (forw now only flow (at each -line origin- or voltages -at each buses)
         .def("get_flows", &Computers::get_flows)
-        .def("get_voltages", &Computers::get_voltages);
+        .def("get_voltages", &Computers::get_voltages)
+        .def("get_sbuses", &Computers::get_sbuses);
 
 }
