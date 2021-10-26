@@ -79,9 +79,10 @@ class DataGeneric : public BaseConstants
         virtual void set_p_slack(int gen_slackbus, real_type p_slack) {};
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
-    protected:
+    
         static const int _deactivated_bus_id;
-
+        
+    protected:
         /**
         activation / deactivation of elements
         **/

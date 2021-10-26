@@ -171,6 +171,7 @@ class DataGen: public DataGeneric
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
 
     const std::vector<bool>& get_status() const {return status_;}
+    const Eigen::VectorXi & get_bus_id() const {return bus_id_;}
 
     void cout_v(){
         for(const auto & el : vm_pu_){

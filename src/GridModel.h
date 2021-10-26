@@ -75,7 +75,12 @@ class GridModel : public DataGeneric
             return res;
         }
         Eigen::Index total_bus() const {return bus_vn_kv_.size();}
-        const std::vector<int> & id_me_to_ac_solver() const  {return id_me_to_ac_solver_;}
+        const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
+        const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
+
+        const DataGen & get_generators_as_data() const {return generators_;}
+        const DataSGen & get_static_generators_as_data() const {return sgens_;}
+        const DataLoad & get_loads_as_data() const {return loads_;}
 
         // solver "control"
         void change_solver(const SolverType & type){

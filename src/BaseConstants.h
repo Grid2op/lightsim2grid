@@ -17,7 +17,7 @@ Eg if I type "1.0" then Eigen cast it to "double" and i cannot use it with real_
 **/
 class BaseConstants
 {
-    protected:
+    public:
         static const cplx_type my_i;
         static const real_type my_pi;
         static const real_type my_half_;
