@@ -391,6 +391,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("total_time", &Computers::total_time)
         .def("solver_time", &Computers::solver_time)
         .def("preprocessing_time", &Computers::preprocessing_time)
+        .def("amps_computation_time", &Computers::amps_computation_time)
         .def("nb_solved", &Computers::nb_solved)
 
         // status
@@ -402,10 +403,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // perform the computations
         .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>())
+        .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>()) // need to be done after compute_Vs
 
         // results (forw now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &Computers::get_flows)
+        .def("get_flows", &Computers::get_flows)  // need to be done after "compute_As"
         .def("get_voltages", &Computers::get_voltages)
-        .def("get_sbuses", &Computers::get_sbuses);
-
+        .def("get_sbuses", &Computers::get_sbuses)
+        ;
 }

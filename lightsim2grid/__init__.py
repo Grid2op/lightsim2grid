@@ -17,6 +17,12 @@ try:
     from lightsim2grid.physical_law_checker import PhysicalLawChecker
     __all__.append("PhysicalLawChecker")
 except ImportError as exc_:
-    # grid2op is not installed, the Backend will not be available
+    # grid2op is not installed, the PhysicalLawChecker will not be available
     pass
-    print(exc_)
+
+try:
+    from lightsim2grid.timeSerie import TimeSerie
+    __all__.append("TimeSerie")
+except ImportError as exc_:
+    # grid2op is not installed, the TimeSeries module will not be available
+    pass

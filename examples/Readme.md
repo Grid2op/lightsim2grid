@@ -1,0 +1,1 @@
+In this folder are provided some example code using lightsim2grid.

@@ -39,6 +39,7 @@ This is a work in progress at the moment
    gridmodel
    lightsimbackend
    solvers
+   time_series
 
 
 Indices and tables

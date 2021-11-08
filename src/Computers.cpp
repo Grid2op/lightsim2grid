@@ -137,7 +137,9 @@ void Computers::compute_flows_from_Vs()
         exc_ << "Computers::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called ";
         throw std::runtime_error(exc_.str());
     }
+    _timer_compute_A = 0.;
 
+    auto timer_compute_A = CustTimer();
     const Eigen::Index nb_powerlines = _grid_model.nb_powerline();
     const Eigen::Index nb_trafos = _grid_model.nb_trafo();
     const auto & sn_mva = _grid_model.get_sn_mva();
@@ -152,4 +154,5 @@ void Computers::compute_flows_from_Vs()
     // compute the flows for the trafos
     lag_id = nb_powerlines;
     compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
+    _timer_compute_A = timer_compute_A.duration();
 }
