@@ -78,9 +78,13 @@ class GridModel : public DataGeneric
         const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
         const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
 
+        // retrieve the underlying data (raw class)
         const DataGen & get_generators_as_data() const {return generators_;}
         const DataSGen & get_static_generators_as_data() const {return sgens_;}
         const DataLoad & get_loads_as_data() const {return loads_;}
+        const DataLine & get_powerlines_as_data() const {return powerlines_;}
+        const DataTrafo & get_trafos_as_data() const {return trafos_;}
+        Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
 
         // solver "control"
         void change_solver(const SolverType & type){
@@ -203,6 +207,8 @@ class GridModel : public DataGeneric
         // if a bus is connected, but isolated, it will make the powerflow diverge
         void reactivate_bus(int bus_id) {_reactivate(bus_id, bus_status_, topo_changed_); }
         int nb_bus() const;
+        Eigen::Index nb_powerline() const {return powerlines_.nb();}
+        Eigen::Index nb_trafo() const {return trafos_.nb();}
 
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }

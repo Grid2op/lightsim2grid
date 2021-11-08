@@ -197,6 +197,14 @@ class DataTrafo : public DataGeneric
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
     Eigen::Ref<const RealVect> get_theta_hv() const {return res_theta_hv_;}
     Eigen::Ref<const RealVect> get_theta_lv() const {return res_theta_lv_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return bus_hv_id_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return bus_lv_id_;}
+
+    // model paramters
+    Eigen::Ref<const CplxVect> yac_ff() const {return yac_ff_;}
+    Eigen::Ref<const CplxVect> yac_ft() const {return yac_ft_;}
+    Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
+    Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
 
     const std::vector<bool>& get_status() const {return status_;}
 

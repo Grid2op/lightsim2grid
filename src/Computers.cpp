@@ -7,14 +7,16 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "Computers.h"
+#include <iostream>
+#include <sstream>
 
-int Computers::compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
-                              Eigen::Ref<const RealMat> sgen_p,
-                              Eigen::Ref<const RealMat> load_p,
-                              Eigen::Ref<const RealMat> load_q,
-                              const CplxVect & Vinit,
-                              int max_iter,
-                              real_type tol)
+int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
+                          Eigen::Ref<const RealMat> sgen_p,
+                          Eigen::Ref<const RealMat> load_p,
+                          Eigen::Ref<const RealMat> load_q,
+                          const CplxVect & Vinit,
+                          int max_iter,
+                          real_type tol)
 {
     auto timer = CustTimer();
     const Eigen::Index nb_total_bus = _grid_model.total_bus();
@@ -44,6 +46,8 @@ int Computers::compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
 
     const Eigen::Index nb_steps = gen_p.rows();
     const Eigen::Index nb_buses_solver = Ybus.cols();  // which is equal to Ybus.rows();
+    const Eigen::Index nb_powerline = _grid_model.nb_powerline();
+    const Eigen::Index nb_trafos = _grid_model.nb_trafo();
 
     const Eigen::VectorXi bus_pv = _grid_model.get_pv();
     const Eigen::VectorXi bus_pq = _grid_model.get_pq();
@@ -52,6 +56,7 @@ int Computers::compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
     // init the computations
     // now build the Sbus
     _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver);
+
     bool add_ = true;
     fill_SBus_real(_Sbuses, generators, gen_p, id_me_to_ac_solver, add_);
     fill_SBus_real(_Sbuses, s_generators, sgen_p, id_me_to_ac_solver, add_);
@@ -62,6 +67,7 @@ int Computers::compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
 
     // init the results matrices
     _voltages = Computers::CplxMat::Zero(nb_steps, nb_total_bus); 
+    _amps_flows = RealMat::Zero(nb_steps, nb_powerline + nb_trafos);
 
     // extract V solver from the given V
     CplxVect Vinit_solver = CplxVect::Constant(nb_buses_solver, {_grid_model.get_init_vm_pu(), 0.});
@@ -118,4 +124,32 @@ bool Computers::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybu
         ++_nb_solved;
     }
     return conv;
+}
+
+void Computers::compute_flows_from_Vs()
+{
+    // TODO find a way to factorize that with DataTrafo::compute_results
+    // TODO and DataLine::compute_results
+
+    if (_voltages.size() == 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "Computers::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called ";
+        throw std::runtime_error(exc_.str());
+    }
+
+    const Eigen::Index nb_powerlines = _grid_model.nb_powerline();
+    const Eigen::Index nb_trafos = _grid_model.nb_trafo();
+    const auto & sn_mva = _grid_model.get_sn_mva();
+    const auto & nb_steps = _voltages.rows();
+
+    // reset the results
+    _amps_flows = RealMat::Zero(nb_steps, nb_powerlines + nb_trafos);
+    
+    // compute the flows for the powerlines
+    Eigen::Index lag_id = 0;
+    compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
+    // compute the flows for the trafos
+    lag_id = nb_powerlines;
+    compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
 }

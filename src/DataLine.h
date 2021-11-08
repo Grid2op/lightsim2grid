@@ -193,6 +193,14 @@ class DataLine : public DataGeneric
     Eigen::Ref<const RealVect> get_theta_or() const {return res_powerline_thetaor_;}
     Eigen::Ref<const RealVect> get_theta_ex() const {return res_powerline_thetaex_;}
     const std::vector<bool>& get_status() const {return status_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return bus_or_id_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return bus_ex_id_;}
+
+    // model paramters
+    Eigen::Ref<const CplxVect> yac_ff() const {return yac_ff_;}
+    Eigen::Ref<const CplxVect> yac_ft() const {return yac_ft_;}
+    Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
+    Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
 
     protected:
         void _update_model_coeffs();

@@ -401,7 +401,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("activate_flow_computations", &Computers::activate_flow_computations)
 
         // perform the computations
-        .def("compute_Sbuses", &Computers::compute_Sbuses, py::call_guard<py::gil_scoped_release>())
+        .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>())
 
         // results (forw now only flow (at each -line origin- or voltages -at each buses)
         .def("get_flows", &Computers::get_flows)

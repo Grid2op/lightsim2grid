@@ -40,13 +40,13 @@ class TestComputers(unittest.TestCase):
         # now perform the computation
         computer = Computers(grid)
         # print("start the computation")
-        status = computer.compute_Sbuses(prod_p,
-                                        np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
-                                        load_p,
-                                        load_q,
-                                        Vinit,
-                                        env.backend.max_it,
-                                        env.backend.tol)
+        status = computer.compute_Vs(prod_p,
+                                    np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
+                                    load_p,
+                                    load_q,
+                                    Vinit,
+                                    env.backend.max_it,
+                                    env.backend.tol)
         if status != 1:
             raise RuntimeError(f"Some error occurred, the powerflow has diverged after {computer.nb_solved()} step(s)")
 

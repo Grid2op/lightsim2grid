@@ -67,13 +67,13 @@ class Computers
 
         Each line of `Sbuses` will be a time step, and each column with 
         **/
-        int compute_Sbuses(Eigen::Ref<const RealMat> gen_p,
-                           Eigen::Ref<const RealMat> sgen_p,
-                           Eigen::Ref<const RealMat> load_p,
-                           Eigen::Ref<const RealMat> load_q,
-                           const CplxVect & Vinit,
-                           int max_iter,
-                           real_type tol);
+        int compute_Vs(Eigen::Ref<const RealMat> gen_p,
+                       Eigen::Ref<const RealMat> sgen_p,
+                       Eigen::Ref<const RealMat> load_p,
+                       Eigen::Ref<const RealMat> load_q,
+                       const CplxVect & Vinit,
+                       int max_iter,
+                       real_type tol);
 
         Eigen::Ref<const RealMat > get_flows() const {return _amps_flows;}
         Eigen::Ref<const CplxMat > get_voltages() const {return _voltages;}
@@ -125,6 +125,62 @@ class Computers
             }
         }
 
+        template<class T>
+        void compute_amps_flows(const T & structure_data,
+                                real_type sn_mva,
+                                Eigen::Index lag_id) 
+        {
+            const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
+            const auto & el_status = structure_data.get_status();
+            const auto & bus_from = structure_data.get_bus_from();
+            const auto & bus_to = structure_data.get_bus_to();
+            const auto & v_yac_ff = structure_data.yac_ff();
+            const auto & v_yac_ft = structure_data.yac_ft();
+            const auto & v_yac_tf = structure_data.yac_tf();
+            const auto & v_yac_tt = structure_data.yac_tt();
+            Eigen::Index nb_el = structure_data.nb();
+            real_type sqrt_3 = sqrt(3.);
+
+            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+                if(!el_status[el_id]) continue;
+
+                // retrieve which buses are used
+                int bus_from_me = bus_from(el_id);
+                int bus_to_me = bus_to(el_id);
+
+                // retrieve voltages
+                const auto Efrom = _voltages.col(bus_from_me);  // vector (one voltages per step)
+                const auto Eto = _voltages.col(bus_to_me);
+
+                const real_type bus_vn_kv_t = bus_vn_kv(el_id);
+                const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_t;
+
+                // retrieve physical parameters
+                const cplx_type yac_ff = v_yac_ff(el_id);  // scalar
+                const cplx_type yac_ft = v_yac_ft(el_id);
+                const cplx_type yac_tf = v_yac_tf(el_id);
+                const cplx_type yac_tt = v_yac_tt(el_id);
+
+                // trafo equations
+                CplxVect I_ft =  yac_ff * Efrom + yac_ft * Eto;
+                CplxVect I_tf =  yac_tt * Eto + yac_tf * Efrom;
+
+                I_ft = I_ft.array().conjugate();
+                I_tf = I_tf.array().conjugate();
+                const CplxVect S_ft = Efrom.array() * I_ft.array();
+                const CplxVect S_tf = Eto.array() * I_tf.array();
+
+                const RealVect p_f = S_ft.array().real() * sn_mva;
+                const RealVect q_f = S_ft.array().imag() * sn_mva;
+
+                // now compute the results
+                RealVect res = (p_f.array() * p_f.array() + q_f.array() * q_f.array());
+                res = res.array().sqrt();
+                res.array() /= sqrt_3 * v_f_kv.array();
+                _amps_flows.col(el_id + lag_id) = res;
+            }
+        }
+
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
@@ -134,6 +190,9 @@ class Computers
                                    int max_iter,
                                    double tol
                                    );
+
+        void compute_flows_from_Vs();
+
     private:
         // inputs
         GridModel _grid_model;
