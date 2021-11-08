@@ -9,15 +9,17 @@
 import time
 import warnings
 import numpy as np
+import sys
 import concurrent.futures  # thread
 from multiprocessing import Pool  # multiprocessing
+import asyncio  # asyncio
 
 import grid2op
 from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
 from lightsim2grid_cpp import Computers
 
-NB_THREAD = 8
+NB_THREAD = 4
 ENV_NAME = "l2rpn_neurips_2020_track2_small"
 
 def get_env(env_name):
@@ -47,12 +49,12 @@ def get_flows(grid, Vinit, prod_p, load_p, load_q, max_it=10, tol=1e-8):
     computer = Computers(grid)
     # print("start the computation")
     status = computer.compute_Vs(prod_p,
-                                np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
-                                load_p,
-                                load_q,
-                                Vinit,
-                                max_it,
-                                tol)
+                                 np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
+                                 load_p,
+                                 load_q,
+                                 Vinit,
+                                 max_it,
+                                 tol)
     if status != 1:
         raise RuntimeError(f"Some error occurred, the powerflow has diverged after {computer.nb_solved()} step(s)")
     nb_sim = prod_p.shape[0]
@@ -64,6 +66,23 @@ def get_flows(grid, Vinit, prod_p, load_p, load_q, max_it=10, tol=1e-8):
     res = 1.0 * ampss
     return res
 
+### asyncio related
+async def main(ls_grid, Vinit, prods_p, loads_p, loads_q):
+    tasks = []
+    loop = asyncio.get_running_loop()
+
+    # inform the computation
+    for th_id in range(NB_THREAD):  # see https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.run_in_executor
+        task = loop.run_in_executor(None,
+                                   get_flows,
+                                   ls_grid, Vinit, prods_p[th_id], loads_p[th_id], loads_q[th_id])
+        # task = asyncio.create_task(get_flows_async(ls_grid, Vinit, prods_p[th_id], loads_p[th_id], loads_q[th_id]))
+        tasks.append(task)
+    # run them
+    for task in tasks:
+        await task
+    return [el.result() for el in tasks]
+    
 
 if __name__ == "__main__":
     env = get_env(ENV_NAME)
@@ -92,6 +111,12 @@ if __name__ == "__main__":
     end_mp_ = time.perf_counter()
     print(f"Execution time in parrallel using multiprocessing : {end_mp_ - beg_mp_:.2f}s")
 
+    # using asyncio
+    beg_asyncio_ = time.perf_counter()
+    amps_asyncio = asyncio.run(main(ls_grid, Vinit, prods_p, loads_p, loads_q))
+    end_asyncio_ = time.perf_counter()
+    print(f"Execution time in parrallel using asyncio : {end_asyncio_ - beg_asyncio_:.2f}s")
+
     # sequential
     seq_prod_p = np.vstack(prods_p)
     seq_load_p = np.vstack(loads_p)
@@ -104,9 +129,12 @@ if __name__ == "__main__":
     print(f"Using {NB_THREAD} \"cores\" the speed up where (sequential = 1)")
     print(f"Using multithreading: {(end_seq_ - beg_seq_) / (end_par_ - beg_par_):.2f}")
     print(f"Using multi processing: {(end_seq_ - beg_seq_) / (end_mp_ - beg_mp_):.2f}")
+    print(f"Using asyncio: {(end_seq_ - beg_seq_) / (end_asyncio_ - beg_asyncio_):.2f}")
 
     # checking the results
     res_threading = np.vstack(data_par)
     res_mp = np.vstack(data_mp)
+    res_asyncio = np.vstack(amps_asyncio)
     assert np.max(np.abs(res_threading - ref_as)) <= 1e-6, "error for multi threading"
-    assert np.max(np.abs(res_threading - res_mp)) <= 1e-6, "error for multi threading"
+    assert np.max(np.abs(res_mp - ref_as)) <= 1e-6, "error for multi processing"
+    assert np.max(np.abs(res_asyncio - ref_as)) <= 1e-6, "error for asyncio"
