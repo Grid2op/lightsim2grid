@@ -11,10 +11,11 @@ from grid2op import Backend
 import numpy as np
 import grid2op
 
-from lightsim2grid_cpp import SecurityAnalysis
+from lightsim2grid import SecurityAnalysis
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb
+
 
 class TestSecurityAnalysis(unittest.TestCase):
     def setUp(self) -> None:
@@ -27,179 +28,190 @@ class TestSecurityAnalysis(unittest.TestCase):
         return super().tearDown()
 
     def test_can_create(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        assert len(SA.my_defaults()) == 0
-
-    def test_add_n1(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_n1(0)
-        all_def = SA.my_defaults()
-        assert len(all_def) == 1
-        assert len(all_def[0]) == 1
-        assert all_def[0][0] == 0
-
-        SA.add_n1(1)
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
-        assert len(all_def[0]) == 1
-        assert len(all_def[1]) == 1
-        assert all_def[0][0] == 0
-        assert all_def[1][0] == 1
-
-        # test that if I insert something twice it counts as one:
-        SA.add_n1(0)
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
-        assert len(all_def[0]) == 1
-        assert len(all_def[1]) == 1
-        assert all_def[0][0] == 0
-        assert all_def[1][0] == 1
-
-        # test i cannot insert "out of range"
-        with self.assertRaises(RuntimeError):
-            SA.add_n1(-1)
-        with self.assertRaises(RuntimeError):
-            SA.add_n1(20)
-
-    def test_add_multiple_n1(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_multiple_n1([0])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 1
-        assert len(all_def[0]) == 1
-        assert all_def[0][0] == 0
-
-        SA.add_multiple_n1([1, 2])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 3
-        assert len(all_def[0]) == 1
-        assert len(all_def[1]) == 1
-        assert len(all_def[2]) == 1
-        assert all_def[0][0] == 0
-        assert all_def[1][0] == 1
-        assert all_def[2][0] == 2
-
-        # test that if I insert something twice it counts as one:
-        SA.add_multiple_n1([1])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 3
-        assert len(all_def[0]) == 1
-        assert len(all_def[1]) == 1
-        assert len(all_def[2]) == 1
-        assert all_def[0][0] == 0
-        assert all_def[1][0] == 1
-        assert all_def[2][0] == 2
-
-        # test i cannot insert "out of range"
-        with self.assertRaises(RuntimeError):
-            SA.add_multiple_n1([-1])
-        with self.assertRaises(RuntimeError):
-            SA.add_multiple_n1([20])
-
-    def test_add_nk(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_nk([0])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 1
-        assert len(all_def[0]) == 1
-        assert all_def[0][0] == 0
-
-        SA.add_nk([0, 1])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
-        assert len(all_def[0]) == 1
-        assert len(all_def[1]) == 2
-        assert all_def[0][0] == 0
-        assert all_def[1][0] == 0
-        assert all_def[1][1] == 1
-
-        # test that if I insert something twice it counts as one:
-        SA.add_nk([0])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
-        assert len(all_def[0]) == 1
-        assert len(all_def[1]) == 2
-        assert all_def[0][0] == 0
-        assert all_def[1][0] == 0
-        assert all_def[1][1] == 1
-
-        # test i cannot insert "out of range"
-        with self.assertRaises(RuntimeError):
-            SA.add_nk([-1])
-        with self.assertRaises(RuntimeError):
-            SA.add_nk([20])
-
-    def test_add_all_n1(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_all_n1()
-        all_def = SA.my_defaults()
-        assert len(all_def) == self.env.n_line
-
-    def test_remove_n1(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_all_n1()
-        assert SA.remove_n1(0)  # this should remove it and return true (because the removing is a success)
-        all_def = SA.my_defaults()
-        assert len(all_def) == self.env.n_line - 1 
-        assert not SA.remove_n1(0)  # this should not remove another one and return false
-        all_def = SA.my_defaults()
-        assert len(all_def) == self.env.n_line - 1 
-
+        sa = SecurityAnalysis(self.env)
+    
     def test_clear(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_all_n1()
-        all_def = SA.my_defaults()
-        assert len(all_def) == self.env.n_line
-        SA.clear()
-        all_def = SA.my_defaults()
-        assert len(all_def) == 0
+        sa = SecurityAnalysis(self.env)
 
-    def test_remove_multiple_n1(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_all_n1()
-        nb_removed = SA.remove_multiple_n1([0, 1, 2])
-        assert nb_removed == 3
-        all_def = SA.my_defaults()
-        assert len(all_def) == self.env.n_line - 3
-        nb_removed = SA.remove_multiple_n1([2, 3, 4])
-        assert nb_removed == 2
-        all_def = SA.my_defaults()
-        assert len(all_def) == self.env.n_line - 5
+        # add simple contingencies
+        sa.add_multiple_contingencies(0, 1, 2, 3)
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 4
+        assert len(sa._contingency_order) == 4
 
-    def test_remove_nk(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        SA.add_nk([0, 1])
-        SA.add_nk([0, 2])
-        SA.add_nk([0, 3])
-        all_def = SA.my_defaults()
-        assert len(all_def) == 3
-        assert SA.remove_nk([0, 1])  # this should remove it and return true (because the removing is a success)
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
+        # test that clear is working
+        sa.clear()
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 0
+        assert len(sa._contingency_order) == 0
 
-        assert not SA.remove_nk([0, 1])  # this should not remove another one and return false
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
+    def test_add_single_contingency(self):
+        sa = SecurityAnalysis(self.env)
+        with self.assertRaises(RuntimeError):
+            sa.add_single_contingency("toto")
+        with self.assertRaises(RuntimeError):
+            sa.add_single_contingency(-1)
+            sa.add_single_contingency("toto")
+        with self.assertRaises(RuntimeError):
+            sa.add_single_contingency(self.env.n_line)
 
-        assert not SA.remove_nk([1, 2])  # this should not remove (never has been in the list)
-        all_def = SA.my_defaults()
-        assert len(all_def) == 2
+        sa.add_single_contingency(self.env.name_line[2])
+        sa.add_single_contingency(0)
+        sa.add_single_contingency(0, 1)
+        sa.add_single_contingency(self.env.name_line[2], 1)
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 4
+        assert len(sa._contingency_order) == 4
 
-    def test_compute(self):
-        SA = SecurityAnalysis(self.env.backend._grid)
-        lid_cont = [0, 1, 2, 3]
-        nb_sub = self.env.n_sub
-        SA.add_multiple_n1(lid_cont)
-        SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
-        res_SA = SA.get_voltages()
-        res_flows = SA.compute_flows()
-        assert res_SA.shape[0] == len(lid_cont)
+    def test_add_multiple_contingencies(self):
+        sa = SecurityAnalysis(self.env)
+        # add simple contingencies
+        sa.add_multiple_contingencies(0, 1, 2, 3)
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 4
+        assert len(sa._contingency_order) == 4
 
-        # now check the voltages are correctly computed
-        obs = self.env.get_obs()
-        for cont_id, l_id in enumerate(lid_cont):
-            sim_obs, *_ = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
-                                       time_step=0)
-            Vref = obs._obs_env.backend.V
-            assert np.max(np.abs(Vref[:nb_sub] - res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
-            assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
+        # clear everything
+        sa.clear()
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 0
+        assert len(sa._contingency_order) == 0
+
+        # add n-2 contingencies
+        sa.add_multiple_contingencies([0, 4], [5, 7])
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 2
+        assert len(sa._contingency_order) == 2
+    
+        # add mixed of everything
+        sa.clear()
+        sa.add_multiple_contingencies(0, [0, 4], [5, 7], self.env.name_line[2])
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == 4
+        assert len(sa._contingency_order) == 4
+
+    def test_add_all_n1_contingencies(self):
+        sa = SecurityAnalysis(self.env)
+        sa.add_all_n1_contingencies()
+        all_conts = sa.computer.my_defaults()
+        assert len(all_conts) == self.env.n_line
+        assert len(sa._contingency_order) == self.env.n_line
+    
+    def test_get_flows_simple(self):
+        """test the get_flows method in the most simplest way: ask for all contingencies,
+        contingencies are given in the right order"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, 1, 2)
+        res_a, res_v = sa.get_flows()
+        assert res_a.shape == (3, self.env.n_line)
+        assert abs(res_a[0,0]) <= 1e-6
+        assert abs(res_a[1,1]) <= 1e-6
+        assert abs(res_a[2,2]) <= 1e-6
+
+    def test_get_flows_1(self):
+        """test the get_flows method: ask for all contingencies , 
+        contingencies are NOT given in the right order"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, 2, 1)
+        res_a, res_v = sa.get_flows()
+        assert res_a.shape == (3, self.env.n_line)
+        assert abs(res_a[0,0]) <= 1e-6
+        assert abs(res_a[1,2]) <= 1e-6
+        assert abs(res_a[2,1]) <= 1e-6
+
+    def test_get_flows_2(self):
+        """test the get_flows method: don't ask for all contingencies (same order as given), 
+        contingencies are given in the right order"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, 1, 2)
+        res_a, res_v = sa.get_flows(0, 1)
+        assert res_a.shape == (2, self.env.n_line)
+        assert abs(res_a[0,0]) <= 1e-6
+        assert abs(res_a[1,1]) <= 1e-6
+
+    def test_get_flows_3(self):
+        """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
+        contingencies are given in the right order"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, 1, 2)
+        res_a, res_v = sa.get_flows(0, 2)
+        assert res_a.shape == (2, self.env.n_line)
+        assert abs(res_a[0,0]) <= 1e-6
+        assert abs(res_a[1,2]) <= 1e-6
+
+    def test_get_flows_4(self):
+        """test the get_flows method: don't ask for all contingencies (same order as given), 
+        contingencies are NOT given in the right order"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, 2, 1)
+        res_a, res_v = sa.get_flows(0, 2)
+        assert res_a.shape == (2, self.env.n_line)
+        assert abs(res_a[0,0]) <= 1e-6
+        assert abs(res_a[1,2]) <= 1e-6
+
+    def test_get_flows_5(self):
+        """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
+        contingencies are NOT given in the right order"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, 2, 1)
+        res_a, res_v = sa.get_flows(0, 1)
+        assert res_a.shape == (2, self.env.n_line)
+        assert abs(res_a[0,0]) <= 1e-6
+        assert abs(res_a[1,1]) <= 1e-6
+
+    def test_get_flows_multiple(self):
+        """test the get_flows function when multiple contingencies"""
+        sa = SecurityAnalysis(self.env)
+        sa.add_multiple_contingencies(0, [0, 4], [5, 7], 4)
+
+        # everything
+        res_a, res_v = sa.get_flows()
+        assert res_a.shape == (4, self.env.n_line)
+        assert abs(res_a[0, 0]) <= 1e-6
+        assert abs(res_a[1, 0]) + abs(res_a[1, 4]) <= 1e-6
+        assert abs(res_a[2, 5]) + abs(res_a[2, 7]) <= 1e-6
+        assert abs(res_a[3, 4]) <= 1e-6
+
+        # only some
+        res_a, res_v = sa.get_flows([0, 4], [5, 7], 4, 0)
+        assert res_a.shape == (4, self.env.n_line)
+        assert abs(res_a[3, 0]) <= 1e-6
+        assert abs(res_a[0, 0]) + abs(res_a[0, 4]) <= 1e-6
+        assert abs(res_a[1, 5]) + abs(res_a[1, 7]) <= 1e-6
+        assert abs(res_a[2, 4]) <= 1e-6
+
+        # only some, but not all
+        res_a, res_v = sa.get_flows([5, 7], [0, 4], 4)
+        assert res_a.shape == (3, self.env.n_line)
+        assert abs(res_a[1, 0]) + abs(res_a[1, 4]) <= 1e-6
+        assert abs(res_a[0, 5]) + abs(res_a[0, 7]) <= 1e-6
+        assert abs(res_a[2, 4]) <= 1e-6
+
+        # ask for a non simulated contingencies
+        with self.assertRaises(RuntimeError):
+            res_a, res_v = sa.get_flows(5)
+
+    def test_change_injection(self):
+        """test the capacity of the things to handle different steps"""
+        sa1 = SecurityAnalysis(self.env)
+        conts = [0, [0, 4], [5, 7], 4]
+        sa1.add_multiple_contingencies(*conts)
+        self.env.reset()
+        sa2 = SecurityAnalysis(self.env)
+        sa2.add_multiple_contingencies(*conts)
+
+        res_a1, res_v1 = sa1.get_flows()
+        res_a2, res_v2 = sa2.get_flows()
+        
+        # basic check that the right flows are 0.
+        assert abs(res_a1[0, 0]) <= 1e-6
+        assert abs(res_a1[1, 0]) + abs(res_a1[1, 4]) <= 1e-6
+        assert abs(res_a1[2, 5]) + abs(res_a1[2, 7]) <= 1e-6
+        assert abs(res_a1[3, 4]) <= 1e-6
+        assert abs(res_a2[0, 0]) <= 1e-6
+        assert abs(res_a2[1, 0]) + abs(res_a2[1, 4]) <= 1e-6
+        assert abs(res_a2[2, 5]) + abs(res_a2[2, 7]) <= 1e-6
+        assert abs(res_a2[3, 4]) <= 1e-6
+
+        # check that indeed the matrix are different
+        assert np.max(np.abs(res_a1 - res_a2)) > 1.

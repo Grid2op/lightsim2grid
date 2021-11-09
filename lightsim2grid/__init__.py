@@ -26,3 +26,10 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the TimeSeries module will not be available
     pass
+
+try:
+    from lightsim2grid.securtiyAnalysis import SecurityAnalysis
+    __all__.append("SecurityAnalysis")
+except ImportError as exc_:
+    # grid2op is not installed, the SecurityAnalysis module will not be available
+    pass

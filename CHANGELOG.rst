@@ -11,12 +11,13 @@ Change Log
 - code NR with dense matrices
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
+- perform unittest on CI (either github or circleci)
 
-[0.5.5] 2021-xx-yy
+[0.5.5] 2021-11-yy
 -------------------
 - [ADDED] possibility to perform dc powerflow
 - [ADDED] a class to compute flows on whole time series when the Ybus does not change (see `TimeSerie`)
-- [ADDED] a class to compute flows on multiple contingencies, when Sbus does not change (see ).
+- [ADDED] a class to compute flows on multiple contingencies, when Sbus does not change (see `SecurityAnalysis`).
 - [IMPROVED] running speed of Newton Raphson solvers with better filling of sparse matrices
 - [IMPROVED] upgrade to SuiteSparse `v5.10.1`
 - [IMPROVED] upgrade to eigen `3.4.0` (stable release)

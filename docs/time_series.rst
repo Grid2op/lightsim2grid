@@ -43,6 +43,9 @@ Detailed usage
 ###############
 TODO examples on how to import, and documentation of main methods
 
+.. automodule:: lightsim2grid.timeSerie
+    :members:
+    :autosummary:
 
 * :ref:`genindex`
 * :ref:`modindex`

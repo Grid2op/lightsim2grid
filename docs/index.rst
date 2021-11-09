@@ -40,6 +40,7 @@ This is a work in progress at the moment
    lightsimbackend
    solvers
    time_series
+   security_analysis
 
 
 Indices and tables
