@@ -14,6 +14,7 @@
 #include "DataConverter.h"
 #include "GridModel.h"
 #include "Computers.h"
+#include "SecurityAnalysis.h"
 
 namespace py = pybind11;
 
@@ -405,9 +406,44 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>())
         .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>()) // need to be done after compute_Vs
 
-        // results (forw now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &Computers::get_flows)  // need to be done after "compute_As"
-        .def("get_voltages", &Computers::get_voltages)
-        .def("get_sbuses", &Computers::get_sbuses)
+        // results (for now only flow (at each -line origin- or voltages -at each buses)
+        .def("get_flows", &Computers::get_flows)  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &Computers::get_voltages)  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &Computers::get_sbuses)  // need to be done after "compute_Vs" 
+        ;
+
+    py::class_<SecurityAnalysis>(m, "SecurityAnalysis")
+        .def(py::init<const GridModel &>())
+        // add some defaults
+        .def("add_all_n1", &SecurityAnalysis::add_all_n1)
+        .def("add_n1", &SecurityAnalysis::add_n1)
+        .def("add_nk", &SecurityAnalysis::add_nk)
+        .def("add_multiple_n1", &SecurityAnalysis::add_multiple_n1)
+
+        // remove some defaults (TODO)
+        .def("reset", &SecurityAnalysis::clear)
+        .def("clear", &SecurityAnalysis::clear)
+        .def("remove_n1", &SecurityAnalysis::remove_n1)
+        .def("remove_nk", &SecurityAnalysis::remove_nk)
+        .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1)
+        
+        // inspect the class
+        .def("my_defaults", &SecurityAnalysis::my_defaults_vect)
+
+        // perform the computation
+        .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>())
+
+        // results (for now only flow (at each -line origin- or voltages -at each buses)
+        .def("get_flows", &SecurityAnalysis::get_flows)  // need to be done after "compute" and "compute_flows"
+        .def("get_voltages", &SecurityAnalysis::get_voltages) // need to be done after "compute"
+        .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>())  // need to be done after "compute"
+
+        // timers
+        .def("total_time", &SecurityAnalysis::total_time)
+        .def("solver_time", &SecurityAnalysis::solver_time)
+        .def("preprocessing_time", &SecurityAnalysis::preprocessing_time)
+        .def("amps_computation_time", &SecurityAnalysis::amps_computation_time)
+        .def("modif_Ybus_time", &SecurityAnalysis::modif_Ybus_time)
+        .def("nb_solved", &SecurityAnalysis::nb_solved)
         ;
 }

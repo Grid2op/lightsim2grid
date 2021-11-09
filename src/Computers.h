@@ -9,36 +9,23 @@
 #ifndef COMPUTERS_H
 #define COMPUTERS_H
 
-#include "GridModel.h"
+#include "BaseMultiplePowerflow.h"
 
-class Computers
+/**
+Allws the computation of time series, that is, the same grid topology is used along with time
+series of injections (productions and loads) to compute powerflows/
+ **/
+class Computers: public BaseMultiplePowerflow
 {
     public:
-        typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
-        typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
-        
         Computers(const GridModel & init_grid_model):
-                _grid_model(init_grid_model),
-                _Sbuses(),
-                _amps_flows(),
-                _voltages(),
-                _nb_solved(0),
-                _status(1), // 1: success, 0: failure
-                _compute_flows(true),
-                _solver(),
-                _timer_total(0.) ,
-                _timer_solver(0.) ,
-                _timer_pre_proc(0.) ,
-                _timer_compute_A(0.)
-                {
-                    // make sure that my "grid_model" is ready to be used (for ac and dc)
-                    Eigen::Index nb_bus = init_grid_model.total_bus();
-                    CplxVect V = CplxVect::Constant(nb_bus, 1.04);
-                    // const auto & Vtmp = init_grid_model.get_V();
-                    // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
-                    _grid_model.dc_pf(V, 10, 1e-5);
-                    _grid_model.ac_pf(V, 10, 1e-5);
-                };
+            BaseMultiplePowerflow(init_grid_model),
+            _Sbuses(),
+            _status(1), // 1: success, 0: failure
+            _compute_flows(true),
+            _timer_total(0.) ,
+            _timer_pre_proc(0.)
+            {}
 
         Computers(const Computers&) = delete;
 
@@ -46,19 +33,9 @@ class Computers
         void deactivate_flow_computations() {_compute_flows = false;}
         void activate_flow_computations() {_compute_flows = true;}
 
-        // solver "control"
-        void change_solver(const SolverType & type){
-            _solver.change_solver(type);
-        }
-        std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
-        SolverType get_solver_type() {return _solver.get_type(); }
-
         // timers
         double total_time() const {return _timer_total;}
-        double solver_time() const {return _timer_solver;}
         double preprocessing_time() const {return _timer_pre_proc;}
-        double amps_computation_time() const {return _timer_compute_A;}
-        int nb_solved() const {return _nb_solved;}
 
         // status
         int get_status() const {return _status;}
@@ -77,8 +54,6 @@ class Computers
                        int max_iter,
                        real_type tol);
 
-        Eigen::Ref<const RealMat > get_flows() const {return _amps_flows;}
-        Eigen::Ref<const CplxMat > get_voltages() const {return _voltages;}
         Eigen::Ref<const CplxMat > get_sbuses() const {return _Sbuses;}
         Eigen::Ref<const RealMat > compute_flows() {
             compute_flows_from_Vs();
@@ -131,80 +106,18 @@ class Computers
             }
         }
 
-        template<class T>
-        void compute_amps_flows(const T & structure_data,
-                                real_type sn_mva,
-                                Eigen::Index lag_id) 
-        {
-            const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
-            const auto & el_status = structure_data.get_status();
-            const auto & bus_from = structure_data.get_bus_from();
-            const auto & bus_to = structure_data.get_bus_to();
-            const auto & v_yac_ff = structure_data.yac_ff();
-            const auto & v_yac_ft = structure_data.yac_ft();
-            Eigen::Index nb_el = structure_data.nb();
-            real_type sqrt_3 = sqrt(3.);
-
-            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
-                if(!el_status[el_id]) continue;
-
-                // retrieve which buses are used
-                int bus_from_me = bus_from(el_id);
-                int bus_to_me = bus_to(el_id);
-
-                // retrieve voltages
-                const auto Efrom = _voltages.col(bus_from_me);  // vector (one voltages per step)
-                const auto Eto = _voltages.col(bus_to_me);
-
-                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me);
-                const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
-
-                // retrieve physical parameters
-                const cplx_type yac_ff = v_yac_ff(el_id);  // scalar
-                const cplx_type yac_ft = v_yac_ft(el_id);
-
-                // trafo equations (to get the power at the "from" side)
-                CplxVect I_ft =  yac_ff * Efrom + yac_ft * Eto;
-                I_ft = I_ft.array().conjugate();
-                const CplxVect S_ft = Efrom.array() * I_ft.array();
-
-                // now compute the current flow
-                RealVect res = S_ft.array().abs() * sn_mva;
-                res.array() /= sqrt_3 * v_f_kv.array();
-                _amps_flows.col(el_id + lag_id) = res;
-            }
-        }
-
-        bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                   CplxVect & V,
-                                   const CplxVect & Sbus,
-                                   const Eigen::VectorXi & bus_pv,
-                                   const Eigen::VectorXi & bus_pq,
-                                   const std::vector<int> & id_ac_solver_to_me,
-                                   int max_iter,
-                                   double tol
-                                   );
-
-        void compute_flows_from_Vs();
-
     private:
         // inputs
-        GridModel _grid_model;
         CplxMat _Sbuses;
+
         // outputs
-        RealMat _amps_flows;
-        CplxMat _voltages;
-        int _nb_solved;
         int _status;
 
         // parameters
         bool _compute_flows;
-        ChooseSolver _solver;
 
         //timers
         double _timer_total;
-        double _timer_solver;
         double _timer_pre_proc;
-        double _timer_compute_A;
 };
 #endif  //COMPUTERS_H

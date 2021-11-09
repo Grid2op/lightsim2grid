@@ -46,11 +46,9 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
 
     const Eigen::Index nb_steps = gen_p.rows();
     const Eigen::Index nb_buses_solver = Ybus.cols();  // which is equal to Ybus.rows();
-    const Eigen::Index nb_powerline = _grid_model.nb_powerline();
-    const Eigen::Index nb_trafos = _grid_model.nb_trafo();
 
-    const Eigen::VectorXi bus_pv = _grid_model.get_pv();
-    const Eigen::VectorXi bus_pq = _grid_model.get_pq();
+    const Eigen::VectorXi & bus_pv = _grid_model.get_pv();
+    const Eigen::VectorXi & bus_pq = _grid_model.get_pq();
     _solver.reset();
 
     // init the computations
@@ -66,17 +64,11 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     if(sn_mva != 1.0) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
 
     // init the results matrices
-    _voltages = Computers::CplxMat::Zero(nb_steps, nb_total_bus); 
-    _amps_flows = RealMat::Zero(nb_steps, nb_powerline + nb_trafos);
+    _voltages = BaseMultiplePowerflow::CplxMat::Zero(nb_steps, nb_total_bus); 
+    _amps_flows = RealMat::Zero(0, n_total_);
 
     // extract V solver from the given V
-    CplxVect Vinit_solver = CplxVect::Constant(nb_buses_solver, {_grid_model.get_init_vm_pu(), 0.});
-    Eigen::Index tmp;
-    for(Eigen::Index bus_id_grid = 0; bus_id_grid < nb_total_bus; ++bus_id_grid){
-        tmp = id_me_to_ac_solver[bus_id_grid];
-        if(tmp == GridModel::_deactivated_bus_id) continue;
-        Vinit_solver[tmp] = Vinit[bus_id_grid];
-    }
+    CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_ac_solver);
     _timer_pre_proc = timer_preproc.duration();
 
     // compute the powerflows
@@ -88,10 +80,8 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
         Sbus = _Sbuses.row(i).array(); 
         conv = compute_one_powerflow(Ybus, V, Sbus,
                                      bus_pv, bus_pq,
-                                     id_ac_solver_to_me,
                                      max_iter,
                                      tol / sn_mva);
-        _timer_solver += _solver.get_computation_time(); 
         if(!conv){
             _timer_total = timer.duration();
             return _status;
@@ -103,56 +93,4 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     _status = 1;
     _timer_total = timer.duration();
     return _status;
-}
-
-/**
- V is modified at each call !
-**/
-bool Computers::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                      CplxVect & V,
-                                      const CplxVect & Sbus,
-                                      const Eigen::VectorXi & bus_pv,
-                                      const Eigen::VectorXi & bus_pq,
-                                      const std::vector<int> & id_ac_solver_to_me,
-                                      int max_iter,
-                                      double tol
-                                      )
-{
-    bool conv = _solver.compute_pf(Ybus, V, Sbus, bus_pv, bus_pq, max_iter, tol);
-    if(conv){
-        V = _solver.get_V().array();
-        ++_nb_solved;
-    }
-    return conv;
-}
-
-void Computers::compute_flows_from_Vs()
-{
-    // TODO find a way to factorize that with DataTrafo::compute_results
-    // TODO and DataLine::compute_results
-
-    if (_voltages.size() == 0)
-    {
-        std::ostringstream exc_;
-        exc_ << "Computers::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called ";
-        throw std::runtime_error(exc_.str());
-    }
-    _timer_compute_A = 0.;
-
-    auto timer_compute_A = CustTimer();
-    const Eigen::Index nb_powerlines = _grid_model.nb_powerline();
-    const Eigen::Index nb_trafos = _grid_model.nb_trafo();
-    const auto & sn_mva = _grid_model.get_sn_mva();
-    const auto & nb_steps = _voltages.rows();
-
-    // reset the results
-    _amps_flows = RealMat::Zero(nb_steps, nb_powerlines + nb_trafos);
-    
-    // compute the flows for the powerlines
-    Eigen::Index lag_id = 0;
-    compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
-    // compute the flows for the trafos
-    lag_id = nb_powerlines;
-    compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
-    _timer_compute_A = timer_compute_A.duration();
 }
