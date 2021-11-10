@@ -144,7 +144,7 @@ class DataLine : public DataGeneric
         }
     }
 
-    int nb() const { return powerlines_r_.size(); }
+    int nb() const { return static_cast<int>(powerlines_r_.size()); }
 
     // make it iterable
     typedef DataLineConstIterator const_iterator_type;
@@ -181,7 +181,8 @@ class DataLine : public DataGeneric
                          const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
-                         real_type sn_mva);
+                         real_type sn_mva,
+                         bool ac);
     void reset_results();
     virtual real_type get_p_slack(int slack_bus_id);
     virtual void get_q(std::vector<real_type>& q_by_bus);
@@ -192,6 +193,17 @@ class DataLine : public DataGeneric
     Eigen::Ref<const RealVect> get_theta_or() const {return res_powerline_thetaor_;}
     Eigen::Ref<const RealVect> get_theta_ex() const {return res_powerline_thetaex_;}
     const std::vector<bool>& get_status() const {return status_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return bus_or_id_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return bus_ex_id_;}
+
+    // model paramters
+    Eigen::Ref<const CplxVect> yac_ff() const {return yac_ff_;}
+    Eigen::Ref<const CplxVect> yac_ft() const {return yac_ft_;}
+    Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
+    Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
+
+    protected:
+        void _update_model_coeffs();
 
     protected:
         // physical properties
@@ -215,6 +227,17 @@ class DataLine : public DataGeneric
         RealVect res_powerline_aex_;  // in kA
         RealVect res_powerline_thetaor_; // in degree
         RealVect res_powerline_thetaex_; // in degree
+
+        // model coefficients
+        CplxVect yac_ff_;
+        CplxVect yac_ft_;
+        CplxVect yac_tf_;
+        CplxVect yac_tt_;
+
+        CplxVect ydc_ff_;
+        CplxVect ydc_ft_;
+        CplxVect ydc_tf_;
+        CplxVect ydc_tt_;
 };
 
 #endif  //DATALINE_H

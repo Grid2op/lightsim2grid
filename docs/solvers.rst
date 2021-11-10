@@ -11,14 +11,22 @@ Type of solvers available
 
 For now, lightsim2grid ships with at most 3 fully working (and tested) solvers:
 
-- KLUSolver (only under some conditions): it uses the Newton-Raphson algorithm to compute the powerflow, and the
-  extremely fast KLU routine to solve the linear systems (currently only available on linux / macos if you compiled
-  KLU from source, see the section where the installation of lightsim is described)
-- SparseLUSolver: it uses the Newton-Raphson algorithm to compute the powerflow, and the
-  slower "SparseLU" solver from the c++ Eigen (available on all platform)
-- GaussSeidel: it uses a different algorithm to compute the powerflow. This algorithm is called "Gauss Seidel" and is
-  most of the time slower than the Newton Raphson algorithm (available on all platform).
-
+- **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
+  solver to compute the powerflows.
+- **LS+GS S** (LightSimBackend+Gauss Seidel Synchronous): the grid2op backend based on lightsim2grid that uses a
+  variant of the "Gauss Seidel" method to compute the powerflows.
+- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
+  Eigen c++ library (available on all platform).
+- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver 
+  "KLU" from the `SuiteSparse` c package implemented.
+- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver 
+  "NICSLU". [**NB** NICSLU is a free software but not open source, in order to use
+  it with lightsim2grid, you need to check section 
+  [It is required to install lightsim2grid from source for such solver and following the 
+  Readme for instructions on how to compile with such solver]
 
 Usage
 ############

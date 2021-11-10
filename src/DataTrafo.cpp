@@ -26,7 +26,7 @@ void DataTrafo::init(const RealVect & trafo_r,
     INPUT DATA ARE ALREADY PAIR UNIT !!
     DOES NOT WORK WITH POWERLINES
     **/
-    int size = trafo_r.size();
+    const int size = static_cast<int>(trafo_r.size());
     DataGeneric::check_size(trafo_r, size, "trafo_r");
     DataGeneric::check_size(trafo_x, size, "trafo_x");
     DataGeneric::check_size(trafo_b, size, "trafo_b");
@@ -40,12 +40,7 @@ void DataTrafo::init(const RealVect & trafo_r,
     //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
 
     RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
-//    for(int i = 0; i < trafo_tap_hv.size(); ++i)
-//    {
-//        // in the equation i do as if the ratio was on the lv side (so ratio = hv / lv) if it's given in
-//        // the lv side, i need to invert it.
-//        if(!trafo_tap_hv[i]) ratio[i] = my_one_ / ratio[i];
-//    }
+
     r_ = trafo_r;
     x_ = trafo_x;
     h_ = trafo_b;
@@ -55,6 +50,8 @@ void DataTrafo::init(const RealVect & trafo_r,
     bus_lv_id_ = trafo_lv_id;
     is_tap_hv_side_ = trafo_tap_hv;
     status_ = std::vector<bool>(trafo_r.size(), true);
+    _update_model_coeffs();
+
 }
 
 DataTrafo::StateRes DataTrafo::get_state() const
@@ -108,67 +105,62 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
     ratio_  = RealVect::Map(&ratio[0], size);
     shift_  = RealVect::Map(&shift[0], size);
     is_tap_hv_side_ = is_tap_hv_side;
+    _update_model_coeffs();
+}
+
+void DataTrafo::_update_model_coeffs()
+{
+    const Eigen::Index my_size = r_.size();
+
+    yac_ff_ = CplxVect::Zero(my_size);
+    yac_ft_ = CplxVect::Zero(my_size);
+    yac_tf_ = CplxVect::Zero(my_size);
+    yac_tt_ = CplxVect::Zero(my_size);
+
+    ydc_ff_ = CplxVect::Zero(my_size);
+    ydc_ft_ = CplxVect::Zero(my_size);
+    ydc_tf_ = CplxVect::Zero(my_size);
+    ydc_tt_ = CplxVect::Zero(my_size);
+    dc_x_tau_shift_ = RealVect::Zero(my_size);
+    for(Eigen::Index i = 0; i < my_size; ++i)
+    {
+        // for AC
+        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+        const cplx_type ys = 1. / (r_(i) + my_i * x_(i));
+        const cplx_type h = my_i * h_(i) * 0.5;
+        double tau = ratio_(i);
+        if(!is_tap_hv_side_[i]) tau = my_one_ / tau;
+        real_type theta_shift = shift_(i);
+        cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
+        cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
+        if(theta_shift != 0.)
+        {
+            real_type cos_theta = std::cos(theta_shift);
+            real_type sin_theta = std::sin(theta_shift);
+            eitheta_shift = {cos_theta, sin_theta};
+            emitheta_shift = {cos_theta, -sin_theta};
+        }
+
+        yac_ff_(i) = (ys + h) / (tau * tau);
+        yac_tt_(i) = (ys + h);
+        yac_tf_(i) = -ys / tau * emitheta_shift ;
+        yac_ft_(i) = -ys / tau * eitheta_shift;
+
+        // for DC
+        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
+        // except here I only care about the real part, so I remove the "1/j"
+        cplx_type tmp = 1. / (tau * x_(i));
+        ydc_ff_(i) = tmp;
+        ydc_tt_(i) = tmp;
+        ydc_tf_(i) = -tmp;
+        ydc_ft_(i) = -tmp;
+        dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
+    }
 }
 
 void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
-    throw std::runtime_error("fillYbus_spmat is no longer used nor updated !");
-    //TODO this is no more used!!!! see the other fillYbus
-
-    //TODO merge that with fillYbusBranch!
-    //TODO template here instead of "if"
-    int nb_trafo = nb();
-    for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
-        // i don't do anything if the trafo is disconnected
-        if(!status_[trafo_id]) continue;
-
-        // compute from / to
-        int bus_hv_id_me = bus_hv_id_(trafo_id);
-        int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
-        if(bus_hv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (hv) to a disconnected bus.");
-        }
-        int bus_lv_id_me = bus_lv_id_(trafo_id);
-        int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
-        if(bus_lv_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataModel::fillYbusTrafo: A trafo is connected (lv) to a disconnected bus.");
-        }
-        //TODO this is no more used!!!! see the other fillYbus
-
-        // get the transformers ratio
-        real_type r = ratio_(trafo_id);
-
-        // subsecptance
-        cplx_type h = {my_zero_, my_zero_} ;
-        if(ac){
-            h = h_(trafo_id);
-            h = my_i * my_half_ * h;
-        }
-        //TODO this is no more used!!!! see the other fillYbus
-
-        // admittance
-        cplx_type y = 0.;
-        cplx_type z = x_(trafo_id);
-        if(ac){
-            z *= my_i;
-            z += r_(trafo_id);
-        }
-        if(z != my_zero_) y = my_one_ / z;
-       //TODO this is no more used!!!! see the other fillYbus
-        // fill non diagonal coefficient
-        cplx_type tmp = y / r;
-        res.coeffRef(bus_hv_solver_id, bus_lv_solver_id) -= tmp ;
-        res.coeffRef(bus_lv_solver_id, bus_hv_solver_id) -= tmp;
-
-        // fill diagonal coefficient
-        if(!ac){
-            r = my_one_; // in dc, r = 1.0 here (same voltage both side)
-        }
-        //TODO this is no more used!!!! see the other fillYbus
-        tmp += h;
-        res.coeffRef(bus_hv_solver_id, bus_hv_solver_id) += tmp / r;
-        res.coeffRef(bus_lv_solver_id, bus_lv_solver_id) += tmp * r;
-    }
+    throw std::runtime_error("You should not use that!");
 }
 
 void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
@@ -178,8 +170,9 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 {
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if" for ac / dc
-    int nb_trafo = nb();
-    for(int trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
+    const Eigen::Index nb_trafo = nb();
+    cplx_type yft, ytf, yff, ytt;
+    for(Eigen::Index trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
         // i don't do anything if the trafo is disconnected
         if(!status_[trafo_id]) continue;
 
@@ -202,78 +195,36 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-
-        // TODO time optim all that could be done once and for all
-        // subsecptance
-        cplx_type h = 0.;
+        
         if(ac){
-            h = h_(trafo_id);
-            h = my_i * my_half_ * h;
-        }
-        // admittance
-        cplx_type y = 0.;
-        cplx_type z = x_(trafo_id);
-        if(ac){
-            z *= my_i;
-            z += r_(trafo_id);  // r_ is the resistance, not the ratio !
-        }
-        if(z != my_zero_) y = my_one_ / z;
-        // END todo
-
-        // get the transformers ratio
-        real_type ratio = ratio_(trafo_id);
-        real_type alpha = shift_(trafo_id);
-        cplx_type eialpha  = {my_one_, my_zero_};  // exp(j  * alpha)
-        cplx_type eimalpha = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(alpha != 0.)
-        {
-            real_type cos_theta = std::cos(alpha);
-            real_type sin_theta = std::sin(alpha);
-            eialpha = {cos_theta, sin_theta};
-            eimalpha = {cos_theta, -sin_theta};
-        }
-
-        // fill non diagonal coefficient
-        if(!ac){
+            // ac mode
+            yft = yac_ft_(trafo_id);
+            ytf = yac_tf_(trafo_id);
+            yff = yac_ff_(trafo_id);
+            ytt = yac_tt_(trafo_id);
+        }else{
             // dc mode
-            // ratio = my_one_; // in dc, ratio = 1.0 here (same voltage both side)
-            eialpha = my_one_;
-            eimalpha = my_one_;
+            yft = ydc_ft_(trafo_id);
+            ytf = ydc_tf_(trafo_id);
+            yff = ydc_ff_(trafo_id);
+            ytt = ydc_tt_(trafo_id);
         }
-        if(!is_tap_hv_side_[trafo_id]) ratio = my_one_ / ratio;
-        cplx_type tmp = y / ratio;  // here ratio should not be 1.0 even in dc mode
-        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_lv_solver_id, -tmp * eialpha));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_hv_solver_id, -tmp * eimalpha));
-
-        // fill diagonal coefficient
-        if(!ac)
-        {
-            // tmp = y;  // i cancel the effect of the ratio here (same both side) ony for diagonal coeff
-            ratio = my_one_;
-        }
-        if(ac) tmp += h;
-        // else tmp += std::imag(h);  // todo ???? still don't know !
-        res.push_back(Eigen::Triplet<cplx_type>(bus_hv_solver_id, bus_hv_solver_id, tmp / ratio));
-        res.push_back(Eigen::Triplet<cplx_type>(bus_lv_solver_id, bus_lv_solver_id, tmp * ratio));
-
+        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_lv_solver_id, yft));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_hv_solver_id, ytf));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_hv_solver_id, yff));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_lv_solver_id, ytt));
     }
 }
 
 void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     if(ac) return;
-    int nb_trafo = nb();
+    // return;
+    const int nb_trafo = nb();
     int bus_id_me, bus_id_solver_hv, bus_id_solver_lv;
     cplx_type tmp;
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
         //  i don't do anything if the load is disconnected
         if(!status_[trafo_id]) continue;
-
-        double shift = shift_[trafo_id];
-        if(shift == 0.) continue;
-
-        double ratio = ratio_[trafo_id];
-        if(!is_tap_hv_side_[trafo_id]) ratio = my_one_ / ratio;
-        tmp = shift / x_[trafo_id] / ratio;
 
         bus_id_me = bus_lv_id_(trafo_id);
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
@@ -294,8 +245,8 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
             throw std::runtime_error(exc_.str());
         }
 
-        Sbus.coeffRef(bus_id_solver_hv) += tmp;
-        Sbus.coeffRef(bus_id_solver_lv) -= tmp;
+        Sbus.coeffRef(bus_id_solver_hv) += dc_x_tau_shift_[trafo_id];
+        Sbus.coeffRef(bus_id_solver_lv) -= dc_x_tau_shift_[trafo_id];
     }
 }
 
@@ -304,11 +255,12 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
                                 const RealVect & bus_vn_kv,
-                                real_type sn_mva
+                                real_type sn_mva,
+                                bool ac
                                 )
 {
     // it needs to be initialized at 0.
-    int nb_element = nb();
+    const int nb_element = nb();
     res_p_hv_ = RealVect::Constant(nb_element, 0.0);  // in MW
     res_q_hv_ = RealVect::Constant(nb_element, 0.0);  // in MVar
     res_v_hv_ = RealVect::Constant(nb_element, 0.0);  // in kV
@@ -322,31 +274,6 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
     for(int trafo_id = 0; trafo_id < nb_element; ++trafo_id){
         // don't do anything if the element is disconnected
         if(!status_[trafo_id]) continue;
-
-        //physical properties
-        real_type r = r_(trafo_id);
-        real_type x = x_(trafo_id);
-        real_type ratio_me = ratio_(trafo_id);
-        cplx_type h = my_i * my_half_ * h_(trafo_id);
-        cplx_type y = my_one_ / (r + my_i * x);
-
-        if(!is_tap_hv_side_[trafo_id])
-        {
-            // tap is lv side i need to change it
-            ratio_me = my_one_ / ratio_me;
-        }
-        y /= ratio_me;
-
-        real_type alpha = shift_(trafo_id);
-        cplx_type eialpha  = {my_one_, my_zero_};  // exp(j  * alpha)
-        cplx_type eimalpha = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(alpha != 0.)
-        {
-            real_type cos_theta = std::cos(alpha);
-            real_type sin_theta = std::sin(alpha);
-            eialpha = {cos_theta, sin_theta};
-            eimalpha = {cos_theta, -sin_theta};
-        }
 
         // connectivity
         int bus_hv_id_me = bus_hv_id_(trafo_id);
@@ -368,34 +295,47 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
             throw std::runtime_error(exc_.str());
         }
 
-        // results of the powerflow
-        cplx_type Ehv = V(bus_hv_solver_id);
-        cplx_type Elv = V(bus_lv_solver_id);
-
-        // powerline equations
-        cplx_type I_hvlv =  (y + h) / ratio_me * Ehv - y * eialpha * Elv ;
-        cplx_type I_lvhv = (y + h) * ratio_me * Elv - y * eimalpha * Ehv;
-
-        I_hvlv = std::conj(I_hvlv);
-        I_lvhv = std::conj(I_lvhv);
-        cplx_type s_hvlv = Ehv * I_hvlv;
-        cplx_type s_lvhv = Elv * I_lvhv;
-
-        res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
-        res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
-        res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
-        res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
-
         // retrieve voltages magnitude in kv instead of pu
         real_type v_hv = Vm(bus_hv_solver_id);
         real_type v_lv = Vm(bus_lv_solver_id);
         real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me);
-        real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);
+        real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);           
+
+        // for voltages
         res_v_hv_(trafo_id) = v_hv * bus_vn_kv_hv;
         res_v_lv_(trafo_id) = v_lv * bus_vn_kv_lv;
 
         res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * 180. / my_pi;
         res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * 180. / my_pi;
+
+        if(ac){
+            // results of the ac powerflow
+            cplx_type Ehv = V(bus_hv_solver_id);
+            cplx_type Elv = V(bus_lv_solver_id);
+
+            // TODO for DC with yff, ...
+            // trafo equations
+            cplx_type I_hvlv =  yac_ff_(trafo_id) * Ehv + yac_ft_(trafo_id) * Elv;
+            cplx_type I_lvhv =  yac_tt_(trafo_id) * Elv + yac_tf_(trafo_id) * Ehv;
+
+            I_hvlv = std::conj(I_hvlv);
+            I_lvhv = std::conj(I_lvhv);
+            cplx_type s_hvlv = Ehv * I_hvlv;
+            cplx_type s_lvhv = Elv * I_lvhv;
+
+            res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
+            res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
+            res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
+            res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
+        }else{
+            // result of the dc powerflow
+            res_p_hv_(trafo_id) = (std::real(ydc_ff_(trafo_id)) * Va(bus_hv_solver_id) + std::real(ydc_ft_(trafo_id)) * Va(bus_lv_solver_id) - dc_x_tau_shift_(trafo_id) ) * sn_mva;
+            res_p_lv_(trafo_id) = (std::real(ydc_tt_(trafo_id)) * Va(bus_lv_solver_id) + std::real(ydc_tf_(trafo_id)) * Va(bus_hv_solver_id) + dc_x_tau_shift_(trafo_id) ) * sn_mva; 
+
+            // for voltages, because vm = 1. pu by hypothesis
+            // res_v_hv_(trafo_id) = bus_vn_kv_hv;
+            // res_v_lv_(trafo_id) = bus_vn_kv_lv;
+        }
 
     }
     _get_amps(res_a_hv_, res_p_hv_, res_q_hv_, res_v_hv_);
@@ -415,7 +355,7 @@ void DataTrafo::reset_results(){
 
 real_type DataTrafo::get_p_slack(int slack_bus_id)
 {
-    int nb_element = nb();
+    const int nb_element = nb();
     real_type res = 0.;
     for(int line_id = 0; line_id < nb_element; ++line_id)
     {
@@ -428,7 +368,7 @@ real_type DataTrafo::get_p_slack(int slack_bus_id)
 
 void DataTrafo::get_q(std::vector<real_type>& q_by_bus)
 {
-    int nb_element = nb();
+    const int nb_element = nb();
     for(int el_id = 0; el_id < nb_element; ++el_id)
     {
         if(!status_[el_id]) continue;

@@ -109,7 +109,7 @@ class DataGen: public DataGeneric
               const Eigen::VectorXi & generators_bus_id
               );
 
-    int nb() const { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     // iterator
     typedef DataGenConstIterator const_iterator_type;
@@ -153,9 +153,10 @@ class DataGen: public DataGeneric
                          const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
-                         real_type sn_mva);
+                         real_type sn_mva,
+                         bool ac);
     void reset_results();
-    void set_q(const std::vector<real_type> & q_by_bus);
+    void set_q(const std::vector<real_type> & q_by_bus, bool ac);
     int get_slack_bus_id(int gen_id);
     virtual void set_p_slack(int slack_bus_id, real_type p_slack);
 
@@ -170,6 +171,7 @@ class DataGen: public DataGeneric
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
 
     const std::vector<bool>& get_status() const {return status_;}
+    const Eigen::VectorXi & get_bus_id() const {return bus_id_;}
 
     void cout_v(){
         for(const auto & el : vm_pu_){

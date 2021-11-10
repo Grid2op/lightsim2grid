@@ -43,8 +43,12 @@ def main_one_dir(input_dir=".", output_dir="SourceWrappers", suitsparse_source_d
     if not os.path.exists(suitsparse_source_dir) or not os.path.isdir(suitsparse_source_dir):
         raise RuntimeError(f"\"{suitsparse_source_dir}\" should be a suitesparse directory.")
     for dirn in ["Source", "Include", "Lib"]:
-        os.symlink(os.path.join(suitsparse_source_dir, dirn),
-                   os.path.join(input_dir, dirn))
+        if sys.platform.startswith("win32"):
+            shutil.copytree(os.path.join(suitsparse_source_dir, dirn),
+                            os.path.join(input_dir, dirn))
+        else:
+            os.symlink(os.path.join(suitsparse_source_dir, dirn),
+                       os.path.join(input_dir, dirn))
 
     # now make the output directory
     if os.path.exists(output_dir):

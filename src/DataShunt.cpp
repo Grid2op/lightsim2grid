@@ -50,7 +50,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                          bool ac,
                          const std::vector<int> & id_grid_to_solver,
                          real_type sn_mva){
-    int nb_shunt = q_mvar_.size();
+    const int nb_shunt = static_cast<int>(q_mvar_.size());
     cplx_type tmp;
     int bus_id_me, bus_id_solver;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
@@ -81,7 +81,7 @@ void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
     // std::cout << " ok i use this function" << std::endl;
     // - bus[:, GS] / baseMVA  # in pandapower
     // yish=gish+jbish -> so g is the MW !
-    int nb_shunt = q_mvar_.size();
+    const int nb_shunt = static_cast<int>(q_mvar_.size());
     int bus_id_me, bus_id_solver;
     for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
@@ -96,7 +96,7 @@ void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
 }
 
 void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
-    int nb_shunt = q_mvar_.size();
+    const int nb_shunt = static_cast<int>(q_mvar_.size());
     //TODO this is no more used!!!! see the other fillYbus
     cplx_type tmp;
     int bus_id_me, bus_id_solver;
@@ -121,9 +121,10 @@ void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
                                 const RealVect & bus_vn_kv,
-                                real_type sn_mva)
+                                real_type sn_mva,
+                                bool ac)
 {
-    int nb_shunt = p_mw_.size();
+    const int nb_shunt = static_cast<int>(p_mw_.size());
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     v_deg_from_va(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = RealVect::Constant(nb_shunt, my_zero_);
@@ -141,7 +142,7 @@ void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
         I = std::conj(I);
         cplx_type s = E * I;
         res_p_(shunt_id) = std::real(s) * sn_mva;
-        res_q_(shunt_id) = std::imag(s) * sn_mva;
+        if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
     }
 }
 

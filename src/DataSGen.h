@@ -61,7 +61,7 @@ class DataSGen: public DataGeneric
               const Eigen::VectorXi & sgen_bus_id
               );
 
-    int nb() { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     void deactivate(int sgen_id, bool & need_reset) {_deactivate(sgen_id, status_, need_reset);}
     void reactivate(int sgen_id, bool & need_reset) {_reactivate(sgen_id, status_, need_reset);}
@@ -77,7 +77,8 @@ class DataSGen: public DataGeneric
                          const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
-                         real_type sn_mva);
+                         real_type sn_mva,
+                         bool ac);
     void reset_results();
     virtual real_type get_p_slack(int slack_bus_id);
     virtual void get_q(std::vector<real_type>& q_by_bus);
@@ -85,6 +86,7 @@ class DataSGen: public DataGeneric
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
+    const Eigen::VectorXi & get_bus_id() const {return bus_id_;}
 
     protected:
         // physical properties

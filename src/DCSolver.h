@@ -14,9 +14,11 @@
 class DCSolver: public BaseSolver
 {
     public:
-        DCSolver():BaseSolver(){};
+        DCSolver():BaseSolver(), dc_solver_(), need_factorize_(true){};
 
         ~DCSolver(){}
+
+        virtual void reset();
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -32,6 +34,10 @@ class DCSolver: public BaseSolver
         // no copy allowed
         DCSolver( const BaseSolver & ) ;
         DCSolver & operator=( const BaseSolver & ) ;
+
+    protected:
+        Eigen::SparseLU<Eigen::SparseMatrix<real_type>>  dc_solver_;
+        bool need_factorize_;
 
 };
 

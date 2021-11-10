@@ -14,8 +14,8 @@ void NICSLUSolver::reset(){
     // free everything
     n_ = -1;
     solver_.Free();
-    delete [] ai_;  // created in NICSLUSolver::initialize
-    delete [] ap_;  // created in NICSLUSolver::initialize
+    if(ai_ != nullptr) delete [] ai_;  // created in NICSLUSolver::initialize
+    if(ap_ != nullptr) delete [] ap_;  // created in NICSLUSolver::initialize
     ai_ = nullptr;
     ap_ = nullptr;
 

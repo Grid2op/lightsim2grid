@@ -23,7 +23,7 @@ void KLUSolver::initialize(){
     // default Eigen representation: column major, which is good for klu !
     // J is const here, even if it's not said in klu_analyze
     auto timer = CustTimer();
-    n_ = J_.cols(); // should be equal to J_.nrows()
+    n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
     err_ = 0; // reset error message
     common_ = klu_common();
     symbolic_ = klu_analyze(n_, J_.outerIndexPtr(), J_.innerIndexPtr(), &common_);
@@ -35,14 +35,14 @@ void KLUSolver::initialize(){
     timer_initialize_ += timer.duration();
 }
 
-void KLUSolver::solve(RealVect & b, bool has_just_been_inialized){
+void KLUSolver::solve(RealVect & b, bool has_just_been_initialized){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const
     auto timer = CustTimer();
     int ok;
     bool stop = false;
-    if(!has_just_been_inialized){
+    if(!has_just_been_initialized){
         // if the call to "klu_factor" has been made this iteration, there is no need
         // to re factor again the matrix
         // i'm in the case where it has not
@@ -58,5 +58,6 @@ void KLUSolver::solve(RealVect & b, bool has_just_been_inialized){
             err_ = 3;
         }
     }
+    // std::cout << "KLUSolver::solve" << std::endl;
     timer_solve_ += timer.duration();
 }

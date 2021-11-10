@@ -148,7 +148,7 @@ class DataTrafo : public DataGeneric
     DataTrafo::StateRes get_state() const;
     void set_state(DataTrafo::StateRes & my_state );
 
-    int nb() const { return r_.size(); }
+    int nb() const { return static_cast<int>(r_.size()); }
 
     // make it iterable
     typedef DataTrafoConstIterator const_iterator_type;
@@ -187,7 +187,8 @@ class DataTrafo : public DataGeneric
                          const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
-                         real_type sn_mva);
+                         real_type sn_mva,
+                         bool ac);
     void reset_results();
     virtual real_type get_p_slack(int slack_bus_id);
     virtual void get_q(std::vector<real_type>& q_by_bus);
@@ -196,9 +197,20 @@ class DataTrafo : public DataGeneric
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
     Eigen::Ref<const RealVect> get_theta_hv() const {return res_theta_hv_;}
     Eigen::Ref<const RealVect> get_theta_lv() const {return res_theta_lv_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return bus_hv_id_;}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return bus_lv_id_;}
+
+    // model paramters
+    Eigen::Ref<const CplxVect> yac_ff() const {return yac_ff_;}
+    Eigen::Ref<const CplxVect> yac_ft() const {return yac_ft_;}
+    Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
+    Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
 
     const std::vector<bool>& get_status() const {return status_;}
 
+    protected:
+        void _update_model_coeffs();
+        
     protected:
         // physical properties
         RealVect r_;
@@ -224,6 +236,18 @@ class DataTrafo : public DataGeneric
         RealVect res_a_lv_;  // in kA
         RealVect res_theta_hv_;  // in degree
         RealVect res_theta_lv_;  // in degree
+
+        // model coefficients
+        CplxVect yac_ff_;
+        CplxVect yac_ft_;
+        CplxVect yac_tf_;
+        CplxVect yac_tt_;
+
+        CplxVect ydc_ff_;
+        CplxVect ydc_ft_;
+        CplxVect ydc_tf_;
+        CplxVect ydc_tt_;
+        RealVect dc_x_tau_shift_;
 };
 
 #endif  //DATATRAFO_H

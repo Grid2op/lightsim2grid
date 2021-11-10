@@ -16,8 +16,8 @@ void GaussSeidelSynchSolver::one_iter(CplxVect & tmp_Sbus,
     // do an update with all nodes being updated at the same time (different than the original GaussSeidel)
     cplx_type tmp;
 
-    int n_pv = pv.size();
-    int n_pq = pq.size();
+    const int n_pv = static_cast<int>(pv.size());
+    const int n_pq = static_cast<int>(pq.size());
 
     // CplxVect tmp_YbusV;  // Ybus[k, :] * V
     // CplxVect tmp_conj_Sbus_V;  //  conj(Sbus[k] / V[k])

@@ -13,6 +13,8 @@
 #include "ChooseSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
+#include "Computers.h"
+#include "SecurityAnalysis.h"
 
 namespace py = pybind11;
 
@@ -322,6 +324,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_trafo_status", &GridModel::get_trafo_status)
         .def("get_storages_res", &GridModel::get_storages_res)
         .def("get_storages_status", &GridModel::get_storages_status)
+        .def("get_sgens_res", &GridModel::get_sgens_res)
+        .def("get_sgens_status", &GridModel::get_sgens_status)
 
         .def("get_gen_theta", &GridModel::get_gen_theta)
         .def("get_load_theta", &GridModel::get_load_theta)
@@ -344,6 +348,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("dc_pf", &GridModel::dc_pf)
         .def("dc_pf_old", &GridModel::dc_pf_old)
         .def("ac_pf", &GridModel::ac_pf)
+        .def("unset_topo_changed", &GridModel::unset_topo_changed)
+        .def("tell_topo_changed", &GridModel::tell_topo_changed)
         .def("compute_newton", &GridModel::ac_pf)
 
          // apply action faster (optimized for grid2op representation)
@@ -374,4 +380,75 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_storage_to_subid", &GridModel::set_storage_to_subid)
         ;
 
+    py::class_<Computers>(m, "Computers")
+        .def(py::init<const GridModel &>())
+
+        // solver control
+        .def("change_solver", &Computers::change_solver)
+        .def("available_solvers", &Computers::available_solvers)
+        .def("get_solver_type", &Computers::get_solver_type)
+
+        // timers
+        .def("total_time", &Computers::total_time)
+        .def("solver_time", &Computers::solver_time)
+        .def("preprocessing_time", &Computers::preprocessing_time)
+        .def("amps_computation_time", &Computers::amps_computation_time)
+        .def("nb_solved", &Computers::nb_solved)
+
+        // status
+        .def("get_status", &Computers::get_status)
+
+        // computation control
+        .def("deactivate_flow_computations", &Computers::deactivate_flow_computations)
+        .def("activate_flow_computations", &Computers::activate_flow_computations)
+
+        // perform the computations
+        .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>())
+        .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>()) // need to be done after compute_Vs
+
+        // results (for now only flow (at each -line origin- or voltages -at each buses)
+        .def("get_flows", &Computers::get_flows)  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &Computers::get_voltages)  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &Computers::get_sbuses)  // need to be done after "compute_Vs" 
+        ;
+
+    py::class_<SecurityAnalysis>(m, "SecurityAnalysis")
+        .def(py::init<const GridModel &>())
+        // solver control
+        .def("change_solver", &Computers::change_solver)
+        .def("available_solvers", &Computers::available_solvers)
+        .def("get_solver_type", &Computers::get_solver_type)
+
+        // add some defaults
+        .def("add_all_n1", &SecurityAnalysis::add_all_n1)
+        .def("add_n1", &SecurityAnalysis::add_n1)
+        .def("add_nk", &SecurityAnalysis::add_nk)
+        .def("add_multiple_n1", &SecurityAnalysis::add_multiple_n1)
+
+        // remove some defaults (TODO)
+        .def("reset", &SecurityAnalysis::clear)
+        .def("clear", &SecurityAnalysis::clear)
+        .def("remove_n1", &SecurityAnalysis::remove_n1)
+        .def("remove_nk", &SecurityAnalysis::remove_nk)
+        .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1)
+        
+        // inspect the class
+        .def("my_defaults", &SecurityAnalysis::my_defaults_vect)
+
+        // perform the computation
+        .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>())
+
+        // results (for now only flow (at each -line origin- or voltages -at each buses)
+        .def("get_flows", &SecurityAnalysis::get_flows)  // need to be done after "compute" and "compute_flows"
+        .def("get_voltages", &SecurityAnalysis::get_voltages) // need to be done after "compute"
+        .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>())  // need to be done after "compute"
+
+        // timers
+        .def("total_time", &SecurityAnalysis::total_time)
+        .def("solver_time", &SecurityAnalysis::solver_time)
+        .def("preprocessing_time", &SecurityAnalysis::preprocessing_time)
+        .def("amps_computation_time", &SecurityAnalysis::amps_computation_time)
+        .def("modif_Ybus_time", &SecurityAnalysis::modif_Ybus_time)
+        .def("nb_solved", &SecurityAnalysis::nb_solved)
+        ;
 }

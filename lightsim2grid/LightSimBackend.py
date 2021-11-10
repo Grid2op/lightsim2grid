@@ -17,7 +17,8 @@ from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 
 from lightsim2grid.initGridModel import init, SolverType
-
+# import lightsim2grid.solver.SolverType.DCSolver
+# from lightsim2grid.solver import DCSolver
 
 class LightSimBackend(Backend):
     def __init__(self, detailed_infos_for_cascading_failures=False):
@@ -414,6 +415,7 @@ class LightSimBackend(Backend):
             self.storage_v = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
 
         self._count_object_per_bus()
+        self._grid.tell_topo_changed()
         self.__me_at_init = self._grid.copy()
         self.__init_topo_vect = np.ones(self.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
@@ -555,14 +557,15 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         my_exc_ = None
         res = False
+        # self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
         try:
             if is_dc:
-                msg_ = "LightSimBackend: the support of the DC approximation is fully supported at the moment"
-                warnings.warn(msg_)
-                raise RuntimeError(msg_)
-                if self.V is None:
-                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
+                # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
+                # one everywhere...
+                # But not when it initializes in DC mode... (see below)
+                self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                self._grid.change_solver(SolverType.DC)
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow("Divergence of powerflow (non connected grid)")
             else:
@@ -575,7 +578,10 @@ class LightSimBackend(Backend):
                     # if I init with dc values, it should depends on previous state
                     self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
                     Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
+                    # self._grid.change_solver(SolverType.DC)
+                    # print(f"time dc: {self._grid.get_computation_time()*1000.:.3f}ms")
                     self._grid.reactivate_result_computation()
+                    # self._grid.change_solver(self.__current_solver_type)
                     if Vdc.shape[0] == 0:
                         raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
                     V_init = Vdc
@@ -583,7 +589,6 @@ class LightSimBackend(Backend):
                     V_init = copy.deepcopy(self.V)
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 if V.shape[0] == 0:
-                    # V = self._grid.ac_pf(self.V, self.max_it, self.tol)
                     raise DivergingPowerFlow(f"divergence of powerflow (more than {self.max_it} iterations)")
 
             self.comp_time += self._grid.get_computation_time()
@@ -626,11 +631,20 @@ class LightSimBackend(Backend):
             # TODO storage case of divergence !
 
             res = True
+            if is_dc:
+                # set back the solver to its previous state
+                self._grid.change_solver(self.__current_solver_type)
+            self._grid.unset_topo_changed()
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
+            self._grid.tell_topo_changed()
             self._fill_nans()
             res = False
             my_exc_ = exc_
+
+            if is_dc:
+                # set back the solver to its previous state
+                self._grid.change_solver(self.__current_solver_type)
 
         # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
         if self.__has_storage:
@@ -660,6 +674,11 @@ class LightSimBackend(Backend):
             self.storage_q[:] = np.NaN
             self.storage_v[:] = np.NaN
         self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
+
+    def __deepcopy__(self, memo):
+        result = self.copy()
+        memo[id(self)] = result
+        return result
 
     def copy(self):
         # i can perform a regular copy, everything has been initialized
@@ -783,6 +802,7 @@ class LightSimBackend(Backend):
     def reset(self, grid_path, grid_filename=None):
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
+        self._grid.tell_topo_changed()
         self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.

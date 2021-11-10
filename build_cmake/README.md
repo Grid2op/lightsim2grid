@@ -36,7 +36,7 @@ of this repo (`lightsim2grid/build_cmake`). Then:
    by the installation script of `lightsim2grid` and this will be useless
 5) compile the SuiteSparse package: `cmake --build . --config Release`
 6) "install" it (which means: "move the libraries and the header at the right place): 
-   `cmake --build . --config Release --target install`
+   `cmake --build . --config Release --target install` and / or `cmake --install . --config Release --prefix ..\built`
 
 ## Install lightsim2grid
 

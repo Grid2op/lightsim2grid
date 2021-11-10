@@ -31,7 +31,7 @@ void DataGen::init(const RealVect & generators_p,
         exc_ << ". Both should match";
         throw std::runtime_error(exc_.str());
     }
-    int nb_gen = min_q_.size();
+    const int nb_gen = static_cast<int>(min_q_.size());
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if (min_q_(gen_id) > max_q_(gen_id))
         {
@@ -79,7 +79,7 @@ void DataGen::set_state(DataGen::StateRes & my_state )
 
 
 void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
-    int nb_gen = nb();
+    const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     real_type tmp;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
@@ -105,7 +105,7 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
                      int slack_bus_id_solver,
                      const std::vector<int> & id_grid_to_solver)
 {
-    int nb_gen = nb();
+    const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
@@ -132,13 +132,13 @@ void DataGen::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const Eigen::Ref<const CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
                                const RealVect & bus_vn_kv,
-                               real_type sn_mva)
+                               real_type sn_mva,
+                               bool ac)
 {
-    int nb_gen = nb();
+    const int nb_gen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     v_deg_from_va(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = p_mw_;
-    // res_q_ = q_mvar_;
 }
 
 void DataGen::reset_results(){
@@ -149,7 +149,7 @@ void DataGen::reset_results(){
 }
 
 void DataGen::get_vm_for_dc(RealVect & Vm){
-    int nb_gen = nb();
+    const int nb_gen = nb();
     int bus_id_me;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
@@ -190,7 +190,7 @@ void DataGen::change_v(int gen_id, real_type new_v_pu, bool & need_reset)
 
 void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
 {
-    int nb_gen = nb();
+    const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
@@ -235,7 +235,7 @@ void DataGen::set_p_slack(int slack_bus_id, real_type p_slack){
 
 void DataGen::init_q_vector(int nb_bus)
 {
-    int nb_gen = nb();
+    const int nb_gen = nb();
     total_q_min_per_bus_ = RealVect::Constant(nb_bus, 0.);
     total_q_max_per_bus_ = RealVect::Constant(nb_bus, 0.);
     total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus, 0);
@@ -249,11 +249,12 @@ void DataGen::init_q_vector(int nb_bus)
     }
 }
 
-void DataGen::set_q(const std::vector<real_type> & q_by_bus)
+void DataGen::set_q(const std::vector<real_type> & q_by_bus, bool ac)
 {
     // for(int bus_id = 0; bus_id < q_by_bus.size(); ++bus_id) std::cout << "bus id " << bus_id << " sum q " << q_by_bus[bus_id] << std::endl;
-    int nb_gen = nb();
+    const int nb_gen = nb();
     res_q_ = RealVect::Constant(nb_gen, 0.);
+    if(!ac) return;  // do not consider Q values in dc mode
     real_type eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {

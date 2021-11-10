@@ -50,7 +50,7 @@ class DataShunt : public DataGeneric
     void set_state(DataShunt::StateRes & my_state );
 
 
-    int nb() { return p_mw_.size(); }
+    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     void deactivate(int shunt_id, bool & need_reset) {_deactivate(shunt_id, status_, need_reset);}
     void reactivate(int shunt_id, bool & need_reset) {_reactivate(shunt_id, status_, need_reset);}
@@ -71,7 +71,8 @@ class DataShunt : public DataGeneric
                          const Eigen::Ref<const CplxVect> & V,
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
-                         real_type sn_mva);
+                         real_type sn_mva,
+                         bool ac);
     void reset_results();
     virtual real_type get_p_slack(int slack_bus_id);
     virtual void get_q(std::vector<real_type>& q_by_bus);

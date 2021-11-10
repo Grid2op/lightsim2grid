@@ -6,7 +6,7 @@ import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.5.4"
+__version__ = "0.5.5"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -101,18 +101,24 @@ VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR = __version__.split(".")[:3]
 
 # compiler options
 extra_compile_args_tmp = ["-DNDEBUG"]
+IS_LINUX = False
+IS_MACOS = False
+IS_WINDOWS = False
 if sys.platform.startswith('linux'):
     # extra_compile_args_tmp = ["-fext-numeric-literals"]
     # -fext-numeric-literals is used for definition of complex number by some version of gcc
     extra_compile_args_tmp += []
+    IS_LINUX = True
 elif sys.platform.startswith("darwin"):
     # extra_compile_args_tmp = ["-fsized-deallocation"]
     extra_compile_args_tmp += []
     # fix a bug in pybind11
     # https://github.com/pybind/pybind11/issues/1604
+    IS_MACOS = True
 elif sys.platform.startswith("win32"):
     extra_compile_args_tmp += [# otherwise windows compiler does not import "M_PI" from the math header
                                "-D_USE_MATH_DEFINES"]
+    IS_WINDOWS = True
 
 
 # for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
@@ -144,11 +150,15 @@ src_files = ['src/main.cpp',
              "src/GaussSeidelSolver.cpp",
              "src/GaussSeidelSynchSolver.cpp",
              "src/BaseSolver.cpp",
-             "src/DCSolver.cpp"]
+             "src/DCSolver.cpp",
+             "src/BaseMultiplePowerflow.cpp",
+             "src/Computers.cpp",
+             "src/SecurityAnalysis.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
+    print("INFO: Using KLU package")
 
 # Try to locate the NICSLU sparse linaer solver
 if "PATH_NICSLU" in os.environ:
@@ -184,11 +194,37 @@ if "PATH_NICSLU" in os.environ:
         include_dirs.append(os.path.join(path_nicslu, "include"))
         src_files.append("src/NICSLUSolver.cpp")
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
+        print("INFO: Using NICSLU package")
 
 if "__COUT_TIMES" in os.environ:
     # to add extra info in cout for the computation times, we do not recommend to use it !
     if os.environ["__COUT_TIMES"] == "1":
         extra_compile_args.append("-D__COUT_TIMES")
+
+if "__COMPILE_MARCHNATIVE" in os.environ:
+    if os.environ["__COMPILE_MARCHNATIVE"] == "1":
+        extra_compile_args.append("-march=native")
+        print("INFO: Using \"-march=native\" compiler flag")
+
+if False:
+    path_iidm = ""
+    lib_iidm = [os.path.join(path_iidm, "lib", "libiidm.a")]
+
+    src_files.append("src/IIDMConverter.cpp")
+    extra_compile_args_tmp.append("-DIIDM_CONVERTER_AVAILABLE")
+
+    include_dirs.append(os.path.join(path_iidm, "include"))
+    include_dirs.append("/usr/include/libxml2/")  # for libxml2
+    LIBS += lib_iidm
+
+if "__O3_OPTIM" in os.environ:
+    # to add extra info in cout for the computation times, we do not recommend to use it !
+    if os.environ["__O3_OPTIM"] == "1":
+        if IS_LINUX or IS_MACOS:
+            extra_compile_args.append("-O3")
+            print("INFO: Using \"-O3\" compiler flag")
+        elif IS_WINDOWS:
+            extra_compile_args.append("/O2")
 
 ext_modules = [
     Pybind11Extension(

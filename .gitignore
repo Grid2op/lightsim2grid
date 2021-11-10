@@ -130,6 +130,7 @@ dmypy.json
 
 # custom
 .idea/
+.vscode/
 old/F_*.npy
 old/J_*.npy
 old/dx_*.npy
@@ -213,3 +214,7 @@ build_cmake/SuiteSparse/SuiteSparse_config/SuiteSparse_config.h
 lightsim2grid/tests/pn.case6470rte.json
 **/nicslu.lic
 benchmarks/debug_speed_improvments.py
+perf.data
+perf.data.old
+test_profile.py.lprof
+benchmarks/case9241pegase.json

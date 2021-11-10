@@ -47,15 +47,23 @@ specific license.
 class NICSLUSolver: public BaseNRSolver
 {
     public:
-        NICSLUSolver():BaseNRSolver(), solver_(), nb_thread_(1){
-        }
+        NICSLUSolver():
+            BaseNRSolver(),
+            solver_(),
+            nb_thread_(1),
+            ai_(nullptr), 
+            ap_(nullptr){}
 
         ~NICSLUSolver()
          {
-             solver_.Free();
-             delete [] ai_;
-             delete [] ap_;
+            solver_.Free();
+            if(ai_!= nullptr) delete [] ai_;
+            if(ap_!= nullptr) delete [] ap_;
          }
+
+        // prevent copy and assignment
+        NICSLUSolver(const NICSLUSolver & other) = delete;
+        NICSLUSolver & operator=( const NICSLUSolver & ) = delete;
 
         virtual void reset();
 
@@ -72,10 +80,6 @@ class NICSLUSolver: public BaseNRSolver
         const unsigned int nb_thread_;
         unsigned int * ai_;
         unsigned int * ap_;
-
-        // no copy allowed
-        NICSLUSolver( const NICSLUSolver & ) ;
-        NICSLUSolver & operator=( const NICSLUSolver & ) ;
 
 };
 
