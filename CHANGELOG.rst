@@ -13,7 +13,7 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - perform unittest on CI (either github or circleci)
 
-[0.5.5] 2021-11-yy
+[0.5.5] 2021-11-10
 -------------------
 - [ADDED] possibility to perform dc powerflow
 - [ADDED] a class to compute flows on whole time series when the Ybus does not change (see `TimeSerie`)
