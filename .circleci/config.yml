@@ -33,6 +33,7 @@ executors:
 jobs:
     compile_gcc10:
         executor: gcc_10
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -50,6 +51,7 @@ jobs:
                       python -m pip install -U .
     compile_gcc9:
         executor: gcc_9
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -67,6 +69,7 @@ jobs:
                       python -m pip install -U .
     compile_gcc8:
         executor: gcc_8
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -84,6 +87,7 @@ jobs:
                     python -m pip install -U .
     compile_gcc11:
         executor: gcc_11
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -101,6 +105,7 @@ jobs:
                     python -m pip install -U .
     compile_clang10:
         executor: clang10
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -118,6 +123,7 @@ jobs:
                     python -m pip install -U .
     compile_clang11:
         executor: clang11
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -135,6 +141,7 @@ jobs:
                     python -m pip install -U .
     compile_clang12:
         executor: clang12
+        resource_class: small
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y

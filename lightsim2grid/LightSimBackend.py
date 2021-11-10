@@ -675,6 +675,11 @@ class LightSimBackend(Backend):
             self.storage_v[:] = np.NaN
         self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
 
+    def __deepcopy__(self, memo):
+        result = self.copy()
+        memo[id(self)] = result
+        return result
+
     def copy(self):
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
