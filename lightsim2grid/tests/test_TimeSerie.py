@@ -25,11 +25,10 @@ class TimeSerieTester(unittest.TestCase):
         time_series.compute_V(scenario_id=0)
         As = time_series.compute_A()  # will contain the flows, in amps at each step (rows) for each powerline (column)
         
+        env.set_id(0)
         env.reset()
         # I got the same voltages as a normal pf
         for it_num in range(100):
             obs, *_ = env.step(env.action_space())
             if np.max(np.abs(As[1 + it_num] - obs.a_or))  > 1e-3:
-                import pdb
-                pdb.set_trace()
                 raise RuntimeError(f"error at it {it_num}")

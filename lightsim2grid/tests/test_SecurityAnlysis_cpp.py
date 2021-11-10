@@ -227,6 +227,5 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
                 assert np.max(np.abs(Vref[:nb_sub] - res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
                 assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
             else:
-                pdb.set_trace()
                 assert np.max(np.abs(res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
                 assert np.all(np.isnan(res_flows[cont_id])) , f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
