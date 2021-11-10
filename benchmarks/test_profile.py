@@ -3,6 +3,9 @@ import grid2op
 from lightsim2grid import LightSimBackend
 import warnings
 
+# usage:
+# perf record ./test_profile.py
+# perf report
 env_name = "l2rpn_neurips_2020_track2_small"
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore")

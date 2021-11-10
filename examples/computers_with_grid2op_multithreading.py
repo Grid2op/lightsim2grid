@@ -6,6 +6,11 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+# ADVANCED USAGE
+# This files explains how to use the Computers cpp class, for easier use
+# please consult the documentation of TimeSeries or the
+# time_serie.py file !
+
 import time
 import warnings
 import numpy as np

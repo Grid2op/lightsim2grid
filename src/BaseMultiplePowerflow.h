@@ -40,6 +40,9 @@ class BaseMultiplePowerflow
                 // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
                 _grid_model.dc_pf(V, 10, 1e-5);
                 _grid_model.ac_pf(V, 10, 1e-5);
+                
+                // assign the right solver type
+                _solver.change_solver(_grid_model.get_solver_type());
             }
 
         BaseMultiplePowerflow(const BaseMultiplePowerflow&) = delete;

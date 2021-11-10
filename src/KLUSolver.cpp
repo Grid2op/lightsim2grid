@@ -17,7 +17,6 @@ void KLUSolver::reset(){
 
     symbolic_ = nullptr;
     numeric_ = nullptr;
-    // std::cout << "KLUSolver::reset" << std::endl;
 }
 
 void KLUSolver::initialize(){
@@ -33,7 +32,6 @@ void KLUSolver::initialize(){
         err_ = 1;
     }
     need_factorize_ = false;
-    // std::cout << "KLUSolver::initialize" << std::endl;
     timer_initialize_ += timer.duration();
 }
 

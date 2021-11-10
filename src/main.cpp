@@ -414,6 +414,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<SecurityAnalysis>(m, "SecurityAnalysis")
         .def(py::init<const GridModel &>())
+        // solver control
+        .def("change_solver", &Computers::change_solver)
+        .def("available_solvers", &Computers::available_solvers)
+        .def("get_solver_type", &Computers::get_solver_type)
+
         // add some defaults
         .def("add_all_n1", &SecurityAnalysis::add_all_n1)
         .def("add_n1", &SecurityAnalysis::add_n1)

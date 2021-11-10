@@ -6,6 +6,11 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+# ADVANCED USAGE
+# This files explains how to use the Computers cpp class, for easier use
+# please consult the documentation of TimeSeries or the
+# time_serie.py file !
+
 import grid2op
 from grid2op.Parameters import Parameters
 import warnings
@@ -14,12 +19,12 @@ from lightsim2grid import LightSimBackend
 from lightsim2grid_cpp import Computers
 
 env_name = "l2rpn_neurips_2020_track2_small"
-nb_sim = 8063 # (or 576 if test=True) 
+test = False
 param = Parameters()
 param.NO_OVERFLOW_DISCONNECTION = True
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore")
-    env = grid2op.make(env_name, backend=LightSimBackend(), param=param)
+    env = grid2op.make(env_name, backend=LightSimBackend(), param=param, test=test)
 
 nb_bus = env.n_sub
 obs = env.reset()
@@ -28,12 +33,13 @@ Vinit = env.backend.V
 prod_p = 1.0 * env.chronics_handler.real_data.data.prod_p
 load_p = 1.0 * env.chronics_handler.real_data.data.load_p
 load_q = 1.0 * env.chronics_handler.real_data.data.load_q
+nb_sim = prod_p.shape[0]
 
 # now perform the computation
 computer = Computers(grid)
 # print("start the computation")
 status = computer.compute_Vs(prod_p,
-                            np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
+                            np.zeros((nb_sim, 0)),  # no static generators for now !
                             load_p,
                             load_q,
                             Vinit,

@@ -1,9 +1,10 @@
 __version__ = "0.5.4"
 
-__all__ = ["newtonpf", "SolverType", "solver"]
+__all__ = ["newtonpf", "SolverType", "solver",
+          # for documentation
+          "timeSerie", "securityAnalysis"]
 
 # import directly from c++ module
-import lightsim2grid.solver
 from lightsim2grid.solver import SolverType
 
 try:
@@ -28,8 +29,8 @@ except ImportError as exc_:
     pass
 
 try:
-    from lightsim2grid.securtiyAnalysis import SecurityAnalysis
+    from lightsim2grid.securityAnalysis import SecurityAnalysis
     __all__.append("SecurityAnalysis")
 except ImportError as exc_:
-    # grid2op is not installed, the SecurityAnalysis module will not be available
+    # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass

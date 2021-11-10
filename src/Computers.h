@@ -51,8 +51,8 @@ class Computers: public BaseMultiplePowerflow
                        Eigen::Ref<const RealMat> load_p,
                        Eigen::Ref<const RealMat> load_q,
                        const CplxVect & Vinit,
-                       int max_iter,
-                       real_type tol);
+                       const int max_iter,
+                       const real_type tol);
 
         Eigen::Ref<const CplxMat > get_sbuses() const {return _Sbuses;}
         Eigen::Ref<const RealMat > compute_flows() {

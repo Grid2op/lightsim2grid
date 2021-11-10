@@ -206,3 +206,27 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
             Vref = obs._obs_env.backend.V
             assert np.max(np.abs(Vref[:nb_sub] - res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
             assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
+    
+    def test_compute_nonconnected_graph(self):
+        SA = SecurityAnalysis(self.env.backend._grid)
+        lid_cont = [18]
+        nb_sub = self.env.n_sub
+        SA.add_multiple_n1(lid_cont)
+        SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
+        res_SA = SA.get_voltages()
+        res_flows = SA.compute_flows()
+        assert res_SA.shape[0] == len(lid_cont)
+
+        # now check the voltages are correctly computed
+        obs = self.env.get_obs()
+        for cont_id, l_id in enumerate(lid_cont):
+            sim_obs, sim_r, sim_done, sim_info = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
+                                                              time_step=0)
+            if not sim_done:
+                Vref = obs._obs_env.backend.V
+                assert np.max(np.abs(Vref[:nb_sub] - res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
+                assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
+            else:
+                pdb.set_trace()
+                assert np.max(np.abs(res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
+                assert np.all(np.isnan(res_flows[cont_id])) , f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"

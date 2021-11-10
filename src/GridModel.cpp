@@ -15,10 +15,6 @@ GridModel::GridModel(const GridModel & other)
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
 
-    // assign the right solver
-    _solver.change_solver(other._solver.get_type());
-    compute_results_ = other.compute_results_;
-
     // copy the powersystem representation
     // 1. bus
     bus_vn_kv_ = other.bus_vn_kv_;
@@ -41,13 +37,13 @@ GridModel::GridModel(const GridModel & other)
     // 6. loads
     loads_ = other.loads_;
 
-    // 6. static generators
+    // 7. static generators
     sgens_ = other.sgens_;
 
-    // 6. storage units
+    // 8. storage units
     storages_ = other.storages_;
 
-    // 7. slack bus
+    // 9. slack bus
     gen_slackbus_ = other.gen_slackbus_;
     slack_bus_id_ = other.slack_bus_id_;
 
@@ -68,6 +64,10 @@ GridModel::GridModel(const GridModel & other)
     trafo_hv_to_subid_ = other.trafo_hv_to_subid_;
     trafo_lv_to_subid_ = other.trafo_lv_to_subid_;
     storage_to_subid_ = other.storage_to_subid_;
+
+    // assign the right solver
+    _solver.change_solver(other._solver.get_type());
+    compute_results_ = other.compute_results_;
 }
 
 //pickle

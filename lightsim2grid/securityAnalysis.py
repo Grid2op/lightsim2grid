@@ -12,9 +12,8 @@ import warnings
 from collections.abc import Iterable
 import copy
 
-import grid2op
 from lightsim2grid.LightSimBackend import LightSimBackend
-from grid2op.Chronics import Multifolder, GridStateFromFile
+from lightsim2grid.initGridModel import SolverType
 from lightsim2grid_cpp import SecurityAnalysis as _SecurityAnalysisCPP
 
 
@@ -46,6 +45,16 @@ class SecurityAnalysis(object):
         # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
         # you can retrieve it with `security_analysis.contingency_order[row_id]`
 
+    Notes
+    ------
+
+    Sometimes, the behaviour might differ from grid2op. For example, if simulating a contingency
+    leads to a non connected grid, then this function will return "Nan" for the flows and 0. for
+    the voltages.
+
+    In grid2op, it would be, in this case, 0. for the flows and 0. for the voltages.
+
+    
     """
     STR_TYPES = (str, np.str, np.str_)
     def __init__(self, grid2op_env):
@@ -58,6 +67,11 @@ class SecurityAnalysis(object):
         self.__computed = False
         self._vs = None
         self._ampss = None
+
+        self.available_solvers = self.computer.available_solvers()
+        if SolverType.KLU in self.available_solvers:
+            # use the faster KLU if available
+            self.computer.change_solver(SolverType.KLU)
 
     @property
     def all_contingencies(self):

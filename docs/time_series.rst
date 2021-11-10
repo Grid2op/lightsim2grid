@@ -30,6 +30,14 @@ It can be used as:
 For now this relies on grid2op, but we could imagine a version of this class that can read
 to / from other data sources.
 
+Importantly, this method is around 15 times faster than simulating "do nothing" with grid2op
+(see section `Benchmarks`)
+
+.. note:: 
+
+    A more detailed example is given in the 
+    `examples\\time_serie.py` file from the lightsim2grid package.
+
 .. warning:: Topology and injections
     
     The topology is taken from the initial provided grid and cannot be changed when evaluating
@@ -37,6 +45,54 @@ to / from other data sources.
 
     Then, the call to `time_series.compute_V(scenario_id=..., seed=...)` will only read the injections
     (productions and loads) from grid2op to compute the voltages.
+
+.. note:: 
+    
+    As this class calls a long c++ function, it is possible to use the python `Threading`
+    module to achieve high efficient parrallelism. An example is provided in the
+    `examples\\computers_with_grid2op_multithreading.py` file.
+
+
+Benchmarks
+************
+
+Here are some benchmarks made with:
+
+- system: Linux 5.11.0-38-generic
+- OS: ubuntu 20.04
+- processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
+- python version: 3.8.10.final.0 (64 bit)
+- numpy version: 1.18.5
+- pandas version: 1.1.4
+- pandapower version: 2.6.0
+- lightsim2grid version: 0.5.5
+- grid2op version: 1.6.4
+
+Where lightsim2grid has been installed from source with all optimization enabled.
+
+This benchmark is available by running, from the root of the lightsim2grid repository:
+
+.. code-block:: bash
+
+    cd examples
+    python3 time_serie.py
+
+
+For this setting the outputs are:
+
+.. code-block:: bash
+
+    For environment: l2rpn_neurips_2020_track2_small
+    Total time spent in "computer" to solve everything: 0.53s (15252 pf / s), 0.07 ms / pf)
+        - time to pre process the injections: 0.03s
+        - time to perform powerflows: 0.50s (16269 pf / s, 0.06 ms / pf)
+    In addition, it took 0.06 s to retrieve the current from the complex voltages (in total 13666.3 pf /s, 0.07 ms / pf)
+    Comparison with raw grid2op timings
+    It took grid2op: 9.26s to perform the same computation
+    This is a 15.7 speed up from TimeSerie over raw grid2op
+
+
+In this case then, the `TimeSerie` module is more than **15** times faster than raw grid2op.
 
 
 Detailed usage

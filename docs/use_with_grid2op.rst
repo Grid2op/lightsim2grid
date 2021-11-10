@@ -119,15 +119,15 @@ The code to run these benchmarks are given with this package int the [benchmark]
 
 All of them has been run on a computer with a the following characteristics:
 
-- system: Linux 5.8.0-63-generic
+- system: Linux 5.11.0-38-generic
 - OS: ubuntu 20.04
 - processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
 - python version: 3.8.10.final.0 (64 bit)
 - numpy version: 1.18.5
 - pandas version: 1.1.4
 - pandapower version: 2.6.0
-- grid2op version: 1.6.3
-- lightsim2grid version: 0.5.4
+- lightsim2grid version: 0.5.5
+- grid2op version: 1.6.4
 
 
 To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
@@ -164,6 +164,8 @@ We compare 5 different backends:
   `(optional) Include NICSLU linear solver (experimental)` of the Readme file.
   It is required to install lightsim2grid from source for such solver]
 
+All benchmarks where done with all the customization enabled. See the readme for more information.
+
 Computation time
 ~~~~~~~~~~~~~~~~~~~
 
@@ -186,19 +188,19 @@ First on an environment based on the IEEE case 14 grid:
 ================  ======================  ===================================  ============================
 case14_sandbox      grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
 ================  ======================  ===================================  ============================
-PP                                  60.8                               12.8                          4.91
-LS+GS                              800                                  0.458                        0.334
-LS+GS S                            790                                  0.47                         0.347
-LS+SLU                             992                                  0.214                        0.0886
-LS+KLU                            1030                                  0.177                        0.0507
-LS+NICSLU                         1020                                  0.178                        0.0513
+PP                                  68.8                               11.3                          4.36
+LS+GS                              866                                  0.41                         0.308
+LS+GS S                            859                                  0.416                        0.314
+LS+SLU                            1090                                  0.168                        0.0632
+LS+KLU                            1160                                  0.12                         0.0188
+LS+NICSLU                         1150                                  0.121                        0.0186
 ================  ======================  ===================================  ============================
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~1000 steps each second on the case 14 and
-"only" 61 for the default PandaPower Backend, leading to a speed up of **~16** in this case
+From a grid2op perspective, lightsim2grid allows to compute up to ~1200 steps each second on the case 14 and
+"only" 69 for the default PandaPower Backend, leading to a speed up of **~17** in this case
 (lightsim2grid is ~16 times faster than Pandapower). For such a small environment, there is no sensible
 difference in using
-KLU linear solver compared to using the SparseLU solver of Eigen (1030 vs 992 iterations on the reported
+KLU linear solver compared to using the SparseLU solver of Eigen (1160 vs 1090 iterations on the reported
 runs, might slightly vary across runs). KLU and NICSLU achieve almost identical performances.
 
 Then on an environment based on the IEEE case 118:
@@ -206,28 +208,28 @@ Then on an environment based on the IEEE case 118:
 =====================  ======================  ===================================  ============================
 neurips_2020_track2      grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
 =====================  ======================  ===================================  ============================
-PP                                      38.6                                13.6                           5.67
-LS+GS                                    5.39                              184                           184
-LS+GS S                                 31.8                                30.5                          30.2
-LS+SLU                                 533                                   1.06                          0.791
-LS+KLU                                 706                                   0.602                         0.329
-LS+NICSLU                              704                                   0.603                         0.33
+PP                                      39.4                                13.5                           5.65
+LS+GS                                    5.12                              194                           194
+LS+GS S                                 35.2                                27.5                          27.3
+LS+SLU                                 621                                   0.775                         0.591
+LS+KLU                                 883                                   0.301                         0.12
+LS+NICSLU                              881                                   0.302                         0.121
 =====================  ======================  ===================================  ============================
 
-For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~18** time faster than
-using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~10**
-times faster than using the default backend [the `LS+KLU` solver is ~2-3 times faster than the `LS+SLU` solver
-(`0.33` ms per powerflow for `L2+KLU`  compared to `0.79` ms for `LS+SLU`), but it only translates to `LS+KLU`
+For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~22** time faster than
+using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~16**
+times faster than using the default backend [the `LS+KLU` solver is ~4-5 times faster than the `LS+SLU` solver 
+(`0.12` ms per powerflow for `L2+KLU`  compared to `0.59` ms for `LS+SLU`), but it only translates to `LS+KLU` 
 providing ~30-40% more
-iterations per second in the total program (`706` vs `533`) mainly because grid2op itself takes some times to modify the
+iterations per second in the total program (`880` vs `650`) mainly because grid2op itself takes some times to modify the
 grid and performs all the check it does.] For this testcase once again there is no noticeable difference between
 `NICSLU` and `KLU`.
 
 If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
 initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.33ms**
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **6.6 ms** when using
-the PandaPowerBackend (speed up of **~18** times)
+grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.12ms**
+to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **5.6 ms** when using
+the PandaPowerBackend (speed up of **~46** times)
 
 **NB** pandapower performances heavily depends on the pandas version used, we used here a version of pandas which
 we found gave the best performances on our machine.
@@ -268,7 +270,7 @@ LS+KLU                              0.000122        7.63e-06          7.63e-06
 LS+NICSLU                           0.000122        7.63e-06          7.63e-06
 ============================  ==============  ==============  ================
 
-.. info::
+.. note::
 
     Flows are here measured in amps (and not kA). The maximum difference of flows is approximately 0.1mA
     or 1e-4 A. This difference is totally neglectible on power transportation side where the current is usually
@@ -286,7 +288,6 @@ LS+SLU                                    6.1e-05        0                 9.54e
 LS+KLU                                    6.1e-05        0                 9.54e-07
 LS+NICSLU                                 6.1e-05        0                 9.54e-07
 =================================  ==============  ==============  ================
-
 
 As we can see on all the tables above, the difference when using lightsim and pandapower is rather
 small, even when using a different algorithm to solve the powerflow (LS + GS corresponds to

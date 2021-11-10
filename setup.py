@@ -158,6 +158,7 @@ src_files = ['src/main.cpp',
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
+    print("INFO: Using KLU package")
 
 # Try to locate the NICSLU sparse linaer solver
 if "PATH_NICSLU" in os.environ:
@@ -193,6 +194,7 @@ if "PATH_NICSLU" in os.environ:
         include_dirs.append(os.path.join(path_nicslu, "include"))
         src_files.append("src/NICSLUSolver.cpp")
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
+        print("INFO: Using NICSLU package")
 
 if "__COUT_TIMES" in os.environ:
     # to add extra info in cout for the computation times, we do not recommend to use it !
@@ -202,6 +204,7 @@ if "__COUT_TIMES" in os.environ:
 if "__COMPILE_MARCHNATIVE" in os.environ:
     if os.environ["__COMPILE_MARCHNATIVE"] == "1":
         extra_compile_args.append("-march=native")
+        print("INFO: Using \"-march=native\" compiler flag")
 
 if False:
     path_iidm = ""
@@ -219,6 +222,7 @@ if "__O3_OPTIM" in os.environ:
     if os.environ["__O3_OPTIM"] == "1":
         if IS_LINUX or IS_MACOS:
             extra_compile_args.append("-O3")
+            print("INFO: Using \"-O3\" compiler flag")
         elif IS_WINDOWS:
             extra_compile_args.append("/O2")
 

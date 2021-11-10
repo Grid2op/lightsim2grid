@@ -32,15 +32,7 @@ class SecurityAnalysis: public BaseMultiplePowerflow
         _timer_total(0.),
         _timer_modif_Ybus(0.),
         _timer_pre_proc(0.)
-        {
-            // make sure that my "grid_model" is ready to be used (for ac and dc)
-            Eigen::Index nb_bus = init_grid_model.total_bus();
-            CplxVect V = CplxVect::Constant(nb_bus, 1.04);
-            // const auto & Vtmp = init_grid_model.get_V();
-            // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
-            _grid_model.dc_pf(V, 10, 1e-5);
-            _grid_model.ac_pf(V, 10, 1e-5);
-        }
+        { }
 
         // utilities to add defaults to simulate
         void add_all_n1(){
@@ -143,7 +135,7 @@ class SecurityAnalysis: public BaseMultiplePowerflow
         }
         void init_li_coeffs();
         // remove the line parameters from Ybus, this is to emulate its disconnection
-        void remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
+        bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus
         void readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
 
@@ -151,6 +143,9 @@ class SecurityAnalysis: public BaseMultiplePowerflow
         // this function sorts this out
         void clean_flows();
 
+        // sometimes, when i perform some disconnection, I make the graph non connexe
+        // in this case, well, i don't use the results of the simulation
+        bool check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const;
     private:
         // li_default
         std::set<std::set<int> > _li_defaults;  // do not use unordered_set here, we rely on the order for different functions !

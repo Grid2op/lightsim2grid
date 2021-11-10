@@ -7,9 +7,41 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SecurityAnalysis.h"
+#include <queue>
+#include <math.h>       /* isfinite */
+
+bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
+    std::vector<bool> visited(Ybus.cols(), false); 
+    std::queue<int> neighborhood;
+    int col_id = 0;  // start by node 0, why not
+    while (true)
+    {
+        visited[col_id] = true;
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_id); it; ++it)
+        {
+            // add in the queue all my neighbor (if the coefficient is big enough)
+            if(!visited[it.row()] && abs(it.value()) > 1e-8){
+                neighborhood.push(it.row());
+            }
+        }
+        if(neighborhood.empty()) break;
+        col_id = neighborhood.front();
+        neighborhood.pop();
+    }
+    
+    bool ok = true;
+    for(auto el: visited){
+        if(!el)
+        {
+            // this node has not been visited, there is an error
+            ok=false;
+            break;
+        }
+    }
+    return ok;
+}
 
 void SecurityAnalysis::init_li_coeffs(){
-    auto timer = CustTimer();
     _li_coeffs.clear();
     _li_coeffs.reserve(_li_defaults.size());
     const auto & powerlines = _grid_model.get_powerlines_as_data();
@@ -55,12 +87,13 @@ void SecurityAnalysis::init_li_coeffs(){
 }
 
 
-void SecurityAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+bool SecurityAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                         const std::vector<Coeff> & coeffs) const
 {
     for(const auto & coeff_to_remove: coeffs){
         Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
     }
+    return check_invertible(Ybus);
 }
 void SecurityAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const std::vector<Coeff> & coeffs) const
@@ -119,19 +152,30 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     // now perform the security analysis
     Eigen::Index cont_id = 0;
     bool conv;
+    CplxVect V;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
-        remove_from_Ybus(Ybus, coeffs_modif);
+        bool invertible = remove_from_Ybus(Ybus, coeffs_modif);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
-        CplxVect V = Vinit_solver; // Vinit is reused for each contingencies
+        conv = false;
+
+        // I have absolutely no idea why, but if i add this "if"
+        // which reduces the computation time, it somehow increase it by A LOT !
+        // 5.2ms without it vs 81.9ms with it (for the iee 118)
+        // So better make the computation, even if it's not used...
+
+        // if(invertible)
+        // {
+        V = Vinit_solver; // Vinit is reused for each contingencies
         conv = compute_one_powerflow(Ybus, V, Sbus,
                                      bus_pv, bus_pq,
                                      max_iter,
                                      tol / sn_mva);
+        // }
         timer_modif_Ybus = CustTimer();
         readd_to_Ybus(Ybus, coeffs_modif);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
-        _voltages.row(cont_id)(id_ac_solver_to_me) = V.array();
+        if (conv && invertible) _voltages.row(cont_id)(id_ac_solver_to_me) = V.array();
         ++cont_id;
     }
     _timer_total = timer.duration();
@@ -142,7 +186,10 @@ void SecurityAnalysis::clean_flows()
     auto timer = CustTimer();
     Eigen::Index cont_id = 0;
     for(const auto & l_id_this_cont: _li_defaults){
-        for(auto l_id : l_id_this_cont) _amps_flows(cont_id, l_id) = 0.;
+        for(auto l_id : l_id_this_cont){
+            real_type & el = _amps_flows(cont_id, l_id);
+            if(isfinite(el)) el = 0.;
+        }
         ++cont_id;
     }
     _timer_compute_A += timer.duration();

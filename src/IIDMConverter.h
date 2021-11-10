@@ -18,6 +18,9 @@
 #include "powsybl/PowsyblException.hpp"
 #include "powsybl/iidm/Network.hpp"
 
+/**
+Supposes that, at the init of the file, every element on the same substation is connected on the same busbar !
+**/
 class GridModelFromIIDM
 {
     GridModelFromIIDM(const std::string & path):network_("not init", "dont use"){
@@ -33,9 +36,9 @@ class GridModelFromIIDM
     protected:
         powsybl::iidm::Network network_;
 
-        void init_bus(GridModel & grid_model) const;
-        void init_powerlines(GridModel & grid_model) const;
-        void init_trafos(GridModel & grid_model) const;
+        powsybl::iidm::network::BusView init_bus(GridModel & grid_model) const;
+        void init_powerlines(GridModel & grid_model, const powsybl::iidm::network::BusView & bus_view) const;
+        void init_trafos(GridModel & grid_model, const powsybl::iidm::network::BusView & bus_view) const;
 };
 
 #endif  // IIDMCONVERTER_H

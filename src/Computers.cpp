@@ -15,8 +15,8 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                           Eigen::Ref<const RealMat> load_p,
                           Eigen::Ref<const RealMat> load_q,
                           const CplxVect & Vinit,
-                          int max_iter,
-                          real_type tol)
+                          const int max_iter,
+                          const real_type tol)
 {
     auto timer = CustTimer();
     const Eigen::Index nb_total_bus = _grid_model.total_bus();
@@ -37,7 +37,7 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
 
     auto timer_preproc = CustTimer();
     const auto & sn_mva = _grid_model.get_sn_mva();
-    const auto & Ybus = _grid_model.get_Ybus(); 
+    Eigen::SparseMatrix<cplx_type> Ybus = _grid_model.get_Ybus(); 
     const auto & id_me_to_ac_solver = _grid_model.id_me_to_ac_solver();
     const auto & id_ac_solver_to_me = _grid_model.id_ac_solver_to_me();
     const auto & generators = _grid_model.get_generators_as_data();
@@ -75,22 +75,31 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // do the computa   tion for each step
     CplxVect V = Vinit_solver;
     bool conv;
-    CplxVect Sbus;
+    Eigen::Index step_diverge = -1;
+    const real_type tol_ = tol / sn_mva; 
     for(Eigen::Index i = 0; i < nb_steps; ++i){
-        Sbus = _Sbuses.row(i).array(); 
-        conv = compute_one_powerflow(Ybus, V, Sbus,
-                                     bus_pv, bus_pq,
+        conv = false;
+        conv = compute_one_powerflow(Ybus,
+                                     V, 
+                                     _Sbuses.row(i),
+                                     bus_pv,
+                                     bus_pq,
                                      max_iter,
-                                     tol / sn_mva);
+                                     tol_);
         if(!conv){
             _timer_total = timer.duration();
             return _status;
         }
-        _voltages.row(i)(id_ac_solver_to_me) = V.array();
+        if(conv && step_diverge < 0) _voltages.row(i)(id_ac_solver_to_me) = V.array();
+        else step_diverge = i;
     }
-
-    // If i reached there, it means it is succesfull
-    _status = 1;
+    if(step_diverge > 0){
+        _status = 0;
+    }else{
+        // If i reached there, it means it is succesfull
+        _status = 1;
+    }
+    
     _timer_total = timer.duration();
     return _status;
 }

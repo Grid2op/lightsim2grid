@@ -62,9 +62,10 @@ get some benefit (in terms of performances) to install it from your on your mach
 
 ## Installation (from source, for more advanced user)
 You need to:
-- clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional)
-- (optional) compile a piece of SparseSuite
+- clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional, but recommended)
+- (optional, but recommended) compile a piece of SparseSuite
 - (optional) [experimental] retrieve and get a proper license for the NICSLU linear solver (see https://github.com/chenxm1986/nicslu)
+- (optional) specify some compilation flags to make the package run faster on your machine
 - install the package
 
 ### Important note
@@ -94,7 +95,7 @@ git submodule init
 git submodule update
 ```
 
-### (optional) Compilation of SuiteSparse
+### (optional, recommended) Compilation of SuiteSparse
 SuiteSparse comes with the faster KLU linear solver. 
 
 Since version 0.3.0 this requirement has been removed. This entails
@@ -164,6 +165,26 @@ Be carefull though, you require a license file in order to use it. As of now, th
 file at the same location that the one you execute python from (*ie* you need to copy paste it each time). We will 
 try to find another solution.
 
+### (optional) customization of the installation
+
+If you bother to compile from source the package, you might also want to benefit from some
+extra speed ups.
+
+This can be achieve by specifying the `__O3_OPTIM` and `__COMPILE_MARCHNATIVE` environment variables. 
+
+The first one will compile the package using the `-O3` compiler flag (`/O2` on windows) which will tell the compiler to optimize the code for speed even more.
+
+The second one will compile the package using the `-march=native` flag (on macos and linux)
+
+And example to do such things on a linux based machine is:
+
+```commandline
+export __O3_OPTIM=1
+export __COMPILE_MARCHNATIVE=1
+```
+
+If you want to disable them, you simply need to set their respective value to 0.
+
 ### 2. Installation of the python package
 Now you simply need to install the lightsim2grid package this way, like any python package:
 
@@ -176,21 +197,23 @@ pip install -U .
 
 And you are done :-)
 
+
 ### Benchmark
 In this section we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
 The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
 
 All of them has been run on a computer with the following configuration:
 Configuration:
-- system: Linux 5.8.0-63-generic
+- system: Linux 5.11.0-38-generic
 - OS: ubuntu 20.04
 - processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
 - python version: 3.8.10.final.0 (64 bit)
 - numpy version: 1.18.5
 - pandas version: 1.1.4
 - pandapower version: 2.6.0
-- grid2op version: 1.6.3
-- lightsim2grid version: 0.5.4
+- lightsim2grid version: 0.5.5
+- grid2op version: 1.6.4
+
 
 The code to reproduce the benchmark on your machine are given, once `cd` into the `benchmarks` directory:
 
@@ -236,47 +259,46 @@ First on an environment based on the IEEE case14 grid:
 
 | case14_sandbox   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
 |------------------|------------------------|-------------------------------------|------------------------------|
-| PP               |                   60.8 |                              12.8   |                       4.91   |
-| LS+GS            |                  800   |                               0.458 |                       0.334  |
-| LS+GS S          |                  790   |                               0.47  |                       0.347  |
-| LS+SLU           |                  992   |                               0.214 |                       0.0886 |
-| LS+KLU           |                 1030   |                               0.177 |                       0.0507 |
-| LS+NICSLU        |                 1020   |                               0.178 |                       0.0513 |
+| PP               |                   68.8 |                              11.3   |                       4.36   |
+| LS+GS            |                  866   |                               0.41  |                       0.308  |
+| LS+GS S          |                  859   |                               0.416 |                       0.314  |
+| LS+SLU           |                 1090   |                               0.168 |                       0.0632 |
+| LS+KLU           |                 1160   |                               0.12  |                       0.0188 |
+| LS+NICSLU        |                 1150   |                               0.121 |                       0.0186 |
 
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~1000 steps each second on the case 14 and
-"only" 61 for the default PandaPower Backend, leading to a speed up of **~16** in this case
-(lightsim2grid is ~16 times faster than Pandapower). For such a small environment, there is no sensible
+From a grid2op perspective, lightsim2grid allows to compute up to ~1200 steps each second on the case 14 and
+"only" 69 for the default PandaPower Backend, leading to a speed up of **~17** in this case
+(lightsim2grid is ~17 times faster than Pandapower). For such a small environment, there is no sensible
 difference in using 
-KLU linear solver compared to using the SparseLU solver of Eigen (1030 vs 992 iterations on the reported
+KLU linear solver compared to using the SparseLU solver of Eigen (1160 vs 1090 iterations on the reported
 runs, might slightly vary across runs). KLU and NICSLU achieve almost identical performances.
 
 Then on an environment based on the IEEE case 118:
 
 | neurips_2020_track2   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
 |-----------------------|------------------------|-------------------------------------|------------------------------|
-| PP                    |                  38.6  |                              13.6   |                        5.67  |
-| LS+GS                 |                   5.39 |                             184     |                      184     |
-| LS+GS S               |                  31.8  |                              30.5   |                       30.2   |
-| LS+SLU                |                 533    |                               1.06  |                        0.791 |
-| LS+KLU                |                 706    |                               0.602 |                        0.329 |
-| LS+NICSLU             |                 704    |                               0.603 |                        0.33  |
+| PP                    |                  39.4  |                              13.5   |                        5.65  |
+| LS+GS                 |                   5.12 |                             194     |                      194     |
+| LS+GS S               |                  35.2  |                              27.5   |                       27.3   |
+| LS+SLU                |                 621    |                               0.775 |                        0.591 |
+| LS+KLU                |                 883    |                               0.301 |                        0.12  |
+| LS+NICSLU             |                 881    |                               0.302 |                        0.121 |
 
-
-For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~18** time faster than
-using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~10**
-times faster than using the default backend [the `LS+KLU` solver is ~2-3 times faster than the `LS+SLU` solver 
-(`0.33` ms per powerflow for `L2+KLU`  compared to `0.79` ms for `LS+SLU`), but it only translates to `LS+KLU` 
+For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~22** time faster than
+using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~16**
+times faster than using the default backend [the `LS+KLU` solver is ~4-5 times faster than the `LS+SLU` solver 
+(`0.12` ms per powerflow for `L2+KLU`  compared to `0.59` ms for `LS+SLU`), but it only translates to `LS+KLU` 
 providing ~30-40% more
-iterations per second in the total program (`706` vs `533`) mainly because grid2op itself takes some times to modify the
+iterations per second in the total program (`880` vs `650`) mainly because grid2op itself takes some times to modify the
 grid and performs all the check it does.] For this testcase once again there is no noticeable difference between
 `NICSLU` and `KLU`.
 
 If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
 initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.33ms**
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **6.6 ms** when using
-the PandaPowerBackend (speed up of **~18** times)
+grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.12ms**
+to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **5.6 ms** when using
+the PandaPowerBackend (speed up of **~46** times)
 
 **NB** pandapower performances heavily depends on the pandas version used, we used here a version of pandas which
 we found gave the best performances on our machine.
