@@ -13,6 +13,11 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - perform unittest on CI (either github or circleci)
 
+[0.5.5] 20xx-yy-zz
+-------------------
+- [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
+-  
+
 [0.5.5] 2021-11-10
 -------------------
 - [ADDED] possibility to perform dc powerflow
