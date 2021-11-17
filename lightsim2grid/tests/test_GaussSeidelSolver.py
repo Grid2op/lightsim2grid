@@ -182,11 +182,11 @@ class MakeTests(unittest.TestCase):
 
         has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.pv,
                                           self.pq, self.max_it, self.tol)
-        # start = time.time()
+        # start = time.perf_counter()
         Vgs, convergedgs, max_itgs = gausspf(copy.deepcopy(self.Ybus), copy.deepcopy(self.Sbus),
                                              copy.deepcopy(self.V_init),
                                              ref=None, pv=self.pv, pq=self.pq, ppopt=ppopt)
-        # end = time.time()
+        # end = time.perf_counter()
         # print("end - start: {}".format(end - start))
         # print("have i conv ? {}".format(has_conv))
         # print("print timer solve: {}".format(self.solver.get_timers()[1]))

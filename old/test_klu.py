@@ -79,21 +79,21 @@ time_ppci_to_pfsoln = 0.  # time to parse pcci back to proper shape
 cpp_solver = KLU4Pandapower()
 # remove the first call with numba, that compiles the code
 pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
-start_time_pp = time.time()
+start_time_pp = time.perf_counter()
 for i in range(nb_iteration):
-    start_time_pp = time.time()
+    start_time_pp = time.perf_counter()
     try:
         pp.runpp(grid1, max_iteration=nb_max_newton_it, numba=True)
     except pp.powerflow.LoadflowNotConverged:
         pass
-    total_time_pp += time.time() - start_time_pp
+    total_time_pp += time.perf_counter() - start_time_pp
     powerflow_time_pp += grid1._ppc['et']
     nb_it_pp = grid1._ppc['iterations']
     sucees_pp = grid1._ppc['success']
-end_time_pp = time.time()
+end_time_pp = time.perf_counter()
 
 for i in range(nb_iteration):
-    start_time_cpp = time.time()
+    start_time_cpp = time.perf_counter()
     try:
         cpp_solver.runpp(grid2, max_iteration=nb_max_newton_it,
                          need_reset=True   # reset the KLU solver to an original state, need to be done each time the Ymatrix is changed (might be slow)
@@ -102,7 +102,7 @@ for i in range(nb_iteration):
         if i == 0:
             print("I didn't converge for c++")
         pass
-    total_time_cpp += time.time() - start_time_cpp
+    total_time_cpp += time.perf_counter() - start_time_cpp
 
     powerflow_time_cpp += grid2._ppc['et']
     sucees_cpp = grid2._ppc['success']
