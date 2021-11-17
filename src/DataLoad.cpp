@@ -119,14 +119,15 @@ void DataLoad::change_q(int load_id, real_type new_q, bool & need_reset)
     q_mvar_(load_id) = new_q;
 }
 
-real_type DataLoad::get_p_slack(int slack_bus_id)
+real_type DataLoad::get_p_slack(const std::vector<int>& slack_bus_id) const
 {
     int nb_element = nb();
     real_type res = 0.;
     for(int load_id = 0; load_id < nb_element; ++load_id)
     {
         if(!status_[load_id]) continue;
-        if(bus_id_(load_id) == slack_bus_id) res += res_p_(load_id);
+        // if(bus_id_(load_id) == slack_bus_id) res += res_p_(load_id);
+        if(slack_bus_id.count(bus_id_(load_id))) res += res_p_(load_id);
     }
     return res;
 }

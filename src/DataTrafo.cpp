@@ -353,7 +353,8 @@ void DataTrafo::reset_results(){
     res_a_lv_ = RealVect();  // in kA
 }
 
-real_type DataTrafo::get_p_slack(int slack_bus_id)
+// TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
+real_type DataTrafo::get_p_slack(const std::vector<int>& slack_bus_id) const
 {
     const int nb_element = nb();
     real_type res = 0.;

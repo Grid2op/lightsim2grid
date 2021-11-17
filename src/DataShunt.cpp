@@ -169,14 +169,16 @@ void DataShunt::change_q(int shunt_id, real_type new_q, bool & need_reset)
     q_mvar_(shunt_id) = new_q;
 }
 
-real_type DataShunt::get_p_slack(int slack_bus_id)
+// TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
+real_type DataShunt::get_p_slack(const std::vector<int>& slack_bus_id) const
 {
     int nb_element = nb();
     real_type res = 0.;
     for(int shunt_id = 0; shunt_id < nb_element; ++shunt_id)
     {
         if(!status_[shunt_id]) continue;
-        if(bus_id_(shunt_id) == slack_bus_id) res += res_p_(shunt_id);  //TODO plus here or minus ???
+        // if(bus_id_(shunt_id) == slack_bus_id) res += res_p_(shunt_id);  //TODO plus here or minus ???
+        if(slack_bus_id.count(bus_id_(shunt_id))) res += res_p_(shunt_id);
     }
     return res;
 }

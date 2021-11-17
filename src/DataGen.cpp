@@ -102,8 +102,8 @@ void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_gri
 
 void DataGen::fillpv(std::vector<int> & bus_pv,
                      std::vector<bool> & has_bus_been_added,
-                     int slack_bus_id_solver,
-                     const std::vector<int> & id_grid_to_solver)
+                     Eigen::VectorXi & slack_bus_id_solver,
+                     const std::vector<int> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
@@ -220,17 +220,24 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
     }
 }
 
-int DataGen::get_slack_bus_id(int gen_id){
-    bool status = status_.at(gen_id);  // also to ensure gen_id is consistent with number of gen
-    if(!status) throw std::runtime_error("DataGen::get_slack_bus_id: Generator for slack bus is deactivated");
-    int res = bus_id_(gen_id);
+std::set<int> DataGen::get_slack_bus_id(const std::vector<int>& gen_ids) const{
+    std::vector<int> res;
+    for(auto gen_id: gen_ids){
+        bool status = status_.at(gen_id);  // also to ensure gen_id is consistent with number of gen
+        if(!status) throw std::runtime_error("DataGen::get_slack_bus_id: Generator for slack bus is deactivated");
+        res.push_back(bus_id_(gen_id));
+    }
     return res;
 }
 
-void DataGen::set_p_slack(int slack_bus_id, real_type p_slack){
-    bool status = status_.at(slack_bus_id);  // also to ensure gen_id is consistent with number of gen
-    if(!status) throw std::runtime_error("DataGen::set_p_slack: Generator for slack bus is deactivated");
-    res_p_(slack_bus_id) = p_slack;
+void DataGen::set_p_slack(const std::vector<int>& slack_bus_id, real_type p_slack){
+    // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
+    // This should not compile on purpose !
+    for(auto int i = 0; i < slack_bus_id.size(); ++i){
+        bool status = status_.at(slack_bus_id);  // also to ensure gen_id is consistent with number of gen
+        if(!status) throw std::runtime_error("DataGen::set_p_slack: Generator for slack bus is deactivated");
+        res_p_(slack_bus_id) = p_slack;
+    }
 }
 
 void DataGen::init_q_vector(int nb_bus)

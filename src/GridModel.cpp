@@ -146,7 +146,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     DataSGen::StateRes & state_sgens= std::get<12>(my_state);
     // storage units
     DataLoad::StateRes & state_storages = std::get<13>(my_state);
-    int gen_slackbus = std::get<14>(my_state);
+    std::vector<int> gen_slackbus = std::get<14>(my_state);
 
     // assign it to this instance
 
@@ -195,14 +195,14 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     if(reset_ac){
         id_me_to_ac_solver_ = std::vector<int>();
         id_ac_solver_to_me_ = std::vector<int>();
-        slack_bus_id_ac_solver_ = -1;
+        slack_bus_id_ac_solver_ = Eigen::VectorXi();
         Ybus_ac_ = Eigen::SparseMatrix<cplx_type>();
     }
 
     if(reset_dc){
         id_me_to_dc_solver_ = std::vector<int>();
         id_dc_solver_to_me_ = std::vector<int>();
-        slack_bus_id_dc_solver_ = -1;
+        slack_bus_id_dc_solver_ = Eigen::VectorXi();
         Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();
     }
 
@@ -304,7 +304,8 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
             res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), my_zero_};
         }
 
-        if(gen.id == gen_slackbus_)
+        // if(gen.id == gen_slackbus_)
+        if(is_in_vect(gen.id, gen_slackbus_))
         {
             // slack bus, by definition, can handle all active value
             res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
@@ -324,7 +325,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                                        Eigen::SparseMatrix<cplx_type> & Ybus,
                                        std::vector<int> & id_me_to_solver,
                                        std::vector<int> & id_solver_to_me,
-                                       int & slack_bus_id_solver,
+                                       Eigen::VectorXi & slack_bus_id_solver,
                                        bool is_ac,
                                        bool reset_solver)
 {
@@ -343,7 +344,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
     if(topo_changed_){
         // TODO do not reinit Ybus if the topology does not change
-        init_Ybus(Ybus, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+        init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
         fillYbus(Ybus, is_ac, id_me_to_solver);
     }
     // std::cout << "GridModel::pre_process_solver : solver and Ybus init " << std::endl;
@@ -416,8 +417,7 @@ void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vini
 
 void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                           std::vector<int>& id_me_to_solver,
-                          std::vector<int>& id_solver_to_me,
-                          int & slack_bus_id_solver){
+                          std::vector<int>& id_solver_to_me){
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(bus_vn_kv_.size());
@@ -444,14 +444,24 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
 void GridModel::init_Sbus(CplxVect & Sbus,
                           std::vector<int>& id_me_to_solver,
                           std::vector<int>& id_solver_to_me,
-                          int & slack_bus_id_solver){
+                          Eigen::VectorXi & slack_bus_id_solver){
     
     const int nb_bus = static_cast<int>(id_solver_to_me.size());                 
     Sbus = CplxVect::Constant(nb_bus, 0.);
-    slack_bus_id_solver = id_me_to_solver[slack_bus_id_];
-    if(slack_bus_id_solver == _deactivated_bus_id){
+    // slack_bus_id_solver = id_me_to_solver[slack_bus_id_];
+    slack_bus_id_solver = Eigen::VectorXi::Zero(slack_bus_id_.size());
+    // TODO SLACK check that the loop is correct !
+    size_t i = 0;
+    for(auto el: slack_bus_id_) {
+        slack_bus_id_solver(i) = id_me_to_solver[el];
+        ++i;
+    }
+    // slack_bus_id_solver[slack_bus_id_];
+    
+    // if(slack_bus_id_solver == _deactivated_bus_id){
+    if(is_in_vect(_deactivated_bus_id, slack_bus_id_solver)){
         //TODO improve error message with the gen_id
-        throw std::runtime_error("The slack bus is disconnected.");
+        throw std::runtime_error("One of the slack bus is disconnected !");
     }
 }
 void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver){
@@ -474,7 +484,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     res.makeCompressed();
 }
 
-void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver)
+void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver, Eigen::VectorXi & slack_bus_id_solver)
 {
     // init the Sbus vector
     powerlines_.fillSbus(Sbus, true, id_me_to_solver);
@@ -489,14 +499,16 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
     if(ac)
     {
         real_type sum_active = Sbus.sum().real();
-        Sbus.coeffRef(slack_bus_id_solver) -= sum_active;
+        // TODO SLACK don't forget the coefficients here !!! (and why the slack_bus_id_solver(0) here !!!)
+        // Sbus.coeffRef(slack_bus_id_solver) -= sum_active;
+        Sbus(slack_bus_id_solver(0)) -= sum_active;
     }
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
 }
 
 void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
                           std::vector<int>& id_solver_to_me,
-                          int slack_bus_id_solver)
+                          Eigen::VectorXi & slack_bus_id_solver)
 {
     // init pq and pv vector
     // TODO remove the order here..., i could be faster in this piece of code (looping once through the buses)
@@ -518,7 +530,8 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
     generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
 
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
-        if(bus_id == slack_bus_id_solver) continue;  // slack bus is not PQ either
+        // if(bus_id == slack_bus_id_solver) continue;  // slack bus is not PQ either
+        if(is_in_vect(bus_id, slack_bus_id_solver)) continue;  // slack bus is not PQ either
         if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
         bus_pq.push_back(bus_id);
         has_bus_been_added[bus_id] = true;  // don't add it a second time
@@ -601,11 +614,11 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     CplxVect Sbus_tmp;
     std::vector<int> id_me_to_solver;
     std::vector<int> id_solver_to_me;
-    int slack_bus_id_solver;
+    Eigen::VectorXi slack_bus_id_solver;
 
     //if(need_reset_){
     slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
-    init_Ybus(dcYbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+    init_Ybus(dcYbus_tmp, id_me_to_solver, id_solver_to_me);
     init_Sbus(Sbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     fillYbus(dcYbus_tmp, false, id_me_to_solver);
     // fillpv_pq(id_me_to_solver);
@@ -627,14 +640,20 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(dcYbus_tmp.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
-        if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
+        // if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
+        if(is_in_vect(k, slack_bus_id_solver)) continue;  // I don't add anything to the slack bus
         for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dcYbus_tmp, k); it; ++it)
         {
             int row_res = static_cast<int>(it.row());
-            if(row_res == slack_bus_id_solver) continue;
-            row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
+            // if(row_res == slack_bus_id_solver) continue;
+            if(is_in_vect(row_res, slack_bus_id_solver)) continue;
+            // row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
+            // TODO SLACK why slack_bus_id_solver(0) ?
+            row_res = row_res > slack_bus_id_solver(0) ? row_res - 1 : row_res;
             int col_res = static_cast<int>(it.col());
-            col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
+            
+            // TODO SLACK why slack_bus_id_solver(0) ?
+            col_res = col_res > slack_bus_id_solver(0) ? col_res - 1 : col_res;
             tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }
     }
@@ -653,9 +672,12 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     // remove the slack bus from Sbus
     RealVect Sbus = RealVect::Constant(nb_bus_solver - 1, 0.);
     for (int k=0; k < nb_bus_solver; ++k){
-        if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
+        // if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
+        if(is_in_vect(k, slack_bus_id_solver)) continue;  // I don't add anything to the slack bus
         int col_res = k;
-        col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
+        // TODO SLACK i should not do slack_bus_id_solver(0)  !
+        // col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
+        col_res = col_res > slack_bus_id_solver(0) ? col_res - 1 : col_res;
         Sbus(col_res) = std::real(Sbus_tmp(k));
     }
 
@@ -672,18 +694,22 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     RealVect Va = RealVect::Constant(nb_bus_me, 0.);
     // fill Va from dc approx
     for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-        if(bus_id_me == slack_bus_id_) continue;  // slack bus is handled elsewhere
         if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is not connected
+        // if(bus_id_me == slack_bus_id_) continue;  // slack bus is handled elsewhere
+        if(is_in_vect(bus_id_me, slack_bus_id_)) continue;  // slack bus is handled elsewhere
 
         bus_id_solver = id_me_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             //TODO improve error message with the gen_id
             throw std::runtime_error("One bus is both connected and disconnected");
         }
-        bus_id_solver = bus_id_solver > slack_bus_id_solver ? bus_id_solver - 1 : bus_id_solver;
+        // bus_id_solver = bus_id_solver > slack_bus_id_solver ? bus_id_solver - 1 : bus_id_solver;
+        // TODO SLACK I should not DO slack_bus_id_solver(0)
+        bus_id_solver = bus_id_solver > slack_bus_id_solver(0) ? bus_id_solver - 1 : bus_id_solver;
         Va(bus_id_me) = Va_dc(bus_id_solver);
     }
-    Va.array() +=  std::arg(Vinit(slack_bus_id_));
+    // Va.array() +=  Vinit(slack_bus_id_).array().arg();
+    Va.array() +=  std::arg(Vinit(slack_bus_id_[0]));  // TODO SLACK why adding the angle of the first slack ? 
 
     // fill Vm either Vinit if pq or Vm if pv (TODO)
     RealVect Vm;
@@ -697,7 +723,7 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
         // put Vm = Vm of turned on gen
         // generators_.get_vm_for_dc(Vm);
         // assign vm of the slack bus
-        Vm(slack_bus_id_) =  std::abs(Vinit(slack_bus_id_));
+        Vm(slack_bus_id_) =  Vinit(slack_bus_id_).array().abs();
     }
     else{
         Vm = RealVect::Constant(Vinit.size(), 1.0);
@@ -770,7 +796,7 @@ int GridModel::nb_bus() const
     return res;
 }
 
-void GridModel::add_gen_slackbus(int gen_id){
+void GridModel::add_gen_slackbus(int gen_id, real_type weight){
     if(gen_id < 0)
     {
         std::ostringstream exc_;
@@ -785,7 +811,13 @@ void GridModel::add_gen_slackbus(int gen_id){
         exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
         throw std::runtime_error(exc_.str());
     }
-    gen_slackbus_ = gen_id;
+    if(weight <= 0.){
+        std::ostringstream exc_;
+        exc_ << "GridModel::add_gen_slackbus: please enter a valid weight for the slack bus (> 0.)";
+        throw std::runtime_error(exc_.str());
+    }
+    gen_slackbus_.push_back(gen_id);
+    gen_slack_weight_.push_back(weight);
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/

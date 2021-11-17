@@ -155,14 +155,16 @@ void DataSGen::change_q(int sgen_id, real_type new_q, bool & need_reset)
     q_mvar_(sgen_id) = new_q;
 }
 
-real_type DataSGen::get_p_slack(int slack_bus_id)
+// TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ??? 
+real_type DataSGen::get_p_slack(const std::vector<int>& slack_bus_id) const
 {
     const int nb_element = nb();
     real_type res = 0.;
     for(int sgen_id = 0; sgen_id < nb_element; ++sgen_id)
     {
         if(!status_[sgen_id]) continue;
-        if(bus_id_(sgen_id) == slack_bus_id) res -= res_p_(sgen_id);
+        // if(bus_id_(sgen_id) == slack_bus_id) res -= res_p_(sgen_id);
+        if(slack_bus_id.count(bus_id_(sgen_id))) res -= res_p_(sgen_id);
     }
     return res;
 }

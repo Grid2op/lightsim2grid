@@ -273,15 +273,18 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
 }
 
-real_type DataLine::get_p_slack(int slack_bus_id)
+// TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
+real_type DataLine::get_p_slack(const std::vector<int>& slack_bus_id) const
 {
     int nb_element = nb();
     real_type res = 0.;
     for(int line_id = 0; line_id < nb_element; ++line_id)
     {
         if(!status_[line_id]) continue;
-        if(bus_or_id_(line_id) == slack_bus_id) res += res_powerline_por_(line_id);
-        if(bus_ex_id_(line_id) == slack_bus_id) res += res_powerline_pex_(line_id);
+        // if(bus_or_id_(line_id) == slack_bus_id) res += res_powerline_por_(line_id);
+        // if(bus_ex_id_(line_id) == slack_bus_id) res += res_powerline_pex_(line_id);
+        if(slack_bus_id.count(bus_or_id_(line_id))) res += res_powerline_por_(line_id);
+        if(slack_bus_id.count(bus_ex_id_(line_id))) res += res_powerline_pex_(line_id);
     }
     return res;
 }

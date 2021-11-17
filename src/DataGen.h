@@ -10,6 +10,7 @@
 #define DATAGEN_H
 
 #include <iostream>
+#include <vector> 
 
 #include "Utils.h"
 
@@ -144,8 +145,8 @@ class DataGen: public DataGeneric
     virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillpv(std::vector<int>& bus_pv,
                         std::vector<bool> & has_bus_been_added,
-                        int slack_bus_id_solver,
-                        const std::vector<int> & id_grid_to_solver);
+                        Eigen::VectorXi & slack_bus_id_solver,
+                        const std::vector<int> & id_grid_to_solver) const;
     void init_q_vector(int nb_bus); // delta_q_per_gen_
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -157,8 +158,11 @@ class DataGen: public DataGeneric
                          bool ac);
     void reset_results();
     void set_q(const std::vector<real_type> & q_by_bus, bool ac);
-    int get_slack_bus_id(int gen_id);
-    virtual void set_p_slack(int slack_bus_id, real_type p_slack);
+    
+    // TODO SLACK have a get_p_slack for the generators (non slack) connected to the same node as the slack !
+    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const = delete;
+    std::vector<int> get_slack_bus_id(const std::vector<int>& gen_ids) const;
+    virtual void set_p_slack(const std::vector<int>& slack_bus_id, real_type p_slack);
 
     void get_vm_for_dc(RealVect & Vm);
     /**

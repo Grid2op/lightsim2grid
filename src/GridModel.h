@@ -11,10 +11,12 @@
 
 #include <iostream>
 #include <vector>
+// #include <set>
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
 #include <cmath>  // for PI
+#include <algorithm>  // for std::find
 
 #include "Utils.h"
 
@@ -65,7 +67,7 @@ class GridModel : public DataGeneric
                 // storage units
                 DataLoad::StateRes,
                 // slack bus generator id
-                int
+                std::vector<int>
                 >  StateRes;
 
         GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
@@ -160,7 +162,7 @@ class GridModel : public DataGeneric
             storages_.init(storages_p, storages_q, storages_bus_id);
         }
 
-        void add_gen_slackbus(int gen_id);
+        void add_gen_slackbus(int gen_id, real_type weight);
 
         //pickle
         GridModel::StateRes get_state() const ;
@@ -431,21 +433,20 @@ class GridModel : public DataGeneric
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
                                     std::vector<int> & id_me_to_solver,
                                     std::vector<int> & id_solver_to_me,
-                                    int & slack_bus_id_solver,
+                                    Eigen::VectorXi & slack_bus_id_solver,
                                     bool is_ac,
                                     bool reset_solver);
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        std::vector<int> & id_me_to_solver,
-                       std::vector<int>& id_solver_to_me,
-                       int & slack_bus_id_solver);
+                       std::vector<int>& id_solver_to_me);
         void init_Sbus(CplxVect & Sbus,
                        std::vector<int> & id_me_to_solver,
                        std::vector<int>& id_solver_to_me,
-                       int & slack_bus_id_solver);
+                       Eigen::VectorXi & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
+        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, Eigen::VectorXi & slack_bus_id_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
-                      int slack_bus_id_solver);
+                       Eigen::VectorXi & slack_bus_id_solver);
 
         // results
         /**process the results from the solver to this instance
@@ -524,6 +525,8 @@ class GridModel : public DataGeneric
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                  std::vector<int> & id_me_to_solver,
                                                  int size);
+        template<class T>  // a std::vector, or an Eigen::Vector                                                 
+        bool is_in_vect(int val, const T & cont) const {return std::find(cont.begin(), cont.end(), val) != vec.end();}
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
@@ -574,10 +577,11 @@ class GridModel : public DataGeneric
 
         // 8. slack bus
         // TODO multiple slack bus
-        int gen_slackbus_;
-        int slack_bus_id_;
-        int slack_bus_id_ac_solver_;
-        int slack_bus_id_dc_solver_;
+        std::vector<int> gen_slackbus_;  // do not use unordered_set because the order would be "random"
+        std::vector<real_type> gen_slack_weight_;  // do not use unordered_set because the order would be "random"
+        std::vector<int> slack_bus_id_;
+        Eigen::VectorXi slack_bus_id_ac_solver_;
+        Eigen::VectorXi slack_bus_id_dc_solver_;
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;

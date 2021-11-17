@@ -73,10 +73,13 @@ class DataGeneric : public BaseConstants
         virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
-                            int slack_bus_id_solver,
-                            const std::vector<int> & id_grid_to_solver) {};
-        virtual real_type get_p_slack(int slack_bus_id) {return my_zero_;}
-        virtual void set_p_slack(int gen_slackbus, real_type p_slack) {};
+                            Eigen::VectorXi & slack_bus_id_solver,
+                            const std::vector<int> & id_grid_to_solver) const {};
+        
+        // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
+        virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const {return my_zero_;}
+        // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
+        virtual void set_p_slack(const std::vector<int>& slack_bus_id, real_type p_slack) {};
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
     
