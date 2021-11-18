@@ -244,6 +244,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_storages", &GridModel::init_storages)
         .def("init_sgens", &GridModel::init_sgens)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
+        .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus)
 
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)

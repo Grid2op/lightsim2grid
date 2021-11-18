@@ -37,9 +37,13 @@ class DataGen: public DataGeneric
     {
         public:
             // members
+            // TODO add some const here (value should not be changed !) !!!
             int id;  // id of the generator
             bool connected;
             int bus_id;
+            bool is_slack;
+            real_type slack_weight;
+
             real_type target_p_mw;
             real_type target_vm_pu;
             real_type min_q_mvar;
@@ -54,6 +58,8 @@ class DataGen: public DataGeneric
             id(-1),
             connected(false),
             bus_id(-1),
+            is_slack(false),
+            slack_weight(-1.0),
             target_p_mw(0.),
             target_vm_pu(0.),
             min_q_mvar(0.),
@@ -69,6 +75,9 @@ class DataGen: public DataGeneric
                     id = my_id;
                     connected = r_data_gen.status_[my_id];
                     bus_id = r_data_gen.bus_id_[my_id];
+                    is_slack = r_data_gen.gen_slackbus_[my_id];
+                    slack_weight = r_data_gen.gen_slack_weight_[my_id];
+
                     target_p_mw = r_data_gen.p_mw_.coeff(my_id);
                     target_vm_pu = r_data_gen.vm_pu_.coeff(my_id);
                     min_q_mvar = r_data_gen.min_q_.coeff(my_id);
@@ -97,7 +106,9 @@ class DataGen: public DataGeneric
        std::vector<real_type>, // min_q_
        std::vector<real_type>, // max_q_
        std::vector<int>, // bus_id
-       std::vector<bool> // status
+       std::vector<bool>, // status
+       std::vector<bool>, // gen_slackbus
+       std::vector<real_type> // gen_slack_weight_
        >  StateRes;
 
     DataGen() {};
@@ -133,6 +144,21 @@ class DataGen: public DataGeneric
     DataGen::StateRes get_state() const;
     void set_state(DataGen::StateRes & my_state );
 
+    // slack handling
+    /**
+    we suppose that the data are correct (ie gen_id in the proper range, and weight > 0.)
+    This is checked in GridModel, and not at this stage
+    **/
+    void add_slackbus(int gen_id, real_type weight){
+        gen_slackbus_[gen_id] = true;
+        gen_slack_weight_[gen_id] = weight;
+    }
+    void remove_slackbus(int gen_id){
+        gen_slackbus_[gen_id] = false;
+        gen_slack_weight_[gen_id] = 0.;
+    }
+
+    // modification
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
@@ -160,9 +186,9 @@ class DataGen: public DataGeneric
     void set_q(const std::vector<real_type> & q_by_bus, bool ac);
     
     // TODO SLACK have a get_p_slack for the generators (non slack) connected to the same node as the slack !
-    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const = delete;
-    std::vector<int> get_slack_bus_id(const std::vector<int>& gen_ids) const;
-    virtual void set_p_slack(const std::vector<int>& slack_bus_id, real_type p_slack);
+    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const; 
+    std::vector<int> get_slack_bus_id() const;
+    virtual void set_p_slack(real_type p_slack);
 
     void get_vm_for_dc(RealVect & Vm);
     /**
@@ -192,6 +218,10 @@ class DataGen: public DataGeneric
         RealVect max_q_;
         Eigen::VectorXi bus_id_;
         std::vector<bool> status_;
+
+        // TODO SLACK is this better there ?
+        std::vector<bool> gen_slackbus_;  // do not use unordered_set because the order would be "random"
+        std::vector<real_type> gen_slack_weight_;  // do not use unordered_set because the order would be "random"
 
         // intermediate data
         RealVect total_q_min_per_bus_;

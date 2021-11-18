@@ -43,10 +43,6 @@ GridModel::GridModel(const GridModel & other)
     // 8. storage units
     storages_ = other.storages_;
 
-    // 9. slack bus
-    gen_slackbus_ = other.gen_slackbus_;
-    slack_bus_id_ = other.slack_bus_id_;
-
     // copy the attributes specific grid2op (speed optimization)
     n_sub_ = other.n_sub_;
     load_pos_topo_vect_ = other.load_pos_topo_vect_;
@@ -98,8 +94,7 @@ GridModel::StateRes GridModel::get_state() const
                             res_gen,
                             res_load,
                             res_sgen,
-                            res_storage,
-                            gen_slackbus_
+                            res_storage
                             );
     return res;
 };
@@ -146,7 +141,6 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     DataSGen::StateRes & state_sgens= std::get<12>(my_state);
     // storage units
     DataLoad::StateRes & state_storages = std::get<13>(my_state);
-    std::vector<int> gen_slackbus = std::get<14>(my_state);
 
     // assign it to this instance
 
@@ -171,10 +165,6 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     sgens_.set_state(state_sgens);
     // 7. storage units
     storages_.set_state(state_storages);
-
-    // other stuff
-    gen_slackbus_ = gen_slackbus;
-
 };
 
 //init
@@ -305,9 +295,10 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
         }
 
         // if(gen.id == gen_slackbus_)
-        if(is_in_vect(gen.id, gen_slackbus_))
+        if(gen.is_slack)
         {
             // slack bus, by definition, can handle all active value
+            //TODO SLACK : This is probably not the case with distributed slack !
             res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
         }
     }
@@ -341,7 +332,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         // topo is not changed, but i can still reset the solver (TODO: no necessarily needed !)
         if (reset_solver) _solver.reset();
     }
-    slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
+    slack_bus_id_ = generators_.get_slack_bus_id();
     if(topo_changed_){
         // TODO do not reinit Ybus if the topology does not change
         init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
@@ -568,7 +559,7 @@ void GridModel::compute_results(bool ac){
     p_slack += sgens_.get_p_slack(slack_bus_id_);
     p_slack += storages_.get_p_slack(slack_bus_id_);
     p_slack += shunts_.get_p_slack(slack_bus_id_);
-    generators_.set_p_slack(gen_slackbus_, p_slack);
+    generators_.set_p_slack(p_slack);
 
     // handle gen_q now
     std::vector<real_type> q_by_bus = std::vector<real_type>(bus_vn_kv_.size(), 0.);
@@ -617,7 +608,7 @@ CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
     Eigen::VectorXi slack_bus_id_solver;
 
     //if(need_reset_){
-    slack_bus_id_ = generators_.get_slack_bus_id(gen_slackbus_);
+    slack_bus_id_ = generators_.get_slack_bus_id();
     init_Ybus(dcYbus_tmp, id_me_to_solver, id_solver_to_me);
     init_Sbus(Sbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     fillYbus(dcYbus_tmp, false, id_me_to_solver);
@@ -816,8 +807,25 @@ void GridModel::add_gen_slackbus(int gen_id, real_type weight){
         exc_ << "GridModel::add_gen_slackbus: please enter a valid weight for the slack bus (> 0.)";
         throw std::runtime_error(exc_.str());
     }
-    gen_slackbus_.push_back(gen_id);
-    gen_slack_weight_.push_back(weight);
+    generators_.add_slackbus(gen_id, weight);
+}
+
+void GridModel::remove_gen_slackbus(int gen_id){
+    if(gen_id < 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "GridModel::remove_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
+        exc_ << gen_id;
+        throw std::runtime_error(exc_.str());
+    }
+    if(gen_id > generators_.nb())
+    {
+        std::ostringstream exc_;
+        exc_ << "GridModel::remove_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
+        exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
+        throw std::runtime_error(exc_.str());
+    }
+    generators_.remove_slackbus(gen_id);
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/

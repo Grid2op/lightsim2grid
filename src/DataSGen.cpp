@@ -164,7 +164,7 @@ real_type DataSGen::get_p_slack(const std::vector<int>& slack_bus_id) const
     {
         if(!status_[sgen_id]) continue;
         // if(bus_id_(sgen_id) == slack_bus_id) res -= res_p_(sgen_id);
-        if(slack_bus_id.count(bus_id_(sgen_id))) res -= res_p_(sgen_id);
+        if(is_in_vect(bus_id_(sgen_id), slack_bus_id)) res -= res_p_(sgen_id);
     }
     return res;
 }

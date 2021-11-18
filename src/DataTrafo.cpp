@@ -361,8 +361,10 @@ real_type DataTrafo::get_p_slack(const std::vector<int>& slack_bus_id) const
     for(int line_id = 0; line_id < nb_element; ++line_id)
     {
         if(!status_[line_id]) continue;
-        if(bus_hv_id_(line_id) == slack_bus_id) res += res_p_hv_(line_id);
-        if(bus_lv_id_(line_id) == slack_bus_id) res += res_p_lv_(line_id);
+        // if(bus_hv_id_(line_id) == slack_bus_id) res += res_p_hv_(line_id);
+        // if(bus_lv_id_(line_id) == slack_bus_id) res += res_p_lv_(line_id);
+        if(is_in_vect(bus_hv_id_(line_id), slack_bus_id)) res += res_p_hv_(line_id);
+        if(is_in_vect(bus_lv_id_(line_id), slack_bus_id)) res += res_p_lv_(line_id);
     }
     return res;
 }

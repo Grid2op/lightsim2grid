@@ -283,8 +283,8 @@ real_type DataLine::get_p_slack(const std::vector<int>& slack_bus_id) const
         if(!status_[line_id]) continue;
         // if(bus_or_id_(line_id) == slack_bus_id) res += res_powerline_por_(line_id);
         // if(bus_ex_id_(line_id) == slack_bus_id) res += res_powerline_pex_(line_id);
-        if(slack_bus_id.count(bus_or_id_(line_id))) res += res_powerline_por_(line_id);
-        if(slack_bus_id.count(bus_ex_id_(line_id))) res += res_powerline_pex_(line_id);
+        if(is_in_vect(bus_or_id_(line_id), slack_bus_id)) res += res_powerline_por_(line_id);
+        if(is_in_vect(bus_ex_id_(line_id), slack_bus_id)) res += res_powerline_pex_(line_id);
     }
     return res;
 }

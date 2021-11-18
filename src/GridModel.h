@@ -16,7 +16,6 @@
 #include <cstdint> // for int32
 #include <chrono>
 #include <cmath>  // for PI
-#include <algorithm>  // for std::find
 
 #include "Utils.h"
 
@@ -65,9 +64,7 @@ class GridModel : public DataGeneric
                 // static generators
                 DataSGen::StateRes,
                 // storage units
-                DataLoad::StateRes,
-                // slack bus generator id
-                std::vector<int>
+                DataLoad::StateRes
                 >  StateRes;
 
         GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
@@ -163,6 +160,7 @@ class GridModel : public DataGeneric
         }
 
         void add_gen_slackbus(int gen_id, real_type weight);
+        void remove_gen_slackbus(int gen_id);
 
         //pickle
         GridModel::StateRes get_state() const ;
@@ -525,8 +523,6 @@ class GridModel : public DataGeneric
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                  std::vector<int> & id_me_to_solver,
                                                  int size);
-        template<class T>  // a std::vector, or an Eigen::Vector                                                 
-        bool is_in_vect(int val, const T & cont) const {return std::find(cont.begin(), cont.end(), val) != vec.end();}
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
@@ -577,8 +573,6 @@ class GridModel : public DataGeneric
 
         // 8. slack bus
         // TODO multiple slack bus
-        std::vector<int> gen_slackbus_;  // do not use unordered_set because the order would be "random"
-        std::vector<real_type> gen_slack_weight_;  // do not use unordered_set because the order would be "random"
         std::vector<int> slack_bus_id_;
         Eigen::VectorXi slack_bus_id_ac_solver_;
         Eigen::VectorXi slack_bus_id_dc_solver_;

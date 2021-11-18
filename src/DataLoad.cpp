@@ -127,7 +127,7 @@ real_type DataLoad::get_p_slack(const std::vector<int>& slack_bus_id) const
     {
         if(!status_[load_id]) continue;
         // if(bus_id_(load_id) == slack_bus_id) res += res_p_(load_id);
-        if(slack_bus_id.count(bus_id_(load_id))) res += res_p_(load_id);
+        if(is_in_vect(bus_id_(load_id), slack_bus_id)) res += res_p_(load_id);
     }
     return res;
 }

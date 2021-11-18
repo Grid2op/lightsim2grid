@@ -9,6 +9,8 @@
 #ifndef DATAGENERIC_H
 #define DATAGENERIC_H
 
+#include <algorithm>  // for std::find
+
 #include "Utils.h"
 
 #include "Eigen/Core"
@@ -79,7 +81,7 @@ class DataGeneric : public BaseConstants
         // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
         virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const {return my_zero_;}
         // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-        virtual void set_p_slack(const std::vector<int>& slack_bus_id, real_type p_slack) {};
+        virtual void set_p_slack(real_type p_slack) {};
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
     
@@ -132,6 +134,12 @@ class DataGeneric : public BaseConstants
         {
             if(container.size() != size) throw std::runtime_error(container_name + " do not have the proper size");
         }
+
+        /**
+        check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)
+        **/
+        template<class T>  // a std::vector, or an Eigen::Vector                                                 
+        bool is_in_vect(int val, const T & cont) const {return std::find(cont.begin(), cont.end(), val) != cont.end();}
 };
 
 #endif // DATAGENERIC_H
