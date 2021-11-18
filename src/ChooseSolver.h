@@ -25,6 +25,8 @@
 
 enum class SolverType { SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU};
 
+// TODO define a template class instead of these weird stuff !!!
+
 
 // NB: when adding a new solver, you need to specialize the *tmp method (eg get_Va_tmp)
 // and also to "forward" the specialisation (adding the if(solvertype==XXX)) in the compute_pf, get_V, get_J, get_Va, get_Vm
@@ -84,9 +86,11 @@ class ChooseSolver
 
         // forward to the right solver used
         //TODO inline all of that
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                        CplxVect & V,
-                        const CplxVect & Sbus,
+        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // size (nb_bus, nb_bus)
+                        CplxVect & V,  // size nb_bus
+                        const CplxVect & Sbus,  // size nb_bus
+                        const Eigen::VectorXi & slack_ids,  // bus ids where thare are slack bus
+                        const RealVect & slack_weights,  // slack weights (size nb_bus)
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
@@ -123,6 +127,8 @@ class ChooseSolver
         bool compute_pf_tmp(const Eigen::SparseMatrix<cplx_type> & Ybus,
                             CplxVect & V,
                             const CplxVect & Sbus,
+                            const Eigen::VectorXi & slack_ids,
+                            const RealVect & slack_weights,
                             const Eigen::VectorXi & pv,
                             const Eigen::VectorXi & pq,
                             int max_iter,
@@ -167,6 +173,8 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -176,6 +184,8 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -185,6 +195,8 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::NICSLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -194,6 +206,8 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -203,6 +217,8 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidelSynch>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -212,6 +228,8 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::DC>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,

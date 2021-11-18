@@ -157,6 +157,15 @@ class DataGen: public DataGeneric
         gen_slackbus_[gen_id] = false;
         gen_slack_weight_[gen_id] = 0.;
     }
+    /**
+    Retrieve the normalized (=sum to 1.000) slack weights for all the buses
+    **/
+    RealVect get_slack_weights(int nb_bus_solver, const std::vector<int> & id_grid_to_solver) const;
+
+    // TODO SLACK have a get_p_slack for the generators (non slack) connected to the same node as the slack !
+    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const; 
+    std::vector<int> get_slack_bus_id() const;
+    virtual void set_p_slack(real_type p_slack);
 
     // modification
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
@@ -184,11 +193,6 @@ class DataGen: public DataGeneric
                          bool ac);
     void reset_results();
     void set_q(const std::vector<real_type> & q_by_bus, bool ac);
-    
-    // TODO SLACK have a get_p_slack for the generators (non slack) connected to the same node as the slack !
-    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const; 
-    std::vector<int> get_slack_bus_id() const;
-    virtual void set_p_slack(real_type p_slack);
 
     void get_vm_for_dc(RealVect & Vm);
     /**

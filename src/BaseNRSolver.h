@@ -39,6 +39,8 @@ class BaseNRSolver : public BaseSolver
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         const CplxVect & Sbus,
+                        const Eigen::VectorXi & slack_ids,
+                        const RealVect & slack_weights,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,

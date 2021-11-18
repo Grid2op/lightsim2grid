@@ -8,9 +8,12 @@
 
 #include "DCSolver.h"
 
+// TODO SLACK !!!
 bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                           CplxVect & V,
                           const CplxVect & Sbus,
+                          const Eigen::VectorXi & slack_ids,
+                          const RealVect & slack_weights,
                           const Eigen::VectorXi & pv,
                           const Eigen::VectorXi & pq,
                           int max_iter,
@@ -36,8 +39,21 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // dcYbus_tmp.makeCompressed();
     const CplxVect & Sbus_tmp = Sbus;
 
+    // TODO SLACK (for now i put all slacks as PV)
+    Eigen::VectorXi my_pv = pv;
+    if(slack_ids.size() > 1){
+        const int nb_slack_added = slack_ids.size() - 1;
+        my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
+        for(auto i = 0; i < nb_slack_added; ++i){
+            my_pv(i) = slack_ids[i+1];
+        }
+        for(auto i = 0; i < pv.size(); ++i){
+            my_pv(i + nb_slack_added) = pv[i];
+        }
+    }
+
     // find the slack bus
-    int slack_bus_id_solver = extract_slack_bus_id(pv, pq, nb_bus_solver);
+    int slack_bus_id_solver = extract_slack_bus_id(my_pv, pq, nb_bus_solver);
     // std::cout << "slack_bus_id_solver extracted" << std::endl;
 
     // remove the slack bus from Ybus

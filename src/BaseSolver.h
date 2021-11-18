@@ -71,6 +71,8 @@ class BaseSolver : public BaseConstants
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,  // store the results of the powerflow and the Vinit !
                         const CplxVect & Sbus,
+                        const Eigen::VectorXi & slack_ids,
+                        const RealVect & slack_weights,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,

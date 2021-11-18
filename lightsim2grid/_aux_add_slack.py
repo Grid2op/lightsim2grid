@@ -30,10 +30,12 @@ def _aux_add_slack(model, pp_net):
     # TODO handle that better maybe, and warn only one slack bus is implemented
     if np.any(pp_net.gen["slack"].values):
         if np.sum(pp_net.gen["slack"].values) >= 2:
+            # TODO SLACK remove this warning !
             warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
                           "slack bus of pandapower will be used.")
-        slack_gen_id = np.where(pp_net.gen["slack"].values)[0]
-        model.change_v_gen(slack_gen_id, pp_net.gen["vm_pu"][slack_gen_id])
+        slack_gen_ids = np.where(pp_net.gen["slack"].values)[0]
+        for slack_id in slack_gen_ids:
+            model.change_v_gen(slack_id, pp_net.gen["vm_pu"].iloc[slack_id])
     else:
         # there is no slack bus in the generator of the pp grid
 
@@ -53,7 +55,9 @@ def _aux_add_slack(model, pp_net):
             gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].values, [-999999.]))
             gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].values, [+99999.]))
             model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
-            slack_gen_id = pp_net.gen["bus"].shape[0]
+            slack_gen_ids = [pp_net.gen["bus"].shape[0]]
 
-    model.add_gen_slackbus(slack_gen_id)
+    # TODO SLACK distributed slack
+    for slack_gen_id in slack_gen_ids:
+        model.add_gen_slackbus(slack_gen_id, 1.0)
 

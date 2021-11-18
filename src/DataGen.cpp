@@ -85,6 +85,29 @@ void DataGen::set_state(DataGen::StateRes & my_state )
     gen_slack_weight_ = slack_weight;
 }
 
+RealVect DataGen::get_slack_weights(int nb_bus_solver, const std::vector<int> & id_grid_to_solver) const{
+    //TODO SLACK: try to memorize that somehow, should be possible
+    const int nb_gen = nb();
+    int bus_id_me, bus_id_solver;
+    RealVect res = RealVect::Zero(nb_bus_solver);
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        //  i don't do anything if the load is disconnected
+        if(!status_[gen_id]) continue;
+        bus_id_me = bus_id_(gen_id);
+        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataGen::fillSbus: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(gen_slackbus_[gen_id])  res.coeffRef(bus_id_solver) += gen_slack_weight_[gen_id];
+    }
+    real_type sum_res = res.sum();
+    res /= sum_res;
+    return res;
+}
 
 void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     const int nb_gen = nb();

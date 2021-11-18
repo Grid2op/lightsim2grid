@@ -60,6 +60,8 @@ template<SolverType ST>
 bool ChooseSolver::compute_pf_tmp(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   CplxVect & V,
                                   const CplxVect & Sbus,
+                                  const Eigen::VectorXi & slack_ids,
+                                  const RealVect & slack_weights,  // slack weights (size nb_bus)
                                   const Eigen::VectorXi & pv,
                                   const Eigen::VectorXi & pq,
                                   int max_iter,
@@ -72,54 +74,64 @@ template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::SparseLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,  // slack weights (size nb_bus)
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
                        real_type tol
                        )
 {
-    return _solver_lu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    return _solver_lu.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
 }
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidel>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,  // slack weights (size nb_bus)
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
                        real_type tol
                        )
 {
-    return _solver_gaussseidel.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    return _solver_gaussseidel.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
 }
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::GaussSeidelSynch>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,  // slack weights (size nb_bus)
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
                        real_type tol
                        )
 {
-    return _solver_gaussseidelsynch.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    return _solver_gaussseidelsynch.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
 }
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::DC>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,  // slack weights (size nb_bus)
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
                        real_type tol
                        )
 {
-    return _solver_dc.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+    return _solver_dc.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
 }
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,  // slack weights (size nb_bus)
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -130,13 +142,15 @@ bool ChooseSolver::compute_pf_tmp<SolverType::KLU>(const Eigen::SparseMatrix<cpl
         // I asked result of KLU solver without the required libraries
         throw std::runtime_error("ChooseSolver::compute_pf_tmp: Impossible to use the KLU solver, that is not available on your plaform.");
     #else
-        return _solver_klu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return _solver_klu.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     #endif
 }
 template<>
 bool ChooseSolver::compute_pf_tmp<SolverType::NICSLU>(const Eigen::SparseMatrix<cplx_type> & Ybus,
                        CplxVect & V,
                        const CplxVect & Sbus,
+                       const Eigen::VectorXi & slack_ids,
+                       const RealVect & slack_weights,  // slack weights (size nb_bus)
                        const Eigen::VectorXi & pv,
                        const Eigen::VectorXi & pq,
                        int max_iter,
@@ -147,7 +161,7 @@ bool ChooseSolver::compute_pf_tmp<SolverType::NICSLU>(const Eigen::SparseMatrix<
         // I asked result of KLU solver without the required libraries
         throw std::runtime_error("ChooseSolver::compute_pf_tmp: Impossible to use the NICSLU solver, that is not available on your plaform.");
     #else
-        return _solver_nicslu.compute_pf(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return _solver_nicslu.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     #endif
 }
 
@@ -404,6 +418,8 @@ Eigen::Ref<const RealVect> ChooseSolver::get_Vm() const {
 bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                               CplxVect & V,
                               const CplxVect & Sbus,
+                              const Eigen::VectorXi & slack_ids,
+                              const RealVect & slack_weights,  // slack weights (size nb_bus)
                               const Eigen::VectorXi & pv,
                               const Eigen::VectorXi & pq,
                               int max_iter,
@@ -413,17 +429,17 @@ bool ChooseSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     _type_used_for_nr = _solver_type;
     if(_solver_type == SolverType::SparseLU)
     {
-        return compute_pf_tmp<SolverType::SparseLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::SparseLU>(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::KLU){
-        return compute_pf_tmp<SolverType::KLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::KLU>(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::NICSLU){
-        return compute_pf_tmp<SolverType::NICSLU>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::NICSLU>(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::GaussSeidel){
-        return compute_pf_tmp<SolverType::GaussSeidel>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::GaussSeidel>(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::GaussSeidelSynch){
-        return compute_pf_tmp<SolverType::GaussSeidelSynch>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::GaussSeidelSynch>(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     }else if(_solver_type == SolverType::DC){
-        return compute_pf_tmp<SolverType::DC>(Ybus, V, Sbus, pv, pq, max_iter, tol);
+        return compute_pf_tmp<SolverType::DC>(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
     }else{
         throw std::runtime_error("ChooseSolver::compute_pf: Unknown solver type.");
     }

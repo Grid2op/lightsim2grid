@@ -11,6 +11,8 @@
 bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                               CplxVect & V,
                               const CplxVect & Sbus,
+                              const Eigen::VectorXi & slack_ids,
+                              const RealVect & slack_weights,
                               const Eigen::VectorXi & pv,
                               const Eigen::VectorXi & pq,
                               int max_iter,
@@ -39,6 +41,10 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     reset_timer();
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
+
+    // TODO SLACK
+
+    
     // initialize once and for all the "inverse" of these vectors
     const int n_pv = static_cast<int>(pv.size());
     const int n_pq = static_cast<int>(pq.size());
