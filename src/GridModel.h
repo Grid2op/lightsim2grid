@@ -321,6 +321,13 @@ class GridModel : public DataGeneric
         Eigen::Ref<const Eigen::VectorXi> get_pq() const{
             return bus_pq_;
         }
+        Eigen::Ref<const Eigen::VectorXi> get_slack_ids() const{
+            return slack_bus_id_ac_solver_;
+        }
+        Eigen::Ref<const RealVect> get_slack_weights() const{
+            return slack_weights_;
+        }
+
         Eigen::Ref<const CplxVect> get_V() const{
             return _solver.get_V();
         }
@@ -576,6 +583,7 @@ class GridModel : public DataGeneric
         std::vector<int> slack_bus_id_;
         Eigen::VectorXi slack_bus_id_ac_solver_;
         Eigen::VectorXi slack_bus_id_dc_solver_;
+        RealVect slack_weights_;
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;

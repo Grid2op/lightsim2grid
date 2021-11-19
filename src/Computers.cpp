@@ -49,6 +49,8 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
 
     const Eigen::VectorXi & bus_pv = _grid_model.get_pv();
     const Eigen::VectorXi & bus_pq = _grid_model.get_pq();
+    const Eigen::VectorXi & slack_ids = _grid_model.get_slack_ids();
+    const RealVect & slack_weights = _grid_model.get_slack_weights();
     _solver.reset();
 
     // init the computations
@@ -82,6 +84,8 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
         conv = compute_one_powerflow(Ybus,
                                      V, 
                                      _Sbuses.row(i),
+                                     slack_ids,
+                                     slack_weights,
                                      bus_pv,
                                      bus_pq,
                                      max_iter,

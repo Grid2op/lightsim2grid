@@ -199,6 +199,7 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     Sbus_ = CplxVect();
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
+    slack_weights_ = RealVect();
     need_reset_ = true;
     topo_changed_ = true;
 
@@ -232,8 +233,8 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                     is_ac, reset_solver);
 
     // start the solver
-    const auto slack_weights = generators_.get_slack_weights(Ybus_ac_.rows(), id_me_to_ac_solver_); 
-    conv = _solver.compute_pf(Ybus_ac_, V, Sbus_, slack_bus_id_ac_solver_, slack_weights, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
+    slack_weights_ = generators_.get_slack_weights(Ybus_ac_.rows(), id_me_to_ac_solver_); 
+    conv = _solver.compute_pf(Ybus_ac_, V, Sbus_, slack_bus_id_ac_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
 
     // store results (in ac mode)
     process_results(conv, res, Vinit, true, id_me_to_ac_solver_);
@@ -761,8 +762,8 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                                     is_ac, reset_solver);
 
     // start the solver
-    const auto slack_weights = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
-    conv = _solver.compute_pf(Ybus_dc_, V, Sbus_, slack_bus_id_dc_solver_, slack_weights, bus_pv_, bus_pq_, max_iter, tol);
+    slack_weights_ = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
+    conv = _solver.compute_pf(Ybus_dc_, V, Sbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
 
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, false, id_me_to_dc_solver_);
