@@ -31,17 +31,7 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     auto timer = CustTimer();
 
     // TODO SLACK (for now i put all slacks as PV)
-    Eigen::VectorXi my_pv = pv;
-    if(slack_ids.size() > 1){
-        const int nb_slack_added = slack_ids.size() - 1;
-        my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
-        for(auto i = 0; i < nb_slack_added; ++i){
-            my_pv(i) = slack_ids[i+1];
-        }
-        for(auto i = 0; i < pv.size(); ++i){
-            my_pv(i + nb_slack_added) = pv[i];
-        }
-    }
+    Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
 
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case

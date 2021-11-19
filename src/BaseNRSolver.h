@@ -78,6 +78,7 @@ class BaseNRSolver : public BaseSolver
 
         void fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   const CplxVect & V,
+                                  const RealVect & slack_weights,
                                   const Eigen::VectorXi & pq,
                                   const Eigen::VectorXi & pvpq,
                                   const std::vector<int> & pq_inv,
@@ -91,9 +92,9 @@ class BaseNRSolver : public BaseSolver
                  // const Eigen::SparseMatrix<cplx_type> & Ybus,
                  // const CplxVect & V,
                  const Eigen::VectorXi & pq,
-                 const Eigen::VectorXi & pvpq,
-                 const std::vector<int> & pq_inv,
-                 const std::vector<int> & pvpq_inv
+                 const Eigen::VectorXi & pvpq //,
+                //  const std::vector<int> & pq_inv,
+                //  const std::vector<int> & pvpq_inv
                  );
         void fill_jacobian_matrix_unkown_sparsity_pattern(
                  // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVa_r,
@@ -102,6 +103,7 @@ class BaseNRSolver : public BaseSolver
                  // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
                  const Eigen::SparseMatrix<cplx_type> & Ybus,
                  const CplxVect & V,
+                 const RealVect & slack_weights,
                  const Eigen::VectorXi & pq,
                  const Eigen::VectorXi & pvpq,
                  const std::vector<int> & pq_inv,
@@ -109,9 +111,7 @@ class BaseNRSolver : public BaseSolver
                  );
 
         void fill_value_map(const Eigen::VectorXi & pq,
-                            const Eigen::VectorXi & pvpq,
-                            const std::vector<int> & pq_inv,
-                            const std::vector<int> & pvpq_inv);
+                            const Eigen::VectorXi & pvpq);
 
     protected:
 

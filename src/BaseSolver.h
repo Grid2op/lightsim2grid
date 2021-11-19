@@ -96,6 +96,14 @@ class BaseSolver : public BaseConstants
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
                               const CplxVect & Sbus,
+                              real_type slack_absorbed,
+                              const RealVect & slack_weights,
+                              const Eigen::VectorXi & pv,
+                              const Eigen::VectorXi & pq);
+
+        RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+                              const CplxVect & V,
+                              const CplxVect & Sbus,
                               const Eigen::VectorXi & pv,
                               const Eigen::VectorXi & pq);
 
@@ -117,6 +125,36 @@ class BaseSolver : public BaseConstants
                                  const Eigen::VectorXi & pq,
                                  unsigned int nb_bus);
 
+        /**
+        When there are multiple slacks, add the other "slack buses" in the PV buses indexes
+        (behaves as if only the first element is used for the slack !!!)
+        **/
+        Eigen::VectorXi retrieve_pv_with_slack(const Eigen::VectorXi & slack_ids, 
+                                               const Eigen::VectorXi & pv) const {
+            Eigen::VectorXi my_pv = pv;
+            if(slack_ids.size() > 1){
+                const int nb_slack_added = slack_ids.size() - 1;
+                my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
+                for(auto i = 0; i < nb_slack_added; ++i){
+                    my_pv(i) = slack_ids[i+1];
+                }
+                for(auto i = 0; i < pv.size(); ++i){
+                    my_pv(i + nb_slack_added) = pv[i];
+                }
+            }
+            return my_pv;
+        }
+
+        /**
+        When there are multiple slacks, add the other "slack buses" in the PV buses indexes
+        **/
+        Eigen::VectorXi add_slack_to_pv(const Eigen::VectorXi & slack_ids, 
+                                        const Eigen::VectorXi & pv) const {
+            Eigen::VectorXi my_pv = Eigen::VectorXi(slack_ids.size() + pv.size());
+            my_pv << slack_ids, pv;
+            return my_pv;
+        }
+        
     protected:
         // solver initialization
         int n_;

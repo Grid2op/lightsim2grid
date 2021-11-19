@@ -126,6 +126,7 @@ class KLUSolver: public BaseNRSolver
         Eigen::SparseMatrix<real_type>
              create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                          const CplxVect & V,
+                                         const RealVect & slack_weights,
                                          const Eigen::VectorXi & pq,
                                          const Eigen::VectorXi & pvpq
                                          ){
@@ -137,7 +138,7 @@ class KLUSolver: public BaseNRSolver
             for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
             std::vector<int> pq_inv(V.size(), -1);
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
-            fill_jacobian_matrix(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
+            fill_jacobian_matrix(Ybus, V, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
             return J_;
         }
 

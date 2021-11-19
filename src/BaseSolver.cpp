@@ -47,6 +47,36 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     return res;
 }
 
+RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+                                  const CplxVect & V,
+                                  const CplxVect & Sbus,
+                                  real_type slack_absorbed,
+                                  const RealVect & slack_weights,
+                                  const Eigen::VectorXi & pv,
+                                  const Eigen::VectorXi & pq)
+{
+    // TODO factorize with above (ugly copy paste)
+    auto timer = CustTimer();
+    auto npv = pv.size();
+    auto npq = pq.size();
+
+    // compute the mismatch
+    CplxVect tmp = Ybus * V;  // this is a vector
+    tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * tmp.array() - Sbus.array() + slack_absorbed * slack_weights.array();
+    auto real_ = mis.real();
+    auto imag_ = mis.imag();
+
+    // build and fill the result
+    RealVect res(npv + 2*npq);
+    res.segment(0,npv) = real_(pv);
+    res.segment(npv,npq) = real_(pq);
+    res.segment(npv+npq, npq) = imag_(pq);
+    timer_Fx_ += timer.duration();
+    return res;
+    
+}
+
 bool BaseSolver::_check_for_convergence(const RealVect & F,
                                         real_type tol)
 {

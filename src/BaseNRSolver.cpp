@@ -35,7 +35,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         std::ostringstream exc_;
         exc_ << "BaseNRSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<<", "<<Ybus.rows() << ").";
+        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
     reset_timer();
@@ -43,18 +43,20 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     auto timer = CustTimer();
 
     // TODO SLACK
+    Eigen::VectorXi my_pv = add_slack_to_pv(slack_ids, pv);
+    real_type slack_absorbed = std::real(Sbus.sum());
 
     
     // initialize once and for all the "inverse" of these vectors
-    const int n_pv = static_cast<int>(pv.size());
+    const int n_pv = static_cast<int>(my_pv.size());
     const int n_pq = static_cast<int>(pq.size());
     Eigen::VectorXi pvpq(n_pv + n_pq);
-    //  for(int id=0; id < n_pv; ++id) pvpq[id] = pv[id];
-    //  for(int id=0; id < n_pq; ++id) pvpq[id + n_pv] = pq[id];
-    pvpq << pv, pq; 
+    pvpq << my_pv, pq; 
+
+    // TODO SLACK: explain why pvpq(ind+1) => because I took the origin (theta = 0) to be the first element of pvpq
     const int n_pvpq = static_cast<int>(pvpq.size());
     std::vector<int> pvpq_inv(V.size(), -1);
-    for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
+    for(int inv_id=0; inv_id < n_pvpq - 1; ++inv_id) pvpq_inv[pvpq(inv_id+1)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
 
@@ -70,7 +72,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
-        fill_jacobian_matrix(Ybus, V_, pq, pvpq, pq_inv, pvpq_inv);
+        fill_jacobian_matrix(Ybus, V_, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
         if(need_factorize_){
             initialize();
             if(err_ != 0){
@@ -94,6 +96,8 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         }
         auto dx = -F;
 
+        slack_absorbed += dx(-1); // by convention in fill_jacobian_matrix the slack bus is the last component
+
         Vm_ = V_.array().abs();  // update Vm and Va again in case
         Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
@@ -107,7 +111,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
 
-        F = _evaluate_Fx(Ybus, V_, Sbus, pv, pq);
+        F = _evaluate_Fx(Ybus, V_, Sbus, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp) break; // divergence due to Nans
         converged = _check_for_convergence(F, tol);
@@ -232,6 +236,7 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
 
 void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                         const CplxVect & V,
+                                        const RealVect & slack_weights,
                                         const Eigen::VectorXi & pq,
                                         const Eigen::VectorXi & pvpq,
                                         const std::vector<int> & pq_inv,
@@ -268,7 +273,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
         fill_jacobian_matrix_unkown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
-                                                     Ybus, V, pq, pvpq, pq_inv, pvpq_inv
+                                                     Ybus, V, slack_weights, pq, pvpq, pq_inv, pvpq_inv
                                                      );
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
@@ -282,7 +287,8 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
         fill_jacobian_matrix_kown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
                                                    //  Ybus,
                                                    // V,
-                                                   pq, pvpq, pq_inv, pvpq_inv
+                                                   pq, pvpq
+                                                   // , pq_inv, pvpq_inv
                                                    );
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
@@ -298,6 +304,7 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
         // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
         const Eigen::SparseMatrix<cplx_type> & Ybus,
         const CplxVect & V,
+        const RealVect & slack_weights,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq,
         const std::vector<int> & pq_inv,
@@ -319,6 +326,8 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     J12 = dS_dVm[array([pvpq]).T, pq].real
     J21 = dS_dVa[array([pq]).T, pvpq].imag
     J22 = dS_dVm[array([pq]).T, pq].imag
+
+    // TODO SLACK: update doc above !!
     **/
     bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
     const int n_pvpq = static_cast<int>(pvpq.size());
@@ -415,9 +424,23 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
             // coeffs.push_back(Eigen::Triplet<double>(row_id, col_id + n_pvpq, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
+
+    // add the slack bus coefficients (last column)
+    // TODO SLACK: explain why pvpq(ind+1) => because I took the origin (theta = 0) to be the first element of pvpq
+    // so in this case, the last column of J (due to pvpq_inv not reaching it) is empty
+    // and then i fill it with this
+    const auto last_col = size_j - 1;
+    real_type tmp;
+    for(int row_id = 0; row_id < n_pvpq; ++row_id){
+        const int row_J = pvpq_inv[row_id];
+        if(row_J >= 0){
+            tmp = slack_weights[row_id];
+            if(tmp != 0.) J_.coeffRef(row_J, last_col) = tmp;
+        }
+    }
     // J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     J_.makeCompressed();
-    fill_value_map(pq, pvpq, pq_inv, pvpq_inv);
+    fill_value_map(pq, pvpq);
 }
 
 /**
@@ -427,9 +450,7 @@ it requires that J_ is initialized, in compressed mode.
 **/
 void BaseNRSolver::fill_value_map(
         const Eigen::VectorXi & pq,
-        const Eigen::VectorXi & pvpq,
-        const std::vector<int> & pq_inv,
-        const std::vector<int> & pvpq_inv
+        const Eigen::VectorXi & pvpq
         )
 {
     const int n_pvpq = static_cast<int>(pvpq.size());
@@ -492,9 +513,9 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
         // const Eigen::SparseMatrix<cplx_type> & Ybus,
         // const CplxVect & V,
         const Eigen::VectorXi & pq,
-        const Eigen::VectorXi & pvpq,
-        const std::vector<int> & pq_inv,
-        const std::vector<int> & pvpq_inv
+        const Eigen::VectorXi & pvpq //,
+        // const std::vector<int> & pq_inv,
+        // const std::vector<int> & pvpq_inv
     )
 {
     /**
