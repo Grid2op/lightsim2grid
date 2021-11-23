@@ -441,19 +441,18 @@ void GridModel::init_Sbus(CplxVect & Sbus,
     
     const int nb_bus = static_cast<int>(id_solver_to_me.size());                 
     Sbus = CplxVect::Constant(nb_bus, 0.);
-    // slack_bus_id_solver = id_me_to_solver[slack_bus_id_];
     slack_bus_id_solver = Eigen::VectorXi::Zero(slack_bus_id_.size());
+
     // TODO SLACK check that the loop is correct !
     size_t i = 0;
     for(auto el: slack_bus_id_) {
         slack_bus_id_solver(i) = id_me_to_solver[el];
         ++i;
     }
-    // slack_bus_id_solver[slack_bus_id_];
     
-    // if(slack_bus_id_solver == _deactivated_bus_id){
     if(is_in_vect(_deactivated_bus_id, slack_bus_id_solver)){
         //TODO improve error message with the gen_id
+        // TODO DEBUG MODE: only check that in debug mode
         throw std::runtime_error("One of the slack bus is disconnected !");
     }
 }
@@ -488,14 +487,6 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
     storages_.fillSbus(Sbus, true, id_me_to_solver);
     generators_.fillSbus(Sbus, true, id_me_to_solver);
 
-    // handle slack bus (in ac only)
-    if(ac)
-    {
-        real_type sum_active = Sbus.sum().real();
-        // TODO SLACK don't forget the coefficients here !!! (and why the slack_bus_id_solver(0) here !!!)
-        // Sbus.coeffRef(slack_bus_id_solver) -= sum_active;
-        Sbus(slack_bus_id_solver(0)) -= sum_active;
-    }
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
 }
 
@@ -554,29 +545,29 @@ void GridModel::compute_results(bool ac){
     // for prods
     generators_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
 
-    //handle_slack_bus
-    real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);
-    p_slack += trafos_.get_p_slack(slack_bus_id_);
-    p_slack += loads_.get_p_slack(slack_bus_id_);
-    p_slack += sgens_.get_p_slack(slack_bus_id_);
-    p_slack += storages_.get_p_slack(slack_bus_id_);
-    p_slack += shunts_.get_p_slack(slack_bus_id_);
-    generators_.set_p_slack(p_slack);
-
-    // handle gen_q now
-    std::vector<real_type> q_by_bus = std::vector<real_type>(bus_vn_kv_.size(), 0.);
+    //handle_slack_bus active power
+    CplxVect mismatch;  // power mismatch at each bus (SOLVER BUS !!!)
+    RealVect ractive_mismatch;  // not used in dc mode (DO NOT ATTEMPT TO USE IT THERE)
     if(ac){
-        // I do not bother with reactive in dc mode
-        powerlines_.get_q(q_by_bus);
-        trafos_.get_q(q_by_bus);
-        loads_.get_q(q_by_bus);
-        storages_.get_q(q_by_bus);
-        sgens_.get_q(q_by_bus);
-        shunts_.get_q(q_by_bus);
+        // In AC mode i am not forced to run through all the grid
+        auto tmp = (Ybus_ac_ * V).conjugate();
+        mismatch = V.array() * tmp.array() - Sbus_.array();
+        RealVect active_mismatch = mismatch.real() * sn_mva_;
+        generators_.set_p_slack(active_mismatch, id_me_to_solver);
+    } else{
+        // TODO get rid of that part
+        real_type p_slack = powerlines_.get_p_slack(slack_bus_id_);
+        p_slack += trafos_.get_p_slack(slack_bus_id_);
+        p_slack += loads_.get_p_slack(slack_bus_id_);
+        p_slack += sgens_.get_p_slack(slack_bus_id_);
+        p_slack += storages_.get_p_slack(slack_bus_id_);
+        p_slack += shunts_.get_p_slack(slack_bus_id_);
+        generators_.set_p_slack(p_slack);
     }
 
+    if(ac) ractive_mismatch = mismatch.imag() * sn_mva_;
     // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
-    generators_.set_q(q_by_bus, ac);
+    generators_.set_q(ractive_mismatch, id_me_to_solver, ac);
 }
 
 void GridModel::reset_results(){
@@ -816,6 +807,7 @@ void GridModel::add_gen_slackbus(int gen_id, real_type weight){
 void GridModel::remove_gen_slackbus(int gen_id){
     if(gen_id < 0)
     {
+        // TODO DEBUG MODE: only check when in debug mode
         std::ostringstream exc_;
         exc_ << "GridModel::remove_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
         exc_ << gen_id;
@@ -823,6 +815,7 @@ void GridModel::remove_gen_slackbus(int gen_id){
     }
     if(gen_id > generators_.nb())
     {
+        // TODO DEBUG MODE: only check when in debug mode
         std::ostringstream exc_;
         exc_ << "GridModel::remove_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
         exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";

@@ -160,12 +160,14 @@ class DataGen: public DataGeneric
     /**
     Retrieve the normalized (=sum to 1.000) slack weights for all the buses
     **/
-    RealVect get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver) const;
+    RealVect get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
 
     // TODO SLACK have a get_p_slack for the generators (non slack) connected to the same node as the slack !
     virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const; 
     std::vector<int> get_slack_bus_id() const;
     virtual void set_p_slack(real_type p_slack);
+    // TODO SLACK test taht
+    void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
 
     // modification
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
@@ -192,7 +194,7 @@ class DataGen: public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    void set_q(const std::vector<real_type> & q_by_bus, bool ac);
+    void set_q(const RealVect & reactive_mismatch, const std::vector<int> & id_grid_to_solver, bool ac);
 
     void get_vm_for_dc(RealVect & Vm);
     /**
@@ -231,6 +233,7 @@ class DataGen: public DataGeneric
         RealVect total_q_min_per_bus_;
         RealVect total_q_max_per_bus_;
         Eigen::VectorXi total_gen_per_bus_;
+        RealVect bus_slack_weight_;  // do not sum to 1., for each node of the grid, say the raw contribution for the generator
 
         //output data
         RealVect res_p_;  // in MW

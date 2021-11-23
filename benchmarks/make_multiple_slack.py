@@ -1,3 +1,4 @@
+from numpy.lib.npyio import load
 import pandapower as pp
 import numpy as np
 import pandapower.networks as pn
@@ -6,6 +7,16 @@ import copy
 import tempfile
 from lightsim2grid.initGridModel import init
 
+# perf
+# net = pn.case300()
+# ls_grid_single = init(net)
+# ls_grid_single.deactivate_result_computation()
+# V = np.ones(net.bus.shape[0], dtype=np.complex_)
+# # Vdc = ls_grid_single.dc_pf(copy.deepcopy(V), max_it, tol)
+# ls_grid_single.reactivate_result_computation()
+# V = ls_grid_single.ac_pf(V, 10, 1e-8)
+# import sys
+# sys.exit()
 
 # LF PARAMETERS
 max_it = 10
@@ -85,7 +96,7 @@ print("Setpoint values")
 print(net.gen["p_mw"])
 net.gen["slack_weight"][[id_ref_slack]] = 1.0
 
-if True:
+if False:  # test pass now
     print()
     print()
     print()
@@ -94,7 +105,7 @@ if True:
     pp.runpp(case, init="flat")
     print("\n")
     print("Real testcase")
-    pp.runpp(net, distributed_slack=True, init="flat")
+    pp.runpp(net, init="flat")
 
     assert ((case.res_gen - net.res_gen) <= 1e-6).all().all()
     assert ((case.res_load - net.res_load) <= 1e-6).all().all()
@@ -113,15 +124,15 @@ if True:
     # Vdc = ls_grid_single.dc_pf(copy.deepcopy(V), max_it, tol)
     ls_grid_single.reactivate_result_computation()
     V = ls_grid_single.ac_pf(V, max_it, tol)
-    real_J = np.load("J_dist_slack_one_slack_firstIter.npy")
+    real_J = np.load("J_dist_slack_one_slack_firstIter.npy")  # from pandapower
+    real_J_ls = np.load(file="J_ref_single_slack_ls_firstIter.npy")  # from ls single slack
     my_J = ls_grid_single.get_J()
     my_first_row = my_J[0].todense()
     ref_first_row = real_J[0]
+    ref_first_row_ls = real_J_ls[0]
     Ybus_me = ls_grid_single.get_Ybus()
     Ybus_ref = net._ppc["internal"]["Ybus"]
     assert np.abs((Ybus_me - Ybus_ref).todense()).max() <= 1e-6, "wrong Ybus"
-    net._ppc["internal"]["Ybus"][0].todense()
-
     # n_pv = 5
     # n_pq = 8
     pdb.set_trace()
@@ -131,10 +142,8 @@ print()
 print()
 print()
 print()
-net.gen["slack_weight"][[id_ref_slack]] = 1.0
 print("Run PF with distributed slack (but still one slack)")
-pp.runpp(net, init="dc", distributed_slack=True)
-pdb.set_trace()
+pp.runpp(net, init="flat", distributed_slack=True)
 # now activate more slack bus
 net.gen["slack"][[1]] = True
 if "slack_weight" in net.gen:
@@ -144,24 +153,98 @@ pp.rundcpp(net)
 if False:
     # run the powerflow without distributed_slack=True
     print("Multiple slack, but nothing change in runpp (case 3)")
-    pp.runpp(net, init="dc")
+    pp.runpp(net, init="flat")
     gen_without_dist_slack = copy.deepcopy(net.res_gen)
     print(gen_without_dist_slack["p_mw"])
 
-if False:
-    ls_grid = init(net)
-    nb_bus_total = 14
-    ls_grid.deactivate_result_computation()
-    V = np.ones(nb_bus_total, dtype=np.complex_) * ls_grid.get_init_vm_pu()
-    Vdc = ls_grid.dc_pf(copy.deepcopy(V), max_it, tol)
-    ls_grid.reactivate_result_computation()
-    V = ls_grid.ac_pf(Vdc, max_it, tol)
-    pdb.set_trace()
-
-
-# run the powerflow with distributed_slack=True
+# run the powerflow with distributed_slack=True (same weights)
 print("Multiple slack, and distributed_slack=True (case 4)")
-pp.runpp(net, init="dc", distributed_slack=True)
+pp.runpp(net, init="flat", distributed_slack=True)
 print(net.res_gen["p_mw"])
-pdb.set_trace()
 
+ls_grid = init(net)
+nb_bus_total = 14
+# ls_grid.deactivate_result_computation()
+V = np.ones(nb_bus_total, dtype=np.complex_)  # * ls_grid.get_init_vm_pu()
+# Vdc = ls_grid.dc_pf(copy.deepcopy(V), max_it, tol)
+# ls_grid.reactivate_result_computation()
+V = ls_grid.ac_pf(V, max_it, tol)
+my_ref = np.where(np.angle(V) == 0.)[0][0]
+V_pp = net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  net.res_bus["va_degree"].values)
+V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
+assert np.abs(V_pp - V).max() <= 1e-6
+assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - net.res_line["p_from_mw"].values) <= 1e-6)
+assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - net.res_gen["q_mvar"].values) <= 1e-6)
+assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - net.res_gen["p_mw"].values) <= 1e-6)
+
+load_p = ls_grid.get_loads_res()[0]
+gen_p = ls_grid.get_gen_res()[0]
+p_or = ls_grid.get_lineor_res()[0]
+p_ex = ls_grid.get_lineex_res()[0]
+p_hv = ls_grid.get_trafohv_res()[0]
+p_lv = ls_grid.get_trafolv_res()[0]
+Sbus = ls_grid.get_Sbus()
+Ybus = ls_grid.get_Ybus()
+mis = V * (Ybus * V).conjugate() - Sbus
+mis_pp = V_pp * (Ybus * V_pp).conjugate() - Sbus
+
+# bus id 2
+# gen 1
+# load 1
+# l2 ex
+# l5 or
+assert abs(-gen_p[1] + load_p[1] + p_ex[2] + p_or[5]) <= 1e-6
+
+# bus id 0
+# l0 or
+# l1 or
+# gen 4
+assert abs(-gen_p[4] + p_or[0] + p_or[1]) <= 1e-6
+
+# bus id 3
+# l3 => to
+# l5 => to
+# l6 => from
+# load 2
+# t0 hv
+# t1 hv
+
+assert abs(load_p[2] + p_ex[3] + p_ex[5] + p_or[6] + p_hv[0] + p_hv[1]) <= 1e-6
+
+# bus 5
+# l7 or
+# l8 or
+# l9 or
+# g2
+# l4
+# t2 lv
+assert abs(p_or[7] + p_or[8] + p_or[9] - gen_p[2] + load_p[4] + p_lv[2]) <= 1e-6
+
+mis = ls_grid.check_solution(V, False)
+assert np.abs(mis).max() <= 1e-6, "error for lighsim2grid"
+mis_pp = ls_grid.check_solution(V_pp, False)
+assert np.abs(mis_pp).max() <= 1e-6, "error for pandapower"
+
+
+### re run the powerflow but with different weights
+net.gen["slack"][[1]] = True
+if "slack_weight" in net.gen:
+    net.gen["slack_weight"][[1, id_ref_slack]] = 0.7, 0.3
+pp.rundcpp(net)
+
+pp.runpp(net, init="flat", distributed_slack=True)
+ls_grid2 = init(net)
+V = np.ones(nb_bus_total, dtype=np.complex_) 
+V = ls_grid2.ac_pf(V, max_it, tol)
+my_ref = np.where(np.angle(V) == 0.)[0][0]
+V_pp = net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  net.res_bus["va_degree"].values)
+V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
+assert np.abs(V_pp - V).max() <= 1e-6
+assert np.all(np.abs([el.res_p_or_mw for el in ls_grid2.get_lines()] - net.res_line["p_from_mw"].values) <= 1e-6)
+
+assert np.all(np.abs([el.res_q_mvar for el in ls_grid2.get_generators()] - net.res_gen["q_mvar"].values) <= 1e-6)
+assert np.all(np.abs([el.res_p_mw for el in ls_grid2.get_generators()] - net.res_gen["p_mw"].values) <= 1e-6)
+
+# TODO SLACK: hardest test 1: multiple slack gen at the same bus
+# TODO SLACK: hardest test 2: at a bus, have both slack gen and non slack gen
+# TODO SLACK: measure the performance of all this

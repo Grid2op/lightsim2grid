@@ -76,7 +76,6 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
-    std::cout << std::endl;
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);

@@ -3,7 +3,7 @@ Change Log
 
 [TODO]
 --------
-- switch c++ to float32 instead
+- improve speed by not performing internal checks (keep check for boundaries and all for python API instead)
 - improve speed
 - improve documentation
 - easier building (get rid of the "make" part)
@@ -12,11 +12,12 @@ Change Log
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
 - perform unittest on CI (either github or circleci)
+- switch c++ to float32 instead
 
 [0.5.5] 20xx-yy-zz
 -------------------
+- [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
--  
 
 [0.5.5] 2021-11-10
 -------------------
