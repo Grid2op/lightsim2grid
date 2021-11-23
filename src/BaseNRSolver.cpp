@@ -200,14 +200,14 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_typ
 }
 
 void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
-                                 std::vector<int> & inner_index,
+                                 std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                                  const std::vector<int> & index_row_inv, // ex. pvpq_inv
                                  const Eigen::VectorXi & index_col, // ex. pvpq
-                                 int col_id,
-                                 int row_lag,  // 0 for J11 for example, n_pvpq for J12
-                                 int col_lag  // to remove the ref slack bus from this
+                                 Eigen::Index col_id,
+                                 Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
+                                 Eigen::Index col_lag  // to remove the ref slack bus from this
                                  )
 {
     /**
@@ -226,13 +226,13 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
 }
 
 void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
-                                 std::vector<int> & inner_index,
+                                 std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                                  const std::vector<int> & index_row_inv, // ex. pvpq_inv
-                                 int col_id_mat, // ex. pvpq
-                                 int row_lag,  // 0 for J11 for example, n_pvpq for J12
-                                 int col_lag  // to remove the ref slack bus from this
+                                 Eigen::Index col_id_mat, // ex. pvpq
+                                 Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
+                                 Eigen::Index col_lag  // to remove the ref slack bus from this
                                  )
 {
     /**
@@ -244,14 +244,14 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
     Hence, we pass as the argument of this function the "inverse" of index_row, which is such
     that : "j = index_row_inv[k]" is easily computable given k.
     **/
-    const int start_id = mat.outerIndexPtr()[col_id_mat];
-    const int end_id = mat.outerIndexPtr()[col_id_mat+1];
+    const Eigen::Index start_id = mat.outerIndexPtr()[col_id_mat];
+    const Eigen::Index end_id = mat.outerIndexPtr()[col_id_mat+1];
     const real_type * val_prt = mat.valuePtr();
-    for(int obj_id = start_id; obj_id < end_id; ++obj_id)
+    for(Eigen::Index obj_id = start_id; obj_id < end_id; ++obj_id)
     {
-        const int row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
+        const Eigen::Index row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
         // I add the value only if the rows was selected in the indexes
-        const int row_id = index_row_inv[row_id_dS_dVa];
+        const Eigen::Index row_id = index_row_inv[row_id_dS_dVa];
         if(row_id >= 0)
         {
             inner_index.push_back(row_id+row_lag);
@@ -373,9 +373,10 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
     the remaining pq components are all 0.
     **/
-    bool need_insert = false;  // i optimization: i don't need to insert the coefficient in the matrix
-    const auto n_pvpq = pvpq.size();
-    const auto n_pq = pq.size();
+   typedef Eigen::SparseMatrix<cplx_type>::StorageIndex StorageIndex;
+
+    const Eigen::Index n_pvpq = pvpq.size();
+    const Eigen::Index n_pq = pq.size();
     const auto size_j = n_pvpq + n_pq + 1;  // the +1 here to represent the equation for slack bus
 
     const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
@@ -388,26 +389,18 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     // optim : if the matrix was already computed, i don't initialize it, i instead reuse as much as i can
     // i can do that because the matrix will ALWAYS have the same non zero coefficients.
     // in this if, i allocate it in a "large enough" place to avoid copy when first filling it
-    if(J_.cols() != size_j)
-    {
-        need_insert = true;
-        J_ = Eigen::SparseMatrix<real_type>(size_j,size_j);
-        // pre allocate a large enough matrix
-        // J_.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros()) + slack_weights.size());
-        // from an experiment, outerIndexPtr is initialized, with the number of columns
-        // innerIndexPtr and valuePtr are not.
-    }
+    if(J_.cols() != size_j) J_ = Eigen::SparseMatrix<real_type>(size_j,size_j);
 
-    std::vector<Eigen::Triplet<double> >coeffs;  // HERE FOR PERF OPTIM (3)
+    std::vector<Eigen::Triplet<double> > coeffs;  // HERE FOR PERF OPTIM (3)
     coeffs.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros())  + slack_weights.size());  // HERE FOR PERF OPTIM (3)
 
     // i fill the buffer columns per columns
     int nb_obj_this_col = 0;
-    std::vector<int> inner_index;
+    std::vector<Eigen::Index> inner_index;
     std::vector<real_type> values;
 
     // fill n_pvpq leftmost columns
-    for(int col_id=0; col_id < n_pvpq; ++col_id){ 
+    for(Eigen::Index col_id=0; col_id < n_pvpq; ++col_id){ 
         // reset from the previous column
         nb_obj_this_col = 0;
         inner_index.clear();
@@ -430,18 +423,15 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
                       0);
 
         // "efficient" insert of the element in the matrix
-        for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
-            int row_id = inner_index[in_ind];
-            // if(need_insert) J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
-            // else J_.coeffRef(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
-            // J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (2)
-            coeffs.push_back(Eigen::Triplet<double>(row_id, col_id, values[in_ind]));   // HERE FOR PERF OPTIM (3)
+        for(Eigen::Index in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
+            StorageIndex row_id = static_cast<StorageIndex>(inner_index[in_ind]);
+            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id), values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
 
     //TODO make same for the second part (have a funciton for previous loop)
     // fill the remaining n_pq columns
-    for(int col_id=0; col_id < n_pq; ++col_id){
+    for(Eigen::Index col_id=0; col_id < n_pq; ++col_id){
         // reset from the previous column
         nb_obj_this_col = 0;
         inner_index.clear();
@@ -465,56 +455,47 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
                       0);
 
         // "efficient" insert of the element in the matrix
-        for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
-            int row_id = inner_index[in_ind];
-            // if(need_insert) J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
-            // else J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
-            // J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (2)
-            coeffs.push_back(Eigen::Triplet<double>(row_id, col_id + n_pvpq, values[in_ind]));   // HERE FOR PERF OPTIM (3)
+        for(Eigen::Index in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
+            auto row_id = static_cast<StorageIndex>(inner_index[in_ind]);
+            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id + n_pvpq), values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
 
     // add the slack bus coefficients for the first bus (the "real" slack bus)
     // first row (which corresponds to slack_bus_id)
-    for (int col_id=0; col_id < n_pvpq; ++col_id){
+    for (Eigen::Index col_id=0; col_id < n_pvpq; ++col_id){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVa_r, col_id); it; ++it)
         {
             if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus
             const auto J_col = pvpq_inv[it.col()];
             if(J_col >= 0){
                 // I need to insert it
-                // if(need_insert) J_.insert(0, J_col) = it.value();  // HERE FOR PERF OPTIM (1)
-                // else J_.coeffRef(0, J_col) = it.value();  // HERE FOR PERF OPTIM (1)
                 coeffs.push_back(Eigen::Triplet<double>(0, J_col, it.value()));   // HERE FOR PERF OPTIM (3)
             }
         }
     }
-    for (int col_id=0; col_id < n_pq; ++col_id){
+    for (Eigen::Index col_id=0; col_id < n_pq; ++col_id){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVm_r, col_id); it; ++it)
         {
             if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus
             const auto J_col = pq_inv[it.col()];
             if(J_col >= 0){
                 // I need to insert it
-                // if(need_insert) J_.insert(0, J_col + n_pvpq) = it.value();  // HERE FOR PERF OPTIM (1)
-                // else J_.coeffRef(0, J_col + n_pvpq) = it.value();  // HERE FOR PERF OPTIM (1)
-                coeffs.push_back(Eigen::Triplet<double>(0,J_col + n_pvpq, it.value()));   // HERE FOR PERF OPTIM (3)
+                coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq), it.value()));   // HERE FOR PERF OPTIM (3)
             }
         }
     }
 
     // add later on the last column which corresponds to the slack bus equation
-    const auto last_col = size_j - 1;
+    const StorageIndex last_col = size_j - 1;
     real_type tmp;
     // add the ref slack bus coeff
-    // J_.coeffRef(0, last_col) = slack_weights[slack_bus_id];
     coeffs.push_back(Eigen::Triplet<double>(0, last_col, slack_weights[slack_bus_id]));   // HERE FOR PERF OPTIM (3)
     // add the other coeffs (for other buses)
     for(int row_id = 0; row_id < pvpq.size(); ++row_id){
         const int row_w = pvpq[row_id];
         tmp = slack_weights[row_w];
-        // if(tmp != 0.) J_.coeffRef(row_id, last_col) = tmp;
-        if(tmp != 0.) coeffs.push_back(Eigen::Triplet<double>(row_id, last_col, tmp));   // HERE FOR PERF OPTIM (3)
+        if(tmp != 0.) coeffs.push_back(Eigen::Triplet<double>(static_cast<StorageIndex>(row_id), last_col, tmp));   // HERE FOR PERF OPTIM (3)
     }
     J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     J_.makeCompressed();
@@ -554,7 +535,7 @@ void BaseNRSolver::fill_value_map(
                     value_map_[pos_el] = &dS_dVm_.coeffRef(row_id_dS_dVx_r, col_id_dS_dVm_r);
                 }
             }else{
-                row_id -= 1;  // "do not consider" the row for slack bus 
+                row_id -= 1;  // "do not consider" the row for slack bus (handled above)
                 // this is consistent with the "+1" added in fill_jacobian_matrix_unkown_sparsity_pattern
                 if((col_id < n_pvpq) && (row_id < n_pvpq)){
                     // this is the J11 part (dS_dVa_r)
@@ -632,7 +613,7 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
 
     **/
 
-    const int n_pvpq = static_cast<int>(pvpq.size());
+    const auto n_pvpq = pvpq.size();
 
     real_type * J_x_ptr = J_.valuePtr();
     const auto n_cols = J_.cols();  // equal to nrow
@@ -641,6 +622,7 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
         {
             const auto row_id = it.row();
+            // only one if is necessary (magic !)
             // top rows are "real" part and bottom rows are imaginary part (you can check)
             if(row_id < n_pvpq + 1) J_x_ptr[pos_el] = std::real(*value_map_[pos_el]);
             else J_x_ptr[pos_el] = std::imag(*value_map_[pos_el]);
