@@ -56,6 +56,37 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const Eigen::VectorXi & pv,
                                   const Eigen::VectorXi & pq)
 {
+    /**
+    Remember, when this function is used:
+
+    J has the shape
+    | slack_bus | s |              |    (1,pvpq)   (1, pq)     | (pvpq+1,1)|
+    |  -------  | l |              | ------------------------- |           |
+    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
+    | --------- | c |= dimensions: | ------------------------- |   -----   |
+    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+
+    python implementation:
+    `J11` = dS_dVa[array([pvpq]).T, pvpq].real
+    `J12` = dS_dVm[array([pvpq]).T, pq].real
+    `J21` = dS_dVa[array([pq]).T, pvpq].imag
+    `J22` = dS_dVm[array([pq]).T, pq].imag
+
+    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    and dS_dVm[slack_bus_id, pq].real
+
+    `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
+    the remaining pq components are all 0.
+
+    So i need to make sure that the returned F has the same properties:
+
+    - first element is the slack bus
+    - then it's Va of pv buses
+    - then it's Va of pq buses
+    - then it's Vm of pq buses
+
+    **/
+
     // TODO factorize with above (ugly copy paste)
     auto timer = CustTimer();
     auto npv = pv.size();
@@ -69,9 +100,9 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     auto imag_ = mis.imag();
 
     // build and fill the result
-    RealVect res(npv + 2*npq + 1); // TODO SLACK (the +1 also bellow)
+    RealVect res(npv + 2*npq + 1); // slack adds one component and the '+1' also bellow)
     res(0) = real_(slack_id);  // slack bus at the end
-    res.segment(1,npv) = real_(pv);
+    res.segment(1, npv) = real_(pv);
     res.segment(npv + 1,npq) = real_(pq);
     res.segment(npv + npq + 1, npq) = imag_(pq);
     timer_Fx_ += timer.duration();
