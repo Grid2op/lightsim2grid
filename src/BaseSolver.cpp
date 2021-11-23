@@ -50,6 +50,7 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
                                   const CplxVect & Sbus,
+                                  Eigen::Index slack_id,  // id of the slack bus
                                   real_type slack_absorbed,
                                   const RealVect & slack_weights,
                                   const Eigen::VectorXi & pv,
@@ -68,10 +69,11 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     auto imag_ = mis.imag();
 
     // build and fill the result
-    RealVect res(npv + 2*npq);
-    res.segment(0,npv) = real_(pv);
-    res.segment(npv,npq) = real_(pq);
-    res.segment(npv+npq, npq) = imag_(pq);
+    RealVect res(npv + 2*npq + 1); // TODO SLACK (the +1 also bellow)
+    res(0) = real_(slack_id);  // slack bus at the end
+    res.segment(1,npv) = real_(pv);
+    res.segment(npv + 1,npq) = real_(pq);
+    res.segment(npv + npq + 1, npq) = imag_(pq);
     timer_Fx_ += timer.duration();
     return res;
     

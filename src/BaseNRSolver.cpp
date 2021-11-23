@@ -68,7 +68,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     Va_ = V_.array().arg();  // we "wrapped around" with a negative Vm
 
     // first check, if the problem is already solved, i stop there
-    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_absorbed, slack_weights, my_pv, pq);
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
@@ -100,14 +100,14 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         }
         auto dx = -F;
 
-        // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
-        slack_absorbed += dx(last_index); // by convention in fill_jacobian_matrix the slack bus is the first component
+        // update voltage (this should be done consistently with "_evaluate_Fx")
         if (n_pv > 0) Va_(my_pv) += dx.segment(0, n_pv);
         if (n_pq > 0){
             Va_(pq) += dx.segment(n_pv, n_pq);
             Vm_(pq) += dx.segment(n_pv + n_pq, n_pq);
         }
-        
+        slack_absorbed += dx(last_index); // by convention in fill_jacobian_matrix the slack bus is the last component
+
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
         Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -126,7 +126,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         std::cout << std::endl;
         std::cout << std::endl;
 
-        F = _evaluate_Fx(Ybus, V_, Sbus, slack_absorbed, slack_weights, my_pv, pq);
+        F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp){
             std::cout << "divergence due to Nans error" << std::endl;

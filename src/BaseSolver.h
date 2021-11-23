@@ -96,6 +96,7 @@ class BaseSolver : public BaseConstants
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
                               const CplxVect & Sbus,
+                              Eigen::Index slack_id,  // id of the slack bus
                               real_type slack_absorbed,
                               const RealVect & slack_weights,
                               const Eigen::VectorXi & pv,
