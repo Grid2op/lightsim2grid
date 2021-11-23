@@ -133,7 +133,7 @@ class BaseSolver : public BaseConstants
                                                const Eigen::VectorXi & pv) const {
             Eigen::VectorXi my_pv = pv;
             if(slack_ids.size() > 1){
-                const int nb_slack_added = slack_ids.size() - 1;
+                const auto nb_slack_added = slack_ids.size() - 1;
                 my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
                 for(auto i = 0; i < nb_slack_added; ++i){
                     my_pv(i) = slack_ids[i+1];

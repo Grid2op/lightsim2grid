@@ -131,14 +131,15 @@ class KLUSolver: public BaseNRSolver
                                          const Eigen::VectorXi & pvpq
                                          ){
 
-            // DO NOT USE, FOR DEBUG ONLY!
+            // DO NOT USE, FOR DEBUG ONLY!// TODO SLACK
             const auto & n_pvpq = pvpq.size();
             const auto & n_pq = pvpq.size();
             std::vector<int> pvpq_inv(V.size(), -1);
             for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
             std::vector<int> pq_inv(V.size(), -1);
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
-            fill_jacobian_matrix(Ybus, V, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+            //TODO SLACK I FORCED THE 0 bellow, change the signature !
+            fill_jacobian_matrix(Ybus, V, 0, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
             return J_;
         }
 

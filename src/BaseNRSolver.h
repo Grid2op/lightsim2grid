@@ -73,11 +73,22 @@ class BaseNRSolver : public BaseSolver
                            const std::vector<int> & index_row_inv, // ex. pvpq_inv
                            const Eigen::VectorXi & index_col, // ex. pvpq
                            int col_id,
-                           int row_lag  // 0 for J11 for example, n_pvpq for J12
+                           int row_lag,  // 0 for J11 for example, n_pvpq for J12
+                           int col_lag
+                           );
+        void _get_values_J(int & nb_obj_this_col,
+                           std::vector<int> & inner_index,
+                           std::vector<real_type> & values,
+                           const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
+                           const std::vector<int> & index_row_inv, // ex. pvpq_inv
+                           int col_id_mat, // ex. pvpq(col_id)
+                           int row_lag,  // 0 for J11 for example, n_pvpq for J12
+                           int col_lag  // to remove the ref slack bus from this
                            );
 
         void fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   const CplxVect & V,
+                                  Eigen::Index slack_bus_id,
                                   const RealVect & slack_weights,
                                   const Eigen::VectorXi & pq,
                                   const Eigen::VectorXi & pvpq,
@@ -91,6 +102,7 @@ class BaseNRSolver : public BaseSolver
                  // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
                  // const Eigen::SparseMatrix<cplx_type> & Ybus,
                  // const CplxVect & V,
+                 Eigen::Index slack_bus_id,
                  const Eigen::VectorXi & pq,
                  const Eigen::VectorXi & pvpq //,
                 //  const std::vector<int> & pq_inv,
@@ -103,6 +115,7 @@ class BaseNRSolver : public BaseSolver
                  // const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & dS_dVm_i,
                  const Eigen::SparseMatrix<cplx_type> & Ybus,
                  const CplxVect & V,
+                 Eigen::Index slack_bus_id,
                  const RealVect & slack_weights,
                  const Eigen::VectorXi & pq,
                  const Eigen::VectorXi & pvpq,
@@ -110,7 +123,8 @@ class BaseNRSolver : public BaseSolver
                  const std::vector<int> & pvpq_inv
                  );
 
-        void fill_value_map(const Eigen::VectorXi & pq,
+        void fill_value_map(Eigen::Index slack_bus_id,
+                            const Eigen::VectorXi & pq,
                             const Eigen::VectorXi & pvpq);
 
     protected:

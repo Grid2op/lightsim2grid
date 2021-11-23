@@ -29,7 +29,7 @@ case.ext_grid["in_service"][0] = False
 pp.runpp(case)
 
 # now create a copy of it, by removing the ext_grid completely (to be sure)
-net = pp.create_empty_network("case14_custom", sn_mva=case.sn_mva, f_hz=case.f_hz)
+net = pp.create_empty_network("case14_custom", sn_mva=1.0 * case.sn_mva, f_hz= 1.0 * case.f_hz)
 # create bus
 for i in range(case.bus.shape[0]):
     pp.create_bus(net, **case.bus.iloc[i])
@@ -83,14 +83,18 @@ assert (net.gen["min_p_mw"] <= 400.).all()
 # check the powerflow match
 print("Setpoint values")
 print(net.gen["p_mw"])
+net.gen["slack_weight"][[id_ref_slack]] = 1.0
+
 if True:
     print()
     print()
     print()
     print()
     print("With only one slack (case 2) ")
-    pp.runpp(case)
-    pp.runpp(net)
+    pp.runpp(case, init="flat")
+    print("\n")
+    print("Real testcase")
+    pp.runpp(net, distributed_slack=True, init="flat")
 
     assert ((case.res_gen - net.res_gen) <= 1e-6).all().all()
     assert ((case.res_load - net.res_load) <= 1e-6).all().all()
@@ -105,10 +109,21 @@ if True:
     ls_grid_single = init(net)
     nb_bus_total = 14
     ls_grid_single.deactivate_result_computation()
-    V = np.ones(nb_bus_total, dtype=np.complex_) * ls_grid_single.get_init_vm_pu()
-    Vdc = ls_grid_single.dc_pf(copy.deepcopy(V), max_it, tol)
+    V = np.ones(nb_bus_total, dtype=np.complex_)
+    # Vdc = ls_grid_single.dc_pf(copy.deepcopy(V), max_it, tol)
     ls_grid_single.reactivate_result_computation()
-    V = ls_grid_single.ac_pf(Vdc, max_it, tol)
+    V = ls_grid_single.ac_pf(V, max_it, tol)
+    real_J = np.load("J_dist_slack_one_slack_firstIter.npy")
+    my_J = ls_grid_single.get_J()
+    my_first_row = my_J[0].todense()
+    ref_first_row = real_J[0]
+    Ybus_me = ls_grid_single.get_Ybus()
+    Ybus_ref = net._ppc["internal"]["Ybus"]
+    assert np.abs((Ybus_me - Ybus_ref).todense()).max() <= 1e-6, "wrong Ybus"
+    net._ppc["internal"]["Ybus"][0].todense()
+
+    # n_pv = 5
+    # n_pq = 8
     pdb.set_trace()
     assert np.all(np.abs([el.res_p_or_mw for el in ls_grid_single.get_lines()] - net.res_line["p_from_mw"].values) <= 1e-6)
 
@@ -117,6 +132,7 @@ print()
 print()
 print()
 net.gen["slack_weight"][[id_ref_slack]] = 1.0
+print("Run PF with distributed slack (but still one slack)")
 pp.runpp(net, init="dc", distributed_slack=True)
 pdb.set_trace()
 # now activate more slack bus

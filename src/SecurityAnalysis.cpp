@@ -12,8 +12,8 @@
 
 bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
     std::vector<bool> visited(Ybus.cols(), false); 
-    std::queue<int> neighborhood;
-    int col_id = 0;  // start by node 0, why not
+    std::queue<Eigen::Index> neighborhood;
+    Eigen::Index col_id = 0;  // start by node 0, why not
     while (true)
     {
         visited[col_id] = true;

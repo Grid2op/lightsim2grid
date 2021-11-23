@@ -85,7 +85,7 @@ void DataGen::set_state(DataGen::StateRes & my_state )
     gen_slack_weight_ = slack_weight;
 }
 
-RealVect DataGen::get_slack_weights(int nb_bus_solver, const std::vector<int> & id_grid_to_solver) const{
+RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver) const{
     //TODO SLACK: try to memorize that somehow, should be possible
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
