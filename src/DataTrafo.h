@@ -190,9 +190,6 @@ class DataTrafo : public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const;
-    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}

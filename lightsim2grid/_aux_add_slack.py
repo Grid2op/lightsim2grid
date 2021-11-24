@@ -32,7 +32,7 @@ def _aux_add_slack(model, pp_net):
     if np.any(pp_net.gen["slack"].values):
         # most favorable cases
         if np.sum(pp_net.gen["slack"].values) >= 2:
-            # TODO SLACK remove this warning !
+            # TODO SLACK remove this warning ! (will be done at the end when more tests will be done)
             warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
                           "slack bus of pandapower will be used.")
         slack_gen_ids = np.where(pp_net.gen["slack"].values)[0]
@@ -45,7 +45,7 @@ def _aux_add_slack(model, pp_net):
         warnings.warn("LightSim has not found any generators tagged as \"slack bus\" in the pandapower network."
                       "I will attempt to add some from the ext_grid.")
         # first i try to see if a generator is connected to a slack bus
-        # TODO SLACK: deactivate warnings and improve the handling of this
+        # TODO SLACK: deactivate warnings (will be done at the end when more tests will be done)
         slack_bus_ids = pp_net.ext_grid["bus"].values
         if pp_net.ext_grid.shape[0] >= 2:
             warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "

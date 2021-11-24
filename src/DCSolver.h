@@ -20,7 +20,7 @@ class DCSolver: public BaseSolver
 
         virtual void reset();
 
-        // TODO SLACK
+        // TODO SLACK : this should be handled in Sbus by the gridmodel maybe ?
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,

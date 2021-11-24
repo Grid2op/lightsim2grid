@@ -39,7 +39,9 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // dcYbus_tmp.makeCompressed();
     const CplxVect & Sbus_tmp = Sbus;
 
-    // TODO SLACK (for now i put all slacks as PV)
+    // TODO SLACK (for now i put all slacks as PV, except the first one)
+    // this should be handled in Sbus, because we know the amount of power absorbed by the slack
+    // so we can compute it correctly !
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
 
     // find the slack bus

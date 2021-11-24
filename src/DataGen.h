@@ -162,11 +162,7 @@ class DataGen: public DataGeneric
     **/
     RealVect get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
 
-    // TODO SLACK have a get_p_slack for the generators (non slack) connected to the same node as the slack !
-    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const; 
     std::vector<int> get_slack_bus_id() const;
-    virtual void set_p_slack(real_type p_slack);
-    // TODO SLACK test taht
     void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
 
     // modification
@@ -225,9 +221,9 @@ class DataGen: public DataGeneric
         Eigen::VectorXi bus_id_;
         std::vector<bool> status_;
 
-        // TODO SLACK is this better there ?
-        std::vector<bool> gen_slackbus_;  // do not use unordered_set because the order would be "random"
-        std::vector<real_type> gen_slack_weight_;  // do not use unordered_set because the order would be "random"
+        // remember which generators are "slack bus"
+        std::vector<bool> gen_slackbus_;  // say for each generator if it's a slack or not
+        std::vector<real_type> gen_slack_weight_;
 
         // intermediate data
         RealVect total_q_min_per_bus_;

@@ -544,6 +544,9 @@ void GridModel::compute_results(bool ac){
     } else{
         active_mismatch = RealVect::Zero(V.size());
         //TODO SLACK: improve distributed slack for DC mode !
+        // it is possible to know in advance the contribution of each slack generators (sum(Sbus) MW 
+        // to split among the contributing generators) so it's possible to "mess with" Sbus 
+        // for such purpose
         const auto id_slack = slack_bus_id_dc_solver_(0);
         active_mismatch(id_slack) = -Sbus_.real().sum() * sn_mva_;
     }
@@ -562,149 +565,6 @@ void GridModel::reset_results(){
     sgens_.reset_results();
     storages_.reset_results();
     generators_.reset_results();
-}
-
-CplxVect GridModel::dc_pf_old(const CplxVect & Vinit,
-                              int max_iter,  // not used for DC
-                              real_type tol  // not used for DC
-                              )
-{
-    // TODO refactor that with ac pf, this is mostly done, but only mostly...
-    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
-    if(static_cast<int>(Vinit.size()) != nb_bus){
-        std::ostringstream exc_;
-        exc_ << "GridModel::dc_pf_old: Size of the Vinit should be the same as the total number of buses. Currently:  ";
-        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
-        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
-        throw std::runtime_error(exc_.str());
-    }
-    Eigen::SparseMatrix<cplx_type> dcYbus_tmp;
-    CplxVect Sbus_tmp;
-    std::vector<int> id_me_to_solver;
-    std::vector<int> id_solver_to_me;
-    Eigen::VectorXi slack_bus_id_solver;
-
-    //if(need_reset_){
-    slack_bus_id_ = generators_.get_slack_bus_id();
-    init_Ybus(dcYbus_tmp, id_me_to_solver, id_solver_to_me);
-    init_Sbus(Sbus_tmp, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
-    fillYbus(dcYbus_tmp, false, id_me_to_solver);
-    // fillpv_pq(id_me_to_solver);
-    //}
-    fillSbus_me(Sbus_tmp, false, id_me_to_solver, slack_bus_id_solver);
-
-
-    // extract only connected bus from Vinit
-    const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
-
-    // DC SOLVER STARTS HERE
-    // TODO all this should rather be one in a "dc solver" instead of here
-    // remove the slack bus
-
-    // remove the slack bus from Ybus
-    // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
-    dcYbus_tmp.makeCompressed();
-    Eigen::SparseMatrix<real_type> dcYbus = Eigen::SparseMatrix<real_type>(nb_bus_solver - 1, nb_bus_solver - 1);
-    std::vector<Eigen::Triplet<real_type> > tripletList;
-    tripletList.reserve(dcYbus_tmp.nonZeros());
-    for (int k=0; k < nb_bus_solver; ++k){
-        // if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
-        if(is_in_vect(k, slack_bus_id_solver)) continue;  // I don't add anything to the slack bus
-        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(dcYbus_tmp, k); it; ++it)
-        {
-            int row_res = static_cast<int>(it.row());
-            // if(row_res == slack_bus_id_solver) continue;
-            if(is_in_vect(row_res, slack_bus_id_solver)) continue;
-            // row_res = row_res > slack_bus_id_solver ? row_res - 1 : row_res;
-            // TODO SLACK why slack_bus_id_solver(0) ?
-            row_res = row_res > slack_bus_id_solver(0) ? row_res - 1 : row_res;
-            int col_res = static_cast<int>(it.col());
-            
-            // TODO SLACK why slack_bus_id_solver(0) ?
-            col_res = col_res > slack_bus_id_solver(0) ? col_res - 1 : col_res;
-            tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
-        }
-    }
-    dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
-    dcYbus.makeCompressed();
-
-    // initialize the solver
-    Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >   solver;
-    solver.analyzePattern(dcYbus);
-    solver.factorize(dcYbus);
-    if(solver.info() != Eigen::Success) {
-        // matrix is not connected
-        return CplxVect();
-    }
-
-    // remove the slack bus from Sbus
-    RealVect Sbus = RealVect::Constant(nb_bus_solver - 1, 0.);
-    for (int k=0; k < nb_bus_solver; ++k){
-        // if(k == slack_bus_id_solver) continue;  // I don't add anything to the slack bus
-        if(is_in_vect(k, slack_bus_id_solver)) continue;  // I don't add anything to the slack bus
-        int col_res = k;
-        // TODO SLACK i should not do slack_bus_id_solver(0)  !
-        // col_res = col_res > slack_bus_id_solver ? col_res - 1 : col_res;
-        col_res = col_res > slack_bus_id_solver(0) ? col_res - 1 : col_res;
-        Sbus(col_res) = std::real(Sbus_tmp(k));
-    }
-
-    // solve for theta: Sbus = dcY . theta
-    RealVect Va_dc = solver.solve(Sbus);
-    if(solver.info() != Eigen::Success) {
-        // solving failed, this should not happen in dc ...
-        return CplxVect();
-    }
-
-    // retrieve back the results in the proper shape
-    const int nb_bus_me = static_cast<int>(bus_vn_kv_.size());
-    int bus_id_solver;
-    RealVect Va = RealVect::Constant(nb_bus_me, 0.);
-    // fill Va from dc approx
-    for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-        if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is not connected
-        // if(bus_id_me == slack_bus_id_) continue;  // slack bus is handled elsewhere
-        if(is_in_vect(bus_id_me, slack_bus_id_)) continue;  // slack bus is handled elsewhere
-
-        bus_id_solver = id_me_to_solver[bus_id_me];
-        if(bus_id_solver == _deactivated_bus_id){
-            //TODO improve error message with the gen_id
-            throw std::runtime_error("One bus is both connected and disconnected");
-        }
-        // bus_id_solver = bus_id_solver > slack_bus_id_solver ? bus_id_solver - 1 : bus_id_solver;
-        // TODO SLACK I should not DO slack_bus_id_solver(0)
-        bus_id_solver = bus_id_solver > slack_bus_id_solver(0) ? bus_id_solver - 1 : bus_id_solver;
-        Va(bus_id_me) = Va_dc(bus_id_solver);
-    }
-    // Va.array() +=  Vinit(slack_bus_id_).array().arg();
-    Va.array() +=  std::arg(Vinit(slack_bus_id_[0]));  // TODO SLACK why adding the angle of the first slack ? 
-
-    // fill Vm either Vinit if pq or Vm if pv (TODO)
-    RealVect Vm;
-    if(false){
-        Vm = Vinit.array().abs();  // fill Vm = Vinit for all
-        // put Vm = 0. for disconnected bus
-        for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-            if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-            Vm(bus_id_me) = 0.;
-        }
-        // put Vm = Vm of turned on gen
-        // generators_.get_vm_for_dc(Vm);
-        // assign vm of the slack bus
-        Vm(slack_bus_id_) =  Vinit(slack_bus_id_).array().abs();
-    }
-    else{
-        Vm = RealVect::Constant(Vinit.size(), 1.0);
-        for (int bus_id_me=0; bus_id_me < nb_bus_me; ++bus_id_me){
-            if(bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
-            Vm(bus_id_me) = 0.;
-        }
-        generators_.get_vm_for_dc(Vm);
-    }
-    //END of the SOLVER PART
-
-    //TODO handle Vm = Vm (gen) for connected generators
-    return Vm.array() * (Va.array().cos().cast<cplx_type>() + my_i * Va.array().sin().cast<cplx_type>());
 }
 
 CplxVect GridModel::dc_pf(const CplxVect & Vinit,

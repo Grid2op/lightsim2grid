@@ -30,7 +30,7 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
 
-    // TODO SLACK (for now i put all slacks as PV)
+    // TODO SLACK (for now i put all slacks as PV, except the first one)
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
 
     V_ = V;

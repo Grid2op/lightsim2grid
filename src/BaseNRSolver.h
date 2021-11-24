@@ -132,6 +132,31 @@ class BaseNRSolver : public BaseSolver
         double timer_dSbus_;
         double timer_fillJ_;
 
+
+    Eigen::SparseMatrix<real_type>
+        create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                    const CplxVect & V,
+                                    const RealVect & slack_weights,
+                                    const Eigen::VectorXi & pq,
+                                    const Eigen::VectorXi & pvpq
+                                    ){
+            // DO NOT USE, FOR DEBUG ONLY!// TODO SLACK
+            const auto & n_pvpq = pvpq.size();
+            const auto & n_pq = pvpq.size();
+            std::vector<int> pvpq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
+            std::vector<int> pq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+            // TODO if bug when using it, check the "pvpq" below, 
+            // in theory its "pv" !
+            int slack_bus_id = extract_slack_bus_id(pvpq, pq,
+                                                    static_cast<unsigned int>(V.size())
+                                                    );
+            fill_jacobian_matrix(Ybus, V, static_cast<Eigen::Index>(slack_bus_id),
+                                 slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+            return J_;
+        }
+
     private:
         // no copy allowed
         BaseNRSolver( const BaseNRSolver & ) ;

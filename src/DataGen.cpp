@@ -263,30 +263,6 @@ std::vector<int> DataGen::get_slack_bus_id() const{
     return res;
 }
 
-real_type DataGen::get_p_slack(const std::vector<int>& slack_bus_id) const{
-    // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-    const auto nb_gen = nb();
-    real_type res = 0.;
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        if(!status_[gen_id]) continue;  // nothing to do if generator is not connected
-        if(!gen_slackbus_[gen_id]) continue;  // slack bus is not handled here
-        if(is_in_vect(bus_id_[gen_id], slack_bus_id))  res -= p_mw_[gen_id];
-    }
-    return res;
-}
-
-void DataGen::set_p_slack(real_type p_slack){
-    // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-    // This should not compile on purpose !
-    const auto nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!status_[gen_id]) continue;
-        if(!gen_slackbus_[gen_id]) continue;
-        // if(!status) throw std::runtime_error("DataGen::set_p_slack: Generator for slack bus is deactivated");
-        res_p_(gen_id) = p_slack;  // TODO SLACK : += maybe ?
-    }
-}
 void DataGen::set_p_slack(const RealVect& node_mismatch,
                           const std::vector<int> & id_grid_to_solver)
 {

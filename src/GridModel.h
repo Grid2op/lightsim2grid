@@ -184,10 +184,6 @@ class GridModel : public DataGeneric
         void tell_topo_changed(){topo_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
 
         // dc powerflow
-        CplxVect dc_pf_old(const CplxVect & Vinit,
-                                   int max_iter,  // not used for DC
-                                   real_type tol  // not used for DC
-                                   );
         CplxVect dc_pf(const CplxVect & Vinit,
                                int max_iter,  // not used for DC
                                real_type tol  // not used for DC

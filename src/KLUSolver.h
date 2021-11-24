@@ -122,27 +122,7 @@ class KLUSolver: public BaseNRSolver
             F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
             return std::tuple<RealVect, CplxVect>(F, V);
         }
-
-        Eigen::SparseMatrix<real_type>
-             create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                         const CplxVect & V,
-                                         const RealVect & slack_weights,
-                                         const Eigen::VectorXi & pq,
-                                         const Eigen::VectorXi & pvpq
-                                         ){
-
-            // DO NOT USE, FOR DEBUG ONLY!// TODO SLACK
-            const auto & n_pvpq = pvpq.size();
-            const auto & n_pq = pvpq.size();
-            std::vector<int> pvpq_inv(V.size(), -1);
-            for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
-            std::vector<int> pq_inv(V.size(), -1);
-            for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
-            //TODO SLACK I FORCED THE 0 bellow, change the signature !
-            fill_jacobian_matrix(Ybus, V, 0, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-            return J_;
-        }
-
+        
         bool initialize_test(Eigen::SparseMatrix<real_type > & J){
             // default Eigen representation: column major, which is good for klu !
             // J is const here, even if it's not said in klu_analyze

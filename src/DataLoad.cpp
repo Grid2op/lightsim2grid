@@ -118,27 +118,3 @@ void DataLoad::change_q(int load_id, real_type new_q, bool & need_reset)
     }
     q_mvar_(load_id) = new_q;
 }
-
-real_type DataLoad::get_p_slack(const std::vector<int>& slack_bus_id) const
-{
-    int nb_element = nb();
-    real_type res = 0.;
-    for(int load_id = 0; load_id < nb_element; ++load_id)
-    {
-        if(!status_[load_id]) continue;
-        // if(bus_id_(load_id) == slack_bus_id) res += res_p_(load_id);
-        if(is_in_vect(bus_id_(load_id), slack_bus_id)) res += res_p_(load_id);
-    }
-    return res;
-}
-
-void DataLoad::get_q(std::vector<real_type>& q_by_bus)
-{
-    int nb_element = nb();
-    for(int load_id = 0; load_id < nb_element; ++load_id)
-    {
-        if(!status_[load_id]) continue;
-        int bus_id = bus_id_[load_id];
-        q_by_bus[bus_id] += res_q_(load_id); //TODO weird that i need to put a + here and a - for the active!
-    }
-}

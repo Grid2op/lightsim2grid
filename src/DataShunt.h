@@ -74,9 +74,6 @@ class DataShunt : public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-    virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const;
-    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}

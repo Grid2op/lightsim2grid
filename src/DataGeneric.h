@@ -78,12 +78,9 @@ class DataGeneric : public BaseConstants
                             Eigen::VectorXi & slack_bus_id_solver,
                             const std::vector<int> & id_grid_to_solver) const {};
         
-        // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-        virtual real_type get_p_slack(const std::vector<int>& slack_bus_id) const {return my_zero_;}
-        // TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-        virtual void set_p_slack(real_type p_slack) {};
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
+        void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver) {};
     
         static const int _deactivated_bus_id;
         

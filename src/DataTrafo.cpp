@@ -352,32 +352,3 @@ void DataTrafo::reset_results(){
     res_v_lv_ = RealVect();  // in kV
     res_a_lv_ = RealVect();  // in kA
 }
-
-// TODO SLACK real_type p_slack OR  std::set<real_type> p_slack ???
-real_type DataTrafo::get_p_slack(const std::vector<int>& slack_bus_id) const
-{
-    const int nb_element = nb();
-    real_type res = 0.;
-    for(int line_id = 0; line_id < nb_element; ++line_id)
-    {
-        if(!status_[line_id]) continue;
-        // if(bus_hv_id_(line_id) == slack_bus_id) res += res_p_hv_(line_id);
-        // if(bus_lv_id_(line_id) == slack_bus_id) res += res_p_lv_(line_id);
-        if(is_in_vect(bus_hv_id_(line_id), slack_bus_id)) res += res_p_hv_(line_id);
-        if(is_in_vect(bus_lv_id_(line_id), slack_bus_id)) res += res_p_lv_(line_id);
-    }
-    return res;
-}
-
-void DataTrafo::get_q(std::vector<real_type>& q_by_bus)
-{
-    const int nb_element = nb();
-    for(int el_id = 0; el_id < nb_element; ++el_id)
-    {
-        if(!status_[el_id]) continue;
-        int bus_id_hv = bus_hv_id_[el_id];
-        int bus_id_lv = bus_lv_id_[el_id];
-        q_by_bus[bus_id_hv] += res_q_hv_(el_id);
-        q_by_bus[bus_id_lv] += res_q_lv_(el_id);
-    }
-}
