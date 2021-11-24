@@ -15,6 +15,7 @@ import copy
 import numpy as np
 from pandapower.std_types import parameter_from_std_type
 import scipy
+import pdb
 import warnings
 
 from lightsim2grid import LightSimBackend
@@ -31,7 +32,7 @@ TIMER_INFO = False  # do i print information regarding computation time
 class TestDCPF(unittest.TestCase):
     def setUp(self) -> None:
         self.tol = 1e-4  # results are equal if they match up to tol
-        self.tol_big = 0.1  # for P = C
+        self.tol_big = 0.01  # for P = C
 
     def test_case14(self):
         case = pn.case14()
@@ -114,9 +115,24 @@ class TestDCPF(unittest.TestCase):
         load_p_pp, load_q_pp, load_v_pp = copy.deepcopy(backend.init_pp_backend.loads_info())
         gen_p_pp, gen_q_pp, gen_v_pp = copy.deepcopy(backend.init_pp_backend.generators_info())
         sh_p_pp, sh_q_pp, sh_v_pp, *_ = copy.deepcopy(backend.init_pp_backend.shunt_info())
+        sgen_p_pp = copy.deepcopy(backend.init_pp_backend._grid.res_sgen["p_mw"].values)
+        init_gen_p = copy.deepcopy(backend.init_pp_backend._grid.gen["p_mw"].values)
+        init_load_p = copy.deepcopy(backend.init_pp_backend._grid.load["p_mw"].values)
+        init_sgen_p = copy.deepcopy(backend.init_pp_backend._grid.sgen["p_mw"].values)
 
         # I- Check for divergence and equality of flows"
         por_ls, qor_ls, vor_ls, aor_ls = backend.lines_or_info()
+        big_err_lid = np.where(np.abs(por_ls - por_pp) > 5000)[0]
+        backend.line_ex_to_subid[big_err_lid]
+        psub_ls, qsub_ls, pbus_ls, qbus_ls, diff_v_bus_ls = backend.check_kirchoff()
+        psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
+        
+        # check voltages
+        nb_real_bus = backend.n_sub
+        V_pp = np.exp(1j * np.pi / 180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_real_bus])
+        V_ls = backend.V[:nb_real_bus]
+        assert np.all(np.abs(np.angle(V_ls) - np.angle(V_pp)) <= self.tol), "error in voltage angles !"
+        
         max_mis = np.max(np.abs(por_ls - por_pp))
         assert max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
         max_mis = np.max(np.abs(qor_ls - qor_pp))
@@ -140,6 +156,7 @@ class TestDCPF(unittest.TestCase):
         # max_mis = np.max(np.abs(gen_p - gen_p_pp))
         # assert max_mis <= self.tol, f"Error: gen_p do not match, maximum absolute error is {max_mis:.5f} MW"
         assert abs(np.sum(gen_p) + np.sum(sgen_p) - np.sum(load_p)) <= self.tol_big
+        # np.sum(gen_p_pp) + np.sum(sgen_p_pp) - np.sum(load_p_pp)
         # pandapower also does weird things in dc for gen_q... lightsim2grid puts everything at 0.
         # max_mis = np.max(np.abs(gen_q - gen_q_pp))
         # assert max_mis <= self.tol, f"Error: gen_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
