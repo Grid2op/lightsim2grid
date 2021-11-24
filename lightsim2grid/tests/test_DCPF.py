@@ -70,6 +70,7 @@ class TestDCPF(unittest.TestCase):
 
     def test_case6470rte(self):
         case = pn.case6470rte()
+        self.tol_big = 0.1  # for P = C
         self.tol = 1e-2
         self._aux_test(case)
 
@@ -80,6 +81,7 @@ class TestDCPF(unittest.TestCase):
 
     def test_case6515rte(self):
         case = pn.case6515rte()
+        self.tol_big = 0.1  # for P = C
         self.tol = 1e-2
         self._aux_test(case)
 
@@ -128,10 +130,10 @@ class TestDCPF(unittest.TestCase):
         psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
         
         # check voltages
-        nb_real_bus = backend.n_sub
-        V_pp = np.exp(1j * np.pi / 180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_real_bus])
-        V_ls = backend.V[:nb_real_bus]
-        assert np.all(np.abs(np.angle(V_ls) - np.angle(V_pp)) <= self.tol), "error in voltage angles !"
+        line_or_theta_pp, line_ex_theta_pp, *_ = backend.init_pp_backend.get_theta()
+        line_or_theta_ls, line_ex_theta_ls, *_ = backend.get_theta()
+        assert np.all(np.abs(line_or_theta_ls - line_or_theta_pp) <= self.tol), "error in voltage angles (theta_or)"
+        assert np.all(np.abs(line_ex_theta_ls - line_ex_theta_pp) <= self.tol), "error in voltage angles (theta_ex)"
         
         max_mis = np.max(np.abs(por_ls - por_pp))
         assert max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
