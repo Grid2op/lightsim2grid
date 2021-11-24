@@ -3,7 +3,8 @@ Change Log
 
 [TODO]
 --------
-- improve speed by not performing internal checks (keep check for boundaries and all for python API instead)
+- improve speed by not performing internal checks 
+  (keep check for boundaries and all for python API instead) [see TODO DEBUG MODE in c++ code]
 - improve speed
 - improve documentation
 - easier building (get rid of the "make" part)
