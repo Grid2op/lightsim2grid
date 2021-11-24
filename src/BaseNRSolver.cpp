@@ -27,15 +27,18 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     of the system.
     If the Ybus matrix changed, please uses the appropriate method to recomptue it!
     **/
-    // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
-    // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
+    // TODO DEBUG MODE check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
+    // TODO DEBUG MODE Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
+    // TODO DEBUG MODE: check that all nodes is either pv, pq or slack
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
+        // TODO DEBUG MODE
         std::ostringstream exc_;
         exc_ << "BaseNRSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
         exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
+        // TODO DEBUG MODE
         std::ostringstream exc_;
         exc_ << "BaseNRSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
         exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.rows() << ").";
@@ -44,8 +47,6 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     reset_timer();
     if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
-
-    // TODO check that all index are in the proper range, check that no index is pv, pq or slacks, etc.
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
     real_type slack_absorbed = std::real(Sbus.sum());
@@ -57,8 +58,43 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq; 
 
+    // TODO SLACK
+    // std::cout << "slack_bus_id " << slack_bus_id << std::endl;
+    // std::cout << "slack_ids: ";
+    // for(auto el: slack_ids){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "pv: ";
+    // for(auto el: pv){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "pq: ";
+    // for(auto el: pq){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "slack_weights: ";
+    // for(auto el: slack_weights){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+
+    // std::cout << "Sbus: ";
+    // for(auto el: Sbus){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "V: ";
+    // for(auto el: V){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+    // std::cout <<  "tol " << tol << std::endl;
+
     // some clever tricks are used in the making of the Jacobian to handle the slack bus 
-    // in case there is a distributed slack bus
+    // (in case there is a distributed slack bus)
     const auto n_pvpq = pvpq.size();
     std::vector<int> pvpq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
@@ -79,10 +115,21 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+        
+        // std::cout << "_____________" << std::endl; // TODO SLACK
+        // std::cout << "iter " << nr_iter_ << std::endl; // TODO SLACK
+        // print_J(22, 23);  // TODO SLACK
+        // if(nr_iter_ == 2){
+        //     converged = true;  // TODO SLACK
+        //     break; // TODO SLACK
+        // }
+        // std::cout << "_____________" << std::endl; // TODO SLACK
+
         if(need_factorize_){
             initialize();
             if(err_ != 0){
                 // I got an error during the initialization of the linear system, i need to stop here
+                std::cout << "initialize error " << err_ << std::endl;  // TODO SLACK
                 res = false;
                 break;
             }
@@ -93,10 +140,18 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         has_just_been_initialized = false;
         if(err_ != 0){
             // I got an error during the solving of the linear system, i need to stop here
+            std::cout << "solve error " << err_ << std::endl;  // TODO SLACK
             res = false;
             break;
         }
         auto dx = -F;
+
+        // TODO SLACK
+        // std::cout << "dx: (iter " << nr_iter_ << ") :";
+        // for(auto el: dx){
+        //     std::cout << el << ", ";
+        // }
+        // std::cout << std::endl;
 
         // update voltage (this should be done consistently with "_evaluate_Fx")
         if (n_pv > 0) Va_(my_pv) += dx.segment(0, n_pv);
@@ -114,12 +169,15 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp){
+            std::cout << "nan error " << err_ << std::endl;  // TODO SLACK
             break; // divergence due to Nans
         }
         converged = _check_for_convergence(F, tol);
     }
+    std::cout << "nr_iter_ " << nr_iter_ << std::endl;  // TODO SLACK
     if(!converged){
         err_ = 4;
+        std::cout << "too much iter error " << err_ << std::endl;  // TODO SLACK
         res = false;
     }
     timer_total_nr_ += timer.duration();
@@ -486,15 +544,15 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     }
 
     // add later on the last column which corresponds to the slack bus equation
-    const StorageIndex last_col = size_j - 1;
-    real_type tmp;
+    const StorageIndex last_col = static_cast<StorageIndex>(size_j) - 1;
     // add the ref slack bus coeff
     coeffs.push_back(Eigen::Triplet<double>(0, last_col, slack_weights[slack_bus_id]));   // HERE FOR PERF OPTIM (3)
     // add the other coeffs (for other buses)
-    for(int row_id = 0; row_id < pvpq.size(); ++row_id){
-        const int row_w = pvpq[row_id];
-        tmp = slack_weights[row_w];
-        if(tmp != 0.) coeffs.push_back(Eigen::Triplet<double>(static_cast<StorageIndex>(row_id), last_col, tmp));   // HERE FOR PERF OPTIM (3)
+    auto row_j = 1;
+    for(auto ind: pvpq){
+        auto sl_w  = slack_weights(ind);
+        if(sl_w != 0.) coeffs.push_back(Eigen::Triplet<double>(row_j, last_col, sl_w));   // HERE FOR PERF OPTIM (3)
+        ++row_j;
     }
     J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     J_.makeCompressed();

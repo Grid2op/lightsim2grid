@@ -121,6 +121,7 @@ void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_gri
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
             exc_ << "DataGen::fillSbus: Generator with id ";
             exc_ << gen_id;
@@ -146,6 +147,7 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
             exc_ << "DataGen::fillpv: Generator with id ";
             exc_ << gen_id;
@@ -161,12 +163,12 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
 }
 
 void DataGen::compute_results(const Eigen::Ref<const RealVect> & Va,
-                               const Eigen::Ref<const RealVect> & Vm,
-                               const Eigen::Ref<const CplxVect> & V,
-                               const std::vector<int> & id_grid_to_solver,
-                               const RealVect & bus_vn_kv,
-                               real_type sn_mva,
-                               bool ac)
+                              const Eigen::Ref<const RealVect> & Vm,
+                              const Eigen::Ref<const CplxVect> & V,
+                              const std::vector<int> & id_grid_to_solver,
+                              const RealVect & bus_vn_kv,
+                              real_type sn_mva,
+                              bool ac)
 {
     const int nb_gen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
@@ -199,6 +201,7 @@ void DataGen::change_p(int gen_id, real_type new_p, bool & need_reset)
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
+        // TODO DEBUG MODE only this in debug mode
         std::ostringstream exc_;
         exc_ << "DataGen::change_p: Impossible to change the active value of a disconnected generator (check gen. id ";
         exc_ << gen_id;
@@ -213,6 +216,7 @@ void DataGen::change_v(int gen_id, real_type new_v_pu, bool & need_reset)
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
+        // TODO DEBUG MODE only this in debug mode
         std::ostringstream exc_;
         exc_ << "DataGen::change_p: Impossible to change the voltage setpoint of a disconnected generator (check gen. id ";
         exc_ << gen_id;
@@ -233,6 +237,7 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
             exc_ << "DataGen::set_vm: Generator with id ";
             exc_ << gen_id;
@@ -258,7 +263,11 @@ std::vector<int> DataGen::get_slack_bus_id() const{
     std::vector<int> res;
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(gen_slackbus_[gen_id]) res.push_back(bus_id_(gen_id));
+        if(gen_slackbus_[gen_id]){
+            const auto my_bus = bus_id_(gen_id);
+            // do not add twice the same "slack bus"
+            if(!is_in_vect(my_bus, res)) res.push_back(my_bus);
+        }
     }
     return res;
 }

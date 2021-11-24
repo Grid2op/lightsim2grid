@@ -159,8 +159,23 @@ class BaseNRSolver : public BaseSolver
 
     private:
         // no copy allowed
-        BaseNRSolver( const BaseNRSolver & ) ;
-        BaseNRSolver & operator=( const BaseNRSolver & ) ;
+        BaseNRSolver( const BaseNRSolver & ) =delete ;
+        BaseNRSolver & operator=( const BaseNRSolver & ) =delete ;
+
+        /** helper function to print the max_col left most columns of the J matrix **/
+        void print_J(int min_col=-1, int max_col=-1) const{
+            auto size_J = J_.cols();
+            if(max_col == -1) max_col = static_cast<int>(size_J);
+            if(min_col == -1) min_col = 0;
+            for (int col_id=min_col; col_id < max_col; ++col_id){
+                for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
+                {
+                    std::cout << it.row() << ", " << it.col() << ": " << it.value() << std::endl;
+                }
+                std::cout << std::endl;
+            }
+        }
+
 
     private:
         Eigen::SparseMatrix<cplx_type>
