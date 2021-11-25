@@ -138,7 +138,6 @@ class TestMultipleSlack(unittest.TestCase):
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         J_me = ls_grid_single.get_J()
         J_pp = self.net._ppc["internal"]["J"]
-        pdb.set_trace()
         self.check_results(V, ls_grid_single, self.net)  # TODO SLACK uncomment
 
         # now run with the option "dist_slack=True"
@@ -219,11 +218,50 @@ class TestMultipleSlack(unittest.TestCase):
             warnings.filterwarnings("ignore")
             ls_grid = init(self.net)
         
+        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = ls_grid.ac_pf(V, self.max_it, self.tol)
+        assert len(V), "lightsim diverged !"
         # check that the losses have been properly split
-        res_slack = self.net.res_gen["p_mw"].values[[-2, -1]] - 0.5 * init_p_mw
-        tartine_0 = self.net.res_gen["p_mw"].values[gen_id_added]
+        last = len(ls_grid.get_generators()) - 1
+        last2 = len(ls_grid.get_generators()) - 2
+        res_slack = np.array((ls_grid.get_generators()[last2].res_p_mw , ls_grid.get_generators()[last].res_p_mw ))
+        res_slack -= 0.5 * init_p_mw
+        tartine_0 = ls_grid.get_generators()[gen_id_added].res_p_mw
+        # res_slack = self.net.res_gen["p_mw"].values[[-2, -1]] - 0.5 * init_p_mw
+        # tartine_0 = self.net.res_gen["p_mw"].values[gen_id_added]
         assert abs(coefs_slack[2] * res_slack[0] - coefs_slack[1] * res_slack[1]) <= 1e-6
         assert abs(coefs_slack[1] * tartine_0 - coefs_slack[0] * res_slack[0]) <= 1e-6
+
+        self.check_results(V, ls_grid, self.net)
+
+    def test_multiple_slack_one_gen_not_slack(self):
+        """
+        test the results when there are two slacks, but at one node where there is a slack, another non slack gen is connected
+        """
+
+        # create gens
+        gen_id_added = 1
+        var_gen = [el for el in VAR_GEN if el in self.net.gen]
+        id_ref_slack = self.net.gen.shape[0] - 1
+        self.net.gen["slack"][[id_ref_slack]] = False  # this gen will be copied, so i remove it
+        self.net.gen["slack"][[gen_id_added]] = True
+        # create the gen on the same bus as one of the slack
+        pp.create_gen(self.net, **self.net.gen[var_gen].iloc[id_ref_slack])
+        self.net.gen["slack"][[id_ref_slack]] = True  # I reactivate it
+        init_p_mw = self.net.gen["p_mw"].values[id_ref_slack]
+        coefs_slack = 0.1, 0.9
+        self.net.gen["slack_weight"][[gen_id_added, id_ref_slack]] = coefs_slack
+        self.net.gen["p_mw"][[id_ref_slack, id_ref_slack]] = 0.5 * init_p_mw
+
+        # start the powerflow
+        pp.rundcpp(self.net)
+        pp.runpp(self.net, distributed_slack=True,
+                 init_vm_pu="flat",
+                 init_va_degree="flat") 
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            ls_grid = init(self.net)
+        
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)

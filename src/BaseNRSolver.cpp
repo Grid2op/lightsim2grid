@@ -174,7 +174,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         }
         converged = _check_for_convergence(F, tol);
     }
-    std::cout << "nr_iter_ " << nr_iter_ << std::endl;  // TODO SLACK
+    // std::cout << "nr_iter_ " << nr_iter_ << std::endl;  // TODO SLACK
     if(!converged){
         err_ = 4;
         std::cout << "too much iter error " << err_ << std::endl;  // TODO SLACK
