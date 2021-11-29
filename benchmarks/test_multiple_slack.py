@@ -109,7 +109,7 @@ def make_grid_multiple_slack(case):
 
     return net
 
-class TestMultipleSlack(unittest.TestCase):
+class TestMultipleSlack14(unittest.TestCase):
     def setUp(self) -> None:
         # LF PARAMETERS
         self.max_it = 10
@@ -274,6 +274,11 @@ class TestMultipleSlack(unittest.TestCase):
         Ybus_ref = pp_net._ppc["internal"]["Ybus"]
         assert np.abs((Ybus_me - Ybus_ref).todense()).max() <= 1e-6, "wrong Ybus"
 
+        # it's a solution of KCL TODO slack bus and PV buses !
+        # pdb.set_trace()
+        # assert np.max(np.abs(V_ls * (Ybus_me * V_ls).conjugate() - ls_grid.get_Sbus())) <= 1e-6
+
+        # check that the same results as pandapower
         my_ref = np.where(np.angle(V_ls) == 0.)[0][0]
         V_pp = pp_net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  pp_net.res_bus["va_degree"].values)
         V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
@@ -283,6 +288,76 @@ class TestMultipleSlack(unittest.TestCase):
         assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= 1e-6)
 
+class TestMultipleSlack118(unittest.TestCase):
+    def setUp(self) -> None:
+        # LF PARAMETERS
+        self.max_it = 10
+        self.tol = 1e-8
+        self.nb_bus_total = 118
+
+        # retrieve the case14 and remove the "ext_grid" => put a generator as slack bus instead
+        self.case = pn.case118()
+        self.net = make_grid_multiple_slack(self.case)
+        if "slack_weight" in self.net.gen:
+            id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
+            self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
+
+    def test_single_slack(self):
+        """check pandapower and lightsim get the same results when there is only one
+           slack bus
+        """
+        # TODO SLACK uncomment
+        pp.runpp(self.net,
+                 init_vm_pu="flat",
+                 init_va_degree="flat")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            ls_grid_single = init(self.net)
+        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
+        J_me = ls_grid_single.get_J()
+        J_pp = self.net._ppc["internal"]["J"]
+        self.check_results(V, ls_grid_single, self.net)  # TODO SLACK uncomment
+
+        # now run with the option "dist_slack=True"
+        pp.runpp(self.net,
+                 distributed_slack=True,
+                 init_vm_pu="flat",
+                 init_va_degree="flat")
+        self.check_results(V, ls_grid_single, self.net)
+
+    def test_two_slacks_diff_bus(self):
+        """test the results when there are two slacks, in most simple setting"""
+        # now activate more slack bus
+        self.net.gen["slack"][[1]] = True
+        id_ref_slack = self.net.gen.shape[0] - 1
+        if "slack_weight" in self.net.gen:
+            self.net.gen["slack_weight"][[1, id_ref_slack]] = 0.5
+        
+        # just to make sure pp forgot previous results
+        pp.runpp(self.net,
+                 distributed_slack=True,
+                 init_vm_pu="flat",
+                 init_va_degree="flat")  
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            ls_grid = init(self.net)
+        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = ls_grid.ac_pf(V, self.max_it, self.tol)
+        self.check_results(V, ls_grid, self.net)
+
+    def check_results(self, V_ls, ls_grid, pp_net):
+        assert len(V_ls), "lightsim diverged !"
+        my_ref = np.where(np.angle(V_ls) == 0.)[0][0]
+        V_pp = pp_net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  pp_net.res_bus["va_degree"].values)
+        V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
+        assert np.abs(V_pp - V_ls).max() <= 1e-6, "wrong voltages"
+        assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_a_or_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= 1e-6)
+        
 if __name__ == "__main__":
     unittest.main()
     if False:

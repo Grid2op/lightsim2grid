@@ -41,7 +41,7 @@ class DataConstIterator
             {};
 
         const DataInfo& operator*() const { return my_info; }
-        bool operator==(const DataConstIterator<DataType> & other) const { return (_p_data_ == other._p_data_) & (my_id == other.my_id); }
+        bool operator==(const DataConstIterator<DataType> & other) const { return (my_id == other.my_id) && (_p_data_ == other._p_data_); }
         bool operator!=(const DataConstIterator<DataType> & other) const { return !(*this == other); }
         DataConstIterator<DataType> & operator++()
         {

@@ -33,6 +33,95 @@ class DataSGen: public DataGeneric
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
 
+
+    // iterators part
+    public:
+        class SGenInfo
+        {
+            public:
+                // members
+                // TODO add some const here (value should not be changed !) !!!
+                int id;  // id of the generator
+                bool connected;
+                int bus_id;
+
+                real_type min_q_mvar;
+                real_type max_q_mvar;
+                real_type min_p_mw;
+                real_type max_p_mw;
+
+                real_type target_p_mw;
+                real_type target_q_mvar;
+
+                bool has_res;
+                real_type res_p_mw;
+                real_type res_q_mvar;
+                real_type res_v_kv;
+                real_type res_theta_deg;
+
+                SGenInfo(const DataSGen & r_data_sgen, int my_id):
+                id(-1),
+                connected(false),
+                bus_id(-1),
+                min_q_mvar(0.),
+                max_q_mvar(0.),
+                min_p_mw(0.),
+                max_p_mw(0.),
+                target_p_mw(0.),
+                target_q_mvar(0.),
+                has_res(false),
+                res_p_mw(0.),
+                res_q_mvar(0.),
+                res_v_kv(0.),
+                res_theta_deg(0.)
+                {
+                    if((my_id >= 0) & (my_id < r_data_sgen.nb()))
+                    {
+                        id = my_id;
+                        connected = r_data_sgen.status_[my_id];
+                        bus_id = r_data_sgen.bus_id_[my_id];
+
+                        min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
+                        max_q_mvar = r_data_sgen.q_max_mvar_(my_id);
+                        min_p_mw = r_data_sgen.p_min_mw_(my_id);
+                        max_p_mw = r_data_sgen.p_max_mw_(my_id);
+
+                        target_p_mw = r_data_sgen.p_mw_.coeff(my_id);
+                        target_q_mvar = r_data_sgen.q_mvar_.coeff(my_id);
+
+                        has_res = r_data_sgen.res_p_.size() > 0;
+                        if(has_res)
+                        {
+                            res_p_mw = r_data_sgen.res_p_.coeff(my_id);
+                            res_q_mvar = r_data_sgen.res_q_.coeff(my_id);
+                            res_v_kv = r_data_sgen.res_v_.coeff(my_id);
+                            res_theta_deg = r_data_sgen.res_theta_.coeff(my_id);
+                        }
+                    }
+                }
+        };
+        typedef SGenInfo DataInfo;
+
+    private:
+        typedef DataConstIterator<DataSGen> DataSGenConstIterator;
+
+    public:
+        typedef DataSGenConstIterator const_iterator_type;
+        const_iterator_type begin() const {return DataSGenConstIterator(this, 0); }
+        const_iterator_type end() const {return DataSGenConstIterator(this, nb()); }
+        SGenInfo operator[](int id) const
+        {
+            if(id < 0)
+            {
+                throw std::range_error("You cannot ask for a negative static generator");
+            }
+            if(id >= nb())
+            {
+                throw std::range_error("Generator out of bound. Not enough static generators on the grid.");
+            }
+            return SGenInfo(*this, id);
+        }
+
     public:
     typedef std::tuple<
        std::vector<real_type>, // p_mw

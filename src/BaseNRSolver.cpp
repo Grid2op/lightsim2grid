@@ -30,6 +30,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // TODO DEBUG MODE check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
     // TODO DEBUG MODE Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
     // TODO DEBUG MODE: check that all nodes is either pv, pq or slack
+    // TODO DEBUG MODE: check that the slack_weights sum to 1.0
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
@@ -49,7 +50,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     auto timer = CustTimer();
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
-    real_type slack_absorbed = std::real(Sbus.sum());
+    real_type slack_absorbed = std::real(Sbus.sum());  // initial guess for slack_absorbed
     const auto slack_bus_id = slack_ids(0);
     
     // initialize once and for all the "inverse" of these vectors
@@ -59,6 +60,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     pvpq << my_pv, pq; 
 
     // TODO SLACK
+    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     // std::cout << "slack_bus_id " << slack_bus_id << std::endl;
     // std::cout << "slack_ids: ";
     // for(auto el: slack_ids){
@@ -77,14 +79,17 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // std::cout << std::endl;
     // std::cout << "slack_weights: ";
     // for(auto el: slack_weights){
-    //     std::cout << el << ", ";
+        // std::cout << el << ", ";
     // }
     // std::cout << std::endl;
+    // std::cout << "slack_weights.sum() " << slack_weights.sum() << std::endl;
+    // std::cout << "slack_weights(slack_bus_id) " << slack_weights(slack_bus_id) << std::endl;
 
     // std::cout << "Sbus: ";
     // for(auto el: Sbus){
     //     std::cout << el << ", ";
     // }
+    // std::cout << "V.size " << V.size() << std::endl;
     // std::cout << std::endl;
     // std::cout << "V: ";
     // for(auto el: V){
@@ -107,18 +112,36 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     Va_ = V_.array().arg();  // we "wrapped around" with a negative Vm
 
     // first check, if the problem is already solved, i stop there
-    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
+    // compute a first time the mismatch to initialize the slack bus
+    // std::cout << "slack_absorbed (init guess)" << slack_absorbed << std::endl;
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);  
+    // slack_absorbed += -F(last_index); // by convention in fill_jacobian_matrix the slack bus is the last component
+    // now initialize the real first vector
+    // F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
+
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
+
+    
+    // TODO SLACK
+    // std::cout << "dx: (iter " << nr_iter_ << ") :";  // dx = -F
+    // for(auto el: F){
+    //     std::cout << -el << ", ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
+
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
-        fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-        
         // std::cout << "_____________" << std::endl; // TODO SLACK
         // std::cout << "iter " << nr_iter_ << std::endl; // TODO SLACK
-        // print_J(22, 23);  // TODO SLACK
+        // print_J(0, 1);  // 22, 23  TODO SLACK
+        fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+        
+        // std::cout << "after fill jacobian " << std::endl; // TODO SLACK
+        // print_J(0, 1);  // 22, 23  TODO SLACK
         // if(nr_iter_ == 2){
         //     converged = true;  // TODO SLACK
         //     break; // TODO SLACK
@@ -129,18 +152,20 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
             initialize();
             if(err_ != 0){
                 // I got an error during the initialization of the linear system, i need to stop here
-                std::cout << "initialize error " << err_ << std::endl;  // TODO SLACK
+                // std::cout << "initialize error " << err_ << std::endl;  // TODO SLACK
                 res = false;
                 break;
             }
             has_just_been_initialized = true;
         }
         solve(F, has_just_been_initialized);
+        // std::cout << "after solve " << std::endl; // TODO SLACK
+        // print_J(0, 1);  // 22, 23  TODO SLACK
 
         has_just_been_initialized = false;
         if(err_ != 0){
             // I got an error during the solving of the linear system, i need to stop here
-            std::cout << "solve error " << err_ << std::endl;  // TODO SLACK
+            // std::cout << "solve error " << err_ << std::endl;  // TODO SLACK
             res = false;
             break;
         }
@@ -152,14 +177,16 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         //     std::cout << el << ", ";
         // }
         // std::cout << std::endl;
+        // std::cout << "dx: (iter " << nr_iter_ << ") :" << dx(0) << std::endl;
+
 
         // update voltage (this should be done consistently with "_evaluate_Fx")
-        if (n_pv > 0) Va_(my_pv) += dx.segment(0, n_pv);
+        if (n_pv > 0) Va_(my_pv) += dx.segment(1, n_pv);  // TODO SLACK INDEX 
         if (n_pq > 0){
-            Va_(pq) += dx.segment(n_pv, n_pq);
-            Vm_(pq) += dx.segment(n_pv + n_pq, n_pq);
+            Va_(pq) += dx.segment(n_pv + 1, n_pq);  // TODO SLACK INDEX 
+            Vm_(pq) += dx.segment(n_pv + n_pq + 1, n_pq);  // TODO SLACK INDEX 
         }
-        slack_absorbed += dx(last_index); // by convention in fill_jacobian_matrix the slack bus is the last component
+        slack_absorbed += dx(0); // by convention in fill_jacobian_matrix the slack bus is the last component
 
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
@@ -169,7 +196,13 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp){
-            std::cout << "nan error " << err_ << std::endl;  // TODO SLACK
+            // std::cout << "nan error " << err_ << std::endl;  // TODO SLACK
+            // // TODO SLACK
+            // std::cout << "F: (iter " << nr_iter_ << ") :";
+            // for(auto el: F){
+            //     std::cout << el << ", ";
+            // }
+            // std::cout << std::endl;
             break; // divergence due to Nans
         }
         converged = _check_for_convergence(F, tol);
@@ -177,7 +210,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // std::cout << "nr_iter_ " << nr_iter_ << std::endl;  // TODO SLACK
     if(!converged){
         err_ = 4;
-        std::cout << "too much iter error " << err_ << std::endl;  // TODO SLACK
+        // std::cout << "too much iter error " << err_ << std::endl;  // TODO SLACK
         res = false;
     }
     timer_total_nr_ += timer.duration();
@@ -482,7 +515,7 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
         // "efficient" insert of the element in the matrix
         for(Eigen::Index in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             StorageIndex row_id = static_cast<StorageIndex>(inner_index[in_ind]);
-            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id), values[in_ind]));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id) + 1, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
 
@@ -514,7 +547,7 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
         // "efficient" insert of the element in the matrix
         for(Eigen::Index in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             auto row_id = static_cast<StorageIndex>(inner_index[in_ind]);
-            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id + n_pvpq), values[in_ind]));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id + n_pvpq) + 1, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
 
@@ -527,7 +560,7 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
             const auto J_col = pvpq_inv[it.col()];
             if(J_col >= 0){
                 // I need to insert it
-                coeffs.push_back(Eigen::Triplet<double>(0, J_col, it.value()));   // HERE FOR PERF OPTIM (3)
+                coeffs.push_back(Eigen::Triplet<double>(0, J_col + 1, it.value()));   // HERE FOR PERF OPTIM (3)
             }
         }
     }
@@ -538,13 +571,13 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
             const auto J_col = pq_inv[it.col()];
             if(J_col >= 0){
                 // I need to insert it
-                coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq), it.value()));   // HERE FOR PERF OPTIM (3)
+                coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq) + 1, it.value()));   // HERE FOR PERF OPTIM (3)
             }
         }
     }
 
     // add later on the last column which corresponds to the slack bus equation
-    const StorageIndex last_col = static_cast<StorageIndex>(size_j) - 1;
+    const StorageIndex last_col = 0; // static_cast<StorageIndex>(size_j) - 1;
     // add the ref slack bus coeff
     coeffs.push_back(Eigen::Triplet<double>(0, last_col, slack_weights[slack_bus_id]));   // HERE FOR PERF OPTIM (3)
     // add the other coeffs (for other buses)
@@ -555,8 +588,10 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
         ++row_j;
     }
     J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
+    // std::cout << "end fill jacobian unknown " << std::endl;
     J_.makeCompressed();
     fill_value_map(slack_bus_id, pq, pvpq);
+    // std::cout << "end fill_value_map" << std::endl;
 }
 
 /**
@@ -575,11 +610,11 @@ void BaseNRSolver::fill_value_map(
 
     const auto n_row = J_.cols();
     unsigned int pos_el = 0;
-    for (Eigen::Index col_=0; col_ < n_row - 1; ++col_){  // last column is never updated (slack equation)
+    for (Eigen::Index col_=1; col_ < n_row; ++col_){  // last column is never updated (slack equation)
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_); it; ++it)
         {
             auto row_id = it.row();
-            const auto col_id = it.col();  // it's equal to "col_"
+            const auto col_id = it.col() - 1;  // it's equal to "col_"
             if(row_id==0){
                 // this is the row of the slack bus
                 const Eigen::Index row_id_dS_dVx_r = slack_bus_id;  // same for both matrices
@@ -672,19 +707,22 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
 
     const auto n_pvpq = pvpq.size();
 
-    real_type * J_x_ptr = J_.valuePtr();
+    // real_type * J_x_ptr = J_.valuePtr();
     const auto n_cols = J_.cols();  // equal to nrow
     unsigned int pos_el = 0;
-    for (Eigen::Index col_id=0; col_id < n_cols  - 1; ++col_id){  // last column is not updated (slack equation)
+    // unsigned int pos_el_J = J_.col(0).size();
+    for (Eigen::Index col_id=1; col_id < n_cols; ++col_id){  // last column is not updated (slack equation)
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
         {
             const auto row_id = it.row();
             // only one if is necessary (magic !)
             // top rows are "real" part and bottom rows are imaginary part (you can check)
-            if(row_id < n_pvpq + 1) J_x_ptr[pos_el] = std::real(*value_map_[pos_el]);
-            else J_x_ptr[pos_el] = std::imag(*value_map_[pos_el]);
+            // if(row_id < n_pvpq + 1) J_x_ptr[pos_el_J] = std::real(*value_map_[pos_el]);
+            // else J_x_ptr[pos_el_J] = std::imag(*value_map_[pos_el]);
+            it.valueRef() = row_id < n_pvpq + 1 ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
             // go to the next element
             ++pos_el;
+            // ++pos_el_J;
         }
     }
 }

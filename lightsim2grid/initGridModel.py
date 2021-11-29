@@ -79,6 +79,11 @@ def init(pp_net):
                    pp_net.line.shape[0],
                    pp_net.trafo.shape[0])
 
+    # deactivate in lightsim the deactivated bus in pandapower
+    for bus_id in range(pp_net.bus.shape[0]):
+        if not pp_net.bus["in_service"].values[bus_id]:
+            model.deactivate_bus(bus_id)
+
     # init the powerlines
     _aux_add_line(converter, model, pp_net)
 

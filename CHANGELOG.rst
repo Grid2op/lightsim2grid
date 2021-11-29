@@ -4,7 +4,7 @@ Change Log
 [TODO]
 --------
 - improve speed by not performing internal checks 
-  (keep check for boundaries and all for python API instead) [see TODO DEBUG MODE in c++ code]
+  (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - improve documentation
 - easier building (get rid of the "make" part)
@@ -18,6 +18,7 @@ Change Log
 [0.5.5] 20xx-yy-zz
 -------------------
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
+- [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` methods (see documentation)
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
 
 [0.5.5] 2021-11-10

@@ -81,6 +81,7 @@ def _aux_add_slack(model, pp_net):
     # handle the possible distributed slack bus
     if slack_coeff is None:
         slack_coeff = np.ones(len(slack_gen_ids))
+
     if np.sum(slack_coeff) == 0. or np.any(slack_coeff < 0.):
         warnings.warn("We found either some slack coefficient to be < 0. or they were all 0."
                       "We set them all to 1.0 to avoid such issues")

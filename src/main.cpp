@@ -131,7 +131,72 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("has_res", &DataGen::GenInfo::has_res)
         .def_readonly("res_p_mw", &DataGen::GenInfo::res_p_mw)
         .def_readonly("res_q_mvar", &DataGen::GenInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataGen::GenInfo::res_theta_deg)
         .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv);
+
+    // iterator for sgens
+    py::class_<DataSGen>(m, "DataSGen")
+        .def("__len__", [](const DataSGen & data) { return data.nb(); })
+        .def("__getitem__", [](const DataSGen & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataSGen & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataSGen::SGenInfo>(m, "SGenInfo")
+        .def_readonly("id", &DataSGen::SGenInfo::id)
+        .def_readonly("connected", &DataSGen::SGenInfo::connected)
+        .def_readonly("bus_id", &DataSGen::SGenInfo::bus_id)
+        .def_readonly("min_q_mvar", &DataSGen::SGenInfo::min_q_mvar)
+        .def_readonly("max_q_mvar", &DataSGen::SGenInfo::max_q_mvar)
+        .def_readonly("min_p_mw", &DataSGen::SGenInfo::min_p_mw)
+        .def_readonly("max_p_mw", &DataSGen::SGenInfo::max_p_mw)
+        .def_readonly("target_p_mw", &DataSGen::SGenInfo::target_p_mw)
+        .def_readonly("target_q_mvar", &DataSGen::SGenInfo::target_q_mvar)
+        .def_readonly("has_res", &DataSGen::SGenInfo::has_res)
+        .def_readonly("res_p_mw", &DataSGen::SGenInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataSGen::SGenInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataSGen::SGenInfo::res_theta_deg)
+        .def_readonly("res_v_kv", &DataSGen::SGenInfo::res_v_kv);
+
+    // iterator for loads
+    py::class_<DataLoad>(m, "DataLoad")
+        .def("__len__", [](const DataLoad & data) { return data.nb(); })
+        .def("__getitem__", [](const DataLoad & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataLoad & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataLoad::LoadInfo>(m, "LoadInfo")
+        .def_readonly("id", &DataLoad::LoadInfo::id)
+        .def_readonly("connected", &DataLoad::LoadInfo::connected)
+        .def_readonly("bus_id", &DataLoad::LoadInfo::bus_id)
+        .def_readonly("target_p_mw", &DataLoad::LoadInfo::target_p_mw)
+        .def_readonly("target_q_mvar", &DataLoad::LoadInfo::target_q_mvar)
+        .def_readonly("has_res", &DataLoad::LoadInfo::has_res)
+        .def_readonly("res_p_mw", &DataLoad::LoadInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataLoad::LoadInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataLoad::LoadInfo::res_theta_deg)
+        .def_readonly("res_v_kv", &DataLoad::LoadInfo::res_v_kv);
+
+    // iterator for shunts
+    py::class_<DataShunt>(m, "DataShunt")
+        .def("__len__", [](const DataShunt & data) { return data.nb(); })
+        .def("__getitem__", [](const DataShunt & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataShunt & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataShunt::ShuntInfo>(m, "ShuntInfo")
+        .def_readonly("id", &DataShunt::ShuntInfo::id)
+        .def_readonly("connected", &DataShunt::ShuntInfo::connected)
+        .def_readonly("bus_id", &DataShunt::ShuntInfo::bus_id)
+        .def_readonly("target_p_mw", &DataShunt::ShuntInfo::target_p_mw)
+        .def_readonly("target_q_mvar", &DataShunt::ShuntInfo::target_q_mvar)
+        .def_readonly("has_res", &DataShunt::ShuntInfo::has_res)
+        .def_readonly("res_p_mw", &DataShunt::ShuntInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataShunt::ShuntInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataShunt::ShuntInfo::res_theta_deg)
+        .def_readonly("res_v_kv", &DataShunt::ShuntInfo::res_v_kv);
 
     // iterator for trafos
     py::class_<DataTrafo>(m, "DataTrafo")
@@ -248,6 +313,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
         .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus)
 
+        // inspect the grid
+        .def("get_lines", &GridModel::get_lines)
+        .def("get_trafos", &GridModel::get_trafos)
+        .def("get_generators", &GridModel::get_generators)
+        .def("get_static_generators", &GridModel::get_static_generators)
+        .def("get_shunts", &GridModel::get_shunts)
+        .def("get_storages", &GridModel::get_storages)
+        .def("get_loads", &GridModel::get_loads)
+
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)
         .def("reactivate_bus", &GridModel::reactivate_bus)
@@ -259,7 +333,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_bus_powerline_ex", &GridModel::change_bus_powerline_ex)
         .def("get_bus_powerline_or", &GridModel::get_bus_powerline_or)
         .def("get_bus_powerline_ex", &GridModel::get_bus_powerline_ex)
-        .def("get_lines", &GridModel::get_lines)
 
         .def("deactivate_trafo", &GridModel::deactivate_trafo)
         .def("reactivate_trafo", &GridModel::reactivate_trafo)
@@ -267,7 +340,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv)
         .def("get_bus_trafo_hv", &GridModel::get_bus_trafo_hv)
         .def("get_bus_trafo_lv", &GridModel::get_bus_trafo_lv)
-        .def("get_trafos", &GridModel::get_trafos)
 
         .def("deactivate_load", &GridModel::deactivate_load)
         .def("reactivate_load", &GridModel::reactivate_load)
@@ -282,7 +354,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_gen", &GridModel::get_bus_gen)
         .def("change_p_gen", &GridModel::change_p_gen)
         .def("change_v_gen", &GridModel::change_v_gen)
-        .def("get_generators", &GridModel::get_generators)
 
         .def("deactivate_shunt", &GridModel::deactivate_shunt)
         .def("reactivate_shunt", &GridModel::reactivate_shunt)

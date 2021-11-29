@@ -50,7 +50,7 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
                                   const CplxVect & Sbus,
-                                  Eigen::Index slack_id,  // id of the slack bus
+                                  Eigen::Index slack_id,  // id of the ref slack bus
                                   real_type slack_absorbed,
                                   const RealVect & slack_weights,
                                   const Eigen::VectorXi & pv,
@@ -96,15 +96,15 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     CplxVect tmp = Ybus * V;  // this is a vector
     tmp = tmp.array().conjugate();  // i take the conjugate
     auto mis = V.array() * tmp.array() - Sbus.array() + slack_absorbed * slack_weights.array();
-    auto real_ = mis.real();
-    auto imag_ = mis.imag();
+    RealVect real_ = mis.real();
+    RealVect imag_ = mis.imag();
 
     // build and fill the result
-    RealVect res(npv + 2*npq + 1); // slack adds one component and the '+1' also bellow)
-    res(0) = real_(slack_id);  // slack bus at the end
-    res.segment(1, npv) = real_(pv);
-    res.segment(npv + 1,npq) = real_(pq);
-    res.segment(npv + npq + 1, npq) = imag_(pq);
+    RealVect res(npv + 2 * npq + 1); // slack adds one component hence the '+1' also bellow)
+    res.segment(1, npv) = real_(pv);  // TODO SLACK INDEX
+    res.segment(npv + 1, npq) = real_(pq);  // TODO SLACK INDEX
+    res.segment(npv + npq + 1, npq) = imag_(pq);  // TODO SLACK INDEX
+    res(0) = real_(slack_id);  // TODO SLACK INDEX slack bus at the end ?
     timer_Fx_ += timer.duration();
     return res;
     

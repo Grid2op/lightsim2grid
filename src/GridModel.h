@@ -206,6 +206,15 @@ class GridModel : public DataGeneric
         Eigen::Index nb_powerline() const {return powerlines_.nb();}
         Eigen::Index nb_trafo() const {return trafos_.nb();}
 
+        // read only data accessor
+        const DataLine & get_lines() const {return powerlines_;}
+        const DataTrafo & get_trafos() const {return trafos_;}
+        const DataGen & get_generators() const {return generators_;}
+        const DataLoad & get_loads() const {return loads_;}
+        const DataLoad & get_storages() const {return storages_;}
+        const DataSGen & get_static_generators() const {return sgens_;}
+        const DataShunt & get_shunts() const {return shunts_;}
+
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, topo_changed_); }
@@ -213,7 +222,6 @@ class GridModel : public DataGeneric
         void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
-        const DataLine & get_lines() const {return powerlines_;}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, topo_changed_); }
@@ -222,7 +230,6 @@ class GridModel : public DataGeneric
         void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
-        const DataTrafo & get_trafos() const {return trafos_;}
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, topo_changed_); }
@@ -247,7 +254,6 @@ class GridModel : public DataGeneric
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, topo_changed_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, topo_changed_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
-        const DataGen & get_generators() const {return generators_;}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, topo_changed_); }
