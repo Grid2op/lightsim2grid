@@ -59,4 +59,6 @@ class BaseNRSolverSingleSlack : public BaseNRSolver<LinearSolver>
 
 };
 
+#include "BaseNRSolverSingleSlack.tpp"
+
 #endif // BASENRSOLVERSINGLESLACK_H

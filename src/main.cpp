@@ -29,6 +29,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
         .value("DC", SolverType::DC)
         .value("NICSLU", SolverType::NICSLU)
+        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack)
+        .value("KLUSingleSlack", SolverType::KLUSingleSlack)
+        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
@@ -109,6 +112,21 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("compute_pf", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
         .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
+    // TODO export also all the base methods from ChooseSolver
+    py::class_<ChooseSolver>(m, "AnySolver")
+        .def(py::init<>())
+        .def("get_type", &ChooseSolver::get_type)
+        .def("change_solver", &ChooseSolver::change_solver)
+        .def("reset", &ChooseSolver::reset)
+        .def("compute_pf", &ChooseSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        .def("solve", &ChooseSolver::compute_pf, py::call_guard<py::gil_scoped_release>() )
+        .def("get_Va", &ChooseSolver::get_Va)  
+        .def("get_Vm", &ChooseSolver::get_Vm) 
+        .def("get_V", &ChooseSolver::get_V) 
+        .def("get_J", &ChooseSolver::get_J) 
+        .def("get_computation_time", &ChooseSolver::get_computation_time);
+
 
     // iterator for generators
     py::class_<DataGen>(m, "DataGen")

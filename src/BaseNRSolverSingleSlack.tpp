@@ -178,7 +178,7 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix(const Eigen::Sp
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // __COUT_TIMES
-        fill_jacobian_matrix_kown_sparsity_pattern(pq, pvpq, pq_inv, pvpq_inv);
+        fill_jacobian_matrix_kown_sparsity_pattern(pq, pvpq);
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
         #endif  // __COUT_TIMES
@@ -242,7 +242,7 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_unkown_sparsity
 
     // i fill the buffer columns per columns
     int nb_obj_this_col = 0;
-    std::vector<int> inner_index;
+    std::vector<Eigen::Index> inner_index;
     std::vector<real_type> values;
 
     // TODO use the loop provided above (in dS) if J is already initialized
@@ -258,13 +258,16 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_unkown_sparsity
         _get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVa_r,
                       pvpq_inv, pvpq,
-                      col_id, 0);
+                      col_id,
+                      0, 
+                      0);
         // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
         _get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVa_i,
                       pq_inv, pvpq,
-                      col_id, n_pvpq
-                      );
+                      col_id,
+                      n_pvpq,
+                      0);
 
         // "efficient" insert of the element in the matrix
         for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
@@ -284,19 +287,22 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_unkown_sparsity
         inner_index.clear();
         values.clear();
 
-        // fill with the first column with the column of dS_dVa[:,pvpq[col_id]]
+          // fill with the first column with the column of dS_dVa[:,pvpq[col_id]]
         // and check the row order !
         _get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVm_r,
                       pvpq_inv, pq,
-                      col_id, 0);
+                      col_id,
+                      0,
+                      0);
 
         // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
         _get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVm_i,
                       pq_inv, pq,
-                      col_id, n_pvpq
-                      );
+                      col_id,
+                      n_pvpq,
+                      0);
 
         // "efficient" insert of the element in the matrix
         for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
@@ -309,7 +315,7 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_unkown_sparsity
     }
     // J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     J_.makeCompressed();
-    fill_value_map(pq, pvpq, pq_inv, pvpq_inv);
+    fill_value_map(pq, pvpq);
 }
 
 /**
@@ -320,9 +326,7 @@ it requires that J_ is initialized, in compressed mode.
 template<class LinearSolver>
 void BaseNRSolverSingleSlack<LinearSolver>::fill_value_map(
         const Eigen::VectorXi & pq,
-        const Eigen::VectorXi & pvpq,
-        const std::vector<int> & pq_inv,
-        const std::vector<int> & pvpq_inv
+        const Eigen::VectorXi & pvpq
         )
 {
     const int n_pvpq = static_cast<int>(pvpq.size());
@@ -380,7 +384,7 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_value_map(
 template<class LinearSolver>
 void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pattern(
         const Eigen::VectorXi & pq,
-        const Eigen::VectorXi & pvpq,
+        const Eigen::VectorXi & pvpq
     )
 {
     /**
@@ -413,7 +417,7 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_kown_sparsity_p
             const auto row_id = it.row();
             // only one if is necessary (magic !)
             // top rows are "real" part and bottom rows are imaginary part (you can check)
-            it.valueRef() = row_id < n_pvpq_1 ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
+            it.valueRef() = row_id < n_pvpq ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
             // go to the next element
             ++pos_el;
         }
