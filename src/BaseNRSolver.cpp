@@ -59,45 +59,6 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq; 
 
-    // TODO SLACK
-    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
-    // std::cout << "slack_bus_id " << slack_bus_id << std::endl;
-    // std::cout << "slack_ids: ";
-    // for(auto el: slack_ids){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "pv: ";
-    // for(auto el: pv){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "pq: ";
-    // for(auto el: pq){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "slack_weights: ";
-    // for(auto el: slack_weights){
-        // std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "slack_weights.sum() " << slack_weights.sum() << std::endl;
-    // std::cout << "slack_weights(slack_bus_id) " << slack_weights(slack_bus_id) << std::endl;
-
-    // std::cout << "Sbus: ";
-    // for(auto el: Sbus){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << "V.size " << V.size() << std::endl;
-    // std::cout << std::endl;
-    // std::cout << "V: ";
-    // for(auto el: V){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout <<  "tol " << tol << std::endl;
-
     // some clever tricks are used in the making of the Jacobian to handle the slack bus 
     // (in case there is a distributed slack bus)
     const auto n_pvpq = pvpq.size();
@@ -113,78 +74,41 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
 
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
-    // std::cout << "slack_absorbed (init guess)" << slack_absorbed << std::endl;
-    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);  
-    // slack_absorbed += -F(last_index); // by convention in fill_jacobian_matrix the slack bus is the last component
-    // now initialize the real first vector
-    // F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
 
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
 
-    
-    // TODO SLACK
-    // std::cout << "dx: (iter " << nr_iter_ << ") :";  // dx = -F
-    // for(auto el: F){
-    //     std::cout << -el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
-
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
-        // std::cout << "_____________" << std::endl; // TODO SLACK
-        // std::cout << "iter " << nr_iter_ << std::endl; // TODO SLACK
-        // print_J(0, 1);  // 22, 23  TODO SLACK
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-        
-        // std::cout << "after fill jacobian " << std::endl; // TODO SLACK
-        // print_J(0, 1);  // 22, 23  TODO SLACK
-        // if(nr_iter_ == 2){
-        //     converged = true;  // TODO SLACK
-        //     break; // TODO SLACK
-        // }
-        // std::cout << "_____________" << std::endl; // TODO SLACK
 
         if(need_factorize_){
             initialize();
             if(err_ != 0){
                 // I got an error during the initialization of the linear system, i need to stop here
-                // std::cout << "initialize error " << err_ << std::endl;  // TODO SLACK
                 res = false;
                 break;
             }
             has_just_been_initialized = true;
         }
         solve(F, has_just_been_initialized);
-        // std::cout << "after solve " << std::endl; // TODO SLACK
-        // print_J(0, 1);  // 22, 23  TODO SLACK
 
         has_just_been_initialized = false;
         if(err_ != 0){
             // I got an error during the solving of the linear system, i need to stop here
-            // std::cout << "solve error " << err_ << std::endl;  // TODO SLACK
             res = false;
             break;
         }
         auto dx = -F;
 
-        // TODO SLACK
-        // std::cout << "dx: (iter " << nr_iter_ << ") :";
-        // for(auto el: dx){
-        //     std::cout << el << ", ";
-        // }
-        // std::cout << std::endl;
-        // std::cout << "dx: (iter " << nr_iter_ << ") :" << dx(0) << std::endl;
-
-
         // update voltage (this should be done consistently with "_evaluate_Fx")
-        if (n_pv > 0) Va_(my_pv) += dx.segment(1, n_pv);  // TODO SLACK INDEX 
+        if (n_pv > 0) Va_(my_pv) += dx.segment(1, n_pv);
         if (n_pq > 0){
-            Va_(pq) += dx.segment(n_pv + 1, n_pq);  // TODO SLACK INDEX 
-            Vm_(pq) += dx.segment(n_pv + n_pq + 1, n_pq);  // TODO SLACK INDEX 
+            Va_(pq) += dx.segment(n_pv + 1, n_pq);
+            Vm_(pq) += dx.segment(n_pv + n_pq + 1, n_pq);
         }
         slack_absorbed += dx(0); // by convention in fill_jacobian_matrix the slack bus is the last component
 
@@ -196,21 +120,12 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp){
-            // std::cout << "nan error " << err_ << std::endl;  // TODO SLACK
-            // // TODO SLACK
-            // std::cout << "F: (iter " << nr_iter_ << ") :";
-            // for(auto el: F){
-            //     std::cout << el << ", ";
-            // }
-            // std::cout << std::endl;
             break; // divergence due to Nans
         }
         converged = _check_for_convergence(F, tol);
     }
-    // std::cout << "nr_iter_ " << nr_iter_ << std::endl;  // TODO SLACK
     if(!converged){
         err_ = 4;
-        // std::cout << "too much iter error " << err_ << std::endl;  // TODO SLACK
         res = false;
     }
     timer_total_nr_ += timer.duration();
@@ -362,13 +277,13 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
                                         )
 {
     /**
-    Remember:
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     |(pvpq+1,1) |
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    Remember, J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -376,7 +291,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
@@ -394,30 +309,23 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     // TODO the `dS_dVa_[pvpq, pvpq]`
     // TODO so that it's easier to retrieve in the next few lines !
     if(J_.cols() != size_j)
-    // if(true)
     {
         #ifdef __COUT_TIMES
             auto timer2 = CustTimer();
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
-        fill_jacobian_matrix_unkown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
-                                                     Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv
-                                                     );
+        fill_jacobian_matrix_unkown_sparsity_pattern(Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
         #endif  // __COUT_TIMES
     }else{
         // the sparsity pattern of J_ is already known, i can reuse it to fill it
-        // properly and faster (or not...)
+        // properly and faster (approx 3 times faster than the previous one)
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // __COUT_TIMES
-        fill_jacobian_matrix_kown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
-                                                   //  Ybus,
-                                                   // V,
-                                                   slack_bus_id,
+        fill_jacobian_matrix_kown_sparsity_pattern(slack_bus_id,
                                                    pq, pvpq
-                                                   // , pq_inv, pvpq_inv
                                                    );
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
@@ -443,13 +351,13 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     For that we need to perform relatively expensive computation from dS_dV* in order to retrieve it.
     This function is NOT optimized for speed...
 
-    Remember:
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     |(pvpq+1,1) |
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    Remember, J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -457,7 +365,7 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
@@ -683,13 +591,13 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
     change the value pointer (not the inner nor outer pointer)
     It is optimized only if J_ is in default Eigen format (column)
 
-    Remember:
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     |(pvpq+1,1) |
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    Remember, J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -697,7 +605,7 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)

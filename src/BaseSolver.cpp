@@ -59,12 +59,13 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     /**
     Remember, when this function is used:
 
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     | (pvpq+1,1)|
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -72,7 +73,7 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
@@ -101,10 +102,10 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 
     // build and fill the result
     RealVect res(npv + 2 * npq + 1); // slack adds one component hence the '+1' also bellow)
-    res.segment(1, npv) = real_(pv);  // TODO SLACK INDEX
-    res.segment(npv + 1, npq) = real_(pq);  // TODO SLACK INDEX
-    res.segment(npv + npq + 1, npq) = imag_(pq);  // TODO SLACK INDEX
-    res(0) = real_(slack_id);  // TODO SLACK INDEX slack bus at the end ?
+    res.segment(1, npv) = real_(pv);
+    res.segment(npv + 1, npq) = real_(pq);
+    res.segment(npv + npq + 1, npq) = imag_(pq);
+    res(0) = real_(slack_id);  // slack bus is first variable
     timer_Fx_ += timer.duration();
     return res;
     

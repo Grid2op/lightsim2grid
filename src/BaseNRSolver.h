@@ -140,7 +140,7 @@ class BaseNRSolver : public BaseSolver
                                     const Eigen::VectorXi & pq,
                                     const Eigen::VectorXi & pvpq
                                     ){
-            // DO NOT USE, FOR DEBUG ONLY!// TODO SLACK
+            // DO NOT USE, FOR DEBUG ONLY (especially for multiple slacks)
             const auto & n_pvpq = pvpq.size();
             const auto & n_pq = pvpq.size();
             std::vector<int> pvpq_inv(V.size(), -1);
