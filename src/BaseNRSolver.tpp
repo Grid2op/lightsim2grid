@@ -6,12 +6,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseNRSolver.h"
+// #include "BaseNRSolver.h"  // now a template class, so this file will be included instead !
 
 // TODO get rid of the pvpq, pv, pq etc and put the jacobian "in the right order"
 // to ease and make way faster the filling of the sparse matrix J
 
-bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+template<class LinearSolver>
+bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                               CplxVect & V,
                               const CplxVect & Sbus,
                               const Eigen::VectorXi & slack_ids,
@@ -80,7 +81,8 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
-
+    std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
+    std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
@@ -102,16 +104,18 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
             res = false;
             break;
         }
-        auto dx = -F;
+        // const auto dx = -F;  // removed for speed optimization (-= used below)
 
         // update voltage (this should be done consistently with "_evaluate_Fx")
-        if (n_pv > 0) Va_(my_pv) += dx.segment(1, n_pv);
+        if (n_pv > 0) Va_(my_pv) -= F.segment(1, n_pv);
         if (n_pq > 0){
-            Va_(pq) += dx.segment(n_pv + 1, n_pq);
-            Vm_(pq) += dx.segment(n_pv + n_pq + 1, n_pq);
+            Va_(pq) -= F.segment(n_pv + 1, n_pq);
+            Vm_(pq) -= F.segment(n_pv + n_pq + 1, n_pq);
         }
-        slack_absorbed += dx(0); // by convention in fill_jacobian_matrix the slack bus is the last component
+        slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the last component
 
+        std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
+        std::cout << "slack_absorbed " << slack_absorbed << std::endl;
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
         Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -142,16 +146,20 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     return res;
 }
 
-void BaseNRSolver::reset(){
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::reset(){
     BaseSolver::reset();
     // reset specific attributes
     J_ = Eigen::SparseMatrix<real_type>();  // the jacobian matrix
     dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
     dS_dVa_ = Eigen::SparseMatrix<cplx_type>();
     need_factorize_ = true;
+    _linear_solver.reset();
+    n_ = -1;
 }
 
-void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                              const Eigen::Ref<const CplxVect > & V){
     auto timer = CustTimer();
     const auto size_dS = V.size();
@@ -204,7 +212,8 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_typ
     timer_dSbus_ += timer.duration();
 }
 
-void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
@@ -230,7 +239,8 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
                   row_lag, col_lag);
 }
 
-void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
@@ -266,7 +276,8 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
     }
 }
 
-void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                         const CplxVect & V,
                                         Eigen::Index slack_bus_id,
                                         const RealVect & slack_weights,
@@ -334,7 +345,8 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     timer_fillJ_ += timer.duration();;
 }
 
-void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         const Eigen::SparseMatrix<cplx_type> & Ybus,
         const CplxVect & V,
         Eigen::Index slack_bus_id,
@@ -507,7 +519,8 @@ fill the value of the `value_map_` that stores pointers to the elements of
 dS_dVa_ and dS_dVm_ to be used to fill J_
 it requires that J_ is initialized, in compressed mode.
 **/
-void BaseNRSolver::fill_value_map(
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_value_map(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq
@@ -577,7 +590,8 @@ void BaseNRSolver::fill_value_map(
     }
 }
 
-void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pattern(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq
@@ -613,24 +627,18 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
 
     **/
 
-    const auto n_pvpq = pvpq.size();
-
-    // real_type * J_x_ptr = J_.valuePtr();
+    const auto n_pvpq_1 = pvpq.size() + 1;
     const auto n_cols = J_.cols();  // equal to nrow
     unsigned int pos_el = 0;
-    // unsigned int pos_el_J = J_.col(0).size();
     for (Eigen::Index col_id=1; col_id < n_cols; ++col_id){  // last column is not updated (slack equation)
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
         {
             const auto row_id = it.row();
             // only one if is necessary (magic !)
             // top rows are "real" part and bottom rows are imaginary part (you can check)
-            // if(row_id < n_pvpq + 1) J_x_ptr[pos_el_J] = std::real(*value_map_[pos_el]);
-            // else J_x_ptr[pos_el_J] = std::imag(*value_map_[pos_el]);
-            it.valueRef() = row_id < n_pvpq + 1 ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
+            it.valueRef() = row_id < n_pvpq_1 ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
             // go to the next element
             ++pos_el;
-            // ++pos_el_J;
         }
     }
 }

@@ -8,46 +8,36 @@
 
 #include "SparseLUSolver.h"
 
-void SparseLUSolver::initialize(){
+bool SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
     // default Eigen representation: column major, which is good for klu !
     // J is const here
-    auto timer = CustTimer();
-    n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
-    err_ = 0; // reset error message
-    J_.makeCompressed();
-    solver_.analyzePattern(J_);  //NEW
-    solver_.factorize(J_);  // NEW
-    if (solver_.info() != Eigen::Success) {
-        err_ = 1;
-    }
-    need_factorize_ = false;
-    timer_initialize_ += timer.duration();
+    solver_.analyzePattern(J);
+    solver_.factorize(J);
+    return solver_.info() == Eigen::Success;
 }
 
-void SparseLUSolver::solve(RealVect & b, bool has_just_been_inialized){
-    // NEW
-
+int SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call sparselu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const
-    auto timer = CustTimer();
+    int err = 0;
     bool stop = false;
     if(!has_just_been_inialized){
         // if the call to "klu_factor" has been made this iteration, there is no need
         // to re factor again the matrix
         // i'm in the case where it has not
-        solver_.factorize(J_);  // NEW
+        solver_.factorize(J);
         if (solver_.info() != Eigen::Success) {
-            err_ = 2;
+            err = 2;
             stop = true;
         }
     }
     if(!stop){
-        RealVect Va = solver_.solve(b);  //NEW
+        RealVect Va = solver_.solve(b);
         if (solver_.info() != Eigen::Success) {
-            err_ = 3;
+            err = 3;
         }
-        b = Va;  // NEW
+        b = Va;
     }
-    timer_solve_ += timer.duration();
+    return err;
 }

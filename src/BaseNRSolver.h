@@ -14,12 +14,11 @@
 /**
 Base class for Newton Raphson based solver
 **/
+template<class LinearSolver>
 class BaseNRSolver : public BaseSolver
 {
     public:
         BaseNRSolver():need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
-
-        ~BaseNRSolver(){}
 
         virtual
         Eigen::SparseMatrix<real_type> get_J(){
@@ -58,10 +57,29 @@ class BaseNRSolver : public BaseSolver
             timer_initialize_ = 0.;
         }
         virtual
-        void initialize()=0;
+        void initialize(){
+            auto timer = CustTimer();
+            n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
+            err_ = 0; // reset error message
+            const bool init_ok = _linear_solver.initialize(J_);
+            if(!init_ok){
+                std::cout << "init_ok " << init_ok << std::endl;
+                err_ = 1;
+            }
+            need_factorize_ = false;
+            timer_initialize_ += timer.duration();
+        }
 
         virtual
-        void solve(RealVect & b, bool has_just_been_inialized)=0;
+        void solve(RealVect & b, bool has_just_been_inialized){
+            auto timer = CustTimer();
+            const int solve_status = _linear_solver.solve(J_, b, has_just_been_inialized);
+            if(solve_status != 0){
+                std::cout << "solve error: " << solve_status << std::endl;
+                err_ = solve_status;
+            }
+            timer_solve_ += timer.duration();
+        }
 
         void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                        const Eigen::Ref<const CplxVect > & V);
@@ -116,6 +134,8 @@ class BaseNRSolver : public BaseSolver
                             const Eigen::VectorXi & pvpq);
 
     protected:
+        // used linear solver
+        LinearSolver _linear_solver;
 
         // solution of the problem
         Eigen::SparseMatrix<real_type> J_;  // the jacobian matrix
@@ -195,5 +215,7 @@ class BaseNRSolver : public BaseSolver
             return res;
         }
 };
+
+#include "BaseNRSolver.tpp"
 
 #endif // BASENRSOLVER_H

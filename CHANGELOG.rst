@@ -20,6 +20,8 @@ Change Log
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
 - [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` methods (see documentation)
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
+- [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
+  Newton Raphson based solvers.
 
 [0.5.5] 2021-11-10
 -------------------

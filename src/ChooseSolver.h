@@ -12,18 +12,12 @@
 #include<vector>
 
 // import newton raphson solvers using different linear algebra solvers
-#ifdef KLU_SOLVER_AVAILABLE
-    #include "KLUSolver.h"
-#endif
-#ifdef NICSLU_SOLVER_AVAILABLE
-    #include "NICSLUSolver.h"
-#endif
-#include "SparseLUSolver.h"
+#include "Solvers.h"
 #include "GaussSeidelSolver.h"
 #include "GaussSeidelSynchSolver.h"
 #include "DCSolver.h"
 
-enum class SolverType { SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU};
+enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU};
 
 // TODO define a template class instead of these weird stuff !!!
 
@@ -148,7 +142,7 @@ class ChooseSolver
             KLUSolver _solver_klu;
         #endif  // KLU_SOLVER_AVAILABLE
         #ifdef NICSLU_SOLVER_AVAILABLE
-            KLUSolver _solver_nicslu;
+            NICSLUSolver _solver_nicslu;
         #endif  // NICSLU_SOLVER_AVAILABLE
 
 };
