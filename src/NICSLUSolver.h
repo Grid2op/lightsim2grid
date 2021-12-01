@@ -44,35 +44,32 @@ specific license.
 **/
 
 // TODO use the cpp API instead !
-class NICSLUSolver: public BaseNRSolver
+class NICSLULinearSolver
 {
     public:
-        NICSLUSolver():
-            BaseNRSolver(),
+        NICSLULinearSolver():
             solver_(),
             nb_thread_(1),
             ai_(nullptr), 
             ap_(nullptr){}
 
-        ~NICSLUSolver()
+        ~NICSLULinearSolver()
          {
             solver_.Free();
             if(ai_!= nullptr) delete [] ai_;
             if(ap_!= nullptr) delete [] ap_;
          }
 
+        // public api
+        void reset();
+        bool initialize(Eigen::SparseMatrix<real_type> & J);
+        int solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
+
         // prevent copy and assignment
-        NICSLUSolver(const NICSLUSolver & other) = delete;
-        NICSLUSolver & operator=( const NICSLUSolver & ) = delete;
+        NICSLULinearSolver(const NICSLULinearSolver & other) = delete;
+        NICSLULinearSolver & operator=( const NICSLULinearSolver & ) = delete;
 
-        virtual void reset();
 
-    protected:
-        virtual
-        void initialize();
-
-        virtual
-        void solve(RealVect & b, bool has_just_been_inialized);
 
     private:
         // solver initialization

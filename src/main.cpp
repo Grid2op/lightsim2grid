@@ -29,12 +29,17 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
         .value("DC", SolverType::DC)
         .value("NICSLU", SolverType::NICSLU)
+        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack)
+        .value("KLUSingleSlack", SolverType::KLUSingleSlack)
+        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack)
+        .value("KLUDC", SolverType::KLUDC)
+        .value("NICSLUDC", SolverType::NICSLUDC)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
-        .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_J", &KLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
         .def("get_error", &KLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
@@ -49,7 +54,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     #ifdef NICSLU_SOLVER_AVAILABLE
     py::class_<NICSLUSolver>(m, "NICSLUSolver")
         .def(py::init<>())
-        .def("get_J", &NICSLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_J", &NICSLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &NICSLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &NICSLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
         .def("get_error", &NICSLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
@@ -63,7 +68,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<SparseLUSolver>(m, "SparseLUSolver")
         .def(py::init<>())
-        .def("get_J", &SparseLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &SparseLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
         .def("get_error", &SparseLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
@@ -109,6 +114,25 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("compute_pf", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
         .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+
+    // Only "const" method are exported
+    // it is so that i cannot modify the internal solver of a gridmodel python side
+    py::class_<ChooseSolver>(m, "AnySolver")
+        .def(py::init<>())
+        .def("get_type", &ChooseSolver::get_type)
+        // .def("change_solver", &ChooseSolver::change_solver)
+        // .def("reset", &ChooseSolver::reset)
+        // .def("compute_pf", &ChooseSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        // .def("solve", &ChooseSolver::compute_pf, py::call_guard<py::gil_scoped_release>() )
+        .def("get_Va", &ChooseSolver::get_Va)  
+        .def("get_Vm", &ChooseSolver::get_Vm) 
+        .def("get_V", &ChooseSolver::get_V) 
+        .def("get_J", &ChooseSolver::get_J_python) 
+        .def("get_error", &ChooseSolver::get_error) 
+        .def("get_nb_iter", &ChooseSolver::get_nb_iter) 
+        .def("converged", &ChooseSolver::converged) 
+        .def("get_computation_time", &ChooseSolver::get_computation_time);
+
 
     // iterator for generators
     py::class_<DataGen>(m, "DataGen")
@@ -296,6 +320,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
         .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
         .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
+        .def("get_solver", &GridModel::get_solver)  // get the solver (AnySolver type python side) used
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
@@ -380,7 +405,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_V", &GridModel::get_V)
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
-        .def("get_J", &GridModel::get_J)
+        .def("get_J", &GridModel::get_J_python)
         .def("check_solution", &GridModel::check_solution)
 
         // TODO optimize that for speed, results are copied apparently

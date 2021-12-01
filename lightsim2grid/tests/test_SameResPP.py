@@ -101,7 +101,8 @@ class MyTestCase(unittest.TestCase):
         pp_net.ext_grid["in_service"].iloc[0] = True
         conv, exc_ = backend.runpf()
         conv_pp, exc_pp = backend.init_pp_backend.runpf()
-
+        # import pdb
+        # pdb.set_trace()
         assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
         assert conv, "Error: lightsim do not converge"
 
@@ -126,7 +127,9 @@ class MyTestCase(unittest.TestCase):
         v_tmp = backend.init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
         v_tmp *= np.exp(1j * np.pi / 180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
         v_tmp = np.concatenate((v_tmp, v_tmp))
-        backend._grid.ac_pf(v_tmp, 1000, 1e-5)
+
+        V = backend._grid.ac_pf(v_tmp, 10, 1e-5)
+        assert V.shape[0], "? lightsim diverge when initialized with pp final voltage ?"
         backend._grid.tell_topo_changed()
 
         Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
@@ -146,7 +149,16 @@ class MyTestCase(unittest.TestCase):
             # V_init *= np.exp(1j * AllVas[:, 0])
             V_init_ref = copy.deepcopy(V_init)
             solver = ClassSolver()
-            solver.solve(scipy.sparse.csc_matrix(Y_pp), V_init, Sbus, pv_, pq_, max_iter, tol_this)
+            
+            # extract the slack bus
+            ref = set(np.arange(V_init.shape[0])) - set(pv_) - set(pq_)
+            ref = np.array(list(ref))
+            # build the slack weights
+            slack_weights = np.zeros(V_init.shape[0])
+            slack_weights[ref] = 1.0 / ref.shape[0]
+
+            solver.solve(scipy.sparse.csc_matrix(Y_pp), V_init, Sbus,
+                         ref, slack_weights, pv_, pq_, max_iter, tol_this)
             time_for_nr = solver.get_timers()[3]
             if TIMER_INFO:
                 print(f"\t Info: Time to perform {nb_iter - index_V} NR iterations for a grid with {nb_sub} "
@@ -171,12 +183,14 @@ class MyTestCase(unittest.TestCase):
         Sbus_pp = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
         Sbus_pp_right_order = Sbus_pp[pp_vect_converter]
         Sbus_me = backend._grid.get_Sbus()
-        error_p = np.abs(np.real(Sbus_me) - np.real(Sbus_pp_right_order))
+        # slack bus is not the same
+        all_but_slack = np.array(list(set(pv_).union(set(pq_))))
+        error_p = np.abs(np.real(Sbus_me[all_but_slack]) - np.real(Sbus_pp_right_order[all_but_slack]))
         assert np.max(error_p) <= self.tol, f"\t Error: P do not match for Sbus, maximum absolute error is " \
                                             f"{np.max(error_p):.5f} MW, \t Error: significative difference for bus " \
                                             f"index (lightsim): {np.where(error_p > self.tol)[0]}"
 
-        error_q = np.abs(np.imag(Sbus_me) - np.imag(Sbus_pp_right_order))
+        error_q = np.abs(np.imag(Sbus_me[all_but_slack]) - np.imag(Sbus_pp_right_order[all_but_slack]))
         assert np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus, maximum absolute error is " \
                                             f"{np.max(error_q):.5f} MVAr, \t Error: significative difference for bus " \
                                             f"index (lightsim): {np.where(error_q > self.tol)[0]}"
@@ -195,7 +209,11 @@ class MyTestCase(unittest.TestCase):
 
         # "IV - Check for the initialization (dc powerflow)"
         # 1) check that the results are same for dc lightsim and dc pandapower
-        Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+        if isinstance(pp_net["_options"]["init_vm_pu"], str):
+            mult_ = 1.0
+        else:
+            mult_ = pp_net["_options"]["init_vm_pu"]
+        Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * mult_
         backend._grid.deactivate_result_computation()
         Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
         backend._grid.reactivate_result_computation()
@@ -269,7 +287,11 @@ class MyTestCase(unittest.TestCase):
                                                 f"is {np.max(error_q):.5f}"
 
         # "3) check that lightsim ac pf init with pp dc pf give same results (than pp)"
-        Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+        if isinstance(pp_net["_options"]["init_vm_pu"], str):
+            mult_coeff = 1.0
+        else:
+            mult_coeff = pp_net["_options"]["init_vm_pu"]
+        Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * mult_coeff
         Vinit[:nb_sub] = V_init_ref[pp_vect_converter]
         conv = backend._grid.ac_pf(Vinit, max_iter, tol_this)
         assert conv.shape[0] > 0, "\t Error: the lightsim diverge when initialized with pandapower Vinit_dc"

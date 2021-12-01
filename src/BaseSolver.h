@@ -51,15 +51,15 @@ class BaseSolver : public BaseConstants
         Eigen::Ref<const CplxVect> get_V() const{
             return V_;
         }
-        int get_error(){
+        int get_error() const {
             return err_;
         }
-        int get_nb_iter(){
+        int get_nb_iter() const {
             return nr_iter_;
         }
 
         virtual
-        std::tuple<double, double, double, double> get_timers()
+        std::tuple<double, double, double, double> get_timers() const
         {
             // TODO change the order of the timers here!
             auto res = std::tuple<double, double, double, double>(
@@ -82,7 +82,7 @@ class BaseSolver : public BaseConstants
         virtual
         void reset();
 
-        bool converged(){
+        bool converged() const{
             return err_ == 0;
         }
     protected:

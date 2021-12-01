@@ -145,12 +145,13 @@ src_files = ['src/main.cpp',
              "src/DataLoad.cpp",
              "src/DataGen.cpp",
              "src/DataSGen.cpp",
-             "src/BaseNRSolver.cpp",
+            #  "src/BaseNRSolver.cpp",  # moved as a template class
+            #  "src/BaseNRSolverSingleSlack.cpp",  # moved as a template class
+            #  "src/DCSolver.cpp",  # moved as a template class
              "src/ChooseSolver.cpp",
              "src/GaussSeidelSolver.cpp",
              "src/GaussSeidelSynchSolver.cpp",
              "src/BaseSolver.cpp",
-             "src/DCSolver.cpp",
              "src/BaseMultiplePowerflow.cpp",
              "src/Computers.cpp",
              "src/SecurityAnalysis.cpp"]

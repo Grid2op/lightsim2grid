@@ -298,7 +298,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
         if(gen.is_slack)
         {
             // slack bus, by definition, can handle all active value
-            //TODO SLACK : This is probably not the case with distributed slack !
+            // This is probably not the case with distributed slack !
             res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
         }
     }

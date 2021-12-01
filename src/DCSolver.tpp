@@ -6,19 +6,20 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DCSolver.h"
+// #include "DCSolver.h"
 
 // TODO SLACK !!!
-bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                          CplxVect & V,
-                          const CplxVect & Sbus,
-                          const Eigen::VectorXi & slack_ids,
-                          const RealVect & slack_weights,
-                          const Eigen::VectorXi & pv,
-                          const Eigen::VectorXi & pq,
-                          int max_iter,
-                          real_type tol
-                          )
+template<class LinearSolver>
+bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                        CplxVect & V,
+                                        const CplxVect & Sbus,
+                                        const Eigen::VectorXi & slack_ids,
+                                        const RealVect & slack_weights,
+                                        const Eigen::VectorXi & pv,
+                                        const Eigen::VectorXi & pq,
+                                        int max_iter,
+                                        real_type tol
+                                        )
 {
     // max_iter is ignored
     // tol is ignored
@@ -76,23 +77,30 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     #ifdef __COUT_TIMES
         auto timer_solve = CustTimer();
     #endif // __COUT_TIMES
+    bool just_factorize = false;
     if(need_factorize_){
-        dc_solver_.analyzePattern(dcYbus);
+        // dc_solver_.analyzePattern(dcYbus);
+        bool is_ok = _linear_solver.initialize(dcYbus);
+        if(!is_ok){
+            err_ = 1;
+            return false;
+        }
         // std::cout << "\t dc: need_factorize_: " << need_factorize_ << std::endl;
         need_factorize_ = false;
+        just_factorize = true;
     }
     // else{
     //     std::cout << "\t dc: no need factorize: " << need_factorize_ << std::endl;
     // }
 
     // factorize the matrix
-    dc_solver_.factorize(dcYbus);
-    if(dc_solver_.info() != Eigen::Success) {
-        // matrix is not connected
-        timer_total_nr_ += timer.duration();
-        err_ = 1;
-        return false;
-    }
+    // dc_solver_.factorize(dcYbus);
+    // if(dc_solver_.info() != Eigen::Success) {
+    //     // matrix is not connected
+    //     timer_total_nr_ += timer.duration();
+    //     err_ = 1;
+    //     return false;
+    // }
 
     // remove the slack bus from Sbus
     RealVect dcSbus = RealVect::Constant(nb_bus_solver - 1, my_zero_);
@@ -104,14 +112,21 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     }
 
     // solve for theta: Sbus = dcY . theta
-    RealVect Va_dc_without_slack = dc_solver_.solve(dcSbus);
-    if(dc_solver_.info() != Eigen::Success) {
-        // solving failed, this should not happen in dc ...
-        // matrix is not connected
+    RealVect Va_dc_without_slack = dcSbus;
+    int error = _linear_solver.solve(dcYbus, Va_dc_without_slack, just_factorize);
+    if(error != 0){
+        err_ = error;
         timer_total_nr_ += timer.duration();
-        err_ = 3;
         return false;
     }
+    // RealVect Va_dc_without_slack = dc_solver_.solve(dcSbus);
+    // if(dc_solver_.info() != Eigen::Success) {
+    //     // solving failed, this should not happen in dc ...
+    //     // matrix is not connected
+    //     timer_total_nr_ += timer.duration();
+    //     err_ = 3;
+    //     return false;
+    // }
     #ifdef __COUT_TIMES
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;
         auto timer_postproc = CustTimer();
@@ -153,7 +168,9 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     return true;
 }
 
-void DCSolver::reset(){
+template<class LinearSolver>
+void BaseDCSolver<LinearSolver>::reset(){
     BaseSolver::reset();
+    _linear_solver.reset();
     need_factorize_ = true;
 }

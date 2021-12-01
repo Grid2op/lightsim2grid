@@ -93,6 +93,7 @@ class GridModel : public DataGeneric
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
         SolverType get_solver_type() {return _solver.get_type(); }
+        const ChooseSolver & get_solver() const {return _solver;}
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
@@ -339,10 +340,13 @@ class GridModel : public DataGeneric
         Eigen::Ref<const RealVect> get_Vm() const{
             return _solver.get_Vm();
         }
-        Eigen::SparseMatrix<real_type> get_J(){
-            return _solver.get_J();  // This is copied to python
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const{
+            return _solver.get_J();
         }
-        real_type get_computation_time(){ return _solver.get_computation_time();}
+        Eigen::SparseMatrix<real_type> get_J_python() const{
+            return _solver.get_J_python();  // This is copied to python
+        }
+        real_type get_computation_time() const{ return _solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !

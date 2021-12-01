@@ -17,9 +17,13 @@ Change Log
 
 [0.5.6] 20xx-yy-zz
 -------------------
+- [ADDED] possibility to change linear solver used when performing a DC solver
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
-- [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` methods (see documentation)
-- [IMPROVED] use of `steady_clock` to retrieve the ellapsed time c++ side
+- [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)
+- [ADDED] direct access to the solver used in the grid model python side
+- [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
+- [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
+  Newton Raphson and DC solvers.
 
 [0.5.5] 2021-11-10
 -------------------

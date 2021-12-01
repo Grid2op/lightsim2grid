@@ -19,8 +19,8 @@ class MakeTests(unittest.TestCase):
         self.tol = 1e-8
 
     def assert_equal(self, tmp, ref):
-        assert np.max(np.abs(tmp - ref)) <= self.tol
-        assert np.sum(np.abs(tmp - ref)) <= tmp.shape[0] * self.tol
+        assert np.max(np.abs(tmp - ref)) <= self.tol, f"maximum error {np.max(np.abs(tmp - ref))}"
+        assert np.sum(np.abs(tmp - ref)) <= tmp.shape[0] * self.tol, f"average error {np.sum(np.abs(tmp - ref))}"
 
     def test_case6_data(self):
         net = pn.case6ww()

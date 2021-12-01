@@ -71,7 +71,6 @@ def init(pp_net):
             tmp_ = pp_net["_options"]["init_vm_pu"]
             if isinstance(tmp_, Number):
                 model.set_init_vm_pu(float(tmp_))
-
     model.set_sn_mva(pp_net.sn_mva)
 
     tmp_bus_ind = np.argsort(pp_net.bus.index)

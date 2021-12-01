@@ -11,12 +11,13 @@
 
 #include "BaseSolver.h"
 // TODO make err_ more explicit: use an enum
-class DCSolver: public BaseSolver
+template<class LinearSolver>
+class BaseDCSolver: public BaseSolver
 {
     public:
-        DCSolver():BaseSolver(), dc_solver_(), need_factorize_(true){};
+        BaseDCSolver():BaseSolver(), _linear_solver(), need_factorize_(true){};
 
-        ~DCSolver(){}
+        ~BaseDCSolver(){}
 
         virtual void reset();
 
@@ -35,13 +36,15 @@ class DCSolver: public BaseSolver
 
     private:
         // no copy allowed
-        DCSolver( const BaseSolver & ) ;
-        DCSolver & operator=( const BaseSolver & ) ;
+        BaseDCSolver( const BaseSolver & ) =delete ;
+        BaseDCSolver & operator=( const BaseSolver & ) =delete;
 
     protected:
-        Eigen::SparseLU<Eigen::SparseMatrix<real_type>>  dc_solver_;
+        LinearSolver  _linear_solver;
         bool need_factorize_;
 
 };
+
+#include "DCSolver.tpp"
 
 #endif // DCSOLVER_H

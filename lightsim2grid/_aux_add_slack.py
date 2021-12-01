@@ -40,6 +40,13 @@ def _aux_add_slack(model, pp_net):
             slack_coeff = pp_net.gen["slack_weight"].values[slack_gen_ids]
         for slack_id in slack_gen_ids:
             model.change_v_gen(slack_id, pp_net.gen["vm_pu"].iloc[slack_id])
+
+        # in this case the ext grid is not taken into account, i raise a warning if
+        # there is one
+        slack_bus_ids = pp_net.ext_grid["bus"].values
+        if pp_net.ext_grid.shape[0] >= 1:
+            warnings.warn("LightSim will not consider the pandapower \"ext_grid\" as there "
+                          "are already generators tagged as slack bus")
     else:
         # there is no slack bus in the generator of the pp grid
         warnings.warn("LightSim has not found any generators tagged as \"slack bus\" in the pandapower network."

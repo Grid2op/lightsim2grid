@@ -6,12 +6,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseNRSolver.h"
+// #include "BaseNRSolver.h"  // now a template class, so this file will be included instead !
 
 // TODO get rid of the pvpq, pv, pq etc and put the jacobian "in the right order"
 // to ease and make way faster the filling of the sparse matrix J
 
-bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+template<class LinearSolver>
+bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                               CplxVect & V,
                               const CplxVect & Sbus,
                               const Eigen::VectorXi & slack_ids,
@@ -59,45 +60,6 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq; 
 
-    // TODO SLACK
-    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
-    // std::cout << "slack_bus_id " << slack_bus_id << std::endl;
-    // std::cout << "slack_ids: ";
-    // for(auto el: slack_ids){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "pv: ";
-    // for(auto el: pv){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "pq: ";
-    // for(auto el: pq){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "slack_weights: ";
-    // for(auto el: slack_weights){
-        // std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "slack_weights.sum() " << slack_weights.sum() << std::endl;
-    // std::cout << "slack_weights(slack_bus_id) " << slack_weights(slack_bus_id) << std::endl;
-
-    // std::cout << "Sbus: ";
-    // for(auto el: Sbus){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << "V.size " << V.size() << std::endl;
-    // std::cout << std::endl;
-    // std::cout << "V: ";
-    // for(auto el: V){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout <<  "tol " << tol << std::endl;
-
     // some clever tricks are used in the making of the Jacobian to handle the slack bus 
     // (in case there is a distributed slack bus)
     const auto n_pvpq = pvpq.size();
@@ -105,7 +67,7 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
-    const auto last_index = n_pvpq + n_pq;
+    // const auto last_index = n_pvpq + n_pq;  // unused
 
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -113,81 +75,47 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
 
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
-    // std::cout << "slack_absorbed (init guess)" << slack_absorbed << std::endl;
-    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);  
-    // slack_absorbed += -F(last_index); // by convention in fill_jacobian_matrix the slack bus is the last component
-    // now initialize the real first vector
-    // F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
 
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
-
-    
-    // TODO SLACK
-    // std::cout << "dx: (iter " << nr_iter_ << ") :";  // dx = -F
-    // for(auto el: F){
-    //     std::cout << -el << ", ";
-    // }
-    // std::cout << std::endl;
-    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
-
+    std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
+    std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
-        // std::cout << "_____________" << std::endl; // TODO SLACK
-        // std::cout << "iter " << nr_iter_ << std::endl; // TODO SLACK
-        // print_J(0, 1);  // 22, 23  TODO SLACK
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-        
-        // std::cout << "after fill jacobian " << std::endl; // TODO SLACK
-        // print_J(0, 1);  // 22, 23  TODO SLACK
-        // if(nr_iter_ == 2){
-        //     converged = true;  // TODO SLACK
-        //     break; // TODO SLACK
-        // }
-        // std::cout << "_____________" << std::endl; // TODO SLACK
 
         if(need_factorize_){
             initialize();
             if(err_ != 0){
                 // I got an error during the initialization of the linear system, i need to stop here
-                // std::cout << "initialize error " << err_ << std::endl;  // TODO SLACK
                 res = false;
                 break;
             }
             has_just_been_initialized = true;
         }
         solve(F, has_just_been_initialized);
-        // std::cout << "after solve " << std::endl; // TODO SLACK
-        // print_J(0, 1);  // 22, 23  TODO SLACK
 
         has_just_been_initialized = false;
         if(err_ != 0){
             // I got an error during the solving of the linear system, i need to stop here
-            // std::cout << "solve error " << err_ << std::endl;  // TODO SLACK
             res = false;
             break;
         }
-        auto dx = -F;
-
-        // TODO SLACK
-        // std::cout << "dx: (iter " << nr_iter_ << ") :";
-        // for(auto el: dx){
-        //     std::cout << el << ", ";
-        // }
-        // std::cout << std::endl;
-        // std::cout << "dx: (iter " << nr_iter_ << ") :" << dx(0) << std::endl;
-
+        // const auto dx = -F;  // removed for speed optimization (-= used below)
 
         // update voltage (this should be done consistently with "_evaluate_Fx")
-        if (n_pv > 0) Va_(my_pv) += dx.segment(1, n_pv);  // TODO SLACK INDEX 
+        if (n_pv > 0) Va_(my_pv) -= F.segment(1, n_pv);
         if (n_pq > 0){
-            Va_(pq) += dx.segment(n_pv + 1, n_pq);  // TODO SLACK INDEX 
-            Vm_(pq) += dx.segment(n_pv + n_pq + 1, n_pq);  // TODO SLACK INDEX 
+            Va_(pq) -= F.segment(n_pv + 1, n_pq);
+            Vm_(pq) -= F.segment(n_pv + n_pq + 1, n_pq);
         }
-        slack_absorbed += dx(0); // by convention in fill_jacobian_matrix the slack bus is the last component
+        slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the last component
 
+        std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
+        std::cout << "slack_absorbed " << slack_absorbed << std::endl;
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
         Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -196,21 +124,12 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp){
-            // std::cout << "nan error " << err_ << std::endl;  // TODO SLACK
-            // // TODO SLACK
-            // std::cout << "F: (iter " << nr_iter_ << ") :";
-            // for(auto el: F){
-            //     std::cout << el << ", ";
-            // }
-            // std::cout << std::endl;
             break; // divergence due to Nans
         }
         converged = _check_for_convergence(F, tol);
     }
-    // std::cout << "nr_iter_ " << nr_iter_ << std::endl;  // TODO SLACK
     if(!converged){
         err_ = 4;
-        // std::cout << "too much iter error " << err_ << std::endl;  // TODO SLACK
         res = false;
     }
     timer_total_nr_ += timer.duration();
@@ -227,16 +146,20 @@ bool BaseNRSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     return res;
 }
 
-void BaseNRSolver::reset(){
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::reset(){
     BaseSolver::reset();
     // reset specific attributes
     J_ = Eigen::SparseMatrix<real_type>();  // the jacobian matrix
     dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
     dS_dVa_ = Eigen::SparseMatrix<cplx_type>();
     need_factorize_ = true;
+    _linear_solver.reset();
+    n_ = -1;
 }
 
-void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                              const Eigen::Ref<const CplxVect > & V){
     auto timer = CustTimer();
     const auto size_dS = V.size();
@@ -289,7 +212,8 @@ void BaseNRSolver::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_typ
     timer_dSbus_ += timer.duration();
 }
 
-void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
@@ -315,7 +239,8 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
                   row_lag, col_lag);
 }
 
-void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
@@ -351,7 +276,8 @@ void BaseNRSolver::_get_values_J(int & nb_obj_this_col,
     }
 }
 
-void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                         const CplxVect & V,
                                         Eigen::Index slack_bus_id,
                                         const RealVect & slack_weights,
@@ -362,13 +288,13 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
                                         )
 {
     /**
-    Remember:
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     |(pvpq+1,1) |
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    Remember, J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -376,7 +302,7 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
@@ -394,30 +320,23 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     // TODO the `dS_dVa_[pvpq, pvpq]`
     // TODO so that it's easier to retrieve in the next few lines !
     if(J_.cols() != size_j)
-    // if(true)
     {
         #ifdef __COUT_TIMES
             auto timer2 = CustTimer();
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
-        fill_jacobian_matrix_unkown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
-                                                     Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv
-                                                     );
+        fill_jacobian_matrix_unkown_sparsity_pattern(Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
         #endif  // __COUT_TIMES
     }else{
         // the sparsity pattern of J_ is already known, i can reuse it to fill it
-        // properly and faster (or not...)
+        // properly and faster (approx 3 times faster than the previous one)
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // __COUT_TIMES
-        fill_jacobian_matrix_kown_sparsity_pattern(// dS_dVa_r, dS_dVa_i, dS_dVm_r, dS_dVm_i,
-                                                   //  Ybus,
-                                                   // V,
-                                                   slack_bus_id,
+        fill_jacobian_matrix_kown_sparsity_pattern(slack_bus_id,
                                                    pq, pvpq
-                                                   // , pq_inv, pvpq_inv
                                                    );
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
@@ -426,7 +345,8 @@ void BaseNRSolver::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Y
     timer_fillJ_ += timer.duration();;
 }
 
-void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         const Eigen::SparseMatrix<cplx_type> & Ybus,
         const CplxVect & V,
         Eigen::Index slack_bus_id,
@@ -443,13 +363,13 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     For that we need to perform relatively expensive computation from dS_dV* in order to retrieve it.
     This function is NOT optimized for speed...
 
-    Remember:
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     |(pvpq+1,1) |
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    Remember, J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -457,7 +377,7 @@ void BaseNRSolver::fill_jacobian_matrix_unkown_sparsity_pattern(
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
@@ -599,7 +519,8 @@ fill the value of the `value_map_` that stores pointers to the elements of
 dS_dVa_ and dS_dVm_ to be used to fill J_
 it requires that J_ is initialized, in compressed mode.
 **/
-void BaseNRSolver::fill_value_map(
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_value_map(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq
@@ -669,7 +590,8 @@ void BaseNRSolver::fill_value_map(
     }
 }
 
-void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
+template<class LinearSolver>
+void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pattern(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq
@@ -683,13 +605,13 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
     change the value pointer (not the inner nor outer pointer)
     It is optimized only if J_ is in default Eigen format (column)
 
-    Remember:
-    J has the shape
-    | slack_bus | s |              |    (1,pvpq)   (1, pq)     |(pvpq+1,1) |
-    |  -------  | l |              | ------------------------- |           |
-    | J11 | J12 | a |              | (pvpq, pvpq) | (pvpq, pq) |           |
-    | --------- | c |= dimensions: | ------------------------- |   -----   |
-    | J21 | J22 | k |              |  (pq, pvpq)  | (pq, pq)   |  (pq, 1)  |
+    Remember, J has the shape:
+    
+    | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+    | l |  -------  |               |            | ------------------------- |
+    | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+    | c | --------- |               |   ------   | ------------------------- |
+    | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
 
     python implementation:
     `J11` = dS_dVa[array([pvpq]).T, pvpq].real
@@ -697,7 +619,7 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
     `J21` = dS_dVa[array([pq]).T, pvpq].imag
     `J22` = dS_dVm[array([pq]).T, pq].imag
 
-    `slack_bus` = is the representation of the equation for the slack bus dS_dVa[slack_bus_id, pvpq].real
+    `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
     and dS_dVm[slack_bus_id, pq].real
 
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
@@ -705,24 +627,18 @@ void BaseNRSolver::fill_jacobian_matrix_kown_sparsity_pattern(
 
     **/
 
-    const auto n_pvpq = pvpq.size();
-
-    // real_type * J_x_ptr = J_.valuePtr();
+    const auto n_pvpq_1 = pvpq.size() + 1;
     const auto n_cols = J_.cols();  // equal to nrow
     unsigned int pos_el = 0;
-    // unsigned int pos_el_J = J_.col(0).size();
     for (Eigen::Index col_id=1; col_id < n_cols; ++col_id){  // last column is not updated (slack equation)
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_id); it; ++it)
         {
             const auto row_id = it.row();
             // only one if is necessary (magic !)
             // top rows are "real" part and bottom rows are imaginary part (you can check)
-            // if(row_id < n_pvpq + 1) J_x_ptr[pos_el_J] = std::real(*value_map_[pos_el]);
-            // else J_x_ptr[pos_el_J] = std::imag(*value_map_[pos_el]);
-            it.valueRef() = row_id < n_pvpq + 1 ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
+            it.valueRef() = row_id < n_pvpq_1 ? std::real(*value_map_[pos_el]) : std::imag(*value_map_[pos_el]);
             // go to the next element
             ++pos_el;
-            // ++pos_el_J;
         }
     }
 }
