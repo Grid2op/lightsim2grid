@@ -15,11 +15,11 @@ Change Log
 - perform unittest on CI (either github or circleci)
 - switch c++ to float32 instead
 
-[0.5.5] 20xx-yy-zz
+[0.5.6] 20xx-yy-zz
 -------------------
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
 - [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` methods (see documentation)
-- [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
+- [IMPROVED] use of `steady_clock` to retrieve the ellapsed time c++ side
 
 [0.5.5] 2021-11-10
 -------------------
