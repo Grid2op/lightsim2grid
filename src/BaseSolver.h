@@ -40,7 +40,7 @@ class BaseSolver : public BaseConstants
     public:
         BaseSolver():BaseConstants(),n_(-1),err_(-1),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
 
-        ~BaseSolver(){}
+        virtual ~BaseSolver(){}
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;

@@ -17,6 +17,8 @@ Change Log
 
 [0.5.6] 20xx-yy-zz
 -------------------
+- [FIXED] bug preventing to use the NICSLU in the `GridModel`
+- [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)
 - [ADDED] possibility to change linear solver used when performing a DC solver
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
 - [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)

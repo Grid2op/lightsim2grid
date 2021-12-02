@@ -95,16 +95,16 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
             res = false;
             break;
         }
-        auto dx = -F;
+        // auto dx = -F;
 
         BaseNRSolver<LinearSolver>::Vm_ = BaseNRSolver<LinearSolver>::V_.array().abs();  // update Vm and Va again in case
         BaseNRSolver<LinearSolver>::Va_ = BaseNRSolver<LinearSolver>::V_.array().arg();  // we wrapped around with a negative Vm
 
         // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
-        if (n_pv > 0) BaseNRSolver<LinearSolver>::Va_(my_pv) += dx.segment(0, n_pv);
+        if (n_pv > 0) BaseNRSolver<LinearSolver>::Va_(my_pv) -= F.segment(0, n_pv);
         if (n_pq > 0){
-            BaseNRSolver<LinearSolver>::Va_(pq) += dx.segment(n_pv,n_pq);
-            BaseNRSolver<LinearSolver>::Vm_(pq) += dx.segment(n_pv+n_pq, n_pq);
+            BaseNRSolver<LinearSolver>::Va_(pq) -= F.segment(n_pv,n_pq);
+            BaseNRSolver<LinearSolver>::Vm_(pq) -= F.segment(n_pv+n_pq, n_pq);
         }
 
         // TODO change here for not having to cast all the time ... maybe

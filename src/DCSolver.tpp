@@ -153,7 +153,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     Vm_(slack_bus_id_solver) = std::abs(V(slack_bus_id_solver));
 
     // now compute the resulting complex voltage
-    V_ = (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>());
+    V_ = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>());
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
     V = V_;

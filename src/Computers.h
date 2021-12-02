@@ -95,7 +95,6 @@ class Computers: public BaseMultiplePowerflow
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
             int  bus_id_solver, bus_id_me;
-            cplx_type tmp;
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);

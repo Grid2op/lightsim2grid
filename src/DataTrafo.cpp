@@ -221,7 +221,7 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
     // return;
     const int nb_trafo = nb();
     int bus_id_me, bus_id_solver_hv, bus_id_solver_lv;
-    cplx_type tmp;
+    // cplx_type tmp;
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
         //  i don't do anything if the load is disconnected
         if(!status_[trafo_id]) continue;

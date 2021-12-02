@@ -117,7 +117,7 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
         std::cout << "slack_absorbed " << slack_absorbed << std::endl;
         // TODO change here for not having to cast all the time ... maybe
-        V_ = Vm_.array() * (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );
+        V_ = Vm_.array() * (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );
         Vm_ = V_.array().abs();  // update Vm and Va again in case
         Va_ = V_.array().arg();  // we wrapped around with a negative Vm TODO more efficient way maybe ?
 
