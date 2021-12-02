@@ -225,14 +225,14 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
         //  i don't do anything if the load is disconnected
         if(!status_[trafo_id]) continue;
-
+        if(dc_x_tau_shift_[trafo_id] == 0.) continue; // nothing to do if the trafo is not concerned (no phase shifter)
         bus_id_me = bus_lv_id_(trafo_id);
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "DataTrafo::fillSbus: the trafo with id ";
             exc_ << trafo_id;
-            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
         bus_id_me = bus_hv_id_(trafo_id);
@@ -241,7 +241,7 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
             std::ostringstream exc_;
             exc_ << "DataTrafo::fillSbus: the trafo with id ";
             exc_ << trafo_id;
-            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
 

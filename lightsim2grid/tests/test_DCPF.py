@@ -25,6 +25,7 @@ except ImportError as exc_:
     from lightsim2grid.solver import SparseLUSolver
     ClassSolver = SparseLUSolver
 
+import pdb
 TIMER_INFO = False  # do i print information regarding computation time
 
 
@@ -52,10 +53,9 @@ class TestDCPF(unittest.TestCase):
         self.tol = 3e-4
         self._aux_test(case)
 
-    # def test_case300(self):
-    # TODO make it work
-    #     case = pn.case300()
-    #     self._aux_test(case)
+    def test_case300(self):
+        case = pn.case300()
+        self._aux_test(case)
 
     # def test_case9241pegase(self):
     # TODO make it work
@@ -118,6 +118,13 @@ class TestDCPF(unittest.TestCase):
         # I- Check for divergence and equality of flows"
         por_ls, qor_ls, vor_ls, aor_ls = backend.lines_or_info()
         max_mis = np.max(np.abs(por_ls - por_pp))
+        # max_error_id = np.argmax(np.abs(por_ls - por_pp))
+        # nb_line = pp_net.line.shape[0]
+        # trafo_id = max_error_id - nb_line
+        # por_ls[max_error_id]
+        # np.abs(por_ls - por_pp)[25 + nb_line]
+        # backend._grid.get_trafos()[trafo_id]
+        pdb.set_trace()
         assert max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
         max_mis = np.max(np.abs(qor_ls - qor_pp))
         assert max_mis <= self.tol, f"Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr"

@@ -3,17 +3,18 @@ Change Log
 
 [TODO]
 --------
+- perform unittest on CI (either github or circleci)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - improve documentation
-- easier building (get rid of the "make" part)
 - code `helm` powerflow method
-- code NR with dense matrices
+- possibility to read CGMES files
+- possibility to read XIIDM files
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
-- perform unittest on CI (either github or circleci)
-- switch c++ to float32 instead
+- easier building (get rid of the "make" part)
+- code NR with dense matrices
 
 [0.5.6] 20xx-yy-zz
 -------------------

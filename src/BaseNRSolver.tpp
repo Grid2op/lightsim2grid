@@ -81,8 +81,8 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
-    std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
-    std::cout << "slack_absorbed " << slack_absorbed << std::endl;
+    // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
+    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
@@ -114,8 +114,8 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         }
         slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the last component
 
-        std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
-        std::cout << "slack_absorbed " << slack_absorbed << std::endl;
+        // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
+        // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );
         Vm_ = V_.array().abs();  // update Vm and Va again in case

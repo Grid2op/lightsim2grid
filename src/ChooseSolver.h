@@ -90,7 +90,7 @@ class ChooseSolver
 
         void reset()
         {
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("reset", false);  // i should not check if it's the right solver when resetting (used in change_solver)
             return p_solver -> reset();
         }
 
@@ -106,29 +106,30 @@ class ChooseSolver
                         real_type tol
                         )
         {
-            auto p_solver = get_prt_solver();
+            _type_used_for_nr = _solver_type;
+            auto p_solver = get_prt_solver("compute_pf", true);
             return p_solver -> compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
         }
 
         Eigen::Ref<const CplxVect> get_V() const
         {
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("get_V", true);
             return p_solver -> get_V();
         }
 
         Eigen::Ref<const RealVect> get_Va() const
         {
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver( "get_Va", true);
             return p_solver -> get_Va();
         }
         Eigen::Ref<const RealVect> get_Vm() const
         {
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("get_Vm", true);
             return p_solver -> get_Vm();
         }
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const
         {
-            check_right_solver();
+            check_right_solver( "get_J");
             if(_solver_type == SolverType::SparseLU){
                 return _solver_lu.get_J();}
             #ifdef KLU_SOLVER_AVAILABLE
@@ -159,30 +160,30 @@ class ChooseSolver
         }
         double get_computation_time() const
         {
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("get_computation_time", true);
             const auto & res =  p_solver -> get_timers();
             return std::get<3>(res);
         }
 
         int get_error() const{
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("get_error", true);
             return p_solver -> get_error();
         }
         
         int get_nb_iter() const {
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("get_nb_iter", true);
             return p_solver -> get_nb_iter();
         }
 
         bool converged() const{
-            auto p_solver = get_prt_solver();
+            auto p_solver = get_prt_solver("converged", true);
             return p_solver -> converged();
         }
 
     private:
-        void check_right_solver() const
+        void check_right_solver(const std::string & error_msg) const
         {
-            if(_solver_type != _type_used_for_nr) throw std::runtime_error("ChooseSolver: Solver mismatch: current solver is not the last solver used to perform a powerflow");
+            if(_solver_type != _type_used_for_nr) throw std::runtime_error("ChooseSolver: Solver mismatch when calling '"+error_msg+"': current solver is not the last solver used to perform a powerflow");
             
             #ifndef KLU_SOLVER_AVAILABLE
                 if(_solver_type == SolverType::KLU){
@@ -215,8 +216,8 @@ class ChooseSolver
         /**
         returns a pointer to the current solver used
         **/
-        const BaseSolver * get_prt_solver() const {
-            check_right_solver();
+        const BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) const {
+            if (check_right_solver_) check_right_solver(error_msg);
             const BaseSolver * res;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
@@ -236,8 +237,8 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered");
             return res;
         }
-        BaseSolver * get_prt_solver() {
-            check_right_solver();
+        BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
+            if (check_right_solver_) check_right_solver(error_msg);
             BaseSolver * res;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
