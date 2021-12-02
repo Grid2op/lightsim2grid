@@ -66,8 +66,7 @@ class ChooseSolver
         {
             if(type == _solver_type) return;
             #ifndef KLU_SOLVER_AVAILABLE
-                // TODO better handling of that :-/
-                if((type == SolverType::KLU) || (type == SolverType::KLUDC) || (SolverType::KLUSingleSlack)){
+                if((type == SolverType::KLU) || (type == SolverType::KLUDC) || (type == SolverType::KLUSingleSlack)){
                     std::string msg;
                     msg = "Impossible to change for the KLU solver, that is not available on your platform.";
                     throw std::runtime_error(msg);
@@ -75,7 +74,6 @@ class ChooseSolver
             #endif
 
             #ifndef NICSLU_SOLVER_AVAILABLE
-                // TODO better handling of that :-/
                 if((type == SolverType::NICSLU) || (type == SolverType::NICSLUDC) || (type ==  SolverType::NICSLUSingleSlack)){
                     std::string msg;
                     msg = "Impossible to change for the NICSLU solver, that is not available on your platform.";
