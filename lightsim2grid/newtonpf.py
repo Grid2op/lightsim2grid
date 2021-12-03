@@ -37,7 +37,7 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
 
     .. warning::
         It considers that all nodes non pv, non pq are slack nodes and assign the same weights
-        for all of them
+        for all of them even though it was not possible to perform such computation in earlier versions.
 
     Parameters
     ----------

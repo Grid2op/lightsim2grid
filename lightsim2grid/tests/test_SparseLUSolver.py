@@ -95,7 +95,14 @@ class MakeTests(unittest.TestCase):
 
     def solver_aux(self):
         self.solver.reset()
-        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.pv, self.pq, self.max_it, self.tol)
+        ref = set(np.arange(self.Sbus.shape[0])) - set(self.pv) - set(self.pq)
+        ref = np.array(list(ref))
+        # build the slack weights
+        slack_weights = np.zeros(self.Sbus.shape[0])
+        slack_weights[ref] = 1.0 / ref.shape[0]
+
+        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.Sbus, ref, slack_weights, 
+                                          self.pv, self.pq, self.max_it, self.tol)
         assert has_conv, "the load flow has diverged for {}".format(self.path)
         J = self.solver.get_J()
         Va = self.solver.get_Va()

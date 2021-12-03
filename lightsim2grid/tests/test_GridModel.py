@@ -77,7 +77,7 @@ class BaseTests:
         g_is = self.net_ref.gen["in_service"]
         prod_p, prod_q, prod_v = self.model.get_gen_res()
         # test the slack bus is properly modeled as a generator
-        assert np.abs(np.sum(net._ppc["gen"][:, 1]) - np.sum(prod_p)) <= self.tol
+        assert np.abs(np.sum(net._ppc["gen"][:, 1]) - np.sum(prod_p)) <= self.tol_test
         if len(prod_p) != g_is.shape[0]:
             # it means a generator has been added for the slack bus
             prod_p = prod_p[:-1]

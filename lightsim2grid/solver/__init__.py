@@ -7,11 +7,18 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 # TODO add the other solver now !
-__all__ = ["SolverType", "SparseLUSolver", "GaussSeidelSolver", "GaussSeidelSynchSolver", "DCSolver"]
+__all__ = ["SolverType",
+           "SparseLUSolver",
+           "GaussSeidelSolver",
+           "GaussSeidelSynchSolver",
+           "DCSolver",
+           "SparseLUSolverSingleSlack"]
 
 try:
     from lightsim2grid_cpp import KLUSolver
+    from lightsim2grid_cpp import KLUSolverSingleSlack
     __all__.append("KLUSolver")
+    __all__.append("KLUSolverSingleSlack")
 except Exception as exc_:
     # KLU is not available
     pass
@@ -25,6 +32,7 @@ except Exception as exc_:
 
 from lightsim2grid_cpp import SolverType
 from lightsim2grid_cpp import SparseLUSolver
+from lightsim2grid_cpp import SparseLUSolverSingleSlack
 from lightsim2grid_cpp import GaussSeidelSolver
 from lightsim2grid_cpp import GaussSeidelSynchSolver
 from lightsim2grid_cpp import DCSolver

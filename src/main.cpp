@@ -49,6 +49,19 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("compute_pf", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+    
+    py::class_<KLUSolverSingleSlack>(m, "KLUSolverSingleSlack")
+        .def(py::init<>())
+        .def("get_J", &KLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &KLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &KLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &KLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &KLUSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     #endif  // KLU_SOLVER_AVAILABLE
 
     #ifdef NICSLU_SOLVER_AVAILABLE
@@ -67,6 +80,19 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     #endif  // NICSLU_SOLVER_AVAILABLE
 
     py::class_<SparseLUSolver>(m, "SparseLUSolver")
+        .def(py::init<>())
+        .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &SparseLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &SparseLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &SparseLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &SparseLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &SparseLUSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+    
+    py::class_<SparseLUSolverSingleSlack>(m, "SparseLUSolverSingleSlack")
         .def(py::init<>())
         .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
