@@ -320,7 +320,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
         .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
         .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
-        .def("get_solver", &GridModel::get_solver)  // get the solver (AnySolver type python side) used
+        .def("get_solver", &GridModel::get_solver, py::return_value_policy::reference)  // get the solver (AnySolver type python side) used
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
@@ -438,6 +438,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("get_Ybus", &GridModel::get_Ybus)
+        .def("get_dcYbus", &GridModel::get_dcYbus)
         .def("get_Sbus", &GridModel::get_Sbus)
         .def("get_pv", &GridModel::get_pv)
         .def("get_pq", &GridModel::get_pq)

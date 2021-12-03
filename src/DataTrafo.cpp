@@ -216,7 +216,7 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     if(ac) return;
     // return;
     const int nb_trafo = nb();
@@ -244,7 +244,6 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-
         Sbus.coeffRef(bus_id_solver_hv) += dc_x_tau_shift_[trafo_id];
         Sbus.coeffRef(bus_id_solver_lv) -= dc_x_tau_shift_[trafo_id];
     }

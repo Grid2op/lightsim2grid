@@ -113,6 +113,11 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
     // solve for theta: Sbus = dcY . theta
     RealVect Va_dc_without_slack = dcSbus;
+    // for(real_type el: dcSbus){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+
     int error = _linear_solver.solve(dcYbus, Va_dc_without_slack, just_factorize);
     if(error != 0){
         err_ = error;

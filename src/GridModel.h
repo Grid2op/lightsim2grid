@@ -315,6 +315,10 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<cplx_type> get_Ybus(){
             return Ybus_ac_;  // This is copied to python
         }
+        // TODO convert it back to this ID, that will make copies, but who really cares ?
+        Eigen::SparseMatrix<cplx_type> get_dcYbus(){
+            return Ybus_dc_;  // This is copied to python
+        }
         Eigen::Ref<CplxVect> get_Sbus(){
             return Sbus_;
         }

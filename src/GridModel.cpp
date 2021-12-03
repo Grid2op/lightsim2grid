@@ -468,14 +468,16 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
 {
     // init the Sbus vector
     powerlines_.fillSbus(Sbus, true, id_me_to_solver);
-    shunts_.fillSbus(Sbus, true, id_me_to_solver);
     trafos_.fillSbus(Sbus, ac, id_me_to_solver);
+    shunts_.fillSbus(Sbus, true, id_me_to_solver);
     loads_.fillSbus(Sbus, true, id_me_to_solver);
     sgens_.fillSbus(Sbus, true, id_me_to_solver);
     storages_.fillSbus(Sbus, true, id_me_to_solver);
     generators_.fillSbus(Sbus, true, id_me_to_solver);
 
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
+    // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
+    trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
 }
 
 void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
