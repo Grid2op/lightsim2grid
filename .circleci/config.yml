@@ -97,7 +97,7 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
-                    git clone https://github.com/grid2op.git _grid2op
+                    git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
                 name: "Install lightsim2grid"
@@ -162,7 +162,7 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
-                    git clone https://github.com/grid2op.git _grid2op
+                    git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
                 name: "Install lightsim2grid"
@@ -195,7 +195,7 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     .\venv_test\Scripts\activate
-                    git clone https://github.com/grid2op.git _grid2op
+                    git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
                 name: "Install lightsim2grid"
