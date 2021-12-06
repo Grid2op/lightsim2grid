@@ -103,7 +103,7 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
-                    cd ligthsim2grid/tests/
+                    cd lightsim2grid/tests/
                     python -m unittest discover
     compile_clang10:
         executor: clang10
@@ -159,12 +159,12 @@ jobs:
                     make
                     CC=clang python setup.py build
                     python -m pip install -U .
-                    cd ligthsim2grid/tests/
+                    cd lightsim2grid/tests/
                     python -m unittest discover
     compile_windows:
         executor: 
             name: win/default  # executor type
-            size: medium
+            size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
             - run:
@@ -181,7 +181,7 @@ jobs:
                     git submodule update
                     py setup.py build
                     py -m pip install -U .
-                    cd ligthsim2grid/tests/
+                    cd lightsim2grid\tests
                     python -m unittest discover
 
 workflows:
