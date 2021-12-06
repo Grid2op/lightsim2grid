@@ -253,16 +253,17 @@ pkgs = {
         ],
         "benchmark": [
             "tabulate",
-            "grid2op>=1.5.0",
+            "grid2op>=1.6.4",
             "numpy",
             "distro",
             "py-cpuinfo"
         ],
         "recommended": [
-            "grid2op>=1.5.0"
+            "grid2op>=1.6.4"
         ],
         "test": [
-            "grid2op>=1.5.0"
+            "grid2op>=1.6.4",
+            "pandapower==2.7.0"  # force this version for test, otherwise problem in test_DataConverter !
         ]
     }
 }
