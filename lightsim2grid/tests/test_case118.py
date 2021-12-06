@@ -178,7 +178,7 @@ class TestMultipleSlack118(unittest.TestCase):
             self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
 
         self.unable_to_run_due_to_pp = False
-        if "slack_weight" not in self.pp_net.gen:
+        if "slack_weight" not in self.net.gen:
             msg_ = "Unable to peform required tests because install pandapower version does not " \
                    "allow multiple slack."
             warnings.warn(msg_)
