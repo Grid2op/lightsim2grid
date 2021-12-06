@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-    win: circleci/windows@2.2.0 # The Windows orb give you everything you need to start using the Windows executor.
+    win: circleci/windows@2.4.1 # The Windows orb give you everything you need to start using the Windows executor.
 
 
 executors:
@@ -103,6 +103,7 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
+                    cd ligthsim2grid/tests/
                     python -m unittest discover
     compile_clang10:
         executor: clang10
@@ -158,11 +159,17 @@ jobs:
                     make
                     CC=clang python setup.py build
                     python -m pip install -U .
+                    cd ligthsim2grid/tests/
                     python -m unittest discover
     compile_windows:
-        executor: win/default  # executor type
+        executor: 
+            name: win/default  # executor type
+            size: small
         steps:
             - checkout
+            - run:
+                name: "Install Python"
+                command: choco install python --version=3.9  # use python 3.9 for windows test
             - run: py -m pip install virtualenv
             - run: py -m virtualenv venv_test
             - run:
@@ -174,6 +181,7 @@ jobs:
                     git submodule update
                     py setup.py build
                     py -m pip install -U .
+                    cd ligthsim2grid/tests/
                     python -m unittest discover
 
 workflows:
