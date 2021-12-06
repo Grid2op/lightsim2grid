@@ -40,7 +40,7 @@ class BaseSolver : public BaseConstants
     public:
         BaseSolver():BaseConstants(),n_(-1),err_(-1),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
 
-        ~BaseSolver(){}
+        virtual ~BaseSolver(){}
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -51,15 +51,15 @@ class BaseSolver : public BaseConstants
         Eigen::Ref<const CplxVect> get_V() const{
             return V_;
         }
-        int get_error(){
+        int get_error() const {
             return err_;
         }
-        int get_nb_iter(){
+        int get_nb_iter() const {
             return nr_iter_;
         }
 
         virtual
-        std::tuple<double, double, double, double> get_timers()
+        std::tuple<double, double, double, double> get_timers() const
         {
             // TODO change the order of the timers here!
             auto res = std::tuple<double, double, double, double>(
@@ -71,6 +71,8 @@ class BaseSolver : public BaseConstants
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,  // store the results of the powerflow and the Vinit !
                         const CplxVect & Sbus,
+                        const Eigen::VectorXi & slack_ids,
+                        const RealVect & slack_weights,
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
@@ -80,7 +82,7 @@ class BaseSolver : public BaseConstants
         virtual
         void reset();
 
-        bool converged(){
+        bool converged() const{
             return err_ == 0;
         }
     protected:
@@ -90,6 +92,15 @@ class BaseSolver : public BaseConstants
             timer_check_ = 0.;
             timer_total_nr_ = 0.;
         }
+
+        RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+                              const CplxVect & V,
+                              const CplxVect & Sbus,
+                              Eigen::Index slack_id,  // id of the slack bus
+                              real_type slack_absorbed,
+                              const RealVect & slack_weights,
+                              const Eigen::VectorXi & pv,
+                              const Eigen::VectorXi & pq);
 
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
@@ -115,6 +126,36 @@ class BaseSolver : public BaseConstants
                                  const Eigen::VectorXi & pq,
                                  unsigned int nb_bus);
 
+        /**
+        When there are multiple slacks, add the other "slack buses" in the PV buses indexes
+        (behaves as if only the first element is used for the slack !!!)
+        **/
+        Eigen::VectorXi retrieve_pv_with_slack(const Eigen::VectorXi & slack_ids, 
+                                               const Eigen::VectorXi & pv) const {
+            Eigen::VectorXi my_pv = pv;
+            if(slack_ids.size() > 1){
+                const auto nb_slack_added = slack_ids.size() - 1;
+                my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
+                for(auto i = 0; i < nb_slack_added; ++i){
+                    my_pv(i) = slack_ids[i+1];
+                }
+                for(auto i = 0; i < pv.size(); ++i){
+                    my_pv(i + nb_slack_added) = pv[i];
+                }
+            }
+            return my_pv;
+        }
+
+        /**
+        When there are multiple slacks, add the other "slack buses" in the PV buses indexes
+        **/
+        Eigen::VectorXi add_slack_to_pv(const Eigen::VectorXi & slack_ids, 
+                                        const Eigen::VectorXi & pv) const {
+            Eigen::VectorXi my_pv = Eigen::VectorXi(slack_ids.size() + pv.size());
+            my_pv << slack_ids, pv;
+            return my_pv;
+        }
+        
     protected:
         // solver initialization
         int n_;

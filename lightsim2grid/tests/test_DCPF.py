@@ -26,6 +26,7 @@ except ImportError as exc_:
     from lightsim2grid.solver import SparseLUSolver
     ClassSolver = SparseLUSolver
 
+import pdb
 TIMER_INFO = False  # do i print information regarding computation time
 
 
@@ -36,6 +37,32 @@ class TestDCPF(unittest.TestCase):
 
     def test_case14(self):
         case = pn.case14()
+        self.tol = 2e-3
+        self._aux_test(case)
+
+    def test_case14_with_phaseshift(self):
+        case = pn.case14()
+        # case.trafo.iloc[[0]]["shift_degree"] = -5.0
+        
+        hv_bus=0
+        lv_bus=2
+        pp.create_transformer_from_parameters(case,
+                                              hv_bus=hv_bus,
+                                              lv_bus=lv_bus,
+                                            #   sn_mva=1184.0,   # case RTE
+                                              sn_mva=9900.0,
+                                              vn_hv_kv=case.bus.iloc[hv_bus]["vn_kv"],
+                                              vn_lv_kv=case.bus.iloc[lv_bus]["vn_kv"],
+                                            #   i0_percent=-0.05152,   # case RTE
+                                              i0_percent=0.0,
+                                            #   vk_percent=0.404445,  # case RTE
+                                              vk_percent=2070.288000,
+                                            #   vkr_percent=0.049728, # case RTE
+                                              vkr_percent=0.0,
+                                              shift_degree=-10.0,  # case RTE
+                                            #   shift_degree=0.,
+                                              pfe_kw=0.
+                                              )
         self.tol = 2e-3
         self._aux_test(case)
 
@@ -54,7 +81,7 @@ class TestDCPF(unittest.TestCase):
         self._aux_test(case)
 
     # def test_case300(self):
-    # TODO make it work
+    #     # issue with Bbus / Ybus matrix
     #     case = pn.case300()
     #     self._aux_test(case)
 
@@ -136,13 +163,30 @@ class TestDCPF(unittest.TestCase):
         assert np.all(np.abs(line_ex_theta_ls - line_ex_theta_pp) <= self.tol), "error in voltage angles (theta_ex)"
         
         max_mis = np.max(np.abs(por_ls - por_pp))
+        # max_error_id = np.argmax(np.abs(por_ls - por_pp))
+        # nb_line = pp_net.line.shape[0]
+        # trafo_id = max_error_id - nb_line
+        # por_ls[max_error_id]
+        # np.abs(por_ls - por_pp)[25 + nb_line]
+        # backend._grid.get_trafos()[trafo_id]
+        # pp_net.trafo.iloc[trafo_id]
+        # check the Ybus for DC
+        Ybus =  backend._grid.get_dcYbus()
+        Bbus = pp_net._ppc["internal"]["Bbus"]
+        assert np.abs(Ybus - Bbus).max() <= self.tol
+        # check the voltage angles
+        Va_pp = pp_net.res_bus["va_degree"].values[:nb_sub]
+        Va_ls = np.rad2deg(np.angle(backend.V[:nb_sub]))
+
+        # check flows
+        assert np.abs(Va_pp - Va_ls).max() <= self.tol
         assert max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
         max_mis = np.max(np.abs(qor_ls - qor_pp))
         assert max_mis <= self.tol, f"Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr"
         max_mis = np.max(np.abs(vor_ls - vor_pp))
         assert max_mis <= self.tol, f"Error: vor do not match, maximum absolute error is {max_mis:.5f} kV"
         max_mis = np.max(np.abs(aor_ls - aor_pp))
-        assert max_mis <= self.tol, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} A"
+        assert max_mis <= 10. * self.tol, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} A"
         
         load_p, load_q, load_v = backend.loads_info()
         max_mis = np.max(np.abs(load_p - load_p_pp))

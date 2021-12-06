@@ -3,20 +3,32 @@ Change Log
 
 [TODO]
 --------
-- switch c++ to float32 instead
+- perform unittest on CI (either github or circleci)
+- improve speed by not performing internal checks 
+  (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - improve documentation
-- easier building (get rid of the "make" part)
 - code `helm` powerflow method
-- code NR with dense matrices
+- possibility to read CGMES files
+- possibility to read XIIDM files
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
-- perform unittest on CI (either github or circleci)
+- easier building (get rid of the "make" part)
+- code NR with dense matrices
 
-[0.5.5] 20xx-yy-zz
+[0.5.6] 20xx-yy-zz
 -------------------
+- [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
+- [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`
+- [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)
+- [ADDED] possibility to change linear solver used when performing a DC solver
+- [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
+- [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)
+- [ADDED] direct access to the solver used in the grid model python side
+- [ADDED] unittest in circleci.
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
--  
+- [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
+  Newton Raphson and DC solvers.
 
 [0.5.5] 2021-11-10
 -------------------

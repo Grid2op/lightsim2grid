@@ -29,12 +29,30 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
         .value("DC", SolverType::DC)
         .value("NICSLU", SolverType::NICSLU)
+        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack)
+        .value("KLUSingleSlack", SolverType::KLUSingleSlack)
+        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack)
+        .value("KLUDC", SolverType::KLUDC)
+        .value("NICSLUDC", SolverType::NICSLUDC)
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
     py::class_<KLUSolver>(m, "KLUSolver")
         .def(py::init<>())
-        .def("get_J", &KLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_J", &KLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &KLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &KLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &KLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &KLUSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+    
+    py::class_<KLUSolverSingleSlack>(m, "KLUSolverSingleSlack")
+        .def(py::init<>())
+        .def("get_J", &KLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
         .def("get_error", &KLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
@@ -49,7 +67,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     #ifdef NICSLU_SOLVER_AVAILABLE
     py::class_<NICSLUSolver>(m, "NICSLUSolver")
         .def(py::init<>())
-        .def("get_J", &NICSLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_J", &NICSLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &NICSLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &NICSLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
         .def("get_error", &NICSLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
@@ -63,7 +81,20 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<SparseLUSolver>(m, "SparseLUSolver")
         .def(py::init<>())
-        .def("get_J", &SparseLUSolver::get_J)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
+        .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &SparseLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
+        .def("get_error", &SparseLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &SparseLUSolver::get_nb_iter)  // return the number of iteration performed at the last optimization
+        .def("reset", &SparseLUSolver::reset)  // reset the solver to its original state
+        .def("converged", &SparseLUSolver::converged)  // whether the solver has converged
+        .def("compute_pf", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // perform the newton raphson optimization
+        .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
+    
+    py::class_<SparseLUSolverSingleSlack>(m, "SparseLUSolverSingleSlack")
+        .def(py::init<>())
+        .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &SparseLUSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
         .def("get_error", &SparseLUSolver::get_error)  // get the error message, see the definition of "err_" for more information
@@ -110,6 +141,25 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
+    // Only "const" method are exported
+    // it is so that i cannot modify the internal solver of a gridmodel python side
+    py::class_<ChooseSolver>(m, "AnySolver")
+        .def(py::init<>())
+        .def("get_type", &ChooseSolver::get_type)
+        // .def("change_solver", &ChooseSolver::change_solver)
+        // .def("reset", &ChooseSolver::reset)
+        // .def("compute_pf", &ChooseSolver::compute_pf, py::call_guard<py::gil_scoped_release>())  // compute the powerflow
+        // .def("solve", &ChooseSolver::compute_pf, py::call_guard<py::gil_scoped_release>() )
+        .def("get_Va", &ChooseSolver::get_Va)  
+        .def("get_Vm", &ChooseSolver::get_Vm) 
+        .def("get_V", &ChooseSolver::get_V) 
+        .def("get_J", &ChooseSolver::get_J_python) 
+        .def("get_error", &ChooseSolver::get_error) 
+        .def("get_nb_iter", &ChooseSolver::get_nb_iter) 
+        .def("converged", &ChooseSolver::converged) 
+        .def("get_computation_time", &ChooseSolver::get_computation_time);
+
+
     // iterator for generators
     py::class_<DataGen>(m, "DataGen")
         .def("__len__", [](const DataGen & data) { return data.nb(); })
@@ -122,6 +172,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("id", &DataGen::GenInfo::id)
         .def_readonly("connected", &DataGen::GenInfo::connected)
         .def_readonly("bus_id", &DataGen::GenInfo::bus_id)
+        .def_readonly("is_slack", &DataGen::GenInfo::is_slack)
+        .def_readonly("slack_weight", &DataGen::GenInfo::slack_weight)
         .def_readonly("target_p_mw", &DataGen::GenInfo::target_p_mw)
         .def_readonly("target_vm_pu", &DataGen::GenInfo::target_vm_pu)
         .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar)
@@ -129,7 +181,72 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("has_res", &DataGen::GenInfo::has_res)
         .def_readonly("res_p_mw", &DataGen::GenInfo::res_p_mw)
         .def_readonly("res_q_mvar", &DataGen::GenInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataGen::GenInfo::res_theta_deg)
         .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv);
+
+    // iterator for sgens
+    py::class_<DataSGen>(m, "DataSGen")
+        .def("__len__", [](const DataSGen & data) { return data.nb(); })
+        .def("__getitem__", [](const DataSGen & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataSGen & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataSGen::SGenInfo>(m, "SGenInfo")
+        .def_readonly("id", &DataSGen::SGenInfo::id)
+        .def_readonly("connected", &DataSGen::SGenInfo::connected)
+        .def_readonly("bus_id", &DataSGen::SGenInfo::bus_id)
+        .def_readonly("min_q_mvar", &DataSGen::SGenInfo::min_q_mvar)
+        .def_readonly("max_q_mvar", &DataSGen::SGenInfo::max_q_mvar)
+        .def_readonly("min_p_mw", &DataSGen::SGenInfo::min_p_mw)
+        .def_readonly("max_p_mw", &DataSGen::SGenInfo::max_p_mw)
+        .def_readonly("target_p_mw", &DataSGen::SGenInfo::target_p_mw)
+        .def_readonly("target_q_mvar", &DataSGen::SGenInfo::target_q_mvar)
+        .def_readonly("has_res", &DataSGen::SGenInfo::has_res)
+        .def_readonly("res_p_mw", &DataSGen::SGenInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataSGen::SGenInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataSGen::SGenInfo::res_theta_deg)
+        .def_readonly("res_v_kv", &DataSGen::SGenInfo::res_v_kv);
+
+    // iterator for loads
+    py::class_<DataLoad>(m, "DataLoad")
+        .def("__len__", [](const DataLoad & data) { return data.nb(); })
+        .def("__getitem__", [](const DataLoad & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataLoad & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataLoad::LoadInfo>(m, "LoadInfo")
+        .def_readonly("id", &DataLoad::LoadInfo::id)
+        .def_readonly("connected", &DataLoad::LoadInfo::connected)
+        .def_readonly("bus_id", &DataLoad::LoadInfo::bus_id)
+        .def_readonly("target_p_mw", &DataLoad::LoadInfo::target_p_mw)
+        .def_readonly("target_q_mvar", &DataLoad::LoadInfo::target_q_mvar)
+        .def_readonly("has_res", &DataLoad::LoadInfo::has_res)
+        .def_readonly("res_p_mw", &DataLoad::LoadInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataLoad::LoadInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataLoad::LoadInfo::res_theta_deg)
+        .def_readonly("res_v_kv", &DataLoad::LoadInfo::res_v_kv);
+
+    // iterator for shunts
+    py::class_<DataShunt>(m, "DataShunt")
+        .def("__len__", [](const DataShunt & data) { return data.nb(); })
+        .def("__getitem__", [](const DataShunt & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataShunt & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataShunt::ShuntInfo>(m, "ShuntInfo")
+        .def_readonly("id", &DataShunt::ShuntInfo::id)
+        .def_readonly("connected", &DataShunt::ShuntInfo::connected)
+        .def_readonly("bus_id", &DataShunt::ShuntInfo::bus_id)
+        .def_readonly("target_p_mw", &DataShunt::ShuntInfo::target_p_mw)
+        .def_readonly("target_q_mvar", &DataShunt::ShuntInfo::target_q_mvar)
+        .def_readonly("has_res", &DataShunt::ShuntInfo::has_res)
+        .def_readonly("res_p_mw", &DataShunt::ShuntInfo::res_p_mw)
+        .def_readonly("res_q_mvar", &DataShunt::ShuntInfo::res_q_mvar)
+        .def_readonly("res_theta_deg", &DataShunt::ShuntInfo::res_theta_deg)
+        .def_readonly("res_v_kv", &DataShunt::ShuntInfo::res_v_kv);
 
     // iterator for trafos
     py::class_<DataTrafo>(m, "DataTrafo")
@@ -229,6 +346,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
         .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
         .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
+        .def("get_solver", &GridModel::get_solver, py::return_value_policy::reference)  // get the solver (AnySolver type python side) used
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
@@ -244,6 +362,16 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_storages", &GridModel::init_storages)
         .def("init_sgens", &GridModel::init_sgens)
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
+        .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus)
+
+        // inspect the grid
+        .def("get_lines", &GridModel::get_lines)
+        .def("get_trafos", &GridModel::get_trafos)
+        .def("get_generators", &GridModel::get_generators)
+        .def("get_static_generators", &GridModel::get_static_generators)
+        .def("get_shunts", &GridModel::get_shunts)
+        .def("get_storages", &GridModel::get_storages)
+        .def("get_loads", &GridModel::get_loads)
 
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus)
@@ -256,7 +384,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_bus_powerline_ex", &GridModel::change_bus_powerline_ex)
         .def("get_bus_powerline_or", &GridModel::get_bus_powerline_or)
         .def("get_bus_powerline_ex", &GridModel::get_bus_powerline_ex)
-        .def("get_lines", &GridModel::get_lines)
 
         .def("deactivate_trafo", &GridModel::deactivate_trafo)
         .def("reactivate_trafo", &GridModel::reactivate_trafo)
@@ -264,7 +391,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv)
         .def("get_bus_trafo_hv", &GridModel::get_bus_trafo_hv)
         .def("get_bus_trafo_lv", &GridModel::get_bus_trafo_lv)
-        .def("get_trafos", &GridModel::get_trafos)
 
         .def("deactivate_load", &GridModel::deactivate_load)
         .def("reactivate_load", &GridModel::reactivate_load)
@@ -279,7 +405,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_gen", &GridModel::get_bus_gen)
         .def("change_p_gen", &GridModel::change_p_gen)
         .def("change_v_gen", &GridModel::change_v_gen)
-        .def("get_generators", &GridModel::get_generators)
 
         .def("deactivate_shunt", &GridModel::deactivate_shunt)
         .def("reactivate_shunt", &GridModel::reactivate_shunt)
@@ -306,7 +431,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_V", &GridModel::get_V)
         .def("get_Va", &GridModel::get_Va)
         .def("get_Vm", &GridModel::get_Vm)
-        .def("get_J", &GridModel::get_J)
+        .def("get_J", &GridModel::get_J_python)
         .def("check_solution", &GridModel::check_solution)
 
         // TODO optimize that for speed, results are copied apparently
@@ -339,6 +464,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("get_Ybus", &GridModel::get_Ybus)
+        .def("get_dcYbus", &GridModel::get_dcYbus)
         .def("get_Sbus", &GridModel::get_Sbus)
         .def("get_pv", &GridModel::get_pv)
         .def("get_pq", &GridModel::get_pq)
@@ -346,7 +472,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("deactivate_result_computation", &GridModel::deactivate_result_computation)
         .def("reactivate_result_computation", &GridModel::reactivate_result_computation)
         .def("dc_pf", &GridModel::dc_pf)
-        .def("dc_pf_old", &GridModel::dc_pf_old)
         .def("ac_pf", &GridModel::ac_pf)
         .def("unset_topo_changed", &GridModel::unset_topo_changed)
         .def("tell_topo_changed", &GridModel::tell_topo_changed)

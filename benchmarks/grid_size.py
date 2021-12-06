@@ -136,7 +136,6 @@ if __name__ == "__main__":
     for case_name in tqdm(case_names):
         # load the case file
         case = pp.from_json(case_name)
-
         # extract reference data
         load_p_init = 1.0 * case.load["p_mw"].values
         load_q_init = 1.0 * case.load["q_mvar"].values
@@ -147,6 +146,7 @@ if __name__ == "__main__":
         res_unit = "s"
         if len(load_p_init) <= 1000:
             # report results in ms if there are less than 1000 loads
+            # only affects "verbose" printing
             res_time = 1e3
             res_unit = "ms"
 

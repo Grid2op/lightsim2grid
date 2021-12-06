@@ -32,7 +32,7 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             pass
             # warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
-            #              "feature that will be removed in further lightsim2grid version.")
+            #               "feature that will be removed in further lightsim2grid version.")
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -557,7 +557,6 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         my_exc_ = None
         res = False
-        # self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
         try:
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
@@ -610,8 +609,8 @@ class LightSimBackend(Backend):
              self.v_ex[self.__nb_powerline:],
              self.a_ex[self.__nb_powerline:]) = self._grid.get_trafolv_res()
 
-            self.a_or *= 1000.  # amps in lightsim, kA expected in grid2op
-            self.a_ex *= 1000.  # amps in lightsim, kA expected in grid2op
+            self.a_or *= 1000.  # kA in lightsim, A expected in grid2op
+            self.a_ex *= 1000.  # kA in lightsim, A expected in grid2op
 
             self.a_or[~np.isfinite(self.a_or)] = 0.
             self.v_or[~np.isfinite(self.v_or)] = 0.

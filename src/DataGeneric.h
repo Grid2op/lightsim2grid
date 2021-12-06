@@ -9,6 +9,8 @@
 #ifndef DATAGENERIC_H
 #define DATAGENERIC_H
 
+#include <algorithm>  // for std::find
+
 #include "Utils.h"
 
 #include "Eigen/Core"
@@ -39,7 +41,7 @@ class DataConstIterator
             {};
 
         const DataInfo& operator*() const { return my_info; }
-        bool operator==(const DataConstIterator<DataType> & other) const { return (_p_data_ == other._p_data_) & (my_id == other.my_id); }
+        bool operator==(const DataConstIterator<DataType> & other) const { return (my_id == other.my_id) && (_p_data_ == other._p_data_); }
         bool operator!=(const DataConstIterator<DataType> & other) const { return !(*this == other); }
         DataConstIterator<DataType> & operator++()
         {
@@ -73,14 +75,17 @@ class DataGeneric : public BaseConstants
         virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
-                            int slack_bus_id_solver,
-                            const std::vector<int> & id_grid_to_solver) {};
-        virtual real_type get_p_slack(int slack_bus_id) {return my_zero_;}
-        virtual void set_p_slack(int gen_slackbus, real_type p_slack) {};
+                            Eigen::VectorXi & slack_bus_id_solver,
+                            const std::vector<int> & id_grid_to_solver) const {};
+        
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
 
+        void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver) {};
     
         static const int _deactivated_bus_id;
+
+        /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
+        virtual ~DataGeneric() {};
         
     protected:
         /**
@@ -129,6 +134,12 @@ class DataGeneric : public BaseConstants
         {
             if(container.size() != size) throw std::runtime_error(container_name + " do not have the proper size");
         }
+
+        /**
+        check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)
+        **/
+        template<class T>  // a std::vector, or an Eigen::Vector                                                 
+        bool is_in_vect(int val, const T & cont) const {return std::find(cont.begin(), cont.end(), val) != cont.end();}
 };
 
 #endif // DATAGENERIC_H

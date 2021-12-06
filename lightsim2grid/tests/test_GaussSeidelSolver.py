@@ -180,10 +180,19 @@ class MakeTests(unittest.TestCase):
 
         ppopt = {"PF_TOL": self.tol, "PF_MAX_IT_GS": self.max_it, "VERBOSE": False}
 
-        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.pv,
-                                          self.pq, self.max_it, self.tol)
         # start = time.perf_counter()
-        Vgs, convergedgs, max_itgs = gausspf(copy.deepcopy(self.Ybus), copy.deepcopy(self.Sbus),
+        ref = set(np.arange(self.Sbus.shape[0])) - set(self.pv) - set(self.pq)
+        ref = np.array(list(ref))
+        # build the slack weights
+        slack_weights = np.zeros(self.Sbus.shape[0])
+        slack_weights[ref] = 1.0 / ref.shape[0]
+
+        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, 
+                                          ref, slack_weights, self.pv,
+                                          self.pq, self.max_it, self.tol)
+
+        Vgs, convergedgs, max_itgs = gausspf(copy.deepcopy(self.Ybus),
+                                             copy.deepcopy(self.Sbus),
                                              copy.deepcopy(self.V_init),
                                              ref=None, pv=self.pv, pq=self.pq, ppopt=ppopt)
         # end = time.perf_counter()

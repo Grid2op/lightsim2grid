@@ -41,6 +41,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     // throw error: object id does not exist
     if(el_id >= el_bus_ids.size())
     {
+        // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
         exc_ << el_id;
@@ -51,6 +52,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     }
     if(el_id < 0)
     {
+        // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
         exc_ << el_id;
@@ -61,6 +63,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     // throw error: bus id does not exist
     if(new_bus_me_id >= nb_bus)
     {
+        // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "DataGeneric::_change_bus: Cannot change an element to bus ";
         exc_ << new_bus_me_id;
@@ -71,6 +74,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     }
     if(new_bus_me_id < 0)
     {
+        // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "DataGeneric::_change_bus: new bus id should be >=0 and not ";
         exc_ << new_bus_me_id;
@@ -107,6 +111,7 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
             exc_ << "DataGeneric::v_kv_from_vpu: The element of id ";
             exc_ << bus_solver_id;
@@ -134,6 +139,7 @@ void DataGeneric::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
             exc_ << "DataGeneric::v_deg_from_va: The element of id ";
             exc_ << bus_solver_id;

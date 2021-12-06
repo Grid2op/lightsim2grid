@@ -11,6 +11,7 @@ Use the pandapower converter to properly initialized a GridModel c++ object.
 """
 
 import numpy as np
+from numbers import Number
 import warnings
 from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
 from lightsim2grid._aux_add_sgen import _aux_add_sgen
@@ -22,7 +23,6 @@ from lightsim2grid._aux_add_shunt import _aux_add_shunt
 from lightsim2grid._aux_check_legit import _aux_check_legit
 from lightsim2grid._aux_add_slack import _aux_add_slack
 from lightsim2grid._aux_add_storage import _aux_add_storage
-
 
 def init(pp_net):
     """
@@ -68,14 +68,20 @@ def init(pp_net):
     model = GridModel()
     if "_options" in pp_net:
         if "init_vm_pu" in pp_net["_options"]:
-            model.set_init_vm_pu(pp_net["_options"]["init_vm_pu"])
-
+            tmp_ = pp_net["_options"]["init_vm_pu"]
+            if isinstance(tmp_, Number):
+                model.set_init_vm_pu(float(tmp_))
     model.set_sn_mva(pp_net.sn_mva)
 
     tmp_bus_ind = np.argsort(pp_net.bus.index)
     model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
                    pp_net.line.shape[0],
                    pp_net.trafo.shape[0])
+
+    # deactivate in lightsim the deactivated bus in pandapower
+    for bus_id in range(pp_net.bus.shape[0]):
+        if not pp_net.bus["in_service"].values[bus_id]:
+            model.deactivate_bus(bus_id)
 
     # init the powerlines
     _aux_add_line(converter, model, pp_net)

@@ -145,12 +145,13 @@ src_files = ['src/main.cpp',
              "src/DataLoad.cpp",
              "src/DataGen.cpp",
              "src/DataSGen.cpp",
-             "src/BaseNRSolver.cpp",
+            #  "src/BaseNRSolver.cpp",  # moved as a template class
+            #  "src/BaseNRSolverSingleSlack.cpp",  # moved as a template class
+            #  "src/DCSolver.cpp",  # moved as a template class
              "src/ChooseSolver.cpp",
              "src/GaussSeidelSolver.cpp",
              "src/GaussSeidelSynchSolver.cpp",
              "src/BaseSolver.cpp",
-             "src/DCSolver.cpp",
              "src/BaseMultiplePowerflow.cpp",
              "src/Computers.cpp",
              "src/SecurityAnalysis.cpp"]
@@ -252,16 +253,18 @@ pkgs = {
         ],
         "benchmark": [
             "tabulate",
-            "grid2op>=1.5.0",
+            "grid2op>=1.6.4",
             "numpy",
             "distro",
             "py-cpuinfo"
         ],
         "recommended": [
-            "grid2op>=1.5.0"
+            "grid2op>=1.6.4"
         ],
         "test": [
-            "grid2op>=1.5.0"
+            "grid2op>=1.6.4",
+            "numba",
+            "pandapower==2.7.0"  # force this version for test, otherwise problem in test_DataConverter !
         ]
     }
 }

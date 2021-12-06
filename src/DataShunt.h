@@ -30,6 +30,79 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
 class DataShunt : public DataGeneric
 {
+    // iterators part
+    public:
+        class ShuntInfo
+        {
+            public:
+                // members
+                // TODO add some const here (value should not be changed !) !!!
+                int id;  // id of the generator
+                bool connected;
+                int bus_id;
+
+                real_type target_p_mw;
+                real_type target_q_mvar;
+                bool has_res;
+                real_type res_p_mw;
+                real_type res_q_mvar;
+                real_type res_v_kv;
+                real_type res_theta_deg;
+
+                ShuntInfo(const DataShunt & r_data_shunt, int my_id):
+                id(-1),
+                connected(false),
+                bus_id(-1),
+                target_p_mw(0.),
+                target_q_mvar(0.),
+                has_res(false),
+                res_p_mw(0.),
+                res_q_mvar(0.),
+                res_v_kv(0.),
+                res_theta_deg(0.)
+                {
+                    if((my_id >= 0) & (my_id < r_data_shunt.nb()))
+                    {
+                        id = my_id;
+                        connected = r_data_shunt.status_[my_id];
+                        bus_id = r_data_shunt.bus_id_[my_id];
+
+                        target_p_mw = r_data_shunt.p_mw_.coeff(my_id);
+                        target_q_mvar = r_data_shunt.q_mvar_.coeff(my_id);
+
+                        has_res = r_data_shunt.res_p_.size() > 0;
+                        if(has_res)
+                        {
+                            res_p_mw = r_data_shunt.res_p_.coeff(my_id);
+                            res_q_mvar = r_data_shunt.res_q_.coeff(my_id);
+                            res_v_kv = r_data_shunt.res_v_.coeff(my_id);
+                            res_theta_deg = r_data_shunt.res_theta_.coeff(my_id);
+                        }
+                    }
+                }
+        };
+        typedef ShuntInfo DataInfo;
+
+    private:
+        typedef DataConstIterator<DataShunt> DataShuntConstIterator;
+
+    public:
+        typedef DataShuntConstIterator const_iterator_type;
+        const_iterator_type begin() const {return DataShuntConstIterator(this, 0); }
+        const_iterator_type end() const {return DataShuntConstIterator(this, nb()); }
+        ShuntInfo operator[](int id) const
+        {
+            if(id < 0)
+            {
+                throw std::range_error("You cannot ask for a negative load id.");
+            }
+            if(id >= nb())
+            {
+                throw std::range_error("Generator out of bound. Not enough loads on the grid.");
+            }
+            return ShuntInfo(*this, id);
+        }
+
     public:
     typedef std::tuple<
            std::vector<real_type>, // p_mw
@@ -74,8 +147,6 @@ class DataShunt : public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    virtual real_type get_p_slack(int slack_bus_id);
-    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
