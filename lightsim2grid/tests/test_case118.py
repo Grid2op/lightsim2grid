@@ -121,6 +121,10 @@ class TestMultipleL2RPN(unittest.TestCase):
         for el in li_envs:
             self.pp_net = env[el].backend._grid
             self.idx_slack = np.where(self.pp_net.gen["slack"].values)[0]
+            if "slack_weight" not in self.pp_net.gen:
+                warnings.warn("Unable to peform required tests because install pandapower version does not "
+                              "allow multiple slack.")
+                return
             self.pp_net.gen["slack_weight"][self.idx_slack] = 1.
             pp.rundcpp(self.pp_net)  # to forget the result
             pp.runpp(self.pp_net, distributed_slack=True, init_vm_pu="flat", init_va_degree="flat")
@@ -172,6 +176,14 @@ class TestMultipleSlack118(unittest.TestCase):
         if "slack_weight" in self.net.gen:
             id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
             self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
+
+        self.unable_to_run_due_to_pp = False
+        if "slack_weight" not in self.pp_net.gen:
+            msg_ = "Unable to peform required tests because install pandapower version does not " \
+                   "allow multiple slack."
+            warnings.warn(msg_)
+            self.unable_to_run_due_to_pp = True
+            self.skipTest(msg_)
 
     def test_single_slack(self):
         """check pandapower and lightsim get the same results when there is only one

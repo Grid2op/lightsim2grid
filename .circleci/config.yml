@@ -94,15 +94,25 @@ jobs:
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
+                name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
-                    pip install -U grid2op
+                    git clone https://github.com/grid2op.git _grid2op
+                    pip install -e _grid2op
+            - run:
+                name: "Install lightsim2grid"
+                command: |
+                    source venv_test/bin/activate
                     pip install -U pybind11
                     git submodule init
                     git submodule update
                     make
                     CC=gcc python setup.py build
-                    python -m pip install -U .[test]
+                    python -m pip install .[test]
+            - run:
+                name: "make tests"
+                command: |
+                    source venv_test/bin/activate
                     cd lightsim2grid/tests/
                     python -m unittest discover  -v
     compile_clang10:
@@ -116,7 +126,6 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
                     git submodule update
@@ -150,15 +159,25 @@ jobs:
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
+                name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
-                    pip install -U grid2op
+                    git clone https://github.com/grid2op.git _grid2op
+                    pip install -e _grid2op
+            - run:
+                name: "Install lightsim2grid"
+                command: |
+                    source venv_test/bin/activate
                     pip install -U pybind11
                     git submodule init
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -U .[test]
+                    python -m pip install -e .[test]
+            - run:
+                name: "make tests"
+                command: |
+                    source venv_test/bin/activate
                     cd lightsim2grid/tests/
                     python -m unittest discover -v
     compile_windows:
@@ -173,14 +192,24 @@ jobs:
             - run: py -m pip install virtualenv
             - run: py -m virtualenv venv_test
             - run:
+                name: "Install grid2op from source"
                 command: |
                     .\venv_test\Scripts\activate
-                    pip install -U grid2op
+                    git clone https://github.com/grid2op.git _grid2op
+                    pip install -e _grid2op
+            - run:
+                name: "Install lightsim2grid"
+                command: |
+                    .\venv_test\Scripts\activate
                     pip install -U pybind11
                     git submodule init
                     git submodule update
                     py setup.py build
-                    py -m pip install -U .[test]
+                    py -m pip install -e .[test]
+            - run:
+                name: "make tests"
+                command: |
+                    .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
                     python -m unittest discover -v
 

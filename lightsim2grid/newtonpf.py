@@ -10,6 +10,7 @@
 This module provide a function that can serve as a base replacement to the function newtonpf of
 `pandapower/pypower/newtonpf.py`
 """
+import warnings
 import numpy as np
 from scipy import sparse
 
@@ -21,7 +22,14 @@ try:
 except ImportError:
     pass
 
-from pandapower.pypower.idx_bus import SL_FAC
+def _isolate_slack_ids(Sbus, pv, pq):
+    # extract the slack bus
+    ref = set(np.arange(Sbus.shape[0])) - set(pv) - set(pq)
+    ref = np.array(list(ref))
+    # build the slack weights
+    slack_weights = np.zeros(Sbus.shape[0])
+    slack_weights[ref] = 1.0 / ref.shape[0]
+    return ref, slack_weights
 
 def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     """
@@ -89,11 +97,7 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     Ybus = sparse.csc_matrix(Ybus)
 
     # extract the slack bus
-    ref = set(np.arange(Sbus.shape[0])) - set(pv) - set(pq)
-    ref = np.array(list(ref))
-    # build the slack weights
-    slack_weights = np.zeros(Sbus.shape[0])
-    slack_weights[ref] = 1.0 / ref.shape[0]
+    ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
 
     # do the newton raphson algorithm
     solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
@@ -170,8 +174,16 @@ def newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
     bus = ppci['bus']
-    slack_weights = bus[:, SL_FAC].astype(float)  ## contribution factors for distributed slack
-    slack_weights /= slack_weights.sum()
+
+    try:
+        from pandapower.pypower.idx_bus import SL_FAC  # lazy import for earlier pandapower version (without distributed slack)
+        slack_weights = bus[:, SL_FAC].astype(float)  ## contribution factors for distributed slack
+        slack_weights /= slack_weights.sum()
+    except ImportError:
+        # earlier version of pandapower
+        warnings.warn("You are using a pandapower version that does not support distributed slack. We will attempt to "
+                      "replicate this with lightsim2grid.")
+        ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
 
     # initialize the solver
     # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)

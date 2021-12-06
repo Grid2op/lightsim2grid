@@ -112,6 +112,13 @@ class TestMultipleSlack14(unittest.TestCase):
         if "slack_weight" in self.net.gen:
             id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
             self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
+            
+        if "slack_weight" not in self.pp_net.gen:
+            msg_ = "Unable to peform required tests because install pandapower version does not " \
+                   "allow multiple slack."
+            warnings.warn(msg_)
+            self.unable_to_run_due_to_pp = True
+            self.skipTest(msg_)
     
     def test_single_slack(self):
         """check pandapower and lightsim get the same results when there is only one
