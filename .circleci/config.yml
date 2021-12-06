@@ -164,7 +164,7 @@ jobs:
     compile_windows:
         executor: 
             name: win/default  # executor type
-            size: small
+            size: medium
         steps:
             - checkout
             - run:
