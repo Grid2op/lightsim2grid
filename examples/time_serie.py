@@ -20,8 +20,8 @@ from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance
 import warnings
 from lightsim2grid import LightSimBackend, TimeSerie
 
-env_name = "l2rpn_neurips_2020_track2_small"
-test = False
+env_name = "l2rpn_neurips_2020_track2"  # use "l2rpn_neurips_2020_track2_small" if `test=True`
+test = True
 scenario_id = 1
 
 # Create the grid2op environment

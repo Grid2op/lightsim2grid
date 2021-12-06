@@ -102,9 +102,9 @@ jobs:
                     git submodule update
                     make
                     CC=gcc python setup.py build
-                    python -m pip install -U .
+                    python -m pip install -U .[test]
                     cd lightsim2grid/tests/
-                    python -m unittest discover
+                    python -m unittest discover  -v
     compile_clang10:
         executor: clang10
         resource_class: small
@@ -158,9 +158,9 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -U .
+                    python -m pip install -U .[test]
                     cd lightsim2grid/tests/
-                    python -m unittest discover
+                    python -m unittest discover -v
     compile_windows:
         executor: 
             name: win/default  # executor type
@@ -180,9 +180,9 @@ jobs:
                     git submodule init
                     git submodule update
                     py setup.py build
-                    py -m pip install -U .
+                    py -m pip install -U .[test]
                     cd lightsim2grid\tests
-                    python -m unittest discover
+                    python -m unittest discover -v
 
 workflows:
     version: 2.1

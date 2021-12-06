@@ -153,10 +153,10 @@ class Test118LightsimBackend(unittest.TestCase):
         self.nb_bus_total = 118
 
     def test_make_and_pf(self):
-        env_name_input = "l2rpn_neurips_2020_track2_small"
+        env_name_input = "l2rpn_neurips_2020_track2"
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env_ls = grid2op.make(env_name_input, backend=LightSimBackend(),
+            self.env_ls = grid2op.make(env_name_input, backend=LightSimBackend(), test=True,
                                        data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
 
 class TestMultipleSlack118(unittest.TestCase):
