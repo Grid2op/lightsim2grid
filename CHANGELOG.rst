@@ -25,6 +25,7 @@ Change Log
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
 - [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)
 - [ADDED] direct access to the solver used in the grid model python side
+- [ADDED] unittest in circleci.
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
 - [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
   Newton Raphson and DC solvers.
