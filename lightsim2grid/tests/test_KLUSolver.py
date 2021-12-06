@@ -84,7 +84,7 @@ class MakeTests(unittest.TestCase):
         """
         pvpq = np.r_[pv, pq]
 
-        comp_val = np.abs(J - J_pp)
+        comp_val = np.abs(J[1:, 1:] - J_pp)  # new in version 0.5.6 : distributed slack added a component to J
         comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
         assert np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)])) <= self.tol_test, "J21 (dS_dVa_i) are not equal"

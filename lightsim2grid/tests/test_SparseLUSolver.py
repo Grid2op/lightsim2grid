@@ -86,7 +86,7 @@ class MakeTests(unittest.TestCase):
         """
         pvpq = np.r_[pv, pq]
 
-        comp_val = np.abs(J - J_pp)
+        comp_val = np.abs(J[1:, 1:] - J_pp)  # new in version 0.5.6 : distributed slack added a component to J
         comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
         assert np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)])) <= self.tol_test, "J21 (dS_dVa_i) are not equal"
@@ -101,7 +101,7 @@ class MakeTests(unittest.TestCase):
         slack_weights = np.zeros(self.Sbus.shape[0])
         slack_weights[ref] = 1.0 / ref.shape[0]
 
-        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.Sbus, ref, slack_weights, 
+        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, ref, slack_weights, 
                                           self.pv, self.pq, self.max_it, self.tol)
         assert has_conv, "the load flow has diverged for {}".format(self.path)
         J = self.solver.get_J()
