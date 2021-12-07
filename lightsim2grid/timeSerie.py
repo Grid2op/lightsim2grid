@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+__all__ = ["Computers", "TimeSerie"]
 import os
 import numpy as np
 import warnings
@@ -16,6 +17,15 @@ from lightsim2grid.LightSimBackend import LightSimBackend
 from lightsim2grid.initGridModel import SolverType
 from lightsim2grid_cpp import Computers
 
+# force doc in sphinx
+Computers.__doc__ = """
+.. :py:class:: Computers 
+
+    Allows the computation of time series, that is, the same grid topology is used along with time
+    series of injections (productions and loads) to compute powerflows. The grid topology is fixed, the injections
+    varies.
+
+"""
 
 class TimeSerie:
     """

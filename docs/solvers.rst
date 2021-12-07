@@ -67,12 +67,13 @@ A concrete example of how to change the solver in this backend is:
 Available Solvers
 #################
 
-The AC available solvers are:
-
 
 Detailed usage
 ###############
-TODO examples on how to import, and documentation of main methods
+
+.. automodule:: lightsim2grid.solver
+    :members:
+    :autosummary:
 
 
 * :ref:`genindex`

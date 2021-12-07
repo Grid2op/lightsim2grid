@@ -7,8 +7,10 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 """
-Use the pandapower converter to properly initialized a GridModel c++ object.
+Use the pandapower converter to properly initialize a GridModel c++ object.
 """
+
+__all__ = ["init", "GridModel"]
 
 import numpy as np
 from numbers import Number
@@ -28,17 +30,18 @@ def init(pp_net):
     """
     Convert a pandapower network as input into a GridModel.
 
-    This does not throw any error at the moment when the conversion is not possible.
+    This can fail to convert the grid and still not throw any error, use with care (for example, you can run a powerflow
+    after this conversion, run a powerflow with pandapower, and compare the results to make sure they match !)
 
     Cases for which conversion is not possible include, but are not limited to:
 
     - the pandapower grid has 3 winding transformers
     - the pandapower grid has xwards
+    - the pandapower grid has dcline
+    - the pandapower grid has switch, motor, assymetric loads, etc.
     - the pandapower grid any parrallel "elements" (at least one of the column "parrallel" is not 1)
-    - some `g_us_per_km` for some lines are not zero
+    - some `g_us_per_km` for some lines are not zero ? TODO not sure if that is still the case !
     - some `p_mw` for some shunts are not zero
-    - some `tap_step_degre` are non zero for some trafo
-    - no "ext_grid" is reported on the initial grid
 
     if you really need any of the above, please submit a github issue and we will work on their support.
 
@@ -108,3 +111,11 @@ def init(pp_net):
     _aux_add_slack(model, pp_net)
 
     return model
+
+# cpp docs for main class
+GridModel.__doc__ = """
+.. :py:class:: GridModel 
+
+    This class represent a lightsim2grid power network. All the elements that can be manipulated by
+    lightsim2grid are represented here.
+"""

@@ -37,13 +37,32 @@ and a c++ implementation of a Newton solver for speed.
   The oldest `newtonpf` function compatible with older version of pandapower (*eg* <=2.6.0) can still be accessed with
   `from lightsim2grid.newtonpf import newtonpf_old`
 
+.. _available-powerflow-solvers: 
+
 Even more advanced usage
 ########################
 You can customize even more the solvers that you want to use.
 
 Lightsim2grid comes with 11 available solvers that can solver either AC or DC powerflows. We can cluster them into 3 categories.
 
-All solvers can be accessed with the same API:
+If you want to stay "relatively high level", once you have a grid model, you can change the solver using
+the "enum" of the solvers you want to use as showed bellow:
+
+.. code-block:: python
+
+    from lightsim2grid.solver import SolverType
+    # init the grid model
+    from lightsim2grid.initGridModel import init
+    pp_net = ...  # any pandapower grid
+    lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+    # change the solver used for the powerflow
+    lightsim_grid_model.change_solver(SolverType.KLUSolver)  # change the NR solver that uses KLU
+    # you can replace `SolverType.KLUSolver` by any of the 11 available solvers described bellow, 
+    # for example (and we will not write the 11...) `SolverType.KLUSolverSingleSlack`, `SolverType.SparseLUSolver` 
+    # or even `SolverType.NICSLUSolver`
+        
+All solvers can be accessed with the same API (if you want to use the raw python class, not recommended):
 
 .. code-block:: python
 

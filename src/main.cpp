@@ -22,22 +22,31 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
 
     // solvers
-    py::enum_<SolverType>(m, "SolverType")
-        .value("GaussSeidel", SolverType::GaussSeidel)
-        .value("GaussSeidelSynch", SolverType::GaussSeidelSynch)
-        .value("SparseLU", SolverType::SparseLU)
-        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack)
-        .value("DC", SolverType::DC)
-        .value("KLU", SolverType::KLU)
-        .value("KLUSingleSlack", SolverType::KLUSingleSlack)
-        .value("KLUDC", SolverType::KLUDC)
-        .value("NICSLU", SolverType::NICSLU)
-        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack)
-        .value("NICSLUDC", SolverType::NICSLUDC)
+    py::enum_<SolverType>(m, "SolverType", "This enum controls the solver you want to use.")
+        .value("GaussSeidel", SolverType::GaussSeidel, "denotes the :class:`lightsim2grid.solver.GaussSeidelSolver`")
+        .value("GaussSeidelSynch", SolverType::GaussSeidelSynch, "denotes the :class:`lightsim2grid.solver.GaussSeidelSynchSolver`")
+        .value("SparseLU", SolverType::SparseLU, "denotes the :class:`lightsim2grid.solver.SparseLUSolver`")
+        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack, "denotes the :class:`lightsim2grid.solver.SparseLUSolverSingleSlack`")
+        .value("DC", SolverType::DC, "denotes the :class:`lightsim2grid.solver.DCSolver`")
+        .value("KLU", SolverType::KLU, "denotes the :class:`lightsim2grid.solver.KLUSolver`")
+        .value("KLUSingleSlack", SolverType::KLUSingleSlack, "denotes the :class:`lightsim2grid.solver.KLUSolverSingleSlack`")
+        .value("KLUDC", SolverType::KLUDC, "denotes the :class:`lightsim2grid.solver.KLUDCSolver`")
+        .value("NICSLU", SolverType::NICSLU, "denotes the :class:`lightsim2grid.solver.NICSLUSolver`")
+        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack, "denotes the :class:`lightsim2grid.solver.NICSLUSolverSingleSlack`")
+        .value("NICSLUDC", SolverType::NICSLUDC, "denotes the :class:`lightsim2grid.solver.NICSLUDCSolver`")
         .export_values();
 
     #ifdef KLU_SOLVER_AVAILABLE
-    py::class_<KLUSolver>(m, "KLUSolver")
+    py::class_<KLUSolver>(m, "KLUSolver", R"mydelimiter(
+        This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster KLU solver available in the SuiteSparse library
+        for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`.
+
+        See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+        .. note::
+
+            It is refered to by the :attr:`lightsim2grid.solver.SolverType.KLU` enum.
+)mydelimiter")
         .def(py::init<>())
         .def("get_J", &KLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolver::get_Va)  // get the voltage angle vector (vector of double)
@@ -50,7 +59,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &KLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     
-    py::class_<KLUSolverSingleSlack>(m, "KLUSolverSingleSlack")
+    py::class_<KLUSolverSingleSlack>(m, "KLUSolverSingleSlack", R"mydelimiter(
+        This classes implements the Newton Raphson algorithm,the faster KLU solver available in the SuiteSparse library
+        for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.KLUSolver` .
+)mydelimiter")
         .def(py::init<>())
         .def("get_J", &KLUSolverSingleSlack::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &KLUSolverSingleSlack::get_Va)  // get the voltage angle vector (vector of double)
@@ -63,7 +75,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &KLUSolverSingleSlack::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &KLUSolverSingleSlack::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     
-    py::class_<KLUDCSolver>(m, "KLUDCSolver")
+    py::class_<KLUDCSolver>(m, "KLUDCSolver", R"mydelimiter(
+       Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
+       the power injected at each nodes (can be unavailable if you build lightsim2grid from source).
+)mydelimiter")
         .def(py::init<>())
         .def("get_Va", &KLUDCSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &KLUDCSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
@@ -77,7 +92,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     #endif  // KLU_SOLVER_AVAILABLE
 
     #ifdef NICSLU_SOLVER_AVAILABLE
-    py::class_<NICSLUSolver>(m, "NICSLUSolver")
+    py::class_<NICSLUSolver>(m, "NICSLUSolver", R"mydelimiter(
+        This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster NICSLU solver available in the NICSLU library
+        for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`. (requires a build from source)
+)mydelimiter")
         .def(py::init<>())
         .def("get_J", &NICSLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &NICSLUSolver::get_Va)  // get the voltage angle vector (vector of double)
@@ -90,7 +108,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &NICSLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     
-    py::class_<NICSLUSolverSingleSlack>(m, "NICSLUSolverSingleSlack")
+    py::class_<NICSLUSolverSingleSlack>(m, "NICSLUSolverSingleSlack", R"mydelimiter(
+        This classes implements the Newton Raphson algorithm, the faster NICSLU solver available in the NICSLU library
+        for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NICSLUSolver` .
+)mydelimiter")
         .def(py::init<>())
         .def("get_J", &NICSLUSolverSingleSlack::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &NICSLUSolverSingleSlack::get_Va)  // get the voltage angle vector (vector of double)
@@ -103,7 +124,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &NICSLUSolverSingleSlack::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &NICSLUSolverSingleSlack::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     
-    py::class_<NICSLUDCSolver>(m, "NICSLUDCSolver")
+    py::class_<NICSLUDCSolver>(m, "NICSLUDCSolver", R"mydelimiter(
+       Alternative implementation of the DC solver, it uses the faster NICSLU solver available in the NICSLU library to solve for the DC voltage given the DC admitance matrix and
+       the power injected at each nodes (requires a build from source).
+)mydelimiter")
         .def(py::init<>())
         .def("get_Va", &NICSLUDCSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &NICSLUDCSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
@@ -116,7 +140,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("solve", &NICSLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     #endif  // NICSLU_SOLVER_AVAILABLE
 
-    py::class_<SparseLUSolver>(m, "SparseLUSolver")
+    py::class_<SparseLUSolver>(m, "SparseLUSolver", R"mydelimiter(
+        This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the default Eigen sparse solver available in Eigen
+        for the linear algebra. 
+)mydelimiter")
         .def(py::init<>())
         .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
@@ -129,7 +156,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
     
-    py::class_<SparseLUSolverSingleSlack>(m, "SparseLUSolverSingleSlack")
+    py::class_<SparseLUSolverSingleSlack>(m, "SparseLUSolverSingleSlack", R"mydelimiter(
+        This classes implements the Newton Raphson algorithm, using the default Eigen sparse solver available in Eigen
+        for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.SparseLUSolver` .
+)mydelimiter")
         .def(py::init<>())
         .def("get_J", &SparseLUSolver::get_J_python)  // (get the jacobian matrix, sparse csc matrix)
         .def("get_Va", &SparseLUSolver::get_Va)  // get the voltage angle vector (vector of double)
@@ -142,7 +172,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &SparseLUSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
-    py::class_<DCSolver>(m, "DCSolver")
+    py::class_<DCSolver>(m, "DCSolver", R"mydelimiter(
+       Default implementation of the DC solver, it uses the default Eigen sparse lu decomposition to solve for the DC voltage given the DC admitance matrix and
+       the power injected at each nodes.
+)mydelimiter")
         .def(py::init<>())
         .def("get_Va", &DCSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &DCSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
@@ -154,7 +187,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &DCSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
-    py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver")
+    py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver", R"mydelimiter(
+       Default implementation of the "Gauss Seidel" powerflow solver. We do not recommend to use it as the Newton Raphson based solvers
+       are usually much faster.
+)mydelimiter")
         .def(py::init<>())
         .def("get_Va", &GaussSeidelSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &GaussSeidelSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
@@ -166,7 +202,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &GaussSeidelSolver::get_timers)  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>() );  // perform the newton raphson optimization
 
-    py::class_<GaussSeidelSynchSolver>(m, "GaussSeidelSynchSolver")
+    py::class_<GaussSeidelSynchSolver>(m, "GaussSeidelSynchSolver", R"mydelimiter(
+       Variant implementation of the "Gauss Seidel" powerflow solver, where every buses are updated at once (can be significantly faster than the 
+       :class:`lightsim2grid.solver.GaussSeidelSolver` for larger grid). We still do not recommend to use it as the Newton Raphson based solvers
+       are usually much faster.
+)mydelimiter")
         .def(py::init<>())
         .def("get_Va", &GaussSeidelSynchSolver::get_Va)  // get the voltage angle vector (vector of double)
         .def("get_Vm", &GaussSeidelSynchSolver::get_Vm)  // get the voltage magnitude vector (vector of double)
@@ -378,7 +418,25 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // general parameters
         // solver control
-        .def("change_solver", &GridModel::change_solver)  // change the solver to use (KLU - faster or SparseLU - available everywhere)
+        .def("change_solver", &GridModel::change_solver, R"mydelimiter(
+    This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
+    more information about them.
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        lightsim_grid_model.change_solver(SolverType.SparseLUSolver)  # change the NR solver that uses Eigen sparse LU
+
+)mydelimiter")
         .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
         .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
         .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
@@ -388,31 +446,159 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_bus", &GridModel::init_bus)
         .def("set_init_vm_pu", &GridModel::set_init_vm_pu)  // TODO use python "property" for that
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu)
-        .def("set_sn_mva", &GridModel::set_sn_mva)
+        .def("set_sn_mva", &GridModel::set_sn_mva)   // TODO use python "property" for that
         .def("get_sn_mva", &GridModel::get_sn_mva)
-        .def("init_powerlines", &GridModel::init_powerlines)
-        .def("init_shunt", &GridModel::init_shunt)
-        .def("init_trafo", &GridModel::init_trafo)
-        .def("init_generators", &GridModel::init_generators)
-        .def("init_loads", &GridModel::init_loads)
-        .def("init_storages", &GridModel::init_storages)
-        .def("init_sgens", &GridModel::init_sgens)
-        .def("add_gen_slackbus", &GridModel::add_gen_slackbus)
-        .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus)
+
+        // init its elements
+        .def("init_powerlines", &GridModel::init_powerlines)  // TODO code the possibility to add / remove a powerline after creation
+        .def("init_shunt", &GridModel::init_shunt)  // same
+        .def("init_trafo", &GridModel::init_trafo)  // same 
+        .def("init_generators", &GridModel::init_generators)  // same
+        .def("init_loads", &GridModel::init_loads)  // same
+        .def("init_storages", &GridModel::init_storages)  // same
+        .def("init_sgens", &GridModel::init_sgens)  // same
+        .def("add_gen_slackbus", &GridModel::add_gen_slackbus) // same
+        .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus)  // same
 
         // inspect the grid
-        .def("get_lines", &GridModel::get_lines)
-        .def("get_trafos", &GridModel::get_trafos)
-        .def("get_generators", &GridModel::get_generators)
-        .def("get_static_generators", &GridModel::get_static_generators)
-        .def("get_shunts", &GridModel::get_shunts)
-        .def("get_storages", &GridModel::get_storages)
-        .def("get_loads", &GridModel::get_loads)
+        .def("get_lines", &GridModel::get_lines, R"mydelimiter(
+    This function allows to retrieve the powerlines (as a DataLine object, see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.x_pu for el in lightsim_grid_model.get_lines()]) # to retrieve the "x" for each
+
+)mydelimiter")
+        .def("get_trafos", &GridModel::get_trafos, R"mydelimiter(
+    This function allows to retrieve the transformers (as a DataTrafo object, see :ref:`elements-modeled` for more information)
+    
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.x_pu for el in lightsim_grid_model.get_trafos()]) # to retrieve the "x" for each trafo
+)mydelimiter")
+        .def("get_generators", &GridModel::get_generators, R"mydelimiter(
+    This function allows to retrieve the generators (as a DataGenerators object, see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.target_p_mw for el in lightsim_grid_model.get_generators()]) # to retrieve the active production setpoint for each generators
+)mydelimiter")
+        .def("get_static_generators", &GridModel::get_static_generators, R"mydelimiter(
+    This function allows to retrieve the static generators (as a DataStaticGenerator object, see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.target_p_mw for el in lightsim_grid_model.get_static_generators()]) # to retrieve the active production setpoint for each static gen
+)mydelimiter")
+        .def("get_shunts", &GridModel::get_shunts, R"mydelimiter(
+    This function allows to retrieve the shunts (as a DatShunt object, see :ref:`elements-modeled` for more information)
+    
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.target_q_mvar for el in lightsim_grid_model.get_shunts()]) # to retrieve the reactive consumption for each shunts
+)mydelimiter")
+        .def("get_storages", &GridModel::get_storages, R"mydelimiter(
+    This function allows to retrieve the storage units (as a DataLoad object, see :ref:`elements-modeled` for more information)
+
+    Examples
+    --------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.target_p_mw for el in lightsim_grid_model.get_storages()]) # to retrieve the active consumption for each storage unit
+)mydelimiter")
+        .def("get_loads", &GridModel::get_loads, R"mydelimiter(
+    This function allows to retrieve the loads (as a DataLoad object, see :ref:`elements-modeled` for more information)
+
+    Examples
+    --------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        print([el.target_p_mw for el in lightsim_grid_model.get_loads()]) # to retrieve the active consumption setpoint for each loads
+)mydelimiter")
 
         // modify the grid
-        .def("deactivate_bus", &GridModel::deactivate_bus)
-        .def("reactivate_bus", &GridModel::reactivate_bus)
-        .def("nb_bus", &GridModel::nb_bus)
+        .def("deactivate_bus", &GridModel::deactivate_bus, R"mydelimiter(
+        INTERNAL
+
+        .. warning:: /!\\\\ Internal, do not use unless you know what you are doing /!\\\\
+
+)mydelimiter")
+        .def("reactivate_bus", &GridModel::reactivate_bus, R"mydelimiter(
+        INTERNAL
+
+        .. warning:: /!\\\\ Internal, do not use unless you know what you are doing /!\\\\
+        
+)mydelimiter")
+        .def("nb_bus", &GridModel::nb_bus, R"mydelimiter(
+        Returns the total number of buses on the grid, some of which might be disconnected, some others connected
+        
+)mydelimiter")
 
         .def("deactivate_powerline", &GridModel::deactivate_powerline)
         .def("reactivate_powerline", &GridModel::reactivate_powerline)

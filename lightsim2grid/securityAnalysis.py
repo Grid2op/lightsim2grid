@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+__all__ = ["SecurityAnalysisCPP", "SecurityAnalysis"]
 import os
 import numpy as np
 import warnings
@@ -14,7 +15,15 @@ import copy
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 from lightsim2grid.initGridModel import SolverType
-from lightsim2grid_cpp import SecurityAnalysis as _SecurityAnalysisCPP
+from lightsim2grid_cpp import SecurityAnalysis as SecurityAnalysisCPP
+
+# force doc in sphinx
+SecurityAnalysisCPP.__doc__ = """
+.. :py:class:: SecurityAnalysisCPP 
+
+    Allows the computation of a "security analysis" that is the results of the flows if some powerlines were disconnected.
+
+"""
 
 
 class SecurityAnalysis(object):
@@ -61,7 +70,7 @@ class SecurityAnalysis(object):
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
         self.grid2op_env = grid2op_env.copy()
-        self.computer = _SecurityAnalysisCPP(self.grid2op_env.backend._grid)
+        self.computer = SecurityAnalysisCPP(self.grid2op_env.backend._grid)
         self._contingency_order = {}  # key: contingency (as tuple), value: order in which it is entered
         self._all_contingencies = []
         self.__computed = False
