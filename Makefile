@@ -80,3 +80,6 @@ doc_help:
 
 html: Makefile
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
+# cmd windows: > sphinx-build -M html docs documentation
+# cmd for pdf > make latexpdf

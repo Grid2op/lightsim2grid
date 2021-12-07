@@ -16,11 +16,8 @@ This simulator is free and uses Eigen (optionally KLU) for performances optimiza
 independant for powersystem focus analysis. Indeed, the code provided in this package was made mainly for
 developping AI focused controlers. Some of its limitations include, but are not limited to:
 
-- it does not support multiple slack buses
-- it can only use Newton-Raphson algorithm
 - it does not enforce reactive power limits on generators
 - it does not model AC/DC converters
-- it does not model phase shifters
 - transformers have fixed tap ratio (though it can be changed at initialization of the solver)
 - shunts have fixed tap during the Newton-Raphson algorithm (though it can be changed at the initialization of the solver)
 - only powerflow ("steady state") can be performed
@@ -41,8 +38,6 @@ while still using open source software, we kindly recommend you to have a look a
 - `Dynaωo <https://github.com/dynawo/dynawo>`_ an hybrid C++/Modelica suite of simulation tools for
   power systems.
 
-
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-

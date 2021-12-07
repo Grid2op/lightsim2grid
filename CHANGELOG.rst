@@ -26,6 +26,8 @@ Change Log
 - [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)
 - [ADDED] direct access to the solver used in the grid model python side
 - [ADDED] unittest in circleci.
+- [ADDED] all kind of solvers based on different linear solvers (Eigen sparse LU, KLU or NICSLU) for Newton Raphson and
+  DC approximation (9 solvers in total)
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
 - [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
   Newton Raphson and DC solvers.

@@ -26,11 +26,8 @@ This simulator is free and uses Eigen and KLU for performances optimization. It 
 independant for powersystem focus analysis. Indeed, the code provided in this package was made mainly for
 developping AI focused controlers. Some of its limitations include, but are not limited to:
 
-- it does not support multiple slack buses
-- it can only use Newton-Raphson algorithm
 - it does not enforce reactive power limits on generators
 - it does not model AC/DC converters
-- it does not model phase shifters
 - transformers have fixed tap ratio (though it can be changed at initialization of the solver)
 - shunts have fixed tap during the Newton-Raphson algorithm (though it can be changed at the initialization of the solver)
 - only powerflow ("steady state") can be performed
@@ -39,6 +36,7 @@ Open source options for powerflow analysis
 --------------------------------------------------
 To get free of these limitations and be able to perform state of the art powerflow analysis, 
 while still using open source softwares, we kindly recommend you to have a look at:
+
 - [Matpower](https://matpower.org/) which is a "free, open-source tools for electric power system simulation and 
   optimization "
 - [Pandapower](https://www.pandapower.org/) that is "An easy to use open source tool for power system modeling, 

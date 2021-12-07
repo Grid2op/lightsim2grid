@@ -9,32 +9,39 @@
 # TODO add the other solver now !
 __all__ = ["SolverType",
            "AnySolver",  
-           "SparseLUSolver",
            "GaussSeidelSolver",
            "GaussSeidelSynchSolver",
-           "DCSolver",
-           "SparseLUSolverSingleSlack"]
+           "SparseLUSolver",
+           "SparseLUSolverSingleSlack",
+           "DCSolver"]
 
 try:
     from lightsim2grid_cpp import KLUSolver
     from lightsim2grid_cpp import KLUSolverSingleSlack
+    from lightsim2grid_cpp import KLUDCSolver
     __all__.append("KLUSolver")
     __all__.append("KLUSolverSingleSlack")
+    __all__.append("KLUDCSolver")
 except Exception as exc_:
     # KLU is not available
     pass
 
 try:
     from lightsim2grid_cpp import NICSLUSolver
+    from lightsim2grid_cpp import NICSLUSolverSingleSlack
+    from lightsim2grid_cpp import NICSLUDCSolver
     __all__.append("NICSLUSolver")
+    __all__.append("NICSLUSolverSingleSlack")
+    __all__.append("NICSLUDCSolver")
 except Exception as exc_:
     # NICSLU is not available
     pass
 
 from lightsim2grid_cpp import AnySolver
 from lightsim2grid_cpp import SolverType
-from lightsim2grid_cpp import SparseLUSolver
-from lightsim2grid_cpp import SparseLUSolverSingleSlack
+
 from lightsim2grid_cpp import GaussSeidelSolver
 from lightsim2grid_cpp import GaussSeidelSynchSolver
+from lightsim2grid_cpp import SparseLUSolver
+from lightsim2grid_cpp import SparseLUSolverSingleSlack
 from lightsim2grid_cpp import DCSolver

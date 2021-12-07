@@ -40,6 +40,8 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
 
     .. versionadded:: 0.5.6
 
+        Added as a way to retrieve the "old" signature for compatibility with older pandapower version
+
     .. note::
         This is a legacy code mainly present for compatibility with older pandapower versions.
 
@@ -81,8 +83,34 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     iterations: ``int``
         The number of iterations the solver performed
 
-    J: `numpy.sparmatrix``, dtype:float
-        The csc scipy matrix of the jacobian matrix of the system.
+    J: ``scipy.sparsematrix```, dtype:float
+        The csc scipy sparse matrix of the jacobian matrix of the system.
+
+    Notes
+    -----
+
+    J has the shape::
+    
+        | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+        | l |  -------  |               |            | ------------------------- |
+        | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+        | c | --------- |               |   ------   | ------------------------- |
+        | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
+        
+
+    With:
+    
+    - `J11` = dS_dVa[array([pvpq]).T, pvpq].real (= real part of dS / dVa for all pv and pq buses)
+    - `J12` = dS_dVm[array([pvpq]).T, pq].real
+    - `J21` = dS_dVa[array([pq]).T, pvpq].imag
+    - `J22` = dS_dVm[array([pq]).T, pq].imag (= imaginary part of dS / dVm for all pq buses)
+    - `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real 
+      and dS_dVm[slack_bus_id, pq].real
+    - `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
+      the remaining pq components are all 0.
+
+    .. note::
+        By default (and this cannot be changed at the moment), all buses in `ref` will be pv buses except the first one.
 
     """
     max_it = options["max_iteration"]
@@ -125,10 +153,11 @@ def newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
     .. versionchanged:: 0.5.6
 
     .. note::
-        It has been updated in version 0.5.6 to match pandapower new signature (addition of the `ref`
+
+        It has been updated in version 0.5.6 to match pandapower new signature (addition of the `ref` 
         parameter)
 
-        If you want the old behaviour, please use the `newtonpf_old`function.
+        If you want the old behaviour, please use the `newtonpf_old` function.
     
     Parameters
     ----------
@@ -141,8 +170,8 @@ def newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
     V0: ``numpy.ndarray``, dtype:complex
         The initial voltage
 
-    ref:
-        Id of the slack buses (added in version 0.5.6 to match pandapower changes)
+    ref: ``numpy.ndarray``, dtype:np.int
+        Ids of the slack buses (added in version 0.5.6 to match pandapower changes)
 
     pv: ``numpy.ndarray``, dtype:np.int
         Index of the pv buses (slack bus must NOT be on this list)
@@ -167,8 +196,33 @@ def newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
     iterations: ``int``
         The number of iterations the solver performed
 
-    J: `numpy.sparmatrix``, dtype:float
-        The csc scipy matrix of the jacobian matrix of the system.
+    J: ``scipy.sparsematrix``, dtype:float
+        The csc scipy sparse matrix of the jacobian matrix of the system.
+
+    Notes
+    -----
+    J has the shape::
+    
+        | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
+        | l |  -------  |               |            | ------------------------- |
+        | a | J11 | J12 | = dimensions: |            | (pvpq, pvpq) | (pvpq, pq) |
+        | c | --------- |               |   ------   | ------------------------- |
+        | k | J21 | J22 |               |  (pq, 1)   |  (pq, pvpq)  | (pq, pq)   |
+        
+
+    With:
+    
+    - `J11` = dS_dVa[array([pvpq]).T, pvpq].real (= real part of dS / dVa for all pv and pq buses)
+    - `J12` = dS_dVm[array([pvpq]).T, pq].real
+    - `J21` = dS_dVa[array([pq]).T, pvpq].imag
+    - `J22` = dS_dVm[array([pq]).T, pq].imag (= imaginary part of dS / dVm for all pq buses)
+    - `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real 
+      and dS_dVm[slack_bus_id, pq].real
+    - `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
+      the remaining pq components are all 0.
+
+    .. note::
+        By default (and this cannot be changed at the moment), all buses in `ref` will be pv buses except the first one.
 
     """
     max_it = options["max_iteration"]

@@ -64,6 +64,11 @@ A concrete example of how to change the solver in this backend is:
     # see the documentation of LightSimBackend for more information
 
 
+Available Solvers
+#################
+
+The AC available solvers are:
+
 
 Detailed usage
 ###############
