@@ -8,6 +8,7 @@
 
 # TODO add the other solver now !
 __all__ = ["SolverType",
+           "AnySolver",  
            "SparseLUSolver",
            "GaussSeidelSolver",
            "GaussSeidelSynchSolver",
@@ -30,6 +31,7 @@ except Exception as exc_:
     # NICSLU is not available
     pass
 
+from lightsim2grid_cpp import AnySolver
 from lightsim2grid_cpp import SolverType
 from lightsim2grid_cpp import SparseLUSolver
 from lightsim2grid_cpp import SparseLUSolverSingleSlack

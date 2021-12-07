@@ -2,6 +2,8 @@ Use as Pandapower Solver
 =========================
 LightSim2grid can be used as a specific implementation of the pandapower "newtonpf" function.
 
+TODO DOC: update with latest pandapower version !
+
 Suppose you somehow get:
 
 - `Ybus` the admittance matrix of your powersystem, for example given by pandapower

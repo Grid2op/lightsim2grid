@@ -142,29 +142,32 @@ To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-We compare 5 different backends:
+We compare up to 9 different solvers:
 
 - **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
   acceleration). It is our reference solver.
 - **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
-  solver to compute the powerflows It is implemented in `GaussSeidelSolver.h`.
+  solver to compute the powerflows.
 - **LS+GS S** (LightSimBackend+Gauss Seidel Synchronous): the grid2op backend based on lightsim2grid that uses a
-  variant of the "Gauss Seidel" method to compute the powerflows. It is implemented in `GaussSeidelSynchSolver.h`.
-- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the
+  variant of the "Gauss Seidel" method to compute the powerflows).
+- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform) and is implemented in `SparseLUSolver.h`.
-- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the
-  "Newton Raphson" algorithm coupled with the linear solver
-  "KLU" from the `SuiteSparse` c package implemented in `KLUSolver.h`.
-- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the
-  "Newton Raphson" algorithm coupled with the linear solver
-  "NICSLU" implemented in
-  `[NICSLUSolver.h`. [**NB** NICSLU is a free software but not open source, in order to use
-  it with lightsim2grid, you need to check section
-  `(optional) Include NICSLU linear solver (experimental)` of the Readme file.
-  It is required to install lightsim2grid from source for such solver]
+  Eigen c++ library (available on all platform). This solver supports distributed slack bus.
+- **LS+SLU (single)** (Newton Raphson+SparseLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
+- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver 
+  "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.
+- **LS+KLU (single)** (Newton Raphson+KLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
+- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver 
+  "NICSLU". [**NB** NICSLU is a free software but not open source, in order to use
+  it with lightsim2grid, you need to install lightsim2grid from source for such solver]
+- **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 
-All benchmarks where done with all the customization enabled. See the readme for more information.
+All benchmarks where done with all the customization (for speed, *eg* `-O3` for linux). See the readme for more information.
 
 Computation time
 ~~~~~~~~~~~~~~~~~~~
@@ -176,11 +179,17 @@ In this first subsection we compare the computation times:
   time to read back the data once the powerflow has run plus the time to update the environment and
   the observations etc.). It is reported in "iteration per second" (`it/s`) and represents the number of grid2op "step"
   that can be computed per second.
-- **grid2op powerflow time** corresponds to the time the solver take to perform a powerflow
+- **grid2op 'backend.runpf' time** corresponds to the time the solver take to perform a powerflow
   as seen from grid2op (counting the resolution time and some time to check the validity of the results but
-  not the time to update the grid nor the grid2op environment). It is reported in milli seconds (ms).
-- **solver powerflow time** corresponds to only the time spend in the solver itself. It does not take into
-  account any of the checking, nor the reading back of the data etc. It is reported in milli seconds (ms).
+  not the time to update the grid nor the grid2op environment), for lightsim2grid it includes the time to read back the data
+  from c++ to python. It is reported in milli seconds (ms).
+- **solver powerflow time** corresponds only to the time spent in the solver itself. It does not take into
+  account any of the checking, nor the transfer of the data python side etc. It is reported in milli seconds (ms) as well.
+
+There are two major differences between **grid2op 'backend.runpf' time** and **solver powerflow time**. In **grid2op 'backend.runpf' time**
+the time to initialize the solver (usually with the DC approximation) is counted (it is not in **solver powerflow time**). Secondly,
+in **grid2op 'backend.runpf' time** the time to read back the data is also included. This explain why **grid2op 'backend.runpf' time** is
+stricly greater, for all benchmarks, than **solver powerflow time** (the closer it is, the better the implementation of the LightSimBackend)
 
 
 First on an environment based on the IEEE case 14 grid:

@@ -6,6 +6,34 @@ the world of power system.
 See the [Disclaimer](DISCLAIMER.md) to have a more detailed view on what is and what is not this package. For example
 this package should not be used for detailed power system computations or simulations.
 
+
+*   [1 Usage](#Usage)
+    *   [1.1. As a grid2op backend (preferred method)](###-1.-As-a-grid2op-backend-\(preferred-method\))
+    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](###-2.-replacement-of-pandapower-"newtonpf"-method-\(advanced-method\))
+*   [2 Installation (from pypi official repository, recommended)](##-Installation-\(from-pypi-official-repository,-recommended\))
+*   [3 Installation (from source, for more advanced user)](##-Installation-\(from-source,-for-more-advanced-user\))
+    *   [3.0 Important note](###-Important-note)
+    *   [3.1. Retrieve the sources](###-1.-Retrieve-the-sources)
+    *   [(optional, recommended) Compilation of SuiteSparse](###-\(optional,-recommended\)-Compilation-of-SuiteSparse)
+        *   [option A. Compilation of SuiteSparse using "make"](####-\(optional\)-option-A.-Compilation-of-SuiteSparse-using-"make")
+        *   [option B. Compilation of SuiteSparse using "cmake"](####-\(optional\)-option-B.-Compilation-of-SuiteSparse-using-"cmake")
+    *   [(optional) Include NICSLU linear solver (experimental)](###-\(optional\)-Include-NICSLU-linear-solver-\(experimental\))
+    *   [(optional) customization of the installation](###-\(optional\)-customization-of-the-installation)
+    *   [3.2 Installation of the python package](###-2.-Installation-of-the-python-package)
+*   [4. Benchmarks](##-Benchmarks)
+*   [5. Philosophy](##-Philosophy)
+*   [6. Usage with docker](##-Usage-with-docker)
+    * [6.1. Install docker](###-1.-Install-docker)
+    * [6.2. Get the lightsim2grid image](###-2.-Get-the-lightsim2grid-image)
+    * [6.3. Run a code on this container](###-3.-Run-a-code-on-this-container)
+    * [6.4 Clean-up](###-4.-Clean-up)
+*   [7. Miscellaneous](##-Miscellaneous)
+    * [7.1 Customization of the compilation](###-Customization-of-the-compilation)
+    * [7.2 Profile the code](###-Profile-the-code)
+    * [7.3 Local testing](###-Local-testing)
+    * [7.4 Tests performed automatically](###-Tests-performed-automatically)
+    * [7.5 Known issues](###-Known-issues)
+
 ## Usage
 Once installed (don't forget, if you used the optional virtual env
 above you need to load it with `source venv/bin/activate`) you can
@@ -198,7 +226,7 @@ pip install -U .
 And you are done :-)
 
 
-### Benchmark
+## Benchmarks
 In this section we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
 The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
 
@@ -229,7 +257,7 @@ python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed per second)
 
-We compare 6 different solvers:
+We compare up to 9 different solvers:
 
 - **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
   acceleration). It is our reference solver.
@@ -242,11 +270,15 @@ We compare 6 different solvers:
 - **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
   Eigen c++ library (available on all platform) and is implemented in
-  [SparseLUSolver](./src/SparseLUSolver.h).
+  [SparseLUSolver](./src/SparseLUSolver.h). This solver supports distributed slack bus.
+- **LS+SLU (single)** (Newton Raphson+SparseLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 - **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
-  "KLU" from the `SuiteSparse` c package implemented in
-  [KLUSolver](./src/KLUSolver.h).
+  "KLU" from the `SuiteSparse` C package implemented in
+  [KLUSolver](./src/KLUSolver.h). This solver supports distributed slack bus.
+- **LS+KLU (single)** (Newton Raphson+KLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 - **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "NICSLU" implemented in
@@ -254,6 +286,8 @@ We compare 6 different solvers:
   it with lightsim2grid, you need to check section 
   [(optional) Include NICSLU linear solver (experimental)](###-\(optional\)-Include-NICSLU-linear-solver-\(experimental\)) 
   It is required to install lightsim2grid from source for such solver]
+- **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 
 First on an environment based on the IEEE case14 grid:
 
@@ -378,7 +412,7 @@ If you use this package in one of your work, please cite:
 }
 ```
 
-## Installation (using docker)
+## Usage with docker
 In this section we cover the use of docker with grid2op.
 
 ### 1. Install docker
@@ -490,7 +524,7 @@ __**malfunction**__, or any and all other commercial
 damages or losses, even if such party shall have 
 been informed of the possibility of such damages.*
 
-### 4) Clean-up
+### 4. Clean-up
 Once you are done with your experiments, you can stop the docker container:
 ```commandline
 docker container stop lightsim_container
