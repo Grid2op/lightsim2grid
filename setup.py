@@ -134,6 +134,7 @@ extra_compile_args += [f"-DVERSION_MAJOR={VERSION_MAJOR}",
                        f"-DVERSION_MEDIUM={VERSION_MEDIUM}",
                        f"-DVERSION_MINOR={VERSION_MINOR}"]
 src_files = ['src/main.cpp',
+             "src/help_fun_msg.cpp",
              "src/SparseLUSolver.cpp",
              "src/BaseConstants.cpp",
              "src/GridModel.cpp",
@@ -207,6 +208,12 @@ if "__COMPILE_MARCHNATIVE" in os.environ:
         extra_compile_args.append("-march=native")
         print("INFO: Using \"-march=native\" compiler flag")
 
+if "_READ_THE_DOC" in os.environ:
+    # generation is made on readthedocs.org for documentation, everything must be added, even though some packages will
+    # not be available (eg KLU, NICSLU, etc.)
+    if os.environ["_READ_THE_DOC"] == "1":
+        extra_compile_args.append("-D_READ_THE_DOC")
+        
 if False:
     path_iidm = ""
     lib_iidm = [os.path.join(path_iidm, "lib", "libiidm.a")]

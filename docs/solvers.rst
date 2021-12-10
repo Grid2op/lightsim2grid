@@ -63,6 +63,7 @@ A concrete example of how to change the solver in this backend is:
     env_lightsim.backend.set_tol(1e-7)  # change the tolerance (smaller tolerance gives a more accurate results but takes longer to compute)
     # see the documentation of LightSimBackend for more information
 
+For the list of availbale solvers, you can consult the "enum" :class:`lightsim2grid.solver.SolverType`.
 
 Available Solvers
 #################

@@ -15,6 +15,15 @@ __all__ = ["SolverType",
            "SparseLUSolverSingleSlack",
            "DCSolver"]
 
+from lightsim2grid_cpp import SolverType
+from lightsim2grid_cpp import AnySolver
+
+from lightsim2grid_cpp import GaussSeidelSolver
+from lightsim2grid_cpp import GaussSeidelSynchSolver
+from lightsim2grid_cpp import SparseLUSolver
+from lightsim2grid_cpp import SparseLUSolverSingleSlack
+from lightsim2grid_cpp import DCSolver
+
 try:
     from lightsim2grid_cpp import KLUSolver
     from lightsim2grid_cpp import KLUSolverSingleSlack
@@ -36,12 +45,3 @@ try:
 except Exception as exc_:
     # NICSLU is not available
     pass
-
-from lightsim2grid_cpp import AnySolver
-from lightsim2grid_cpp import SolverType
-
-from lightsim2grid_cpp import GaussSeidelSolver
-from lightsim2grid_cpp import GaussSeidelSynchSolver
-from lightsim2grid_cpp import SparseLUSolver
-from lightsim2grid_cpp import SparseLUSolverSingleSlack
-from lightsim2grid_cpp import DCSolver

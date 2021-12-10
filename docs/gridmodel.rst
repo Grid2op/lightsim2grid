@@ -22,12 +22,17 @@ For example, you can init it like:
 Elements modeled
 ------------------
 
-- PandaPowerConverter
-- GridModel
+Generators
++++++++++++
 
-example on how to import, and documentation of main methods
+.. autoclass:: lightsim2grid.elements.DataGen
+    :members:
+    :autosummary:
 
-TODO doc
+.. autoclass:: lightsim2grid.elements.GenInfo
+    :members:
+    :autosummary:
+
 
 Detailed documentation
 ######################

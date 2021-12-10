@@ -58,7 +58,10 @@ class BaseSolver : public BaseConstants
             return nr_iter_;
         }
 
-        virtual
+        bool converged() const{
+            return err_ == 0;
+        }
+
         std::tuple<double, double, double, double> get_timers() const
         {
             // TODO change the order of the timers here!
@@ -81,10 +84,7 @@ class BaseSolver : public BaseConstants
 
         virtual
         void reset();
-
-        bool converged() const{
-            return err_ == 0;
-        }
+        
     protected:
         virtual void reset_timer(){
             timer_Fx_ = 0.;

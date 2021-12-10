@@ -97,11 +97,7 @@ In this case then, the `TimeSerie` module is more than **15** times faster than 
 
 Detailed usage
 ###############
-TODO examples on how to import, and documentation of main methods
-
-.. automodule:: lightsim2grid.timeSerie
-    :members:
-    :autosummary:
+TODO DOC examples on how to import, and documentation of main methods
 
 * :ref:`genindex`
 * :ref:`modindex`

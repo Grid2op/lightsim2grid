@@ -22,19 +22,35 @@ typedef BaseNRSolverSingleSlack<SparseLULinearSolver> SparseLUSolverSingleSlack;
 typedef BaseDCSolver<SparseLULinearSolver> DCSolver;
 
 #ifdef KLU_SOLVER_AVAILABLE
-/** Solver based on Newton Raphson, using the KLU linear solver**/
-typedef BaseNRSolver<KLULinearSolver> KLUSolver;
-/** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
-typedef BaseNRSolverSingleSlack<KLULinearSolver> KLUSolverSingleSlack;
-/** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
-typedef BaseDCSolver<KLULinearSolver> KLUDCSolver;
+    /** Solver based on Newton Raphson, using the KLU linear solver**/
+    typedef BaseNRSolver<KLULinearSolver> KLUSolver;
+    /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
+    typedef BaseNRSolverSingleSlack<KLULinearSolver> KLUSolverSingleSlack;
+    /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
+    typedef BaseDCSolver<KLULinearSolver> KLUDCSolver;
+#elif defined(_READ_THE_DOC)
+    // hack to display accurately the doc in read the doc even if the models are not compiled
+    /** Solver based on Newton Raphson, using the KLU linear solver**/
+    class KLUSolver : public SparseLUSolver {};
+    /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
+    class KLUSolverSingleSlack : public SparseLUSolverSingleSlack {};
+    /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
+    class KLUDCSolver : public DCSolver {};
 #endif  // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
-/** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license)**/
-typedef BaseNRSolver<NICSLULinearSolver> NICSLUSolver;
-/** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), do not consider multiple slack bus**/
-typedef BaseNRSolverSingleSlack<NICSLULinearSolver> NICSLUSolverSingleSlack;
-/** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), only suitable for the DC approximation**/
-typedef BaseDCSolver<NICSLULinearSolver> NICSLUDCSolver;
+    /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license)**/
+    typedef BaseNRSolver<NICSLULinearSolver> NICSLUSolver;
+    /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), do not consider multiple slack bus**/
+    typedef BaseNRSolverSingleSlack<NICSLULinearSolver> NICSLUSolverSingleSlack;
+    /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), only suitable for the DC approximation**/
+    typedef BaseDCSolver<NICSLULinearSolver> NICSLUDCSolver;
+#elif defined(_READ_THE_DOC)
+    // hack to display accurately the doc in read the doc even if the models are not compiled
+    /** Solver based on Newton Raphson, using the KLU linear solver**/
+    class NICSLUSolver : public SparseLUSolver{};
+    /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
+    class NICSLUSolverSingleSlack : public SparseLUSolverSingleSlack{};
+    /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
+    class NICSLUDCSolver : public DCSolver{};
 #endif  // NICSLU_SOLVER_AVAILABLE
