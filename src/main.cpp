@@ -364,7 +364,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
         .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
 
-    py::class_<GridModel>(m, "GridModel")
+    py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy)
 
@@ -391,29 +391,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // general parameters
         // solver control
-        .def("change_solver", &GridModel::change_solver, R"mydelimiter(
-    This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
-    more information about them.
-
-    Examples
-    ---------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        lightsim_grid_model.change_solver(SolverType.SparseLUSolver)  # change the NR solver that uses Eigen sparse LU
-
-)mydelimiter")
-        .def("available_solvers", &GridModel::available_solvers)  // retrieve the solver available for your installation
-        .def("get_computation_time", &GridModel::get_computation_time)  // get the computation time spent in the solver
-        .def("get_solver_type", &GridModel::get_solver_type)  // get the type of solver used
-        .def("get_solver", &GridModel::get_solver, py::return_value_policy::reference)  // get the solver (AnySolver type python side) used
+        .def("change_solver", &GridModel::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &GridModel::available_solvers, DocGridModel::available_solvers.c_str())  // retrieve the solver available for your installation
+        .def("get_computation_time", &GridModel::get_computation_time, DocGridModel::get_computation_time.c_str())  // get the computation time spent in the solver
+        .def("get_solver_type", &GridModel::get_solver_type, DocGridModel::get_solver_type.c_str())  // get the type of solver used
+        .def("get_solver", &GridModel::get_solver, py::return_value_policy::reference, DocGridModel::get_solver.c_str())  // get the solver (AnySolver type python side) used
 
         // init the grid
         .def("init_bus", &GridModel::init_bus)
@@ -434,138 +416,25 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus)  // same
 
         // inspect the grid
-        .def("get_lines", &GridModel::get_lines, R"mydelimiter(
-    This function allows to retrieve the powerlines (as a DataLine object, see :ref:`elements-modeled` for more information)
-
-    Examples
-    ---------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.x_pu for el in lightsim_grid_model.get_lines()]) # to retrieve the "x" for each
-
-)mydelimiter")
-        .def("get_trafos", &GridModel::get_trafos, R"mydelimiter(
-    This function allows to retrieve the transformers (as a DataTrafo object, see :ref:`elements-modeled` for more information)
-    
-    Examples
-    ---------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.x_pu for el in lightsim_grid_model.get_trafos()]) # to retrieve the "x" for each trafo
-)mydelimiter")
-        .def("get_generators", &GridModel::get_generators, R"mydelimiter(
-    This function allows to retrieve the generators (as a DataGenerators object, see :ref:`elements-modeled` for more information)
-
-    Examples
-    ---------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.target_p_mw for el in lightsim_grid_model.get_generators()]) # to retrieve the active production setpoint for each generators
-)mydelimiter")
-        .def("get_static_generators", &GridModel::get_static_generators, R"mydelimiter(
-    This function allows to retrieve the static generators (as a DataStaticGenerator object, see :ref:`elements-modeled` for more information)
-
-    Examples
-    ---------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.target_p_mw for el in lightsim_grid_model.get_static_generators()]) # to retrieve the active production setpoint for each static gen
-)mydelimiter")
-        .def("get_shunts", &GridModel::get_shunts, R"mydelimiter(
-    This function allows to retrieve the shunts (as a DatShunt object, see :ref:`elements-modeled` for more information)
-    
-    Examples
-    ---------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.target_q_mvar for el in lightsim_grid_model.get_shunts()]) # to retrieve the reactive consumption for each shunts
-)mydelimiter")
-        .def("get_storages", &GridModel::get_storages, R"mydelimiter(
-    This function allows to retrieve the storage units (as a DataLoad object, see :ref:`elements-modeled` for more information)
-
-    Examples
-    --------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.target_p_mw for el in lightsim_grid_model.get_storages()]) # to retrieve the active consumption for each storage unit
-)mydelimiter")
-        .def("get_loads", &GridModel::get_loads, R"mydelimiter(
-    This function allows to retrieve the loads (as a DataLoad object, see :ref:`elements-modeled` for more information)
-
-    Examples
-    --------
-
-    .. code-block:: python
-        
-        from lightsim2grid.solver import SolverType
-        # init the grid model
-        from lightsim2grid.initGridModel import init
-        pp_net = ...  # any pandapower grid
-        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
-
-        # change the solver used for the powerflow
-        print([el.target_p_mw for el in lightsim_grid_model.get_loads()]) # to retrieve the active consumption setpoint for each loads
-)mydelimiter")
+        .def("get_lines", &GridModel::get_lines, DocGridModel::get_lines.c_str())
+        .def("get_trafos", &GridModel::get_trafos, DocGridModel::get_trafos.c_str())
+        .def("get_generators", &GridModel::get_generators, DocGridModel::get_generators.c_str())
+        .def("get_static_generators", &GridModel::get_static_generators, DocGridModel::get_static_generators.c_str())
+        .def("get_shunts", &GridModel::get_shunts, DocGridModel::get_shunts.c_str())
+        .def("get_storages", &GridModel::get_storages, DocGridModel::get_storages.c_str())
+        .def("get_loads", &GridModel::get_loads, DocGridModel::get_loads.c_str())
 
         // modify the grid
         .def("deactivate_bus", &GridModel::deactivate_bus, R"mydelimiter(
         INTERNAL
 
-        .. warning:: /!\\\\ Internal, do not use unless you know what you are doing /!\\\\
+        .. warning:: /!\\ Internal, do not use unless you know what you are doing /!\\
 
 )mydelimiter")
         .def("reactivate_bus", &GridModel::reactivate_bus, R"mydelimiter(
         INTERNAL
 
-        .. warning:: /!\\\\ Internal, do not use unless you know what you are doing /!\\\\
+        .. warning:: /!\\ Internal, do not use unless you know what you are doing /!\\
         
 )mydelimiter")
         .def("nb_bus", &GridModel::nb_bus, R"mydelimiter(

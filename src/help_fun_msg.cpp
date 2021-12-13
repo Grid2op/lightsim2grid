@@ -1155,3 +1155,213 @@ const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
         This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
 
 )mydelimiter";
+
+const std::string DocGridModel::GridModel = R"mydelimiter(
+    This class represent a lightsim2grid power network. All the elements that can be manipulated by
+    lightsim2grid are represented here.
+
+    We do not recommend to use this class directly, but rather to use a :class:`lightsim2grid.LightSimBackend.LightSimBackend`.
+
+    Examples:
+    ---------
+
+    We **DO NOT** recommend to do:
+
+    .. code-block:: python
+
+        import lightsim2grid
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower network for example pp_net = pn.case118() 
+
+        grid_model = init(pp_net)
+
+    It's better to do:
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        env_name = ...  # any grid2op environment
+        grid2op_env = grid2op.make(env_name, backend=LightSimBackend())
+
+        grid_model = grid2op_env.backend._grid
+
+    The best way to use this class is through the `LightSimBackend` and not to use it directly !
+
+)mydelimiter";
+
+const std::string DocGridModel::change_solver =  R"mydelimiter(
+    This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
+    more information about them.
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        from lightsim2grid.solver import SolverType
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # change the solver used for the powerflow
+        lightsim_grid_model.change_solver(SolverType.SparseLUSolver)  # change the NR solver that uses Eigen sparse LU
+
+)mydelimiter";
+
+const std::string DocGridModel::available_solvers =  R"mydelimiter(
+    Return the list of solver available on the current lightsim2grid installation.
+
+    This is a list of :attr:`lightsim2grid.solver.SolverType`.
+
+)mydelimiter";
+const std::string DocGridModel::get_computation_time = R"mydelimiter(
+    Return the total computation time (in second) spend in the solver when performing a powerflow.
+
+    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
+    the solver used.
+    
+)mydelimiter";
+const std::string DocGridModel::get_solver_type = R"mydelimiter(
+    Return the type of the solver currently used.
+
+    This is equivalent to the `get_type` of the :func:`lightsim2grid.solver.AnySolver.get_type` of
+    the solver used.
+
+)mydelimiter";
+const std::string DocGridModel::get_solver = R"mydelimiter(
+    Return the solver currently in use as a :func:`lightsim2grid.solver.AnySolver` instance.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_lines = R"mydelimiter(
+    This function allows to retrieve the powerlines (as a :class:`lightsim2grid.elements.DataLine` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the powerlines
+        print([el.x_pu for el in lightsim_grid_model.get_lines()]) # to print the "x" for each powerlines
+
+)mydelimiter";
+const std::string DocGridModel::get_trafos = R"mydelimiter(
+    This function allows to retrieve the transformers (as a :class:`lightsim2grid.elements.DataLine` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the trafos
+        print([el.x_pu for el in lightsim_grid_model.get_trafos()]) # to print the "x" for each transformer
+
+)mydelimiter";
+const std::string DocGridModel::get_generators = R"mydelimiter(
+    This function allows to retrieve the (standard) generators (as a :class:`lightsim2grid.elements.DataGen` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the generators
+        print([el.target_p_mw for el in lightsim_grid_model.get_generators()]) # to print the active production setpoint for each generators
+
+)mydelimiter";
+const std::string DocGridModel::get_static_generators = R"mydelimiter(
+    This function allows to retrieve the (more exotic) static generators (as a :class:`lightsim2grid.elements.DataSGen` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the static generators
+        print([el.target_p_mw for el in lightsim_grid_model.get_static_generators()]) # to print the active production setpoint for each static generator
+
+)mydelimiter";
+const std::string DocGridModel::get_shunts = R"mydelimiter(
+    This function allows to retrieve the shunts (as a :class:`lightsim2grid.elements.DataShunt` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the shunts
+        print([el.target_q_mvar for el in lightsim_grid_model.get_shunts()]) # to print the reactive consumption for each shunts
+
+)mydelimiter";
+const std::string DocGridModel::get_storages = R"mydelimiter(
+    This function allows to retrieve the storage units (as a :class:`lightsim2grid.elements.DataLoad` object,
+    see :ref:`elements-modeled` for more information)
+
+    .. note::
+        We want to emphize that, as far as lightsim2grid is concerned, the storage units are modeled as loads. This is why
+        this function will return a :class:`lightsim2grid.elements.DataLoad`.
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # print the target consumption of each storage units
+        print([el.target_p_mw for el in lightsim_grid_model.get_storages()]) # to print the active consumption for each storage unit
+
+)mydelimiter";
+const std::string DocGridModel::get_loads = R"mydelimiter(
+    This function allows to retrieve the loads (as a :class:`lightsim2grid.elements.DataLoad` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.initGridModel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # print the target consumption of each loads
+        print([el.target_p_mw for el in lightsim_grid_model.get_loads()]) # to print the active consumption for each load
+
+)mydelimiter";

@@ -8,14 +8,28 @@ This class basically represents a powergrid (what elements it is made for, their
 
 To create such class, for now the only way is to get it from a pandapower grid (and it does not model every elements there !)
 
-For example, you can init it like:
+For example, you can init it like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python
 
     from lightsim2grid.initGridModel import init
-    pp_net = ...  # any pandapower grid
+    pp_net = ...  # any pandapower grid eg. pp_net = pn.case118()
 
     lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+A better initialization is through the :class:`lightsim2grid.LightSimBackend.LightSimBackend` class:
+
+.. code-block:: python
+
+    from lightsim2grid.initGridModel import init
+    # create a lightsim2grid "gridmodel"
+    env_name = ... # eg. "l2rpn_case14_test"
+    env = grid2op.make(env_name, backend=LightSimBackend())
+    grid_model = env.backend._grid
+
+.. warning::
+    We do not recommend to manipulate directly the :class:`lightsim2grid.initGridModel.GridModel` directy, but to use
+    it via the backend class. This is much more tested this way.
 
 .. _elements-modeled: 
 

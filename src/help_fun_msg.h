@@ -126,3 +126,23 @@ struct DocIterator
     static const std::string res_theta_ex_deg;
 
 };
+
+struct DocGridModel
+{
+    static const std::string GridModel;
+
+    static const std::string change_solver;
+    static const std::string available_solvers;
+    static const std::string get_computation_time;
+    static const std::string get_solver_type;
+    static const std::string get_solver;
+
+    // accessor
+    static const std::string get_lines;
+    static const std::string get_trafos;
+    static const std::string get_generators;
+    static const std::string get_static_generators;
+    static const std::string get_shunts;
+    static const std::string get_storages;
+    static const std::string get_loads;
+};

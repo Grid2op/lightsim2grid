@@ -111,10 +111,3 @@ def init(pp_net):
     _aux_add_slack(model, pp_net)
 
     return model
-
-# cpp docs for main class
-GridModel.__doc__ = """
-.. :py:class:: GridModel 
-
-    
-"""
