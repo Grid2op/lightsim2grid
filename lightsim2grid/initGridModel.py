@@ -116,6 +116,5 @@ def init(pp_net):
 GridModel.__doc__ = """
 .. :py:class:: GridModel 
 
-    This class represent a lightsim2grid power network. All the elements that can be manipulated by
-    lightsim2grid are represented here.
+    
 """

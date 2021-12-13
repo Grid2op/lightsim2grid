@@ -234,127 +234,127 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for sgens
-    py::class_<DataSGen>(m, "DataSGen")
+    py::class_<DataSGen>(m, "DataSGen", DocIterator::DataSGen.c_str())
         .def("__len__", [](const DataSGen & data) { return data.nb(); })
         .def("__getitem__", [](const DataSGen & data, int k){return data[k]; } )
         .def("__iter__", [](const DataSGen & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataSGen::SGenInfo>(m, "SGenInfo")
-        .def_readonly("id", &DataSGen::SGenInfo::id)
-        .def_readonly("connected", &DataSGen::SGenInfo::connected)
-        .def_readonly("bus_id", &DataSGen::SGenInfo::bus_id)
-        .def_readonly("min_q_mvar", &DataSGen::SGenInfo::min_q_mvar)
-        .def_readonly("max_q_mvar", &DataSGen::SGenInfo::max_q_mvar)
-        .def_readonly("min_p_mw", &DataSGen::SGenInfo::min_p_mw)
-        .def_readonly("max_p_mw", &DataSGen::SGenInfo::max_p_mw)
-        .def_readonly("target_p_mw", &DataSGen::SGenInfo::target_p_mw)
-        .def_readonly("target_q_mvar", &DataSGen::SGenInfo::target_q_mvar)
-        .def_readonly("has_res", &DataSGen::SGenInfo::has_res)
-        .def_readonly("res_p_mw", &DataSGen::SGenInfo::res_p_mw)
-        .def_readonly("res_q_mvar", &DataSGen::SGenInfo::res_q_mvar)
-        .def_readonly("res_theta_deg", &DataSGen::SGenInfo::res_theta_deg)
-        .def_readonly("res_v_kv", &DataSGen::SGenInfo::res_v_kv);
+    py::class_<DataSGen::SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
+        .def_readonly("id", &DataSGen::SGenInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataSGen::SGenInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &DataSGen::SGenInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("min_q_mvar", &DataSGen::SGenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
+        .def_readonly("max_q_mvar", &DataSGen::SGenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("min_p_mw", &DataSGen::SGenInfo::min_p_mw, DocIterator::min_p_mw.c_str())
+        .def_readonly("max_p_mw", &DataSGen::SGenInfo::max_p_mw, DocIterator::max_p_mw.c_str())
+        .def_readonly("target_p_mw", &DataSGen::SGenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &DataSGen::SGenInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &DataSGen::SGenInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &DataSGen::SGenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &DataSGen::SGenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &DataSGen::SGenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &DataSGen::SGenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
-    // iterator for loads
-    py::class_<DataLoad>(m, "DataLoad")
+    // iterator for loads (and storage units)
+    py::class_<DataLoad>(m, "DataLoad", DocIterator::DataLoad.c_str())
         .def("__len__", [](const DataLoad & data) { return data.nb(); })
         .def("__getitem__", [](const DataLoad & data, int k){return data[k]; } )
         .def("__iter__", [](const DataLoad & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataLoad::LoadInfo>(m, "LoadInfo")
-        .def_readonly("id", &DataLoad::LoadInfo::id)
-        .def_readonly("connected", &DataLoad::LoadInfo::connected)
-        .def_readonly("bus_id", &DataLoad::LoadInfo::bus_id)
-        .def_readonly("target_p_mw", &DataLoad::LoadInfo::target_p_mw)
-        .def_readonly("target_q_mvar", &DataLoad::LoadInfo::target_q_mvar)
-        .def_readonly("has_res", &DataLoad::LoadInfo::has_res)
-        .def_readonly("res_p_mw", &DataLoad::LoadInfo::res_p_mw)
-        .def_readonly("res_q_mvar", &DataLoad::LoadInfo::res_q_mvar)
-        .def_readonly("res_theta_deg", &DataLoad::LoadInfo::res_theta_deg)
-        .def_readonly("res_v_kv", &DataLoad::LoadInfo::res_v_kv);
+    py::class_<DataLoad::LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
+        .def_readonly("id", &DataLoad::LoadInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataLoad::LoadInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &DataLoad::LoadInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("target_p_mw", &DataLoad::LoadInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &DataLoad::LoadInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &DataLoad::LoadInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &DataLoad::LoadInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &DataLoad::LoadInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &DataLoad::LoadInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &DataLoad::LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for shunts
-    py::class_<DataShunt>(m, "DataShunt")
+    py::class_<DataShunt>(m, "DataShunt", DocIterator::DataShunt.c_str())
         .def("__len__", [](const DataShunt & data) { return data.nb(); })
         .def("__getitem__", [](const DataShunt & data, int k){return data[k]; } )
         .def("__iter__", [](const DataShunt & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataShunt::ShuntInfo>(m, "ShuntInfo")
-        .def_readonly("id", &DataShunt::ShuntInfo::id)
-        .def_readonly("connected", &DataShunt::ShuntInfo::connected)
-        .def_readonly("bus_id", &DataShunt::ShuntInfo::bus_id)
-        .def_readonly("target_p_mw", &DataShunt::ShuntInfo::target_p_mw)
-        .def_readonly("target_q_mvar", &DataShunt::ShuntInfo::target_q_mvar)
-        .def_readonly("has_res", &DataShunt::ShuntInfo::has_res)
-        .def_readonly("res_p_mw", &DataShunt::ShuntInfo::res_p_mw)
-        .def_readonly("res_q_mvar", &DataShunt::ShuntInfo::res_q_mvar)
-        .def_readonly("res_theta_deg", &DataShunt::ShuntInfo::res_theta_deg)
-        .def_readonly("res_v_kv", &DataShunt::ShuntInfo::res_v_kv);
+    py::class_<DataShunt::ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
+        .def_readonly("id", &DataShunt::ShuntInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataShunt::ShuntInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &DataShunt::ShuntInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("target_p_mw", &DataShunt::ShuntInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &DataShunt::ShuntInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &DataShunt::ShuntInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &DataShunt::ShuntInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &DataShunt::ShuntInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &DataShunt::ShuntInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &DataShunt::ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for trafos
-    py::class_<DataTrafo>(m, "DataTrafo")
+    py::class_<DataTrafo>(m, "DataTrafo", DocIterator::DataTrafo.c_str())
         .def("__len__", [](const DataTrafo & data) { return data.nb(); })
         .def("__getitem__", [](const DataTrafo & data, int k){return data[k]; } )
         .def("__iter__", [](const DataTrafo & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataTrafo::TrafoInfo>(m, "TrafoInfo")
-        .def_readonly("id", &DataTrafo::TrafoInfo::id)
-        .def_readonly("connected", &DataTrafo::TrafoInfo::connected)
-        .def_readonly("bus_hv_id", &DataTrafo::TrafoInfo::bus_hv_id)
-        .def_readonly("bus_lv_id", &DataTrafo::TrafoInfo::bus_lv_id)
-        .def_readonly("r_pu", &DataTrafo::TrafoInfo::r_pu)
-        .def_readonly("x_pu", &DataTrafo::TrafoInfo::x_pu)
-        .def_readonly("h_pu", &DataTrafo::TrafoInfo::h_pu)
-        .def_readonly("is_tap_hv_side", &DataTrafo::TrafoInfo::is_tap_hv_side)
-        .def_readonly("ratio", &DataTrafo::TrafoInfo::ratio)
-        .def_readonly("shift_rad", &DataTrafo::TrafoInfo::shift_rad)
-        .def_readonly("has_res", &DataTrafo::TrafoInfo::has_res)
-        .def_readonly("res_p_hv_mw", &DataTrafo::TrafoInfo::res_p_hv_mw)
-        .def_readonly("res_q_hv_mvar", &DataTrafo::TrafoInfo::res_q_hv_mvar)
-        .def_readonly("res_v_hv_kv", &DataTrafo::TrafoInfo::res_v_hv_kv)
-        .def_readonly("res_a_hv_ka", &DataTrafo::TrafoInfo::res_a_hv_ka)
-        .def_readonly("res_p_lv_mw", &DataTrafo::TrafoInfo::res_p_lv_mw)
-        .def_readonly("res_q_lv_mvar", &DataTrafo::TrafoInfo::res_q_lv_mvar)
-        .def_readonly("res_v_lv_kv", &DataTrafo::TrafoInfo::res_v_lv_kv)
-        .def_readonly("res_a_lv_ka", &DataTrafo::TrafoInfo::res_a_lv_ka)
-        .def_readonly("res_theta_hv_deg", &DataTrafo::TrafoInfo::res_theta_hv_deg)
-        .def_readonly("res_theta_lv_deg", &DataTrafo::TrafoInfo::res_theta_lv_deg);
+    py::class_<DataTrafo::TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
+        .def_readonly("id", &DataTrafo::TrafoInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataTrafo::TrafoInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_hv_id", &DataTrafo::TrafoInfo::bus_hv_id, DocIterator::bus_hv_id.c_str())
+        .def_readonly("bus_lv_id", &DataTrafo::TrafoInfo::bus_lv_id, DocIterator::bus_lv_id.c_str())
+        .def_readonly("r_pu", &DataTrafo::TrafoInfo::r_pu, DocIterator::r_pu.c_str())
+        .def_readonly("x_pu", &DataTrafo::TrafoInfo::x_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_pu", &DataTrafo::TrafoInfo::h_pu, DocIterator::h_pu.c_str())
+        .def_readonly("is_tap_hv_side", &DataTrafo::TrafoInfo::is_tap_hv_side, DocIterator::is_tap_hv_side.c_str())
+        .def_readonly("ratio", &DataTrafo::TrafoInfo::ratio, DocIterator::ratio.c_str())
+        .def_readonly("shift_rad", &DataTrafo::TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
+        .def_readonly("has_res", &DataTrafo::TrafoInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_hv_mw", &DataTrafo::TrafoInfo::res_p_hv_mw, DocIterator::res_p_hv_mw.c_str())
+        .def_readonly("res_q_hv_mvar", &DataTrafo::TrafoInfo::res_q_hv_mvar, DocIterator::res_q_hv_mvar.c_str())
+        .def_readonly("res_v_hv_kv", &DataTrafo::TrafoInfo::res_v_hv_kv, DocIterator::res_v_hv_kv.c_str())
+        .def_readonly("res_a_hv_ka", &DataTrafo::TrafoInfo::res_a_hv_ka, DocIterator::res_a_hv_ka.c_str())
+        .def_readonly("res_p_lv_mw", &DataTrafo::TrafoInfo::res_p_lv_mw, DocIterator::res_p_lv_mw.c_str())
+        .def_readonly("res_q_lv_mvar", &DataTrafo::TrafoInfo::res_q_lv_mvar, DocIterator::res_q_lv_mvar.c_str())
+        .def_readonly("res_v_lv_kv", &DataTrafo::TrafoInfo::res_v_lv_kv, DocIterator::res_v_lv_kv.c_str())
+        .def_readonly("res_a_lv_ka", &DataTrafo::TrafoInfo::res_a_lv_ka, DocIterator::res_a_lv_ka.c_str())
+        .def_readonly("res_theta_hv_deg", &DataTrafo::TrafoInfo::res_theta_hv_deg, DocIterator::res_theta_hv_deg.c_str())
+        .def_readonly("res_theta_lv_deg", &DataTrafo::TrafoInfo::res_theta_lv_deg, DocIterator::res_theta_lv_deg.c_str());
 
     // iterator for trafos
-    py::class_<DataLine>(m, "DataLine")
+    py::class_<DataLine>(m, "DataLine", DocIterator::DataLine.c_str())
         .def("__len__", [](const DataLine & data) { return data.nb(); })
         .def("__getitem__", [](const DataLine & data, int k){return data[k]; } )
         .def("__iter__", [](const DataLine & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataLine::LineInfo>(m, "LineInfo")
-        .def_readonly("id", &DataLine::LineInfo::id)
-        .def_readonly("connected", &DataLine::LineInfo::connected)
-        .def_readonly("bus_or_id", &DataLine::LineInfo::bus_or_id)
-        .def_readonly("bus_ex_id", &DataLine::LineInfo::bus_ex_id)
-        .def_readonly("r_pu", &DataLine::LineInfo::r_pu)
-        .def_readonly("x_pu", &DataLine::LineInfo::x_pu)
-        .def_readonly("h_pu", &DataLine::LineInfo::h_pu)
-        .def_readonly("has_res", &DataLine::LineInfo::has_res)
-        .def_readonly("res_p_or_mw", &DataLine::LineInfo::res_p_or_mw)
-        .def_readonly("res_q_or_mvar", &DataLine::LineInfo::res_q_or_mvar)
-        .def_readonly("res_v_or_kv", &DataLine::LineInfo::res_v_or_kv)
-        .def_readonly("res_a_or_ka", &DataLine::LineInfo::res_a_or_ka)
-        .def_readonly("res_p_ex_mw", &DataLine::LineInfo::res_p_ex_mw)
-        .def_readonly("res_q_ex_mvar", &DataLine::LineInfo::res_q_ex_mvar)
-        .def_readonly("res_v_ex_kv", &DataLine::LineInfo::res_v_ex_kv)
-        .def_readonly("res_a_ex_ka", &DataLine::LineInfo::res_a_ex_ka)
-        .def_readonly("res_theta_or_deg", &DataLine::LineInfo::res_theta_or_deg)
-        .def_readonly("res_theta_ex_deg", &DataLine::LineInfo::res_theta_ex_deg);
+    py::class_<DataLine::LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
+        .def_readonly("id", &DataLine::LineInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataLine::LineInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_or_id", &DataLine::LineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus_ex_id", &DataLine::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("r_pu", &DataLine::LineInfo::r_pu, DocIterator::r_pu.c_str())
+        .def_readonly("x_pu", &DataLine::LineInfo::x_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_pu", &DataLine::LineInfo::h_pu, DocIterator::h_pu.c_str())
+        .def_readonly("has_res", &DataLine::LineInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_or_mw", &DataLine::LineInfo::res_p_or_mw, DocIterator::res_p_or_mw.c_str())
+        .def_readonly("res_q_or_mvar", &DataLine::LineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar.c_str())
+        .def_readonly("res_v_or_kv", &DataLine::LineInfo::res_v_or_kv, DocIterator::res_v_or_kv.c_str())
+        .def_readonly("res_a_or_ka", &DataLine::LineInfo::res_a_or_ka, DocIterator::res_a_or_ka.c_str())
+        .def_readonly("res_p_ex_mw", &DataLine::LineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw.c_str())
+        .def_readonly("res_q_ex_mvar", &DataLine::LineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar.c_str())
+        .def_readonly("res_v_ex_kv", &DataLine::LineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv.c_str())
+        .def_readonly("res_a_ex_ka", &DataLine::LineInfo::res_a_ex_ka, DocIterator::res_a_ex_ka.c_str())
+        .def_readonly("res_theta_or_deg", &DataLine::LineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg.c_str())
+        .def_readonly("res_theta_ex_deg", &DataLine::LineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg.c_str());
 
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")

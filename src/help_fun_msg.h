@@ -57,18 +57,72 @@ struct DocIterator
     static const std::string bus_id;
     static const std::string target_p_mw;
     static const std::string target_vm_pu;
+    static const std::string target_q_mvar;
     static const std::string has_res;
     static const std::string res_p_mw;
     static const std::string res_q_mvar;
     static const std::string res_theta_deg;
     static const std::string res_v_kv;
+    static const std::string min_p_mw;
+    static const std::string max_p_mw;
+    static const std::string min_q_mvar;
+    static const std::string max_q_mvar;
+    static const std::string line_model;
+    static const std::string r_pu;
+    static const std::string x_pu;
+    static const std::string h_pu;
 
-    // specifi to generators
+    // specific to generators
     static const std::string DataGen;
     static const std::string GenInfo;
     static const std::string is_slack;
     static const std::string slack_weight;
-    static const std::string min_q_mvar;
-    static const std::string max_q_mvar;
+
+    // specific to sgens
+    static const std::string DataSGen;
+    static const std::string SGenInfo;
+
+    // specific to loads (and storage units)
+    static const std::string DataLoad;
+    static const std::string LoadInfo;
+
+    // specific to shunts
+    static const std::string DataShunt;
+    static const std::string ShuntInfo;
+
+    // specific to transformers
+    static const std::string DataTrafo;
+    static const std::string TrafoInfo;
+    static const std::string bus_hv_id;
+    static const std::string bus_lv_id;
+    static const std::string is_tap_hv_side;
+    static const std::string ratio;
+    static const std::string shift_rad;
+    static const std::string res_p_hv_mw;
+    static const std::string res_q_hv_mvar;
+    static const std::string res_v_hv_kv;
+    static const std::string res_a_hv_ka;
+    static const std::string res_p_lv_mw;
+    static const std::string res_q_lv_mvar;
+    static const std::string res_v_lv_kv;
+    static const std::string res_a_lv_ka;
+    static const std::string res_theta_hv_deg;
+    static const std::string res_theta_lv_deg;
+
+    // specific to powerlines
+    static const std::string DataLine;
+    static const std::string LineInfo;
+    static const std::string bus_or_id;
+    static const std::string bus_ex_id;
+    static const std::string res_p_or_mw;
+    static const std::string res_q_or_mvar;
+    static const std::string res_v_or_kv;
+    static const std::string res_a_or_ka;
+    static const std::string res_p_ex_mw;
+    static const std::string res_q_ex_mvar;
+    static const std::string res_v_ex_kv;
+    static const std::string res_a_ex_ka;
+    static const std::string res_theta_or_deg;
+    static const std::string res_theta_ex_deg;
 
 };

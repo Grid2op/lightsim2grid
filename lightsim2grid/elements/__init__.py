@@ -7,8 +7,28 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 __all__ = ["DataGen",
-           "GenInfo"
+           "GenInfo",
+           "DataSGen",
+           "SGenInfo",
+           "DataLoad",
+           "LoadInfo",
+           "DataShunt",
+           "ShuntInfo",
+           "DataTrafo",
+           "TrafoInfo",
+           "DataLine",
+           "LineInfo",
            ]
 
 from lightsim2grid_cpp import DataGen
 from lightsim2grid_cpp import GenInfo
+from lightsim2grid_cpp import DataSGen
+from lightsim2grid_cpp import SGenInfo
+from lightsim2grid_cpp import DataLoad
+from lightsim2grid_cpp import LoadInfo
+from lightsim2grid_cpp import DataShunt
+from lightsim2grid_cpp import ShuntInfo
+from lightsim2grid_cpp import DataTrafo
+from lightsim2grid_cpp import TrafoInfo
+from lightsim2grid_cpp import DataLine
+from lightsim2grid_cpp import LineInfo

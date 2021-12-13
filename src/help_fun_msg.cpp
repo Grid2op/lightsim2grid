@@ -323,6 +323,53 @@ const std::string DocIterator::target_p_mw = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::target_q_mvar = R"mydelimiter(
+    Get the reactive production (or consumption) setpoint in MVAr for element of the grid supporting this feature.
+
+    For generators (and static generators) it is given following the "generator convention" (positive = power is injected to the grid)
+    
+    For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
+
+)mydelimiter";
+
+const std::string DocIterator::line_model = R"mydelimiter(
+    The "line model" (also valid for transformers) is: 
+    
+    .. code-block :: none
+
+                    ior                      ________            iex
+        `or bus` o------>   -----------------|r + j.x|---------<-------o `ex bus`
+                 |       ) (            |                  |           |
+                 |       ) (         |     |            |     |        |
+                 | vor   ) ( n:1     |1/2*h|            |1/2*h|        | vex
+                 |       ) (         |     |            |     |        |
+                 \/      ) (            |                  |           \/
+        ground---o-------   -------------------------------------------o---- ground
+
+    (fyi: `ior`, `iex`, `n` and `y` are all complex numbers. `r` and `x` are real numbers. `j` is a complex number such that `j^2 = -1`)
+
+)mydelimiter";
+
+const std::string DocIterator::r_pu = R"mydelimiter(
+    Retrieve the resistance (given in pair unit system, and not in Ohm) of the powerlines or the transformers. This is a real number
+    and is represented by the number `r` in the line model.
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::x_pu = R"mydelimiter(
+    Retrieve the reactance (given in pair unit system, and not in Ohm) of the powerlines or the transformers. This is a real number
+    and is represented by the number `x` in the line model.
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::h_pu = R"mydelimiter(
+    Retrieve the capacitance (real part) and dielectric conductance (imaginary part)
+    (given in pair unit system) of the powerlines or the transformers. 
+    
+    This is a complex number and is represented by the number `h` in the line model.
+
+)mydelimiter" + DocIterator::line_model;
+
 const std::string DocIterator::res_p_mw = R"mydelimiter(
     Get the active production (or consumption) in MW for element of the grid supporting this feature.
 
@@ -386,6 +433,15 @@ const std::string DocIterator::has_res = R"mydelimiter(
 const std::string DocIterator::DataGen = R"mydelimiter(
     This class allows to iterate through the generators of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
     in a python list.
+
+    In lightsim2grid they are modeled as "pv" meanings you give the active production setpoint and voltage magnitude setpoint
+    (see :attr:`lightsim2grid.elements.DataSGen` for more exotic PQ generators).
+
+    The active production value setpoint are modified only for the generators participating to the slack buses
+    (see :attr:`lightsim2grid.elements.GenInfo.is_slack` and :attr:`lightsim2grid.elements.GenInfo.slack_weight`).
+
+    Generators are modeled as in pandapower and can be represented a the 
+    `pandapower generators <https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model>`_ .
 
     Examples
     --------
@@ -463,7 +519,7 @@ const std::string DocIterator::slack_weight = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::min_q_mvar = R"mydelimiter(
-    Minimum reactive value that can be absorbed by this generator.
+    Minimum reactive value that can be produced / absorbed by this generator given MVAr.
 
     .. note:: 
         This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
@@ -472,10 +528,630 @@ const std::string DocIterator::min_q_mvar = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::max_q_mvar = R"mydelimiter(
-    Maximum reactive value that can be produce by this generator.
+    Maximum reactive value that can be produced / absorbed by this generator given MVAr.
 
     .. note:: 
         This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
         set to ``True``
+
+)mydelimiter";
+
+const std::string DocIterator::min_p_mw = R"mydelimiter(
+    Minimum active value that can be produced / absorbed by this generator given in MW.
+
+    .. note:: 
+        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
+        set to ``True``
+
+)mydelimiter";
+
+const std::string DocIterator::max_p_mw = R"mydelimiter(
+    Maximum active value that can be produced / absorbed by this generator given in MW.
+
+    .. note:: 
+        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
+        set to ``True``
+
+)mydelimiter";
+
+const std::string DocIterator::DataSGen = R"mydelimiter(
+    This class allows to iterate through the static generators of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    in a python list.
+
+    In lightsim2grid they are two types of generators the more standard PV generators (see :attr:`lightsim2grid.elements.DataGen`). These
+    are more exotic generators known as PQ, where you give the active production value and reactive production value. It's basically like loads,
+    but using the generator convention (if the value is positive, it means power is taken from the grid to the element)
+
+    They cannot participate to the distributed slack bus.
+
+    Static generators are modeled as in pandapower and can be represented a the 
+    `pandapower static generators <https://pandapower.readthedocs.io/en/latest/elements/sgen.html#electric-model>`_ .
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # manipulate the static generators
+        for sgen in grid_model.get_static_generators():
+            # do something with sgen !
+            sgen.bus_id
+
+        print(f"There are {len(grid_model.get_static_generators())} static generators on the grid.")
+
+        first_static_generator = grid_model.get_static_generators()[0]
+
+    You can have a look at :class:`lightsim2grid.elements.SGenInfo` for properties of these elements.
+
+)mydelimiter";
+
+const std::string DocIterator::SGenInfo = R"mydelimiter(
+    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataSGen`
+
+    It allows to read information from each static generator of the powergrid.
+
+    .. warning::
+        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # do something with the static generators
+        first_static_generator = grid_model.get_static_generators()[0]  # first static generator is a `SGenInfo`
+
+        for sgen in grid_model.get_static_generators():
+            # sgen is a `SGenInfo`
+            sgen.bus_id
+
+)mydelimiter";
+
+const std::string DocIterator::DataLoad = R"mydelimiter(
+    This class allows to iterate through the loads **and storage units** of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    in a python list.
+
+    They cannot participate to the distributed slack bus yet. If you want this feature, fill free to send us a github issue.
+
+    Loads are modeled as in pandapower and can be represented a the 
+    `pandapower loads <https://pandapower.readthedocs.io/en/latest/elements/load.html#electric-model>`_ .
+
+    .. note::
+        lightsim2grid Storages are modeled as load.
+    
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # manipulate the load
+        for load in grid_model.get_loads():
+            # do something with load !
+            load.bus_id
+
+        print(f"There are {len(grid_model.get_loads())} loads on the grid.")
+
+        first_load = grid_model.get_loads()[0]
+
+        # or the storage units
+        for storage in grid_model.get_storages():
+            # do something with storage !
+            storage.bus_id
+
+        print(f"There are {len(grid_model.get_storages())} storage units on the grid.")
+
+        first_storage_unit = grid_model.get_storages()[0]
+
+    You can have a look at :class:`lightsim2grid.elements.LoadInfo` for properties of these elements.
+
+)mydelimiter";
+
+const std::string DocIterator::LoadInfo = R"mydelimiter(
+    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataLoad`.
+    We remind the reader that storage units are also modeled as load in lightsim2grid.
+
+    It allows to read information from each load / storage unit of the powergrid.
+
+    .. warning::
+        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    .. note::
+        lightsim2grid Storages are modeled as load.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # for loads
+        first_load = grid_model.get_loads()[0]  # first static generator is a `LoadInfo`
+        for load in grid_model.get_loads():
+            # load is a `LoadInfo`
+            load.bus_id
+
+
+        # for loads
+        first_storage_unit = grid_model.get_storages()[0]  # first static generator is a `LoadInfo`
+        for storage in grid_model.get_storages():
+            # storage is a `LoadInfo`
+            storage.bus_id
+
+)mydelimiter";
+
+const std::string DocIterator::DataShunt = R"mydelimiter(
+    This class allows to iterate through the load of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    in a python list.
+
+    Shunts are modeled as in pandapower and can be represented a the 
+    `pandapower shunts <https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model>`_ .
+    
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # manipulate the load
+        for shunt in grid_model.get_shunts():
+            # do something with shunt !
+            shunt.bus_id
+
+        print(f"There are {len(grid_model.get_shunts())} shunts on the grid.")
+
+        first_shunt = grid_model.get_shunts()[0]
+
+    You can have a look at :class:`lightsim2grid.elements.ShuntInfo` for properties of these elements.
+
+)mydelimiter";
+
+const std::string DocIterator::ShuntInfo = R"mydelimiter(
+    This class represents what you get from retrieving the shunts from :class:`lightsim2grid.elements.DataShunt`.
+
+    It allows to read information from each shunt of the powergrid.
+
+    .. warning::
+        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # for shunts
+        first_shunt = grid_model.get_shunts()[0]  # first shunt, this is a `ShuntInfo`
+        for shunt in grid_model.get_shunts():
+            # shunt is a `ShuntInfo`
+            shunt.bus_id
+
+)mydelimiter";
+
+const std::string DocIterator::DataTrafo = R"mydelimiter(
+    This class allows to iterate through the transformers of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    in a python list.
+
+    Transformers are modeled as in pandapower and can be represented a the 
+    `pandapower transformers <https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model>`_ .
+    
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # manipulate the tranformers
+        for trafo in grid_model.get_trafos():
+            # do something with trafo !
+            trafo.bus_hv_id
+
+        print(f"There are {len(grid_model.get_trafos())} transformers on the grid.")
+
+        first_transformer = grid_model.get_trafos()[0]
+
+    You can have a look at :class:`lightsim2grid.elements.TrafoInfo` for properties of these elements.
+
+)mydelimiter";
+
+const std::string DocIterator::TrafoInfo = R"mydelimiter(
+    This class represents what you get from retrieving the transformers from :class:`lightsim2grid.elements.DataTrafo`.
+
+    It allows to read information from each transformer of the powergrid.
+
+    Transformers have two sides, one is "hv" for "high voltage" and one is "lv" for "low voltage" that are connected and linked to each other
+    by some equations.
+
+    For accessing the results, it's basically the same as having two "elements" (so you get two "voltage_magnitude" `res_v_kv`,
+    two "injected power" `res_p_mw` etc.)
+
+    .. warning::
+        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # for transformers
+        first_transformer = grid_model.get_trafos()[0]  # first transformer, this is a `TrafoInfo`
+        for trafo in grid_model.get_trafos():
+            # trafo is a `TrafoInfo`
+            trafo.bus_hv_id
+
+    Notes
+    -----
+    Transformer are modeled using the "line model".
+
+    Usually, the "or" side is the "hv" side and the "ex" side is the "lv" side.
+
+    The tap ratio `n` bellow is a complex number with its magnitude corresponding to the tap ratio and its
+    angle to the phase shifter.
+
+    For more information about the model and the equations linking all the quantities, please visit 
+    `matpower manual <https://matpower.org/docs/MATPOWER-manual.pdf>`_ , especially the "3. Modeling" and the
+    "3.2 Branches" subsection, as well as the equation 3.1, 3.2 and 3.3 therein.
+    
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::ratio = R"mydelimiter(
+    Retrieve the ratio (absolute value of the complex coefficient `n` in the powerline model). It has no units
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::shift_rad = R"mydelimiter(
+    Retrieve the shift angle (angle of the complex coefficient `n` in the powerline model). It is given in radian (and not in degree)
+
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::is_tap_hv_side = R"mydelimiter(
+    Gives whether the tap (both for the ratio and the phase shifter) is located "hv" side (default, when ``True``) or 
+    "lv" side (when ``False``).
+
+)mydelimiter";
+
+const std::string DocIterator::bus_hv_id = R"mydelimiter(
+    Get the bus id (as an integer) at which the "hv" side of the transformer is connected. If `-1` is returned it means
+    that the transformer is disconnected.
+
+)mydelimiter";
+
+const std::string DocIterator::bus_lv_id = R"mydelimiter(
+    Get the bus id (as an integer) at which the "lv" side of the transformer is connected. If `-1` is returned it means
+    that the transformer is disconnected.
+
+)mydelimiter";
+
+const std::string DocIterator::res_p_hv_mw = R"mydelimiter(
+    Get the active power in MW for at the "hv" side of the transformer. If it is positive it means power is absorbed by the transformer.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_p_lv_mw = R"mydelimiter(
+    Get the active power in MW for at the "lv" side of the transformer. If it is positive it means power is absorbed by the transformer.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_q_hv_mvar = R"mydelimiter(
+    Get the reactive power in MVAr for at the "hv" side of the transformer. If it is positive it means power is absorbed by the transformer.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_q_lv_mvar = R"mydelimiter(
+    Get the reactive power in MVAr for at the "lv" side of the transformer. If it is positive it means power is absorbed by the transformer.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_theta_hv_deg = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "hv" side of the transformer is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
+
+)mydelimiter";
+
+const std::string DocIterator::res_theta_lv_deg = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "lv" side of the transformer is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
+
+)mydelimiter";
+
+const std::string DocIterator::res_v_hv_kv = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which this "hv" side of the transformer is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
+
+)mydelimiter";
+
+const std::string DocIterator::res_v_lv_kv = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which this "lv" side of the transformer is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
+
+)mydelimiter";
+
+const std::string DocIterator::res_a_lv_ka = R"mydelimiter(
+    Get the current flows (in kA) at the "lv" side of the transformer.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_a_hv_ka = R"mydelimiter(
+    Get the current flows (in kA) at the "hv" side of the transformer.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::DataLine = R"mydelimiter(
+    This class allows to iterate through the powerlines of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    in a python list.
+
+    Powerlines are modeled as in pandapower and can be represented a the 
+    `pandapower lines <https://pandapower.readthedocs.io/en/latest/elements/line.html#electric-model>`_ .
+    
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # manipulate the powerlines
+        for line in grid_model.get_lines():
+            # do something with line !
+            line.bus_or_id
+
+        print(f"There are {len(grid_model.get_lines())} lines on the grid.")
+
+        first_line = grid_model.get_lines()[0]
+
+    You can have a look at :class:`lightsim2grid.elements.LineInfo` for properties of these elements.
+
+)mydelimiter";
+
+const std::string DocIterator::LineInfo = R"mydelimiter(
+    This class represents what you get from retrieving the powerlines from :class:`lightsim2grid.elements.DataLine`.
+
+    It allows to read information from each powerline of the powergrid.
+
+    Powerlines have two sides, one is "or" for "origin" and one is "ex" for "extremity" that are connected and linked to each other
+    by some equations.
+
+    For accessing the results, it's basically the same as having two "elements" (so you get two "voltage_magnitude" `res_v_kv`,
+    two "injected power" `res_p_mw` etc.)
+
+    .. warning::
+        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # for powerlines
+        first_line = grid_model.get_lines()[0]  # first line, this is a `LineInfo`
+        for line in grid_model.get_lines():
+            # line is a `LineInfo`
+            line.bus_or_id
+
+    Notes
+    -----
+    Line are modeled using the "line model" as shown in the schema at the end of the paragraph.
+
+    The tap ratio `n` on this schema will be 1.0 for all powerline. If you want to model phase shifters, please
+    model them as Trafo (see :class:`lightsim2grid.elements.TrafoInfo`)
+
+    For more information about the model and the equations linking all the quantities, please visit 
+    `matpower manual <https://matpower.org/docs/MATPOWER-manual.pdf>`_ , especially the "3. Modeling" and the
+    "3.2 Branches" subsection, as well as the equation 3.1, 3.2 and 3.3 therein.
+    
+)mydelimiter" + DocIterator::line_model;
+
+const std::string DocIterator::bus_or_id = R"mydelimiter(
+    Get the bus id (as an integer) at which the "or" side of the line is connected. If `-1` is returned it means
+    that the line is disconnected.
+
+)mydelimiter";
+
+const std::string DocIterator::bus_ex_id = R"mydelimiter(
+    Get the bus id (as an integer) at which the "lv" side of the line is connected. If `-1` is returned it means
+    that the line is disconnected.
+
+)mydelimiter";
+
+const std::string DocIterator::res_p_or_mw = R"mydelimiter(
+    Get the active power in MW for at the "or" side of the line. If it is positive it means power is absorbed by the line.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_p_ex_mw = R"mydelimiter(
+    Get the active power in MW for at the "ex" side of the line. If it is positive it means power is absorbed by the line.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_q_or_mvar = R"mydelimiter(
+    Get the reactive power in MVAr for at the "or" side of the line. If it is positive it means power is absorbed by the line.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_q_ex_mvar = R"mydelimiter(
+    Get the reactive power in MVAr for at the "ex" side of the line. If it is positive it means power is absorbed by the line.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_theta_or_deg = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "or" side of the line is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
+
+)mydelimiter";
+
+const std::string DocIterator::res_theta_ex_deg = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "ex" side of the line is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
+
+)mydelimiter";
+
+const std::string DocIterator::res_v_or_kv = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which this "or" side of the line is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
+
+)mydelimiter";
+
+const std::string DocIterator::res_v_ex_kv = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which this "ex" side of the line is connected.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
+
+)mydelimiter";
+
+const std::string DocIterator::res_a_or_ka = R"mydelimiter(
+    Get the current flows (in kA) at the "or" side of the line.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
+const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
+    Get the current flows (in kA) at the "ex" side of the line.
+
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
 
 )mydelimiter";
