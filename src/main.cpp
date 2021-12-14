@@ -563,36 +563,32 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_storage_to_subid", &GridModel::set_storage_to_subid, DocGridModel::_internal_do_not_use.c_str())
         ;
 
-    py::class_<Computers>(m, "Computers")
+    py::class_<Computers>(m, "Computers", DocComputers::Computers.c_str())
         .def(py::init<const GridModel &>())
 
         // solver control
-        .def("change_solver", &Computers::change_solver)
-        .def("available_solvers", &Computers::available_solvers)
-        .def("get_solver_type", &Computers::get_solver_type)
+        .def("change_solver", &Computers::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &Computers::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("get_solver_type", &Computers::get_solver_type, DocGridModel::get_solver_type.c_str())
 
         // timers
-        .def("total_time", &Computers::total_time)
-        .def("solver_time", &Computers::solver_time)
-        .def("preprocessing_time", &Computers::preprocessing_time)
-        .def("amps_computation_time", &Computers::amps_computation_time)
-        .def("nb_solved", &Computers::nb_solved)
+        .def("total_time", &Computers::total_time, DocComputers::total_time.c_str())
+        .def("solver_time", &Computers::solver_time, DocComputers::solver_time.c_str())
+        .def("preprocessing_time", &Computers::preprocessing_time, DocComputers::preprocessing_time.c_str())
+        .def("amps_computation_time", &Computers::amps_computation_time, DocComputers::amps_computation_time.c_str())
+        .def("nb_solved", &Computers::nb_solved, DocComputers::nb_solved.c_str())
 
         // status
-        .def("get_status", &Computers::get_status)
-
-        // computation control
-        .def("deactivate_flow_computations", &Computers::deactivate_flow_computations)
-        .def("activate_flow_computations", &Computers::activate_flow_computations)
+        .def("get_status", &Computers::get_status, DocComputers::get_status.c_str())
 
         // perform the computations
-        .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>())
-        .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>()) // need to be done after compute_Vs
+        .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
+        .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &Computers::get_flows)  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_voltages", &Computers::get_voltages)  // need to be done after "compute_Vs" 
-        .def("get_sbuses", &Computers::get_sbuses)  // need to be done after "compute_Vs" 
+        .def("get_flows", &Computers::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &Computers::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &Computers::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
         ;
 
     py::class_<SecurityAnalysis>(m, "SecurityAnalysis")

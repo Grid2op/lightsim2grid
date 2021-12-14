@@ -10,7 +10,7 @@ Goal
 --------------------------
 
 This class aims to make faster (and easier) the computations of the current flows (measured in Amps)
-at a certain side of a powerline.
+at a certain side of a powerline / transformer when the topology is not modified.
 
 It can be used as:
 
@@ -28,10 +28,10 @@ It can be used as:
     As = time_series.compute_A()  # will contain the flows, in amps at each step (rows) for each powerline (column)
 
 For now this relies on grid2op, but we could imagine a version of this class that can read
-to / from other data sources.
+to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.Computers` for such purpose)
 
-Importantly, this method is around 15 times faster than simulating "do nothing" with grid2op
-(see section `Benchmarks`)
+Importantly, this method is around 15 times faster than simulating "do nothing" (or "one change then nothing") with grid2op
+(see section :ref:`timeserie_benchmark` )
 
 .. note:: 
 
@@ -52,6 +52,7 @@ Importantly, this method is around 15 times faster than simulating "do nothing" 
     module to achieve high efficient parrallelism. An example is provided in the
     `examples\\computers_with_grid2op_multithreading.py` file.
 
+.. _timeserie_benchmark: 
 
 Benchmarks
 ************
@@ -97,7 +98,10 @@ In this case then, the `TimeSerie` module is more than **15** times faster than 
 
 Detailed usage
 --------------------------
-TODO DOC examples on how to import, and documentation of main methods
+
+.. automodule:: lightsim2grid.timeSerie
+    :members:
+    :autosummary:
 
 * :ref:`genindex`
 * :ref:`modindex`

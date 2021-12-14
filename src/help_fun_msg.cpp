@@ -1194,6 +1194,8 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
     This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
     more information about them.
 
+    .. seealso:: :attr:`lightsim2grid.solver.SolverType` for a list of the available solver (NB: some solvers might not be available on all platform)
+
     Examples
     ---------
 
@@ -1206,7 +1208,8 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
         # change the solver used for the powerflow
-        lightsim_grid_model.change_solver(SolverType.SparseLUSolver)  # change the NR solver that uses Eigen sparse LU
+        # to use internally a solver based on Newton Raphson algorithme using Eigen sparse LU
+        lightsim_grid_model.change_solver(SolverType.SparseLUSolver)  
 
 )mydelimiter";
 
@@ -1433,11 +1436,12 @@ const std::string DocGridModel::get_V = R"mydelimiter(
 
 
 const std::string DocGridModel::id_me_to_ac_solver = R"mydelimiter(
-    In lightsim2grid, buses are labelled from `0` to `n-1` (if `n` denotes the total number of buses on the grid).
+    In lightsim2grid, buses are labelled from `0` to `n-1` (if `n` denotes the total number of buses on the grid) [this is called "**grid model bus id**"]
 
     At any given point in time, some buses might be deactivated (for example because nothing is connected to them).
 
-    On the other end, the solvers need a contiguous list of only active buses (otherwise they might run into divergence issue).
+    On the other end, the solvers need a contiguous list of only active buses (otherwise they might run into divergence issue) [this will be called 
+    "**solver bus id**" later on]
 
     This function allows, for all buses of the :class:`lightsim2grid.initGridModel.GridModel` to know on which "solver bus" they are affected. It
     has the same size as the total number of buses on the grid. And for each of them it tells to which "solver bus" it is connected (unless there is a `-1`,
@@ -1483,11 +1487,12 @@ const std::string DocGridModel::id_me_to_ac_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::id_ac_solver_to_me = R"mydelimiter(
-    In lightsim2grid, buses are labelled from `0` to `n-1` (if `n` denotes the total number of buses on the grid).
+    In lightsim2grid, buses are labelled from `0` to `n-1` (if `n` denotes the total number of buses on the grid) [this is called "**grid model bus id**"]
 
     At any given point in time, some buses might be deactivated (for example because nothing is connected to them).
 
-    On the other end, the solvers need a contiguous list of only active buses (otherwise they might run into divergence issue).
+    On the other end, the solvers need a contiguous list of only active buses (otherwise they might run into divergence issue) [this will be called 
+    "**solver bus id**" later on]
 
     This function allows, for all buses exported in the solver, to retrieve which was the initial bus in the :class:`lightsim2grid.initGridModel.GridModel`. It
     has the same size as the number of active buses on the grid.
@@ -1761,3 +1766,156 @@ const std::string DocGridModel::ac_pf = R"mydelimiter(
 const std::string DocGridModel::dc_pf = R"mydelimiter(
     This function has the same interface, inputs, outputs, behaviour, etc. as the :func:`lightsim2grid.initGridModel.GridModel.ac_pf`.
 )mydelimiter";       
+
+const std::string DocComputers::Computers = R"mydelimiter(
+    Allows the computation of time series, that is, the same grid topology is used while the active / reactive power injected
+    at each buse vary. The grid topology is fixed, the injections vary.
+
+    This is a "raw" c++ class, for an easier to use interface, please refer to the python documentation of the 
+    :class:`lightsim2grid.timeSerie.TimeSerie` class.
+
+)mydelimiter";
+
+const std::string DocComputers::total_time = R"mydelimiter(
+    Total time spent in solving the powerflows, pre processing the data, post processing them, initializing everything etc.
+    
+    It is given in seconds (``float``).
+
+)mydelimiter";
+
+const std::string DocComputers::solver_time = R"mydelimiter(
+    Total time spent only in solving the powerflows (excluding pre processing the data, post processing them, initializing everything etc.)
+    
+    It is given in seconds (``float``).
+
+)mydelimiter";
+
+const std::string DocComputers::amps_computation_time = R"mydelimiter(
+    Time spent in computing the flows (in amps) after the voltages have been computed at each nodes
+    
+    It is given in seconds (``float``).
+
+)mydelimiter";
+
+const std::string DocComputers::preprocessing_time = R"mydelimiter(
+    Time spent in pre processing the data (this involves, but is not limited to the computation of the Sbus)
+    
+    It is given in seconds (``float``).
+
+)mydelimiter";
+
+const std::string DocComputers::nb_solved = R"mydelimiter(
+    Total number of powerflows solved.
+
+)mydelimiter";
+
+const std::string DocComputers::get_status = R"mydelimiter(
+    Status of the solvers (1: success, 0: failure).
+
+    .. note::
+        Even if the solver failed at some point, some results might still be available (but not totally).
+
+)mydelimiter";
+
+const std::string DocComputers::compute_Vs = R"mydelimiter(
+    Compute the voltages (at each bus of the grid model) for some time series of injections (productions, loads, storage units, etc.)
+
+    .. note::
+        This function must be called before :func:`lightsim2grid.timeSerie.Computers.compute_flows` and 
+        :func:`lightsim2grid.timeSerie.Computers.get_flows`, :func:`lightsim2grid.timeSerie.Computers.get_voltages` or
+        :func:`lightsim2grid.timeSerie.Computers.get_sbuses`.
+
+    Parameters
+    -----------
+    gen_p:  ``numy.ndarray``, float
+        Active generation for each generators. Its counts as many column as the number of generators on the grid and as many rows as
+        the number of steps to compute.
+
+    sgen_p:  ``numy.ndarray``, float
+        Active generation for each static generator. Its counts as many column as the number of static generators on the grid and as many rows as
+        the number of steps to compute.
+
+    load_p:``numy.ndarray``, float
+        Active consumption for each loads. Its counts as many column as the number of loads on the grid and as many rows as
+        the number of steps to compute.
+
+    load_q: ``numy.ndarray``, float
+        Reactive consumption for each loads. Its counts as many column as the number of loads on the grid and as many rows as
+        the number of steps to compute.
+
+    Vinit:  ``numy.ndarray``, complex
+        First voltage at each bus of the grid model (including the disconnected buses)
+
+    max_iter:  ``int``
+        Total number of iteration (>0 integer)
+
+    tol: ``float``
+        Solver tolerance (> 0. float)
+
+    Returns
+    ----------
+    status: ``int``
+        The status of the computation. 1 means "success": all powerflows were computed sucessfully, 0 means there were some errors and that 
+        the computation stopped after a certain number of steps.
+
+)mydelimiter";
+
+const std::string DocComputers::compute_flows = R"mydelimiter(
+    Retrieve the flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been called.
+
+    .. note::
+        This function must be called before :func:`lightsim2grid.timeSerie.Computers.get_flows`
+
+)mydelimiter";
+
+const std::string DocComputers::get_flows = R"mydelimiter(
+    Get the flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+
+    Each rows correspond to a time step, each column to a powerline / transformer
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been caleed)
+
+    Returns
+    -------
+    As: ``numpy.ndarry`` (matrix)
+        The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+
+)mydelimiter";
+
+const std::string DocComputers::get_voltages = R"mydelimiter(
+    Get the complex voltage angles at each bus of the powergrid.
+
+    Each rows correspond to a time step, each column to a bus.
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs`.
+
+    Returns
+    -------
+    Vs: ``numpy.ndarry`` (matrix)
+        The complex voltage angles at each bus of the powergrid.
+
+)mydelimiter";
+
+const std::string DocComputers::get_sbuses = R"mydelimiter(
+    Ge the complex power injected at each (solver id) bus of the powergrid. Results are given in pair unit.
+    We do not recommend to use it as it uses the solver id and NOT the powergrid bus id (you can refer to 
+    :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and 
+    :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for more information)
+
+    Each rows correspond to a time step, each column to a bus (bus are identified by their solver id !)
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs`.
+
+    Returns
+    -------
+    Sbuses: ``numpy.ndarry`` (matrix)
+        The complex power injected at each bus (pair unit, load sign convention)
+
+)mydelimiter";

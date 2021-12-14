@@ -175,3 +175,21 @@ struct DocGridModel
     static const std::string ac_pf;
     static const std::string dc_pf;
 };
+
+struct DocComputers
+{
+    static const std::string Computers;
+    static const std::string total_time;
+    static const std::string solver_time;
+    static const std::string preprocessing_time;
+    static const std::string amps_computation_time;
+    static const std::string nb_solved;
+    static const std::string get_status;
+
+    static const std::string compute_Vs;
+    static const std::string compute_flows;
+
+    static const std::string get_flows;
+    static const std::string get_voltages;
+    static const std::string get_sbuses;
+};

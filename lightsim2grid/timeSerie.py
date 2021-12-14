@@ -17,16 +17,6 @@ from lightsim2grid.LightSimBackend import LightSimBackend
 from lightsim2grid.initGridModel import SolverType
 from lightsim2grid_cpp import Computers
 
-# force doc in sphinx
-Computers.__doc__ = """
-.. :py:class:: Computers 
-
-    Allows the computation of time series, that is, the same grid topology is used along with time
-    series of injections (productions and loads) to compute powerflows. The grid topology is fixed, the injections
-    varies.
-
-"""
-
 class TimeSerie:
     """
     This helper class, that only works with grid2op when using a LightSimBackend allows to compute
@@ -56,9 +46,11 @@ class TimeSerie:
             Vs[i, :env.n_sub] = env.backend.V
             As[i] = obs.a_or
 
-    Compare to the previous code, it avoid all grid2op code (coded in python) and can be roughly 3-5 times 
-    faster.
-    It allows also to use python threading, as the c++ computation can be done in different thread.
+    Compare to the previous code, it avoid all grid2op code and can be more than 15 times 
+    faster (on the case 118).
+    
+    It also allows to use python threading module, as the c++ computation can be done in different python threads (the GIL is not locked
+    during the c++ computation).
 
     Examples
     ----------
