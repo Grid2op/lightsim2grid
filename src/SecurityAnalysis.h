@@ -93,10 +93,17 @@ class SecurityAnalysis: public BaseMultiplePowerflow
 
         // make the computation
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
+        
         Eigen::Ref<const RealMat > compute_flows() {
             compute_flows_from_Vs();
             clean_flows();
             return _amps_flows;
+        }
+
+        Eigen::Ref<const RealMat > compute_power_flows() {
+            compute_flows_from_Vs(false);
+            clean_flows(false);
+            return _active_power_flows;
         }
 
         // python cannot handle set of sets... (c++ can because set are ordered set, but in python
@@ -141,7 +148,7 @@ class SecurityAnalysis: public BaseMultiplePowerflow
 
         // by default the flows are not 0 when the powerline is connected in the original topology
         // this function sorts this out
-        void clean_flows();
+        void clean_flows(bool is_amps=true);
 
         // sometimes, when i perform some disconnection, I make the graph non connexe
         // in this case, well, i don't use the results of the simulation

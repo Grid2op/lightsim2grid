@@ -24,6 +24,7 @@ class TimeSerieTester(unittest.TestCase):
         time_series = TimeSerie(env)
         time_series.compute_V(scenario_id=0)
         As = time_series.compute_A()  # will contain the flows, in amps at each step (rows) for each powerline (column)
+        Ps = time_series.compute_P()  # will contain the flows, in amps at each step (rows) for each powerline (column)
         
         env.set_id(0)
         env.reset()
@@ -31,4 +32,6 @@ class TimeSerieTester(unittest.TestCase):
         for it_num in range(100):
             obs, *_ = env.step(env.action_space())
             if np.max(np.abs(As[1 + it_num] - obs.a_or))  > 1e-3:
-                raise RuntimeError(f"error at it {it_num}")
+                raise RuntimeError(f"error at it {it_num} for A")
+            if np.max(np.abs(Ps[1 + it_num] - obs.p_or))  > 1e-3:
+                raise RuntimeError(f"error at it {it_num} for P")

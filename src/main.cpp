@@ -584,9 +584,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // perform the computations
         .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
         .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
-
+        .def("compute_power_flows", &Computers::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        
         // results (for now only flow (at each -line origin- or voltages -at each buses)
         .def("get_flows", &Computers::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_power_flows", &Computers::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
         .def("get_voltages", &Computers::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
         .def("get_sbuses", &Computers::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
         ;
@@ -617,10 +619,12 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // perform the computation
         .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
         .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
+        .def("compute_power_flows", &SecurityAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
         .def("get_flows", &SecurityAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
         .def("get_voltages", &SecurityAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
+        .def("get_power_flows", &SecurityAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
 
         // timers
         .def("total_time", &SecurityAnalysis::total_time, DocComputers::total_time.c_str())

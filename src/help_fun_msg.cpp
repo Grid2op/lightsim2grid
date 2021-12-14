@@ -1877,13 +1877,43 @@ const std::string DocComputers::compute_flows = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocComputers::compute_power_flows = R"mydelimiter(
+    Retrieve the active flows (in MW, at the origin of each powerlines / high voltage size of each transformers.
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been called.
+
+    .. note::
+        This function must be called before :func:`lightsim2grid.timeSerie.Computers.get_flows`
+
+    .. note::
+        During this computation, the GIL is released, allowing easier parrallel computation
+
+)mydelimiter";
+
 const std::string DocComputers::get_flows = R"mydelimiter(
-    Get the flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+    Get the current flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
 
     Each rows correspond to a time step, each column to a powerline / transformer
 
     .. warning::
         This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been caleed)
+
+    Returns
+    -------
+    As: ``numpy.ndarry`` (matrix)
+        The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+
+)mydelimiter";
+
+const std::string DocComputers::get_power_flows = R"mydelimiter(
+    Get the active flows (in MW) at the origin side / high voltage side of each transformers / powerlines.
+
+    Each rows correspond to a time step, each column to a powerline / transformer
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.timeSerie.Computers.compute_power_flows` has been called.
         (`compute_flows` also requires that :func:`lightsim2grid.timeSerie.Computers.compute_Vs` has been caleed)
 
     Returns
@@ -2120,7 +2150,21 @@ const std::string DocSecurityAnalysis::compute = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSecurityAnalysis::compute_flows = R"mydelimiter(
-    Retrieve the flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
+    Compute the current flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been called.
+
+    .. note::
+        This function must be called before :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows`
+
+    .. note::
+        During this computation, the GIL is released, allowing easier parrallel computation
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::compute_power_flows = R"mydelimiter(
+    Compute the current flows (in MW, at the origin of each powerlines / high voltage size of each transformers.
 
     .. warning::
         This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been called.
@@ -2149,7 +2193,7 @@ const std::string DocSecurityAnalysis::get_flows = R"mydelimiter(
 
     Returns
     -------
-    As: ``numpy.ndarry`` (matrix)
+    As: ``numpy.ndarray`` (matrix)
         The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
 
 )mydelimiter";
@@ -2169,7 +2213,28 @@ const std::string DocSecurityAnalysis::get_voltages = R"mydelimiter(
 
     Returns
     -------
-    Vs: ``numpy.ndarry`` (matrix)
+    Vs: ``numpy.ndarray`` (matrix)
         The complex voltage angles at each bus of the powergrid.
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::get_power_flows = R"mydelimiter(
+    Get the active flows (in MW) at the origin side / high voltage side of each transformers / powerlines.
+
+    Each rows correspond to a contingency, each column to a powerline / transformer
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_power_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been caleed)
+
+    .. warning::
+        The order in which the contingencies are computed is **NOT** (in this c++ class) the order in which you enter them. They are computed
+        in the order given by :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.my_defaults`. For an easier, more "human readable" please
+        use the :func:`lightsim2grid.securityAnalysis.SecurityAnalysis.get_flows` method.
+
+    Returns
+    -------
+    As: ``numpy.ndarray`` (matrix)
+        The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
 
 )mydelimiter";

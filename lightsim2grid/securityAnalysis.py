@@ -256,7 +256,7 @@ class SecurityAnalysis(object):
 
             security_analysis = SecurityAnalysis(env)
             security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
-            res_a, res_v = security_analysis.get_flows()
+            res_p, res_a, res_v = security_analysis.get_flows()
 
             # in this results, then
             # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
@@ -286,8 +286,9 @@ class SecurityAnalysis(object):
         if not self.__computed:
             self.compute_V()
             self.compute_A()
+            self.compute_P()
         
-        return self._ampss[orders_], self._vs[orders_]
+        return self._mws[orders_], self._ampss[orders_], self._vs[orders_]
 
     def compute_V(self):
         """
@@ -321,3 +322,18 @@ class SecurityAnalysis(object):
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
         self._ampss = 1e3 * self.computer.compute_flows()
         return self._ampss
+
+    def compute_P(self):
+        """
+        This function returns the active power flows (in MW) at the origin / high voltage side
+
+        .. warning:: Order of the results
+
+            The order in which the results are returned is NOT necessarily the order in which the contingencies have
+            been entered. Please use `get_flows()` method for easier reading back of the results !
+
+        """
+        if not self.__computed:
+            raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
+        self._mws = 1.0 * self.computer.compute_power_flows()
+        return self._mws

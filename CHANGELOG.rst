@@ -16,11 +16,13 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.5.6] 20xx-yy-zz
+[0.6.0] 20xx-yy-zz
 -------------------
+- [BREAKING] `SecurityAnalysis` now also returns the active flows when calling `security_analysis.get_flows()`
 - [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
 - [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`
 - [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)
+- [ADDED] possibility to compute the active flows using the `BaseMultiplePower` 
 - [ADDED] possibility to change linear solver used when performing a DC solver
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
 - [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)

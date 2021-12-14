@@ -180,6 +180,19 @@ class TimeSerie:
         ampss = self.computer.compute_flows()
         return 1000. * ampss
 
+    def compute_P(self):
+        """
+        This function returns the active power flows (in MW) at the origin (for powerline) / high voltage (for transformer) 
+        side
+        
+        It does not recompute the voltages at each buses, it uses the information get from `compute_V` and
+        This is why you must call `compute_V(...)` first !
+        """
+        if not self.__computed:
+            raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
+        mws = self.computer.compute_power_flows()
+        return mws
+
     def _extract_inj(self):
         data_loader = None
         if isinstance(self.grid2op_env.chronics_handler.real_data, Multifolder):

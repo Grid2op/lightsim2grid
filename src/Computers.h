@@ -59,6 +59,10 @@ class Computers: public BaseMultiplePowerflow
             compute_flows_from_Vs();
             return _amps_flows;
         }
+        Eigen::Ref<const RealMat > compute_power_flows() {
+            compute_flows_from_Vs(false);
+            return _active_power_flows;
+        }
 
     protected:
         template<class T>

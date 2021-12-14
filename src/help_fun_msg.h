@@ -191,8 +191,10 @@ struct DocComputers
 
     static const std::string compute_Vs;
     static const std::string compute_flows;
+    static const std::string compute_power_flows;
 
     static const std::string get_flows;
+    static const std::string get_power_flows;
     static const std::string get_voltages;
     static const std::string get_sbuses;
 };
@@ -217,9 +219,11 @@ struct DocSecurityAnalysis
 
     static const std::string compute;
     static const std::string compute_flows;
+    static const std::string compute_power_flows;
 
     static const std::string get_flows;
     static const std::string get_voltages;
+    static const std::string get_power_flows;
 };
 
 #endif  // HELP_FUN_MSG_H

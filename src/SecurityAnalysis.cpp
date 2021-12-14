@@ -184,16 +184,17 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     _timer_total = timer.duration();
 }
 
-void SecurityAnalysis::clean_flows()
+void SecurityAnalysis::clean_flows(bool is_amps)
 {
     auto timer = CustTimer();
     Eigen::Index cont_id = 0;
     for(const auto & l_id_this_cont: _li_defaults){
         for(auto l_id : l_id_this_cont){
-            real_type & el = _amps_flows(cont_id, l_id);
+            real_type & el = is_amps ? _amps_flows(cont_id, l_id): _active_power_flows(cont_id, l_id);
             if(isfinite(el)) el = 0.;
         }
         ++cont_id;
     }
-    _timer_compute_A += timer.duration();
+    if (is_amps) _timer_compute_A += timer.duration();
+    else _timer_compute_P += timer.duration();
 }
