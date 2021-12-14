@@ -1825,6 +1825,9 @@ const std::string DocComputers::compute_Vs = R"mydelimiter(
         :func:`lightsim2grid.timeSerie.Computers.get_flows`, :func:`lightsim2grid.timeSerie.Computers.get_voltages` or
         :func:`lightsim2grid.timeSerie.Computers.get_sbuses`.
 
+    .. note::
+        During this computation, the GIL is released, allowing easier parrallel computation
+
     Parameters
     -----------
     gen_p:  ``numy.ndarray``, float
@@ -1868,6 +1871,9 @@ const std::string DocComputers::compute_flows = R"mydelimiter(
 
     .. note::
         This function must be called before :func:`lightsim2grid.timeSerie.Computers.get_flows`
+
+    .. note::
+        During this computation, the GIL is released, allowing easier parrallel computation
 
 )mydelimiter";
 
@@ -1917,5 +1923,253 @@ const std::string DocComputers::get_sbuses = R"mydelimiter(
     -------
     Sbuses: ``numpy.ndarry`` (matrix)
         The complex power injected at each bus (pair unit, load sign convention)
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::SecurityAnalysis = R"mydelimiter(
+    Allows the computation of "security analysis", that consists in computing the flows that would result from the disconnection of one or multiple
+    disconnections of some powerlines.
+
+    This is a "raw" c++ class, for an easier to use interface, please refer to the python documentation of the 
+    :class:`lightsim2grid.securityAnalysis.SecurityAnalysis` class.
+
+    .. note::
+        Even if you instruct it to simulate the same contingency multiple times, it will only do it once.
+
+    .. note::
+        You can only simulate disconnection of powerlines / transformers
+
+    At a glance, this class should be used in three steps:
+
+    1) Modify the list of contingencies to simulate, with the functions:
+
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_n1`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_all_n1`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_nk`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_multiple_n1`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.clear`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.remove_n1`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.remove_nk`
+    - :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.remove_multiple_n1`
+
+    2) Then you can start the computation of the security analysis with 
+    :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` then optionally
+    :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_flows` .
+
+    3) And finally inspect the results with :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows` and 
+    :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_voltages` .
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::preprocessing_time = R"mydelimiter(
+    Time spent in pre processing the data (this involves, the checking whether the grid would be still connex after the contingency for example)
+    
+    It is given in seconds (``float``).
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::modif_Ybus_time = R"mydelimiter(
+    Time spent to modify the Ybus matrix before simulating each contingency.
+    
+    It is given in seconds (``float``).
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::add_all_n1 = R"mydelimiter(
+    This allows to add all the "n-1" in the contingency list to simulate.
+
+    .. seealso:: :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_n1` to add only a single line
+
+    .. seealso::
+        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_multiple_n1` to add multiple single contingencies in the same call 
+        (but not necessarily all)
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::add_n1 = R"mydelimiter(
+    This allows to add a single  "n-1" in the contingency list to simulate.
+
+    .. seealso:: :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_all_n1` to add all contingencies at the same time
+
+    .. seealso::
+        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_multiple_n1` to add multiple single contingencies in the same call.
+
+    Parameters
+    ----------
+    line_id: ``int``
+        The line id you would like to see disconnected
+        
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::add_nk = R"mydelimiter(
+    This allows to add a single  "n-k" in the contingency list to simulate (it will only add at most one contingency)
+
+    .. warning::
+        A "n-k" will disconnect multiple powerlines at the same time. It's not the same as adding muliple "n-1" contingencies, where
+        powerlines will be disconnected one after the other.
+
+    Parameters
+    ----------
+    vect_nk: ``list`` (of ``int``)
+        The lines id you want to add in the single contingency added.
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::add_multiple_n1 = R"mydelimiter(
+    This allows to add a multiple "n-1" in the contingency list to simulate (it will add as many contingency as the size of the list)
+    and is equivalent to call multiple times :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_n1`
+
+    .. seealso::
+        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.add_all_n1` to add all the "n-1" contingencies.
+    
+    .. warning::
+        A "n-k" will disconnect multiple powerlines at the same time. It's not the same as adding muliple "n-1" contingencies, where
+        powerlines will be disconnected one after the other.
+
+    Parameters
+    ----------
+    vect_n1: ``list`` (of ``int``)
+        The lines id you want to add to the contingency list
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::clear = R"mydelimiter(
+    Clear the list of all contingencies. After a call to this method, you will need to re add some contingencies with
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::remove_n1 = R"mydelimiter(
+    Remove a single "n-1" contingency from the contingency list to simulate.
+
+    Parameters
+    ----------
+    line_id: ``int``
+        The line id you would like to remove from contingency list (will remove a single "n-k" contingencies)
+    
+    Returns
+    -------
+    success: ``bool``
+        Whether or not the contingency has been properly removed
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::remove_nk = R"mydelimiter(
+    Remove a single "n-k" contingency from the contingency list to simulate. This removes at much one single contingency
+
+    Parameters
+    ----------
+    vect_nk: ``list`` (of ``int``)
+        The lines id you want to remove from contingency list.
+
+    Returns
+    -------
+    nb_removed: ``int``
+        The total number of contingencies removed from the contingency list
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::remove_multiple_n1 = R"mydelimiter(
+    Remove multiple "n-1" contingency from the contingency list to simulate. This can remove up to `len(vect_n1)` single contingencies
+    from the contingency list.
+
+    Parameters
+    ----------
+    vect_n1: ``list`` (of ``int``)
+        The lines id you want to remove from contingency list (will remove multiple "n-1" single contingency)
+
+    Returns
+    -------
+    success: ``bool``
+        Whether or not the contingency has been properly removed
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::my_defaults_vect = R"mydelimiter(
+    Allows to inspect the contingency list that will be simulated.
+
+    Returns
+    -------
+    my_defaults_vect: ``list``
+        The list (of list) of all the current contingencies. Its length corresponds to the number of contingencies simulated.
+        For each contingency, it gives which powerline will be disconnected.
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::compute = R"mydelimiter(
+    Compute the voltages (at each bus of the grid model) for some time series of injections (productions, loads, storage units, etc.)
+
+    .. note::
+        This function must be called before :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_flows` and 
+        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows` or
+        :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_voltages` .
+
+    .. note::
+        During this computation, the GIL is released, allowing easier parrallel computation
+
+    Parameters
+    -----------
+    Vinit:  ``numy.ndarray``, complex
+        First voltage at each bus of the grid model (including the disconnected buses)
+
+    max_iter:  ``int``
+        Total number of iteration (>0 integer)
+
+    tol: ``float``
+        Solver tolerance (> 0. float)
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::compute_flows = R"mydelimiter(
+    Retrieve the flows (in amps, at the origin of each powerlines / high voltage size of each transformers.
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been called.
+
+    .. note::
+        This function must be called before :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.get_flows`
+
+    .. note::
+        During this computation, the GIL is released, allowing easier parrallel computation
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::get_flows = R"mydelimiter(
+    Get the flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+
+    Each rows correspond to a contingency, each column to a powerline / transformer
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute_flows` has been called.
+        (`compute_flows` also requires that :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute` has been caleed)
+
+    .. warning::
+        The order in which the contingencies are computed is **NOT** (in this c++ class) the order in which you enter them. They are computed
+        in the order given by :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.my_defaults`. For an easier, more "human readable" please
+        use the :func:`lightsim2grid.securityAnalysis.SecurityAnalysis.get_flows` method.
+
+    Returns
+    -------
+    As: ``numpy.ndarry`` (matrix)
+        The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
+
+)mydelimiter";
+
+const std::string DocSecurityAnalysis::get_voltages = R"mydelimiter(
+    Get the complex voltage angles at each bus of the powergrid.
+
+    Each rows correspond to a contingency, each column to a bus.
+
+    .. warning::
+        This function must be called after :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.compute`.
+
+    .. warning::
+        The order in which the contingencies are computed is **NOT** (in this c++ class) the order in which you enter them. They are computed
+        in the order given by :func:`lightsim2grid.securityAnalysis.SecurityAnalysisCPP.my_defaults`. For an easier, more "human readable" please
+        use the :func:`lightsim2grid.securityAnalysis.SecurityAnalysis.get_flows` method.
+
+    Returns
+    -------
+    Vs: ``numpy.ndarry`` (matrix)
+        The complex voltage angles at each bus of the powergrid.
 
 )mydelimiter";

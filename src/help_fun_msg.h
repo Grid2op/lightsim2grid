@@ -9,6 +9,9 @@
 // containst he help messages for the functions and classes defined in "main" to avoid "pollute" the "main.cpp" file
 // with all of this and keep it cleaner
 
+#ifndef HELP_FUN_MSG_H
+#define HELP_FUN_MSG_H
+
 #include<string>
 
 struct DocSolver
@@ -193,3 +196,30 @@ struct DocComputers
     static const std::string get_voltages;
     static const std::string get_sbuses;
 };
+
+struct DocSecurityAnalysis
+{
+    static const std::string SecurityAnalysis;
+
+    static const std::string preprocessing_time;
+    static const std::string modif_Ybus_time;
+
+    static const std::string add_all_n1;
+    static const std::string add_n1;
+    static const std::string add_nk;
+    static const std::string add_multiple_n1;
+    static const std::string clear;
+    static const std::string remove_n1;
+    static const std::string remove_nk;
+    static const std::string remove_multiple_n1;
+
+    static const std::string my_defaults_vect;
+
+    static const std::string compute;
+    static const std::string compute_flows;
+
+    static const std::string get_flows;
+    static const std::string get_voltages;
+};
+
+#endif  // HELP_FUN_MSG_H

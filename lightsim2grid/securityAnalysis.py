@@ -15,15 +15,7 @@ import copy
 
 from lightsim2grid.LightSimBackend import LightSimBackend
 from lightsim2grid.initGridModel import SolverType
-from lightsim2grid_cpp import SecurityAnalysis as SecurityAnalysisCPP
-
-# force doc in sphinx
-SecurityAnalysisCPP.__doc__ = """
-.. :py:class:: SecurityAnalysisCPP 
-
-    Allows the computation of a "security analysis" that is the results of the flows if some powerlines were disconnected.
-
-"""
+from lightsim2grid_cpp import SecurityAnalysisCPP
 
 
 class SecurityAnalysis(object):
@@ -35,9 +27,18 @@ class SecurityAnalysis(object):
     
     Feel free to post a feature request if you want to extend it.
 
+    This class is used in 4 phases:
+    
+    0) you create it from a grid2op environment (the grid topology will not be modified from this environment)
+    1) you add some contingencies to simulate
+    2) you start the simulation
+    3) you read back the results
+    
+    
     Examples
     --------
-
+    An example is given here
+    
     .. code-block:: python
 
         import grid2op
@@ -46,8 +47,14 @@ class SecurityAnalysis(object):
         env_name = ...
         env = grid2op.make(env_name, backend=LightSimBackend())
 
+        0) you create
         security_analysis = SecurityAnalysis(env)
+        
+        1) you add some contingencies to simulate
         security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
+        
+        2) you start the simulation (done automatically)
+        3) you read back the results
         res_a, res_v = security_analysis.get_flows()
 
         # in this results, then

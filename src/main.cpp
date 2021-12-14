@@ -591,43 +591,43 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_sbuses", &Computers::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
         ;
 
-    py::class_<SecurityAnalysis>(m, "SecurityAnalysis")
+    py::class_<SecurityAnalysis>(m, "SecurityAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
         .def(py::init<const GridModel &>())
         // solver control
-        .def("change_solver", &Computers::change_solver)
-        .def("available_solvers", &Computers::available_solvers)
-        .def("get_solver_type", &Computers::get_solver_type)
+        .def("change_solver", &Computers::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &Computers::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("get_solver_type", &Computers::get_solver_type, DocGridModel::get_solver_type.c_str())
 
         // add some defaults
-        .def("add_all_n1", &SecurityAnalysis::add_all_n1)
-        .def("add_n1", &SecurityAnalysis::add_n1)
-        .def("add_nk", &SecurityAnalysis::add_nk)
-        .def("add_multiple_n1", &SecurityAnalysis::add_multiple_n1)
+        .def("add_all_n1", &SecurityAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
+        .def("add_n1", &SecurityAnalysis::add_n1, DocSecurityAnalysis::add_n1.c_str())
+        .def("add_nk", &SecurityAnalysis::add_nk, DocSecurityAnalysis::add_nk.c_str())
+        .def("add_multiple_n1", &SecurityAnalysis::add_multiple_n1, DocSecurityAnalysis::add_multiple_n1.c_str())
 
         // remove some defaults (TODO)
-        .def("reset", &SecurityAnalysis::clear)
-        .def("clear", &SecurityAnalysis::clear)
-        .def("remove_n1", &SecurityAnalysis::remove_n1)
-        .def("remove_nk", &SecurityAnalysis::remove_nk)
-        .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1)
+        .def("reset", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("clear", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("remove_n1", &SecurityAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
+        .def("remove_nk", &SecurityAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
+        .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())
         
         // inspect the class
-        .def("my_defaults", &SecurityAnalysis::my_defaults_vect)
+        .def("my_defaults", &SecurityAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
 
         // perform the computation
-        .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>())
+        .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
+        .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &SecurityAnalysis::get_flows)  // need to be done after "compute" and "compute_flows"
-        .def("get_voltages", &SecurityAnalysis::get_voltages) // need to be done after "compute"
-        .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>())  // need to be done after "compute"
+        .def("get_flows", &SecurityAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
+        .def("get_voltages", &SecurityAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
 
         // timers
-        .def("total_time", &SecurityAnalysis::total_time)
-        .def("solver_time", &SecurityAnalysis::solver_time)
-        .def("preprocessing_time", &SecurityAnalysis::preprocessing_time)
-        .def("amps_computation_time", &SecurityAnalysis::amps_computation_time)
-        .def("modif_Ybus_time", &SecurityAnalysis::modif_Ybus_time)
-        .def("nb_solved", &SecurityAnalysis::nb_solved)
+        .def("total_time", &SecurityAnalysis::total_time, DocComputers::total_time.c_str())
+        .def("solver_time", &SecurityAnalysis::solver_time, DocComputers::solver_time.c_str())
+        .def("preprocessing_time", &SecurityAnalysis::preprocessing_time, DocSecurityAnalysis::preprocessing_time.c_str())
+        .def("amps_computation_time", &SecurityAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
+        .def("modif_Ybus_time", &SecurityAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
+        .def("nb_solved", &SecurityAnalysis::nb_solved, DocComputers::nb_solved.c_str())
         ;
 }
