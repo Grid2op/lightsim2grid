@@ -202,17 +202,19 @@ if "__COUT_TIMES" in os.environ:
     # to add extra info in cout for the computation times, we do not recommend to use it !
     if os.environ["__COUT_TIMES"] == "1":
         extra_compile_args.append("-D__COUT_TIMES")
+        print("WARNING: Using the \"cout times\" compatibility mode, do not use the generated package outside of testing !")
 
 if "__COMPILE_MARCHNATIVE" in os.environ:
     if os.environ["__COMPILE_MARCHNATIVE"] == "1":
         extra_compile_args.append("-march=native")
         print("INFO: Using \"-march=native\" compiler flag")
 
-if "_READ_THE_DOC" in os.environ:
+if "_READ_THE_DOCS" in os.environ:
     # generation is made on readthedocs.org for documentation, everything must be added, even though some packages will
     # not be available (eg KLU, NICSLU, etc.)
-    if os.environ["_READ_THE_DOC"] == "1":
-        extra_compile_args.append("-D_READ_THE_DOC")
+    if os.environ["_READ_THE_DOCS"] == "1":
+        extra_compile_args.append("-D_READ_THE_DOCS")
+        print("WARNING: Using the \"read the docs\" compatibility mode, do not use the package for something else than generating documentation.")
         
 if False:
     path_iidm = ""

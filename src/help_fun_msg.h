@@ -129,6 +129,9 @@ struct DocIterator
 
 struct DocGridModel
 {
+    static const std::string _internal_do_not_use;
+    static const std::string J_description;
+    
     static const std::string GridModel;
 
     static const std::string change_solver;
@@ -145,4 +148,30 @@ struct DocGridModel
     static const std::string get_shunts;
     static const std::string get_storages;
     static const std::string get_loads;
+    
+    // retrieve the results
+    static const std::string get_J_python;
+    static const std::string get_Va;
+    static const std::string get_Vm;
+    static const std::string get_V;
+    static const std::string id_me_to_ac_solver;
+    static const std::string id_ac_solver_to_me;
+    static const std::string id_me_to_dc_solver;
+    static const std::string id_dc_solver_to_me;
+    static const std::string total_bus;
+    static const std::string nb_bus;
+    static const std::string get_pv;
+    static const std::string get_pq;
+    static const std::string get_slack_ids;
+    static const std::string get_slack_weights;
+    static const std::string get_Ybus;
+    static const std::string get_dcYbus;
+    static const std::string get_Sbus;
+
+    static const std::string check_solution;
+
+    static const std::string deactivate_result_computation;
+    static const std::string reactivate_result_computation;
+    static const std::string ac_pf;
+    static const std::string dc_pf;
 };

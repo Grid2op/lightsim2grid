@@ -76,6 +76,8 @@ class GridModel : public DataGeneric
         Eigen::Index total_bus() const {return bus_vn_kv_.size();}
         const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
         const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
+        const std::vector<int> & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
+        const std::vector<int> & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
 
         // retrieve the underlying data (raw class)
         const DataGen & get_generators_as_data() const {return generators_;}
@@ -203,7 +205,7 @@ class GridModel : public DataGeneric
         void deactivate_bus(int bus_id) {_deactivate(bus_id, bus_status_, topo_changed_); }
         // if a bus is connected, but isolated, it will make the powerflow diverge
         void reactivate_bus(int bus_id) {_reactivate(bus_id, bus_status_, topo_changed_); }
-        int nb_bus() const;
+        int nb_bus() const;  // number of activated buses
         Eigen::Index nb_powerline() const {return powerlines_.nb();}
         Eigen::Index nb_trafo() const {return trafos_.nb();}
 

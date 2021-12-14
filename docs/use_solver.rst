@@ -40,7 +40,7 @@ and a c++ implementation of a Newton solver for speed.
 .. _available-powerflow-solvers: 
 
 Even more advanced usage
-########################
+--------------------------
 You can customize even more the solvers that you want to use.
 
 Lightsim2grid comes with 11 available solvers that can solver either AC or DC powerflows. We can cluster them into 3 categories.
@@ -198,7 +198,7 @@ There are 3 solvers of this type that are different in the way they solve `Ybus 
   # process the results as above
 
 Detailed documentation
-######################
+--------------------------
 
 .. automodule:: lightsim2grid.newtonpf
     :members:

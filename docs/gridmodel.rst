@@ -104,7 +104,7 @@ Transformers
 
 
 Detailed documentation
-######################
+--------------------------
 
 .. automodule:: lightsim2grid.initGridModel
     :members:

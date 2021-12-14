@@ -88,7 +88,7 @@ with obs.simulate as a way to compute the outcome of a contingency)
 
 
 Detailed usage
-###############
+--------------------------
 TODO DOC examples on how to import, and documentation of main methods
 
 

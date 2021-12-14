@@ -7,7 +7,7 @@ basic features.
 If you are interested in collaborating to improve this section, let us know.
 
 Type of solvers available
-##########################
+--------------------------
 
 For now, lightsim2grid ships with at most TODO DOC fully working (and tested) solvers:
 
@@ -33,7 +33,7 @@ For now, lightsim2grid ships with at most TODO DOC fully working (and tested) so
   can thus be slightly faster.
 
 Usage
-############
+--------------------------
 In this section we briefly explain how to switch from one solver to another. An example of code using this feature
 is given in the
 `"benchmark_solvers.py" <https://github.com/BDonnot/lightsim2grid/blob/master/benchmarks/benchmark_solvers.py>`_
@@ -66,11 +66,11 @@ A concrete example of how to change the solver in this backend is:
 For the list of availbale solvers, you can consult the "enum" :class:`lightsim2grid.solver.SolverType`.
 
 Available Solvers
-#################
+--------------------------
 
 
 Detailed usage
-###############
+--------------------------
 
 .. automodule:: lightsim2grid.solver
     :members:

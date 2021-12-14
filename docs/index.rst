@@ -29,6 +29,7 @@ As from version 0.5.3:
    disclaimer
    use_with_grid2op
    use_solver
+   physical_law_checker
 
 
 Technical Documentation (work in progress)

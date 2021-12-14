@@ -28,7 +28,7 @@ typedef BaseDCSolver<SparseLULinearSolver> DCSolver;
     typedef BaseNRSolverSingleSlack<KLULinearSolver> KLUSolverSingleSlack;
     /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
     typedef BaseDCSolver<KLULinearSolver> KLUDCSolver;
-#elif defined(_READ_THE_DOC)
+#elif defined(_READ_THE_DOCS)
     // hack to display accurately the doc in read the doc even if the models are not compiled
     /** Solver based on Newton Raphson, using the KLU linear solver**/
     class KLUSolver : public SparseLUSolver {};
@@ -45,7 +45,7 @@ typedef BaseDCSolver<SparseLULinearSolver> DCSolver;
     typedef BaseNRSolverSingleSlack<NICSLULinearSolver> NICSLUSolverSingleSlack;
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), only suitable for the DC approximation**/
     typedef BaseDCSolver<NICSLULinearSolver> NICSLUDCSolver;
-#elif defined(_READ_THE_DOC)
+#elif defined(_READ_THE_DOCS)
     // hack to display accurately the doc in read the doc even if the models are not compiled
     /** Solver based on Newton Raphson, using the KLU linear solver**/
     class NICSLUSolver : public SparseLUSolver{};

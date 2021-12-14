@@ -7,7 +7,7 @@ basic features.
 If you are interested in collaborating to improve this section, let us know.
 
 Goal
-##############################
+--------------------------
 
 This class aims to make faster (and easier) the computations of the current flows (measured in Amps)
 at a certain side of a powerline.
@@ -96,7 +96,7 @@ In this case then, the `TimeSerie` module is more than **15** times faster than 
 
 
 Detailed usage
-###############
+--------------------------
 TODO DOC examples on how to import, and documentation of main methods
 
 * :ref:`genindex`
