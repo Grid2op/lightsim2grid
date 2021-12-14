@@ -590,7 +590,11 @@ class LightSimBackend(Backend):
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow(f"divergence of powerflow (more than {self.max_it} iterations)")
 
-            self.comp_time += self._grid.get_computation_time()
+            if is_dc:
+                self.comp_time += self._grid.get_dc_computation_time()
+            else:
+                self.comp_time += self._grid.get_computation_time()
+                
             self.V[:] = V
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],

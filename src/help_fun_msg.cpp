@@ -1196,6 +1196,9 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
 
     .. seealso:: :attr:`lightsim2grid.solver.SolverType` for a list of the available solver (NB: some solvers might not be available on all platform)
 
+    .. info::
+        If the solver type entered, it will change the `_dc_solver` otherwise the regular `_solver` is impacted.
+
     Examples
     ---------
 
@@ -1223,7 +1226,14 @@ const std::string DocGridModel::get_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver when performing a powerflow.
 
     This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
-    the solver used.
+    the solver used (:func:`lightsim2grid.initGridModel.GridModel.get_solver`)
+    
+)mydelimiter";
+const std::string DocGridModel::get_dc_computation_time = R"mydelimiter(
+    Return the total computation time (in second) spend in the solver (used to perform DC approximation) when performing a DC powerflow.
+
+    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
+    the DC solver used (:func:`lightsim2grid.initGridModel.GridModel.get_dc_solver`)
     
 )mydelimiter";
 const std::string DocGridModel::get_solver_type = R"mydelimiter(
@@ -1233,8 +1243,16 @@ const std::string DocGridModel::get_solver_type = R"mydelimiter(
     the solver used.
 
 )mydelimiter";
+const std::string DocGridModel::get_dc_solver_type = R"mydelimiter(
+    Return the type of the solver currently used to compute DC powerflow.
+
+)mydelimiter";
 const std::string DocGridModel::get_solver = R"mydelimiter(
     Return the solver currently in use as a :func:`lightsim2grid.solver.AnySolver` instance.
+
+)mydelimiter";
+const std::string DocGridModel::get_dc_solver = R"mydelimiter(
+    Return the solver currently in use as a :func:`lightsim2grid.solver.AnySolver` instance for the dc powerflow.
 
 )mydelimiter";
 

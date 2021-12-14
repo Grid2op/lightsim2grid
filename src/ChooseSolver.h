@@ -60,6 +60,11 @@ class ChooseSolver
             return res;
         }
         
+        bool is_dc(const SolverType & type){
+            bool res;
+            res = (type == SolverType::DC) || (type == SolverType::KLUDC) || (type == SolverType::NICSLUDC);
+            return res;
+        }
         SolverType get_type() const {return _solver_type;}
 
         void change_solver(const SolverType & type)

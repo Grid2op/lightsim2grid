@@ -63,6 +63,7 @@ GridModel::GridModel(const GridModel & other)
 
     // assign the right solver
     _solver.change_solver(other._solver.get_type());
+    _dc_solver.change_solver(other._dc_solver.get_type());
     compute_results_ = other.compute_results_;
 }
 
@@ -204,7 +205,10 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     topo_changed_ = true;
 
     // reset the solvers
-    if (reset_solver) _solver.reset();
+    if (reset_solver){
+        _solver.reset();
+        _dc_solver.reset();
+    }
     // std::cout << "GridModel::reset called" << std::endl;
 }
 
@@ -330,7 +334,11 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if(topo_changed_) reset(reset_solver, reset_ac, reset_dc);  // TODO what if pv and pq changed ? :O
     else{
         // topo is not changed, but i can still reset the solver (TODO: no necessarily needed !)
-        if (reset_solver) _solver.reset();
+        if (reset_solver)
+        {
+            if(is_ac) _solver.reset();
+            else _dc_solver.reset();
+        }
     }
     slack_bus_id_ = generators_.get_slack_bus_id();
     if(topo_changed_){
@@ -385,7 +393,8 @@ void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vini
             compute_results(ac);
         }
         need_reset_ = false;
-        const CplxVect & res_tmp = _solver.get_V();
+        const CplxVect & res_tmp = ac ? _solver.get_V(): _dc_solver.get_V() ;
+
         // convert back the results to "big" vector
         res = _get_results_back_to_orig_nodes(res_tmp,
                                               id_me_to_solver,
@@ -514,9 +523,9 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
 }
 void GridModel::compute_results(bool ac){
     // retrieve results from powerflow
-    const auto & Va = _solver.get_Va();
-    const auto & Vm = _solver.get_Vm();
-    const auto & V = _solver.get_V();
+    const auto & Va = ac ? _solver.get_Va() : _dc_solver.get_Va();
+    const auto & Vm = ac ? _solver.get_Vm() : _dc_solver.get_Vm();
+    const auto & V = ac ? _solver.get_V() : _dc_solver.get_V();
 
     const std::vector<int> & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
     // for powerlines
@@ -587,9 +596,6 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
-    const SolverType init_solver_type = _solver.get_type();
-    _solver.change_solver(SolverType::DC);
-
     bool conv = false;
     CplxVect res = CplxVect();
 
@@ -602,12 +608,10 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
 
     // start the solver
     slack_weights_ = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
-    conv = _solver.compute_pf(Ybus_dc_, V, Sbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
+    conv = _dc_solver.compute_pf(Ybus_dc_, V, Sbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
 
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, false, id_me_to_dc_solver_);
-    // restore original solver
-    _solver.change_solver(init_solver_type);
     return res;
 }
 

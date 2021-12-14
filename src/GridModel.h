@@ -67,7 +67,9 @@ class GridModel : public DataGeneric
                 DataLoad::StateRes
                 >  StateRes;
 
-        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
+        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){
+            _dc_solver.change_solver(SolverType::DC);
+        }
         GridModel(const GridModel & other);
         GridModel copy() const{
             GridModel res(*this);
@@ -91,11 +93,14 @@ class GridModel : public DataGeneric
         void change_solver(const SolverType & type){
             need_reset_ = true;
             topo_changed_ = true;
-            _solver.change_solver(type);
+            if(_solver.is_dc(type)) _dc_solver.change_solver(type);
+            else _solver.change_solver(type);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
         SolverType get_solver_type() {return _solver.get_type(); }
+        SolverType get_dc_solver_type() {return _solver.get_type(); }
         const ChooseSolver & get_solver() const {return _solver;}
+        const ChooseSolver & get_dc_solver() const {return _dc_solver;}
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
@@ -321,7 +326,7 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<cplx_type> get_dcYbus(){
             return Ybus_dc_;  // This is copied to python
         }
-        Eigen::Ref<CplxVect> get_Sbus(){
+        Eigen::Ref<const CplxVect> get_Sbus() const{
             return Sbus_;
         }
         Eigen::Ref<const Eigen::VectorXi> get_pv() const{
@@ -353,6 +358,7 @@ class GridModel : public DataGeneric
             return _solver.get_J_python();  // This is copied to python
         }
         real_type get_computation_time() const{ return _solver.get_computation_time();}
+        real_type get_dc_computation_time() const{ return _dc_solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
@@ -608,6 +614,7 @@ class GridModel : public DataGeneric
 
         // to solve the newton raphson
         ChooseSolver _solver;
+        ChooseSolver _dc_solver;
 
         // specific grid2op
         int n_sub_;

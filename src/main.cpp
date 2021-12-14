@@ -394,8 +394,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("change_solver", &GridModel::change_solver, DocGridModel::change_solver.c_str())
         .def("available_solvers", &GridModel::available_solvers, DocGridModel::available_solvers.c_str())  // retrieve the solver available for your installation
         .def("get_computation_time", &GridModel::get_computation_time, DocGridModel::get_computation_time.c_str())  // get the computation time spent in the solver
+        .def("get_dc_computation_time", &GridModel::get_dc_computation_time, DocGridModel::get_dc_computation_time.c_str())  // get the computation time spent in the solver
         .def("get_solver_type", &GridModel::get_solver_type, DocGridModel::get_solver_type.c_str())  // get the type of solver used
+        .def("get_dc_solver_type", &GridModel::get_dc_solver_type, DocGridModel::get_dc_solver_type.c_str())  // get the type of solver used
         .def("get_solver", &GridModel::get_solver, py::return_value_policy::reference, DocGridModel::get_solver.c_str())  // get the solver (AnySolver type python side) used
+        .def("get_dc_solver", &GridModel::get_dc_solver, py::return_value_policy::reference, DocGridModel::get_dc_solver.c_str())  // get the solver (AnySolver type python side) used
 
         // init the grid
         .def("init_bus", &GridModel::init_bus, DocGridModel::_internal_do_not_use.c_str())

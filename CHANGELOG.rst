@@ -33,6 +33,7 @@ Change Log
 - [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
 - [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
   Newton Raphson and DC solvers.
+- [IMPROVED] `GridModel` now contains two different solvers, one for AC powerflow and one for DC powerflow.
 
 [0.5.5] 2021-11-10
 -------------------

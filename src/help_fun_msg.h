@@ -140,8 +140,11 @@ struct DocGridModel
     static const std::string change_solver;
     static const std::string available_solvers;
     static const std::string get_computation_time;
+    static const std::string get_dc_computation_time;
     static const std::string get_solver_type;
+    static const std::string get_dc_solver_type;
     static const std::string get_solver;
+    static const std::string get_dc_solver;
 
     // accessor
     static const std::string get_lines;
