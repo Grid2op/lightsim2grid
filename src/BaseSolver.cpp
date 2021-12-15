@@ -18,7 +18,7 @@ void BaseSolver::reset(){
     Va_= RealVect();  // voltage angle
     V_= RealVect();  // voltage angle
     nr_iter_ = 0;  // number of iteration performs by the algorithm
-    err_ = -1; //error message:
+    err_ = ErrorType::NotInitError; //error message:
 }
 
 RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,

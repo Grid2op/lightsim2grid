@@ -8,19 +8,22 @@
 
 #include "SparseLUSolver.h"
 
-bool SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
     // default Eigen representation: column major, which is good for klu !
     // J is const here
+    ErrorType res = ErrorType::NoError; 
     solver_.analyzePattern(J);
+    // do not check here for "solver_.info" it is not set to "Success"
     solver_.factorize(J);
-    return solver_.info() == Eigen::Success;
+    if(solver_.info() != Eigen::Success) res = ErrorType::SolverFactor; 
+    return res;
 }
 
-int SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
+ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call sparselu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const
-    int err = 0;
+    ErrorType err = ErrorType::NoError;
     bool stop = false;
     if(!has_just_been_inialized){
         // if the call to "klu_factor" has been made this iteration, there is no need
@@ -28,14 +31,14 @@ int SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVe
         // i'm in the case where it has not
         solver_.factorize(J);
         if (solver_.info() != Eigen::Success) {
-            err = 2;
+            err = ErrorType::SolverFactor;
             stop = true;
         }
     }
     if(!stop){
         RealVect Va = solver_.solve(b);
         if (solver_.info() != Eigen::Success) {
-            err = 3;
+            err = ErrorType::SolverSolve;
         }
         b = Va;
     }

@@ -47,8 +47,10 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         throw std::runtime_error(exc_.str());
     }
     reset_timer();
-    if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
+    if(!is_linear_solver_valid()) return false;
+
+    err_ = ErrorType::NoError;  // reset the error if previous error happened
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
     real_type slack_absorbed = std::real(Sbus.sum());  // initial guess for slack_absorbed
@@ -89,7 +91,7 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
         if(need_factorize_){
             initialize();
-            if(err_ != 0){
+            if(err_ != ErrorType::NoError){
                 // I got an error during the initialization of the linear system, i need to stop here
                 res = false;
                 break;
@@ -99,7 +101,7 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         solve(F, has_just_been_initialized);
 
         has_just_been_initialized = false;
-        if(err_ != 0){
+        if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
             break;
@@ -124,12 +126,13 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
         if(!tmp){
+            err_ = ErrorType::InifiniteValue;
             break; // divergence due to Nans
         }
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){
-        err_ = 4;
+        if (err_ != ErrorType::NoError) err_ = ErrorType::TooManyIterations;
         res = false;
     }
     timer_total_nr_ += timer.duration();
@@ -154,8 +157,10 @@ void BaseNRSolver<LinearSolver>::reset(){
     dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
     dS_dVa_ = Eigen::SparseMatrix<cplx_type>();
     need_factorize_ = true;
-    _linear_solver.reset();
     n_ = -1;
+    // reset linear solver
+    ErrorType reset_status = _linear_solver.reset();
+    if(reset_status != ErrorType::NoError) err_ = reset_status;
 }
 
 template<class LinearSolver>

@@ -3,11 +3,9 @@ Change Log
 
 [TODO]
 --------
-- perform unittest on CI (either github or circleci)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
-- improve documentation
 - code `helm` powerflow method
 - possibility to read CGMES files
 - possibility to read XIIDM files
@@ -25,6 +23,7 @@ Change Log
 - [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
 - [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`
 - [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)
+- [FIXED] a bug in the `SecurityAnalysisCPP`: when it diverges for some contingencies, the others were not simulated properly.
 - [ADDED] possibility to compute the active flows using the `BaseMultiplePower` 
 - [ADDED] possibility to change linear solver used when performing a DC solver
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
@@ -37,6 +36,8 @@ Change Log
 - [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
   Newton Raphson and DC solvers.
 - [IMPROVED] `GridModel` now contains two different solvers, one for AC powerflow and one for DC powerflow.
+- [IMPROVED] error message in the solver are now embedded in an Enum instead of being integers, for better readibility.
+- [IMPROVED] error message when the powerflow diverge (error are read from c++ now)
 
 [0.5.5] 2021-11-10
 -------------------

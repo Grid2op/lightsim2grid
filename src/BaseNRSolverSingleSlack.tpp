@@ -41,7 +41,10 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
         throw std::runtime_error(exc_.str());
     }
     BaseNRSolver<LinearSolver>::reset_timer();
-    if(BaseNRSolver<LinearSolver>::err_ > 0) return false; // i don't do anything if there were a problem at the initialization
+    
+    if(!is_linear_solver_valid()) return false;
+
+    BaseNRSolver<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
     Eigen::VectorXi my_pv = BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
@@ -76,7 +79,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
         fill_jacobian_matrix(Ybus, BaseNRSolver<LinearSolver>::V_, pq, pvpq, pq_inv, pvpq_inv);
         if(BaseNRSolver<LinearSolver>::need_factorize_){
             BaseNRSolver<LinearSolver>::initialize();
-            if(BaseNRSolver<LinearSolver>::err_ != 0){
+            if(BaseNRSolver<LinearSolver>::err_ != ErrorType::NoError){
                 // I got an error during the initialization of the linear system, i need to stop here
                 res = false;
                 break;
@@ -90,7 +93,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
         BaseNRSolver<LinearSolver>::solve(F, has_just_been_initialized);
 
         has_just_been_initialized = false;
-        if(BaseNRSolver<LinearSolver>::err_ != 0){
+        if(BaseNRSolver<LinearSolver>::err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
             break;
@@ -118,7 +121,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
         converged = BaseNRSolver<LinearSolver>::_check_for_convergence(F, tol);
     }
     if(!converged){
-        BaseNRSolver<LinearSolver>::err_ = 4;
+        BaseNRSolver<LinearSolver>::err_ = ErrorType::TooManyIterations;
         res = false;
     }
     BaseNRSolver<LinearSolver>::timer_total_nr_ += timer.duration();

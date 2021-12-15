@@ -120,11 +120,6 @@ elif sys.platform.startswith("win32"):
                                "-D_USE_MATH_DEFINES"]
     IS_WINDOWS = True
 
-
-# for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
-# why we deactivated it by default
-# extra_compile_args_tmp += ["-march=native"]
-
 # if you have installed some BLAS or LAPACKE libraries (on ubuntu sudo apt-get install libblas-dev liblapacke-dev)
 # you can also trigger their use when using eigen.
 # extra_compile_args_tmp += ["-DEIGEN_USE_BLAS", "-DEIGEN_USE_LAPACKE"]
@@ -171,25 +166,36 @@ if "PATH_NICSLU" in os.environ:
     include_nicslu = True
     # check for appropriate license
     if not os.path.exists(path_nicslu):
+        print(f"WARNING: nothing for NICSLU at at: {path_nicslu}")
         include_nicslu = False
-    if include_nicslu and not os.path.exists(os.path.join(path_nicslu, "license")):
+    license_path = os.path.join(path_nicslu, "license")
+    if include_nicslu and not os.path.exists(license_path):
         # license not located at the right directory
+        print(f"WARNING: no license path found for NICSLU at: {license_path}")
         include_nicslu = False
-    if include_nicslu and not os.path.exists(os.path.join(path_nicslu, "license", "nicslu.lic")):
+    license_file = os.path.join(license_path, "nicslu.lic")
+    if include_nicslu and not os.path.exists(license_file):
         # no license found
+        print(f"WARNING: no license file is found for NICSLU at: {license_file}")
         include_nicslu = False
     libnicslu_path = None
     if include_nicslu:
         if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
             libnicslu_path = os.path.join(path_nicslu, "linux/lib_centos6_x64_gcc482_fma/int32/libnicslu.so")
             if not os.path.exists(libnicslu_path):
+                print(f"WARNING: cannot locate the NICSLU shared object that should be at: {libnicslu_path}")
                 include_nicslu = False
                 libnicslu_path = None
         elif sys.platform.startswith("win"):
             libnicslu_path = os.path.join(path_nicslu, "windows/lib_win7_x64_fma/int32/nicslu.lib")
             if not os.path.exists(libnicslu_path):
+                print(f"WARNING: cannot locate the NICSLU shared object that should be at: {libnicslu_path}")
                 include_nicslu = False
                 libnicslu_path = None
+        else:
+            print(f"WARNING: NICSLU can only be added when using linux, darwin (MacOS) or win (Windows) python version, you are using {sys.platform}")
+            include_nicslu = False
+            libnicslu_path = None
 
     if include_nicslu and libnicslu_path is not None:
         LIBS.append(os.path.join(path_nicslu, libnicslu_path))
@@ -260,7 +266,6 @@ pkgs = {
             "sphinxcontrib-trio>=1.1.0",
             "autodocsumm>=0.1.13",
             "grid2op>=1.6.4",
-            # "m2r"
             "recommonmark",
         ],
         "benchmark": [
@@ -271,7 +276,8 @@ pkgs = {
             "py-cpuinfo"
         ],
         "recommended": [
-            "grid2op>=1.6.4"
+            "grid2op>=1.6.4",
+            "numba"
         ],
         "test": [
             "grid2op>=1.6.4",

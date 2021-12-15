@@ -80,9 +80,9 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     bool just_factorize = false;
     if(need_factorize_){
         // dc_solver_.analyzePattern(dcYbus);
-        bool is_ok = _linear_solver.initialize(dcYbus);
-        if(!is_ok){
-            err_ = 1;
+        ErrorType status_init = _linear_solver.initialize(dcYbus);
+        if(status_init != ErrorType::NoError){
+            err_ = status_init;
             return false;
         }
         // std::cout << "\t dc: need_factorize_: " << need_factorize_ << std::endl;
@@ -118,8 +118,8 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // }
     // std::cout << std::endl;
 
-    int error = _linear_solver.solve(dcYbus, Va_dc_without_slack, just_factorize);
-    if(error != 0){
+    ErrorType error = _linear_solver.solve(dcYbus, Va_dc_without_slack, just_factorize);
+    if(error != ErrorType::NoError){
         err_ = error;
         timer_total_nr_ += timer.duration();
         return false;

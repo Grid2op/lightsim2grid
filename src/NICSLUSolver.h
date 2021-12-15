@@ -61,9 +61,9 @@ class NICSLULinearSolver
          }
 
         // public api
-        void reset();
-        bool initialize(Eigen::SparseMatrix<real_type> & J);
-        int solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
+        ErrorType reset();
+        ErrorType initialize(Eigen::SparseMatrix<real_type> & J);
+        ErrorType solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
 
         // prevent copy and assignment
         NICSLULinearSolver(const NICSLULinearSolver & other) = delete;

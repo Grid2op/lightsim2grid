@@ -65,11 +65,11 @@ class BaseNRSolver : public BaseSolver
         void initialize(){
             auto timer = CustTimer();
             n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
-            err_ = 0; // reset error message
-            const bool init_ok = _linear_solver.initialize(J_);
-            if(!init_ok){
-                std::cout << "init_ok " << init_ok << std::endl;
-                err_ = 1;
+            err_ = ErrorType::NoError; // reset error message
+            const ErrorType init_status = _linear_solver.initialize(J_);
+            if(init_status != ErrorType::NoError){
+                // std::cout << "init_ok " << init_ok << std::endl;
+                err_ = init_status;
             }
             need_factorize_ = false;
             timer_initialize_ += timer.duration();
@@ -78,9 +78,9 @@ class BaseNRSolver : public BaseSolver
         virtual
         void solve(RealVect & b, bool has_just_been_inialized){
             auto timer = CustTimer();
-            const int solve_status = _linear_solver.solve(J_, b, has_just_been_inialized);
-            if(solve_status != 0){
-                std::cout << "solve error: " << solve_status << std::endl;
+            const ErrorType solve_status = _linear_solver.solve(J_, b, has_just_been_inialized);
+            if(solve_status != ErrorType::NoError){
+                // std::cout << "solve error: " << solve_status << std::endl;
                 err_ = solve_status;
             }
             timer_solve_ += timer.duration();

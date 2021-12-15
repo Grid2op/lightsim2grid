@@ -1983,6 +1983,11 @@ const std::string DocSecurityAnalysis::SecurityAnalysis = R"mydelimiter(
     This is a "raw" c++ class, for an easier to use interface, please refer to the python documentation of the 
     :class:`lightsim2grid.securityAnalysis.SecurityAnalysis` class.
 
+    .. warning::
+        This function might give wrong result for lightsim2grid version 0.5.5 were they were a bug : when some contingencies made the grid
+        non connex, it made all the other contingencies diverge. This bug has been fixed in version 0.6.0 and this is why we do not recommend
+        to use this feature with lightsim2grid version < 0.6.0 !
+
     .. note::
         Even if you instruct it to simulate the same contingency multiple times, it will only do it once.
 

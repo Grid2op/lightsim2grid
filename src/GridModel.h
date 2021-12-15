@@ -98,7 +98,7 @@ class GridModel : public DataGeneric
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
         SolverType get_solver_type() {return _solver.get_type(); }
-        SolverType get_dc_solver_type() {return _solver.get_type(); }
+        SolverType get_dc_solver_type() {return _dc_solver.get_type(); }
         const ChooseSolver & get_solver() const {return _solver;}
         const ChooseSolver & get_dc_solver() const {return _dc_solver;}
 

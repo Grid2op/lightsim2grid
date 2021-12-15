@@ -28,8 +28,7 @@
 #include "CustTimer.h"
 #include "BaseConstants.h"
 
-// TODO make err_ more explicit: use an enum
-
+enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue, SolverAnalyze, SolverFactor, SolverReFactor, SolverSolve, NotInitError, LicenseError};
 /**
 This class represents a solver to compute powerflow.
 
@@ -38,7 +37,7 @@ It can be derived for different usecase, for example for DC powerflow, AC powerf
 class BaseSolver : public BaseConstants
 {
     public:
-        BaseSolver():BaseConstants(),n_(-1),err_(-1),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
+        BaseSolver():BaseConstants(),n_(-1),err_(ErrorType::NotInitError),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
 
         virtual ~BaseSolver(){}
 
@@ -51,7 +50,7 @@ class BaseSolver : public BaseConstants
         Eigen::Ref<const CplxVect> get_V() const{
             return V_;
         }
-        int get_error() const {
+        ErrorType get_error() const {
             return err_;
         }
         int get_nb_iter() const {
@@ -59,7 +58,7 @@ class BaseSolver : public BaseConstants
         }
 
         bool converged() const{
-            return err_ == 0;
+            return err_ == ErrorType::NoError;
         }
 
         std::tuple<double, double, double, double> get_timers() const
@@ -93,6 +92,12 @@ class BaseSolver : public BaseConstants
             timer_total_nr_ = 0.;
         }
 
+        bool is_linear_solver_valid(){
+            // bool res = true;
+            // if((err_ == ErrorType::NotInitError) || (err_ == ErrorType::LicenseError)) res = false;  // cannot use a non intialize solver
+            // return res;
+            return (err_ != ErrorType::LicenseError);
+        }
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
                               const CplxVect & Sbus,
@@ -166,7 +171,7 @@ class BaseSolver : public BaseConstants
         CplxVect V_;  // complex voltage
 
         int nr_iter_;  // number of iteration performs by the solver (may vary depending on the solver)
-        int err_; //error message:
+        ErrorType err_; //error message:
         // -1 : the solver has not been initialized (call initialize in this case)
         // 0 everything ok
         // 1: i can't factorize the matrix (klu_factor)

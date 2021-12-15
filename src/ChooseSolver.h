@@ -170,7 +170,7 @@ class ChooseSolver
             return std::get<3>(res);
         }
 
-        int get_error() const{
+        ErrorType get_error() const{
             auto p_solver = get_prt_solver("get_error", true);
             return p_solver -> get_error();
         }

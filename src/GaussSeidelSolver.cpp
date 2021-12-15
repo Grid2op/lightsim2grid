@@ -27,7 +27,7 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
     // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
     reset_timer();
-    if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
+    if(err_ == ErrorType::NotInitError) return false; // i don't do anything if there were a problem at the initialization
     auto timer = CustTimer();
 
     // TODO SLACK (for now i put all slacks as PV, except the first one)
@@ -66,7 +66,7 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){
-        err_ = 4;
+        err_ = ErrorType::TooManyIterations;
         res = false;
     }
     Vm_ = V_.array().abs();  // update Vm and Va again in case

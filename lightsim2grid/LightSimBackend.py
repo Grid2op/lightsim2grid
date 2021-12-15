@@ -564,9 +564,8 @@ class LightSimBackend(Backend):
                 # But not when it initializes in DC mode... (see below)
                 self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
-                self._grid.change_solver(SolverType.DC)
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow("Divergence of powerflow (non connected grid)")
+                    raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid). Detailed error: {self._grid.get_dc_solver().get_error()}")
             else:
                 if (self.V is None) or (self.V.shape[0] == 0):
                     # create the vector V as it is not created
@@ -582,13 +581,13 @@ class LightSimBackend(Backend):
                     self._grid.reactivate_result_computation()
                     # self._grid.change_solver(self.__current_solver_type)
                     if Vdc.shape[0] == 0:
-                        raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
+                        raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
                     V_init = Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow(f"divergence of powerflow (more than {self.max_it} iterations)")
+                    raise DivergingPowerFlow(f"Divergence of AC powerflow. Detailed error: {self._grid.get_solver().get_error()}")
 
             if is_dc:
                 self.comp_time += self._grid.get_dc_computation_time()

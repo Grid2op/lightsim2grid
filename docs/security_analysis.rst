@@ -6,6 +6,11 @@ basic features.
 
 If you are interested in collaborating to improve this section, let us know.
 
+.. warning::
+    This function might give wrong result for lightsim2grid version 0.5.5 were they were a bug : when some contingencies made the grid
+    non connex, it made all the other contingencies diverge. This bug has been fixed in version 0.6.0 and this is why we **do not recommend**
+    to use this feature with lightsim2grid version < 0.6.0 !
+    
 Goal
 -----------------
 

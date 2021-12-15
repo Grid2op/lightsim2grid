@@ -8,6 +8,7 @@
 
 # TODO add the other solver now !
 __all__ = ["SolverType",
+           "ErrorType",
            "AnySolver",  
            "GaussSeidelSolver",
            "GaussSeidelSynchSolver",
@@ -16,6 +17,7 @@ __all__ = ["SolverType",
            "DCSolver"]
 
 from lightsim2grid_cpp import SolverType
+from lightsim2grid_cpp import ErrorType
 from lightsim2grid_cpp import AnySolver
 
 from lightsim2grid_cpp import GaussSeidelSolver

@@ -42,9 +42,9 @@ class SparseLULinearSolver
         SparseLULinearSolver():solver_(){}
         
         // public api
-        bool initialize(const Eigen::SparseMatrix<real_type> & J);
-        int solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
-        void reset(){};
+        ErrorType initialize(const Eigen::SparseMatrix<real_type> & J);
+        ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
+        ErrorType reset(){ return ErrorType::NoError; }
 
     private:
         // solver initialization
