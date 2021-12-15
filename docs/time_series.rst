@@ -54,8 +54,10 @@ Importantly, this method is around 15 times faster than simulating "do nothing" 
 
 .. _timeserie_benchmark: 
 
+.. _ts_benchmarks:
+
 Benchmarks
-************
+-----------------
 
 Here are some benchmarks made with:
 

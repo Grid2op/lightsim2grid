@@ -28,6 +28,7 @@ As from version 0.5.3:
    quickstart
    disclaimer
    use_with_grid2op
+   benchmarks
    use_solver
    physical_law_checker
 

@@ -1,9 +1,12 @@
 Use as Pandapower Solver
 =========================
 
-.. versionchanged:: 0.5.6
+Advanced usage
+-----------------
 
-    As of version 0.5.6 lightsim2grid implements the new API of "newtonpf" required by pandapower. This means that
+.. versionchanged:: 0.6.0
+
+    As of version 0.6.0 lightsim2grid implements the new API of "newtonpf" required by pandapower. This means that
     it is asked specifically to provide `ref` a vector of integer identifying the slack buses (implements a distributed
     slack)
 
@@ -118,7 +121,7 @@ python virtual machine at execution time. So we encourage you to check that:
 
 
 AC solvers using Newton Raphson
-+++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 There are 6 solvers in this categorie. They can in turn, be split into two main sub categories. The first one allows for a
 distributed slack bus (but can be a bit slower) as the other one does not allow for such (in case of multiple slack bus, only 
@@ -154,12 +157,12 @@ You can use them as:
   # process the results as above
 
 .. note::
-  \* these 4 solvers might not be available on all platforms (KLU is available if installed from pypi, but not
+  \* these 4 solvers might not be available on all platforms (`KLU` is available if installed from pypi, but not
   necessarily when installed from source). The solvers based on `NICSLU` also requires an installation from
   source.
 
 AC solvers using Gauss Seidel method
-+++++++++++++++++++++++++++++++++++++
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 There are 2 solvers in this categorie. Neither of them supports distributed slack bus [they both ignore `slack_weight` and
 assign all elements of `ref` into `pv` except the first one]. If a grid with more
@@ -173,7 +176,8 @@ The two solvers there are `GaussSeidelSolver` and `GaussSeidelSynchSolver`. Unle
 do not recommend to use them as they often are slower than the Newton Raphson based solvers above.
 
 DC solvers
-+++++++++++
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 This is another type of solvers available in lightsim2grid, they use a DC modeling of the powergrid equation and
 are often really fast compared to full AC powerflow.
 
@@ -196,6 +200,7 @@ There are 3 solvers of this type that are different in the way they solve `Ybus 
   dc_solver = DCSolver()
   converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
   # process the results as above
+
 
 Detailed documentation
 --------------------------

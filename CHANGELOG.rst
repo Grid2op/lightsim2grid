@@ -18,6 +18,9 @@ Change Log
 
 [0.6.0] 20xx-yy-zz
 -------------------
+- [BREAKING] change the interface of the `newton_pf` function to reflect pandapower change in their
+  latest version (arguments `ref` has been added). You can still use the old `newton_pf` function, with the
+  old signature by importing `newtonpf_old` instead.
 - [BREAKING] `SecurityAnalysis` now also returns the active flows when calling `security_analysis.get_flows()`
 - [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
 - [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`

@@ -65,9 +65,6 @@ A concrete example of how to change the solver in this backend is:
 
 For the list of availbale solvers, you can consult the "enum" :class:`lightsim2grid.solver.SolverType`.
 
-Available Solvers
---------------------------
-
 
 Detailed usage
 --------------------------

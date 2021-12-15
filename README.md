@@ -8,18 +8,18 @@ this package should not be used for detailed power system computations or simula
 
 
 *   [1 Usage](#Usage)
-    *   [1.1. As a grid2op backend (preferred method)](#-1.-As-a-grid2op-backend-\(preferred-method\))
-    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](#2.-replacement-of-pandapower-"newtonpf"-method-\(advanced-method\))
+    *   [1.1. As a grid2op backend (preferred method)](#1-As-a-grid2op-backend-\(preferred-method\))
+    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](#2-replacement-of-pandapower-"newtonpf"-method-\(advanced-method\))
 *   [2 Installation (from pypi official repository, recommended)](#Installation-\(from-pypi-official-repository,-recommended\))
 *   [3 Installation (from source, for more advanced user)](#Installation-\(from-source,-for-more-advanced-user\))
     *   [3.0 Important note](#Important-note)
-    *   [3.1. Retrieve the sources](#1.-Retrieve-the-sources)
+    *   [3.1. Retrieve the sources](#1-Retrieve-the-sources)
     *   [(optional, recommended) Compilation of SuiteSparse](#\(optional,-recommended\)-Compilation-of-SuiteSparse)
         *   [option A. Compilation of SuiteSparse using "make"](#\(optional\)-option-A.-Compilation-of-SuiteSparse-using-"make")
         *   [option B. Compilation of SuiteSparse using "cmake"](#\(optional\)-option-B.-Compilation-of-SuiteSparse-using-"cmake")
     *   [(optional) Include NICSLU linear solver (experimental)](#\(optional\)-Include-NICSLU-linear-solver-\(experimental\))
     *   [(optional) customization of the installation](#\(optional\)-customization-of-the-installation)
-    *   [3.2 Installation of the python package](#2.-Installation-of-the-python-package)
+    *   [3.2 Installation of the python package](#2-Installation-of-the-python-package)
 *   [4. Benchmarks](#Benchmarks)
 *   [5. Philosophy](#Philosophy)
 *   [6. Miscellaneous](#Miscellaneous)
@@ -36,8 +36,9 @@ use it as any python package.
 
 ### 1. As a grid2op backend (preferred method)
 This functionality requires you to have grid2op installed, with at least version 0.7.0. You can install it with
+
 ```commandline
-pip install grid2op>=0.7.0
+pip install grid2op>=1.6.4
 ```
 
 Then you can use a LightSimBackend instead of the default PandapowerBackend this way:
@@ -55,19 +56,21 @@ And you are good to go.
 It is also possible to use directly the "solver" part of lightsim2grid.
 
 Suppose you somehow get:
-- `Ybus` the admittance matrix of your powersystem given by pandapower
-- `V0` the (complex) voltage vector at each bus given by pandapower
-- `Sbus` the (complex) power absorb at each bus as given by pandapower
-- `ppci` a ppc internal pandapower test case
+- `Ybus` the admittance matrix of your powersystem, for example given by pandapower
+  (will be converted to a scipy `sparse.csc_matrix` )
+- `V0` the (complex) voltage vector at each bus, for example given by pandapower
+- `Sbus` the (complex) power absorb at each bus, for example as given by pandapower
+- `ref` Ids of the slack buses (added in version 0.5.6 to match recent pandapower changes)
 - `pv` list of PV buses
 - `pq` list of PQ buses
-- `options` list of pandapower "options"
+- `ppci` a ppc internal pandapower test case (or dictionary, is used to retrieve the coefficients associated to each slack bus)
+- `options` list of pandapower "options" (or dictionary with keys `max_iteration` and `tolerance_mva`)
 
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
 ```python
 from lightsim2grid.newtonpf import newtonpf
-V, converged, iterations, J = newtonpf(Ybus, V, Sbus, pv, pq, ppci, options)
+V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
@@ -219,67 +222,8 @@ And you are done :-)
 
 
 ## Benchmarks
-In this section we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
-The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
 
-All of them has been run on a computer with the following configuration:
-Configuration:
-- system: Linux 5.11.0-38-generic
-- OS: ubuntu 20.04
-- processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
-- python version: 3.8.10.final.0 (64 bit)
-- numpy version: 1.18.5
-- pandas version: 1.1.4
-- pandapower version: 2.6.0
-- lightsim2grid version: 0.5.5
-- grid2op version: 1.6.4
-
-
-The code to reproduce the benchmark on your machine are given, once `cd` into the `benchmarks` directory:
-
-```commandline
-cd benchmarks  # cd in the lightsim2grid benchmarks directory if not already
-python3 benchmark_solvers.py --name l2rpn_case14_sandbox --no_test --number 1000
-python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --number 1000
-```
-(results may vary depending on the hard drive, the ram etc. )
-
-(to run these benchmarks, some data will automatically be downloaded, this requires an internet access)
-
-(we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
-make use of all the available cores, which would increase the number of steps that can be performed per second)
-
-We compare up to 9 different solvers:
-
-- **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
-  acceleration). It is our reference solver.
-- **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
-  solver to compute the powerflows It is implemented in
-  [GaussSeidelSolver](./src/GaussSeidelSolver.h).
-- **LS+GS S** (LightSimBackend+Gauss Seidel Synchronous): the grid2op backend based on lightsim2grid that uses a
-  variant of the "Gauss Seidel" method to compute the powerflows. It is implemented in
-  [GaussSeidelSynchSolver](./src/GaussSeidelSynchSolver.h).
-- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
-  "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform) and is implemented in
-  [SparseLUSolver](./src/SparseLUSolver.h). This solver supports distributed slack bus.
-- **LS+SLU (single)** (Newton Raphson+SparseLU): same as above but this solver does not support distributed slack bus and
-  can thus be slightly faster.
-- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
-  "Newton Raphson" algorithm coupled with the linear solver 
-  "KLU" from the `SuiteSparse` C package implemented in
-  [KLUSolver](./src/KLUSolver.h). This solver supports distributed slack bus.
-- **LS+KLU (single)** (Newton Raphson+KLU): same as above but this solver does not support distributed slack bus and
-  can thus be slightly faster.
-- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
-  "Newton Raphson" algorithm coupled with the linear solver 
-  "NICSLU" implemented in
-  [NICSLUSolver](./src/NICSLUSolver.h). [**NB** NICSLU is a free software but not open source, in order to use
-  it with lightsim2grid, you need to check section 
-  [(optional) Include NICSLU linear solver (experimental)](###-\(optional\)-Include-NICSLU-linear-solver-\(experimental\)) 
-  It is required to install lightsim2grid from source for such solver]
-- **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
-  can thus be slightly faster.
+Lightsim2grid is significantly faster than pandapower when used with grid2op for all kind of environment size.
 
 First on an environment based on the IEEE case14 grid:
 
@@ -292,14 +236,6 @@ First on an environment based on the IEEE case14 grid:
 | LS+KLU           |                 1160   |                               0.12  |                       0.0188 |
 | LS+NICSLU        |                 1150   |                               0.121 |                       0.0186 |
 
-
-From a grid2op perspective, lightsim2grid allows to compute up to ~1200 steps each second on the case 14 and
-"only" 69 for the default PandaPower Backend, leading to a speed up of **~17** in this case
-(lightsim2grid is ~17 times faster than Pandapower). For such a small environment, there is no sensible
-difference in using 
-KLU linear solver compared to using the SparseLU solver of Eigen (1160 vs 1090 iterations on the reported
-runs, might slightly vary across runs). KLU and NICSLU achieve almost identical performances.
-
 Then on an environment based on the IEEE case 118:
 
 | neurips_2020_track2   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
@@ -311,23 +247,7 @@ Then on an environment based on the IEEE case 118:
 | LS+KLU                |                 883    |                               0.301 |                        0.12  |
 | LS+NICSLU             |                 881    |                               0.302 |                        0.121 |
 
-For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~22** time faster than
-using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~16**
-times faster than using the default backend [the `LS+KLU` solver is ~4-5 times faster than the `LS+SLU` solver 
-(`0.12` ms per powerflow for `L2+KLU`  compared to `0.59` ms for `LS+SLU`), but it only translates to `LS+KLU` 
-providing ~30-40% more
-iterations per second in the total program (`880` vs `650`) mainly because grid2op itself takes some times to modify the
-grid and performs all the check it does.] For this testcase once again there is no noticeable difference between
-`NICSLU` and `KLU`.
-
-If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
-initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.12ms**
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **5.6 ms** when using
-the PandaPowerBackend (speed up of **~46** times)
-
-**NB** pandapower performances heavily depends on the pandas version used, we used here a version of pandas which
-we found gave the best performances on our machine.
+For more information (including the exact way to reproduce these results, as well as the computer used), you can consult the dedicated [Benchmarks](https://lightsim2grid.readthedocs.io/en/latest/benchmarks.html) page on the documentation.
 
 ## Philosophy
 Lightsim2grid aims at providing a somewhat efficient (in terms of computation speed) backend targeting the 
@@ -335,7 +255,7 @@ grid2op platform.
 
 It provides a c++ api, compatible with grid2op that is able to compute flows (and voltages and reactive power) from
 a given grid. This grid can be modified according to grid2op mechanism (see more information in the [official
-grid2Op documentation](https://grid2op.readthedocs.io/en/latest/index.html`) ).
+grid2Op documentation](https://grid2op.readthedocs.io/en/latest/index.html) ).
 
 This code do not aim at providing state of the art solver in term of performances nor in terms of realism in the
 modeling of power system elements (*eg* loads, generators, powerlines, transformers, etc.).

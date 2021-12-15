@@ -43,6 +43,8 @@ to / from other data sources.
     A more advanced usage is given in the `examples\\security_analysis.py` 
     file from the lightsim2grid package.
 
+.. _sa_benchmarks:
+
 Benchmarks
 -----------------
 
