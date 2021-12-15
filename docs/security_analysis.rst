@@ -7,7 +7,7 @@ basic features.
 If you are interested in collaborating to improve this section, let us know.
 
 Goal
-##############################
+-----------------
 
 This class aims to make faster (and easier) the computations of a security analysis (which is the results of some 
 powerflow after the disconnection of one or more powerlines)
@@ -44,7 +44,7 @@ to / from other data sources.
     file from the lightsim2grid package.
 
 Benchmarks
-************
+-----------------
 
 Here are some benchmarks made with:
 

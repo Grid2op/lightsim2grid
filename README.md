@@ -8,31 +8,26 @@ this package should not be used for detailed power system computations or simula
 
 
 *   [1 Usage](#Usage)
-    *   [1.1. As a grid2op backend (preferred method)](###-1.-As-a-grid2op-backend-\(preferred-method\))
-    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](###-2.-replacement-of-pandapower-"newtonpf"-method-\(advanced-method\))
-*   [2 Installation (from pypi official repository, recommended)](##-Installation-\(from-pypi-official-repository,-recommended\))
-*   [3 Installation (from source, for more advanced user)](##-Installation-\(from-source,-for-more-advanced-user\))
-    *   [3.0 Important note](###-Important-note)
-    *   [3.1. Retrieve the sources](###-1.-Retrieve-the-sources)
-    *   [(optional, recommended) Compilation of SuiteSparse](###-\(optional,-recommended\)-Compilation-of-SuiteSparse)
-        *   [option A. Compilation of SuiteSparse using "make"](####-\(optional\)-option-A.-Compilation-of-SuiteSparse-using-"make")
-        *   [option B. Compilation of SuiteSparse using "cmake"](####-\(optional\)-option-B.-Compilation-of-SuiteSparse-using-"cmake")
-    *   [(optional) Include NICSLU linear solver (experimental)](###-\(optional\)-Include-NICSLU-linear-solver-\(experimental\))
-    *   [(optional) customization of the installation](###-\(optional\)-customization-of-the-installation)
-    *   [3.2 Installation of the python package](###-2.-Installation-of-the-python-package)
-*   [4. Benchmarks](##-Benchmarks)
-*   [5. Philosophy](##-Philosophy)
-*   [6. Usage with docker](##-Usage-with-docker)
-    * [6.1. Install docker](###-1.-Install-docker)
-    * [6.2. Get the lightsim2grid image](###-2.-Get-the-lightsim2grid-image)
-    * [6.3. Run a code on this container](###-3.-Run-a-code-on-this-container)
-    * [6.4 Clean-up](###-4.-Clean-up)
-*   [7. Miscellaneous](##-Miscellaneous)
-    * [7.1 Customization of the compilation](###-Customization-of-the-compilation)
-    * [7.2 Profile the code](###-Profile-the-code)
-    * [7.3 Local testing](###-Local-testing)
-    * [7.4 Tests performed automatically](###-Tests-performed-automatically)
-    * [7.5 Known issues](###-Known-issues)
+    *   [1.1. As a grid2op backend (preferred method)](#-1.-As-a-grid2op-backend-\(preferred-method\))
+    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](#2.-replacement-of-pandapower-"newtonpf"-method-\(advanced-method\))
+*   [2 Installation (from pypi official repository, recommended)](#Installation-\(from-pypi-official-repository,-recommended\))
+*   [3 Installation (from source, for more advanced user)](#Installation-\(from-source,-for-more-advanced-user\))
+    *   [3.0 Important note](#Important-note)
+    *   [3.1. Retrieve the sources](#1.-Retrieve-the-sources)
+    *   [(optional, recommended) Compilation of SuiteSparse](#\(optional,-recommended\)-Compilation-of-SuiteSparse)
+        *   [option A. Compilation of SuiteSparse using "make"](#\(optional\)-option-A.-Compilation-of-SuiteSparse-using-"make")
+        *   [option B. Compilation of SuiteSparse using "cmake"](#\(optional\)-option-B.-Compilation-of-SuiteSparse-using-"cmake")
+    *   [(optional) Include NICSLU linear solver (experimental)](#\(optional\)-Include-NICSLU-linear-solver-\(experimental\))
+    *   [(optional) customization of the installation](#\(optional\)-customization-of-the-installation)
+    *   [3.2 Installation of the python package](#2.-Installation-of-the-python-package)
+*   [4. Benchmarks](#Benchmarks)
+*   [5. Philosophy](#Philosophy)
+*   [6. Miscellaneous](#Miscellaneous)
+    * [6.1 Customization of the compilation](#Customization-of-the-compilation)
+    * [6.2 Profile the code](#Profile-the-code)
+    * [6.3 Local testing](#Local-testing)
+    * [6.4 Tests performed automatically](#Tests-performed-automatically)
+    * [5.5 Known issues](#Known-issues)
 
 ## Usage
 Once installed (don't forget, if you used the optional virtual env
@@ -136,10 +131,8 @@ Newton-Raphson based method. But to carry out this algorithm, one need to solver
 difference in the two version (with KLU and without) is that the linear equation solver is different. Up to the
 double float precision, both results (with and without KLU) should match.
 
-We only detail the compilation on a system using "make" (so most likely GNU-Linux and MacOS). If you don't feel 
-comfortable with this, either you can ignore it, or you have also the possibility to use the
-provided a docker version. See the next section [Installation Using Docker](#installation-using-docker) 
-for more information.
+There are 2 ways to install this package. Either you use "make" (preferred method on linux / unix -- including MacOS) or you use "cmake", which works on all platforms but takes more time and is less automatic (mainly because SuiteSparse
+cannot be directly built with "cmake" so we need extra steps to make it possible.)
 
 #### (optional) option A. Compilation of SuiteSparse using "make"
 This is the easiest method to compile SuiteSparse on your system but unfortunately it only works on OS where "make" is
@@ -190,8 +183,7 @@ To use it, you need to:
 And this is it. Lightsim will be able to use this linear solver.
 
 Be carefull though, you require a license file in order to use it. As of now, the best way is to copy paste the license
-file at the same location that the one you execute python from (*ie* you need to copy paste it each time). We will 
-try to find another solution.
+file at the same location that the one you execute python from (*ie* you need to copy paste it each time).
 
 ### (optional) customization of the installation
 
@@ -411,149 +403,6 @@ If you use this package in one of your work, please cite:
     howpublished = {\url{https://GitHub.com/bdonnot/lightsim2grid}},
 }
 ```
-
-## Usage with docker
-In this section we cover the use of docker with grid2op.
-
-### 1. Install docker
-First, you need to install docker. You can consult the 
-[docker on windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) if you use a windows like
-operating system, if you are using MacOs you can consult 
-[docker on Mac](https://hub.docker.com/editions/community/docker-ce-desktop-mac/). The installation of docker on linux
-depends on your linux distribution, we will not list them all here.
-
-### 2. Get the lightsim2grid image
-
-Once done, you can simply "install" the lightsim2grid image with:
-```commandline
-docker pull bdonnot/lightsim2grid:latest
-```
-
-This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
-internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
-dependencies), equivalent of what would be installed if you typed:
-```commandline
-pip install -U grid2op[optional] pybind11
-# and do steps detailed in section "Installation (from source)"
-# that we will not repeat
-```
-
-### 3. Run a code on this container
-You can skip this section if you know how to use docker. We will present here "the simplest way" to use. This is NOT
-a tutorial on docker, and you can find better use of this technology on 
-[the docker website](https://www.docker.com/get-started).
-
-For this tutorial, we suppose you have a script named `my_script.py` located in the directory (complete path) 
-`DIR_PATH` (*e.g.* on windows you can have `DIR_PATH` looking like "c:\User\MyName\L2RPNCompeitionCode" or 
-on Linux `DIR_PATH` will look like "/home/MyName/L2RPNCompeitionCode", this path is your choice, you can name it
-the way you like)
-
-#### 3.1) Start a docker container
-You first need to start a docker container and tell docker that the container can access your local files with the 
-following command:
-
-```commandline
-docker run -t -d -p 8888:8888 --name lightsim_container -v DIR_PATH:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
-```
-More information on this command 
-[in the official docker documentation](https://docs.docker.com/engine/reference/commandline/run/)
-
-After this call you can check everything went smoothly with by invoking:
-```commandline
-docker ps
-```
-And the results should look like:
-```
-CONTAINER ID        IMAGE                   COMMAND             CREATED             STATUS              PORTS               NAMES
-89750964ca55        bdonnot/lightsim2grid   "python3"           5 seconds ago       Up 4 seconds        80/tcp              lightsim_container
-```
-
-**NB** I insist, `DIR_PATH` should be replaced by the path on which you are working, see again the introduction of this
-section for more information, in the example above this can look like:
-```commandline
-docker run -t -d -p 8888:8888 --name lightsim_container -v /home/MyName/L2RPNCompeitionCode:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
-```
-
-#### 3.2) Execute your code on this container
-Once everything is set-up you can execute anything you want on this container. Note that doing so, the execution
-of the code will be totally independant of your system. Only the things located in `DIR_PATH` will be visible 
-by your script, only the python package installed in the container will be usable, only the python interpreter
-of the containter (python 3.6 at time of writing) will be usable etc.
-
-```commandline
-docker exec lightsim_container python my_script.py
-```
-
-Of course, the "my_script.py" should save its output somewhere on the hard drive.
-
-If you rather want to execute a python REPL (read-eval-print loop), corresponding to the "interactive python 
-interpreter", you can run this command:
-```commandline
-docker exec -it lightsim_container python
-```
-
-We also added the possibility to run jupyter notebook from this container. To do so, you can run the command:
-```commandline
-docker exec -it lightsim_container jupyter notebook --port=8888 --no-browser --ip='*' --allow-root
-```
-
-More information is provided in the official documentation of 
-[docker exec](https://docs.docker.com/engine/reference/commandline/exec/).
-
-#### 3.3) Disclaimer
-Usually, docker run as root on your machine, be careful, you can do irreversible things with it. "A great power 
-comes with a great responsibility".
-
-Also, we recall that we presented a really short introduction to docker and its possibility. We have not implied
-that this was enough, nor explain (on purpose, to make this short) any of the commands. 
-We strongly encourage you to have a look for yourself. 
-
-We want to recall the paragraph `7. Limitation of Liability` under which lightsim2grid, and this "tutorial" 
-is distributed:
-
-*Under no circumstances and under no legal 
-theory, whether tort (including negligence), 
-contract, or otherwise, shall any Contributor, or 
-anyone who distributes Covered Software as 
-permitted above, be liable to You for any direct, 
-indirect, special, incidental, or consequential 
-damages of any character including, without 
-limitation, damages for lost profits, loss of 
-goodwill, work stoppage, __**computer failure or**__
-__**malfunction**__, or any and all other commercial 
-damages or losses, even if such party shall have 
-been informed of the possibility of such damages.*
-
-### 4. Clean-up
-Once you are done with your experiments, you can stop the docker container:
-```commandline
-docker container stop lightsim_container
-```
-This will free all the CPU / GPU resources that this container will use. If you want to start it again, for another 
-experiment for example, just use the command:
-```commandline
-docker container start lightsim_container
-```
-This will allow you to run another batch of `dcoker exec` (see `3.2) Execute your code on this container`) 
-without having to re run the container.
-
-
-If you want to go a step further, you can also delete the container with the command:
-```commandline
-docker container rm lightsim_container
-```
-This will remove the container, and all your code executed there, the history of commands etc. If you want to use
-lightsim2grid with docker again you will have to go through section `3. Run a code on this container` all over
-again.
-
-And if you also want to remove the image, you can do:
-```commandline
-docker rmi bdonnot/lightsim2grid 
-```
-**NB** this last command will completely erase the lightsim2grid image from your machine. This means that 
-if you want to use it again, you will have to download it again (see section `2. Get the lightsim2grid image`)
-
-Finally, you can see the official documentation in case you need to uninstall docker completely from your system.
 
 ## Miscellaneous
 

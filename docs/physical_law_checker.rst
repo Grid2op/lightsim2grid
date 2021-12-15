@@ -7,6 +7,10 @@ It is a wrapper around the :func:`lightsim2grid.initGridModel.GridModel.check_so
 
 TODO DOC in progress !
 
+.. warning::
+    The grid2op environment is read from a `grid.json`` file. Make sure to use an environment that can be
+    loaded by lightsim2grid (default environment uses pandapower and are fully compatible)
+
 Examples
 ---------
 See the section :ref:`use_with_g2op` for more information and more examples.
