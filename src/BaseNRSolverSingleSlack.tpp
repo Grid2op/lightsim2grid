@@ -42,7 +42,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     }
     BaseNRSolver<LinearSolver>::reset_timer();
     
-    if(!is_linear_solver_valid()) return false;
+    if(!BaseNRSolver<LinearSolver>::is_linear_solver_valid()) return false;
 
     BaseNRSolver<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();

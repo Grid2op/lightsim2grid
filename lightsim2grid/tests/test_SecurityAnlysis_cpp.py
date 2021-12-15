@@ -208,7 +208,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
     
     def test_compute_nonconnected_graph(self):
         SA = SecurityAnalysisCPP(self.env.backend._grid)
-        lid_cont = [18]
+        lid_cont = [18, 0, 1]
         nb_sub = self.env.n_sub
         SA.add_multiple_n1(lid_cont)
         SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
@@ -223,6 +223,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
                                                               time_step=0)
             if not sim_done:
                 Vref = obs._obs_env.backend.V
+                assert np.all(np.isfinite(res_flows[cont_id])), f"amps should not be Nan for cont {cont_id} (converged)"
                 assert np.max(np.abs(Vref[:nb_sub] - res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
                 assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
             else:
