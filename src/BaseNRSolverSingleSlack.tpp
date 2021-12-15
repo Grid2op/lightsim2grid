@@ -121,7 +121,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
         converged = BaseNRSolver<LinearSolver>::_check_for_convergence(F, tol);
     }
     if(!converged){
-        BaseNRSolver<LinearSolver>::err_ = ErrorType::TooManyIterations;
+        if (err_ == ErrorType::NoError) BaseNRSolver<LinearSolver>::err_ = ErrorType::TooManyIterations;
         res = false;
     }
     BaseNRSolver<LinearSolver>::timer_total_nr_ += timer.duration();

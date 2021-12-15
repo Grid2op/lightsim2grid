@@ -208,7 +208,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
     
     def test_compute_nonconnected_graph(self):
         SA = SecurityAnalysisCPP(self.env.backend._grid)
-        lid_cont = [18, 0, 1]
+        lid_cont = [17, 18, 19]  # 17 is ok, 18 lead to divergence, i need to check then that 19 is correct (no divergence)
         nb_sub = self.env.n_sub
         SA.add_multiple_n1(lid_cont)
         SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)

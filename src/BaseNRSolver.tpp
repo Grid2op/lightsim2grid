@@ -132,7 +132,7 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){
-        if (err_ != ErrorType::NoError) err_ = ErrorType::TooManyIterations;
+        if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
         res = false;
     }
     timer_total_nr_ += timer.duration();

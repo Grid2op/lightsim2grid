@@ -6,6 +6,7 @@ Change Log
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
+- code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
 - code `helm` powerflow method
 - possibility to read CGMES files
 - possibility to read XIIDM files

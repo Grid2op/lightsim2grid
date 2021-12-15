@@ -200,7 +200,8 @@ class MakeTests(unittest.TestCase):
         # print("have i conv ? {}".format(has_conv))
         # print("print timer solve: {}".format(self.solver.get_timers()[1]))
 
-        assert has_conv, "the load flow has diverged for {}".format(self.path)
+        assert convergedgs, "the load flow has diverged for pandapower for {}".format(self.path)
+        assert has_conv, "the load flow has diverged for {} with error {}".format(self.path, self.solver.get_error())
         Va = self.solver.get_Va()
         Vm = self.solver.get_Vm()
         iter_max = self.solver.get_nb_iter()
