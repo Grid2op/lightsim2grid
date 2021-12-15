@@ -209,9 +209,11 @@ if "__COMPILE_MARCHNATIVE" in os.environ:
         extra_compile_args.append("-march=native")
         print("INFO: Using \"-march=native\" compiler flag")
 
+# $Env:_READ_THE_DOCS = "1" in powershell
 if "_READ_THE_DOCS" in os.environ:
     # generation is made on readthedocs.org for documentation, everything must be added, even though some packages will
     # not be available (eg KLU, NICSLU, etc.)
+
     if os.environ["_READ_THE_DOCS"] == "1":
         extra_compile_args.append("-D_READ_THE_DOCS")
         print("WARNING: Using the \"read the docs\" compatibility mode, do not use the package for something else than generating documentation.")
@@ -257,6 +259,7 @@ pkgs = {
             "sphinx-rtd-theme>=0.4.3",
             "sphinxcontrib-trio>=1.1.0",
             "autodocsumm>=0.1.13",
+            "grid2op>=1.6.4"
             # "m2r"
             "recommonmark",
         ],

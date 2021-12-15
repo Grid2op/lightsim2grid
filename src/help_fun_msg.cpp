@@ -1196,8 +1196,10 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
 
     .. seealso:: :attr:`lightsim2grid.solver.SolverType` for a list of the available solver (NB: some solvers might not be available on all platform)
 
-    .. info::
-        If the solver type entered, it will change the `_dc_solver` otherwise the regular `_solver` is impacted.
+    .. note::
+        If the solver type entered is a `DC` solver (**eg** from :attr:`lightsim2grid.solver.SolverType`, 
+        `DC`, `KLUDC` or `NICSLUDC`), it will change the `_dc_solver` otherwise the regular `_solver` 
+        is modified.
 
     Examples
     ---------
