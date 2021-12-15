@@ -259,7 +259,7 @@ pkgs = {
             "sphinx-rtd-theme>=0.4.3",
             "sphinxcontrib-trio>=1.1.0",
             "autodocsumm>=0.1.13",
-            "grid2op>=1.6.4"
+            "grid2op>=1.6.4",
             # "m2r"
             "recommonmark",
         ],
