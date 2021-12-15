@@ -273,6 +273,11 @@ Lightsim2grid codebase is "organized" in 4 different parts:
 4) computes the active power, reactive power, flow on powerllines etc. from the `V` and `Sbus` complex vectors computed
    at step 3).
 
+Step 1, 2 and 4 are done in the [GridModel](https://lightsim2grid.readthedocs.io/en/latest/gridmodel.html#lightsim2grid.initGridModel.GridModel) class.
+
+Step 3 is performed thanks to a "powerflow solver".
+
+### Using a custom powerflow solver
 For now some basic "solver" (*eg* the program that performs points `3.` above) are available, based on the
 Gauss Seidel or the Newton-Raphson methods to perform "powerflows". 
 
@@ -282,6 +287,8 @@ implement, in c++ a "lightsim2grid solver" which mainly consists in defining a f
 bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // the admittance matrix
                 CplxVect & V,  // store the results of the powerflow and the Vinit !
                 const CplxVect & Sbus,  // the injection vector
+                const Eigen::VectorXi & ref,  // bus id participating to the distributed slack
+                const RealVect & slack_weights,  // slack weights for each bus
                 const Eigen::VectorXi & pv,  // (might be ignored) index of the components of Sbus should be computed
                 const Eigen::VectorXi & pq,  // (might be ignored) index of the components of |V| should be computed
                 int max_iter,  // maximum number of iteration (might be ignored)
@@ -293,22 +300,41 @@ The types used are:
 
 - `real_type`: double => type representing the real number
 - `cplx_type` :  std::complex<real_type> => type representing the complex number
-- `CplxVect` : Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> => type representing a vector of complex elements
+- `CplxVect` : Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> => type representing a vector of complex numbers
+- `RealVect` : Eigen::Matrix<real_type, Eigen::Dynamic, 1> => type representing a vector of real numbers
 - `Eigen::VectorXi` => represents a vector of integer
 - `Eigen::SparseMatrix<cplx_type>` => represents a sparse matrix
 
-See for example [BaseNRSolver](./src/BaseNRSolver.h) for the implementation of a Newton Raphson solver (and
-its derived classes [KLUSolver](./src/KLUSolver.h) and [SparseLUSolver](./src/SparseLUSolver.h) that uses
-different routine to implement this algorithm) for examples on how to implement a solver.
+See for example [BaseNRSolver](./src/BaseNRSolver.h) for the implementation of a Newton Raphson solver (it requires some "linear solvers", more details about that are given in the section bellow)
 
 Any contribution in this area is more than welcome.
+
+**NB** For now the "solver" only uses these above information to perform the powerflow. If a more
+"in depth" solution needs to be implemented, let us know with a github issue. For example, it could be totally fine that a proposed "solver" uses direct information about the elements (powerline, topology etc.) of the grid in order to perform some powerflow.
 
 **NB** It is not mandatory to "embed" all the code of the solver in lightsim2grid. Thanks to different customization, 
 it is perfectly possible to install a given "lightsim solver" only if certain conditions are met. For example, on
 windows based machine, the SuiteSparse library cannot be easily compiled, and the KLUSolver is then not available.
 
-It would be totally fine if some "lightsim2grid" solvers are available only if some packages are installed on the
+**NB** It would be totally fine if some "lightsim2grid" solvers are available only if some packages are installed on the
 machine for example.
+
+### Using custom linear solvers to solve powerflows
+
+In lightsim2grid (c++ part) it is also possible, thanks to the use of "template meta programming" to
+not recode the Newton Raphson algorithm (or the DC powerflow algorithm) and to leverage the 
+use of a linear solver.
+
+A "linear solver" is anything that can implement 3 basic functions:
+
+- `initialize(const Eigen::SparseMatrix<real_type> & J)` : initialize the solver and prepare it to solve for linear systems `J.x = b` (usually called once per powerflow)
+- `ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized)`: effectively solves `J.x = b` (usually called multiple times per powerflow)
+- `ErrorType reset()`: clear the state of the solver (usually performed at the end of a powerflow
+  to reset the state to a "blank" / "as if it was just initialized" state)
+
+Some example are given in the c++ code "KLUSolver.h", "SparLUSolver.h" and "NICSLU.h"
+
+This usage usually takes approximately around 20 / 30 lines of c++ code (not counting the comments, and boiler code for exception handling for example).
 
 ## Citing
 
@@ -382,7 +408,7 @@ Some tests are performed automatically on standard platform each time modificati
 
 These tests include, for now, compilation on gcc (version 8, 9, 10 and 11) and clang (version 10, 11 and 12).
 
-**NB** Older version of clang are not tested regularly, but lightsim2grid used to work on these versions.
+**NB** Older versions of clang are not tested regularly, but lightsim2grid used to work on these.
 
 ### Known issues
 
