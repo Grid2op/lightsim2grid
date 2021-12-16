@@ -22,7 +22,7 @@ import asyncio  # asyncio
 import grid2op
 from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
-from lightsim2grid_cpp import Computers
+from lightsim2grid.timeSerie import Computers
 
 NB_THREAD = 4
 ENV_NAME = "l2rpn_neurips_2020_track2_small"

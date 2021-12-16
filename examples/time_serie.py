@@ -97,9 +97,9 @@ full_time_ts =  computer.total_time() + computer.amps_computation_time()
 print()
 print("Comparison with raw grid2op timings")
 print(f"It took grid2op (with lightsim2grid): {total_time_glop_ls:.2f}s to perform the same computation")
-print(f"This is a {(total_time_glop_ls) / (full_time_ts) :.1f} speed up from TimeSerie over raw grid2op (lightsim2grid)")
+print(f"\t This is a {(total_time_glop_ls) / (full_time_ts) :.1f} speed up from TimeSerie over raw grid2op (lightsim2grid)")
 print(f"It took grid2op (with pandapower): {total_time_glop_pp:.2f}s to perform the same computation")
-print(f"This is a {(total_time_glop_pp) / (full_time_ts) :.1f} speed up from TimeSerie over raw grid2op (pandapower)")
+print(f"\t This is a {(total_time_glop_pp) / (full_time_ts) :.1f} speed up from TimeSerie over raw grid2op (pandapower)")
 
 #### Check that the results matches
 env.set_id(scenario_id)

@@ -85,10 +85,10 @@ full_time_sa = computer.total_time() + computer.amps_computation_time()
 print()
 print("Comparison with raw grid2op timings")
 print(f"It took grid2op (with lightsim2grid, using obs.simulate): {total_time_glop_ls:.2f}s to perform the same computation")
-print(f"This is a {(total_time_glop_ls) / (full_time_sa) :.1f} "
+print(f"\t This is a {(total_time_glop_ls) / (full_time_sa) :.1f} "
       f"speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)")
 print(f"It took grid2op (with pandapower, using obs.simulate): {total_time_glop_pp:.2f}s to perform the same computation")
-print(f"This is a {(total_time_glop_pp) / (full_time_sa) :.1f} "
+print(f"\t This is a {(total_time_glop_pp) / (full_time_sa) :.1f} "
       f"speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)")
 
 

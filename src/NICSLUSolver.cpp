@@ -36,7 +36,7 @@ ErrorType NICSLULinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     // default Eigen representation: column major, which is good for klu !
     const auto n = J.cols(); // should be equal to J_.nrows()
     int ret;
-    int err = ErrorType::NoError; // reset error message
+    ErrorType err = ErrorType::NoError; // reset error message
     const unsigned int nnz = J.nonZeros();
 
     ai_ = new unsigned int [nnz];  // deleted in destructor and NICSLUSolver::reset
@@ -59,15 +59,15 @@ ErrorType NICSLULinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
         err = ErrorType::SolverAnalyze;
         // std::cout << "NICSLULinearSolver::initialize() solver_.Analyze error: "  << ret << std::endl;
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
-        return;
+        return err;
     }
     // solver.FactorizeMatrix(ax, 0); //use all created threads
-    ret = solver_.FactorizeMatrix(J_.valuePtr(), nb_thread_);
+    ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
     if (ret < 0){
         err = ErrorType::SolverFactor;
         // std::cout << "NICSLULinearSolver::initialize() solver_.FactorizeMatrix error: "  << ret << std::endl;
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
-        return;
+        return err;
     }
     return err;
 }
@@ -79,7 +79,7 @@ ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect
     int ret;
     bool stop = false;
     RealVect x;
-    int err = 0;
+    ErrorType err = ErrorType::NoError;
     const auto n = J.cols(); // should be equal to J_.nrows()
     if(!has_just_been_inialized){
         // if the call to "klu_factor" has been made this iteration, there is no need

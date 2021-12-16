@@ -18,7 +18,7 @@ This class aims to make faster (and easier) the computations of a security analy
 powerflow after the disconnection of one or more powerlines)
 
 This function is much (much) faster than its pure grid2op counterpart. For example,
-on the case 118, to simulate all n-1 contingencies you can expect a **~100x** speed ups 
+on the case 118, to simulate all n-1 contingencies you can expect a **~20x** speed ups 
 compared to using the grid2op `obs.simulate(..., time_step=0)` while obtaining the
 exact same results (see section `Benchmarks`)
 
@@ -55,14 +55,14 @@ Benchmarks
 
 Here are some benchmarks made with:
 
-- system: Linux 5.11.0-38-generic
+- system: Linux 5.11.0-40-generic
 - OS: ubuntu 20.04
 - processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
 - python version: 3.8.10.final.0 (64 bit)
 - numpy version: 1.18.5
 - pandas version: 1.1.4
-- pandapower version: 2.6.0
-- lightsim2grid version: 0.5.5
+- pandapower version: 2.7.0
+- lightsim2grid version: 0.6.0
 - grid2op version: 1.6.4
 
 Where lightsim2grid has been installed from source with all optimization enabled.
@@ -79,18 +79,22 @@ For this setting the outputs are:
 
 .. code-block:: bash
 
-    For environment: l2rpn_neurips_2020_track2_small (186 n-1 simulated)
-    Total time spent in "computer" to solve everything: 2.8ms (66375 pf / s), 0.02 ms / pf)
+    For environment: l2rpn_neurips_2020_track2_small (177 n-1 simulated)
+    Total time spent in "computer" to solve everything: 18.5ms (9573 pf / s), 0.10 ms / pf)
         - time to compute the coefficients to simulate line disconnection: 0.04ms
-        - time to pre process Ybus: 2.00ms
-        - time to perform powerflows: 0.73ms (256458 pf / s, 0.00 ms / pf)
-    In addition, it took 0.67 ms to retrieve the current from the complex voltages (in total 53578.7 pf /s, 0.02 ms / pf)
+        - time to pre process Ybus: 2.50ms
+        - time to perform powerflows: 15.84ms (11172 pf / s, 0.09 ms / pf)
+    In addition, it took 0.83 ms to retrieve the current from the complex voltages (in total 9160.4 pf /s, 0.11 ms / pf)
+
     Comparison with raw grid2op timings
-    It took grid2op: 0.41s to perform the same computation
-    This is a 116.7 speed up from SecurityAnalysis over raw grid2op (using obs.simulate)
+    It took grid2op (with lightsim2grid, using obs.simulate): 0.42s to perform the same computation
+        This is a 21.6 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+    It took grid2op (with pandapower, using obs.simulate): 6.39s to perform the same computation
+        This is a 330.9 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)
+    All results match !
 
 
-In this case then, the `SecurityAnalysis` module is more than **100** times faster than raw grid2op (
+In this case then, the `SecurityAnalysis` module is more than **22** times faster than raw grid2op (
 with obs.simulate as a way to compute the outcome of a contingency)
 
 

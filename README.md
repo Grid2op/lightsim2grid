@@ -227,25 +227,31 @@ Lightsim2grid is significantly faster than pandapower when used with grid2op for
 
 First on an environment based on the IEEE case14 grid:
 
-| case14_sandbox   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
-|------------------|------------------------|-------------------------------------|------------------------------|
-| PP               |                   68.8 |                              11.3   |                       4.36   |
-| LS+GS            |                  866   |                               0.41  |                       0.308  |
-| LS+GS S          |                  859   |                               0.416 |                       0.314  |
-| LS+SLU           |                 1090   |                               0.168 |                       0.0632 |
-| LS+KLU           |                 1160   |                               0.12  |                       0.0188 |
-| LS+NICSLU        |                 1150   |                               0.121 |                       0.0186 |
+| case14_sandbox     |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
+|--------------------|------------------------|-------------------------------------|------------------------------|
+| PP                 |                   70.5 |                              11     |                       4.27   |
+| LS+GS              |                  881   |                               0.447 |                       0.327  |
+| LS+GS S            |                  877   |                               0.446 |                       0.327  |
+| LS+SLU (single)    |                 1110   |                               0.191 |                       0.0655 |
+| LS+SLU             |                 1120   |                               0.195 |                       0.0683 |
+| LS+KLU (single)    |                 1200   |                               0.138 |                       0.0176 |
+| LS+KLU             |                 1180   |                               0.141 |                       0.0188 |
+| LS+NICSLU (single) |                 1200   |                               0.139 |                       0.0179 |
+| LS+NICSLU          |                 1200   |                               0.139 |                       0.0184 |
 
 Then on an environment based on the IEEE case 118:
 
 | neurips_2020_track2   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
 |-----------------------|------------------------|-------------------------------------|------------------------------|
-| PP                    |                  39.4  |                              13.5   |                        5.65  |
-| LS+GS                 |                   5.12 |                             194     |                      194     |
-| LS+GS S               |                  35.2  |                              27.5   |                       27.3   |
-| LS+SLU                |                 621    |                               0.775 |                        0.591 |
-| LS+KLU                |                 883    |                               0.301 |                        0.12  |
-| LS+NICSLU             |                 881    |                               0.302 |                        0.121 |
+| PP                    |                   39.6 |                              13.3   |                        5.58  |
+| LS+GS                 |                    5.3 |                             188     |                      188     |
+| LS+GS S               |                   36.5 |                              26.6   |                       26.4   |
+| LS+SLU (single)       |                  642   |                               0.775 |                        0.607 |
+| LS+SLU                |                  588   |                               0.932 |                        0.769 |
+| LS+KLU (single)       |                  945   |                               0.277 |                        0.116 |
+| LS+KLU                |                  918   |                               0.306 |                        0.144 |
+| LS+NICSLU (single)    |                  947   |                               0.274 |                        0.11  |
+| LS+NICSLU             |                  929   |                               0.298 |                        0.134 |
 
 For more information (including the exact way to reproduce these results, as well as the computer used), you can consult the dedicated [Benchmarks](https://lightsim2grid.readthedocs.io/en/latest/benchmarks.html) page on the documentation.
 
