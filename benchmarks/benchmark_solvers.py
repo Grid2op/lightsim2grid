@@ -24,7 +24,7 @@ except ImportError:
 
 from grid2op.Parameters import Parameters
 import lightsim2grid
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:

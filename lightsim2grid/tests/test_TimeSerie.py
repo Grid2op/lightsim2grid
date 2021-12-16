@@ -10,7 +10,7 @@ import unittest
 import warnings
 from lightsim2grid import TimeSerie
 import grid2op
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 import numpy as np
 
 class TimeSerieTester(unittest.TestCase):

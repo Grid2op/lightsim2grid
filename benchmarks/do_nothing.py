@@ -13,7 +13,7 @@ from grid2op import make
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import GridStateFromFile
 from grid2op.Parameters import Parameters
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 from utils_benchmark import print_res, run_env, str2bool
 import pdb
 

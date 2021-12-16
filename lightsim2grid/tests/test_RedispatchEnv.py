@@ -15,7 +15,7 @@ from grid2op.tests.BaseRedispTest import BaseTestRedispatch, BaseTestRedispatchC
 from grid2op.tests.BaseRedispTest import BaseTestRedispTooLowHigh, BaseTestDispatchRampingIllegalETC
 from grid2op.tests.BaseRedispTest import BaseTestLoadingAcceptAlmostZeroSumRedisp
 
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP

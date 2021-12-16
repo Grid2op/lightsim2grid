@@ -10,7 +10,7 @@ from grid2op import make
 from grid2op.Agent import DoNothingAgent
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 import numpy as np
 import unittest
 from abc import ABC, abstractmethod

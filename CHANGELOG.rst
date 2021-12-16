@@ -21,10 +21,15 @@ Change Log
   latest version (arguments `ref` has been added). You can still use the old `newton_pf` function, with the
   old signature by importing `newtonpf_old` instead.
 - [BREAKING] `SecurityAnalysis` now also returns the active flows when calling `security_analysis.get_flows()`
+- [BREAKING] change the file names (python side) to be compliant with pep 8. You can no longer
+  do things like `from lightsim2grid.LightSimBackend import LightSimBackend` change it to
+  `from lightsim2grid import LightSimBackend` (preferred method)
 - [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
 - [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`
 - [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)
 - [FIXED] a bug in the `SecurityAnalysisCPP`: when it diverges for some contingencies, the others were not simulated properly.
+- [FIXED] `LightSimBackend` now contains members for `shunts` and `***_theta` as it does for the other quantities. This improves the consistency, but most importantly
+  fixes some bugs when used in earlier grid2op versions
 - [ADDED] possibility to compute the active flows using the `BaseMultiplePower` 
 - [ADDED] possibility to change linear solver used when performing a DC solver
 - [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)

@@ -11,7 +11,7 @@ from grid2op.Agent import AgentWithConverter
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
 from grid2op.Converter import IdToAct
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 import numpy as np
 import unittest
 from abc import ABC, abstractmethod

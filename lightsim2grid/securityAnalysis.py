@@ -13,7 +13,7 @@ import warnings
 from collections.abc import Iterable
 import copy
 
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.initGridModel import SolverType
 from lightsim2grid_cpp import SecurityAnalysisCPP
 
