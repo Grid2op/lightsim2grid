@@ -167,7 +167,7 @@ SuiteSparse comes with the faster KLU linear solver.
 Since version 0.3.0 this requirement has been removed. This entails
 that on linux / macos you can still benefit from the faster KLU solver. On windows you will still benefit from the
 speed up of lightsim (versus the default PandaPowerBackend) but this speed up will be less than if you manage
-to compile SuiteSparse (see the subsection [Benchmark](#benchmark) for more information).
+to compile SuiteSparse (see the subsection *Benchmark* for more information).
 
 **NB** in both cases the algorithm to compute the powerflow is exactly the same. It is a
 Newton Raphson based method. But to carry out this algorithm, one need to solver some linear equations. The only
@@ -183,8 +183,7 @@ provided a docker version. See the next section for more information.
 
 This is the easiest method to compile SuiteSparse on your system but unfortunately it only works on OS where "make" is
 available (*eg* Linux or MacOS) but this will not work on Windows... The compilation on windows is covered in the next
-paragraph 
-[(optional) option B. Compilation of SuiteSparse using "cmake"](#\(optional\)-option-B.-Compilation-of-SuiteSparse-using-"cmake")
+paragraph *(optional) option B. Compilation of SuiteSparse using "cmake"* bellow.
 
 Anyway, in this case, it's super easy. Just do:
 
@@ -306,9 +305,9 @@ In this section we cover the use of docker with grid2op.
 1. Install docker
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 First, you need to install docker. You can consult the 
-[docker on windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) if you use a windows like
+`docker on windows <https://hub.docker.com/editions/community/docker-ce-desktop-windows>`_ if you use a windows like
 operating system, if you are using MacOs you can consult 
-[docker on Mac](https://hub.docker.com/editions/community/docker-ce-desktop-mac/). The installation of docker on linux
+`docker on Mac <https://hub.docker.com/editions/community/docker-ce-desktop-mac/>`_ . The installation of docker on linux
 depends on your linux distribution, we will not list them all here.
 
 2. Get the lightsim2grid image
@@ -336,10 +335,10 @@ dependencies), equivalent of what would be installed if you typed:
 
 You can skip this section if you know how to use docker. We will present here "the simplest way" to use. This is NOT
 a tutorial on docker, and you can find better use of this technology on 
-[the docker website](https://www.docker.com/get-started).
+`the docker website <https://www.docker.com/get-started>`_ .
 
 For this tutorial, we suppose you have a script named `my_script.py` located in the directory (complete path) 
-`DIR_PATH` (*e.g.* on windows you can have `DIR_PATH` looking like "c:\User\MyName\L2RPNCompeitionCode" or 
+`DIR_PATH` (*e.g.* on windows you can have `DIR_PATH` looking like "c:\\User\\MyName\\L2RPNCompeitionCode" or 
 on Linux `DIR_PATH` will look like "/home/MyName/L2RPNCompeitionCode", this path is your choice, you can name it
 the way you like)
 
@@ -354,7 +353,7 @@ following command:
     docker run -t -d -p 8888:8888 --name lightsim_container -v DIR_PATH:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
 
 More information on this command 
-[in the official docker documentation](https://docs.docker.com/engine/reference/commandline/run/)
+`in the official docker documentation <https://docs.docker.com/engine/reference/commandline/run/>`_
 
 After this call you can check everything went smoothly with by invoking:
 
@@ -406,7 +405,7 @@ We also added the possibility to run jupyter notebook from this container. To do
     docker exec -it lightsim_container jupyter notebook --port=8888 --no-browser --ip='*' --allow-root
 
 More information is provided in the official documentation of 
-[docker exec](https://docs.docker.com/engine/reference/commandline/exec/).
+`docker exec  <https://docs.docker.com/engine/reference/commandline/exec/>`_.
 
 3.3) Disclaimer
 +++++++++++++++++++++++++++++++++++++++

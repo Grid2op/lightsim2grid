@@ -29,8 +29,13 @@ piece of code:
 
 .. code-block:: python
 
-    from lighsim2grid.newtonpf import newtonpf
-    V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, pv, pq, ppci, options)
+    from lightsim2grid.newtonpf import newtonpf
+
+    # when pandapower version <= 2.7.0
+    # V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options)
+
+    # when pandapower version > 2.7.0
+    V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
 
 This function uses the KLU algorithm (or the solver provided in Eigen if KLU has not been instealld) 
 and a c++ implementation of a Newton solver for speed.
@@ -55,7 +60,7 @@ the "enum" of the solvers you want to use as showed bellow:
 
     from lightsim2grid.solver import SolverType
     # init the grid model
-    from lightsim2grid.initGridModel import init
+    from lightsim2grid.gridmodel import init
     pp_net = ...  # any pandapower grid
     lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 

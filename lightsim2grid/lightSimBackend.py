@@ -16,11 +16,17 @@ from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFl
 from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 
-from lightsim2grid.initGridModel import init, SolverType
+from lightsim2grid.gridmodel import init
+from lightsim2grid.solver import SolverType
+
 # import lightsim2grid.solver.SolverType.DCSolver
 # from lightsim2grid.solver import DCSolver
 
 class LightSimBackend(Backend):
+    """
+    This is a specialization of the grid2op Backend class to use the lightsim2grid solver,
+    coded in c++, aiming at speeding up the computations.
+    """
     def __init__(self, detailed_infos_for_cascading_failures=False):
         Backend.__init__(self,
                          detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)

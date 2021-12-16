@@ -14,7 +14,7 @@ import pdb
 import copy
 import tempfile
 import unittest
-from lightsim2grid.initGridModel import init
+from lightsim2grid.gridmodel import init
 
 
 VAR_GEN = ["bus", "p_mw", "vm_pu", "sn_mva", "name", "index", "max_q_mvar", "min_q_mvar", "min_p_mw",

@@ -24,6 +24,9 @@ Change Log
 - [BREAKING] change the file names (python side) to be compliant with pep 8. You can no longer
   do things like `from lightsim2grid.LightSimBackend import LightSimBackend` change it to
   `from lightsim2grid import LightSimBackend` (preferred method)
+- [BREAKING] change the file names (python side) to be compliant with pep 8. You can no longer
+  do things like `from lightsim2grid.initGridModel import init` change it to
+  `from lightsim2grid.gridmodel import init` (preferred method) (same for `GridModel` class)
 - [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
 - [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`
 - [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)

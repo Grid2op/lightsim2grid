@@ -11,7 +11,7 @@ import unittest
 import copy
 import numpy as np
 from scipy import sparse
-from lightsim2grid.initGridModel import init
+from lightsim2grid.gridmodel import init
 import pandapower.networks as pn
 import pandapower as pp
 import warnings

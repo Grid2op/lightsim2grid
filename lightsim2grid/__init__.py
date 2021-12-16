@@ -1,9 +1,18 @@
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 __version__ = "0.5.5"
 
-__all__ = ["newtonpf", "SolverType", "solver"]
+__all__ = ["newtonpf", "SolverType", "ErrorType", "solver"]
 
 # import directly from c++ module
 from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import ErrorType
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend

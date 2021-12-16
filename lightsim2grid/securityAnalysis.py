@@ -7,14 +7,15 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 __all__ = ["SecurityAnalysisCPP", "SecurityAnalysis"]
+
 import os
-import numpy as np
 import warnings
-from collections.abc import Iterable
 import copy
+import numpy as np
+from collections.abc import Iterable
 
 from lightsim2grid.lightSimBackend import LightSimBackend
-from lightsim2grid.initGridModel import SolverType
+from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import SecurityAnalysisCPP
 
 
@@ -55,7 +56,7 @@ class SecurityAnalysis(object):
         
         2) you start the simulation (done automatically)
         3) you read back the results
-        res_a, res_v = security_analysis.get_flows()
+        res_p, res_a, res_v = security_analysis.get_flows()
 
         # in this results, then
         # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
@@ -70,7 +71,6 @@ class SecurityAnalysis(object):
 
     In grid2op, it would be, in this case, 0. for the flows and 0. for the voltages.
 
-    
     """
     STR_TYPES = (str, np.str, np.str_)
     def __init__(self, grid2op_env):

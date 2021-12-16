@@ -273,7 +273,7 @@ Lightsim2grid codebase is "organized" in 4 different parts:
 4) computes the active power, reactive power, flow on powerllines etc. from the `V` and `Sbus` complex vectors computed
    at step 3).
 
-Step 1, 2 and 4 are done in the [GridModel](https://lightsim2grid.readthedocs.io/en/latest/gridmodel.html#lightsim2grid.initGridModel.GridModel) class.
+Step 1, 2 and 4 are done in the [GridModel](https://lightsim2grid.readthedocs.io/en/latest/gridmodel.html#lightsim2grid.gridmodel.GridModel) class.
 
 Step 3 is performed thanks to a "powerflow solver".
 

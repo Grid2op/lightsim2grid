@@ -14,7 +14,7 @@ import warnings
 from grid2op.Chronics import Multifolder, GridStateFromFile
 
 from lightsim2grid.lightSimBackend import LightSimBackend
-from lightsim2grid.initGridModel import SolverType
+from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import Computers
 
 class TimeSerie:

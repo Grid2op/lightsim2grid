@@ -6,10 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-"""
-This module provide a function that can serve as a base replacement to the function newtonpf of
-`pandapower/pypower/newtonpf.py`
-"""
 import warnings
 import numpy as np
 from scipy import sparse
@@ -22,6 +18,8 @@ try:
 except ImportError:
     pass
 
+_PP_VERSION_MAX = "2.7.0"
+
 def _isolate_slack_ids(Sbus, pv, pq):
     # extract the slack bus
     ref = set(np.arange(Sbus.shape[0])) - set(pv) - set(pq)
@@ -31,6 +29,63 @@ def _isolate_slack_ids(Sbus, pv, pq):
     slack_weights[ref] = 1.0 / ref.shape[0]
     return ref, slack_weights
 
+
+def newtonpf(*args, **kwargs):
+    """
+    Pandapower changed the interface when they introduced the distributed slack functionality.
+    (around pandapower 2.7.0, pandapower 2.7.0 does not support distributed slack)
+
+    As of lightsim2grid version 0.6.0 we tried to reflect this change.
+
+    However we want to keep the full compatibility with different pandapower version.
+
+    This wrapper tries to select the proper version among:
+
+    - :func:`lightsim2grid.newtonpf.newtonpf_old` for older version of pandapower (<= 2.7.0)
+    - :func:`lightsim2grid.newtonpf.newtonpf_new` for newer version of pandapower (> 2.7.0)
+    
+    .. versionchanged:: 0.6.0
+        Before this version, the function was :func:`lightsim2grid.newtonpf.newtonpf_old` , 
+        now it's a wrapper.
+
+    Examples
+    ----------
+
+    .. code-block::
+
+        from lightsim2grid.newtonpf import newtonpf
+
+        # when pandapower version <= 2.7.0
+        V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options)
+
+        # when pandapower version > 2.7.0
+        V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
+
+    """
+    import pandapower as pp
+    if pp.__version__ <= _PP_VERSION_MAX:
+        try:
+            # should be the old version
+            return newtonpf_old(*args, **kwargs)
+        except TypeError as exc_:
+            # old version does not work, I try the new one
+            try:
+                return newtonpf_new(*args, **kwargs)
+            except TypeError as exc2_:
+                # nothing work, I stop here
+                raise exc2_ from exc_
+    else:
+        try:
+            # should be the new version
+            return newtonpf_new(*args, **kwargs)
+        except TypeError as exc_:
+            # new version does not work, I try the old one
+            try:
+                return newtonpf_old(*args, **kwargs)
+            except TypeError as exc2_:
+                # nothing work, I stop here
+                raise exc2_ from exc_
+
 def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     """
     Perform the Newton scheme to compute the AC powerflow of the system provided as input.
@@ -38,7 +93,12 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
 
     It is main as being integrated into pandapower as a replacement of the pypower implementation of "newtonpf"
 
-    .. versionadded:: 0.5.6
+    .. seealso::
+        :func:`lightsim2grid.newtonpf.newtonpf` for a compatibility wrapper that tries to find
+        the best option among :func:`lightsim2grid.newtonpf.newtonpf_old` and 
+        :func:`lightsim2grid.newtonpf.newtonpf_new` depending on pandapower version
+
+    .. versionadded:: 0.6.0
 
         Added as a way to retrieve the "old" signature for compatibility with older pandapower version
 
@@ -143,18 +203,23 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     return V, converged, iterations, J, Vm_it, Va_it
 
 
-def newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
+def newtonpf_new(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
     """
     Perform the Newton scheme to compute the AC powerflow of the system provided as input.
     It supports only one single slack bus.
 
     It is main as being integrated into pandapower as a replacement of the pypower implementation of "newtonpf"
 
-    .. versionchanged:: 0.5.6
+    .. versionadded:: 0.6.0
+
+    .. seealso::
+        :func:`lightsim2grid.newtonpf.newtonpf` for a compatibility wrapper that tries to find
+        the best option among :func:`lightsim2grid.newtonpf.newtonpf_old` and 
+        :func:`lightsim2grid.newtonpf.newtonpf_new` depending on pandapower version
 
     .. note::
 
-        It has been updated in version 0.5.6 to match pandapower new signature (addition of the `ref` 
+        It has been updated in version 0.6.0 to match pandapower new signature (addition of the `ref` 
         parameter)
 
         If you want the old behaviour, please use the `newtonpf_old` function.

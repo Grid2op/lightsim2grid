@@ -16,7 +16,7 @@ import copy
 import tempfile
 import unittest
 from lightsim2grid import LightSimBackend
-from lightsim2grid.initGridModel import init
+from lightsim2grid.gridmodel import init
 from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 
 

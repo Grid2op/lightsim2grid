@@ -18,7 +18,7 @@ It can be used as:
 
     from lightsim2grid import TimeSerie
     import grid2op
-    from lightsim2grid.LightSimBackend import LightSimBackend
+    from lightsim2grid.lightSimBackend import LightSimBackend
 
     env_name = ...
     env = grid2op.make(env_name, backend=LightSimBackend())

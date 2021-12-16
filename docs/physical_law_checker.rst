@@ -3,7 +3,7 @@ Check if some given (complex) Voltage meets the KCL
 
 This module allows to check if a given vector checks the KCL (Kirchhoff Current Law) or not.
 
-It is a wrapper around the :func:`lightsim2grid.initGridModel.GridModel.check_solution` function.
+It is a wrapper around the :func:`lightsim2grid.gridmodel.GridModel.check_solution` function.
 
 TODO DOC in progress !
 

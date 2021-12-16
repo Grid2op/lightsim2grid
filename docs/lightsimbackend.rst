@@ -46,7 +46,7 @@ For standard grid2op environment, you can use it like:
 Detailed documentation
 --------------------------
 
-.. automodule:: lightsim2grid.LightSimBackend
+.. automodule:: lightsim2grid.lightSimBackend
     :members:
     :autosummary:
 

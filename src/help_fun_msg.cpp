@@ -261,7 +261,7 @@ const std::string DocSolver::get_type = R"mydelimiter(
     Retrieve the current solver used. This will return an instance of :class:`lightsim2grid.solver.SolverType` indicating which
     is the underlying solver in use.
 
-    This should be equivalent to :func:`lightsim2grid.initGridModel.GridModel.get_solver_type()`
+    This should be equivalent to :func:`lightsim2grid.gridmodel.GridModel.get_solver_type()`
 
 )mydelimiter";
 const std::string DocSolver::chooseSolver_get_J_python = R"mydelimiter(
@@ -284,7 +284,7 @@ const std::string DocIterator::id = R"mydelimiter(
     Examples
     --------
     We give the example only for generators, but it works similarly for every other types of objects
-    in a :class:`lightsim2grid.initGridModel.GridModel`.
+    in a :class:`lightsim2grid.gridmodel.GridModel`.
     
     This gives something like:
 
@@ -304,12 +304,12 @@ const std::string DocIterator::id = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::connected = R"mydelimiter(
-    Get the status (True = connected, False = disconnected) of each element of a :class:`lightsim2grid.initGridModel.GridModel`
+    Get the status (True = connected, False = disconnected) of each element of a :class:`lightsim2grid.gridmodel.GridModel`
 
 )mydelimiter";
 
 const std::string DocIterator::bus_id = R"mydelimiter(
-    Get the bus id (as an integer) at which each element of a :class:`lightsim2grid.initGridModel.GridModel` is connected. If `-1` is returned it means
+    Get the bus id (as an integer) at which each element of a :class:`lightsim2grid.gridmodel.GridModel` is connected. If `-1` is returned it means
     that the object is disconnected.
 
 )mydelimiter";
@@ -431,7 +431,7 @@ const std::string DocIterator::has_res = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::DataGen = R"mydelimiter(
-    This class allows to iterate through the generators of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    This class allows to iterate through the generators of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     In lightsim2grid they are modeled as "pv" meanings you give the active production setpoint and voltage magnitude setpoint
@@ -522,7 +522,7 @@ const std::string DocIterator::min_q_mvar = R"mydelimiter(
     Minimum reactive value that can be produced / absorbed by this generator given MVAr.
 
     .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
+        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
         set to ``True``
 
 )mydelimiter";
@@ -531,7 +531,7 @@ const std::string DocIterator::max_q_mvar = R"mydelimiter(
     Maximum reactive value that can be produced / absorbed by this generator given MVAr.
 
     .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
+        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
         set to ``True``
 
 )mydelimiter";
@@ -540,7 +540,7 @@ const std::string DocIterator::min_p_mw = R"mydelimiter(
     Minimum active value that can be produced / absorbed by this generator given in MW.
 
     .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
+        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
         set to ``True``
 
 )mydelimiter";
@@ -549,13 +549,13 @@ const std::string DocIterator::max_p_mw = R"mydelimiter(
     Maximum active value that can be produced / absorbed by this generator given in MW.
 
     .. note:: 
-        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.initGridModel.check_solution` if `check_q_limits` is
+        This is for now not taken into account by the solver. It is only used in :func:`lightsim2grid.gridmodel.check_solution` if `check_q_limits` is
         set to ``True``
 
 )mydelimiter";
 
 const std::string DocIterator::DataSGen = R"mydelimiter(
-    This class allows to iterate through the static generators of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    This class allows to iterate through the static generators of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     In lightsim2grid they are two types of generators the more standard PV generators (see :attr:`lightsim2grid.elements.DataGen`). These
@@ -624,7 +624,7 @@ const std::string DocIterator::SGenInfo = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::DataLoad = R"mydelimiter(
-    This class allows to iterate through the loads **and storage units** of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    This class allows to iterate through the loads **and storage units** of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     They cannot participate to the distributed slack bus yet. If you want this feature, fill free to send us a github issue.
@@ -711,7 +711,7 @@ const std::string DocIterator::LoadInfo = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::DataShunt = R"mydelimiter(
-    This class allows to iterate through the load of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    This class allows to iterate through the load of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     Shunts are modeled as in pandapower and can be represented a the 
@@ -773,7 +773,7 @@ const std::string DocIterator::ShuntInfo = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::DataTrafo = R"mydelimiter(
-    This class allows to iterate through the transformers of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    This class allows to iterate through the transformers of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     Transformers are modeled as in pandapower and can be represented a the 
@@ -974,7 +974,7 @@ const std::string DocIterator::res_a_hv_ka = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::DataLine = R"mydelimiter(
-    This class allows to iterate through the powerlines of the :class:`lightsim2grid.initGridModel.GridModel` easily, as if they were
+    This class allows to iterate through the powerlines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     Powerlines are modeled as in pandapower and can be represented a the 
@@ -1170,7 +1170,7 @@ const std::string DocGridModel::GridModel = R"mydelimiter(
     .. code-block:: python
 
         import lightsim2grid
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower network for example pp_net = pn.case118() 
 
         grid_model = init(pp_net)
@@ -1208,7 +1208,7 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
         
         from lightsim2grid.solver import SolverType
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1228,14 +1228,14 @@ const std::string DocGridModel::get_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver when performing a powerflow.
 
     This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
-    the solver used (:func:`lightsim2grid.initGridModel.GridModel.get_solver`)
+    the solver used (:func:`lightsim2grid.gridmodel.GridModel.get_solver`)
     
 )mydelimiter";
 const std::string DocGridModel::get_dc_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver (used to perform DC approximation) when performing a DC powerflow.
 
     This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
-    the DC solver used (:func:`lightsim2grid.initGridModel.GridModel.get_dc_solver`)
+    the DC solver used (:func:`lightsim2grid.gridmodel.GridModel.get_dc_solver`)
     
 )mydelimiter";
 const std::string DocGridModel::get_solver_type = R"mydelimiter(
@@ -1268,7 +1268,7 @@ const std::string DocGridModel::get_lines = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1286,7 +1286,7 @@ const std::string DocGridModel::get_trafos = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1304,7 +1304,7 @@ const std::string DocGridModel::get_generators = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1322,7 +1322,7 @@ const std::string DocGridModel::get_static_generators = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1340,7 +1340,7 @@ const std::string DocGridModel::get_shunts = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1362,7 +1362,7 @@ const std::string DocGridModel::get_storages = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1380,7 +1380,7 @@ const std::string DocGridModel::get_loads = R"mydelimiter(
     .. code-block:: python
         
         # init the grid model
-        from lightsim2grid.initGridModel import init
+        from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
         lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
@@ -1435,7 +1435,7 @@ const std::string DocGridModel::get_J_python = R"mydelimiter(
 const std::string DocGridModel::get_Va = R"mydelimiter(
     Returns the voltage angles for each buses as a numpy vector of real number. This vector have the size of the total number of active buses on the system.
 
-    You can use the :attr:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.initGridModel.GridModel.id_dc_solver_to_me`) to know at which bus
+    You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
     (on the grid) they corresponds.
 
 )mydelimiter";
@@ -1443,14 +1443,14 @@ const std::string DocGridModel::get_Va = R"mydelimiter(
 const std::string DocGridModel::get_Vm = R"mydelimiter(
     Returns the voltage magnitude for each buses as a numpy vector of real number. This vector have the size of the total number of active buses on the system.
 
-    You can use the :attr:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.initGridModel.GridModel.id_dc_solver_to_me`) to know at which bus
+    You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
     (on the grid) they corresponds.
 )mydelimiter";
 
 const std::string DocGridModel::get_V = R"mydelimiter(
     Returns the complex voltage for each buses as a numpy vector of complex number. This vector have the size of the total number of active buses on the system.
 
-    You can use the :attr:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.initGridModel.GridModel.id_dc_solver_to_me`) to know at which bus
+    You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
     (on the grid) they corresponds.
 )mydelimiter";
 
@@ -1463,7 +1463,7 @@ const std::string DocGridModel::id_me_to_ac_solver = R"mydelimiter(
     On the other end, the solvers need a contiguous list of only active buses (otherwise they might run into divergence issue) [this will be called 
     "**solver bus id**" later on]
 
-    This function allows, for all buses of the :class:`lightsim2grid.initGridModel.GridModel` to know on which "solver bus" they are affected. It
+    This function allows, for all buses of the :class:`lightsim2grid.gridmodel.GridModel` to know on which "solver bus" they are affected. It
     has the same size as the total number of buses on the grid. And for each of them it tells to which "solver bus" it is connected (unless there is a `-1`,
     meaning the associated bus is deactivated).
 
@@ -1488,9 +1488,9 @@ const std::string DocGridModel::id_me_to_ac_solver = R"mydelimiter(
         id_me_to_ac_solver2 = grid.id_me_to_ac_solver()
         # is [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
     
-    .. seealso:: :class:`lightsim2grid.initGridModel.GridModel.id_me_to_dc_solver` for its counterpart when a dc powerflow is used
+    .. seealso:: :class:`lightsim2grid.gridmodel.GridModel.id_me_to_dc_solver` for its counterpart when a dc powerflow is used
     
-    .. seealso:: :class:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for the "reverse" operation (given a "solver bus" id, returns 
+    .. seealso:: :class:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for the "reverse" operation (given a "solver bus" id, returns 
         the "gridmodel bus id")
 
     Notes
@@ -1514,7 +1514,7 @@ const std::string DocGridModel::id_ac_solver_to_me = R"mydelimiter(
     On the other end, the solvers need a contiguous list of only active buses (otherwise they might run into divergence issue) [this will be called 
     "**solver bus id**" later on]
 
-    This function allows, for all buses exported in the solver, to retrieve which was the initial bus in the :class:`lightsim2grid.initGridModel.GridModel`. It
+    This function allows, for all buses exported in the solver, to retrieve which was the initial bus in the :class:`lightsim2grid.gridmodel.GridModel`. It
     has the same size as the number of active buses on the grid.
 
     Examples
@@ -1538,9 +1538,9 @@ const std::string DocGridModel::id_ac_solver_to_me = R"mydelimiter(
         id_ac_solver_to_me2 = grid.id_ac_solver_to_me()
         # is [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     
-    .. seealso:: :class:`lightsim2grid.initGridModel.GridModel.id_dc_solver_to_me` for its counterpart when a dc powerflow is used
+    .. seealso:: :class:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me` for its counterpart when a dc powerflow is used
     
-    .. seealso:: :class:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` for the "reverse" operation (given a "solver bus" id, returns 
+    .. seealso:: :class:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` for the "reverse" operation (given a "solver bus" id, returns 
         the "gridmodel bus id")
 
     Notes
@@ -1557,11 +1557,11 @@ const std::string DocGridModel::id_ac_solver_to_me = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::id_me_to_dc_solver = R"mydelimiter(
-    Same as :class:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` but only used for the DC approximation.
+    Same as :class:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` but only used for the DC approximation.
 )mydelimiter";
 
 const std::string DocGridModel::id_dc_solver_to_me = R"mydelimiter(
-    Same as :class:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` but only used for the DC approximation.
+    Same as :class:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` but only used for the DC approximation.
 )mydelimiter";
 
 const std::string DocGridModel::total_bus = R"mydelimiter(
@@ -1580,7 +1580,7 @@ const std::string DocGridModel::get_pv = R"mydelimiter(
     .. warning:: 
         The index are given in the "solver bus" convention. This means that it might not be the bus of the original grid model.
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
         
 )mydelimiter";
@@ -1593,7 +1593,7 @@ const std::string DocGridModel::get_pq = R"mydelimiter(
     .. warning:: 
         The index are given in the "solver bus" convention. This means that it will might be the bus of the original grid model.
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
 )mydelimiter";
@@ -1606,7 +1606,7 @@ const std::string DocGridModel::get_slack_ids = R"mydelimiter(
     .. warning:: 
         The index are given in the "solver bus" convention. This means that it might not be the bus of the original grid model.
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
 )mydelimiter";
@@ -1621,7 +1621,7 @@ const std::string DocGridModel::get_slack_weights = R"mydelimiter(
     .. warning:: 
         This vector represents "solver buses" and not "original grid model buses".
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
 )mydelimiter";
@@ -1640,7 +1640,7 @@ const std::string DocGridModel::get_Ybus = R"mydelimiter(
     .. warning::
         This is given in the pair unit system !
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
 
     Notes
@@ -1655,7 +1655,7 @@ const std::string DocGridModel::get_Ybus = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::get_dcYbus = R"mydelimiter(
-    It is the equivalent of :func:`lightsim2grid.initGridModel.GridModel.get_Ybus` but for the dc solver.
+    It is the equivalent of :func:`lightsim2grid.gridmodel.GridModel.get_Ybus` but for the dc solver.
 
     .. warning::
         As opposed to some other librairies (for example Matpower of pandapower), the Ybus for the dc approximation in lightsim2grid has no
@@ -1678,7 +1678,7 @@ const std::string DocGridModel::get_Sbus = R"mydelimiter(
     .. warning::
         This is given in the pair unit system and in load convention (so generation will be negative)
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
         ways to link the "grid model" bus id to the "solver" bus id.
     
     Notes
@@ -1698,8 +1698,8 @@ const std::string DocGridModel::check_solution = R"mydelimiter(
     .. note::
         It is expected that you provide a complex number even for the buses that are disconnected in the grid model. They will not be ignored
         so you can put anything you want. We keep the public interface this way to avoid headaches with the bus order between
-        the grid model and the solver (you can refer to :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and 
-        :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` if you still want to have a look)
+        the grid model and the solver (you can refer to :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and 
+        :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` if you still want to have a look)
 
     .. seealso:: :class:`lightsim2grid.physical_law_checker.PhysicalLawChecker` for an easier to use, more pythonic function !
 
@@ -1724,14 +1724,14 @@ const std::string DocGridModel::check_solution = R"mydelimiter(
 const std::string DocGridModel::deactivate_result_computation = R"mydelimiter(
     Allows to deactivate the computation of the flows, reactive power absorbed by generators etc. to gain a bit of time when it is not needed.
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.reactivate_result_computation`
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.reactivate_result_computation`
 )mydelimiter";     
 
 const std::string DocGridModel::reactivate_result_computation = R"mydelimiter(
     Allows to reactivate the computation of the flows, reactive power absorbed by generators etc. when they are needed again after having been
     deactivated.
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.deactivate_result_computation`
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.deactivate_result_computation`
 )mydelimiter";     
 
 const std::string DocGridModel::ac_pf = R"mydelimiter(
@@ -1740,10 +1740,10 @@ const std::string DocGridModel::ac_pf = R"mydelimiter(
     .. note::
         It is expected that you provide a complex number even for the buses that are disconnected in the grid model. They will not be affected (if the powerflow converges)
         and you can put anything you want there. We keep the public interface this way to avoid headaches with the bus order between
-        the grid model and the solver (you can refer to :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and 
-        :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` if you still want to have a look)
+        the grid model and the solver (you can refer to :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and 
+        :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` if you still want to have a look)
 
-    .. seealso:: :func:`lightsim2grid.initGridModel.GridModel.dc_pf` if you want to perform DC powerflow (same interface, same results, same behaviour)
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.dc_pf` if you want to perform DC powerflow (same interface, same results, same behaviour)
 
     .. warning::
         The input vector `V` is modified (and is equal to the resulting vector `V`)
@@ -1784,7 +1784,7 @@ const std::string DocGridModel::ac_pf = R"mydelimiter(
 )mydelimiter";     
 
 const std::string DocGridModel::dc_pf = R"mydelimiter(
-    This function has the same interface, inputs, outputs, behaviour, etc. as the :func:`lightsim2grid.initGridModel.GridModel.ac_pf`.
+    This function has the same interface, inputs, outputs, behaviour, etc. as the :func:`lightsim2grid.gridmodel.GridModel.ac_pf`.
 )mydelimiter";       
 
 const std::string DocComputers::Computers = R"mydelimiter(
@@ -1961,8 +1961,8 @@ const std::string DocComputers::get_voltages = R"mydelimiter(
 const std::string DocComputers::get_sbuses = R"mydelimiter(
     Ge the complex power injected at each (solver id) bus of the powergrid. Results are given in pair unit.
     We do not recommend to use it as it uses the solver id and NOT the powergrid bus id (you can refer to 
-    :func:`lightsim2grid.initGridModel.GridModel.id_me_to_ac_solver` and 
-    :func:`lightsim2grid.initGridModel.GridModel.id_ac_solver_to_me` for more information)
+    :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and 
+    :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for more information)
 
     Each rows correspond to a time step, each column to a bus (bus are identified by their solver id !)
 

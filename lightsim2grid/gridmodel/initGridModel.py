@@ -15,16 +15,17 @@ __all__ = ["init", "GridModel"]
 import numpy as np
 from numbers import Number
 import warnings
-from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
-from lightsim2grid._aux_add_sgen import _aux_add_sgen
-from lightsim2grid._aux_add_load import _aux_add_load
-from lightsim2grid._aux_add_trafo import _aux_add_trafo
-from lightsim2grid._aux_add_line import _aux_add_line
-from lightsim2grid._aux_add_gen import _aux_add_gen
-from lightsim2grid._aux_add_shunt import _aux_add_shunt
-from lightsim2grid._aux_check_legit import _aux_check_legit
-from lightsim2grid._aux_add_slack import _aux_add_slack
-from lightsim2grid._aux_add_storage import _aux_add_storage
+from lightsim2grid_cpp import GridModel, PandaPowerConverter
+from lightsim2grid.gridmodel._aux_add_sgen import _aux_add_sgen
+from lightsim2grid.gridmodel._aux_add_load import _aux_add_load
+from lightsim2grid.gridmodel._aux_add_trafo import _aux_add_trafo
+from lightsim2grid.gridmodel._aux_add_line import _aux_add_line
+from lightsim2grid.gridmodel._aux_add_gen import _aux_add_gen
+from lightsim2grid.gridmodel._aux_add_shunt import _aux_add_shunt
+from lightsim2grid.gridmodel._aux_check_legit import _aux_check_legit
+from lightsim2grid.gridmodel._aux_add_slack import _aux_add_slack
+from lightsim2grid.gridmodel._aux_add_storage import _aux_add_storage
+
 
 def init(pp_net):
     """
@@ -55,7 +56,7 @@ def init(pp_net):
 
     Returns
     -------
-    model: :class:`GridModel`
+    model: :class:`lightsim2grid.gridmodel.GridModel`
         The initialize gridmodel
 
     """
