@@ -19,7 +19,7 @@ Change Log
 -------------------
 - [BREAKING] change the interface of the `newton_pf` function to reflect pandapower change in their
   latest version (arguments `ref` has been added). You can still use the old `newton_pf` function, with the
-  old signature by importing `newtonpf_old` instead.
+  old signature by importing `newtonpf_old` instead or explicitly importing the new one by importing `newtonpf_new`
 - [BREAKING] `SecurityAnalysis` now also returns the active flows when calling `security_analysis.get_flows()`
 - [BREAKING] change the file names (python side) to be compliant with pep 8. You can no longer
   do things like `from lightsim2grid.LightSimBackend import LightSimBackend` change it to
