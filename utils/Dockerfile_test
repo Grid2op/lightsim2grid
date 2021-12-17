@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 # Use an official Python runtime as a parent image
-FROM python:3.6-stretch
+FROM python:3.8-buster
 
 MAINTAINER Benjamin DONNOT <benjamin.donnot@rte-france.com>
 
