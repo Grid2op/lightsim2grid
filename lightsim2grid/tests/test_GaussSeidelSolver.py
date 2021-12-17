@@ -180,18 +180,28 @@ class MakeTests(unittest.TestCase):
 
         ppopt = {"PF_TOL": self.tol, "PF_MAX_IT_GS": self.max_it, "VERBOSE": False}
 
-        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, self.pv,
+        # start = time.perf_counter()
+        ref = set(np.arange(self.Sbus.shape[0])) - set(self.pv) - set(self.pq)
+        ref = np.array(list(ref))
+        # build the slack weights
+        slack_weights = np.zeros(self.Sbus.shape[0])
+        slack_weights[ref] = 1.0 / ref.shape[0]
+
+        has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, 
+                                          ref, slack_weights, self.pv,
                                           self.pq, self.max_it, self.tol)
-        # start = time.time()
-        Vgs, convergedgs, max_itgs = gausspf(copy.deepcopy(self.Ybus), copy.deepcopy(self.Sbus),
+
+        Vgs, convergedgs, max_itgs = gausspf(copy.deepcopy(self.Ybus),
+                                             copy.deepcopy(self.Sbus),
                                              copy.deepcopy(self.V_init),
                                              ref=None, pv=self.pv, pq=self.pq, ppopt=ppopt)
-        # end = time.time()
+        # end = time.perf_counter()
         # print("end - start: {}".format(end - start))
         # print("have i conv ? {}".format(has_conv))
         # print("print timer solve: {}".format(self.solver.get_timers()[1]))
 
-        assert has_conv, "the load flow has diverged for {}".format(self.path)
+        assert convergedgs, "the load flow has diverged for pandapower for {}".format(self.path)
+        assert has_conv, "the load flow has diverged for {} with error {}".format(self.path, self.solver.get_error())
         Va = self.solver.get_Va()
         Vm = self.solver.get_Vm()
         iter_max = self.solver.get_nb_iter()

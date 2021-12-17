@@ -14,6 +14,8 @@ from grid2op import make
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import ChangeNothing
 import re
+
+from lightsim2grid import solver
 try:
     from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 except ImportError:
@@ -22,7 +24,7 @@ except ImportError:
 
 from grid2op.Parameters import Parameters
 import lightsim2grid
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
@@ -36,9 +38,36 @@ ENV_NAME = "rte_case14_realistic"
 
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
+solver_names = {lightsim2grid.SolverType.GaussSeidel: "LS+GS",
+                lightsim2grid.SolverType.GaussSeidelSynch: "LS+GS S",
+                lightsim2grid.SolverType.SparseLU: "LS+SLU ",
+                lightsim2grid.SolverType.KLU: "LS+KLU",
+                lightsim2grid.SolverType.NICSLU: "LS+NICSLU",
+                lightsim2grid.SolverType.SparseLUSingleSlack: "LS+SLU (single)",
+                lightsim2grid.SolverType.KLUSingleSlack: "LS+KLU (single)",
+                lightsim2grid.SolverType.NICSLUSingleSlack: "LS+NICSLU (single)",
+                # lightsim2grid.SolverType.DC: "LS+DC",
+                # lightsim2grid.SolverType.KLUDC: "LS+SLU",
+                # lightsim2grid.SolverType.NICSLUDC: "LS+SLU"
+                }
+solver_gs = {lightsim2grid.SolverType.GaussSeidelSynch, lightsim2grid.SolverType.GaussSeidel}
+res_times = {}
+
+order_solver_print = [
+    lightsim2grid.SolverType.GaussSeidel,
+    lightsim2grid.SolverType.GaussSeidelSynch,
+    lightsim2grid.SolverType.SparseLUSingleSlack,
+    lightsim2grid.SolverType.SparseLU,
+    lightsim2grid.SolverType.KLUSingleSlack,
+    lightsim2grid.SolverType.KLU,
+    lightsim2grid.SolverType.NICSLUSingleSlack,
+    lightsim2grid.SolverType.NICSLU,
+]
+
 
 def main(max_ts, env_name_input, test=True,
-         no_gs=False, no_gs_synch=False,
+         no_gs=False,
+         no_gs_synch=False,
          no_pp=False):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
@@ -72,57 +101,37 @@ def main(max_ts, env_name_input, test=True,
 
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
-    if lightsim2grid.SolverType.KLU in solver_types:
-        print("Start using KLU")
-        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.KLU)
-        env_lightsim.backend.set_solver_max_iter(10)
-        nb_ts_klu, time_klu, aor_klu, gen_p_klu, gen_q_klu = run_env(env_lightsim, max_ts, agent, chron_id=0,
-                                                                     with_type_solver=wst, env_seed=0)
-        klu_comp_time = env_lightsim.backend.comp_time
-        klu_time_pf = env_lightsim._time_powerflow
-
-    if lightsim2grid.SolverType.NICSLU in solver_types and NICSLU_LICENSE_AVAIL:
-        print("Start using NICSLU")
-        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.NICSLU)
-        env_lightsim.backend.set_solver_max_iter(10)
-        nb_ts_nicslu, time_nicslu, aor_nicslu, gen_p_nicslu, gen_q_nicslu = run_env(env_lightsim,
-                                                                                    max_ts,
-                                                                                    agent, chron_id=0,
-                                                                                    with_type_solver=wst,
-                                                                                    env_seed=0)
-        nicslu_comp_time = env_lightsim.backend.comp_time
-        nicslu_time_pf = env_lightsim._time_powerflow
-
-    if lightsim2grid.SolverType.SparseLU in solver_types:
-        print("Start using SparseLU")
-        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.SparseLU)
-        env_lightsim.backend.set_solver_max_iter(10)
-        nb_ts_slu, time_slu, aor_slu, gen_p_slu, gen_q_slu = run_env(env_lightsim, max_ts, agent, chron_id=0,
-                                                                     with_type_solver=wst, env_seed=0)
-        slu_comp_time = env_lightsim.backend.comp_time
-        slu_time_pf = env_lightsim._time_powerflow
-
-    if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
-        print("Start using GaussSeidel")
-        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidel)
-        env_lightsim.backend.set_solver_max_iter(10000)
+    
+    for solver_type in solver_types:
+        if solver_type not in solver_names:
+            continue
+        print(f"Start using {solver_type}")
+        env_lightsim.backend.set_solver_type(solver_type)
+        if solver_type in solver_gs:
+            # gauss seidel sovler => more iterations
+            env_lightsim.backend.set_solver_max_iter(10000)
+            if lightsim2grid.SolverType.GaussSeidel == solver_type and no_gs:
+                # I don't study the gauss seidel solver
+                continue
+            elif lightsim2grid.SolverType.GaussSeidelSynch  == solver_type and no_gs_synch:
+                # I don't study the gauss seidel synch solver
+                continue
+        else:
+            # NR based solver => less iterations
+            env_lightsim.backend.set_solver_max_iter(10)
         nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs = run_env(env_lightsim, max_ts, agent, chron_id=0,
                                                                 with_type_solver=wst, env_seed=0)
         gs_comp_time = env_lightsim.backend.comp_time
         gs_time_pf = env_lightsim._time_powerflow
-
-    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-        print("Start using GaussSeidelSynch")
-        env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidelSynch)
-        env_lightsim.backend.set_solver_max_iter(10000)
-        nb_ts_gsa, time_gsa, aor_gsa, gen_p_gsa, gen_q_gsa = run_env(env_lightsim, max_ts, agent, chron_id=0,
-                                                                     with_type_solver=wst, env_seed=0)
-        gsa_comp_time = env_lightsim.backend.comp_time
-        gsa_time_pf = env_lightsim._time_powerflow
+        res_times[solver_type] = (solver_names[solver_type],
+                                  nb_ts_gs, time_gs, aor_gs, gen_p_gs,
+                                  gen_q_gs, gs_comp_time, gs_time_pf)
 
     # NOW PRINT THE RESULTS
     print("Configuration:")
     print_configuration()
+    # order on which the solvers will be 
+    this_order =  [el for el in res_times.keys() if el not in order_solver_print] + order_solver_print
 
     env_name = get_env_name_displayed(env_name_input)
     hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"solver powerflow time (ms)"]
@@ -131,26 +140,15 @@ def main(max_ts, env_name_input, test=True,
         tab.append(["PP", f"{nb_ts_pp/time_pp:.2e}",
                     f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
                     f"{1000.*pp_comp_time/nb_ts_pp:.2e}"])
-    if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
-        tab.append(["LS+GS", f"{nb_ts_gs/time_gs:.2e}",
+
+    for key in this_order:
+        if key not in res_times:
+            continue
+        solver_name, nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs, gs_comp_time, gs_time_pf = res_times[key]
+        tab.append([solver_name,
+                    f"{nb_ts_gs/time_gs:.2e}",
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"])
-    if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-        tab.append(["LS+GS S", f"{nb_ts_gsa/time_gsa:.2e}",
-                    f"{1000.*gsa_time_pf/nb_ts_gsa:.2e}",
-                    f"{1000.*gsa_comp_time/nb_ts_gsa:.2e}"])
-    if lightsim2grid.SolverType.SparseLU in solver_types:
-        tab.append(["LS+SLU", f"{nb_ts_slu/time_slu:.2e}",
-                    f"{1000.*slu_time_pf/nb_ts_slu:.2e}",
-                    f"{1000.*slu_comp_time/nb_ts_slu:.2e}"])
-    if lightsim2grid.SolverType.KLU in solver_types:
-        tab.append(["LS+KLU", f"{nb_ts_klu/time_klu:.2e}",
-                    f"{1000.*klu_time_pf/nb_ts_klu:.2e}",
-                    f"{1000.*klu_comp_time/nb_ts_klu:.2e}"])
-    if lightsim2grid.SolverType.NICSLU in solver_types:
-        tab.append(["LS+NICSLU", f"{nb_ts_nicslu/time_nicslu:.2e}",
-                    f"{1000.*nicslu_time_pf/nb_ts_nicslu:.2e}",
-                    f"{1000.*nicslu_comp_time/nb_ts_nicslu:.2e}"])
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
@@ -169,37 +167,22 @@ def main(max_ts, env_name_input, test=True,
     if no_pp is False:
         hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
         tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
-        if lightsim2grid.SolverType.GaussSeidel in solver_types and no_gs is False:
-            tab.append(["LS+GS",
-                        f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
-                        f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
-                        f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
-        if lightsim2grid.SolverType.GaussSeidelSynch in solver_types and no_gs_synch is False:
-            tab.append(["LS+GS S",
-                        f"{np.max(np.abs(aor_gsa - aor_pp)):.2e}",
-                        f"{np.max(np.abs(gen_p_gsa - gen_p_pp)):.2e}",
-                        f"{np.max(np.abs(gen_q_gsa - gen_q_pp)):.2e}"])
-        if lightsim2grid.SolverType.SparseLU in solver_types:
-            tab.append(["LS+SLU",
-                        f"{np.max(np.abs(aor_slu - aor_pp)):.2e}",
-                        f"{np.max(np.abs(gen_p_slu - gen_p_pp)):.2e}",
-                        f"{np.max(np.abs(gen_q_slu - gen_q_pp)):.2e}"])
-        if lightsim2grid.SolverType.KLU in solver_types:
-            tab.append(["LS+KLU",
-                        f"{np.max(np.abs(aor_klu - aor_pp)):.2e}",
-                        f"{np.max(np.abs(gen_p_klu - gen_p_pp)):.2e}",
-                        f"{np.max(np.abs(gen_q_klu - gen_q_pp)):.2e}"])
-        if lightsim2grid.SolverType.NICSLU in solver_types:
-            tab.append(["LS+NICSLU",
-                        f"{np.max(np.abs(aor_nicslu - aor_pp)):.2e}",
-                        f"{np.max(np.abs(gen_p_nicslu - gen_p_pp)):.2e}",
-                        f"{np.max(np.abs(gen_q_nicslu - gen_q_pp)):.2e}"])
 
-        if TABULATE_AVAIL:
-            res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
-            print(res_use_with_grid2op_2)
-        else:
-            print(tab)
+    for key in this_order:
+        if key not in res_times:
+            continue
+        solver_name, nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs, gs_comp_time, gs_time_pf = res_times[key]
+        tab.append([solver_name,
+                    f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
+                    f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
+                    f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
+
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
+        print(res_use_with_grid2op_2)
+    else:
+        print(tab)
+
     print()
 
 

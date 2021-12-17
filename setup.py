@@ -6,7 +6,7 @@ import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.5.5"
+__version__ = "0.6.0"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -120,11 +120,6 @@ elif sys.platform.startswith("win32"):
                                "-D_USE_MATH_DEFINES"]
     IS_WINDOWS = True
 
-
-# for even greater speed, you can add the "-march=native" flag. It does not work on all platform, that is
-# why we deactivated it by default
-# extra_compile_args_tmp += ["-march=native"]
-
 # if you have installed some BLAS or LAPACKE libraries (on ubuntu sudo apt-get install libblas-dev liblapacke-dev)
 # you can also trigger their use when using eigen.
 # extra_compile_args_tmp += ["-DEIGEN_USE_BLAS", "-DEIGEN_USE_LAPACKE"]
@@ -134,6 +129,7 @@ extra_compile_args += [f"-DVERSION_MAJOR={VERSION_MAJOR}",
                        f"-DVERSION_MEDIUM={VERSION_MEDIUM}",
                        f"-DVERSION_MINOR={VERSION_MINOR}"]
 src_files = ['src/main.cpp',
+             "src/help_fun_msg.cpp",
              "src/SparseLUSolver.cpp",
              "src/BaseConstants.cpp",
              "src/GridModel.cpp",
@@ -145,12 +141,13 @@ src_files = ['src/main.cpp',
              "src/DataLoad.cpp",
              "src/DataGen.cpp",
              "src/DataSGen.cpp",
-             "src/BaseNRSolver.cpp",
+            #  "src/BaseNRSolver.cpp",  # moved as a template class
+            #  "src/BaseNRSolverSingleSlack.cpp",  # moved as a template class
+            #  "src/DCSolver.cpp",  # moved as a template class
              "src/ChooseSolver.cpp",
              "src/GaussSeidelSolver.cpp",
              "src/GaussSeidelSynchSolver.cpp",
              "src/BaseSolver.cpp",
-             "src/DCSolver.cpp",
              "src/BaseMultiplePowerflow.cpp",
              "src/Computers.cpp",
              "src/SecurityAnalysis.cpp"]
@@ -169,25 +166,36 @@ if "PATH_NICSLU" in os.environ:
     include_nicslu = True
     # check for appropriate license
     if not os.path.exists(path_nicslu):
+        print(f"WARNING: nothing for NICSLU at at: {path_nicslu}")
         include_nicslu = False
-    if include_nicslu and not os.path.exists(os.path.join(path_nicslu, "license")):
+    license_path = os.path.join(path_nicslu, "license")
+    if include_nicslu and not os.path.exists(license_path):
         # license not located at the right directory
+        print(f"WARNING: no license path found for NICSLU at: {license_path}")
         include_nicslu = False
-    if include_nicslu and not os.path.exists(os.path.join(path_nicslu, "license", "nicslu.lic")):
+    license_file = os.path.join(license_path, "nicslu.lic")
+    if include_nicslu and not os.path.exists(license_file):
         # no license found
+        print(f"WARNING: no license file is found for NICSLU at: {license_file}")
         include_nicslu = False
     libnicslu_path = None
     if include_nicslu:
         if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
             libnicslu_path = os.path.join(path_nicslu, "linux/lib_centos6_x64_gcc482_fma/int32/libnicslu.so")
             if not os.path.exists(libnicslu_path):
+                print(f"WARNING: cannot locate the NICSLU shared object that should be at: {libnicslu_path}")
                 include_nicslu = False
                 libnicslu_path = None
         elif sys.platform.startswith("win"):
             libnicslu_path = os.path.join(path_nicslu, "windows/lib_win7_x64_fma/int32/nicslu.lib")
             if not os.path.exists(libnicslu_path):
+                print(f"WARNING: cannot locate the NICSLU shared object that should be at: {libnicslu_path}")
                 include_nicslu = False
                 libnicslu_path = None
+        else:
+            print(f"WARNING: NICSLU can only be added when using linux, darwin (MacOS) or win (Windows) python version, you are using {sys.platform}")
+            include_nicslu = False
+            libnicslu_path = None
 
     if include_nicslu and libnicslu_path is not None:
         LIBS.append(os.path.join(path_nicslu, libnicslu_path))
@@ -200,12 +208,22 @@ if "__COUT_TIMES" in os.environ:
     # to add extra info in cout for the computation times, we do not recommend to use it !
     if os.environ["__COUT_TIMES"] == "1":
         extra_compile_args.append("-D__COUT_TIMES")
+        print("WARNING: Using the \"cout times\" compatibility mode, do not use the generated package outside of testing !")
 
 if "__COMPILE_MARCHNATIVE" in os.environ:
     if os.environ["__COMPILE_MARCHNATIVE"] == "1":
         extra_compile_args.append("-march=native")
         print("INFO: Using \"-march=native\" compiler flag")
 
+# $Env:_READ_THE_DOCS = "1" in powershell
+if "_READ_THE_DOCS" in os.environ:
+    # generation is made on readthedocs.org for documentation, everything must be added, even though some packages will
+    # not be available (eg KLU, NICSLU, etc.)
+
+    if os.environ["_READ_THE_DOCS"] == "1":
+        extra_compile_args.append("-D_READ_THE_DOCS")
+        print("WARNING: Using the \"read the docs\" compatibility mode, do not use the package for something else than generating documentation.")
+        
 if False:
     path_iidm = ""
     lib_iidm = [os.path.join(path_iidm, "lib", "libiidm.a")]
@@ -247,21 +265,24 @@ pkgs = {
             "sphinx-rtd-theme>=0.4.3",
             "sphinxcontrib-trio>=1.1.0",
             "autodocsumm>=0.1.13",
-            # "m2r"
+            "grid2op>=1.6.4",
             "recommonmark",
         ],
         "benchmark": [
             "tabulate",
-            "grid2op>=1.5.0",
+            "grid2op>=1.6.4",
             "numpy",
             "distro",
             "py-cpuinfo"
         ],
         "recommended": [
-            "grid2op>=1.5.0"
+            "grid2op>=1.6.4",
+            "numba"
         ],
         "test": [
-            "grid2op>=1.5.0"
+            "grid2op>=1.6.4",
+            "numba",
+            "pandapower==2.7.0"  # force this version for test, otherwise problem in test_DataConverter !
         ]
     }
 }

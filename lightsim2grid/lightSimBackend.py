@@ -16,11 +16,17 @@ from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFl
 from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 
-from lightsim2grid.initGridModel import init, SolverType
+from lightsim2grid.gridmodel import init
+from lightsim2grid.solver import SolverType
+
 # import lightsim2grid.solver.SolverType.DCSolver
 # from lightsim2grid.solver import DCSolver
 
 class LightSimBackend(Backend):
+    """
+    This is a specialization of the grid2op Backend class to use the lightsim2grid solver,
+    coded in c++, aiming at speeding up the computations.
+    """
     def __init__(self, detailed_infos_for_cascading_failures=False):
         Backend.__init__(self,
                          detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
@@ -32,7 +38,7 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             pass
             # warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
-            #              "feature that will be removed in further lightsim2grid version.")
+            #               "feature that will be removed in further lightsim2grid version.")
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -83,6 +89,19 @@ class LightSimBackend(Backend):
         self.storage_q = None
         self.storage_v = None
 
+        # shunts
+        self.sh_p = None
+        self.sh_q = None
+        self.sh_v = None
+        self.sh_bus = None
+
+        # voltage angle
+        self.line_or_theta = None
+        self.line_ex_theta = None
+        self.load_theta = None
+        self.gen_theta = None
+        self.storage_theta = None
+
         self.thermal_limit_a = None
 
         self.dim_topo = -1
@@ -108,6 +127,23 @@ class LightSimBackend(Backend):
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
 
+    def _fill_theta(self):
+        # line_or_theta = np.empty(self.n_line)
+        self.line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
+        self.line_or_theta[self.__nb_powerline:] = self._grid.get_trafohv_theta()
+
+        # line_ex_theta = np.empty(self.n_line)
+        self.line_ex_theta[:self.__nb_powerline] = self._grid.get_lineex_theta()
+        self.line_ex_theta[self.__nb_powerline:] = self._grid.get_trafolv_theta()
+
+        # line_or_theta = np.concatenate((self._grid.get_lineor_theta(), self._grid.get_trafohv_theta()))
+        # line_ex_theta = np.concatenate((self._grid.get_lineex_theta(), self._grid.get_trafolv_theta()))
+        self.load_theta[:] = self._grid.get_load_theta()
+        self.gen_theta[:] = self._grid.get_gen_theta()
+
+        if self.__has_storage:
+            self.storage_theta[:] = self._grid.get_storage_theta()
+
     def get_theta(self):
         """
 
@@ -124,20 +160,11 @@ class LightSimBackend(Backend):
         storage_theta: ``numpy.ndarray``
             Gives the voltage angle to the bus at which each storage unit is connected
         """
-        line_or_theta = np.empty(self.n_line)
-        line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
-        line_or_theta[self.__nb_powerline:] = self._grid.get_trafohv_theta()
-
-        line_ex_theta = np.empty(self.n_line)
-        line_ex_theta[:self.__nb_powerline] = self._grid.get_lineex_theta()
-        line_ex_theta[self.__nb_powerline:] = self._grid.get_trafolv_theta()
-
-        # line_or_theta = np.concatenate((self._grid.get_lineor_theta(), self._grid.get_trafohv_theta()))
-        # line_ex_theta = np.concatenate((self._grid.get_lineex_theta(), self._grid.get_trafolv_theta()))
-        load_theta = self.cst_1 * self._grid.get_load_theta()
-        gen_theta = self.cst_1 * self._grid.get_gen_theta()
-        storage_theta = self.cst_1 * self._grid.get_storage_theta()
-        return line_or_theta, line_ex_theta, load_theta, gen_theta, storage_theta
+        return self.cst_1 * self.line_or_theta, \
+               self.cst_1 * self.line_ex_theta, \
+               self.cst_1 * self.load_theta, \
+               self.cst_1 * self.gen_theta, \
+               self.cst_1 * self.storage_theta
 
     def set_solver_type(self, solver_type):
         """
@@ -245,6 +272,9 @@ class LightSimBackend(Backend):
         if SolverType.KLU in self.available_solvers:
             # use the faster KLU if available
             self._grid.change_solver(SolverType.KLU)
+        if SolverType.KLUDC in self.available_solvers:
+            # use the faster KLU if available
+            self._grid.change_solver(SolverType.KLUDC)
         if self.__current_solver_type is None:
             self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
 
@@ -390,6 +420,11 @@ class LightSimBackend(Backend):
         self.topo_vect = np.ones(self.dim_topo, dtype=dt_int)
         if self.shunts_data_available:
             self.shunt_topo_vect = np.ones(self.n_shunt, dtype=dt_int)
+             # shunts
+            self.sh_p = np.full(self.n_shunt, dtype=dt_float, fill_value=np.NaN)
+            self.sh_q = np.full(self.n_shunt, dtype=dt_float, fill_value=np.NaN)
+            self.sh_v = np.full(self.n_shunt, dtype=dt_float, fill_value=np.NaN)
+            self.sh_bus = np.full(self.n_shunt, dtype=dt_int, fill_value=-1)
 
         self.p_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
         self.q_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
@@ -407,12 +442,18 @@ class LightSimBackend(Backend):
         self.prod_p = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
         self.prod_q = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
         self.prod_v = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
+        
+        self.line_or_theta = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.line_ex_theta = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.load_theta = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.gen_theta = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
             self.storage_p = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
             self.storage_q = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
             self.storage_v = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_theta = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
 
         self._count_object_per_bus()
         self._grid.tell_topo_changed()
@@ -557,7 +598,6 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc=False):
         my_exc_ = None
         res = False
-        # self._grid.tell_topo_changed()  # TODO it does not work if we remove that, segfault !
         try:
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
@@ -565,9 +605,8 @@ class LightSimBackend(Backend):
                 # But not when it initializes in DC mode... (see below)
                 self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
-                self._grid.change_solver(SolverType.DC)
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow("Divergence of powerflow (non connected grid)")
+                    raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid). Detailed error: {self._grid.get_dc_solver().get_error()}")
             else:
                 if (self.V is None) or (self.V.shape[0] == 0):
                     # create the vector V as it is not created
@@ -583,15 +622,19 @@ class LightSimBackend(Backend):
                     self._grid.reactivate_result_computation()
                     # self._grid.change_solver(self.__current_solver_type)
                     if Vdc.shape[0] == 0:
-                        raise DivergingPowerFlow("divergence of powerflow (non connected grid)")
+                        raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
                     V_init = Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow(f"divergence of powerflow (more than {self.max_it} iterations)")
+                    raise DivergingPowerFlow(f"Divergence of AC powerflow. Detailed error: {self._grid.get_solver().get_error()}")
 
-            self.comp_time += self._grid.get_computation_time()
+            if is_dc:
+                self.comp_time += self._grid.get_dc_computation_time()
+            else:
+                self.comp_time += self._grid.get_computation_time()
+                
             self.V[:] = V
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
@@ -610,8 +653,8 @@ class LightSimBackend(Backend):
              self.v_ex[self.__nb_powerline:],
              self.a_ex[self.__nb_powerline:]) = self._grid.get_trafolv_res()
 
-            self.a_or *= 1000.  # amps in lightsim, kA expected in grid2op
-            self.a_ex *= 1000.  # amps in lightsim, kA expected in grid2op
+            self.a_or *= 1000.  # kA in lightsim, A expected in grid2op
+            self.a_ex *= 1000.  # kA in lightsim, A expected in grid2op
 
             self.a_or[~np.isfinite(self.a_or)] = 0.
             self.v_or[~np.isfinite(self.v_or)] = 0.
@@ -625,15 +668,21 @@ class LightSimBackend(Backend):
             self.next_prod_p[:] = self.prod_p
 
             if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
-                raise DivergingPowerFlow("One load is disconnected")
+                disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
+                load_disco = np.where(disco)[0]
+                raise DivergingPowerFlow(f"At least one load is disconnected (check loads {load_disco})")
             if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
-                raise DivergingPowerFlow("One generator is disconnected")
+                disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
+                gen_disco = np.where(disco)[0]
+                raise DivergingPowerFlow(f"At least one generator is disconnected (check loads {gen_disco})")
             # TODO storage case of divergence !
 
+            if self.shunts_data_available:
+                self._set_shunt_info()
+            
+            self._fill_theta()
+
             res = True
-            if is_dc:
-                # set back the solver to its previous state
-                self._grid.change_solver(self.__current_solver_type)
             self._grid.unset_topo_changed()
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
@@ -668,11 +717,22 @@ class LightSimBackend(Backend):
         self.next_prod_p[:] = np.NaN
         self.prod_q[:] = np.NaN
         self.prod_v[:] = np.NaN
-        self.topo_vect[:] = -1
+        self.line_or_theta[:] = np.NaN
+        self.line_ex_theta[:] = np.NaN
+        self.load_theta[:] = np.NaN
+        self.gen_theta[:] = np.NaN
+
+        if self.shunts_data_available:
+            self.sh_p[:] = np.NaN
+            self.sh_q[:] = np.NaN
+            self.sh_v[:] = np.NaN
+            self.sh_bus[:] = -1
+
         if self.__has_storage:
             self.storage_p[:] = np.NaN
             self.storage_q[:] = np.NaN
             self.storage_v[:] = np.NaN
+            self.storage_theta[:] = np.NaN
         self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
 
     def __deepcopy__(self, memo):
@@ -709,7 +769,9 @@ class LightSimBackend(Backend):
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
                            "_idx_hack_storage"]
         for attr_nm in li_regular_attr:
-            setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
+            if hasattr(self, attr_nm):
+                # this test is needed for backward compatibility with other grid2op version
+                setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
 
         # copy the numpy array
         res.__nb_bus_before = copy.deepcopy(self.__nb_bus_before)
@@ -722,10 +784,40 @@ class LightSimBackend(Backend):
                        "load_p", "load_q", "load_v",
                        "prod_p", "prod_q", "prod_v",
                        "storage_p", "storage_q", "storage_v",
+                       "sh_p", "sh_q", "sh_v", "sh_bus",
+                       "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",                   
                        ]
         for attr_nm in li_attr_npy:
-            setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
+            if hasattr(self, attr_nm):
+                # this test is needed for backward compatibility with other grid2op version
+                setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
+
+        # copy class attribute for older grid2op version (did not use the class attribute)
+        cls_attr = ["env_name", 
+                    "n_line", "n_gen", "n_load", "n_sub",
+                    "name_gen", "name_load", "name_line", "name_sub", "name_storage",
+                    "sub_info", "dim_topo", 
+                    "load_to_subid", "gen_to_subid", "line_or_to_subid",
+                    "line_ex_to_subid", "load_to_sub_pos", "line_or_to_sub_pos",
+                    "line_ex_to_sub_pos", "load_pos_topo_vect", "gen_pos_topo_vect",
+                    "line_or_pos_topo_vect", "line_ex_pos_topo_vect", "storage_pos_topo_vect",
+
+                    "shunts_data_available", "shunt_to_subid", "n_shunt", "name_shunt",
+
+                    "n_storage", "storage_to_subid", "storage_to_sub_pos", "storage_type", 
+                    "storage_Emax", "storage_Emin", "storage_max_p_prod", "storage_max_p_absorb",
+                    "storage_marginal_cost", "storage_loss", "storage_charging_efficiency", 
+                    "storage_discharging_efficiency",
+
+                    "alarms_area_names", "alarms_lines_area", "alarms_area_lines"
+                    ] + type(self)._li_attr_disp
+
+        for attr_nm in cls_attr:
+            if hasattr(self, attr_nm):
+                # this test is needed for backward compatibility with other grid2op version
+                setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
         ###############
+
 
         # handle the most complicated
         res._grid = mygrid.copy()
@@ -781,12 +873,15 @@ class LightSimBackend(Backend):
         return self.cst_1 * self.storage_p, self.cst_1 * self.storage_q, self.cst_1 * self.storage_v
 
     def shunt_info(self):
-        tmp = self._grid.get_shunts_res()
+        return self.cst_1 * self.sh_p, self.cst_1 * self.sh_q, self.cst_1 * self.sh_v, self.sh_bus
+
+    def _set_shunt_info(self):
+        self.sh_p[:], self.sh_q[:], self.sh_v[:]  = self._grid.get_shunts_res()
         shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(self.n_shunt)], dtype=dt_int)
         res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)  # by default all shunts are on bus one
         res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
         res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
-        return tmp[0].astype(dt_float), tmp[1].astype(dt_float), tmp[2].astype(dt_float), res_bus
+        self.sh_bus[:] = res_bus
 
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1

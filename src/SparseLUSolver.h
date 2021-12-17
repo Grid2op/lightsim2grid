@@ -36,28 +36,23 @@ Reusing the same solver is possible, but "reset" method must be called.
 Otherwise, unexpected behaviour might follow, including "segfault".
 
 **/
-class SparseLUSolver : public BaseNRSolver
+class SparseLULinearSolver
 {
     public:
-        SparseLUSolver():BaseNRSolver(),solver_(){}
-
-        ~SparseLUSolver(){}
-
-    protected:
-        virtual
-        void initialize();
-
-        virtual
-        void solve(RealVect & b, bool has_just_been_inialized);
-
+        SparseLULinearSolver():solver_(){}
+        
+        // public api
+        ErrorType initialize(const Eigen::SparseMatrix<real_type> & J);
+        ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
+        ErrorType reset(){ return ErrorType::NoError; }
 
     private:
         // solver initialization
         Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  solver_;
 
         // no copy allowed
-        SparseLUSolver( const SparseLUSolver & ) ;
-        SparseLUSolver & operator=( const SparseLUSolver & ) ;
+        SparseLULinearSolver( const SparseLULinearSolver & ) =delete ;
+        SparseLULinearSolver & operator=( const SparseLULinearSolver & ) =delete ;
 };
 
 #endif // SPARSELUSOLVER_H

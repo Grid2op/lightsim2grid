@@ -30,7 +30,7 @@ if __has_storage:
 
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 
 
 class TestNames(HelperTests, BaseTestNames):

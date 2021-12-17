@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <vector>
+// #include <set>
 #include <stdio.h>
 #include <cstdint> // for int32
 #include <chrono>
@@ -63,12 +64,12 @@ class GridModel : public DataGeneric
                 // static generators
                 DataSGen::StateRes,
                 // storage units
-                DataLoad::StateRes,
-                // slack bus generator id
-                int
+                DataLoad::StateRes
                 >  StateRes;
 
-        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){};
+        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){
+            _dc_solver.change_solver(SolverType::DC);
+        }
         GridModel(const GridModel & other);
         GridModel copy() const{
             GridModel res(*this);
@@ -77,6 +78,8 @@ class GridModel : public DataGeneric
         Eigen::Index total_bus() const {return bus_vn_kv_.size();}
         const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
         const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
+        const std::vector<int> & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
+        const std::vector<int> & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
 
         // retrieve the underlying data (raw class)
         const DataGen & get_generators_as_data() const {return generators_;}
@@ -90,10 +93,14 @@ class GridModel : public DataGeneric
         void change_solver(const SolverType & type){
             need_reset_ = true;
             topo_changed_ = true;
-            _solver.change_solver(type);
+            if(_solver.is_dc(type)) _dc_solver.change_solver(type);
+            else _solver.change_solver(type);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
         SolverType get_solver_type() {return _solver.get_type(); }
+        SolverType get_dc_solver_type() {return _dc_solver.get_type(); }
+        const ChooseSolver & get_solver() const {return _solver;}
+        const ChooseSolver & get_dc_solver() const {return _dc_solver;}
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
@@ -160,7 +167,8 @@ class GridModel : public DataGeneric
             storages_.init(storages_p, storages_q, storages_bus_id);
         }
 
-        void add_gen_slackbus(int gen_id);
+        void add_gen_slackbus(int gen_id, real_type weight);
+        void remove_gen_slackbus(int gen_id);
 
         //pickle
         GridModel::StateRes get_state() const ;
@@ -184,10 +192,6 @@ class GridModel : public DataGeneric
         void tell_topo_changed(){topo_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
 
         // dc powerflow
-        CplxVect dc_pf_old(const CplxVect & Vinit,
-                                   int max_iter,  // not used for DC
-                                   real_type tol  // not used for DC
-                                   );
         CplxVect dc_pf(const CplxVect & Vinit,
                                int max_iter,  // not used for DC
                                real_type tol  // not used for DC
@@ -206,9 +210,18 @@ class GridModel : public DataGeneric
         void deactivate_bus(int bus_id) {_deactivate(bus_id, bus_status_, topo_changed_); }
         // if a bus is connected, but isolated, it will make the powerflow diverge
         void reactivate_bus(int bus_id) {_reactivate(bus_id, bus_status_, topo_changed_); }
-        int nb_bus() const;
+        int nb_bus() const;  // number of activated buses
         Eigen::Index nb_powerline() const {return powerlines_.nb();}
         Eigen::Index nb_trafo() const {return trafos_.nb();}
+
+        // read only data accessor
+        const DataLine & get_lines() const {return powerlines_;}
+        const DataTrafo & get_trafos() const {return trafos_;}
+        const DataGen & get_generators() const {return generators_;}
+        const DataLoad & get_loads() const {return loads_;}
+        const DataLoad & get_storages() const {return storages_;}
+        const DataSGen & get_static_generators() const {return sgens_;}
+        const DataShunt & get_shunts() const {return shunts_;}
 
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }
@@ -217,7 +230,6 @@ class GridModel : public DataGeneric
         void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
-        const DataLine & get_lines() const {return powerlines_;}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, topo_changed_); }
@@ -226,7 +238,6 @@ class GridModel : public DataGeneric
         void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
-        const DataTrafo & get_trafos() const {return trafos_;}
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, topo_changed_); }
@@ -251,7 +262,6 @@ class GridModel : public DataGeneric
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, topo_changed_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, topo_changed_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
-        const DataGen & get_generators() const {return generators_;}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, topo_changed_); }
@@ -312,7 +322,11 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<cplx_type> get_Ybus(){
             return Ybus_ac_;  // This is copied to python
         }
-        Eigen::Ref<CplxVect> get_Sbus(){
+        // TODO convert it back to this ID, that will make copies, but who really cares ?
+        Eigen::SparseMatrix<cplx_type> get_dcYbus(){
+            return Ybus_dc_;  // This is copied to python
+        }
+        Eigen::Ref<const CplxVect> get_Sbus() const{
             return Sbus_;
         }
         Eigen::Ref<const Eigen::VectorXi> get_pv() const{
@@ -321,6 +335,13 @@ class GridModel : public DataGeneric
         Eigen::Ref<const Eigen::VectorXi> get_pq() const{
             return bus_pq_;
         }
+        Eigen::Ref<const Eigen::VectorXi> get_slack_ids() const{
+            return slack_bus_id_ac_solver_;
+        }
+        Eigen::Ref<const RealVect> get_slack_weights() const{
+            return slack_weights_;
+        }
+
         Eigen::Ref<const CplxVect> get_V() const{
             return _solver.get_V();
         }
@@ -330,10 +351,14 @@ class GridModel : public DataGeneric
         Eigen::Ref<const RealVect> get_Vm() const{
             return _solver.get_Vm();
         }
-        Eigen::SparseMatrix<real_type> get_J(){
-            return _solver.get_J();  // This is copied to python
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const{
+            return _solver.get_J();
         }
-        real_type get_computation_time(){ return _solver.get_computation_time();}
+        Eigen::SparseMatrix<real_type> get_J_python() const{
+            return _solver.get_J_python();  // This is copied to python
+        }
+        real_type get_computation_time() const{ return _solver.get_computation_time();}
+        real_type get_dc_computation_time() const{ return _dc_solver.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
@@ -431,21 +456,20 @@ class GridModel : public DataGeneric
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
                                     std::vector<int> & id_me_to_solver,
                                     std::vector<int> & id_solver_to_me,
-                                    int & slack_bus_id_solver,
+                                    Eigen::VectorXi & slack_bus_id_solver,
                                     bool is_ac,
                                     bool reset_solver);
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        std::vector<int> & id_me_to_solver,
-                       std::vector<int>& id_solver_to_me,
-                       int & slack_bus_id_solver);
+                       std::vector<int>& id_solver_to_me);
         void init_Sbus(CplxVect & Sbus,
                        std::vector<int> & id_me_to_solver,
                        std::vector<int>& id_solver_to_me,
-                       int & slack_bus_id_solver);
+                       Eigen::VectorXi & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, int slack_bus_id_solver);
+        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, Eigen::VectorXi & slack_bus_id_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
-                      int slack_bus_id_solver);
+                       Eigen::VectorXi & slack_bus_id_solver);
 
         // results
         /**process the results from the solver to this instance
@@ -574,10 +598,10 @@ class GridModel : public DataGeneric
 
         // 8. slack bus
         // TODO multiple slack bus
-        int gen_slackbus_;
-        int slack_bus_id_;
-        int slack_bus_id_ac_solver_;
-        int slack_bus_id_dc_solver_;
+        std::vector<int> slack_bus_id_;
+        Eigen::VectorXi slack_bus_id_ac_solver_;
+        Eigen::VectorXi slack_bus_id_dc_solver_;
+        RealVect slack_weights_;
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;
@@ -590,6 +614,7 @@ class GridModel : public DataGeneric
 
         // to solve the newton raphson
         ChooseSolver _solver;
+        ChooseSolver _dc_solver;
 
         // specific grid2op
         int n_sub_;

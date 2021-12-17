@@ -14,13 +14,15 @@
 bool BaseMultiplePowerflow::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                   CplxVect & V,
                                                   const CplxVect & Sbus,
+                                                  const Eigen::VectorXi & slack_ids,
+                                                  const RealVect & slack_weights,
                                                   const Eigen::VectorXi & bus_pv,
                                                   const Eigen::VectorXi & bus_pq,
                                                   int max_iter,
                                                   double tol
                                                   )
 {
-    bool conv = _solver.compute_pf(Ybus, V, Sbus, bus_pv, bus_pq, max_iter, tol);
+    bool conv = _solver.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
     if(conv){
         V = _solver.get_V().array();
     }
@@ -29,7 +31,7 @@ bool BaseMultiplePowerflow::compute_one_powerflow(const Eigen::SparseMatrix<cplx
     return conv;
 }
 
-void BaseMultiplePowerflow::compute_flows_from_Vs()
+void BaseMultiplePowerflow::compute_flows_from_Vs(bool amps)
 {
     // TODO find a way to factorize that with DataTrafo::compute_results
     // TODO and DataLine::compute_results
@@ -37,23 +39,29 @@ void BaseMultiplePowerflow::compute_flows_from_Vs()
     if (_voltages.size() == 0)
     {
         std::ostringstream exc_;
-        exc_ << "BaseMultiplePowerflow::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called ";
+        exc_ << "BaseMultiplePowerflow::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called compute(...) ? ";
         throw std::runtime_error(exc_.str());
     }
-    _timer_compute_A = 0.;
+    if (amps) _timer_compute_A = 0.;
+    else _timer_compute_P = 0.;
 
-    auto timer_compute_A = CustTimer();
+    auto timer_compute = CustTimer();
     const auto & sn_mva = _grid_model.get_sn_mva();
     const auto & nb_steps = _voltages.rows();
 
     // reset the results
-    _amps_flows = RealMat::Zero(nb_steps, n_total_);
+    if (amps) _amps_flows = RealMat::Zero(nb_steps, n_total_);
+    else _active_power_flows = RealMat::Zero(nb_steps, n_total_);
     
     // compute the flows for the powerlines
     Eigen::Index lag_id = 0;
-    compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
+    if (amps) compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
+    else compute_active_power_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
     // compute the flows for the trafos
     lag_id = n_line_;
-    compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
-    _timer_compute_A = timer_compute_A.duration();
+    if (amps) compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
+    else compute_active_power_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
+
+    if (amps) _timer_compute_A = timer_compute.duration();
+    else _timer_compute_P = timer_compute.duration();
 }

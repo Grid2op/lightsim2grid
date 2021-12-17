@@ -12,8 +12,8 @@
 
 bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
     std::vector<bool> visited(Ybus.cols(), false); 
-    std::queue<int> neighborhood;
-    int col_id = 0;  // start by node 0, why not
+    std::queue<Eigen::Index> neighborhood;
+    Eigen::Index col_id = 0;  // start by node 0, why not
     while (true)
     {
         visited[col_id] = true;
@@ -133,6 +133,8 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     const auto & id_ac_solver_to_me = _grid_model.id_ac_solver_to_me();
     const Eigen::VectorXi & bus_pv = _grid_model.get_pv();
     const Eigen::VectorXi & bus_pq = _grid_model.get_pq();
+    const Eigen::VectorXi & slack_ids = _grid_model.get_slack_ids();
+    const RealVect & slack_weights = _grid_model.get_slack_weights();
     const Eigen::Index nb_buses_solver = Ybus.cols();  // which is equal to Ybus.rows();
     const auto & id_me_to_ac_solver = _grid_model.id_me_to_ac_solver();
 
@@ -153,6 +155,7 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     Eigen::Index cont_id = 0;
     bool conv;
     CplxVect V;
+    // int contingency = 0;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
         bool invertible = remove_from_Ybus(Ybus, coeffs_modif);
@@ -164,14 +167,20 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
         // 5.2ms without it vs 81.9ms with it (for the iee 118)
         // So better make the computation, even if it's not used...
 
-        // if(invertible)
-        // {
-        V = Vinit_solver; // Vinit is reused for each contingencies
-        conv = compute_one_powerflow(Ybus, V, Sbus,
-                                     bus_pv, bus_pq,
-                                     max_iter,
-                                     tol / sn_mva);
-        // }
+        if(invertible)
+        {
+            V = Vinit_solver; // Vinit is reused for each contingencies
+            conv = compute_one_powerflow(Ybus, V, Sbus,
+                                        slack_ids, slack_weights,
+                                        bus_pv, bus_pq,
+                                        max_iter,
+                                        tol / sn_mva);
+        }
+        // std::string conv_str =  conv ? "has converged" : "has diverged";
+        // std::cout << "contingency " << contingency << ": " << conv_str << std::endl;
+        // if(!conv) std::cout << "\t error was: " << _solver.get_error() << std::endl;
+        // ++contingency;
+
         timer_modif_Ybus = CustTimer();
         readd_to_Ybus(Ybus, coeffs_modif);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
@@ -181,16 +190,17 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     _timer_total = timer.duration();
 }
 
-void SecurityAnalysis::clean_flows()
+void SecurityAnalysis::clean_flows(bool is_amps)
 {
     auto timer = CustTimer();
     Eigen::Index cont_id = 0;
     for(const auto & l_id_this_cont: _li_defaults){
         for(auto l_id : l_id_this_cont){
-            real_type & el = _amps_flows(cont_id, l_id);
+            real_type & el = is_amps ? _amps_flows(cont_id, l_id): _active_power_flows(cont_id, l_id);
             if(isfinite(el)) el = 0.;
         }
         ++cont_id;
     }
-    _timer_compute_A += timer.duration();
+    if (is_amps) _timer_compute_A += timer.duration();
+    else _timer_compute_P += timer.duration();
 }

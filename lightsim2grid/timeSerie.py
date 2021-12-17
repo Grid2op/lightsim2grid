@@ -6,16 +6,16 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+__all__ = ["Computers", "TimeSerie"]
 import os
 import numpy as np
 import warnings
 
 from grid2op.Chronics import Multifolder, GridStateFromFile
 
-from lightsim2grid.LightSimBackend import LightSimBackend
-from lightsim2grid.initGridModel import SolverType
+from lightsim2grid.lightSimBackend import LightSimBackend
+from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import Computers
-
 
 class TimeSerie:
     """
@@ -46,9 +46,11 @@ class TimeSerie:
             Vs[i, :env.n_sub] = env.backend.V
             As[i] = obs.a_or
 
-    Compare to the previous code, it avoid all grid2op code (coded in python) and can be roughly 3-5 times 
-    faster.
-    It allows also to use python threading, as the c++ computation can be done in different thread.
+    Compare to the previous code, it avoid all grid2op code and can be more than 15 times 
+    faster (on the case 118).
+    
+    It also allows to use python threading module, as the c++ computation can be done in different python threads (the GIL is not locked
+    during the c++ computation).
 
     Examples
     ----------
@@ -177,6 +179,19 @@ class TimeSerie:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
         ampss = self.computer.compute_flows()
         return 1000. * ampss
+
+    def compute_P(self):
+        """
+        This function returns the active power flows (in MW) at the origin (for powerline) / high voltage (for transformer) 
+        side
+        
+        It does not recompute the voltages at each buses, it uses the information get from `compute_V` and
+        This is why you must call `compute_V(...)` first !
+        """
+        if not self.__computed:
+            raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
+        mws = self.computer.compute_power_flows()
+        return mws
 
     def _extract_inj(self):
         data_loader = None

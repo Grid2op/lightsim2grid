@@ -43,8 +43,10 @@ For standard grid2op environment, you can use it like:
             # the `LightSimBackend` will be used to carry out the powerflow computation instead
             # of the default grid2op `PandaPowerBackend`
 
+Detailed documentation
+--------------------------
 
-.. automodule:: lightsim2grid.LightSimBackend
+.. automodule:: lightsim2grid.lightSimBackend
     :members:
     :autosummary:
 

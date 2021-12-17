@@ -6,7 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-from os import truncate
 import unittest
 import grid2op
 from grid2op.Parameters import Parameters
@@ -27,7 +26,7 @@ class TestComputers(unittest.TestCase):
         param.NO_OVERFLOW_DISCONNECTION = True
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env = grid2op.make(env_name, backend=LightSimBackend(), param=param, test=truncate)
+            env = grid2op.make(env_name, backend=LightSimBackend(), param=param, test=True)
 
         nb_bus = env.n_sub
         obs = env.reset()
@@ -73,7 +72,7 @@ class TestComputers(unittest.TestCase):
         param.NO_OVERFLOW_DISCONNECTION = True
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            env = grid2op.make(env_name, backend=LightSimBackend(), param=param, test=truncate)
+            env = grid2op.make(env_name, backend=LightSimBackend(), param=param, test=True)
 
         nb_bus = env.n_sub
         obs = env.reset()

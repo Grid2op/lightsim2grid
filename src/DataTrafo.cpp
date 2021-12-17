@@ -216,23 +216,23 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     if(ac) return;
     // return;
     const int nb_trafo = nb();
     int bus_id_me, bus_id_solver_hv, bus_id_solver_lv;
-    cplx_type tmp;
+    // cplx_type tmp;
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
         //  i don't do anything if the load is disconnected
         if(!status_[trafo_id]) continue;
-
+        if(dc_x_tau_shift_[trafo_id] == 0.) continue; // nothing to do if the trafo is not concerned (no phase shifter)
         bus_id_me = bus_lv_id_(trafo_id);
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "DataTrafo::fillSbus: the trafo with id ";
             exc_ << trafo_id;
-            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
         bus_id_me = bus_hv_id_(trafo_id);
@@ -241,10 +241,9 @@ void DataTrafo::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_g
             std::ostringstream exc_;
             exc_ << "DataTrafo::fillSbus: the trafo with id ";
             exc_ << trafo_id;
-            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-
         Sbus.coeffRef(bus_id_solver_hv) += dc_x_tau_shift_[trafo_id];
         Sbus.coeffRef(bus_id_solver_lv) -= dc_x_tau_shift_[trafo_id];
     }
@@ -351,30 +350,4 @@ void DataTrafo::reset_results(){
     res_q_lv_ = RealVect();  // in MVar
     res_v_lv_ = RealVect();  // in kV
     res_a_lv_ = RealVect();  // in kA
-}
-
-real_type DataTrafo::get_p_slack(int slack_bus_id)
-{
-    const int nb_element = nb();
-    real_type res = 0.;
-    for(int line_id = 0; line_id < nb_element; ++line_id)
-    {
-        if(!status_[line_id]) continue;
-        if(bus_hv_id_(line_id) == slack_bus_id) res += res_p_hv_(line_id);
-        if(bus_lv_id_(line_id) == slack_bus_id) res += res_p_lv_(line_id);
-    }
-    return res;
-}
-
-void DataTrafo::get_q(std::vector<real_type>& q_by_bus)
-{
-    const int nb_element = nb();
-    for(int el_id = 0; el_id < nb_element; ++el_id)
-    {
-        if(!status_[el_id]) continue;
-        int bus_id_hv = bus_hv_id_[el_id];
-        int bus_id_lv = bus_lv_id_[el_id];
-        q_by_bus[bus_id_hv] += res_q_hv_(el_id);
-        q_by_bus[bus_id_lv] += res_q_lv_(el_id);
-    }
 }

@@ -6,15 +6,17 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-import os
-import numpy as np
-import warnings
-from collections.abc import Iterable
-import copy
+__all__ = ["SecurityAnalysisCPP", "SecurityAnalysis"]
 
-from lightsim2grid.LightSimBackend import LightSimBackend
-from lightsim2grid.initGridModel import SolverType
-from lightsim2grid_cpp import SecurityAnalysis as _SecurityAnalysisCPP
+import os
+import warnings
+import copy
+import numpy as np
+from collections.abc import Iterable
+
+from lightsim2grid.lightSimBackend import LightSimBackend
+from lightsim2grid.solver import SolverType
+from lightsim2grid_cpp import SecurityAnalysisCPP
 
 
 class SecurityAnalysis(object):
@@ -26,9 +28,18 @@ class SecurityAnalysis(object):
     
     Feel free to post a feature request if you want to extend it.
 
+    This class is used in 4 phases:
+    
+    0) you create it from a grid2op environment (the grid topology will not be modified from this environment)
+    1) you add some contingencies to simulate
+    2) you start the simulation
+    3) you read back the results
+    
+    
     Examples
     --------
-
+    An example is given here
+    
     .. code-block:: python
 
         import grid2op
@@ -37,9 +48,15 @@ class SecurityAnalysis(object):
         env_name = ...
         env = grid2op.make(env_name, backend=LightSimBackend())
 
+        0) you create
         security_analysis = SecurityAnalysis(env)
+        
+        1) you add some contingencies to simulate
         security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
-        res_a, res_v = security_analysis.get_flows()
+        
+        2) you start the simulation (done automatically)
+        3) you read back the results
+        res_p, res_a, res_v = security_analysis.get_flows()
 
         # in this results, then
         # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
@@ -54,14 +71,13 @@ class SecurityAnalysis(object):
 
     In grid2op, it would be, in this case, 0. for the flows and 0. for the voltages.
 
-    
     """
     STR_TYPES = (str, np.str, np.str_)
     def __init__(self, grid2op_env):
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
         self.grid2op_env = grid2op_env.copy()
-        self.computer = _SecurityAnalysisCPP(self.grid2op_env.backend._grid)
+        self.computer = SecurityAnalysisCPP(self.grid2op_env.backend._grid)
         self._contingency_order = {}  # key: contingency (as tuple), value: order in which it is entered
         self._all_contingencies = []
         self.__computed = False
@@ -240,7 +256,7 @@ class SecurityAnalysis(object):
 
             security_analysis = SecurityAnalysis(env)
             security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
-            res_a, res_v = security_analysis.get_flows()
+            res_p, res_a, res_v = security_analysis.get_flows()
 
             # in this results, then
             # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
@@ -270,8 +286,9 @@ class SecurityAnalysis(object):
         if not self.__computed:
             self.compute_V()
             self.compute_A()
+            self.compute_P()
         
-        return self._ampss[orders_], self._vs[orders_]
+        return self._mws[orders_], self._ampss[orders_], self._vs[orders_]
 
     def compute_V(self):
         """
@@ -305,3 +322,18 @@ class SecurityAnalysis(object):
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
         self._ampss = 1e3 * self.computer.compute_flows()
         return self._ampss
+
+    def compute_P(self):
+        """
+        This function returns the active power flows (in MW) at the origin / high voltage side
+
+        .. warning:: Order of the results
+
+            The order in which the results are returned is NOT necessarily the order in which the contingencies have
+            been entered. Please use `get_flows()` method for easier reading back of the results !
+
+        """
+        if not self.__computed:
+            raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
+        self._mws = 1.0 * self.computer.compute_power_flows()
+        return self._mws

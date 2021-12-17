@@ -7,9 +7,9 @@ basic features.
 If you are interested in collaborating to improve this section, let us know.
 
 Type of solvers available
-##########################
+--------------------------
 
-For now, lightsim2grid ships with at most 3 fully working (and tested) solvers:
+For now, lightsim2grid ships with at most TODO DOC fully working (and tested) solvers:
 
 - **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
   solver to compute the powerflows.
@@ -17,19 +17,23 @@ For now, lightsim2grid ships with at most 3 fully working (and tested) solvers:
   variant of the "Gauss Seidel" method to compute the powerflows.
 - **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform).
+  Eigen c++ library (available on all platform). This solver supports distributed slack bus.
+- **LS+SLU (single)** (Newton Raphson+SparseLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 - **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
-  "KLU" from the `SuiteSparse` c package implemented.
+  "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.
+- **LS+KLU (single)** (Newton Raphson+KLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 - **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "NICSLU". [**NB** NICSLU is a free software but not open source, in order to use
-  it with lightsim2grid, you need to check section 
-  [It is required to install lightsim2grid from source for such solver and following the 
-  Readme for instructions on how to compile with such solver]
+  it with lightsim2grid, you need to install lightsim2grid from source for such solver]
+- **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 
 Usage
-############
+--------------------------
 In this section we briefly explain how to switch from one solver to another. An example of code using this feature
 is given in the
 `"benchmark_solvers.py" <https://github.com/BDonnot/lightsim2grid/blob/master/benchmarks/benchmark_solvers.py>`_
@@ -59,11 +63,15 @@ A concrete example of how to change the solver in this backend is:
     env_lightsim.backend.set_tol(1e-7)  # change the tolerance (smaller tolerance gives a more accurate results but takes longer to compute)
     # see the documentation of LightSimBackend for more information
 
+For the list of availbale solvers, you can consult the "enum" :class:`lightsim2grid.solver.SolverType`.
 
 
 Detailed usage
-###############
-TODO examples on how to import, and documentation of main methods
+--------------------------
+
+.. automodule:: lightsim2grid.solver
+    :members:
+    :autosummary:
 
 
 * :ref:`genindex`

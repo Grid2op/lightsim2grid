@@ -15,7 +15,7 @@ import warnings
 import numpy as np
 
 from grid2op import make
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 import pdb
 
 

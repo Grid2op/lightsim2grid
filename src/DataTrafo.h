@@ -180,7 +180,7 @@ class DataTrafo : public DataGeneric
                           bool ac,
                           const std::vector<int> & id_grid_to_solver,
                           real_type sn_mva);
-    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
+    virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,
@@ -190,8 +190,6 @@ class DataTrafo : public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    virtual real_type get_p_slack(int slack_bus_id);
-    virtual void get_q(std::vector<real_type>& q_by_bus);
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}

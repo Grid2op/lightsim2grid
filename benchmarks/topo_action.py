@@ -15,7 +15,7 @@ from grid2op.Converter import IdToAct
 from grid2op.Rules import AlwaysLegal
 from grid2op.Chronics import GridStateFromFile
 
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 
 from utils_benchmark import print_res, run_env, str2bool
 

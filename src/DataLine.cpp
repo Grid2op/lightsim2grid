@@ -75,7 +75,7 @@ void DataLine::set_state(DataLine::StateRes & my_state)
 
 void DataLine::_update_model_coeffs()
 {
-    const int my_size = powerlines_r_.size();
+    const auto my_size = powerlines_r_.size();
 
     yac_ff_ = CplxVect::Zero(my_size);
     yac_ft_ = CplxVect::Zero(my_size);
@@ -271,30 +271,4 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
     }
     _get_amps(res_powerline_aor_, res_powerline_por_, res_powerline_qor_, res_powerline_vor_);
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
-}
-
-real_type DataLine::get_p_slack(int slack_bus_id)
-{
-    int nb_element = nb();
-    real_type res = 0.;
-    for(int line_id = 0; line_id < nb_element; ++line_id)
-    {
-        if(!status_[line_id]) continue;
-        if(bus_or_id_(line_id) == slack_bus_id) res += res_powerline_por_(line_id);
-        if(bus_ex_id_(line_id) == slack_bus_id) res += res_powerline_pex_(line_id);
-    }
-    return res;
-}
-
-void DataLine::get_q(std::vector<real_type>& q_by_bus)
-{
-    int nb_element = nb();
-    for(int el_id = 0; el_id < nb_element; ++el_id)
-    {
-        if(!status_[el_id]) continue;
-        int bus_id_ex = bus_ex_id_[el_id];
-        int bus_id_or = bus_or_id_[el_id];
-        q_by_bus[bus_id_or] += res_powerline_qor_(el_id);
-        q_by_bus[bus_id_ex] += res_powerline_qex_(el_id);
-    }
 }

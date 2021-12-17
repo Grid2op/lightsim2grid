@@ -11,19 +11,23 @@
 
 #include "BaseSolver.h"
 // TODO make err_ more explicit: use an enum
-class DCSolver: public BaseSolver
+template<class LinearSolver>
+class BaseDCSolver: public BaseSolver
 {
     public:
-        DCSolver():BaseSolver(), dc_solver_(), need_factorize_(true){};
+        BaseDCSolver():BaseSolver(), _linear_solver(), need_factorize_(true){};
 
-        ~DCSolver(){}
+        ~BaseDCSolver(){}
 
         virtual void reset();
 
+        // TODO SLACK : this should be handled in Sbus by the gridmodel maybe ?
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         const CplxVect & Sbus,
+                        const Eigen::VectorXi & slack_ids,
+                        const RealVect & slack_weights,  // currently unused
                         const Eigen::VectorXi & pv,
                         const Eigen::VectorXi & pq,
                         int max_iter,
@@ -32,13 +36,15 @@ class DCSolver: public BaseSolver
 
     private:
         // no copy allowed
-        DCSolver( const BaseSolver & ) ;
-        DCSolver & operator=( const BaseSolver & ) ;
+        BaseDCSolver( const BaseSolver & ) =delete ;
+        BaseDCSolver & operator=( const BaseSolver & ) =delete;
 
     protected:
-        Eigen::SparseLU<Eigen::SparseMatrix<real_type>>  dc_solver_;
+        LinearSolver  _linear_solver;
         bool need_factorize_;
 
 };
+
+#include "DCSolver.tpp"
 
 #endif // DCSOLVER_H

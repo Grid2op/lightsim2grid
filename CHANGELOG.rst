@@ -3,15 +3,50 @@ Change Log
 
 [TODO]
 --------
-- switch c++ to float32 instead
+- improve speed by not performing internal checks 
+  (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
-- improve documentation
-- easier building (get rid of the "make" part)
+- code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
 - code `helm` powerflow method
-- code NR with dense matrices
+- possibility to read CGMES files
+- possibility to read XIIDM files
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
-- perform unittest on CI (either github or circleci)
+- easier building (get rid of the "make" part)
+- code NR with dense matrices
+
+[0.6.0] 2021-12-17
+-------------------
+- [BREAKING] change the interface of the `newton_pf` function to reflect pandapower change in their
+  latest version (arguments `ref` has been added). You can still use the old `newton_pf` function, with the
+  old signature by importing `newtonpf_old` instead.
+- [BREAKING] `SecurityAnalysis` now also returns the active flows when calling `security_analysis.get_flows()`
+- [BREAKING] change the file names (python side) to be compliant with pep 8. You can no longer
+  do things like `from lightsim2grid.LightSimBackend import LightSimBackend` change it to
+  `from lightsim2grid import LightSimBackend` (preferred method)
+- [BREAKING] change the file names (python side) to be compliant with pep 8. You can no longer
+  do things like `from lightsim2grid.initGridModel import init` change it to
+  `from lightsim2grid.gridmodel import init` (preferred method) (same for `GridModel` class)
+- [FIXED] a bug that lead to the wrong computation of the dc powerflow in case of `sn_mva != 1.` and phase shifters.
+- [FIXED] bug preventing to use the NICSLU linear solver in the `GridModel`
+- [FIXED] compilation warnings on clang (missing virtual destructor, unused variables, etc.)
+- [FIXED] a bug in the `SecurityAnalysisCPP`: when it diverges for some contingencies, the others were not simulated properly.
+- [FIXED] `LightSimBackend` now contains members for `shunts` and `***_theta` as it does for the other quantities. This improves the consistency, but most importantly
+  fixes some bugs when used in earlier grid2op versions
+- [ADDED] possibility to compute the active flows using the `BaseMultiplePower` 
+- [ADDED] possibility to change linear solver used when performing a DC solver
+- [ADDED] possibility to make powerflow with distributed slack bus (only for newton raphson at the moment)
+- [ADDED] access (read only) to the element of a lightsim2grid grid with the `get_XXX` (*eg* `get_loads()`) methods (see documentation)
+- [ADDED] direct access to the solver used in the grid model python side
+- [ADDED] unittest in circleci.
+- [ADDED] all kind of solvers based on different linear solvers (Eigen sparse LU, KLU or NICSLU) for Newton Raphson and
+  DC approximation (9 solvers in total)
+- [IMPROVED] use of `steady_clock` to retrieve the ellapse time c++ side
+- [IMPROVED] refactoring of the c++ part to use template mecanism instead of inheritance for the
+  Newton Raphson and DC solvers.
+- [IMPROVED] `GridModel` now contains two different solvers, one for AC powerflow and one for DC powerflow.
+- [IMPROVED] error message in the solver are now embedded in an Enum instead of being integers, for better readibility.
+- [IMPROVED] error message when the powerflow diverge (error are read from c++ now)
 
 [0.5.5] 2021-11-10
 -------------------

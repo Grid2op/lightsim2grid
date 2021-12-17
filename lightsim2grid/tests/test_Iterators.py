@@ -12,6 +12,7 @@ import grid2op
 import warnings
 import pdb
 import numpy as np
+from scipy.sparse import data
 from lightsim2grid import LightSimBackend
 
 SparseLUSolver_AVAILBLE = False
@@ -145,6 +146,47 @@ class MakeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             line_info = data_lines[nb_line]
 
+    def test_getters_load(self):
+        """test that the load getter return the right values"""
+        data_loads = self.env.backend._grid.get_loads()
+        load_p, load_q, load_v = self.env.backend.loads_info()
+        
+        tol = 1e-5
+        nb_load = len(data_loads)
+        for el in data_loads:
+            load_id = el.id
+            assert np.abs(el.res_p_mw - load_p[load_id]) <= tol, f"load {load_id} has wrong res_p"
+            assert np.abs(el.res_q_mvar - load_q[load_id]) <= tol, f"load {load_id} has wrong res_q"
+            assert np.abs(el.res_v_kv - load_v[load_id]) <= tol, f"load {load_id} has wrong res_v"
+
+        with self.assertRaises(ValueError):
+            load_ = data_loads[-1]
+
+        with self.assertRaises(ValueError):
+            load_ = data_loads[nb_load]
+
+    def test_getters_generic(self):
+        """
+        basic tests on the other getters, to make sure i can call them basically (there is none on this grid so 
+        not easy to test
+        """
+        data_shunts = self.env.backend._grid.get_shunts()
+        with self.assertRaises(ValueError):
+            shunt_ = data_shunts[-1]
+        with self.assertRaises(ValueError):
+            shunt_ = data_shunts[len(data_shunts)]
+
+        data_sgens = self.env.backend._grid.get_static_generators()
+        with self.assertRaises(ValueError):
+            sgen_ = data_sgens[-1]
+        with self.assertRaises(ValueError):
+            sgen_ = data_sgens[len(data_sgens)]
+
+        data_storages = self.env.backend._grid.get_storages()
+        with self.assertRaises(ValueError):
+            stor_ = data_storages[-1]
+        with self.assertRaises(ValueError):
+            stor_ = data_storages[len(data_storages)]
 
 if __name__ == "__main__":
     unittest.main()

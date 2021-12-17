@@ -8,56 +8,56 @@
 
 #include "KLUSolver.h"
 
-void KLUSolver::reset(){
-    BaseNRSolver::reset();
+ErrorType KLULinearSolver::reset(){
     klu_free_symbolic(&symbolic_, &common_);
     klu_free_numeric(&numeric_, &common_);
-    n_ = -1;
     common_ = klu_common();
-
     symbolic_ = nullptr;
     numeric_ = nullptr;
+    return ErrorType::NoError;
 }
 
-void KLUSolver::initialize(){
+ErrorType KLULinearSolver::initialize(Eigen::SparseMatrix<real_type>&  J){
     // default Eigen representation: column major, which is good for klu !
     // J is const here, even if it's not said in klu_analyze
-    auto timer = CustTimer();
-    n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
-    err_ = 0; // reset error message
+    const auto n = J.cols();
     common_ = klu_common();
-    symbolic_ = klu_analyze(n_, J_.outerIndexPtr(), J_.innerIndexPtr(), &common_);
-    numeric_ = klu_factor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, &common_);
-    if (common_.status != KLU_OK) {
-        err_ = 1;
+    ErrorType res = ErrorType::NoError; 
+    symbolic_ = klu_analyze(n, J.outerIndexPtr(), J.innerIndexPtr(), &common_);
+    if(common_.status != KLU_OK){
+        res = ErrorType::SolverAnalyze; 
+    }else{
+        numeric_ = klu_factor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic_, &common_);
+        if(common_.status != KLU_OK) res = ErrorType::SolverFactor; 
     }
-    need_factorize_ = false;
-    timer_initialize_ += timer.duration();
+    return res;
 }
 
-void KLUSolver::solve(RealVect & b, bool has_just_been_initialized){
+ErrorType KLULinearSolver::solve(Eigen::SparseMatrix<real_type>& J, RealVect & b, bool has_just_been_initialized){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const
-    auto timer = CustTimer();
     int ok;
+    ErrorType err = ErrorType::NoError;
     bool stop = false;
     if(!has_just_been_initialized){
         // if the call to "klu_factor" has been made this iteration, there is no need
         // to re factor again the matrix
         // i'm in the case where it has not
-        ok = klu_refactor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, numeric_, &common_);
+        ok = klu_refactor(J.outerIndexPtr(), J.innerIndexPtr(), J.valuePtr(), symbolic_, numeric_, &common_);
         if (ok != 1) {
-            err_ = 2;
+            // std::cout << "\t KLU: refactor error" << std::endl;
+            err = ErrorType::SolverReFactor;
             stop = true;
         }
     }
     if(!stop){
-        ok = klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
+        const auto n = J.cols();
+        ok = klu_solve(symbolic_, numeric_, n, 1, &b(0), &common_);
         if (ok != 1) {
-            err_ = 3;
+            // std::cout << "\t KLU: klu_solve error" << std::endl;
+            err = ErrorType::SolverSolve;
         }
     }
-    // std::cout << "KLUSolver::solve" << std::endl;
-    timer_solve_ += timer.duration();
+    return err;
 }

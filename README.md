@@ -6,6 +6,29 @@ the world of power system.
 See the [Disclaimer](DISCLAIMER.md) to have a more detailed view on what is and what is not this package. For example
 this package should not be used for detailed power system computations or simulations.
 
+
+*   [1 Usage](#Usage)
+    *   [1.1. As a grid2op backend (preferred method)](#1-as-a-grid2op-backend-preferred-method)
+    *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](#2-replacement-of-pandapower-newtonpf-method-advanced-method)
+*   [2 Installation (from pypi official repository, recommended)](#Installation-from-pypi-official-repository-recommended)
+*   [3 Installation (from source, for more advanced user)](#Installation-from-source-for-more-advanced-user)
+    *   [3.0 Important note](#Important-note)
+    *   [3.1. Retrieve the sources](#1-Retrieve-the-sources)
+    *   [(optional, recommended) Compilation of SuiteSparse](#optional-recommended-Compilation-of-SuiteSparse)
+        *   [option A. Compilation of SuiteSparse using "make"](#optional-option-a-Compilation-of-SuiteSparse-using-make)
+        *   [option B. Compilation of SuiteSparse using "cmake"](#optional-option-b-Compilation-of-SuiteSparse-using-cmake)
+    *   [(optional) Include NICSLU linear solver (experimental)](#optional-Include-NICSLU-linear-solver-experimental)
+    *   [(optional) customization of the installation](#optional-customization-of-the-installation)
+    *   [3.2 Installation of the python package](#2-Installation-of-the-python-package)
+*   [4. Benchmarks](#Benchmarks)
+*   [5. Philosophy](#Philosophy)
+*   [6. Miscellaneous](#Miscellaneous)
+    * [6.1 Customization of the compilation](#Customization-of-the-compilation)
+    * [6.2 Profile the code](#Profile-the-code)
+    * [6.3 Local testing](#Local-testing)
+    * [6.4 Tests performed automatically](#Tests-performed-automatically)
+    * [5.5 Known issues](#Known-issues)
+
 ## Usage
 Once installed (don't forget, if you used the optional virtual env
 above you need to load it with `source venv/bin/activate`) you can
@@ -13,8 +36,9 @@ use it as any python package.
 
 ### 1. As a grid2op backend (preferred method)
 This functionality requires you to have grid2op installed, with at least version 0.7.0. You can install it with
+
 ```commandline
-pip install grid2op>=0.7.0
+pip install grid2op>=1.6.4
 ```
 
 Then you can use a LightSimBackend instead of the default PandapowerBackend this way:
@@ -32,19 +56,21 @@ And you are good to go.
 It is also possible to use directly the "solver" part of lightsim2grid.
 
 Suppose you somehow get:
-- `Ybus` the admittance matrix of your powersystem given by pandapower
-- `V0` the (complex) voltage vector at each bus given by pandapower
-- `Sbus` the (complex) power absorb at each bus as given by pandapower
-- `ppci` a ppc internal pandapower test case
+- `Ybus` the admittance matrix of your powersystem, for example given by pandapower
+  (will be converted to a scipy `sparse.csc_matrix` )
+- `V0` the (complex) voltage vector at each bus, for example given by pandapower
+- `Sbus` the (complex) power absorb at each bus, for example as given by pandapower
+- `ref` Ids of the slack buses (added in version 0.5.6 to match recent pandapower changes)
 - `pv` list of PV buses
 - `pq` list of PQ buses
-- `options` list of pandapower "options"
+- `ppci` a ppc internal pandapower test case (or dictionary, is used to retrieve the coefficients associated to each slack bus)
+- `options` list of pandapower "options" (or dictionary with keys `max_iteration` and `tolerance_mva`)
 
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
 ```python
 from lightsim2grid.newtonpf import newtonpf
-V, converged, iterations, J = newtonpf(Ybus, V, Sbus, pv, pq, ppci, options)
+V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
@@ -108,10 +134,8 @@ Newton-Raphson based method. But to carry out this algorithm, one need to solver
 difference in the two version (with KLU and without) is that the linear equation solver is different. Up to the
 double float precision, both results (with and without KLU) should match.
 
-We only detail the compilation on a system using "make" (so most likely GNU-Linux and MacOS). If you don't feel 
-comfortable with this, either you can ignore it, or you have also the possibility to use the
-provided a docker version. See the next section [Installation Using Docker](#installation-using-docker) 
-for more information.
+There are 2 ways to install this package. Either you use "make" (preferred method on linux / unix -- including MacOS) or you use "cmake", which works on all platforms but takes more time and is less automatic (mainly because SuiteSparse
+cannot be directly built with "cmake" so we need extra steps to make it possible.)
 
 #### (optional) option A. Compilation of SuiteSparse using "make"
 This is the easiest method to compile SuiteSparse on your system but unfortunately it only works on OS where "make" is
@@ -162,8 +186,7 @@ To use it, you need to:
 And this is it. Lightsim will be able to use this linear solver.
 
 Be carefull though, you require a license file in order to use it. As of now, the best way is to copy paste the license
-file at the same location that the one you execute python from (*ie* you need to copy paste it each time). We will 
-try to find another solution.
+file at the same location that the one you execute python from (*ie* you need to copy paste it each time).
 
 ### (optional) customization of the installation
 
@@ -198,110 +221,39 @@ pip install -U .
 And you are done :-)
 
 
-### Benchmark
-In this section we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
-The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
+## Benchmarks
 
-All of them has been run on a computer with the following configuration:
-Configuration:
-- system: Linux 5.11.0-38-generic
-- OS: ubuntu 20.04
-- processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
-- python version: 3.8.10.final.0 (64 bit)
-- numpy version: 1.18.5
-- pandas version: 1.1.4
-- pandapower version: 2.6.0
-- lightsim2grid version: 0.5.5
-- grid2op version: 1.6.4
-
-
-The code to reproduce the benchmark on your machine are given, once `cd` into the `benchmarks` directory:
-
-```commandline
-cd benchmarks  # cd in the lightsim2grid benchmarks directory if not already
-python3 benchmark_solvers.py --name l2rpn_case14_sandbox --no_test --number 1000
-python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --number 1000
-```
-(results may vary depending on the hard drive, the ram etc. )
-
-(to run these benchmarks, some data will automatically be downloaded, this requires an internet access)
-
-(we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
-make use of all the available cores, which would increase the number of steps that can be performed per second)
-
-We compare 6 different solvers:
-
-- **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
-  acceleration). It is our reference solver.
-- **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
-  solver to compute the powerflows It is implemented in
-  [GaussSeidelSolver](./src/GaussSeidelSolver.h).
-- **LS+GS S** (LightSimBackend+Gauss Seidel Synchronous): the grid2op backend based on lightsim2grid that uses a
-  variant of the "Gauss Seidel" method to compute the powerflows. It is implemented in
-  [GaussSeidelSynchSolver](./src/GaussSeidelSynchSolver.h).
-- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
-  "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
-  Eigen c++ library (available on all platform) and is implemented in
-  [SparseLUSolver](./src/SparseLUSolver.h).
-- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
-  "Newton Raphson" algorithm coupled with the linear solver 
-  "KLU" from the `SuiteSparse` c package implemented in
-  [KLUSolver](./src/KLUSolver.h).
-- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
-  "Newton Raphson" algorithm coupled with the linear solver 
-  "NICSLU" implemented in
-  [NICSLUSolver](./src/NICSLUSolver.h). [**NB** NICSLU is a free software but not open source, in order to use
-  it with lightsim2grid, you need to check section 
-  [(optional) Include NICSLU linear solver (experimental)](###-\(optional\)-Include-NICSLU-linear-solver-\(experimental\)) 
-  It is required to install lightsim2grid from source for such solver]
+Lightsim2grid is significantly faster than pandapower when used with grid2op for all kind of environment size.
 
 First on an environment based on the IEEE case14 grid:
 
-| case14_sandbox   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
-|------------------|------------------------|-------------------------------------|------------------------------|
-| PP               |                   68.8 |                              11.3   |                       4.36   |
-| LS+GS            |                  866   |                               0.41  |                       0.308  |
-| LS+GS S          |                  859   |                               0.416 |                       0.314  |
-| LS+SLU           |                 1090   |                               0.168 |                       0.0632 |
-| LS+KLU           |                 1160   |                               0.12  |                       0.0188 |
-| LS+NICSLU        |                 1150   |                               0.121 |                       0.0186 |
-
-
-From a grid2op perspective, lightsim2grid allows to compute up to ~1200 steps each second on the case 14 and
-"only" 69 for the default PandaPower Backend, leading to a speed up of **~17** in this case
-(lightsim2grid is ~17 times faster than Pandapower). For such a small environment, there is no sensible
-difference in using 
-KLU linear solver compared to using the SparseLU solver of Eigen (1160 vs 1090 iterations on the reported
-runs, might slightly vary across runs). KLU and NICSLU achieve almost identical performances.
+| case14_sandbox     |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
+|--------------------|------------------------|-------------------------------------|------------------------------|
+| PP                 |                   70.5 |                              11     |                       4.27   |
+| LS+GS              |                  881   |                               0.447 |                       0.327  |
+| LS+GS S            |                  877   |                               0.446 |                       0.327  |
+| LS+SLU (single)    |                 1110   |                               0.191 |                       0.0655 |
+| LS+SLU             |                 1120   |                               0.195 |                       0.0683 |
+| LS+KLU (single)    |                 1200   |                               0.138 |                       0.0176 |
+| LS+KLU             |                 1180   |                               0.141 |                       0.0188 |
+| LS+NICSLU (single) |                 1200   |                               0.139 |                       0.0179 |
+| LS+NICSLU          |                 1200   |                               0.139 |                       0.0184 |
 
 Then on an environment based on the IEEE case 118:
 
 | neurips_2020_track2   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
 |-----------------------|------------------------|-------------------------------------|------------------------------|
-| PP                    |                  39.4  |                              13.5   |                        5.65  |
-| LS+GS                 |                   5.12 |                             194     |                      194     |
-| LS+GS S               |                  35.2  |                              27.5   |                       27.3   |
-| LS+SLU                |                 621    |                               0.775 |                        0.591 |
-| LS+KLU                |                 883    |                               0.301 |                        0.12  |
-| LS+NICSLU             |                 881    |                               0.302 |                        0.121 |
+| PP                    |                   39.6 |                              13.3   |                        5.58  |
+| LS+GS                 |                    5.3 |                             188     |                      188     |
+| LS+GS S               |                   36.5 |                              26.6   |                       26.4   |
+| LS+SLU (single)       |                  642   |                               0.775 |                        0.607 |
+| LS+SLU                |                  588   |                               0.932 |                        0.769 |
+| LS+KLU (single)       |                  945   |                               0.277 |                        0.116 |
+| LS+KLU                |                  918   |                               0.306 |                        0.144 |
+| LS+NICSLU (single)    |                  947   |                               0.274 |                        0.11  |
+| LS+NICSLU             |                  929   |                               0.298 |                        0.134 |
 
-For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~22** time faster than
-using the default PandaPower backend. The speed up of lightsim + SparseLU is a bit lower, but it is still **~16**
-times faster than using the default backend [the `LS+KLU` solver is ~4-5 times faster than the `LS+SLU` solver 
-(`0.12` ms per powerflow for `L2+KLU`  compared to `0.59` ms for `LS+SLU`), but it only translates to `LS+KLU` 
-providing ~30-40% more
-iterations per second in the total program (`880` vs `650`) mainly because grid2op itself takes some times to modify the
-grid and performs all the check it does.] For this testcase once again there is no noticeable difference between
-`NICSLU` and `KLU`.
-
-If we look now only at the time to compute one powerflow (and don't take into account the time to load the data, to
-initialize the solver, to modify the grid, read back the results, to perform the other update in the
-grid2op environment etc.) we can notice that it takes on average (over 1000 different states) approximately **0.12ms**
-to compute a powerflow with the LightSimBackend (if using the KLU linear solver) compared to the **5.6 ms** when using
-the PandaPowerBackend (speed up of **~46** times)
-
-**NB** pandapower performances heavily depends on the pandas version used, we used here a version of pandas which
-we found gave the best performances on our machine.
+For more information (including the exact way to reproduce these results, as well as the computer used), you can consult the dedicated [Benchmarks](https://lightsim2grid.readthedocs.io/en/latest/benchmarks.html) page on the documentation.
 
 ## Philosophy
 Lightsim2grid aims at providing a somewhat efficient (in terms of computation speed) backend targeting the 
@@ -309,7 +261,7 @@ grid2op platform.
 
 It provides a c++ api, compatible with grid2op that is able to compute flows (and voltages and reactive power) from
 a given grid. This grid can be modified according to grid2op mechanism (see more information in the [official
-grid2Op documentation](https://grid2op.readthedocs.io/en/latest/index.html`) ).
+grid2Op documentation](https://grid2op.readthedocs.io/en/latest/index.html) ).
 
 This code do not aim at providing state of the art solver in term of performances nor in terms of realism in the
 modeling of power system elements (*eg* loads, generators, powerlines, transformers, etc.).
@@ -327,6 +279,11 @@ Lightsim2grid codebase is "organized" in 4 different parts:
 4) computes the active power, reactive power, flow on powerllines etc. from the `V` and `Sbus` complex vectors computed
    at step 3).
 
+Step 1, 2 and 4 are done in the [GridModel](https://lightsim2grid.readthedocs.io/en/latest/gridmodel.html#lightsim2grid.gridmodel.GridModel) class.
+
+Step 3 is performed thanks to a "powerflow solver".
+
+### Using a custom powerflow solver
 For now some basic "solver" (*eg* the program that performs points `3.` above) are available, based on the
 Gauss Seidel or the Newton-Raphson methods to perform "powerflows". 
 
@@ -336,6 +293,8 @@ implement, in c++ a "lightsim2grid solver" which mainly consists in defining a f
 bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // the admittance matrix
                 CplxVect & V,  // store the results of the powerflow and the Vinit !
                 const CplxVect & Sbus,  // the injection vector
+                const Eigen::VectorXi & ref,  // bus id participating to the distributed slack
+                const RealVect & slack_weights,  // slack weights for each bus
                 const Eigen::VectorXi & pv,  // (might be ignored) index of the components of Sbus should be computed
                 const Eigen::VectorXi & pq,  // (might be ignored) index of the components of |V| should be computed
                 int max_iter,  // maximum number of iteration (might be ignored)
@@ -347,22 +306,41 @@ The types used are:
 
 - `real_type`: double => type representing the real number
 - `cplx_type` :  std::complex<real_type> => type representing the complex number
-- `CplxVect` : Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> => type representing a vector of complex elements
+- `CplxVect` : Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> => type representing a vector of complex numbers
+- `RealVect` : Eigen::Matrix<real_type, Eigen::Dynamic, 1> => type representing a vector of real numbers
 - `Eigen::VectorXi` => represents a vector of integer
 - `Eigen::SparseMatrix<cplx_type>` => represents a sparse matrix
 
-See for example [BaseNRSolver](./src/BaseNRSolver.h) for the implementation of a Newton Raphson solver (and
-its derived classes [KLUSolver](./src/KLUSolver.h) and [SparseLUSolver](./src/SparseLUSolver.h) that uses
-different routine to implement this algorithm) for examples on how to implement a solver.
+See for example [BaseNRSolver](./src/BaseNRSolver.h) for the implementation of a Newton Raphson solver (it requires some "linear solvers", more details about that are given in the section bellow)
 
 Any contribution in this area is more than welcome.
+
+**NB** For now the "solver" only uses these above information to perform the powerflow. If a more
+"in depth" solution needs to be implemented, let us know with a github issue. For example, it could be totally fine that a proposed "solver" uses direct information about the elements (powerline, topology etc.) of the grid in order to perform some powerflow.
 
 **NB** It is not mandatory to "embed" all the code of the solver in lightsim2grid. Thanks to different customization, 
 it is perfectly possible to install a given "lightsim solver" only if certain conditions are met. For example, on
 windows based machine, the SuiteSparse library cannot be easily compiled, and the KLUSolver is then not available.
 
-It would be totally fine if some "lightsim2grid" solvers are available only if some packages are installed on the
+**NB** It would be totally fine if some "lightsim2grid" solvers are available only if some packages are installed on the
 machine for example.
+
+### Using custom linear solvers to solve powerflows
+
+In lightsim2grid (c++ part) it is also possible, thanks to the use of "template meta programming" to
+not recode the Newton Raphson algorithm (or the DC powerflow algorithm) and to leverage the 
+use of a linear solver.
+
+A "linear solver" is anything that can implement 3 basic functions:
+
+- `initialize(const Eigen::SparseMatrix<real_type> & J)` : initialize the solver and prepare it to solve for linear systems `J.x = b` (usually called once per powerflow)
+- `ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized)`: effectively solves `J.x = b` (usually called multiple times per powerflow)
+- `ErrorType reset()`: clear the state of the solver (usually performed at the end of a powerflow
+  to reset the state to a "blank" / "as if it was just initialized" state)
+
+Some example are given in the c++ code "KLUSolver.h", "SparLUSolver.h" and "NICSLU.h"
+
+This usage usually takes approximately around 20 / 30 lines of c++ code (not counting the comments, and boiler code for exception handling for example).
 
 ## Citing
 
@@ -377,149 +355,6 @@ If you use this package in one of your work, please cite:
     howpublished = {\url{https://GitHub.com/bdonnot/lightsim2grid}},
 }
 ```
-
-## Installation (using docker)
-In this section we cover the use of docker with grid2op.
-
-### 1. Install docker
-First, you need to install docker. You can consult the 
-[docker on windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) if you use a windows like
-operating system, if you are using MacOs you can consult 
-[docker on Mac](https://hub.docker.com/editions/community/docker-ce-desktop-mac/). The installation of docker on linux
-depends on your linux distribution, we will not list them all here.
-
-### 2. Get the lightsim2grid image
-
-Once done, you can simply "install" the lightsim2grid image with:
-```commandline
-docker pull bdonnot/lightsim2grid:latest
-```
-
-This step should be done only once (unless you delete the image) it will download approximately 4 or 5GB from the
-internet. The lightsim2grid image contains lightsim and grid2op python packages (as well as their
-dependencies), equivalent of what would be installed if you typed:
-```commandline
-pip install -U grid2op[optional] pybind11
-# and do steps detailed in section "Installation (from source)"
-# that we will not repeat
-```
-
-### 3. Run a code on this container
-You can skip this section if you know how to use docker. We will present here "the simplest way" to use. This is NOT
-a tutorial on docker, and you can find better use of this technology on 
-[the docker website](https://www.docker.com/get-started).
-
-For this tutorial, we suppose you have a script named `my_script.py` located in the directory (complete path) 
-`DIR_PATH` (*e.g.* on windows you can have `DIR_PATH` looking like "c:\User\MyName\L2RPNCompeitionCode" or 
-on Linux `DIR_PATH` will look like "/home/MyName/L2RPNCompeitionCode", this path is your choice, you can name it
-the way you like)
-
-#### 3.1) Start a docker container
-You first need to start a docker container and tell docker that the container can access your local files with the 
-following command:
-
-```commandline
-docker run -t -d -p 8888:8888 --name lightsim_container -v DIR_PATH:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
-```
-More information on this command 
-[in the official docker documentation](https://docs.docker.com/engine/reference/commandline/run/)
-
-After this call you can check everything went smoothly with by invoking:
-```commandline
-docker ps
-```
-And the results should look like:
-```
-CONTAINER ID        IMAGE                   COMMAND             CREATED             STATUS              PORTS               NAMES
-89750964ca55        bdonnot/lightsim2grid   "python3"           5 seconds ago       Up 4 seconds        80/tcp              lightsim_container
-```
-
-**NB** I insist, `DIR_PATH` should be replaced by the path on which you are working, see again the introduction of this
-section for more information, in the example above this can look like:
-```commandline
-docker run -t -d -p 8888:8888 --name lightsim_container -v /home/MyName/L2RPNCompeitionCode:/L2RPNCompeitionCode -w /L2RPNCompeitionCode bdonnot/lightsim2grid
-```
-
-#### 3.2) Execute your code on this container
-Once everything is set-up you can execute anything you want on this container. Note that doing so, the execution
-of the code will be totally independant of your system. Only the things located in `DIR_PATH` will be visible 
-by your script, only the python package installed in the container will be usable, only the python interpreter
-of the containter (python 3.6 at time of writing) will be usable etc.
-
-```commandline
-docker exec lightsim_container python my_script.py
-```
-
-Of course, the "my_script.py" should save its output somewhere on the hard drive.
-
-If you rather want to execute a python REPL (read-eval-print loop), corresponding to the "interactive python 
-interpreter", you can run this command:
-```commandline
-docker exec -it lightsim_container python
-```
-
-We also added the possibility to run jupyter notebook from this container. To do so, you can run the command:
-```commandline
-docker exec -it lightsim_container jupyter notebook --port=8888 --no-browser --ip='*' --allow-root
-```
-
-More information is provided in the official documentation of 
-[docker exec](https://docs.docker.com/engine/reference/commandline/exec/).
-
-#### 3.3) Disclaimer
-Usually, docker run as root on your machine, be careful, you can do irreversible things with it. "A great power 
-comes with a great responsibility".
-
-Also, we recall that we presented a really short introduction to docker and its possibility. We have not implied
-that this was enough, nor explain (on purpose, to make this short) any of the commands. 
-We strongly encourage you to have a look for yourself. 
-
-We want to recall the paragraph `7. Limitation of Liability` under which lightsim2grid, and this "tutorial" 
-is distributed:
-
-*Under no circumstances and under no legal 
-theory, whether tort (including negligence), 
-contract, or otherwise, shall any Contributor, or 
-anyone who distributes Covered Software as 
-permitted above, be liable to You for any direct, 
-indirect, special, incidental, or consequential 
-damages of any character including, without 
-limitation, damages for lost profits, loss of 
-goodwill, work stoppage, __**computer failure or**__
-__**malfunction**__, or any and all other commercial 
-damages or losses, even if such party shall have 
-been informed of the possibility of such damages.*
-
-### 4) Clean-up
-Once you are done with your experiments, you can stop the docker container:
-```commandline
-docker container stop lightsim_container
-```
-This will free all the CPU / GPU resources that this container will use. If you want to start it again, for another 
-experiment for example, just use the command:
-```commandline
-docker container start lightsim_container
-```
-This will allow you to run another batch of `dcoker exec` (see `3.2) Execute your code on this container`) 
-without having to re run the container.
-
-
-If you want to go a step further, you can also delete the container with the command:
-```commandline
-docker container rm lightsim_container
-```
-This will remove the container, and all your code executed there, the history of commands etc. If you want to use
-lightsim2grid with docker again you will have to go through section `3. Run a code on this container` all over
-again.
-
-And if you also want to remove the image, you can do:
-```commandline
-docker rmi bdonnot/lightsim2grid 
-```
-**NB** this last command will completely erase the lightsim2grid image from your machine. This means that 
-if you want to use it again, you will have to download it again (see section `2. Get the lightsim2grid image`)
-
-Finally, you can see the official documentation in case you need to uninstall docker completely from your system.
 
 ## Miscellaneous
 
@@ -579,7 +414,7 @@ Some tests are performed automatically on standard platform each time modificati
 
 These tests include, for now, compilation on gcc (version 8, 9, 10 and 11) and clang (version 10, 11 and 12).
 
-**NB** Older version of clang are not tested regularly, but lightsim2grid used to work on these versions.
+**NB** Older versions of clang are not tested regularly, but lightsim2grid used to work on these.
 
 ### Known issues
 

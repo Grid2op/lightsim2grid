@@ -94,7 +94,7 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
     reward = env.reward_range[0]
     nb_ts = 0
     prev_act = None
-    beg_ = time.time()
+    beg_ = time.perf_counter()
     with tqdm(total=nb_rows, desc=pbar_desc) as pbar:
         while not done:
             act = agent.act(obs, reward, done)
@@ -109,7 +109,7 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
             # if np.sum(obs.line_status) < obs.n_line - 1 * (nb_ts % 2 == 1):
             #     print("There is a bug following action; {}".format(act))
             prev_act = act
-    end_ = time.time()
+    end_ = time.perf_counter()
     total_time = end_ - beg_
     return nb_ts, total_time, aor, gen_p, gen_q
 

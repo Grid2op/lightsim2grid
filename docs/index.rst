@@ -17,6 +17,10 @@ As from version 0.3.0:
 - `LightSimBackend` is compatible with the "pickle" library, so you can use it with multiprocessing
   on windows, and with frameworks that requires it (for example ray rllib).
 
+As from version 0.5.3:
+
+- `lightsim2grid` is available on pypi, you can install it (on windows, macos and linux) with `pip install lighsim2grid`
+
 .. toctree::
    :maxdepth: 2
    :caption: Quickstart
@@ -24,7 +28,9 @@ As from version 0.3.0:
    quickstart
    disclaimer
    use_with_grid2op
+   benchmarks
    use_solver
+   physical_law_checker
 
 
 Technical Documentation (work in progress)

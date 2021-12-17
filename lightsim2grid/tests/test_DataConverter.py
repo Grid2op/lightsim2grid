@@ -9,6 +9,7 @@
 import unittest
 import numpy as np
 import pdb
+from numpy.lib.arraysetops import isin
 import pandapower.networks as pn
 from lightsim2grid_cpp import PandaPowerConverter
 
@@ -18,9 +19,9 @@ class MakeTests(unittest.TestCase):
         self.converter = PandaPowerConverter()
         self.tol = 1e-8
 
-    def assert_equal(self, tmp, ref):
-        assert np.max(np.abs(tmp - ref)) <= self.tol
-        assert np.sum(np.abs(tmp - ref)) <= tmp.shape[0] * self.tol
+    def assert_equal(self, tmp, ref, name=""):
+        assert np.max(np.abs(tmp - ref)) <= self.tol, f"maximum error {np.max(np.abs(tmp - ref))} {'for '+name if name else''}"
+        assert np.sum(np.abs(tmp - ref)) <= tmp.shape[0] * self.tol, f"average error {np.sum(np.abs(tmp - ref))}  {'for '+name if name else''}"
 
     def test_case6_data(self):
         net = pn.case6ww()
@@ -37,9 +38,12 @@ class MakeTests(unittest.TestCase):
         res_r = np.array([0.001, 0.0005, 0.001, 0.0008, 0.0005, 0.0005, 0.001, 0.0007, 0.0012, 0.0002, 0.002])
         res_x = np.array([0.002, 0.002, 0.003, 0.003, 0.0025, 0.001, 0.003, 0.002, 0.0026, 0.001, 0.004])
         res_h = np.array([4.+0.j, 4.+0.j, 6.+0.j, 6.+0.j, 6.+0.j, 2.+0.j, 4.+0.j, 5.+0.j, 5.+0.j, 2.+0.j, 8.+0.j])
-        self.assert_equal(line_r, res_r)
-        self.assert_equal(line_x, res_x)
-        self.assert_equal(line_h, res_h)
+        # new in pandapower 2.7.0 : order changed, sn_mva changed!
+        order_270 = [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 2]
+        # for el_r, el_x in zip(line_r, line_x): print(np.where((np.abs(res_r*100.-el_r) <= 1e-6) & (np.abs(res_x*100.-el_x) <= 1e-6))[0])
+        self.assert_equal(line_r, res_r[order_270] * net.sn_mva, "resistance (r)")
+        self.assert_equal(line_x, res_x[order_270] * net.sn_mva, "reactance (x)")
+        self.assert_equal(line_h, res_h[order_270] / net.sn_mva, "susceptance (h)")
 
     def test_case30_data(self):
         net = pn.case30()
@@ -71,9 +75,16 @@ class MakeTests(unittest.TestCase):
                            0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
                            0.+0.j, 2.+0.j, 2.+0.j, 1.+0.j, 2.+0.j, 0.+0.j, 1.+0.j, 1.+0.j,
                            0.+0.j])
-        self.assert_equal(line_r, res_r)
-        self.assert_equal(line_x, res_x)
-        self.assert_equal(line_h, res_h)
+        # new in pandapower 2.7.0 : order changed, sn_mva changed!
+        # for el_r, el_x, el_h in zip(line_r, line_x, line_h): 
+        #     print(np.where((np.abs(res_r*100.-el_r) <= 1e-6) & 
+        #                    (np.abs(res_x*100.-el_x) <= 1e-6) & 
+        #                    (np.abs(res_h/100.-el_h) <= 1e-6))[0])
+        order_270 = [0, 1, 12, 23, 34, 36, 37, 38, 39, 40, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19,
+                     20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35]
+        self.assert_equal(line_r, res_r[order_270] * net.sn_mva, "line r")
+        self.assert_equal(line_x, res_x[order_270] * net.sn_mva, "line x")
+        self.assert_equal(line_h, res_h[order_270] / net.sn_mva, "line h")
 
     def test_case118_data(self):
         net = pn.case118()
@@ -180,9 +191,22 @@ class MakeTests(unittest.TestCase):
                             21.6  +0.j, 104.6  +0.j,   1.738+0.j,  38.   +0.j,   2.48 +0.j,
                              2.48 +0.j,   5.78 +0.j,   3.1  +0.j,   2.682+0.j,   7.092+0.j,
                              8.28 +0.j,  12.2  +0.j,  10.198+0.j])
-        self.assert_equal(line_r, res_r)
-        self.assert_equal(line_x, res_x)
-        self.assert_equal(line_h, res_h)
+        # new in pandapower 2.7.0 : order changed, sn_mva changed!
+        # for el_r, el_x in zip(line_r, line_x): print(np.where((np.abs(res_r*100.-el_r) <= 1e-6) & (np.abs(res_x*100.-el_x) <= 1e-6))[0])
+        # for el in [el for el in np.arange(line_r.shape[0]) if not np.isin(el, order_270)]: print(el)
+        order_270 = [0, 1, 85, 96, 107, 118, 129, 140, 151, 162, 2, 13, 24, 35, 46, 57, 68, 79, 83, 84, 86, 87, 88, 89,
+                    90, 91, 92, 93, 94, 95, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 108, 109, 110, 111, 112, 113, 
+                    114, 115, 116, 117, 119, 120, 121, 122, 123,124, 125, 126, 127, 128, 130,
+                    131, 132, 133, 134, 135, 136, 137, 138, 139, 141, 142, 
+                    143, 144, 145, 146, 147, 148, 149, 150, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 165, 
+                    166, 167, 168, 169, 170, 171, 172, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 47, 48, 49, 50, 51, 
+                    52, 53, 54, 55, 56, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 80, 81,
+                    82]
+
+        self.assert_equal(line_r, res_r[order_270] * net.sn_mva, "line r")
+        self.assert_equal(line_x, res_x[order_270] * net.sn_mva, "line x")
+        self.assert_equal(line_h, res_h[order_270] / net.sn_mva, "line h")
 
         pp_net = net
         # fix the missing values
@@ -226,9 +250,13 @@ class MakeTests(unittest.TestCase):
                                 0.        -0.j        ,  0.        -0.j        ,
                                63.96323106-0.01411497j,  0.        -0.j        ,
                                81.1310369 -0.02879733j])
-        self.assert_equal(trafo_r, trafo_r_res)
-        self.assert_equal(trafo_x, trafo_x_res)
-        self.assert_equal(trafo_b, trafo_h_res)
+        # new in pandapower 2.7.0 : order changed, sn_mva changed!
+        # for el_r, el_x in zip(trafo_r, trafo_x): print(np.where((np.abs(trafo_r_res*100.-el_r) <= 1e-6) & (np.abs(trafo_x_res*100.-el_x) <= 1e-6))[0])
+        # for el in [el for el in np.arange(line_r.shape[0]) if not np.isin(el, order_270)]: print(el)
+        order_270_trafo = [0, 1, 5, 6, 7, 8, 9, 10, 11, 12, 2, 3, 4]
+        self.assert_equal(trafo_r, trafo_r_res[order_270_trafo] * net.sn_mva, "trafo r")
+        self.assert_equal(trafo_x, trafo_x_res[order_270_trafo] * net.sn_mva, "trafo x")
+        self.assert_equal(trafo_b, trafo_h_res[order_270_trafo] / net.sn_mva, "trafo h")
 
 
 if __name__ == "__main__":

@@ -7,13 +7,13 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import os
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 
 
 class PhysicalLawChecker:
     """
     Utility tools to check that a given vector meets the KCL (Kirchhoff's Current Law)
-     for a given grid (given as a grid2op observation).
+    for a given grid (given as a grid2op observation).
 
     Notes
     ------
@@ -21,7 +21,7 @@ class PhysicalLawChecker:
     difference in the "mismatch" in the order of 1e-5 / 1e-6. If you want to check the kirchoffs law, then you won't be
     able to check with a tolerance less than 1e-5.
 
-    ..warning::
+    .. warning::
         The grid2op environment is read from a grid.json file. Make sure to use an environment that can be
         loaded by lightsim2grid !
 
@@ -30,7 +30,7 @@ class PhysicalLawChecker:
 
     It can be used as:
 
-    ..code-block:: python
+    .. code-block:: python
 
         import grid2op
         import numpy as np
@@ -88,7 +88,8 @@ class PhysicalLawChecker:
         Parameters
         ----------
         vcomplex:
-            A numpy complex vector representing the complex voltage at each bus
+            A numpy complex vector representing the complex voltage at each bus (should have the same size as the total number of buses in the 
+            grid2op environment)
 
         grid2op_obs:
             A grid2op observation representing the state of the grid
@@ -104,10 +105,10 @@ class PhysicalLawChecker:
 
         Notes
         -----
-        The vector `vcomplex` needs to have as many components as the possible number of buses (typically `2.env.n_sub`)
+        The vector `vcomplex` needs to have as many components as the possible number of buses (typically `2 * env.n_sub`)
         for regular grid2op environments.
 
-        If some buses are "empty" (*ie* no elements are connected to it) then the given components of `vcomplex` is
+        If some buses are "empty" / "deactivated" (*ie* no elements are connected to it) then the given components of `vcomplex` is
         ignored: you can put whatever you want there it will have no impact on the final result.
 
         The order of the buses are expected to be given in the following order: First `n_sub` components of

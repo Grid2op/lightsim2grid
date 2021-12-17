@@ -154,26 +154,3 @@ void DataSGen::change_q(int sgen_id, real_type new_q, bool & need_reset)
     }
     q_mvar_(sgen_id) = new_q;
 }
-
-real_type DataSGen::get_p_slack(int slack_bus_id)
-{
-    const int nb_element = nb();
-    real_type res = 0.;
-    for(int sgen_id = 0; sgen_id < nb_element; ++sgen_id)
-    {
-        if(!status_[sgen_id]) continue;
-        if(bus_id_(sgen_id) == slack_bus_id) res -= res_p_(sgen_id);
-    }
-    return res;
-}
-
-void DataSGen::get_q(std::vector<real_type>& q_by_bus)
-{
-    const int nb_element = nb();
-    for(int sgen_id = 0; sgen_id < nb_element; ++sgen_id)
-    {
-        if(!status_[sgen_id]) continue;
-        int bus_id = bus_id_[sgen_id];
-        q_by_bus[bus_id] -= res_q_(sgen_id); //TODO weird that i need to put a + here and a - for the active!
-    }
-}

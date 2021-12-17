@@ -16,10 +16,10 @@ from grid2op.Parameters import Parameters
 import warnings
 import numpy as np
 from lightsim2grid import LightSimBackend
-from lightsim2grid_cpp import Computers
+from lightsim2grid.timeSerie import Computers
 
-env_name = "l2rpn_neurips_2020_track2_small"
-test = False
+env_name = "l2rpn_neurips_2020_track2"
+test = True
 param = Parameters()
 param.NO_OVERFLOW_DISCONNECTION = True
 with warnings.catch_warnings():

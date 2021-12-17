@@ -17,9 +17,6 @@ def _aux_add_gen(model, pp_net):
     model
     pp_net
 
-    Returns
-    -------
-
     """
     if "parallel" in pp_net.gen and np.any(pp_net.gen["parallel"].values != 1):
         raise RuntimeError("Cannot handle 'parallel' gen columns. Please duplicate the rows if that is the case. "

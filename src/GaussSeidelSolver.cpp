@@ -11,6 +11,8 @@
 bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
+                                   const Eigen::VectorXi & slack_ids,
+                                   const RealVect & slack_weights,  // currently unused
                                    const Eigen::VectorXi & pv,
                                    const Eigen::VectorXi & pq,
                                    int max_iter,
@@ -25,15 +27,18 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // TODO check what can be checked: no voltage at 0, Ybus is square, Sbus same size than V and
     // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
     reset_timer();
-    if(err_ > 0) return false; // i don't do anything if there were a problem at the initialization
+    err_ = ErrorType::NoError;
     auto timer = CustTimer();
+
+    // TODO SLACK (for now i put all slacks as PV, except the first one)
+    Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
 
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case
     Va_ = V_.array().arg();  // we wrapped around with a negative Vm
 
     // first check, if the problem is already solved, i stop there
-    RealVect F = _evaluate_Fx(Ybus, V, Sbus, pv, pq);
+    RealVect F = _evaluate_Fx(Ybus, V, Sbus, my_pv, pq);
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
@@ -49,19 +54,22 @@ bool GaussSeidelSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
         // https://github.com/rwl/PYPOWER/blob/master/pypower/gausspf.py
 
         auto timer2 = CustTimer();
-        one_iter(tmp_Sbus, Ybus, pv, pq);
+        one_iter(tmp_Sbus, Ybus, my_pv, pq);
         timer_solve_ += timer2.duration();
 
         // #####################
         // stopping criteria
         // #####################
-        F = _evaluate_Fx(Ybus, V_, tmp_Sbus, pv, pq);
+        F = _evaluate_Fx(Ybus, V_, tmp_Sbus, my_pv, pq);
         bool tmp = F.allFinite();
-        if(!tmp) break; // divergence due to Nans
+        if(!tmp){
+            err_ = ErrorType::InifiniteValue;
+            break; // divergence due to Nans
+        }
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){
-        err_ = 4;
+        if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
         res = false;
     }
     Vm_ = V_.array().abs();  // update Vm and Va again in case
@@ -82,7 +90,7 @@ void GaussSeidelSolver::one_iter(CplxVect & tmp_Sbus,
     const int n_pq = static_cast<int>(pq.size());
 
     // update PQ buses
-    for(int k_tmp=0; k_tmp<n_pq; ++k_tmp)
+    for(int k_tmp=0; k_tmp < n_pq; ++k_tmp)
     {
         int k = pq.coeff(k_tmp);
         tmp = tmp_Sbus.coeff(k) / V_.coeff(k);

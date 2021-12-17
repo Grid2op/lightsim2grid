@@ -102,7 +102,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         contingencies are given in the right order"""
         sa = SecurityAnalysis(self.env)
         sa.add_multiple_contingencies(0, 1, 2)
-        res_a, res_v = sa.get_flows()
+        res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
         assert abs(res_a[0,0]) <= 1e-6
         assert abs(res_a[1,1]) <= 1e-6
@@ -113,7 +113,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         contingencies are NOT given in the right order"""
         sa = SecurityAnalysis(self.env)
         sa.add_multiple_contingencies(0, 2, 1)
-        res_a, res_v = sa.get_flows()
+        res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
         assert abs(res_a[0,0]) <= 1e-6
         assert abs(res_a[1,2]) <= 1e-6
@@ -124,7 +124,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         contingencies are given in the right order"""
         sa = SecurityAnalysis(self.env)
         sa.add_multiple_contingencies(0, 1, 2)
-        res_a, res_v = sa.get_flows(0, 1)
+        res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
         assert abs(res_a[0,0]) <= 1e-6
         assert abs(res_a[1,1]) <= 1e-6
@@ -134,7 +134,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         contingencies are given in the right order"""
         sa = SecurityAnalysis(self.env)
         sa.add_multiple_contingencies(0, 1, 2)
-        res_a, res_v = sa.get_flows(0, 2)
+        res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
         assert abs(res_a[0,0]) <= 1e-6
         assert abs(res_a[1,2]) <= 1e-6
@@ -144,7 +144,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         contingencies are NOT given in the right order"""
         sa = SecurityAnalysis(self.env)
         sa.add_multiple_contingencies(0, 2, 1)
-        res_a, res_v = sa.get_flows(0, 2)
+        res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
         assert abs(res_a[0,0]) <= 1e-6
         assert abs(res_a[1,2]) <= 1e-6
@@ -154,7 +154,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         contingencies are NOT given in the right order"""
         sa = SecurityAnalysis(self.env)
         sa.add_multiple_contingencies(0, 2, 1)
-        res_a, res_v = sa.get_flows(0, 1)
+        res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
         assert abs(res_a[0,0]) <= 1e-6
         assert abs(res_a[1,1]) <= 1e-6
@@ -165,7 +165,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         sa.add_multiple_contingencies(0, [0, 4], [5, 7], 4)
 
         # everything
-        res_a, res_v = sa.get_flows()
+        res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (4, self.env.n_line)
         assert abs(res_a[0, 0]) <= 1e-6
         assert abs(res_a[1, 0]) + abs(res_a[1, 4]) <= 1e-6
@@ -173,7 +173,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert abs(res_a[3, 4]) <= 1e-6
 
         # only some
-        res_a, res_v = sa.get_flows([0, 4], [5, 7], 4, 0)
+        res_p, res_a, res_v = sa.get_flows([0, 4], [5, 7], 4, 0)
         assert res_a.shape == (4, self.env.n_line)
         assert abs(res_a[3, 0]) <= 1e-6
         assert abs(res_a[0, 0]) + abs(res_a[0, 4]) <= 1e-6
@@ -181,15 +181,19 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert abs(res_a[2, 4]) <= 1e-6
 
         # only some, but not all
-        res_a, res_v = sa.get_flows([5, 7], [0, 4], 4)
+        res_p, res_a, res_v = sa.get_flows([5, 7], [0, 4], 4)
         assert res_a.shape == (3, self.env.n_line)
         assert abs(res_a[1, 0]) + abs(res_a[1, 4]) <= 1e-6
         assert abs(res_a[0, 5]) + abs(res_a[0, 7]) <= 1e-6
         assert abs(res_a[2, 4]) <= 1e-6
+        
+        assert abs(res_p[1, 0]) + abs(res_p[1, 4]) <= 1e-6
+        assert abs(res_p[0, 5]) + abs(res_p[0, 7]) <= 1e-6
+        assert abs(res_p[2, 4]) <= 1e-6
 
         # ask for a non simulated contingencies
         with self.assertRaises(RuntimeError):
-            res_a, res_v = sa.get_flows(5)
+            res_p, res_a, res_v = sa.get_flows(5)
 
     def test_change_injection(self):
         """test the capacity of the things to handle different steps"""
@@ -200,8 +204,8 @@ class TestSecurityAnalysis(unittest.TestCase):
         sa2 = SecurityAnalysis(self.env)
         sa2.add_multiple_contingencies(*conts)
 
-        res_a1, res_v1 = sa1.get_flows()
-        res_a2, res_v2 = sa2.get_flows()
+        res_p1, res_a1, res_v1 = sa1.get_flows()
+        res_p2, res_a2, res_v2 = sa2.get_flows()
         
         # basic check that the right flows are 0.
         assert abs(res_a1[0, 0]) <= 1e-6
@@ -212,6 +216,16 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert abs(res_a2[1, 0]) + abs(res_a2[1, 4]) <= 1e-6
         assert abs(res_a2[2, 5]) + abs(res_a2[2, 7]) <= 1e-6
         assert abs(res_a2[3, 4]) <= 1e-6
+        assert abs(res_a1[0, 0]) <= 1e-6
+        
+        assert abs(res_p1[1, 0]) + abs(res_p1[1, 4]) <= 1e-6
+        assert abs(res_p1[2, 5]) + abs(res_p1[2, 7]) <= 1e-6
+        assert abs(res_p1[3, 4]) <= 1e-6
+        assert abs(res_p2[0, 0]) <= 1e-6
+        assert abs(res_p2[1, 0]) + abs(res_p2[1, 4]) <= 1e-6
+        assert abs(res_p2[2, 5]) + abs(res_p2[2, 7]) <= 1e-6
+        assert abs(res_p2[3, 4]) <= 1e-6
 
         # check that indeed the matrix are different
         assert np.max(np.abs(res_a1 - res_a2)) > 1.
+        assert np.max(np.abs(res_p1 - res_p2)) > 1.

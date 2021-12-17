@@ -6,16 +6,20 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DCSolver.h"
+// #include "DCSolver.h"
 
-bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                          CplxVect & V,
-                          const CplxVect & Sbus,
-                          const Eigen::VectorXi & pv,
-                          const Eigen::VectorXi & pq,
-                          int max_iter,
-                          real_type tol
-                          )
+// TODO SLACK !!!
+template<class LinearSolver>
+bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                        CplxVect & V,
+                                        const CplxVect & Sbus,
+                                        const Eigen::VectorXi & slack_ids,
+                                        const RealVect & slack_weights,
+                                        const Eigen::VectorXi & pv,
+                                        const Eigen::VectorXi & pq,
+                                        int max_iter,
+                                        real_type tol
+                                        )
 {
     // max_iter is ignored
     // tol is ignored
@@ -36,8 +40,13 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     // dcYbus_tmp.makeCompressed();
     const CplxVect & Sbus_tmp = Sbus;
 
+    // TODO SLACK (for now i put all slacks as PV, except the first one)
+    // this should be handled in Sbus, because we know the amount of power absorbed by the slack
+    // so we can compute it correctly !
+    Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
+
     // find the slack bus
-    int slack_bus_id_solver = extract_slack_bus_id(pv, pq, nb_bus_solver);
+    int slack_bus_id_solver = extract_slack_bus_id(my_pv, pq, nb_bus_solver);
     // std::cout << "slack_bus_id_solver extracted" << std::endl;
 
     // remove the slack bus from Ybus
@@ -68,23 +77,30 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     #ifdef __COUT_TIMES
         auto timer_solve = CustTimer();
     #endif // __COUT_TIMES
+    bool just_factorize = false;
     if(need_factorize_){
-        dc_solver_.analyzePattern(dcYbus);
+        // dc_solver_.analyzePattern(dcYbus);
+        ErrorType status_init = _linear_solver.initialize(dcYbus);
+        if(status_init != ErrorType::NoError){
+            err_ = status_init;
+            return false;
+        }
         // std::cout << "\t dc: need_factorize_: " << need_factorize_ << std::endl;
         need_factorize_ = false;
+        just_factorize = true;
     }
     // else{
     //     std::cout << "\t dc: no need factorize: " << need_factorize_ << std::endl;
     // }
 
     // factorize the matrix
-    dc_solver_.factorize(dcYbus);
-    if(dc_solver_.info() != Eigen::Success) {
-        // matrix is not connected
-        timer_total_nr_ += timer.duration();
-        err_ = 1;
-        return false;
-    }
+    // dc_solver_.factorize(dcYbus);
+    // if(dc_solver_.info() != Eigen::Success) {
+    //     // matrix is not connected
+    //     timer_total_nr_ += timer.duration();
+    //     err_ = 1;
+    //     return false;
+    // }
 
     // remove the slack bus from Sbus
     RealVect dcSbus = RealVect::Constant(nb_bus_solver - 1, my_zero_);
@@ -96,14 +112,26 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     }
 
     // solve for theta: Sbus = dcY . theta
-    RealVect Va_dc_without_slack = dc_solver_.solve(dcSbus);
-    if(dc_solver_.info() != Eigen::Success) {
-        // solving failed, this should not happen in dc ...
-        // matrix is not connected
+    RealVect Va_dc_without_slack = dcSbus;
+    // for(real_type el: dcSbus){
+    //     std::cout << el << ", ";
+    // }
+    // std::cout << std::endl;
+
+    ErrorType error = _linear_solver.solve(dcYbus, Va_dc_without_slack, just_factorize);
+    if(error != ErrorType::NoError){
+        err_ = error;
         timer_total_nr_ += timer.duration();
-        err_ = 3;
         return false;
     }
+    // RealVect Va_dc_without_slack = dc_solver_.solve(dcSbus);
+    // if(dc_solver_.info() != Eigen::Success) {
+    //     // solving failed, this should not happen in dc ...
+    //     // matrix is not connected
+    //     timer_total_nr_ += timer.duration();
+    //     err_ = 3;
+    //     return false;
+    // }
     #ifdef __COUT_TIMES
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;
         auto timer_postproc = CustTimer();
@@ -130,7 +158,7 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     Vm_(slack_bus_id_solver) = std::abs(V(slack_bus_id_solver));
 
     // now compute the resulting complex voltage
-    V_ = (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>());
+    V_ = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>());
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
     V = V_;
@@ -145,7 +173,9 @@ bool DCSolver::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
     return true;
 }
 
-void DCSolver::reset(){
+template<class LinearSolver>
+void BaseDCSolver<LinearSolver>::reset(){
     BaseSolver::reset();
+    _linear_solver.reset();
     need_factorize_ = true;
 }

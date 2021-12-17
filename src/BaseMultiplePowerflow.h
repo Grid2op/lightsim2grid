@@ -31,6 +31,7 @@ class BaseMultiplePowerflow
             _voltages(),
             _nb_solved(0),
             _timer_compute_A(0.),
+            _timer_compute_P(0.),
             _timer_solver(0.)
             {
                 // make sure that my "grid_model" is ready to be used (for ac and dc)
@@ -61,6 +62,7 @@ class BaseMultiplePowerflow
 
         // results
         Eigen::Ref<const RealMat > get_flows() const {return _amps_flows;}
+        Eigen::Ref<const RealMat > get_power_flows() const {return _active_power_flows;}
         Eigen::Ref<const CplxMat > get_voltages() const {return _voltages;}
         
     protected:
@@ -107,17 +109,60 @@ class BaseMultiplePowerflow
                 _amps_flows.col(el_id + lag_id) = res;
             }
         }
+        template<class T>
+        void compute_active_power_flows(const T & structure_data,
+                                        real_type sn_mva,
+                                        Eigen::Index lag_id) 
+        {
+            const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
+            const auto & el_status = structure_data.get_status();
+            const auto & bus_from = structure_data.get_bus_from();
+            const auto & bus_to = structure_data.get_bus_to();
+            const auto & v_yac_ff = structure_data.yac_ff();
+            const auto & v_yac_ft = structure_data.yac_ft();
+            Eigen::Index nb_el = structure_data.nb();
+
+            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+                if(!el_status[el_id]) continue;
+
+                // retrieve which buses are used
+                int bus_from_me = bus_from(el_id);
+                int bus_to_me = bus_to(el_id);
+
+                // retrieve voltages
+                const auto Efrom = _voltages.col(bus_from_me);  // vector (one voltages per step)
+                const auto Eto = _voltages.col(bus_to_me);
+
+                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me);
+                const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
+
+                // retrieve physical parameters
+                const cplx_type yac_ff = v_yac_ff(el_id);  // scalar
+                const cplx_type yac_ft = v_yac_ft(el_id);
+
+                // trafo equations (to get the power at the "from" side)
+                CplxVect I_ft = yac_ff * Efrom + yac_ft * Eto;
+                I_ft = I_ft.array().conjugate();
+                const CplxVect S_ft = Efrom.array() * I_ft.array();
+
+                // now compute the current flow
+                RealVect res = S_ft.array().real() * sn_mva;
+                _active_power_flows.col(el_id + lag_id) = res;
+            }
+        }
 
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
+                                   const Eigen::VectorXi & slack_ids,
+                                   const RealVect & slack_weights,
                                    const Eigen::VectorXi & bus_pv,
                                    const Eigen::VectorXi & bus_pq,
                                    int max_iter,
                                    double tol
                                    );
 
-        void compute_flows_from_Vs();
+        void compute_flows_from_Vs(bool amps=true);
 
         CplxVect extract_Vsolver_from_Vinit(const CplxVect& Vinit,
                                             Eigen::Index nb_buses_solver,
@@ -147,11 +192,13 @@ class BaseMultiplePowerflow
 
         // outputs
         RealMat _amps_flows;
+        RealMat _active_power_flows;
         CplxMat _voltages;
         
         // timers
         int _nb_solved;
         double _timer_compute_A;
+        double _timer_compute_P;
         double _timer_solver;
 
 };

@@ -14,7 +14,7 @@ from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
 from grid2op.Chronics import GridStateFromFileWithForecasts
 
-from lightsim2grid.LightSimBackend import LightSimBackend
+from lightsim2grid.lightSimBackend import LightSimBackend
 
 from utils_benchmark import print_res, run_env
 

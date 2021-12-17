@@ -218,3 +218,15 @@ perf.data
 perf.data.old
 test_profile.py.lprof
 benchmarks/case9241pegase.json
+benchmarks/case118.json
+benchmarks/case_illinois200.json
+benchmarks/case300.json
+benchmarks/case1354pegase.json
+benchmarks/case1888rte.json
+benchmarks/GBnetwork.json
+benchmarks/case2848rte.json
+benchmarks/case2869pegase.json
+benchmarks/case3120sp.json
+benchmarks/case6495rte.json
+_pandapower
+benchmarks/slacks.py
