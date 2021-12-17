@@ -15,7 +15,7 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.6.0] 20xx-yy-zz
+[0.6.0] 2021-12-17
 -------------------
 - [BREAKING] change the interface of the `newton_pf` function to reflect pandapower change in their
   latest version (arguments `ref` has been added). You can still use the old `newton_pf` function, with the
