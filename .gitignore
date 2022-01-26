@@ -231,3 +231,4 @@ benchmarks/case6495rte.json
 _pandapower
 benchmarks/slacks.py
 _gridcal
+*grid.json

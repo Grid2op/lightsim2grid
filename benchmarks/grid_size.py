@@ -16,6 +16,7 @@ from grid2op import make, Parameters
 from grid2op.Chronics import ChangeNothing
 from lightsim2grid import LightSimBackend, TimeSerie
 from tqdm import tqdm
+import os
 
 VERBOSE = False
 
@@ -29,14 +30,17 @@ case_names = ["case118.json",
               "case2869pegase.json",
               "case3120sp.json",
               "case6495rte.json",
-              "case9241pegase.json"]
+              "case9241pegase.json"
+              ]
 
 def make_grid2op_env(pp_case, casse_name):
     param = Parameters.Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
+        
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
-        env_lightsim = make("blank", param=param, test=True,
+        env_lightsim = make("blank",
+                            param=param, test=True,
                             backend=LightSimBackend(),
                             data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                             grid_path=case_name,
@@ -134,6 +138,12 @@ if __name__ == "__main__":
     speeds = []
     sizes = []
     for case_name in tqdm(case_names):
+
+        if not os.path.exists(case_name):
+            import pandapower.networks as pn
+            case = getattr(pn, os.path.splitext(case_name)[0])()
+            pp.to_json(case, case_name)
+
         # load the case file
         case = pp.from_json(case_name)
         # extract reference data
@@ -203,4 +213,5 @@ if __name__ == "__main__":
     plt.xlabel("Size (number of substation)")
     plt.ylabel("Speed (pf / s)")
     plt.title(f"Computation speed")
+    plt.yscale("log")
     plt.show()

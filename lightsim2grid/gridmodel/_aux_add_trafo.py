@@ -61,7 +61,7 @@ def _aux_add_trafo(converter, model, pp_net):
                            "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
 
     tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
-    if np.any(~np.isfinite(tap_pos)):
+    if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
     tap_angles_[~np.isfinite(tap_angles_)] = 0.
     tap_angles_ = np.deg2rad(tap_angles_)
