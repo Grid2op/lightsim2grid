@@ -41,10 +41,11 @@ def _aux_add_slack(model, pp_net):
         for slack_id in slack_gen_ids:
             model.change_v_gen(slack_id, pp_net.gen["vm_pu"].iloc[slack_id])
 
-        has_nan = np.any(~np.isfinite(slack_coeff))
-        if has_nan:
-            warnings.warn("Some slack coefficients were Nans. We set them all to 1.0")
-            slack_coeff[:] = 1.0
+        if slack_coeff is not None:
+            has_nan = np.any(~np.isfinite(slack_coeff))
+            if has_nan:
+                warnings.warn("Some slack coefficients were Nans. We set them all to 1.0")
+                slack_coeff[:] = 1.0
             
         # in this case the ext grid is not taken into account, i raise a warning if
         # there is one
