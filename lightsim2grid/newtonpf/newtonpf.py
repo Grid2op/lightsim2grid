@@ -303,7 +303,7 @@ def newtonpf_new(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
         warnings.warn("You are using a pandapower version that does not support distributed slack. We will attempt to "
                       "replicate this with lightsim2grid.")
         ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
-
+    
     # initialize the solver
     # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
     if KLU_solver_available:

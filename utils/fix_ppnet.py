@@ -242,5 +242,7 @@ if __name__ == "__main__":
     new_grid_path = fix_for_unit_env(env_path, init_grid_path, env, env_pp)
 
     # compute the hash:
-    print(f"hash for {env_name} {_hash_env(final_path).hexdigest()}")
+    print(f"hash for {env_name} {_hash_env(final_path).hexdigest()} (wrong for multimix... "
+           "for them, upload the files, update this fake hash. Update the env, recompute the hash"
+           " and then reupload the right one.")
     print(f"new file for {env_name} {new_grid_path}")

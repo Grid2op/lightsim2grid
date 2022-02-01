@@ -42,15 +42,29 @@ class TestRunner(TestRunner_glop):
         self.backendClass = LightSimBackend
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.runner = Runner(init_grid_path=self.init_grid_path,
-                                 path_chron=self.path_chron,
-                                 parameters_path=self.parameters_path,
-                                 names_chronics_to_backend=self.names_chronics_to_backend,
-                                 gridStateclass=self.gridStateclass,
-                                 backendClass=self.backendClass,
-                                 rewardClass=L2RPNReward,
-                                 max_iter=self.max_iter,
-                                 name_env="test_runner_env")
+            try:
+                # grid2op <= 1.6.5
+                self.runner = Runner(init_grid_path=self.init_grid_path,
+                                    path_chron=self.path_chron,
+                                    parameters_path=self.parameters_path,
+                                    names_chronics_to_backend=self.names_chronics_to_backend,
+                                    gridStateclass=self.gridStateclass,
+                                    backendClass=self.backendClass,
+                                    rewardClass=L2RPNReward,
+                                    max_iter=self.max_iter,
+                                    name_env="test_runner_env")
+            except TypeError:
+                # grid2op >= 1.6.6
+                self.runner = Runner(init_grid_path=self.init_grid_path,
+                                    path_chron=self.path_chron,
+                                    parameters_path=self.parameters_path,
+                                    names_chronics_to_backend=self.names_chronics_to_backend,
+                                    gridStateclass=self.gridStateclass,
+                                    backendClass=self.backendClass,
+                                    rewardClass=L2RPNReward,
+                                    max_iter=self.max_iter,
+                                    name_env="test_runner_env",
+                                    init_env_path=self.init_grid_path)
 
 
 class TestRunnerFast(TestRunnerFast_glop):

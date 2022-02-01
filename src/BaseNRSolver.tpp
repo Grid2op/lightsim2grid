@@ -478,26 +478,23 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
 
     // add the slack bus coefficients for the first bus (the "real" slack bus)
     // first row (which corresponds to slack_bus_id)
-    for (Eigen::Index col_id=0; col_id < n_pvpq; ++col_id){
+    const int nb_bus = dS_dVa_r.cols();
+    for (Eigen::Index col_id=0; col_id < nb_bus; ++col_id){
+        const auto J_col = pvpq_inv[col_id];
+        if(J_col < 0) continue;
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVa_r, col_id); it; ++it)
         {
-            if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus
-            const auto J_col = pvpq_inv[it.col()];
-            if(J_col >= 0){
-                // I need to insert it
-                coeffs.push_back(Eigen::Triplet<double>(0, J_col + 1, it.value()));   // HERE FOR PERF OPTIM (3)
-            }
+            if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus          
+            coeffs.push_back(Eigen::Triplet<double>(0, J_col + 1, it.value()));   // HERE FOR PERF OPTIM (3)
         }
     }
-    for (Eigen::Index col_id=0; col_id < n_pq; ++col_id){
+    for (Eigen::Index col_id=0; col_id < nb_bus; ++col_id){
+        const auto J_col = pq_inv[col_id];
+        if(J_col < 0) continue;
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVm_r, col_id); it; ++it)
         {
             if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus
-            const auto J_col = pq_inv[it.col()];
-            if(J_col >= 0){
-                // I need to insert it
-                coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq) + 1, it.value()));   // HERE FOR PERF OPTIM (3)
-            }
+            coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq) + 1, it.value()));   // HERE FOR PERF OPTIM (3)
         }
     }
 

@@ -232,3 +232,7 @@ _pandapower
 benchmarks/slacks.py
 _gridcal
 *grid.json
+bug_pandapower.py
+bug_pp.py
+old_pyproject.toml
+test_gridcal.py
