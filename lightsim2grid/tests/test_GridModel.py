@@ -23,7 +23,10 @@ class BaseTests:
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.runpp(self.net_datamodel)
+            pp.runpp(self.net_datamodel,
+                     lightsim2grid=False,
+                     numba=True, 
+                     distributed_slack=False)
 
         # initialize constant stuff
         self.max_it = 10
@@ -105,7 +108,11 @@ class BaseTests:
     def run_ref_pf(self, net):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.runpp(net, init="flat")
+            pp.runpp(net,
+                     init="flat",
+                     lightsim2grid=False,
+                     numba=True, 
+                     distributed_slack=False)
 
     def do_i_skip(self, func_name):
         # self.skipTest("dev")
@@ -372,7 +379,11 @@ class MakeDCTests(BaseTests, unittest.TestCase):
     def run_ref_pf(self, net):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.rundcpp(net, init="flat")
+            pp.rundcpp(net,
+                       init="flat",
+                       lightsim2grid=False,
+                       numba=True, 
+                       distributed_slack=False)
 
     def do_i_skip(self, test_nm):
         #self.skipTest("dev")
@@ -400,7 +411,10 @@ class MakeACTests(BaseTests, unittest.TestCase):
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.runpp(net, init="flat")
+            pp.runpp(net, init="flat",
+                     lightsim2grid=False,
+                     numba=True, 
+                     distributed_slack=False)
 
     def do_i_skip(self, test_nm):
         pass

@@ -45,7 +45,10 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
     def run_ref_pf(self, net):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.runpp(net, init="flat")
+            pp.runpp(net, init="flat",
+                     lightsim2grid=False,
+                     numba=True, 
+                     distributed_slack=False)
 
     def do_i_skip(self, test_nm):
         return
@@ -75,7 +78,11 @@ class MakeDCTestsDisco(BaseTests, unittest.TestCase):
     def run_ref_pf(self, net):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.rundcpp(net, init="flat")
+            pp.rundcpp(net,
+                       init="flat",
+                       lightsim2grid=False,
+                       numba=True, 
+                       distributed_slack=False)
 
     def do_i_skip(self, test_nm):
         pass

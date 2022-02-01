@@ -15,6 +15,15 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
+[0.6.1] 2022-02-01
+--------------------
+- [BREAKING] the behaviour of the `newton_pf` function is not 
+  consistent with pandapower default concerning distributed slack.
+- [FIXED] an issue in the distributed slack case spotted by pandapower team 
+  thanks to them (see https://github.com/e2nIEE/pandapower/pull/1455)
+- [IMPROVED] lightsim2grid will now use the single slack algorithm if the 
+  grids counts only one slack bus (performance increase)
+
 [0.6.0] 2021-12-17
 -------------------
 - [BREAKING] change the interface of the `newton_pf` function to reflect pandapower change in their

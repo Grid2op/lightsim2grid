@@ -17,6 +17,7 @@ import scipy
 import warnings
 
 from lightsim2grid import LightSimBackend
+import lightsim2grid
 try:
     from lightsim2grid.solver import KLUSolver
     ClassSolver = KLUSolver
@@ -123,7 +124,7 @@ class MyTestCase(unittest.TestCase):
         # "II - Check for possible solver issues"
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.runpp(backend.init_pp_backend._grid, v_debug=True)
+            pp.runpp(backend.init_pp_backend._grid, v_debug=True, lightsim2grid=False)
         v_tmp = backend.init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
         v_tmp *= np.exp(1j * np.pi / 180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
         v_tmp = np.concatenate((v_tmp, v_tmp))

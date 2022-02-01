@@ -10,15 +10,16 @@ import warnings
 import numpy as np
 from scipy import sparse
 
-from lightsim2grid_cpp import SparseLUSolver
-KLU_solver_available = False
+from lightsim2grid_cpp import SparseLUSolver, SparseLUSolverSingleSlack
+
 try:
-    from lightsim2grid_cpp import KLUSolver
+    from lightsim2grid_cpp import KLUSolver, KLUSolverSingleSlack
     KLU_solver_available = True
 except ImportError:
-    pass
+    KLU_solver_available = False
 
 _PP_VERSION_MAX = "2.7.0"
+
 
 def _isolate_slack_ids(Sbus, pv, pq):
     # extract the slack bus
@@ -28,6 +29,25 @@ def _isolate_slack_ids(Sbus, pv, pq):
     slack_weights = np.zeros(Sbus.shape[0])
     slack_weights[ref] = 1.0 / ref.shape[0]
     return ref, slack_weights
+
+
+def _get_valid_solver(options, Ybus):
+    # initialize the solver
+    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
+    if options.get("distributed_slack", False):
+        solver = KLUSolver() if KLU_solver_available else SparseLUSolver()
+    else:
+        solver = KLUSolverSingleSlack() if KLU_solver_available else SparseLUSolverSingleSlack()
+
+    if ~sparse.isspmatrix_csc(Ybus):
+        Ybus = sparse.csc_matrix(Ybus)
+
+    if not Ybus.has_canonical_format:
+        raise RuntimeError("Your matrix should be in a canonical format. See "
+                           "https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csc_matrix.has_canonical_format.html"
+                           " for more information.")
+    
+    return solver
 
 
 def newtonpf(*args, **kwargs):
@@ -176,16 +196,11 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
 
-    # initialize the solver
-    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
-    if KLU_solver_available:
-        solver = KLUSolver()
-    else:
-        solver = SparseLUSolver()
-    Ybus = sparse.csc_matrix(Ybus)
-
     # extract the slack bus
     ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
+
+    # initialize the solver and perform some sanity checks
+    solver = _get_valid_solver(options, Ybus)
 
     # do the newton raphson algorithm
     solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
@@ -290,30 +305,25 @@ def newtonpf_new(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
         By default (and this cannot be changed at the moment), all buses in `ref` will be pv buses except the first one.
 
     """
-    max_it = options["max_iteration"]
-    tol = options['tolerance_mva']
-    bus = ppci['bus']
+    max_iteration = options["max_iteration"]
+    tolerance_pu = options['tolerance_mva']  # / ppci["baseMVA"]
 
     try:
-        from pandapower.pypower.idx_bus import SL_FAC  # lazy import for earlier pandapower version (without distributed slack)
-        slack_weights = bus[:, SL_FAC].astype(float)  ## contribution factors for distributed slack
-        slack_weights /= slack_weights.sum()
+        # lazy import for earlier pandapower version (without distributed slack):
+        from pandapower.pypower.idx_bus import SL_FAC
+        # contribution factors for distributed slack:
+        slack_weights = ppci['bus'][:, SL_FAC].astype(np.float64)
     except ImportError:
         # earlier version of pandapower
         warnings.warn("You are using a pandapower version that does not support distributed slack. We will attempt to "
                       "replicate this with lightsim2grid.")
         ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
-
-    # initialize the solver
-    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
-    if KLU_solver_available:
-        solver = KLUSolver()
-    else:
-        solver = SparseLUSolver()
-    Ybus = sparse.csc_matrix(Ybus)
-
+    
+    # initialize the solver and perform some sanity checks
+    solver = _get_valid_solver(options, Ybus)
+    
     # do the newton raphson algorithm
-    solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
+    solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iteration, tolerance_pu)
 
     # extract the results
     Va = solver.get_Va()
