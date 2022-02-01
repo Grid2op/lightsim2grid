@@ -307,7 +307,7 @@ def newtonpf_new(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
 
     # initialize the solver
     # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
-    if options["distributed_slack"]:
+    if options.get("distributed_slack", False):
         solver = KLUSolver() if KLU_solver_available else SparseLUSolver()
     else:
         solver = KLUSolverSingleSlack() if KLU_solver_available else SparseLUSolverSingleSlack()
