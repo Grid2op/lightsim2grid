@@ -12,15 +12,13 @@ import numpy as np
 
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
-from grid2op.Exceptions import InvalidLineStatus, BackendError, DivergingPowerFlow
+from grid2op.Exceptions import BackendError, DivergingPowerFlow
 from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 
 from lightsim2grid.gridmodel import init
 from lightsim2grid.solver import SolverType
 
-# import lightsim2grid.solver.SolverType.DCSolver
-# from lightsim2grid.solver import DCSolver
 
 class LightSimBackend(Backend):
     """
@@ -268,12 +266,25 @@ class LightSimBackend(Backend):
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
 
         self._grid = init(self.init_pp_backend._grid)
+
         self.available_solvers = self._grid.available_solvers()
-        if SolverType.KLU in self.available_solvers:
-            # use the faster KLU if available
-            self._grid.change_solver(SolverType.KLU)
+        has_single_slack = np.where([el.slack_weight for el in self._grid.get_generators()] != 0.)[0].shape[0] == 1
+        if has_single_slack:
+            if SolverType.KLUSingleSlack in self.available_solvers:
+                # use the faster KLU if available
+                self._grid.change_solver(SolverType.KLUSingleSlack)
+            else:
+                self._grid.change_solver(SolverType.SparseLUSingleSlack)
+        else:
+            # grid has multiple slack      
+            if SolverType.KLUSingleSlack in self.available_solvers:
+                # use the faster KLU if available
+                self._grid.change_solver(SolverType.KLU)
+            else:
+                self._grid.change_solver(SolverType.SparseLU)
+           
         if SolverType.KLUDC in self.available_solvers:
-            # use the faster KLU if available
+            # use the faster KLU if available even for DC approximation
             self._grid.change_solver(SolverType.KLUDC)
         if self.__current_solver_type is None:
             self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
