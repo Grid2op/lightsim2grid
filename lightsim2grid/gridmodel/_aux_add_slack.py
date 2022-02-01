@@ -41,6 +41,11 @@ def _aux_add_slack(model, pp_net):
         for slack_id in slack_gen_ids:
             model.change_v_gen(slack_id, pp_net.gen["vm_pu"].iloc[slack_id])
 
+        has_nan = np.any(~np.isfinite(slack_coeff))
+        if has_nan:
+            warnings.warn("Some slack coefficients were Nans. We set them all to 1.0")
+            slack_coeff[:] = 1.0
+            
         # in this case the ext grid is not taken into account, i raise a warning if
         # there is one
         slack_bus_ids = pp_net.ext_grid["bus"].values
@@ -65,6 +70,12 @@ def _aux_add_slack(model, pp_net):
             slack_gen_ids = np.where(slack_gen_ids)[0]  # keep only the id of the generators
             if "slack_weight" in pp_net.gen:
                 slack_coeff = pp_net.gen["slack_weight"].values[slack_gen_ids]
+                
+            has_nan = np.any(~np.isfinite(slack_coeff))
+            if has_nan:
+                warnings.warn("We found some Nans in the slack coefficients. "
+                              "We set them all to the same value !")
+                slack_coeff[:] = 1.0
         else:
             # at least one slack bus has no generator connected to it
             # so I assume i need to add as many generators as number of slack bus
@@ -74,6 +85,15 @@ def _aux_add_slack(model, pp_net):
             else:
                 slack_coeff = np.ones(nb_slack)
             slack_coeff_norm = slack_coeff / slack_coeff.sum()
+            
+            has_nan = np.any(~np.isfinite(slack_coeff_norm))
+            if has_nan:
+                warnings.warn("We found some Nans in the slack coefficients \"slack_coeff_norm\", "
+                              " (probably because the slack weights sum to 0.0 initially)"
+                              "We set them all to the same value !")
+                slack_coeff_norm[:] = 1.0 / slack_coeff_norm.shape[0]
+                slack_coeff[:] = 1.0
+                
             slack_gen_ids = np.arange(nb_slack) + pp_net.gen.shape[0]
             slack_contrib = (np.sum(pp_net.gen["p_mw"]) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
             vm_pu = 1.0 * pp_net.ext_grid["vm_pu"].values
@@ -88,7 +108,6 @@ def _aux_add_slack(model, pp_net):
     # handle the possible distributed slack bus
     if slack_coeff is None:
         slack_coeff = np.ones(len(slack_gen_ids))
-
     if np.sum(slack_coeff) == 0. or np.any(slack_coeff < 0.):
         warnings.warn("We found either some slack coefficient to be < 0. or they were all 0."
                       "We set them all to 1.0 to avoid such issues")

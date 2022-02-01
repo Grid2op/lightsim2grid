@@ -31,6 +31,25 @@ def _isolate_slack_ids(Sbus, pv, pq):
     return ref, slack_weights
 
 
+def _get_valid_solver(options, Ybus):
+    # initialize the solver
+    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
+    if options.get("distributed_slack", False):
+        solver = KLUSolver() if KLU_solver_available else SparseLUSolver()
+    else:
+        solver = KLUSolverSingleSlack() if KLU_solver_available else SparseLUSolverSingleSlack()
+
+    if ~sparse.isspmatrix_csc(Ybus):
+        Ybus = sparse.csc_matrix(Ybus)
+
+    if not Ybus.has_canonical_format:
+        raise RuntimeError("Your matrix should be in a canonical format. See "
+                           "https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csc_matrix.has_canonical_format.html"
+                           " for more information.")
+    
+    return solver
+
+
 def newtonpf(*args, **kwargs):
     """
     Pandapower changed the interface when they introduced the distributed slack functionality.
@@ -177,16 +196,11 @@ def newtonpf_old(Ybus, Sbus, V0, pv, pq, ppci, options):
     max_it = options["max_iteration"]
     tol = options['tolerance_mva']
 
-    # initialize the solver
-    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
-    if KLU_solver_available:
-        solver = KLUSolver()
-    else:
-        solver = SparseLUSolver()
-    Ybus = sparse.csc_matrix(Ybus)
-
     # extract the slack bus
     ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
+
+    # initialize the solver and perform some sanity checks
+    solver = _get_valid_solver(options, Ybus)
 
     # do the newton raphson algorithm
     solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
@@ -305,16 +319,9 @@ def newtonpf_new(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
                       "replicate this with lightsim2grid.")
         ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
     
-    # initialize the solver
-    # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
-    if options.get("distributed_slack", False):
-        solver = KLUSolver() if KLU_solver_available else SparseLUSolver()
-    else:
-        solver = KLUSolverSingleSlack() if KLU_solver_available else SparseLUSolverSingleSlack()
-
-    if ~sparse.isspmatrix_csc(Ybus):
-        Ybus = sparse.csc_matrix(Ybus)
-
+    # initialize the solver and perform some sanity checks
+    solver = _get_valid_solver(options, Ybus)
+    
     # do the newton raphson algorithm
     solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iteration, tolerance_pu)
 
