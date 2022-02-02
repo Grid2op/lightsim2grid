@@ -122,20 +122,20 @@ class TimeSerie:
                                "and columns representing individual loads.")
         if prod_p.shape[0] != load_p.shape[0] or prod_p.shape[0] != load_q.shape[0]:
             raise RuntimeError(f"prod_p, load_p and load_q should have the same number of "
-                               f"rows. We found: {prod_p.shape[0] = }, {load_p.shape[0] = } "
-                               f"and {load_q.shape[0] = }")
+                               f"rows. We found: prod_p.shape[0] = {prod_p.shape[0]}, load_p.shape[0] = {load_p.shape[0]} "
+                               f"and load_q.shape[0] = {load_q.shape[0]}")
         if prod_p.shape[1] != self.grid2op_env.n_gen:
             raise RuntimeError(f"The number of generators on the grid {self.grid2op_env.n_gen} "
                                f"is different that the number of columns of the provided prod_p data: "
-                               f"{prod_p.shape[1] = }")
+                               f"prod_p.shape[1] = {prod_p.shape[1]}")
         if load_p.shape[1] != self.grid2op_env.n_load:
             raise RuntimeError(f"The number of loads on the grid {self.grid2op_env.n_load} "
                                f"is different that the number of columns of the provided load_p data: "
-                               f"{load_p.shape[1] = }")
+                               f"load_p.shape[1] = {load_p.shape[1]}")
         if load_q.shape[1] != self.grid2op_env.n_load:
             raise RuntimeError(f"The number of loads on the grid {self.grid2op_env.n_load} "
                                f"is different that the number of columns of the provided load_q data: "
-                               f"{load_q.shape[1] = }")
+                               f"load_q.shape[1] = {load_q.shape[1]}")
         if v_init is None:
             v_init = self.grid2op_env.backend.V
         status = self.computer.compute_Vs(prod_p,
