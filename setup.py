@@ -6,7 +6,7 @@ import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.6.1.post1"
+__version__ = "0.6.1.post2"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -254,10 +254,14 @@ ext_modules = [
     )
 ]
 
+# before pandapower 2.8 scipy was forced to be <= 1.6 which does not work with
+# python 3.10+
+req_pkgs = [
+        "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
+    ]
+
 pkgs = {
-    "required": [
-        "pandapower"
-    ],
+    "required": req_pkgs,
     "extras": {
         "docs": [
             "numpydoc>=0.9.2",
