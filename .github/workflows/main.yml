@@ -102,6 +102,10 @@ jobs:
             name: cp39,
             version: '3.9',
           }
+          - {
+            name: cp310,
+            version: '3.10',
+          }
 
     steps:
 
