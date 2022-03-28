@@ -18,6 +18,8 @@ from lightsim2grid import LightSimBackend
 from grid2op.MakeEnv.UpdateEnv import _hash_env
 import warnings
 
+PBAR_RUNNER = True
+
 
 def fix_pp_net(pp_net):
     ## sgen
@@ -49,6 +51,9 @@ def fix_pp_net(pp_net):
         if pp_net.ext_grid.shape[0] >= 1:
             del pp_net.ext_grid
         print("INFO: ext_grid deleted because pp_net.gen has some slacks")
+        if np.sum(np.abs(pp_net.gen.loc[pp_net.gen["slack"]]["slack_weight"].values)) <= 1e-3:
+            print("WARNING: adding slack weight of 1. to all generators participating to the slack")
+            pp_net.gen["slack_weight"].loc[pp_net.gen["slack"]] = 1.0
     else:
         slack_bus_ids = pp_net.ext_grid["bus"].values
         if pp_net.ext_grid.shape[0] >= 2:
@@ -91,6 +96,8 @@ def fix_pp_net(pp_net):
                               slack=True,
                               )
                 warnings.warn("slack_weight not taken into account !")
+        # add the slack coefficient
+        pp_net.gen["slack_weight"].loc[pp_net.gen["slack"]]["slack_weight"] = 1.0 * slack_coeff
         del pp_net.ext_grid
 
     ## trafo
@@ -119,11 +126,11 @@ def fix_pp_net(pp_net):
         pp_net.trafo["tap_step_degree"][:] = tap_step_degree
 
 
-def check_env(env, new_grid_path):
+def check_env(env, env_path_name, new_grid_path):
     # check all warnings are removed
     with warnings.catch_warnings():
         warnings.filterwarnings("error")
-        env_nowarn = grid2op.make(env_path,
+        env_nowarn = grid2op.make(env_path_name,
                                   grid_path=new_grid_path,
                                   backend=LightSimBackend(),
                                   _add_to_name="_no_warn",)
@@ -131,7 +138,7 @@ def check_env(env, new_grid_path):
     # basic check to "make sure" I did not mess with the file
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
-        env_fix = grid2op.make(env_path,
+        env_fix = grid2op.make(env_path_name,
                                grid_path=new_grid_path,
                                backend=LightSimBackend(),
                                _add_to_name="_new",
@@ -156,11 +163,11 @@ def check_env(env, new_grid_path):
     nb_episode = 10
     max_iter = 288*2
     res = runner.run(nb_episode=nb_episode,
-                     pbar=True,
+                     pbar=PBAR_RUNNER,
                      max_iter=max_iter,
                      env_seeds=[0] * nb_episode)
     res_fix = runner_fix.run(nb_episode=nb_episode,
-                             pbar=True,
+                             pbar=PBAR_RUNNER,
                              max_iter=max_iter,
                              env_seeds=[0] * nb_episode)
 
@@ -181,8 +188,8 @@ def fix_for_unit_env(env_path, init_grid_path, env, env_pp):
     runner_pp = Runner(**env_pp.get_params_for_runner())
     nb_episode = 4
     max_iter = 100
-    res = runner.run(nb_episode=nb_episode, pbar=True, max_iter=max_iter, env_seeds=[0] * nb_episode)
-    res_pp = runner_pp.run(nb_episode=nb_episode, pbar=True, max_iter=max_iter, env_seeds=[0] * nb_episode)
+    res = runner.run(nb_episode=nb_episode, pbar=PBAR_RUNNER, max_iter=max_iter, env_seeds=[0] * nb_episode)
+    res_pp = runner_pp.run(nb_episode=nb_episode, pbar=PBAR_RUNNER, max_iter=max_iter, env_seeds=[0] * nb_episode)
     assert res == res_pp, "pandapower and lightsim2grid does not give the same result. Stopping there"
 
 
@@ -197,7 +204,7 @@ def fix_for_unit_env(env_path, init_grid_path, env, env_pp):
     # check it works
     new_grid_path = os.path.abspath(f"./{env_name}_grid.json")
     pp.to_json(pp_net, new_grid_path)
-    check_env(env, new_grid_path)
+    check_env(env, env_path_name, new_grid_path)
 
     # save the new grid
     pp.to_json(pp_net, init_grid_path)
@@ -205,6 +212,7 @@ def fix_for_unit_env(env_path, init_grid_path, env, env_pp):
 
 
 if __name__ == "__main__":
+    env_path = None
     env_name = "rte_case14_redisp"
     env_name = "l2rpn_case14_sandbox"
     env_name = "l2rpn_2019"
@@ -216,13 +224,19 @@ if __name__ == "__main__":
     env_name = "l2rpn_icaps_2021_large"
     env_name = "l2rpn_neurips_2020_track2_small"
     env_name = "l2rpn_neurips_2020_track2_large"
+    
+    env_path = "/home/benjamin/Downloads/2022_WCCI/"
+    env_name = "case118_l2rpn_wcci_benjamin"
 
     # env_name = "l2rpn_neurips_2020_track2_small"
 
+    env_path_name = env_name
+    if env_path is not None:
+        env_path_name = os.path.join(env_path, env_name)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
-        env = grid2op.make(env_name, backend=LightSimBackend())
-        env_pp = grid2op.make(env_name)
+        env = grid2op.make(env_path_name, backend=LightSimBackend())
+        env_pp = grid2op.make(env_path_name)
 
     env_path = env.get_path_env()
     final_path = env_path = env.get_path_env()

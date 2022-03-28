@@ -46,8 +46,9 @@ Then you can use a LightSimBackend instead of the default PandapowerBackend this
 ```python3
 import grid2op
 from lightsim2grid import LightSimBackend
-backend = LightSimBackend()
-env = grid2op.make(backend=backend)
+env_name = "l2rpn_case14_sandbox"  # or any other name.
+env = grid2op.make(env_name, backend=LightSimBackend())
+
 # do regular computation as you would with grid2op
 ```
 And you are good to go.
@@ -70,7 +71,7 @@ You can define replace the `newtonpf` function of `pandapower.pandapower.newtonp
 piece of code:
 ```python
 from lightsim2grid.newtonpf import newtonpf
-V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, pv, pq, ppci, options)
+V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, weights, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
@@ -85,6 +86,13 @@ easiest method to install lightsim2grid on your system and have it running witho
 
 Note though that these packages have been compiled on a different platform that the one you are using. You might still
 get some benefit (in terms of performances) to install it from your on your machine.
+
+Pypi packages are available for linux, windows and macos with python versions: 
+
+- 3.7
+- 3.8
+- 3.9
+- 3.10 (lightsim2grid >= 0.6.1)
 
 ## Installation (from source, for more advanced user)
 You need to:

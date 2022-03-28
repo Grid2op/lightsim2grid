@@ -260,7 +260,6 @@ class LightSimBackend(Backend):
         self._idx_hack_storage = np.zeros(0, dtype=dt_int)
 
     def load_grid(self, path=None, filename=None):
-
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
@@ -268,7 +267,7 @@ class LightSimBackend(Backend):
         self._grid = init(self.init_pp_backend._grid)
 
         self.available_solvers = self._grid.available_solvers()
-        has_single_slack = np.where([el.slack_weight for el in self._grid.get_generators()] != 0.)[0].shape[0] == 1
+        has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
         if has_single_slack:
             if SolverType.KLUSingleSlack in self.available_solvers:
                 # use the faster KLU if available
@@ -628,10 +627,7 @@ class LightSimBackend(Backend):
                     # if I init with dc values, it should depends on previous state
                     self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
                     Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
-                    # self._grid.change_solver(SolverType.DC)
-                    # print(f"time dc: {self._grid.get_computation_time()*1000.:.3f}ms")
                     self._grid.reactivate_result_computation()
-                    # self._grid.change_solver(self.__current_solver_type)
                     if Vdc.shape[0] == 0:
                         raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
                     V_init = Vdc
