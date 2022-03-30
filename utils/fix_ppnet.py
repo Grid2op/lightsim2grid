@@ -96,8 +96,9 @@ def fix_pp_net(pp_net):
                               slack=True,
                               )
                 warnings.warn("slack_weight not taken into account !")
-        # add the slack coefficient
-        pp_net.gen["slack_weight"].loc[pp_net.gen["slack"]]["slack_weight"] = 1.0 * slack_coeff
+                
+            # add the slack coefficient
+            pp_net.gen["slack_weight"].loc[pp_net.gen["slack"]] = 1.0 * slack_coeff
         del pp_net.ext_grid
 
     ## trafo
@@ -180,14 +181,12 @@ def check_env(env, env_path_name, new_grid_path):
     assert res == res_fix
 
 
-def fix_for_unit_env(env_path, init_grid_path, env, env_pp):
+def fix_for_unit_env(env_path, init_grid_path, env, env_pp, nb_episode=4, max_iter=100):
     pp_net = pp.from_json(init_grid_path)
 
     # check that i can perform the tests
     runner = Runner(**env.get_params_for_runner())
     runner_pp = Runner(**env_pp.get_params_for_runner())
-    nb_episode = 4
-    max_iter = 100
     res = runner.run(nb_episode=nb_episode, pbar=PBAR_RUNNER, max_iter=max_iter, env_seeds=[0] * nb_episode)
     res_pp = runner_pp.run(nb_episode=nb_episode, pbar=PBAR_RUNNER, max_iter=max_iter, env_seeds=[0] * nb_episode)
     assert res == res_pp, "pandapower and lightsim2grid does not give the same result. Stopping there"
@@ -225,10 +224,23 @@ if __name__ == "__main__":
     env_name = "l2rpn_neurips_2020_track2_small"
     env_name = "l2rpn_neurips_2020_track2_large"
     
-    env_path = "/home/benjamin/Downloads/2022_WCCI/"
+    env_path = "~/Downloads/2022_WCCI/"
     env_name = "case118_l2rpn_wcci_benjamin"
-
-    # env_name = "l2rpn_neurips_2020_track2_small"
+    
+    env_path = "~/grid2op_dev/grid2op/data/"
+    env_name = "educ_case14_redisp"
+    env_name = "educ_case14_storage"
+    env_name = "rte_case5_example"
+    env_name = "rte_case14_opponent"
+    env_name = "rte_case14_realistic"
+    env_name = "rte_case14_redisp"
+    env_name = "rte_case14_test"
+    env_name = "rte_case118_example"
+    env_name = "l2rpn_wcci_2020"
+    env_name = "l2rpn_neurips_2020_track1"
+    env_name = "l2rpn_neurips_2020_track2"
+    env_name = "l2rpn_icaps_2021"
+    env_name = "l2rpn_case14_sandbox"
 
     env_path_name = env_name
     if env_path is not None:
