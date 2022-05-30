@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-    win: circleci/windows@2.4.1 # The Windows orb give you everything you need to start using the Windows executor.
+    win: circleci/windows@4.1 # The Windows orb give you everything you need to start using the Windows executor.
 
 
 executors:
@@ -186,9 +186,9 @@ jobs:
             size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
-            - run:
-                name: "Install Python"
-                command: choco install python --version=3.9  # use python 3.9 for windows test
+            # - run:
+            #     name: "Install Python"
+            #     command: choco install python --version=3.9  # use python 3.9 for windows test
             - run: py -m pip install virtualenv
             - run: py -m virtualenv venv_test
             - run:
