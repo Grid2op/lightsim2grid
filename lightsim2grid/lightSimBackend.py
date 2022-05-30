@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
-from typing import Optional
+from typing import Optional, Type
 import warnings
 import numpy as np
 import time
@@ -33,12 +33,19 @@ class LightSimBackend(Backend):
                  max_iter: int=10,
                  tol: float=1e-8,
                  solver_type: Optional[SolverType] =None):
-        Backend.__init__(self,
-                         detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
-                         can_be_copied=can_be_copied,
-                         solver_type=solver_type,
-                         max_iter=max_iter,
-                         tol=tol)
+        try:
+            # for grid2Op >= 1.7.1
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
+                             can_be_copied=can_be_copied,
+                             solver_type=solver_type,
+                             max_iter=max_iter,
+                             tol=tol)
+        except TypeError as exc_:
+            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
+                          "you cannot set max_iter, tol nor solver_type arguments.")
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
         # lazy loading because it crashes...
         from grid2op.Backend import PandaPowerBackend
