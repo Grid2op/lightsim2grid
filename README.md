@@ -46,8 +46,9 @@ Then you can use a LightSimBackend instead of the default PandapowerBackend this
 ```python3
 import grid2op
 from lightsim2grid import LightSimBackend
-backend = LightSimBackend()
-env = grid2op.make(backend=backend)
+env_name = "l2rpn_case14_sandbox"  # or any other name.
+env = grid2op.make(env_name, backend=LightSimBackend())
+
 # do regular computation as you would with grid2op
 ```
 And you are good to go.
@@ -70,7 +71,7 @@ You can define replace the `newtonpf` function of `pandapower.pandapower.newtonp
 piece of code:
 ```python
 from lightsim2grid.newtonpf import newtonpf
-V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, pv, pq, ppci, options)
+V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, weights, pv, pq, ppci, options)
 ```
 
 This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
@@ -85,6 +86,13 @@ easiest method to install lightsim2grid on your system and have it running witho
 
 Note though that these packages have been compiled on a different platform that the one you are using. You might still
 get some benefit (in terms of performances) to install it from your on your machine.
+
+Pypi packages are available for linux, windows and macos with python versions: 
+
+- 3.7
+- 3.8
+- 3.9
+- 3.10 (lightsim2grid >= 0.6.1)
 
 ## Installation (from source, for more advanced user)
 You need to:
@@ -412,9 +420,13 @@ cd ..
 
 Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
 
-These tests include, for now, compilation on gcc (version 8, 9, 10 and 11) and clang (version 10, 11 and 12).
+These tests include, for now, compilation on gcc (version 8, 10, 11 and 12) and clang (version 10, 13 and 14).
 
-**NB** Older versions of clang are not tested regularly, but lightsim2grid used to work on these.
+**NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. We suppose that if it works on *eg* clang 10 and clang 14 then it compiles also on all intermediate versions.
+
+**NB** Package might work (we never tested it) on earlier version of these compilers. 
+The only "real" requirement for lightsim2grid is to have a compiler supporting c++11
+(at least).
 
 ### Known issues
 

@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import pdb
 import unittest
 import warnings
 import grid2op
@@ -31,7 +32,8 @@ if __has_storage:
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP
 from lightsim2grid.lightSimBackend import LightSimBackend
-
+from lightsim2grid.solver import SolverType
+from grid2op.Runner import Runner
 
 class TestNames(HelperTests, BaseTestNames):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
@@ -250,5 +252,44 @@ class TestTheta(unittest.TestCase):
         self._check_obs(obs_ls, obs_pp)
 
 
+class TestBackendArgument(unittest.TestCase):
+    def setUp(self) -> None:
+        if grid2op.__version__ < "1.7.1":
+            self.skipTest(f"grid2op version too old for the feature. Expecting "
+                          f"grid2op >= 1.7.1 found {grid2op.__version__}")
+            
+    def test_non_default_argument(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make("l2rpn_case14_sandbox",
+                               test=True,
+                               backend=LightSimBackend(solver_type=SolverType.SparseLUSingleSlack,
+                                                       max_iter=100,
+                                                       tol=1e-6))
+        assert env.backend._grid.get_solver_type() == SolverType.SparseLUSingleSlack
+        assert env.backend.max_it == 100
+        assert env.backend.tol == 1e-6
+        runner = Runner(**env.get_params_for_runner())
+        env_cpy = runner.init_env()
+        assert env_cpy.backend._grid.get_solver_type() == SolverType.SparseLUSingleSlack
+        assert env_cpy.backend.max_it == 100
+        assert env_cpy.backend.tol == 1e-6
+            
+    def test_default_arguments(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make("l2rpn_case14_sandbox",
+                               test=True,
+                               backend=LightSimBackend())
+        assert env.backend._grid.get_solver_type() == SolverType.KLUSingleSlack
+        assert env.backend.max_it == 10
+        assert env.backend.tol == 1e-8
+        runner = Runner(**env.get_params_for_runner())
+        env_cpy = runner.init_env()
+        assert env_cpy.backend._grid.get_solver_type() == SolverType.KLUSingleSlack
+        assert env_cpy.backend.max_it == 10
+        assert env_cpy.backend.tol == 1e-8
+       
+            
 if __name__ == "__main__":
     unittest.main()

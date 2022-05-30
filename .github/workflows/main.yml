@@ -87,7 +87,7 @@ jobs:
           }
           - {
             name: windows,
-            os: windows-latest,
+            os: windows-2019,
           }
         python:
           - {
@@ -115,7 +115,7 @@ jobs:
           submodules: true
 
       - name: Setup Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python.version }}
 

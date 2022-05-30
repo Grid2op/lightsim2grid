@@ -7,8 +7,10 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
+from typing import Optional, Type
 import warnings
 import numpy as np
+import time
 
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
@@ -25,18 +27,33 @@ class LightSimBackend(Backend):
     This is a specialization of the grid2op Backend class to use the lightsim2grid solver,
     coded in c++, aiming at speeding up the computations.
     """
-    def __init__(self, detailed_infos_for_cascading_failures=False):
-        Backend.__init__(self,
-                         detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+    def __init__(self,
+                 detailed_infos_for_cascading_failures: bool =False,
+                 can_be_copied: bool =True,
+                 max_iter: int=10,
+                 tol: float=1e-8,
+                 solver_type: Optional[SolverType] =None):
+        try:
+            # for grid2Op >= 1.7.1
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
+                             can_be_copied=can_be_copied,
+                             solver_type=solver_type,
+                             max_iter=max_iter,
+                             tol=tol)
+        except TypeError as exc_:
+            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
+                          "you cannot set max_iter, tol nor solver_type arguments.")
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
         # lazy loading because it crashes...
         from grid2op.Backend import PandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
         if not self.__has_storage:
-            pass
-            # warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
-            #               "feature that will be removed in further lightsim2grid version.")
+            warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
+                          "feature that will be removed in further lightsim2grid version.")
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -48,6 +65,9 @@ class LightSimBackend(Backend):
         self._init_bus_lex = None
         self._big_topo_to_obj = None
         self.nb_obj_per_bus = None
+        self._timer_preproc = 0.
+        self._timer_postproc = 0.
+        self._timer_solver = 0.
 
         self.next_prod_p = None  # this vector is updated with the action that will modify the environment
         # it is done to keep track of the redispatching
@@ -58,8 +78,8 @@ class LightSimBackend(Backend):
         self.init_pp_backend = PandaPowerBackend()
 
         self.V = None
-        self.max_it = 10
-        self.tol = 1e-8  # tolerance for the solver
+        self.max_it = max_iter
+        self.tol = tol  # tolerance for the solver
 
         self.prod_pu_to_kv = None
         self.load_pu_to_kv = None
@@ -112,7 +132,11 @@ class LightSimBackend(Backend):
         # available solver in lightsim
         self.available_solvers = []
         self.comp_time = 0.  # computation time of just the powerflow
-        self.__current_solver_type = None
+        self._timer_postproc = 0.
+        self._timer_preproc = 0.
+        self._timer_solver = 0.
+        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+        self.__current_solver_type = solver_type
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -188,15 +212,24 @@ class LightSimBackend(Backend):
             The new type of solver you want to use. See backend.available_solvers for a list of available solver
             on your machine.
         """
-        if not isinstance(solver_type, SolverType):
-            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
-                               f"{type(solver_type)}")
-        if solver_type not in self.available_solvers:
-            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
-                               f"solvers are {self.available_solvers}")
+        if solver_type is None:
+            raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
+        self._check_suitable_solver_type(solver_type)
         self.__current_solver_type = copy.deepcopy(solver_type)
         self._grid.change_solver(self.__current_solver_type)
 
+    def _check_suitable_solver_type(self, solver_type, check_in_avail_solver=True):
+        if solver_type is None:
+            return
+        
+        if not isinstance(solver_type, SolverType):
+            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
+                               f"{type(solver_type)}")
+            
+        if check_in_avail_solver and solver_type not in self.available_solvers:
+            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
+                               f"solvers are {self.available_solvers}")
+            
     def set_solver_max_iter(self, max_iter):
         """
         Set the maximum number of iteration the solver is allowed to perform.
@@ -260,7 +293,6 @@ class LightSimBackend(Backend):
         self._idx_hack_storage = np.zeros(0, dtype=dt_int)
 
     def load_grid(self, path=None, filename=None):
-
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
@@ -268,27 +300,35 @@ class LightSimBackend(Backend):
         self._grid = init(self.init_pp_backend._grid)
 
         self.available_solvers = self._grid.available_solvers()
-        has_single_slack = np.where([el.slack_weight for el in self._grid.get_generators()] != 0.)[0].shape[0] == 1
-        if has_single_slack:
-            if SolverType.KLUSingleSlack in self.available_solvers:
-                # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLUSingleSlack)
-            else:
-                self._grid.change_solver(SolverType.SparseLUSingleSlack)
-        else:
-            # grid has multiple slack      
-            if SolverType.KLUSingleSlack in self.available_solvers:
-                # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLU)
-            else:
-                self._grid.change_solver(SolverType.SparseLU)
-           
-        if SolverType.KLUDC in self.available_solvers:
-            # use the faster KLU if available even for DC approximation
-            self._grid.change_solver(SolverType.KLUDC)
         if self.__current_solver_type is None:
+            # previous default behaviour (< 0.7)
+            # by default it builds the backend with the fastest solver
+            # automatically found
+            has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
+            if has_single_slack:
+                if SolverType.KLUSingleSlack in self.available_solvers:
+                    # use the faster KLU if available
+                    self._grid.change_solver(SolverType.KLUSingleSlack)
+                else:
+                    self._grid.change_solver(SolverType.SparseLUSingleSlack)
+            else:
+                # grid has multiple slack      
+                if SolverType.KLUSingleSlack in self.available_solvers:
+                    # use the faster KLU if available
+                    self._grid.change_solver(SolverType.KLU)
+                else:
+                    self._grid.change_solver(SolverType.SparseLU)
+            
+            if SolverType.KLUDC in self.available_solvers:
+                # use the faster KLU if available even for DC approximation
+                self._grid.change_solver(SolverType.KLUDC)
+                
             self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
-
+        else:
+            # check that the solver type provided is installed with lightsim2grid
+            self._check_suitable_solver_type(self.__current_solver_type)
+            self._grid.change_solver(self.__current_solver_type)
+            
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen
         self.n_load = self.init_pp_backend.n_load
@@ -610,12 +650,16 @@ class LightSimBackend(Backend):
         my_exc_ = None
         res = False
         try:
+            beg_preproc = time.perf_counter()
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
                 # But not when it initializes in DC mode... (see below)
                 self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
+                tick = time.perf_counter()
+                self._timer_preproc += tick - beg_preproc
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid). Detailed error: {self._grid.get_dc_solver().get_error()}")
             else:
@@ -628,19 +672,20 @@ class LightSimBackend(Backend):
                     # if I init with dc values, it should depends on previous state
                     self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
                     Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
-                    # self._grid.change_solver(SolverType.DC)
-                    # print(f"time dc: {self._grid.get_computation_time()*1000.:.3f}ms")
                     self._grid.reactivate_result_computation()
-                    # self._grid.change_solver(self.__current_solver_type)
                     if Vdc.shape[0] == 0:
                         raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
                     V_init = Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
+                tick = time.perf_counter()
+                self._timer_preproc += tick - beg_preproc
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
+                self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow(f"Divergence of AC powerflow. Detailed error: {self._grid.get_solver().get_error()}")
 
+            beg_postroc = time.perf_counter()
             if is_dc:
                 self.comp_time += self._grid.get_dc_computation_time()
             else:
@@ -681,10 +726,12 @@ class LightSimBackend(Backend):
             if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
                 disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
                 load_disco = np.where(disco)[0]
+                self._timer_postproc += time.perf_counter() - beg_postroc
                 raise DivergingPowerFlow(f"At least one load is disconnected (check loads {load_disco})")
             if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
                 disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
                 gen_disco = np.where(disco)[0]
+                self._timer_postproc += time.perf_counter() - beg_postroc
                 raise DivergingPowerFlow(f"At least one generator is disconnected (check loads {gen_disco})")
             # TODO storage case of divergence !
 
@@ -695,6 +742,7 @@ class LightSimBackend(Backend):
 
             res = True
             self._grid.unset_topo_changed()
+            self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
             self._grid.tell_topo_changed()
@@ -778,7 +826,8 @@ class LightSimBackend(Backend):
         li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
                            "nb_bus_total", "initdc",
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
-                           "_idx_hack_storage"]
+                           "_idx_hack_storage",
+                           "_timer_preproc", "_timer_postproc", "_timer_solver"]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
                 # this test is needed for backward compatibility with other grid2op version
@@ -912,3 +961,6 @@ class LightSimBackend(Backend):
         self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
+        self._timer_postproc = 0.
+        self._timer_preproc = 0.
+        self._timer_solver = 0.
