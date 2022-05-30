@@ -15,6 +15,10 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
+[0.6.2] 2022-xx-yy
+---------------------
+- [ADDED] improved time measurments
+
 [0.6.1.post2] 2022-02-08
 -------------------------
 - [FIXED] add support for python 3.10 now that scipy does (and add proper tests in CI)
