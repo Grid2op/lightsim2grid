@@ -37,7 +37,7 @@ executors:
             - image: silkeh/clang:10
     clang9:
         docker:
-            - image: silkeh/clang:9
+            - image: silkeh/clang:9  # no c++ 11, does not work
 
 jobs:
     compile_gcc11:
@@ -142,7 +142,7 @@ jobs:
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
                     python -m unittest discover  -v
-    compile_clang9:
+    compile_clang9:  # no c++ 11, will not work
         executor: clang9
         resource_class: small
         steps:
@@ -301,7 +301,7 @@ workflows:
           - compile_gcc10
           - compile_gcc11
           - compile_gcc12
-          - compile_clang9
+          - compile_clang10
           - compile_clang13
           - compile_clang14
           - compile_windows

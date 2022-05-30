@@ -420,9 +420,9 @@ cd ..
 
 Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
 
-These tests include, for now, compilation on gcc (version 8, 10, 11 and 12) and clang (version 9, 13 and 14).
+These tests include, for now, compilation on gcc (version 8, 10, 11 and 12) and clang (version 10, 13 and 14).
 
-**NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. We suppose that if it works on *eg* clang 9 and clang 14 then it compiles also on all intermediate versions.
+**NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. We suppose that if it works on *eg* clang 10 and clang 14 then it compiles also on all intermediate versions.
 
 **NB** Package might work (we never tested it) on earlier version of these compilers. 
 The only "real" requirement for lightsim2grid is to have a compiler supporting c++11
