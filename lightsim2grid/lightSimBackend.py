@@ -9,6 +9,7 @@
 import copy
 import warnings
 import numpy as np
+import time
 
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
@@ -48,6 +49,9 @@ class LightSimBackend(Backend):
         self._init_bus_lex = None
         self._big_topo_to_obj = None
         self.nb_obj_per_bus = None
+        self._timer_preproc = 0.
+        self._timer_postproc = 0.
+        self._timer_solver = 0.
 
         self.next_prod_p = None  # this vector is updated with the action that will modify the environment
         # it is done to keep track of the redispatching
@@ -112,6 +116,9 @@ class LightSimBackend(Backend):
         # available solver in lightsim
         self.available_solvers = []
         self.comp_time = 0.  # computation time of just the powerflow
+        self._timer_postproc = 0.
+        self._timer_preproc = 0.
+        self._timer_solver = 0.
         self.__current_solver_type = None
 
         # hack for the storage unit:
@@ -609,12 +616,16 @@ class LightSimBackend(Backend):
         my_exc_ = None
         res = False
         try:
+            beg_preproc = time.perf_counter()
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
                 # But not when it initializes in DC mode... (see below)
                 self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
+                tick = time.perf_counter()
+                self._timer_preproc += tick - beg_preproc
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
+                self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid). Detailed error: {self._grid.get_dc_solver().get_error()}")
             else:
@@ -633,10 +644,14 @@ class LightSimBackend(Backend):
                     V_init = Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
+                tick = time.perf_counter()
+                self._timer_preproc += tick - beg_preproc
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
+                self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
                     raise DivergingPowerFlow(f"Divergence of AC powerflow. Detailed error: {self._grid.get_solver().get_error()}")
 
+            beg_postroc = time.perf_counter()
             if is_dc:
                 self.comp_time += self._grid.get_dc_computation_time()
             else:
@@ -677,10 +692,12 @@ class LightSimBackend(Backend):
             if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
                 disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
                 load_disco = np.where(disco)[0]
+                self._timer_postproc += time.perf_counter() - beg_postroc
                 raise DivergingPowerFlow(f"At least one load is disconnected (check loads {load_disco})")
             if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
                 disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
                 gen_disco = np.where(disco)[0]
+                self._timer_postproc += time.perf_counter() - beg_postroc
                 raise DivergingPowerFlow(f"At least one generator is disconnected (check loads {gen_disco})")
             # TODO storage case of divergence !
 
@@ -691,6 +708,7 @@ class LightSimBackend(Backend):
 
             res = True
             self._grid.unset_topo_changed()
+            self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
             self._grid.tell_topo_changed()
@@ -774,7 +792,8 @@ class LightSimBackend(Backend):
         li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
                            "nb_bus_total", "initdc",
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
-                           "_idx_hack_storage"]
+                           "_idx_hack_storage",
+                           "_timer_preproc", "_timer_postproc", "_timer_solver"]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
                 # this test is needed for backward compatibility with other grid2op version
@@ -908,3 +927,6 @@ class LightSimBackend(Backend):
         self._grid.change_solver(self.__current_solver_type)
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
+        self._timer_postproc = 0.
+        self._timer_preproc = 0.
+        self._timer_solver = 0.
