@@ -15,7 +15,7 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.7.0] 2022-xx-yy
+[0.7.0] 2022-05-30
 ---------------------
 - [ADDED] improved time measurments
 - [ADDED] Possibility to set, at creation time, the type of solver used, number
