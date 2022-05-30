@@ -18,6 +18,8 @@ Change Log
 [0.6.2] 2022-xx-yy
 ---------------------
 - [ADDED] improved time measurments
+- [IMPROVED] scripts to load the pandapower grid (json format)
+- [IMPROVED] update the automatic tests on more recent compilers.
 
 [0.6.1.post2] 2022-02-08
 -------------------------
