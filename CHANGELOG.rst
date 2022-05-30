@@ -15,9 +15,12 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.6.2] 2022-xx-yy
+[0.7.0] 2022-xx-yy
 ---------------------
 - [ADDED] improved time measurments
+- [ADDED] Possibility to set, at creation time, the type of solver used, number
+  of iterations and precisions with 
+  `LightSimBackend(max_iter=..., tol=..., solver_type=...)`
 - [IMPROVED] scripts to load the pandapower grid (json format)
 - [IMPROVED] update the automatic tests on more recent compilers.
 

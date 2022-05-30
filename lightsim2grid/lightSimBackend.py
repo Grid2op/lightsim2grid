@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
+from typing import Optional
 import warnings
 import numpy as np
 import time
@@ -26,18 +27,26 @@ class LightSimBackend(Backend):
     This is a specialization of the grid2op Backend class to use the lightsim2grid solver,
     coded in c++, aiming at speeding up the computations.
     """
-    def __init__(self, detailed_infos_for_cascading_failures=False):
+    def __init__(self,
+                 detailed_infos_for_cascading_failures: bool =False,
+                 can_be_copied: bool =True,
+                 max_iter: int=10,
+                 tol: float=1e-8,
+                 solver_type: Optional[SolverType] =None):
         Backend.__init__(self,
-                         detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+                         detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
+                         can_be_copied=can_be_copied,
+                         solver_type=solver_type,
+                         max_iter=max_iter,
+                         tol=tol)
 
         # lazy loading because it crashes...
         from grid2op.Backend import PandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
         if not self.__has_storage:
-            pass
-            # warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
-            #               "feature that will be removed in further lightsim2grid version.")
+            warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
+                          "feature that will be removed in further lightsim2grid version.")
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -62,8 +71,8 @@ class LightSimBackend(Backend):
         self.init_pp_backend = PandaPowerBackend()
 
         self.V = None
-        self.max_it = 10
-        self.tol = 1e-8  # tolerance for the solver
+        self.max_it = max_iter
+        self.tol = tol  # tolerance for the solver
 
         self.prod_pu_to_kv = None
         self.load_pu_to_kv = None
@@ -119,7 +128,8 @@ class LightSimBackend(Backend):
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
-        self.__current_solver_type = None
+        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+        self.__current_solver_type = solver_type
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -195,15 +205,24 @@ class LightSimBackend(Backend):
             The new type of solver you want to use. See backend.available_solvers for a list of available solver
             on your machine.
         """
-        if not isinstance(solver_type, SolverType):
-            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
-                               f"{type(solver_type)}")
-        if solver_type not in self.available_solvers:
-            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
-                               f"solvers are {self.available_solvers}")
+        if solver_type is None:
+            raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
+        self._check_suitable_solver_type(solver_type)
         self.__current_solver_type = copy.deepcopy(solver_type)
         self._grid.change_solver(self.__current_solver_type)
 
+    def _check_suitable_solver_type(self, solver_type, check_in_avail_solver=True):
+        if solver_type is None:
+            return
+        
+        if not isinstance(solver_type, SolverType):
+            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
+                               f"{type(solver_type)}")
+            
+        if check_in_avail_solver and solver_type not in self.available_solvers:
+            raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
+                               f"solvers are {self.available_solvers}")
+            
     def set_solver_max_iter(self, max_iter):
         """
         Set the maximum number of iteration the solver is allowed to perform.
@@ -274,27 +293,35 @@ class LightSimBackend(Backend):
         self._grid = init(self.init_pp_backend._grid)
 
         self.available_solvers = self._grid.available_solvers()
-        has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
-        if has_single_slack:
-            if SolverType.KLUSingleSlack in self.available_solvers:
-                # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLUSingleSlack)
-            else:
-                self._grid.change_solver(SolverType.SparseLUSingleSlack)
-        else:
-            # grid has multiple slack      
-            if SolverType.KLUSingleSlack in self.available_solvers:
-                # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLU)
-            else:
-                self._grid.change_solver(SolverType.SparseLU)
-           
-        if SolverType.KLUDC in self.available_solvers:
-            # use the faster KLU if available even for DC approximation
-            self._grid.change_solver(SolverType.KLUDC)
         if self.__current_solver_type is None:
+            # previous default behaviour (< 0.7)
+            # by default it builds the backend with the fastest solver
+            # automatically found
+            has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
+            if has_single_slack:
+                if SolverType.KLUSingleSlack in self.available_solvers:
+                    # use the faster KLU if available
+                    self._grid.change_solver(SolverType.KLUSingleSlack)
+                else:
+                    self._grid.change_solver(SolverType.SparseLUSingleSlack)
+            else:
+                # grid has multiple slack      
+                if SolverType.KLUSingleSlack in self.available_solvers:
+                    # use the faster KLU if available
+                    self._grid.change_solver(SolverType.KLU)
+                else:
+                    self._grid.change_solver(SolverType.SparseLU)
+            
+            if SolverType.KLUDC in self.available_solvers:
+                # use the faster KLU if available even for DC approximation
+                self._grid.change_solver(SolverType.KLUDC)
+                
             self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
-
+        else:
+            # check that the solver type provided is installed with lightsim2grid
+            self._check_suitable_solver_type(self.__current_solver_type)
+            self._grid.change_solver(self.__current_solver_type)
+            
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen
         self.n_load = self.init_pp_backend.n_load
