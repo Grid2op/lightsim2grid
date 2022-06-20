@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import pdb
+import sys
 import unittest
 import warnings
 import grid2op
@@ -281,12 +282,18 @@ class TestBackendArgument(unittest.TestCase):
             env = grid2op.make("l2rpn_case14_sandbox",
                                test=True,
                                backend=LightSimBackend())
-        assert env.backend._grid.get_solver_type() == SolverType.KLUSingleSlack
+        if SolverType.KLUSingleSlack in env.backend.available_solvers:
+            # in the test KLU is not available on windows
+            correct_type = SolverType.KLUSingleSlack
+        else:
+            correct_type = SolverType.SparseLUSingleSlack
+            
+        assert env.backend._grid.get_solver_type() == correct_type
         assert env.backend.max_it == 10
         assert env.backend.tol == 1e-8
         runner = Runner(**env.get_params_for_runner())
-        env_cpy = runner.init_env()
-        assert env_cpy.backend._grid.get_solver_type() == SolverType.KLUSingleSlack
+        env_cpy = runner.init_env()            
+        assert env_cpy.backend._grid.get_solver_type() == correct_type
         assert env_cpy.backend.max_it == 10
         assert env_cpy.backend.tol == 1e-8
        
