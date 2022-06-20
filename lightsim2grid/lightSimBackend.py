@@ -822,6 +822,7 @@ class LightSimBackend(Backend):
         res.__current_solver_type = self.__current_solver_type
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
+        res._can_be_copied = self._can_be_copied
         res.cst_1 = dt_float(1.0)
         li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
                            "nb_bus_total", "initdc",

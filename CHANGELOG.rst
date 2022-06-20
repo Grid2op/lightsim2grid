@@ -15,6 +15,11 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
+[0.7.0.post1] 2022-06-20
+-------------------------
+- [FIXED] a compatibility issue with grid2op 1.7.1 (missing a backend attribute
+  when environment is copied)
+
 [0.7.0] 2022-05-30
 ---------------------
 - [ADDED] improved time measurments
