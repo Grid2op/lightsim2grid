@@ -45,9 +45,12 @@ def _aux_check_legit(pp_net):
         raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "
                            "in pandapower network")
 
-    # if pp_net.sn_mva != 1.:
-    #     warnings.warn("Pandapower network with sn_mva != 1 are not fully supported yet, especially in the "
-    #                   "conversion for some trafo (and probably somewhere else too)")
+    # bus indexes should start at 0 and be contiguous
+    if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
+        raise RuntimeError("In order to work, pandapower bus indexes should start at 0 and be contiguous. "
+                           "Make sure that `pp_net.bus.index` have this property. You can write a github "
+                           "issue if you want improvment on this regard.")
+    
     if "_options" in pp_net and \
        "trafo_model" in pp_net["_options"] and \
        pp_net["_options"]["trafo_model"] != "t":

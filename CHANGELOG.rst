@@ -19,6 +19,8 @@ Change Log
 ---------------------
 - [FIXED] a compatibility issue with grid2op 1.7.2 (missing another backend attribute
   when the environment is copied) see https://github.com/rte-france/Grid2Op/issues/360
+- [FIXED] now an error if thrown if the bus indexes in the pandapower grid are not contiguous
+  or do not start at 0 (thanks Roman Bolgaryn for spotting this issue)
 
 [0.7.0.post1] 2022-06-20
 -------------------------

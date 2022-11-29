@@ -239,3 +239,4 @@ test_gridcal.py
 lightsim2grid/tests/bug_file.zip
 lightsim2grid/tests/test.json
 pyproject.toml.old
+test_bug_as.py
