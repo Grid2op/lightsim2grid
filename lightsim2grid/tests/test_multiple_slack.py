@@ -101,6 +101,15 @@ def make_grid_multiple_slack(case):
 
 class TestMultipleSlack14(unittest.TestCase):
     def setUp(self) -> None:
+        
+        if pp.__version__.split() < ["2", "8", "0"]:
+            # check if functionality is available in pandapower installed (officially supported since 2.8.0)
+            msg_ = ("Unable to peform required tests because install pandapower version does not "
+                   "allow multiple slack." )
+            warnings.warn(msg_)
+            self.unable_to_run_due_to_pp = True
+            self.skipTest(msg_)
+            
         # LF PARAMETERS
         self.max_it = 10
         self.tol = 1e-8
@@ -109,16 +118,9 @@ class TestMultipleSlack14(unittest.TestCase):
         # retrieve the case14 and remove the "ext_grid" => put a generator as slack bus instead
         self.case = pn.case14()
         self.net = make_grid_multiple_slack(self.case)
-        if "slack_weight" in self.net.gen:
-            id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
-            self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
 
-        if "slack_weight" not in self.net.gen:
-            msg_ = "Unable to peform required tests because install pandapower version does not " \
-                   "allow multiple slack."
-            warnings.warn(msg_)
-            self.unable_to_run_due_to_pp = True
-            self.skipTest(msg_)
+        id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
+        self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
     
     def test_single_slack(self):
         """check pandapower and lightsim get the same results when there is only one

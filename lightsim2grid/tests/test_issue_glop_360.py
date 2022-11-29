@@ -32,6 +32,8 @@ class Issue360Tester(unittest.TestCase):
         env_cpy.close()
     
     def test_runner(self):
+        if grid2op.__version__.split(".") < ["1.7.3"]:
+            self.skipTest("there used to be this bug in grid2op which is fixed in 1.7.3")
         env_cpy = self.env.copy()
         runner = Runner(**env_cpy.get_params_for_runner())
         res = runner.run(nb_episode=1, max_iter=10)
