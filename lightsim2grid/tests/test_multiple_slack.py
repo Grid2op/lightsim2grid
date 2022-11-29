@@ -120,6 +120,8 @@ class TestMultipleSlack14(unittest.TestCase):
         self.net = make_grid_multiple_slack(self.case)
 
         id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
+        if not "slack_weight" in self.net.gen:
+            self.net.gen["slack_weight"] = 0.
         self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
     
     def test_single_slack(self):
