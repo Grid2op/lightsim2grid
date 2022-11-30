@@ -41,6 +41,10 @@ struct DocSolver
     static const std::string NICSLUSolverSingleSlack;
     static const std::string NICSLUDCSolver;
 
+    static const std::string CKTSOSolver;
+    static const std::string CKTSOSolverSingleSlack;
+    static const std::string CKTSODCSolver;
+
     static const std::string GaussSeidelSolver;
     static const std::string GaussSeidelSynchSolver;
 

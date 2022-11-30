@@ -183,6 +183,10 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
 
         In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLU` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLU)`).
 
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
+        
 )mydelimiter";
 
 const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
@@ -194,6 +198,10 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
     .. note::
 
         In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLUSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUSingleSlack)`).
+    
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
 
 )mydelimiter";
 
@@ -205,7 +213,59 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLUSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUSingleSlack)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLUDC` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUDC)`).
+
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
+ 
+)mydelimiter";
+
+const std::string DocSolver::CKTSOSolver = R"mydelimiter(
+    This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster CKTSO solver available in the CKTSO library
+    for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.CKTSOSolver`. (requires a build from source)
+    
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `CKTSO` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSO)`).
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
+ 
+)mydelimiter";
+
+const std::string DocSolver::CKTSOSolverSingleSlack = R"mydelimiter(
+    This classes implements the Newton Raphson algorithm, the faster CKTSO solver available in the CKTSO library
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.CKTSOSolver` .
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `CKTSOSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSOSingleSlack)`).
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
+ 
+)mydelimiter";
+
+const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
+    Alternative implementation of the DC solver, it uses the faster CKTSO solver available in the CKTSO library to solve for the DC voltage given the DC admitance matrix and
+    the power injected at each nodes (requires a build from source).
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `CKTSODC` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSODC)`).
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
 
 )mydelimiter";
 

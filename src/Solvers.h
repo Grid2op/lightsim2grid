@@ -13,6 +13,7 @@
 #include "SparseLUSolver.h"
 #include "KLUSolver.h"
 #include "NICSLUSolver.h"
+#include "CKTSOSolver.h"
 
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen**/
 typedef BaseNRSolver<SparseLULinearSolver> SparseLUSolver;
@@ -54,3 +55,20 @@ typedef BaseDCSolver<SparseLULinearSolver> DCSolver;
     /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
     class NICSLUDCSolver : public DCSolver{};
 #endif  // NICSLU_SOLVER_AVAILABLE
+
+#ifdef CKTSO_SOLVER_AVAILABLE
+    /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license)**/
+    typedef BaseNRSolver<CKTSOLinearSolver> CKTSOSolver;
+    /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), do not consider multiple slack bus**/
+    typedef BaseNRSolverSingleSlack<CKTSOLinearSolver> CKTSOSolverSingleSlack;
+    /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), only suitable for the DC approximation**/
+    typedef BaseDCSolver<CKTSOLinearSolver> CKTSODCSolver;
+#elif defined(_READ_THE_DOCS)
+    // hack to display accurately the doc in read the doc even if the models are not compiled
+    /** Solver based on Newton Raphson, using the KLU linear solver**/
+    class CKTSOSolver : public SparseLUSolver{};
+    /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
+    class CKTSOSolverSingleSlack : public SparseLUSolverSingleSlack{};
+    /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
+    class CKTSODCSolver : public DCSolver{};
+#endif  // CKTSO_SOLVER_AVAILABLE

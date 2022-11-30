@@ -13,10 +13,10 @@ import pdb
 import zipfile
 from scipy import sparse
 import re
-NICSLU_AVAILBLE = False
+CKTSO_AVAILBLE = False
 try:
-    from lightsim2grid_cpp import NICSLUSolver
-    NICSLU_AVAILBLE = True
+    from lightsim2grid_cpp import CKTSOSolver
+    CKTSO_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
     pass
@@ -30,9 +30,9 @@ class MakeTests(unittest.TestCase):
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
-        if not NICSLU_AVAILBLE:
+        if not CKTSO_AVAILBLE:
             return
-        self.solver = NICSLUSolver()
+        self.solver = CKTSOSolver()
 
         self.path = None
         self.V_init = None
@@ -104,7 +104,7 @@ class MakeTests(unittest.TestCase):
 
         has_conv = self.solver.compute_pf(self.Ybus, self.V_init, self.Sbus, ref, slack_weights, 
                                           self.pv, self.pq, self.max_it, self.tol)
-        assert has_conv, "the load flow has diverged for {}".format(self.path)
+        assert has_conv, "the load flow has diverged for {} with error {}".format(self.path, self.solver.get_error())
         J = self.solver.get_J()
         Va = self.solver.get_Va()
         Vm = self.solver.get_Vm()
@@ -116,8 +116,8 @@ class MakeTests(unittest.TestCase):
         assert np.sum(np.abs(Vm - Vm_pp)) <= self.tol_test, "voltages magnitude are not the same"
 
     def test_dir(self):
-        if not NICSLU_AVAILBLE:
-            self.skipTest("NICSLU is not installed")
+        if not CKTSO_AVAILBLE:
+            self.skipTest("CKTSO is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

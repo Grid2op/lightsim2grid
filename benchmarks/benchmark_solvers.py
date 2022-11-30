@@ -46,6 +46,8 @@ solver_names = {lightsim2grid.SolverType.GaussSeidel: "LS+GS",
                 lightsim2grid.SolverType.SparseLUSingleSlack: "LS+SLU (single)",
                 lightsim2grid.SolverType.KLUSingleSlack: "LS+KLU (single)",
                 lightsim2grid.SolverType.NICSLUSingleSlack: "LS+NICSLU (single)",
+                lightsim2grid.SolverType.CKTSO: "LS+CKTSO",
+                lightsim2grid.SolverType.CKTSOSingleSlack: "LS+CKTSO (single)",
                 # lightsim2grid.SolverType.DC: "LS+DC",
                 # lightsim2grid.SolverType.KLUDC: "LS+SLU",
                 # lightsim2grid.SolverType.NICSLUDC: "LS+SLU"
@@ -62,6 +64,8 @@ order_solver_print = [
     lightsim2grid.SolverType.KLU,
     lightsim2grid.SolverType.NICSLUSingleSlack,
     lightsim2grid.SolverType.NICSLU,
+    lightsim2grid.SolverType.CKTSOSingleSlack,
+    lightsim2grid.SolverType.CKTSO,
 ]
 
 

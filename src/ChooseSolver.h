@@ -17,9 +17,10 @@
 #include "GaussSeidelSynchSolver.h"
 #include "DCSolver.h"
 
-enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
-                       SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack,
-                       KLUDC, NICSLUDC};
+enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU, 
+                       SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack, 
+                       KLUDC, NICSLUDC,
+                       CKTSO, CKTSOSingleSlack, CKTSODC};
 
 // TODO define a template class instead of these weird stuff !!!
 // TODO export all methods from base class !
@@ -57,12 +58,20 @@ class ChooseSolver
                 res.push_back(SolverType::NICSLUSingleSlack);
                 res.push_back(SolverType::NICSLUDC);
             #endif
+            #ifdef CKTSO_SOLVER_AVAILABLE
+                res.push_back(SolverType::CKTSO);
+                res.push_back(SolverType::CKTSOSingleSlack);
+                res.push_back(SolverType::CKTSODC);
+            #endif
             return res;
         }
         
         bool is_dc(const SolverType & type){
             bool res;
-            res = (type == SolverType::DC) || (type == SolverType::KLUDC) || (type == SolverType::NICSLUDC);
+            res = (type == SolverType::DC) || 
+                  (type == SolverType::KLUDC) || 
+                  (type == SolverType::NICSLUDC) ||
+                  (type == SolverType::CKTSODC);
             return res;
         }
         SolverType get_type() const {return _solver_type;}
@@ -70,6 +79,7 @@ class ChooseSolver
         void change_solver(const SolverType & type)
         {
             if(type == _solver_type) return;
+
             #ifndef KLU_SOLVER_AVAILABLE
                 if((type == SolverType::KLU) || (type == SolverType::KLUDC) || (type == SolverType::KLUSingleSlack)){
                     std::string msg;
@@ -82,6 +92,14 @@ class ChooseSolver
                 if((type == SolverType::NICSLU) || (type == SolverType::NICSLUDC) || (type ==  SolverType::NICSLUSingleSlack)){
                     std::string msg;
                     msg = "Impossible to change for the NICSLU solver, that is not available on your platform.";
+                    throw std::runtime_error(msg);
+                }
+            #endif
+
+            #ifndef CKTSO_SOLVER_AVAILABLE
+                if((type == SolverType::CKTSO) || (type == SolverType::CKTSODC) || (type ==  SolverType::CKTSOSingleSlack)){
+                    std::string msg;
+                    msg = "Impossible to change for the CKTSO solver, that is not available on your platform.";
                     throw std::runtime_error(msg);
                 }
             #endif
@@ -149,6 +167,12 @@ class ChooseSolver
             else if(_solver_type == SolverType::NICSLUSingleSlack){
                 return _solver_nicslu_single.get_J();}
             #endif // NICSLU_SOLVER_AVAILABLE
+            #ifdef CKTSO_SOLVER_AVAILABLE
+            else if(_solver_type == SolverType::CKTSO){
+                return _solver_cktso.get_J();}
+            else if(_solver_type == SolverType::CKTSOSingleSlack){
+                return _solver_cktso_single.get_J();}
+            #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");}
             else if(_solver_type == SolverType::DC){
@@ -215,6 +239,19 @@ class ChooseSolver
                     throw std::runtime_error(msg);
                 }
             #endif  // NICSLU_SOLVER_AVAILABLE
+
+            #ifndef CKTSO_SOLVER_AVAILABLE
+                if(_solver_type == SolverType::CKTSO){
+                    std::string msg = "Impossible to use the CKTSO solver, it is not available on your platform.";
+                    throw std::runtime_error(msg);
+                } else if(_solver_type == SolverType::CKTSOSingleSlack){
+                    std::string msg = "Impossible to use the CKTSO solver, it is not available on your platform.";
+                    throw std::runtime_error(msg);
+                } else if(_solver_type == SolverType::CKTSODC){
+                    std::string msg = "Impossible to use the CKTSO solver, it is not available on your platform.";
+                    throw std::runtime_error(msg);
+                }
+            #endif  // CKTSO_SOLVER_AVAILABLE
         }
 
     protected:
@@ -237,6 +274,11 @@ class ChooseSolver
             else if(_solver_type == SolverType::NICSLUSingleSlack){res = &_solver_nicslu_single;}
             else if(_solver_type == SolverType::NICSLUDC){res = &_solver_nicslu_dc;}
             #endif // NICSLU_SOLVER_AVAILABLE
+            #ifdef CKTSO_SOLVER_AVAILABLE
+            else if(_solver_type == SolverType::CKTSO){res = &_solver_cktso;}
+            else if(_solver_type == SolverType::CKTSOSingleSlack){res = &_solver_cktso_single;}
+            else if(_solver_type == SolverType::CKTSODC){res = &_solver_cktso_dc;}
+            #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){res = &_solver_gaussseidel;}
             else if(_solver_type == SolverType::GaussSeidelSynch){res = &_solver_gaussseidelsynch;}
             else throw std::runtime_error("Unknown solver type encountered");
@@ -258,6 +300,11 @@ class ChooseSolver
             else if(_solver_type == SolverType::NICSLUSingleSlack){res = &_solver_nicslu_single;}
             else if(_solver_type == SolverType::NICSLUDC){res = &_solver_nicslu_dc;}
             #endif // NICSLU_SOLVER_AVAILABLE
+            #ifdef CKTSO_SOLVER_AVAILABLE
+            else if(_solver_type == SolverType::CKTSO){res = &_solver_cktso;}
+            else if(_solver_type == SolverType::CKTSOSingleSlack){res = &_solver_cktso_single;}
+            else if(_solver_type == SolverType::CKTSODC){res = &_solver_cktso_dc;}
+            #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){res = &_solver_gaussseidel;}
             else if(_solver_type == SolverType::GaussSeidelSynch){res = &_solver_gaussseidelsynch;}
             else throw std::runtime_error("Unknown solver type encountered");
@@ -284,6 +331,11 @@ class ChooseSolver
             NICSLUSolverSingleSlack _solver_nicslu_single;
             NICSLUDCSolver _solver_nicslu_dc;
         #endif  // NICSLU_SOLVER_AVAILABLE
+        #ifdef CKTSO_SOLVER_AVAILABLE
+            CKTSOSolver _solver_cktso;
+            CKTSOSolverSingleSlack _solver_cktso_single;
+            CKTSODCSolver _solver_cktso_dc;
+        #endif  // CKTSO_SOLVER_AVAILABLE
 
 };
 

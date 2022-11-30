@@ -18,6 +18,7 @@ this package should not be used for detailed power system computations or simula
         *   [option A. Compilation of SuiteSparse using "make"](#optional-option-a-Compilation-of-SuiteSparse-using-make)
         *   [option B. Compilation of SuiteSparse using "cmake"](#optional-option-b-Compilation-of-SuiteSparse-using-cmake)
     *   [(optional) Include NICSLU linear solver (experimental)](#optional-Include-NICSLU-linear-solver-experimental)
+    *   [(optional) Include CKTSO linear solver (experimental)](#optional-Include-CKTSO-linear-solver-experimental)
     *   [(optional) customization of the installation](#optional-customization-of-the-installation)
     *   [3.2 Installation of the python package](#2-Installation-of-the-python-package)
 *   [4. Benchmarks](#Benchmarks)
@@ -195,6 +196,27 @@ And this is it. Lightsim will be able to use this linear solver.
 
 Be carefull though, you require a license file in order to use it. As of now, the best way is to copy paste the license
 file at the same location that the one you execute python from (*ie* you need to copy paste it each time).
+
+### (optional) Include CKTSO linear solver (experimental)
+Another linear solver that can be used with lighsim2grid is the "CKTSO" linear solver (a newer version of NICSLU) that might, 
+in some cases, be even faster than the NICSLU linear solver. This can lead to more speed up if using lighsim2grid.
+
+To use it, you need to:
+
+1) retrieve the sources (only available as a freeware) from https://github.com/chenxm1986/cktso and save
+   it on your machine. Say you clone this github repository in `CKTSO_GIT` 
+   (*eg* CKTSO_GIT="/home/user/Documents/cktso/"). Also note that you need to check that your usage
+   is compliant with their license !
+2) define the "PATH_CKTSO" environment variable **before** compiling lightsim2grid, on linux you can do
+   `export PATH_CKTSO=CKTSO_GIT` 
+   (for example `export PATH_CKTSO=/home/user/Documents/cktso` if you cloned the repository 
+   as the example of `step 1)` )
+
+And this is it. Lightsim will be able to use this linear solver.
+
+Be carefull though, you require a license file in order to use it. As of now, the best way is to copy paste the license
+file at the same location as the library used when ligthsim2grid is compiled. It should be on `CKTSO_GIT/ubuntu1804_x64_gcc750`
+on linux and `CKTSO_GIT/win7_x64` on windows.
 
 ### (optional) customization of the installation
 

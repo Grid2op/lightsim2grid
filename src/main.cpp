@@ -36,6 +36,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("NICSLU", SolverType::NICSLU, "denotes the :class:`lightsim2grid.solver.NICSLUSolver`")
         .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack, "denotes the :class:`lightsim2grid.solver.NICSLUSolverSingleSlack`")
         .value("NICSLUDC", SolverType::NICSLUDC, "denotes the :class:`lightsim2grid.solver.NICSLUDCSolver`")
+        .value("CKTSO", SolverType::CKTSO, "denotes the :class:`lightsim2grid.solver.CKTSOolver`")
+        .value("CKTSOSingleSlack", SolverType::CKTSOSingleSlack, "denotes the :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`")
+        .value("CKTSODC", SolverType::CKTSODC, "denotes the :class:`lightsim2grid.solver.CKTSODCSolver`")
         .export_values();
 
     py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")
@@ -133,7 +136,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("compute_pf", &KLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
             .def("get_timers", &KLUDCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &KLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
-    #endif  // KLU_SOLVER_AVAILABLE (or )
+    #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
         py::class_<NICSLUSolver>(m, "NICSLUSolver", DocSolver::NICSLUSolver.c_str())
@@ -177,6 +180,49 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("get_timers", &NICSLUDCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &NICSLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
     #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
+
+    #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+        py::class_<CKTSOSolver>(m, "CKTSOSolver", DocSolver::CKTSOSolver.c_str())
+            .def(py::init<>())
+            .def("get_J", &CKTSOSolver::get_J_python, DocSolver::get_J_python.c_str())  // (get the jacobian matrix, sparse csc matrix)
+            .def("get_Va", &CKTSOSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &CKTSOSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &CKTSOSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &CKTSOSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &CKTSOSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &CKTSOSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &CKTSOSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+            .def("get_timers", &CKTSOSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<CKTSOSolverSingleSlack>(m, "CKTSOSolverSingleSlack", DocSolver::CKTSOSolverSingleSlack.c_str())
+            .def(py::init<>())
+            .def("get_J", &CKTSOSolverSingleSlack::get_J_python, DocSolver::get_J_python.c_str())  // (get the jacobian matrix, sparse csc matrix)
+            .def("get_Va", &CKTSOSolverSingleSlack::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &CKTSOSolverSingleSlack::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &CKTSOSolverSingleSlack::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &CKTSOSolverSingleSlack::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &CKTSOSolverSingleSlack::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &CKTSOSolverSingleSlack::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &CKTSOSolverSingleSlack::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &CKTSOSolverSingleSlack::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+            .def("get_timers", &CKTSOSolverSingleSlack::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &CKTSOSolverSingleSlack::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<CKTSODCSolver>(m, "CKTSODCSolver", DocSolver::CKTSODCSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &CKTSODCSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &CKTSODCSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &CKTSODCSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &CKTSODCSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &CKTSODCSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &CKTSODCSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &CKTSODCSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &CKTSODCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+            .def("get_timers", &CKTSODCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &CKTSODCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+    #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver", DocSolver::GaussSeidelSolver.c_str())
         .def(py::init<>())
