@@ -13,6 +13,13 @@ import warnings
 from grid2op.Runner import Runner
 from lightsim2grid import LightSimBackend
 
+def int_or_null(el):
+    try:
+        res = int(el)
+    except ValueError:
+        res = 0
+    return res
+
 
 class Issue360Tester(unittest.TestCase):
     def setUp(self) -> None:
@@ -32,13 +39,14 @@ class Issue360Tester(unittest.TestCase):
         env_cpy.close()
     
     def test_runner(self):
-        if grid2op.__version__.split(".") < ["1.7.3"]:
+        if [int_or_null(el) for el in grid2op.__version__.split(".")] < [1, 7, 3]:
             self.skipTest("there used to be this bug in grid2op which is fixed in 1.7.3")
         env_cpy = self.env.copy()
         runner = Runner(**env_cpy.get_params_for_runner())
         res = runner.run(nb_episode=1, max_iter=10)
         # this crashed above
         env_cpy.close()
+
 
 if __name__ == "__main__":
     unittest.main()

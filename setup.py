@@ -286,7 +286,7 @@ pkgs = {
         "test": [
             "grid2op>=1.6.4",
             "numba",
-            "pandapower==2.7.0"  # force this version for test, otherwise problem in test_DataConverter !
+            "pandapower>=2.7.0"  # force this version for test, otherwise problem in test_DataConverter !
         ]
     }
 }

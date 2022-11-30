@@ -6,15 +6,14 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
+import pdb
 import warnings
 import pandapower as pp
 import numpy as np
 import pandapower.networks as pn
-import pdb
-import copy
-import tempfile
 import unittest
 from lightsim2grid.gridmodel import init
+from functools import reduce
 
 
 VAR_GEN = ["bus", "p_mw", "vm_pu", "sn_mva", "name", "index", "max_q_mvar", "min_q_mvar", "min_p_mw",
@@ -23,25 +22,39 @@ VAR_GEN = ["bus", "p_mw", "vm_pu", "sn_mva", "name", "index", "max_q_mvar", "min
 # adding a slack bus
 def make_grid_multiple_slack(case):
     """create an equivalent grid (for case 14) with generator as slack buses"""
-    pp.runpp(case)  # forced to do it to retrieve the power of the slack bus
+    
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        pp.runpp(case)  # forced to do it to retrieve the power of the slack bus
+    
     var_pp = ["bus", 'in_service', "name", "max_p_mw", "min_p_mw", "max_q_mvar", "min_q_mvar", "slack_weight"]
     if "slack_weight" not in case.ext_grid:
         var_pp = var_pp[:-1]
 
     slack_bus_gen_id_ppc = 0  # checked manually
-    pp.create_gen(case,
-                **case.ext_grid[var_pp].iloc[0],
-                p_mw=case._ppc['gen'][slack_bus_gen_id_ppc, 1],
-                slack=True)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        pp.create_gen(case,
+                    **case.ext_grid[var_pp].iloc[0],
+                    p_mw=case._ppc['gen'][slack_bus_gen_id_ppc, 1],
+                    slack=True)
     # "deactivate" the "ext_grid" 
     case.ext_grid["in_service"][0] = False
-    pp.runpp(case)
+    
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        pp.runpp(case)
 
     # now create a copy of it, by removing the ext_grid completely (to be sure)
-    net = pp.create_empty_network("case14_custom", sn_mva=1.0 * case.sn_mva, f_hz= 1.0 * case.f_hz)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        net = pp.create_empty_network("case14_custom", sn_mva=1.0 * case.sn_mva, f_hz= 1.0 * case.f_hz)
+    
     # create bus
     for i in range(case.bus.shape[0]):
-        pp.create_bus(net, **case.bus.iloc[i])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.create_bus(net, **case.bus.iloc[i])
 
     # create lines
     var_line = ["from_bus", "to_bus", "length_km", "r_ohm_per_km", "x_ohm_per_km", "c_nf_per_km", "max_i_ka", "name",
@@ -49,7 +62,9 @@ def make_grid_multiple_slack(case):
                 "max_loading_percent", "alpha", "temperature_degree_celsius"]
     var_line = [el for el in var_line if el in case.line]
     for i in range(case.line.shape[0]):
-        pp.create_line_from_parameters(net, **case.line[var_line].iloc[i])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.create_line_from_parameters(net, **case.line[var_line].iloc[i])
 
     # create trafos
     var_trafo = ["hv_bus", "lv_bus", "sn_mva", "vn_hv_kv", "vn_lv_kv", "vkr_percent", "vk_percent", "pfe_kw", "i0_percent", "shift_degree",
@@ -58,14 +73,18 @@ def make_grid_multiple_slack(case):
                 "parallel", "df"]
     var_trafo = [el for el in var_trafo if el in case.trafo]
     for i in range(case.trafo.shape[0]):
-        pp.create_transformer_from_parameters(net, **case.trafo[var_trafo].iloc[i])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.create_transformer_from_parameters(net, **case.trafo[var_trafo].iloc[i])
 
     # create shunts
     var_shunt = ["bus", "q_mvar", "p_mw", "vn_kv", "step", "max_step", "name",
                 "in_service", "index"]
     var_shunt = [el for el in var_shunt if el in case.shunt]
     for i in range(case.shunt.shape[0]):
-        pp.create_shunt(net, **case.shunt[var_shunt].iloc[i])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.create_shunt(net, **case.shunt[var_shunt].iloc[i])
 
     # create loads
     var_load = ["bus", "p_mw", "q_mvar", "const_z_percent", "const_i_percent", "sn_mva", "name",
@@ -73,12 +92,16 @@ def make_grid_multiple_slack(case):
                 "min_q_mvar", "controllable"]
     var_load = [el for el in var_load if el in case.load]
     for i in range(case.load.shape[0]):
-        pp.create_load(net, **case.load[var_load].iloc[i])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.create_load(net, **case.load[var_load].iloc[i])
 
     # create gens
     var_gen = [el for el in VAR_GEN if el in case.gen]
     for i in range(case.gen.shape[0]):
-        pp.create_gen(net, **case.gen[var_gen].iloc[i])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.create_gen(net, **case.gen[var_gen].iloc[i])
 
     id_ref_slack = net.gen.shape[0]-1  # initial generator added as the slack bus added
     net.gen["min_p_mw"][[id_ref_slack]] = 0.
@@ -99,10 +122,19 @@ def make_grid_multiple_slack(case):
 
     return net
 
+
+def int_or_null(el):
+    try:
+        res = int(el)
+    except ValueError:
+        res = 0
+    return res
+
+
 class TestMultipleSlack14(unittest.TestCase):
     def setUp(self) -> None:
         
-        if pp.__version__.split() < ["2", "8", "0"]:
+        if [int_or_null(el) for el in pp.__version__.split(".")] < [2, 8, 0]:
             # check if functionality is available in pandapower installed (officially supported since 2.8.0)
             msg_ = ("Unable to peform required tests because install pandapower version does not "
                    "allow multiple slack." )
@@ -116,7 +148,9 @@ class TestMultipleSlack14(unittest.TestCase):
         self.nb_bus_total = 14
 
         # retrieve the case14 and remove the "ext_grid" => put a generator as slack bus instead
-        self.case = pn.case14()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.case = pn.case14()
         self.net = make_grid_multiple_slack(self.case)
 
         id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
@@ -127,10 +161,13 @@ class TestMultipleSlack14(unittest.TestCase):
     def test_single_slack(self):
         """check pandapower and lightsim get the same results when there is only one
            slack bus
-        """
-        pp.runpp(self.net,
-                 init_vm_pu="flat",
-                 init_va_degree="flat")
+        """            
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(self.net,
+                    init_vm_pu="flat",
+                    init_va_degree="flat")
+            
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid_single = init(self.net)
@@ -139,10 +176,12 @@ class TestMultipleSlack14(unittest.TestCase):
         self.check_results(V, ls_grid_single, self.net)
 
         # now run with the option "dist_slack=True"
-        pp.runpp(self.net,
-                 distributed_slack=True,
-                 init_vm_pu="flat",
-                 init_va_degree="flat")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(self.net,
+                    distributed_slack=True,
+                    init_vm_pu="flat",
+                    init_va_degree="flat")
         self.check_results(V, ls_grid_single, self.net)
 
     def test_two_slacks_diff_bus(self):
@@ -154,10 +193,13 @@ class TestMultipleSlack14(unittest.TestCase):
             self.net.gen["slack_weight"][[1, id_ref_slack]] = 0.5
         
         # just to make sure pp forgot previous results
-        pp.runpp(self.net,
-                 distributed_slack=True,
-                 init_vm_pu="flat",
-                 init_va_degree="flat")  
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(self.net,
+                     distributed_slack=True,
+                     init_vm_pu="flat",
+                     init_va_degree="flat",
+                     lightsim2grid=False)  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init(self.net)
@@ -178,10 +220,12 @@ class TestMultipleSlack14(unittest.TestCase):
             self.net.gen["slack_weight"][[gen_id_added, id_ref_slack]] = 0.9, 0.3
         
         # just to make sure pp forgot previous results
-        pp.runpp(self.net,
-                 distributed_slack=True,
-                 init_vm_pu="flat",
-                 init_va_degree="flat")  
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.runpp(self.net,
+                    distributed_slack=True,
+                    init_vm_pu="flat",
+                    init_va_degree="flat")  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init(self.net)
@@ -208,10 +252,12 @@ class TestMultipleSlack14(unittest.TestCase):
         self.net.gen["p_mw"][[id_ref_slack, last_gen_id]] = 0.5 * init_p_mw
 
         # start the powerflow
-        pp.rundcpp(self.net)
-        pp.runpp(self.net, distributed_slack=True,
-                 init_vm_pu="flat",
-                 init_va_degree="flat") 
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")  
+            pp.rundcpp(self.net)
+            pp.runpp(self.net, distributed_slack=True,
+                    init_vm_pu="flat",
+                    init_va_degree="flat") 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init(self.net)
@@ -252,10 +298,13 @@ class TestMultipleSlack14(unittest.TestCase):
         self.net.gen["p_mw"][[id_ref_slack, id_ref_slack]] = 0.5 * init_p_mw
 
         # start the powerflow
-        pp.rundcpp(self.net)
-        pp.runpp(self.net, distributed_slack=True,
-                 init_vm_pu="flat",
-                 init_va_degree="flat") 
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            pp.rundcpp(self.net)
+            pp.runpp(self.net, distributed_slack=True,
+                    init_vm_pu="flat",
+                    init_va_degree="flat") 
+            
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init(self.net)
