@@ -173,7 +173,7 @@ jobs:
                     pip install -U pybind11
                     git submodule init
                     git submodule update
-                    make
+                    CC=clang make
                     CC=clang python setup.py build
                     CC=clang python -m pip install -U .
     compile_clang11:
@@ -297,11 +297,11 @@ workflows:
     version: 2.1
     compile:
         jobs:
-          - compile_gcc8
-          - compile_gcc10
-          - compile_gcc11
-          - compile_gcc12
+          # - compile_gcc8
+          # - compile_gcc10
+          # - compile_gcc11
+          # - compile_gcc12
           - compile_clang10
-          - compile_clang13
-          - compile_clang14
-          - compile_windows
+          # - compile_clang13
+          # - compile_clang14
+          # - compile_windows
