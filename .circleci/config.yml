@@ -170,7 +170,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U pybind11<2.10.3
+                    pip install -U "pybind11<2.10.3"
                     git submodule init
                     git submodule update
                     CC=clang make
