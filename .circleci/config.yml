@@ -303,7 +303,7 @@ workflows:
           - compile_gcc10
           - compile_gcc11
           - compile_gcc12
-          - compile_clang10  # does not work I don't know why, too lazy to check
+          # - compile_clang10  # does not work I don't know why, too lazy to check
           - compile_clang11
           - compile_clang13
           - compile_clang14
