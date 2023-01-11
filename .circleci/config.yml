@@ -165,16 +165,18 @@ jobs:
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip git -y
+            - run: 
+                command: |
+                    git submodule init
+                    git submodule update
+                    make
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
                     pip install -U "pybind11==2.10.1"
-                    git submodule init
-                    git submodule update
-                    make
-                    CC=clang python setup.py build
+                    python setup.py build
                     python -m pip install .
     compile_clang11:
         executor: clang11
