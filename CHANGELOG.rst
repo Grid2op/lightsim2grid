@@ -15,7 +15,7 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.xx.yy] 2022-zz-tt
+[0.7.1] 2023-01-11
 ---------------------
 - [BREAKING] drop support for numpy version < 1.20 (to be consistent with grid2op)
 - [FIXED] a compatibility issue with grid2op 1.7.2 (missing another backend attribute
