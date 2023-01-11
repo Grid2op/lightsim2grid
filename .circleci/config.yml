@@ -164,7 +164,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip git -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:

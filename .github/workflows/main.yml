@@ -72,7 +72,9 @@ jobs:
         run: |
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid import LightSimBackend"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v2
@@ -165,6 +167,14 @@ jobs:
       - name: Install wheel
         shell: bash
         run: python -m pip install dist/*.whl --user
+
+      - name: Check package can be imported
+        run: |
+          python -c "import lightsim2grid"
+          python -c "from lightsim2grid import *"
+          python -c "from lightsim2grid import LightSimBackend"
+          python -c "from lightsim2grid.newtonpf import newtonpf"
+          python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v2
