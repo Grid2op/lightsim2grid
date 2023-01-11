@@ -72,7 +72,12 @@ class SecurityAnalysis(object):
     In grid2op, it would be, in this case, 0. for the flows and 0. for the voltages.
 
     """
-    STR_TYPES = (str, np.str, np.str_)
+    try:
+        STR_TYPES = (str, np.str, np.str_)
+    except AttributeError:
+        # deprecation in numpy 1.24 of np.str
+        STR_TYPES = (str, np.str_)
+        
     def __init__(self, grid2op_env):
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")

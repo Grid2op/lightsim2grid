@@ -24,7 +24,7 @@
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 
-// import klu package
+// import nicslu package
 #include "nicslu_cpp.inl"
 
 #include "CustTimer.h"
@@ -68,9 +68,7 @@ class NICSLULinearSolver
         // prevent copy and assignment
         NICSLULinearSolver(const NICSLULinearSolver & other) = delete;
         NICSLULinearSolver & operator=( const NICSLULinearSolver & ) = delete;
-
-
-
+        
     private:
         // solver initialization
         CNicsLU solver_;

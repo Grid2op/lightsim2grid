@@ -1,12 +1,20 @@
-from setuptools import setup, Extension
-from setuptools.command.build_ext import build_ext
-import sys
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 import setuptools
+from setuptools import setup
+import sys
 import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
-__version__ = "0.7.0.post1"
+
+__version__ = "0.7.1"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -275,7 +283,7 @@ pkgs = {
         "benchmark": [
             "tabulate",
             "grid2op>=1.6.4",
-            "numpy",
+            "numpy>=1.20",
             "distro",
             "py-cpuinfo"
         ],
@@ -286,7 +294,7 @@ pkgs = {
         "test": [
             "grid2op>=1.6.4",
             "numba",
-            "pandapower==2.7.0"  # force this version for test, otherwise problem in test_DataConverter !
+            "pandapower>=2.8.0"
         ]
     }
 }
@@ -315,11 +323,11 @@ setup(name='LightSim2Grid',
       keywords='pandapower powergrid simulator KLU Eigen c++',
       classifiers=[
             'Development Status :: 4 - Beta',
-            'Programming Language :: Python :: 3.6',
             'Programming Language :: Python :: 3.7',
             'Programming Language :: Python :: 3.8',
             'Programming Language :: Python :: 3.9',
             'Programming Language :: Python :: 3.10',
+            'Programming Language :: Python :: 3.11',
             "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
             "Intended Audience :: Developers",
             "Intended Audience :: Education",

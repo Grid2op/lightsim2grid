@@ -511,7 +511,7 @@ class LightSimBackend(Backend):
         self.__me_at_init = self._grid.copy()
         self.__init_topo_vect = np.ones(self.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
-
+        
     def assert_grid_correct_after_powerflow(self):
         """
         This method is called by the environment. It ensure that the backend remains consistent even after a powerflow
@@ -828,7 +828,9 @@ class LightSimBackend(Backend):
                            "nb_bus_total", "initdc",
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
                            "_idx_hack_storage",
-                           "_timer_preproc", "_timer_postproc", "_timer_solver"]
+                           "_timer_preproc", "_timer_postproc", "_timer_solver",
+                           "_my_kwargs"
+                           ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
                 # this test is needed for backward compatibility with other grid2op version

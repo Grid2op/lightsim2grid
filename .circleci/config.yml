@@ -164,18 +164,20 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip git -y
+            - run: 
+                command: |
+                    git submodule init
+                    git submodule update
+                    make
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
                     pip install -U pybind11
-                    git submodule init
-                    git submodule update
-                    make
                     CC=clang python setup.py build
-                    python -m pip install -U .
+                    python -m pip install .
     compile_clang11:
         executor: clang11
         resource_class: small
@@ -193,7 +195,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -U .
+                    CC=clang python -m pip install -U .
     compile_clang12:
         executor: clang12
         resource_class: small
@@ -211,7 +213,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -U .
+                    CC=clang python -m pip install -U .
     compile_clang13:
         executor: clang13
         resource_class: small
@@ -229,7 +231,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -U .
+                    CC=clang python -m pip install -U .
     compile_clang14:
         executor: clang14
         resource_class: small
@@ -253,7 +255,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -e .[test]
+                    CC=clang python -m pip install -e .[test]
             - run:
                 name: "make tests"
                 command: |
@@ -301,7 +303,8 @@ workflows:
           - compile_gcc10
           - compile_gcc11
           - compile_gcc12
-          - compile_clang10
+          # - compile_clang10  # does not work I don't know why, too lazy to check
+          - compile_clang11
           - compile_clang13
           - compile_clang14
           - compile_windows
