@@ -23,6 +23,7 @@ Change Log
 - [FIXED] now an error if thrown if the bus indexes in the pandapower grid are not contiguous
   or do not start at 0 (thanks Roman Bolgaryn for spotting this issue)
 - [ADDED] automatic build for python 3.11
+- [ADDED] support for numpy >= 1.24 (some deprecation *eg** np.str and np.bool are removed)
 
 [0.7.0.post1] 2022-06-20
 -------------------------
