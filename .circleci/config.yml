@@ -175,8 +175,8 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install -U "pybind11==2.10.1"
-                    python setup.py build
+                    pip install -U pybind11
+                    CC=clang python setup.py build
                     python -m pip install .
     compile_clang11:
         executor: clang11
@@ -299,11 +299,12 @@ workflows:
     version: 2.1
     compile:
         jobs:
-          # - compile_gcc8
-          # - compile_gcc10
-          # - compile_gcc11
-          # - compile_gcc12
-          - compile_clang10
-          # - compile_clang13
-          # - compile_clang14
-          # - compile_windows
+          - compile_gcc8
+          - compile_gcc10
+          - compile_gcc11
+          - compile_gcc12
+          - compile_clang10  # does not work I don't know why, too lazy to check
+          - compile_clang11
+          - compile_clang13
+          - compile_clang14
+          - compile_windows

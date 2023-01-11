@@ -6,18 +6,12 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-from setuptools import setup
-from setuptools.command.build_ext import build_ext
-import sys
 import setuptools
+from setuptools import setup
+import sys
 import os
 import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
-
-####
-import pybind11
-print(f"INFO:pybind11 version {pybind11.__version__}")
-####
 
 
 __version__ = "0.7.0.post1"
