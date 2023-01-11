@@ -175,7 +175,7 @@ jobs:
                     git submodule update
                     CC=clang make
                     CC=clang python setup.py build
-                    CC=clang python -m pip install -U .
+                    CC=clang python -m pip install .
     compile_clang11:
         executor: clang11
         resource_class: small
