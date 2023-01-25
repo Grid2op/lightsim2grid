@@ -3,10 +3,14 @@ Change Log
 
 [TODO]
 --------
+- make an `init` function from pypowsybl
+- support DC powerline (as modeled in pandapower)
+- support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
+- use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
 - possibility to read CGMES files
 - possibility to read XIIDM files
@@ -17,8 +21,12 @@ Change Log
 
 [0.7.2] 2023-xx-yy
 --------------------
+- [FIXED] a bug in the `init` function that caused issue when importing a grid with multiple slack
+  on some cases
 - [ADDED] support for the CKTSO linear solver, which is slightly faster than SparseLU, KLU and NICSLU
   (this requires a compilation from source)
+- [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
+  are irrelevant. They have been removed.
 
 [0.7.1] 2023-01-11
 ---------------------

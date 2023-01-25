@@ -132,6 +132,7 @@ int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     // /!\ does not support multiple slack bus!!!
 
     int res=-1;
+    bool found=false;
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
     for(unsigned int k=0; k < pv.size(); ++k)
@@ -147,8 +148,12 @@ int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     {
         if(tmp[k])
         {
-            res = k;
-            break;
+            if(!found){
+                res = k;
+                found = true;
+            }else{
+                throw std::runtime_error("BaseSolver::extract_slack_bus_id: multiple slack bus found on your grid !");
+            }
         }
     }
     if(res == -1){

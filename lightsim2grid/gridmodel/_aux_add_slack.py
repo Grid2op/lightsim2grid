@@ -31,10 +31,10 @@ def _aux_add_slack(model, pp_net):
     slack_coeff = None
     if np.any(pp_net.gen["slack"].values):
         # most favorable cases
-        if np.sum(pp_net.gen["slack"].values) >= 2:
-            # TODO SLACK remove this warning ! (will be done at the end when more tests will be done)
-            warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
-                          "slack bus of pandapower will be used.")
+        # if np.sum(pp_net.gen["slack"].values) >= 2:
+        #     # TODO SLACK remove this warning ! (will be done at the end when more tests will be done)
+        #     warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
+        #                   "slack bus of pandapower will be used.")
         slack_gen_ids = np.where(pp_net.gen["slack"].values)[0]
         if "slack_weight" in pp_net.gen:
             slack_coeff = pp_net.gen["slack_weight"].values[slack_gen_ids]
@@ -60,9 +60,9 @@ def _aux_add_slack(model, pp_net):
         # first i try to see if a generator is connected to a slack bus
         # TODO SLACK: deactivate warnings (will be done at the end when more tests will be done)
         slack_bus_ids = pp_net.ext_grid["bus"].values
-        if pp_net.ext_grid.shape[0] >= 2:
-            warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
-                          "slack bus of pandapower will be used.")
+        # if pp_net.ext_grid.shape[0] >= 2:
+        #     warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
+        #                   "slack bus of pandapower will be used.")
 
         if np.all(np.isin(slack_bus_ids, pp_net.gen["bus"].values)):
             # all slack buses have a generator connected to them
@@ -104,7 +104,6 @@ def _aux_add_slack(model, pp_net):
             gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].values, [-999999.]))
             gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].values, [+99999.]))
             model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
-            slack_gen_ids = [pp_net.gen["bus"].shape[0]]
 
     # handle the possible distributed slack bus
     if slack_coeff is None:

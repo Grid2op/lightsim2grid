@@ -44,6 +44,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // this should be handled in Sbus, because we know the amount of power absorbed by the slack
     // so we can compute it correctly !
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
+    // Eigen::VectorXi my_pv = pv;
 
     // find the slack bus
     int slack_bus_id_solver = extract_slack_bus_id(my_pv, pq, nb_bus_solver);

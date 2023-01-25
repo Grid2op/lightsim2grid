@@ -14,7 +14,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
                                          CplxVect & V,
                                          const CplxVect & Sbus,
                                          const Eigen::VectorXi & slack_ids,
-                                         const RealVect & slack_weights,
+                                         const RealVect & slack_weights,  // unused here
                                          const Eigen::VectorXi & pv,
                                          const Eigen::VectorXi & pq,
                                          int max_iter,
@@ -48,12 +48,11 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
     Eigen::VectorXi my_pv = BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
+    // Eigen::VectorXi my_pv = pv; // BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
 
     const int n_pv = static_cast<int>(my_pv.size());
     const int n_pq = static_cast<int>(pq.size());
     Eigen::VectorXi pvpq(n_pv + n_pq);
-    //  for(int id=0; id < n_pv; ++id) pvpq[id] = pv[id];
-    //  for(int id=0; id < n_pq; ++id) pvpq[id + n_pv] = pq[id];
     pvpq << my_pv, pq; 
     const int n_pvpq = static_cast<int>(pvpq.size());
     std::vector<int> pvpq_inv(V.size(), -1);

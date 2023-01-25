@@ -231,7 +231,9 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     bool is_ac = true;
     bool reset_solver = topo_changed_;   // I reset the solver only if the topology change
     CplxVect V = pre_process_solver(Vinit, Ybus_ac_,
-                                    id_me_to_ac_solver_, id_ac_solver_to_me_, slack_bus_id_ac_solver_,
+                                    id_me_to_ac_solver_,
+                                    id_ac_solver_to_me_,
+                                    slack_bus_id_ac_solver_,
                                     is_ac, reset_solver);
 
     // start the solver
@@ -384,7 +386,9 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
     return res;
 }
 
-void GridModel::process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac,
+void GridModel::process_results(bool conv, CplxVect & res,
+                                const CplxVect & Vinit,
+                                bool ac,
                                 std::vector<int> & id_me_to_solver)
 {
     if (conv){
@@ -428,8 +432,6 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
 
     Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus, nb_bus);
     Ybus.reserve(nb_bus + 2*powerlines_.nb() + 2*trafos_.nb());
-
-
 }
 
 void GridModel::init_Sbus(CplxVect & Sbus,
