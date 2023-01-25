@@ -80,14 +80,7 @@ ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect
     bool stop = false;
     RealVect x;
     ErrorType err = ErrorType::NoError;
-    const auto n = J.cols(); // should be equal to J_.nrows()
     if(!has_just_been_inialized){
-        // if the call to "klu_factor" has been made this iteration, there is no need
-        // to re factor again the matrix
-        // i'm in the case where it has not
-        //        ret = klu_refactor(J_.outerIndexPtr(), J_.innerIndexPtr(), J_.valuePtr(), symbolic_, numeric_, &common_);
-
-        // solver.FactorizeMatrix(ax, 0); //use all created threads
         ret  = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
         if (ret < 0) {
             // std::cout << "NICSLULinearSolver::solve solver_.FactorizeMatrix error: " << ret << std::endl;
@@ -97,8 +90,7 @@ ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect
         }
     }
     if(!stop){
-        // ok = klu_solve(symbolic_, numeric_, n_, 1, &b(0), &common_);
-        // solver.Solve(b, x);
+        const auto n = J.cols(); // should be equal to J_.nrows()
         x = RealVect(n);
         ret = solver_.Solve(&b(0), &x(0));
         if (ret < 0) {

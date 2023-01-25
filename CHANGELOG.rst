@@ -15,12 +15,20 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.xx.yy] 2022-zz-tt
+[0.7.2] 2023-xx-yy
+--------------------
+- [ADDED] support for the CKTSO linear solver, which is slightly faster than SparseLU, KLU and NICSLU
+  (this requires a compilation from source)
+
+[0.7.1] 2023-01-11
 ---------------------
+- [BREAKING] drop support for numpy version < 1.20 (to be consistent with grid2op)
 - [FIXED] a compatibility issue with grid2op 1.7.2 (missing another backend attribute
   when the environment is copied) see https://github.com/rte-france/Grid2Op/issues/360
 - [FIXED] now an error if thrown if the bus indexes in the pandapower grid are not contiguous
   or do not start at 0 (thanks Roman Bolgaryn for spotting this issue)
+- [ADDED] automatic build for python 3.11
+- [ADDED] support for numpy >= 1.24 (some deprecation *eg** np.str and np.bool are removed)
 
 [0.7.0.post1] 2022-06-20
 -------------------------
