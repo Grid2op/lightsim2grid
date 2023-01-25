@@ -62,8 +62,11 @@ class CKTSOLinearSolver
             if(solver_!= nullptr) solver_->DestroySolver();
             if(ai_!= nullptr) delete [] ai_;
             if(ap_!= nullptr) delete [] ap_;
-            if(iparm_!= nullptr) delete iparm_;
-            if(oparm_!= nullptr) delete oparm_;
+            
+            // should not be deleted, see https://github.com/BDonnot/lightsim2grid/issues/52#issuecomment-1333565959
+            // if(iparm_!= nullptr) delete iparm_;
+            // if(oparm_!= nullptr) delete oparm_;
+            
          }
 
         // public api

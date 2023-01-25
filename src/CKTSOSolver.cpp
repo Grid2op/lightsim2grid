@@ -12,12 +12,17 @@
 
 
 ErrorType CKTSOLinearSolver::reset(){
+    std::cout << "CKTSOLinearSolver::reset() beg" << std::endl;
+
     // free everything
     if(solver_ != nullptr) solver_->DestroySolver();
+    std::cout << "CKTSOLinearSolver: after DestroySolver" << std::endl;
     if(ai_ != nullptr) delete [] ai_;
     if(ap_ != nullptr) delete [] ap_;
-    if(iparm_!= nullptr) delete iparm_;
-    if(oparm_!= nullptr) delete oparm_;
+
+    // should not be deleted, see https://github.com/BDonnot/lightsim2grid/issues/52#issuecomment-1333565959
+    // if(iparm_!= nullptr) delete iparm_;
+    // if(oparm_!= nullptr) delete oparm_;
 
     ai_ = nullptr;
     ap_ = nullptr;
@@ -85,7 +90,7 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
 
 ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
     // solves (for x) the linear system J.x = b
-    // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
+    // with standard use of lightsim2grid, the solver should have already been initialized
     // J is const even if it does not compile if said const
     int ret;
     bool stop = false;
@@ -101,6 +106,7 @@ ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect 
         }
     }
     if(!stop){
+        x = b;  // for initialization (TODO a copy is probably not needed)
         ret = solver_->Solve(&b(0), &x(0), false);
         if (ret < 0) {
             std::cout << "CKTSOLinearSolver::solve solver_.Solve error: " << ret << std::endl;
