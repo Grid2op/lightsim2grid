@@ -394,6 +394,11 @@ For that, you need to declare the environment variables `PATH_NICSLU` that point
 the NICSLU package (see https://github.com/chenxm1986/nicslu). 
 For example: `export PATH_NICSLU=/home/user/Documents/nicslu/nicslu202103`
 
+#### Enable CKTSO
+For that, you need to declare the environment variables `PATH_CKTSO` that points to a valid installation of
+the NICSLU package (see https://github.com/chenxm1986/cktso). 
+For example: `export PATH_NICSLU=/home/user/Documents/cktso`
+
 #### Enable 03 optimization
 By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
 to specify the `__COMPLILE_O3` environment variable: `set __COMPLILE_O3=1` before the compilation (so before
@@ -442,7 +447,7 @@ cd ..
 
 Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
 
-These tests include, for now, compilation on gcc (version 8, 10, 11 and 12) and clang (version 10, 13 and 14).
+These tests include, for now, compilation on gcc (version 8, 10, 11 and 12) and clang (version 11, 13 and 14).
 
 **NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. We suppose that if it works on *eg* clang 10 and clang 14 then it compiles also on all intermediate versions.
 

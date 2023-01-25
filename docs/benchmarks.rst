@@ -39,7 +39,7 @@ To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-We compare up to 9 different solvers:
+We compare up to 11 different solvers:
 
 - **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
   acceleration). It is our reference solver.
@@ -63,8 +63,15 @@ We compare up to 9 different solvers:
   it with lightsim2grid, you need to install lightsim2grid from source for such solver]
 - **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
+- **LS+CKTSO** (Newton Raphson+CKTSO): he grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver 
+  "CKTSO". [**NB** CKTSO is a free software but not open source, in order to use
+  it with lightsim2grid, you need to install lightsim2grid from source for such solver]
+- **LS+CKTSO (single)** (Newton Raphson+CKTSO): same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster.
 
-All benchmarks where done with all the customization (for speed, *eg* `-O3` for linux). See the readme for more information.
+All benchmarks where done with all the customization (for speed, *eg* `-O3` and `-march=native` for linux). 
+See the readme for more information.
 
 Computation time
 ~~~~~~~~~~~~~~~~~~~

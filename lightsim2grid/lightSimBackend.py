@@ -511,7 +511,7 @@ class LightSimBackend(Backend):
         self.__me_at_init = self._grid.copy()
         self.__init_topo_vect = np.ones(self.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
-
+        
     def assert_grid_correct_after_powerflow(self):
         """
         This method is called by the environment. It ensure that the backend remains consistent even after a powerflow

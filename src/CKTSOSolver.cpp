@@ -12,11 +12,8 @@
 
 
 ErrorType CKTSOLinearSolver::reset(){
-    std::cout << "CKTSOLinearSolver::reset() beg" << std::endl;
-
     // free everything
     if(solver_ != nullptr) solver_->DestroySolver();
-    std::cout << "CKTSOLinearSolver: after DestroySolver" << std::endl;
     if(ai_ != nullptr) delete [] ai_;
     if(ap_ != nullptr) delete [] ap_;
 
@@ -43,7 +40,6 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
             msg += "Please copy this file at the location you want to use the CKTSO solver.";
             std::cout << msg << std::endl;
         }
-        // std::cout << "CKTSOLinearSolver::reset() solver_.Initialize error: "  << ret_ << std::endl;
         return ErrorType::LicenseError;
     }
 
@@ -71,7 +67,7 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
                            nb_thread_);
     if (ret < 0){
         err = ErrorType::SolverAnalyze;
-        std::cout << "CKTSOLinearSolver::initialize() solver_->Analyze error: "  << ret << std::endl;
+        // std::cout << "CKTSOLinearSolver::initialize() solver_->Analyze error: "  << ret << std::endl;
         // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
         return err;
     }
@@ -81,7 +77,7 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
                              );
     if (ret < 0){
         err = ErrorType::SolverFactor;
-        std::cout << "CKTSOLinearSolver::initialize() solver_->Factorize error: "  << ret << std::endl;
+        // std::cout << "CKTSOLinearSolver::initialize() solver_->Factorize error: "  << ret << std::endl;
         // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
         return err;
     }
@@ -99,17 +95,18 @@ ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect 
     if(!has_just_been_inialized){
         ret  = solver_->Refactorize(J.valuePtr()); 
         if (ret < 0) {
-            std::cout << "CKTSOLinearSolver::solve solver_->Refactorize error: " << ret << std::endl;
+            // std::cout << "CKTSOLinearSolver::solve solver_->Refactorize error: " << ret << std::endl;
             // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
             err = ErrorType::SolverReFactor;
             stop = true;
         }
     }
     if(!stop){
-        x = b;  // for initialization (TODO a copy is probably not needed)
+        const auto n = J.cols(); // should be equal to J_.nrows()
+        x = RealVect(n);
         ret = solver_->Solve(&b(0), &x(0), false);
         if (ret < 0) {
-            std::cout << "CKTSOLinearSolver::solve solver_.Solve error: " << ret << std::endl;
+            // std::cout << "CKTSOLinearSolver::solve solver_.Solve error: " << ret << std::endl;
             err = ErrorType::SolverSolve;
         }
         b = x;
