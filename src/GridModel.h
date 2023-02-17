@@ -83,6 +83,10 @@ class GridModel : public DataGeneric
 
         // retrieve the underlying data (raw class)
         const DataGen & get_generators_as_data() const {return generators_;}
+        void turnedoff_no_pv(){generators_.turnedoff_no_pv();}  // turned off generators are not pv
+        void turnedoff_pv(){generators_.turnedoff_pv();}  // turned off generators are pv
+        bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
+
         const DataSGen & get_static_generators_as_data() const {return sgens_;}
         const DataLoad & get_loads_as_data() const {return loads_;}
         const DataLine & get_powerlines_as_data() const {return powerlines_;}

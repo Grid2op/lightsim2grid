@@ -28,11 +28,13 @@ class LightSimBackend(Backend):
     coded in c++, aiming at speeding up the computations.
     """
     def __init__(self,
-                 detailed_infos_for_cascading_failures: bool =False,
-                 can_be_copied: bool =True,
+                 detailed_infos_for_cascading_failures: bool=False,
+                 can_be_copied: bool=True,
                  max_iter: int=10,
                  tol: float=1e-8,
-                 solver_type: Optional[SolverType] =None):
+                 solver_type: Optional[SolverType]=None,
+                 turned_off_pv : bool=True  # are gen turned off (or with p=0) contributing to voltage or not
+                 ):
         try:
             # for grid2Op >= 1.7.1
             Backend.__init__(self,
@@ -40,7 +42,8 @@ class LightSimBackend(Backend):
                              can_be_copied=can_be_copied,
                              solver_type=solver_type,
                              max_iter=max_iter,
-                             tol=tol)
+                             tol=tol,
+                             turned_off_pv=turned_off_pv)
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
                           "you cannot set max_iter, tol nor solver_type arguments.")
@@ -148,7 +151,19 @@ class LightSimBackend(Backend):
         # TODO and should rather be handled in pandapower backend
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
-
+        
+        # does the "turned off" generators (including when p=0)
+        # are pv buses
+        self._turned_off_pv = turned_off_pv
+        
+    def turnedoff_no_pv(self):
+        self._turned_off_pv = False
+        self._grid.turnedoff_no_pv()
+        
+    def turnedoff_pv(self):
+        self._turned_off_pv = True
+        self._grid.turnedoff_pv()
+        
     def _fill_theta(self):
         # line_or_theta = np.empty(self.n_line)
         self.line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
@@ -286,19 +301,27 @@ class LightSimBackend(Backend):
         try:
             new_tol = float(new_tol)
         except Exception as exc_:
-            raise BackendError(f"Impossible to convert \"new_tol={new_tol}\" to an float with error \"{exc_}\"")
+            raise BackendError(f"Impossible to convert \"new_tol={new_tol}\" to an float with error \"{exc_}\"") from exc_
         if new_tol <= 0:
             raise BackendError("new_tol should be a strictly positive float (float > 0)")
         self.tol = new_tol
         self._idx_hack_storage = np.zeros(0, dtype=dt_int)
 
+    def _handle_turnedoff_pv(self):
+        if self._turned_off_pv:
+            self._grid.turnedoff_pv()
+        else:
+            self._grid.turnedoff_no_pv()
+            
     def load_grid(self, path=None, filename=None):
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
 
         self._grid = init(self.init_pp_backend._grid)
-
+        
+        self._handle_turnedoff_pv()
+            
         self.available_solvers = self._grid.available_solvers()
         if self.__current_solver_type is None:
             # previous default behaviour (< 0.7)
@@ -829,7 +852,8 @@ class LightSimBackend(Backend):
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
-                           "_my_kwargs"
+                           "_my_kwargs",
+                           "_turned_off_pv"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -962,6 +986,7 @@ class LightSimBackend(Backend):
         self._grid = self.__me_at_init.copy()
         self._grid.tell_topo_changed()
         self._grid.change_solver(self.__current_solver_type)
+        self._handle_turnedoff_pv()
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
         self._timer_postproc = 0.
