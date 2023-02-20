@@ -30,6 +30,8 @@ Change Log
 - [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
   are irrelevant. They have been removed.
 - [IMPROVED] slightly the documentation on the "sovlers" part
+- [IMPROVED] `SuiteSparse` is upgraded to version 5.13 (issue with build system based on cmake and BLAS)
+- [IMPROVED] upgrade to eigen `3.4.0` (stable release)
 
 [0.7.1] 2023-01-11
 ---------------------
@@ -126,7 +128,7 @@ Change Log
 - [FIXED] An issue where the backend could get "stuck" in a wrong state because of the way the Vinit was computed (see
   `Issue 30 <https://github.com/BDonnot/lightsim2grid/issues/30>`_)
 - [ADDED] experimental support for the `NICSLU` linear solver (requires a proper license and library, see
-  https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment.
+  https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment).
 - [IMPROVED] minor performance improvements for the solvers based on Newton Raphson (faster filling of the Jacobian
   matrix after the first iteration)
 
