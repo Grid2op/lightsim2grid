@@ -67,7 +67,7 @@ class GridModel : public DataGeneric
                 DataLoad::StateRes
                 >  StateRes;
 
-        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){
+        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true), init_vm_pu_(1.04), sn_mva_(1.0){
             _dc_solver.change_solver(SolverType::DC);
         }
         GridModel(const GridModel & other);
@@ -86,6 +86,9 @@ class GridModel : public DataGeneric
         void turnedoff_no_pv(){generators_.turnedoff_no_pv();}  // turned off generators are not pv
         void turnedoff_pv(){generators_.turnedoff_pv();}  // turned off generators are pv
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
+        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
+            generators_.update_slack_weights(could_be_slack, topo_changed_);
+        }
 
         const DataSGen & get_static_generators_as_data() const {return sgens_;}
         const DataLoad & get_loads_as_data() const {return loads_;}

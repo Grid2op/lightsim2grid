@@ -32,4 +32,17 @@ typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
 typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
 
+// define some constant for compilation outside of "setup.py"
+#ifndef VERSION_MAJOR
+#define VERSION_MAJOR -1
+#endif
+
+#ifndef VERSION_MEDIUM
+#define VERSION_MEDIUM -1
+#endif
+
+#ifndef VERSION_MINOR
+#define VERSION_MINOR -1
+#endif
+
 #endif // UTILS_H

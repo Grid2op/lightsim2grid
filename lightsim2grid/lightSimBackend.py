@@ -33,7 +33,8 @@ class LightSimBackend(Backend):
                  max_iter: int=10,
                  tol: float=1e-8,
                  solver_type: Optional[SolverType]=None,
-                 turned_off_pv : bool=True  # are gen turned off (or with p=0) contributing to voltage or not
+                 turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
+                 dist_slack_non_renew: bool=False  # distribute the slack on non renewable turned on (and with P>0) generators
                  ):
         try:
             # for grid2Op >= 1.7.1
@@ -43,7 +44,8 @@ class LightSimBackend(Backend):
                              solver_type=solver_type,
                              max_iter=max_iter,
                              tol=tol,
-                             turned_off_pv=turned_off_pv)
+                             turned_off_pv=turned_off_pv,
+                             dist_slack_non_renew=dist_slack_non_renew)
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
                           "you cannot set max_iter, tol nor solver_type arguments.")
@@ -155,6 +157,9 @@ class LightSimBackend(Backend):
         # does the "turned off" generators (including when p=0)
         # are pv buses
         self._turned_off_pv = turned_off_pv
+        
+        # distributed slack, on non renewable gen with P > 0
+        self._dist_slack_non_renew = dist_slack_non_renew
         
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
@@ -312,7 +317,23 @@ class LightSimBackend(Backend):
             self._grid.turnedoff_pv()
         else:
             self._grid.turnedoff_no_pv()
-            
+    
+    def _assign_right_solver(self):
+        has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
+        if has_single_slack and not self._dist_slack_non_renew:
+            if SolverType.KLUSingleSlack in self.available_solvers:
+                # use the faster KLU if available
+                self._grid.change_solver(SolverType.KLUSingleSlack)
+            else:
+                self._grid.change_solver(SolverType.SparseLUSingleSlack)
+        else:
+            # grid has multiple slack      
+            if SolverType.KLU in self.available_solvers:
+                # use the faster KLU if available
+                self._grid.change_solver(SolverType.KLU)
+            else:
+                self._grid.change_solver(SolverType.SparseLU)
+        
     def load_grid(self, path=None, filename=None):
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
@@ -327,20 +348,7 @@ class LightSimBackend(Backend):
             # previous default behaviour (< 0.7)
             # by default it builds the backend with the fastest solver
             # automatically found
-            has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
-            if has_single_slack:
-                if SolverType.KLUSingleSlack in self.available_solvers:
-                    # use the faster KLU if available
-                    self._grid.change_solver(SolverType.KLUSingleSlack)
-                else:
-                    self._grid.change_solver(SolverType.SparseLUSingleSlack)
-            else:
-                # grid has multiple slack      
-                if SolverType.KLUSingleSlack in self.available_solvers:
-                    # use the faster KLU if available
-                    self._grid.change_solver(SolverType.KLU)
-                else:
-                    self._grid.change_solver(SolverType.SparseLU)
+            self._assign_right_solver()
             
             if SolverType.KLUDC in self.available_solvers:
                 # use the faster KLU if available even for DC approximation
@@ -668,6 +676,12 @@ class LightSimBackend(Backend):
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
         # TODO have been correctly called before calling the function self._grid.update_topo
+        
+        self._handle_dist_slack()
+    
+    def _handle_dist_slack(self):
+        if self._dist_slack_non_renew:
+            self._grid.update_slack_weights(type(self).gen_redispatchable)
 
     def runpf(self, is_dc=False):
         my_exc_ = None
@@ -853,7 +867,7 @@ class LightSimBackend(Backend):
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
                            "_my_kwargs",
-                           "_turned_off_pv"
+                           "_turned_off_pv", "_dist_slack_non_renew"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):

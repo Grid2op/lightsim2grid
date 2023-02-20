@@ -23,8 +23,10 @@ Change Log
 --------------------
 - [FIXED] a bug in the `init` function that caused issue when importing a grid with multiple slack
   on some cases
-- [ADDED] support for the CKTSO linear solver, which is slightly faster than SparseLU, KLU and NICSLU
+- [ADDED] support for the CKTSO linear solver (on linux), which is slightly faster than SparseLU, KLU and NICSLU
   (this requires a compilation from source)
+- [ADDED] support for distributed slack bus in `LightSimBackend`
+- [ADDED] support for "generator with p=0. do not participate in voltage regulation" in `LightSimBackend`
 - [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
   are irrelevant. They have been removed.
 

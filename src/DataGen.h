@@ -170,6 +170,8 @@ class DataGen: public DataGeneric
     void turnedoff_no_pv(){turnedoff_gen_pv_=false;}  // turned off generators are not pv
     void turnedoff_pv(){turnedoff_gen_pv_=true;}  // turned off generators are pv
     bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
+    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+                              bool & need_reset);
 
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}

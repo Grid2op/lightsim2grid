@@ -107,7 +107,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        if(gen_slackbus_[gen_id])  res.coeffRef(bus_id_solver) += gen_slack_weight_[gen_id];
+        if(gen_slackbus_[gen_id]) res.coeffRef(bus_id_solver) += gen_slack_weight_[gen_id];
     }
     bus_slack_weight_ = res;
     real_type sum_res = res.sum();
@@ -314,6 +314,7 @@ void DataGen::set_p_slack(const RealVect& node_mismatch,
         const auto total_contrib_slack = bus_slack_weight_(bus_id_solver);
         const auto my_contrib_slack = gen_slack_weight_[gen_id];
         // now take "my part"
+        // std::cout << "gen_id " << gen_id << " my_contrib_slack " << my_contrib_slack << ", " << total_contrib_slack << " node_mismatch " << node_mismatch(bus_id_solver) << std::endl;
         res_p_(gen_id) += node_mismatch(bus_id_solver) * my_contrib_slack / total_contrib_slack;
     }
 }
@@ -369,3 +370,28 @@ void DataGen::set_q(const RealVect & reactive_mismatch, const std::vector<int> &
     }
 }
 
+
+void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+                                   bool & need_reset)
+{
+    const int nb_gen = nb();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(could_be_slack(gen_id) && status_[gen_id]){
+            // gen is connected and participate to the slack
+            if(p_mw_(gen_id) > 0.){
+                // gen is properly connected
+                if(!gen_slackbus_[gen_id]) need_reset = true; // it was not in the slack before, so I need to reset the solver
+                add_slackbus(gen_id, p_mw_(gen_id));
+
+            }else{
+                // gen is now "turned off"
+                if(gen_slackbus_[gen_id]) need_reset = true;  // it was in the slack before, so I need to reset the solver
+                remove_slackbus(gen_id);
+            }
+        }else{
+            if(gen_slackbus_[gen_id]) need_reset = true;  // it was in the slack before, I need to reset the solver
+            remove_slackbus(gen_id);
+        }
+    }
+}

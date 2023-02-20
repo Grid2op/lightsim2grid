@@ -490,6 +490,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("turnedoff_no_pv", &GridModel::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")
         .def("turnedoff_pv", &GridModel::turnedoff_pv, "Turned off (or generators with p = 0) generators will be pv buses, they will maintain voltage (default)")
         .def("get_turnedoff_gen_pv", &GridModel::get_turnedoff_gen_pv, "TODO")
+        .def("update_slack_weights", &GridModel::update_slack_weights, "TODO")
         
         .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
         .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
