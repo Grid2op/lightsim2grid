@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
-from typing import Optional, Type
+from typing import Optional, Union
 import warnings
 import numpy as np
 import time
@@ -208,7 +208,33 @@ class LightSimBackend(Backend):
                self.cst_1 * self.gen_theta, \
                self.cst_1 * self.storage_theta
 
-    def set_solver_type(self, solver_type):
+    def get_solver_types(self) -> Union[SolverType, SolverType]:
+        """Return the types of solver that are used in the form a tuple with 2 elements.
+        
+        The first one is the solver used for AC computation, the second one for DC computation (and also for
+        initialization of AC computations)
+        
+        You can use it to check what is used:
+        
+        .. code-block:: python
+
+            import grid2op
+            import lightsim2grid
+            from ligthsim2grid import LightSimBackend
+            
+            env_name = ...
+            env = grid2op.make(env_name, backend=LightSimBackend())
+            print(env.backend.get_solver_types())
+            # >>> (<SolverType.KLUSingleSlack: 7>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            
+            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLU))
+            print(env2.backend.get_solver_types())
+            # >>> (<SolverType.SparseLU: 0>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            
+        """
+        return self._grid.get_solver_type(), self._grid.get_dc_solver_type()
+        
+    def set_solver_type(self, solver_type: SolverType):
         """
         Change the type of solver you want to use.
 
@@ -257,11 +283,10 @@ class LightSimBackend(Backend):
         We do not recommend to modify the default value (10), unless you are using the GaussSeidel powerflow.
         This powerflow being slower, we do not recommend to use it.
 
-        Recommendation:
+        Recommendation, for medium sized grid (**eg** based on the ieee 118):
 
         - for SolverType.SparseLU: 10
         - for SolverType.GaussSeidel: 10000
-        - for SolverType.DC: this has no effect
         - for SolverType.SparseKLU: 10
 
         Parameters

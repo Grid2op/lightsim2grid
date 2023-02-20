@@ -1,3 +1,5 @@
+.. _solvers_doc:
+
 Available "solvers" (doc in progress)
 =======================================
 
@@ -11,26 +13,32 @@ Type of solvers available
 
 For now, lightsim2grid ships with at most TODO DOC fully working (and tested) solvers:
 
-- **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
+- **LS+GS** [:class:`lightsim2grid.solver.GaussSeidelSolver`]: the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
   solver to compute the powerflows.
-- **LS+GS S** (LightSimBackend+Gauss Seidel Synchronous): the grid2op backend based on lightsim2grid that uses a
+- **LS+GS S** [:class:`lightsim2grid.solver.GaussSeidelSynchSolver`]: the grid2op backend based on lightsim2grid that uses a
   variant of the "Gauss Seidel" method to compute the powerflows.
-- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
+- **LS+SLU** [:class:`lightsim2grid.solver.SparseLUSolver`]: the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
   Eigen c++ library (available on all platform). This solver supports distributed slack bus.
-- **LS+SLU (single)** (Newton Raphson+SparseLU): same as above but this solver does not support distributed slack bus and
+- **LS+SLU (single)** [:class:`lightsim2grid.solver.SparseLUSolverSingleSlack`]: same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
+- **LS+KLU** [:class:`lightsim2grid.solver.KLUSolver`]: he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.
-- **LS+KLU (single)** (Newton Raphson+KLU): same as above but this solver does not support distributed slack bus and
+- **LS+KLU (single)** [:class:`lightsim2grid.solver.KLUSolverSingleSlack`]: same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
+- **LS+NICSLU** [:class:`lightsim2grid.solver.NICSLUSolver`]: he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "NICSLU". [**NB** NICSLU is a free software but not open source, in order to use
   it with lightsim2grid, you need to install lightsim2grid from source for such solver]
-- **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
+- **LS+NICSLU (single)** [:class:`lightsim2grid.solver.NICSLUSolverSingleSlack`]: same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
+- **LS+CKTSO** [:class:`lightsim2grid.solver.CKTSOSolver`]: he grid2op backend based on lightsim2grid that uses the 
+  "Newton Raphson" algorithm coupled with the linear solver 
+  "CKTSO". [**NB** CKTSO is a free software but not open source, in order to use
+  it with lightsim2grid, you need to install lightsim2grid from source for such solver] (only tested on linux)
+- **LS+CKTSO (single)** [:class:`lightsim2grid.solver.CKTSOSolverSingleSlack`]: same as above but this solver does not support distributed slack bus and
+  can thus be slightly faster. (only tested on linux)
 
 Usage
 --------------------------
@@ -62,6 +70,8 @@ A concrete example of how to change the solver in this backend is:
     env_lightsim.backend.set_solver_max_iter(10000)  # all solvers here are iterative, this is the maximum number of iterations
     env_lightsim.backend.set_tol(1e-7)  # change the tolerance (smaller tolerance gives a more accurate results but takes longer to compute)
     # see the documentation of LightSimBackend for more information
+
+    env_lightsim.reset()  # do not forget to reset
 
 For the list of availbale solvers, you can consult the "enum" :class:`lightsim2grid.solver.SolverType`.
 

@@ -29,6 +29,7 @@ Change Log
 - [ADDED] support for "generator with p=0. do not participate in voltage regulation" in `LightSimBackend`
 - [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
   are irrelevant. They have been removed.
+- [IMPROVED] slightly the documentation on the "sovlers" part
 
 [0.7.1] 2023-01-11
 ---------------------

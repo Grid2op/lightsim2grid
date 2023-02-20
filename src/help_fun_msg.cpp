@@ -109,7 +109,16 @@ const std::string DocSolver::SparseLUSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `SparseLU` member (*eg* `env_lightsim.backend.set_solver_typelightsim2grid.solver.SolverType.SparseLU)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `SparseLU`.
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLU)` at creation time    
+    
+    .. note::
+        Available on all plateform, this is the default solver used when :class:`lightsim2grid.solver.SolverType.KLUSolverSingleSlack`
+        is not found (when a "single slack" is detected).
 
 )mydelimiter";
 
@@ -121,7 +130,16 @@ const std::string DocSolver::SparseLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `SparseLUSolverSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.SparseLUSolverSingleSlack)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `SparseLUSolverSingleSlack` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.SparseLUSolverSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLUSolverSingleSlack)` at creation time
+
+    .. note::
+        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.SolverType.KLUSolver`
+        is not found.
 
 )mydelimiter";
 
@@ -133,7 +151,18 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `DC` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.DC)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `DC` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.DC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.DC)` at creation time
+
+    .. warning::
+        This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
+        it when you create the grid2op environment, for example with "param.ENV_DC=True".
+
+        Otherwise, it is used internally to find good starting point to intialize the real AC solver.
 
 )mydelimiter";
 
@@ -145,7 +174,15 @@ const std::string DocSolver::KLUSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `KLU` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLU)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `KLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.KLU)` at creation time
+
+    .. note::
+        This is the default solver used when a distributed slack bus is detected (when it's available, otherwise see :class:`lightsim2grid.solver.SparseLUSolver`).
 
 )mydelimiter";
 
@@ -157,7 +194,15 @@ const std::string DocSolver::KLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `KLUSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLUSingleSlack)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `KLUSingleSlack` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLUSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.KLUSingleSlack)` at creation time
+
+    .. note::
+        This is the default solver used when available.
 
 )mydelimiter";
 
@@ -169,7 +214,18 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `KLUDC` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLUDC)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `KLUDC` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLUDC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.KLUDC)` at creation time
+
+    .. warning::
+        This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
+        it when you create the grid2op environment, for example with "param.ENV_DC=True".
+
+        Otherwise, it is used internally to find good starting point to intialize the real AC solver.
 
 )mydelimiter";
 
@@ -181,7 +237,12 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLU` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLU)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `NICSLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.NICSLU)` at creation time
 
     .. note::
 
@@ -197,7 +258,12 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLUSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUSingleSlack)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `NICSLUSingleSlack` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.NICSLUSingleSlack)` at creation time    
     
     .. note::
 
@@ -213,7 +279,18 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `NICSLUDC` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUDC)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `NICSLUDC` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUDC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.NICSLUDC)` at creation time
+
+    .. warning::
+        This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
+        it when you create the grid2op environment, for example with "param.ENV_DC=True".
+
+        Otherwise, it is used internally to find good starting point to intialize the real AC solver.
 
     .. note::
 
@@ -229,7 +306,12 @@ const std::string DocSolver::CKTSOSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `CKTSO` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSO)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `CKTSO` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.CKTSO)` at creation time
 
     .. note::
 
@@ -245,7 +327,12 @@ const std::string DocSolver::CKTSOSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `CKTSOSingleSlack` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSOSingleSlack)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `CKTSOSingleSlack` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSOSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.CKTSOSingleSlack)` at creation time
 
     .. note::
 
@@ -261,7 +348,18 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `CKTSODC` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSODC)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `CKTSODC` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSODC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.CKTSODC)` at creation time
+
+    .. warning::
+        This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
+        it when you create the grid2op environment, for example with "param.ENV_DC=True".
+
+        Otherwise, it is used internally to find good starting point to intialize the real AC solver.
 
     .. note::
 
@@ -271,7 +369,7 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
 
 const std::string DocSolver::GaussSeidelSolver = R"mydelimiter(
     Default implementation of the "Gauss Seidel" powerflow solver. We do not recommend to use it as the Newton Raphson based solvers
-    are usually much faster.
+    are usually much (much) faster.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -279,12 +377,15 @@ const std::string DocSolver::GaussSeidelSolver = R"mydelimiter(
 
         In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `GaussSeidel` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.GaussSeidel)`).
 
+    .. warning::
+        It currently does not support distributed slack.
+
 )mydelimiter";
 
 const std::string DocSolver::GaussSeidelSynchSolver = R"mydelimiter(
     Variant implementation of the "Gauss Seidel" powerflow solver, where every buses are updated at once (can be significantly faster than the 
     :class:`lightsim2grid.solver.GaussSeidelSolver` for larger grid). We still do not recommend to use it as the Newton Raphson based solvers
-    are usually much faster.
+    are usually much (much) faster.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -292,6 +393,9 @@ const std::string DocSolver::GaussSeidelSynchSolver = R"mydelimiter(
 
         In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `GaussSeidelSynch` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.GaussSeidelSynch)`).
 
+    .. warning::
+        It currently does not support distributed slack.
+        
 )mydelimiter";
 
 const std::string DocSolver::AnySolver = R"mydelimiter(
