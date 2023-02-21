@@ -53,6 +53,15 @@ class Computers: public BaseMultiplePowerflow
                        const CplxVect & Vinit,
                        const int max_iter,
                        const real_type tol);
+                       
+        virtual void clear(){
+            BaseMultiplePowerflow::clear();
+            _Sbuses = CplxMat();
+            _status = 1;
+            _compute_flows = true;
+            _timer_total = 0.;
+            _timer_pre_proc = 0.;
+        }
 
         Eigen::Ref<const CplxMat > get_sbuses() const {return _Sbuses;}
         Eigen::Ref<const RealMat > compute_flows() {
@@ -105,7 +114,7 @@ class Computers: public BaseMultiplePowerflow
                 bus_id_solver = id_me_to_ac_solver[bus_id_me];
                 const auto & tmp = temporal_data.col(el_id).cast<cplx_type>();
                 if(add) Sbuses.col(bus_id_solver) += BaseConstants::my_i * tmp;
-                else Sbuses.col(bus_id_solver) -= BaseConstants::my_i * tmp;;
+                else Sbuses.col(bus_id_solver) -= BaseConstants::my_i * tmp;
             }
         }
 

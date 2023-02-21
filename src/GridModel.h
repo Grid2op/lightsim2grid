@@ -345,6 +345,9 @@ class GridModel : public DataGeneric
         Eigen::Ref<const Eigen::VectorXi> get_slack_ids() const{
             return slack_bus_id_ac_solver_;
         }
+        Eigen::Ref<const Eigen::VectorXi> get_slack_ids_dc() const{
+            return slack_bus_id_dc_solver_;
+        }
         Eigen::Ref<const RealVect> get_slack_weights() const{
             return slack_weights_;
         }
@@ -445,6 +448,10 @@ class GridModel : public DataGeneric
         {
             n_sub_ = n_sub;
         }
+        
+        void fillSbus_other(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver){
+            fillSbus_me(res, ac, id_me_to_solver);
+        }
 
     protected:
     // add method to change topology, change ratio of transformers, change
@@ -474,7 +481,7 @@ class GridModel : public DataGeneric
                        std::vector<int>& id_solver_to_me,
                        Eigen::VectorXi & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, Eigen::VectorXi & slack_bus_id_solver);
+        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
                        Eigen::VectorXi & slack_bus_id_solver);
 

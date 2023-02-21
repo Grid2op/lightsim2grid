@@ -82,7 +82,7 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
 }
 
 
-void DataSGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){
     const int nb_sgen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
@@ -100,7 +100,7 @@ void DataSGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_gr
             throw std::runtime_error(exc_.str());
         }
         tmp = static_cast<cplx_type>(p_mw_(sgen_id));
-        if(ac) tmp += my_i * q_mvar_(sgen_id);
+        tmp += my_i * q_mvar_(sgen_id);
         Sbus.coeffRef(bus_id_solver) += tmp;
     }
 }

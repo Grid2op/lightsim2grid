@@ -159,7 +159,7 @@ class DataSGen: public DataGeneric
     void change_p(int sgen_id, real_type new_p, bool & need_reset);
     void change_q(int sgen_id, real_type new_q, bool & need_reset);
 
-    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,

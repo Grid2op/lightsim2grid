@@ -75,9 +75,9 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataShunt::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver)  // in DC i need that
+void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver)  // in DC i need that
 {
-    if(ac) return;  // in AC I do not do that
+    // if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;
     // - bus[:, GS] / baseMVA  # in pandapower
     // yish=gish+jbish -> so g is the MW !

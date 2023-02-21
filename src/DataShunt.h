@@ -137,7 +137,7 @@ class DataShunt : public DataGeneric
                           const std::vector<int> & id_grid_to_solver,
                           real_type sn_mva);
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // in DC i need that
+    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver);  // in DC i need that
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,

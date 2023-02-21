@@ -648,6 +648,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // status
         .def("get_status", &Computers::get_status, DocComputers::get_status.c_str())
+        .def("clear", &Computers::clear, DocComputers::clear.c_str())
+        .def("close", &Computers::clear, DocComputers::clear.c_str())
 
         // perform the computations
         .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
@@ -677,6 +679,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // remove some defaults (TODO)
         .def("reset", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
         .def("clear", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("close", &SecurityAnalysis::clear, DocComputers::clear.c_str())
         .def("remove_n1", &SecurityAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
         .def("remove_nk", &SecurityAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
         .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())

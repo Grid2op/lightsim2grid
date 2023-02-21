@@ -204,6 +204,7 @@ struct DocComputers
     static const std::string get_power_flows;
     static const std::string get_voltages;
     static const std::string get_sbuses;
+    static const std::string clear;
 };
 
 struct DocSecurityAnalysis

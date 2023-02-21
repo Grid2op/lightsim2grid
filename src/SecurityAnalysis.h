@@ -64,7 +64,15 @@ class SecurityAnalysis: public BaseMultiplePowerflow
         }
 
         // utilities to remove defaults to simulate (TODO)
-        void clear(){_li_defaults.clear();}
+        virtual void clear(){
+            BaseMultiplePowerflow::clear();
+            _li_defaults.clear();
+            _li_coeffs.clear();
+            _timer_total = 0.;
+            _timer_modif_Ybus = 0.;
+            _timer_pre_proc = 0.;
+        }
+        
         bool remove_n1(int line_id){
             check_ok_el(line_id);
             std::set<int> this_default = {line_id};
@@ -140,7 +148,7 @@ class SecurityAnalysis: public BaseMultiplePowerflow
                 throw std::runtime_error(exc_.str());
             }
         }
-        void init_li_coeffs();
+        void init_li_coeffs(bool ac_solver_used);
         // remove the line parameters from Ybus, this is to emulate its disconnection
         bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus

@@ -34,11 +34,13 @@ It can be used as:
 
     security_analysis = SecurityAnalysis(env)
     security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
-    res_a, res_v = security_analysis.get_flows()
+    res_p, res_a, res_v = security_analysis.get_flows()
 
     # in this results, then
-    # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
-    # you can retrieve it with `security_analysis.contingency_order[row_id]`
+    # res_p[row_id] will be the active power flows (origin side), on all powerlines corresponding to the `row_id` contingency.
+    # res_a[row_id] will be the current flows, on all powerlines corresponding to step "row_id"
+    # res_v[row_id] will be the complex voltage, on all bus of the grid corresponding to the `row_id` contingency.
+    # you can retrieve which contingency is id'ed `row_id` with `security_analysis.contingency_order[row_id]`
 
 For now this relies on grid2op, but we could imagine a version of this class that can read
 to / from other data sources.

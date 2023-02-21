@@ -36,49 +36,56 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     _timer_solver = 0.;
 
     auto timer_preproc = CustTimer();
+
+    // init the computations
     const auto & sn_mva = _grid_model.get_sn_mva();
-    Eigen::SparseMatrix<cplx_type> Ybus = _grid_model.get_Ybus(); 
-    const auto & id_me_to_ac_solver = _grid_model.id_me_to_ac_solver();
-    const auto & id_ac_solver_to_me = _grid_model.id_ac_solver_to_me();
+    const bool ac_solver_used = _solver.ac_solver_used();
+    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus() : _grid_model.get_dcYbus();
+    const Eigen::Index nb_buses_solver = Ybus.cols();
+
+    const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
+    const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
     const auto & generators = _grid_model.get_generators_as_data();
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
 
     const Eigen::Index nb_steps = gen_p.rows();
-    const Eigen::Index nb_buses_solver = Ybus.cols();  // which is equal to Ybus.rows();
 
     const Eigen::VectorXi & bus_pv = _grid_model.get_pv();
     const Eigen::VectorXi & bus_pq = _grid_model.get_pq();
-    const Eigen::VectorXi & slack_ids = _grid_model.get_slack_ids();
+    const Eigen::VectorXi & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids(): _grid_model.get_slack_ids_dc();
     const RealVect & slack_weights = _grid_model.get_slack_weights();
     _solver.reset();
 
-    // init the computations
     // now build the Sbus
     _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver);
 
     bool add_ = true;
-    fill_SBus_real(_Sbuses, generators, gen_p, id_me_to_ac_solver, add_);
-    fill_SBus_real(_Sbuses, s_generators, sgen_p, id_me_to_ac_solver, add_);
+    fill_SBus_real(_Sbuses, generators, gen_p, id_me_to_solver, add_);
+    fill_SBus_real(_Sbuses, s_generators, sgen_p, id_me_to_solver, add_);
     add_ = false;
-    fill_SBus_real(_Sbuses, loads, load_p, id_me_to_ac_solver, add_);
-    fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_ac_solver, add_);
+    fill_SBus_real(_Sbuses, loads, load_p, id_me_to_solver, add_);
+    fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver, add_);
     if(sn_mva != 1.0) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
+    // TODO trafo hack for Sbus !
 
     // init the results matrices
     _voltages = BaseMultiplePowerflow::CplxMat::Zero(nb_steps, nb_total_bus); 
     _amps_flows = RealMat::Zero(0, n_total_);
 
     // extract V solver from the given V
-    CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_ac_solver);
+    CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
     _timer_pre_proc = timer_preproc.duration();
 
     // compute the powerflows
-    // do the computa   tion for each step
+    // set the "right" init vector
     CplxVect V = Vinit_solver;
+    _grid_model.get_generators().set_vm(V, id_me_to_solver);
+
     bool conv;
     Eigen::Index step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
+    // do the computation for each step
     for(Eigen::Index i = 0; i < nb_steps; ++i){
         conv = false;
         conv = compute_one_powerflow(Ybus,
@@ -94,7 +101,7 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
             _timer_total = timer.duration();
             return _status;
         }
-        if(conv && step_diverge < 0) _voltages.row(i)(id_ac_solver_to_me) = V.array();
+        if(conv && step_diverge < 0) _voltages.row(i)(id_solver_to_me) = V.array();
         else step_diverge = i;
     }
     if(step_diverge > 0){

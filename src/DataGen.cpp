@@ -115,7 +115,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
     return res;
 }
 
-void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     real_type tmp;
@@ -247,7 +247,7 @@ void DataGen::change_v(int gen_id, real_type new_v_pu, bool & need_reset)
     vm_pu_(gen_id) = new_v_pu;
 }
 
-void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
+void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;

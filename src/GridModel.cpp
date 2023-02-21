@@ -352,7 +352,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver); // TODO what if pv and pq changed ? :O
     
     generators_.init_q_vector(static_cast<int>(bus_vn_kv_.size()));
-    fillSbus_me(Sbus_, is_ac, id_me_to_solver, slack_bus_id_solver);
+    fillSbus_me(Sbus_, is_ac, id_me_to_solver);
 
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
@@ -386,7 +386,8 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
     return res;
 }
 
-void GridModel::process_results(bool conv, CplxVect & res,
+void GridModel::process_results(bool conv,
+                                CplxVect & res,
                                 const CplxVect & Vinit,
                                 bool ac,
                                 std::vector<int> & id_me_to_solver)
@@ -475,16 +476,16 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     res.makeCompressed();
 }
 
-void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver, Eigen::VectorXi & slack_bus_id_solver)
+void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver)
 {
     // init the Sbus vector
-    powerlines_.fillSbus(Sbus, true, id_me_to_solver);
-    trafos_.fillSbus(Sbus, ac, id_me_to_solver);
-    shunts_.fillSbus(Sbus, true, id_me_to_solver);
-    loads_.fillSbus(Sbus, true, id_me_to_solver);
-    sgens_.fillSbus(Sbus, true, id_me_to_solver);
-    storages_.fillSbus(Sbus, true, id_me_to_solver);
-    generators_.fillSbus(Sbus, true, id_me_to_solver);
+    powerlines_.fillSbus(Sbus, id_me_to_solver);
+    trafos_.fillSbus(Sbus, id_me_to_solver);
+    shunts_.fillSbus(Sbus, id_me_to_solver);
+    loads_.fillSbus(Sbus, id_me_to_solver);
+    sgens_.fillSbus(Sbus, id_me_to_solver);
+    storages_.fillSbus(Sbus, id_me_to_solver);
+    generators_.fillSbus(Sbus, id_me_to_solver);
 
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !

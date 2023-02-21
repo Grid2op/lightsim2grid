@@ -72,7 +72,7 @@ class DataGeneric : public BaseConstants
                               const std::vector<int> & id_grid_to_solver,
                               real_type sn_mva) {};
         virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
-        virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){};
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             Eigen::VectorXi & slack_bus_id_solver,

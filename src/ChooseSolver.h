@@ -75,6 +75,11 @@ class ChooseSolver
             return res;
         }
         SolverType get_type() const {return _solver_type;}
+        
+        bool ac_solver_used() const{
+            auto p_solver = get_prt_solver("ac_solver_used", false);
+            return p_solver->IS_AC;
+        }
 
         void change_solver(const SolverType & type)
         {

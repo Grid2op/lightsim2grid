@@ -23,14 +23,19 @@ Change Log
 --------------------
 - [FIXED] a bug in the `init` function that caused issue when importing a grid with multiple slack
   on some cases
+- [FIXED] some bugs in the "SecurityAnalysis" and "TimeSerie" modules especially in DC mode.
+- [FIXED] a bug in the DC comptuation: some "divergence" were not catched
+- [FIXED] a bug in the "Computer" (cpp) class where the intial voltage could lead to generator not
+  participating correctly to the voltage regulation (wrong output voltage level).
 - [ADDED] support for the CKTSO linear solver (on linux), which is slightly faster than SparseLU, KLU and NICSLU
   (this requires a compilation from source)
 - [ADDED] support for distributed slack bus in `LightSimBackend`
 - [ADDED] support for "generator with p=0. do not participate in voltage regulation" in `LightSimBackend`
+- [ADDED] support for the DC computation for "SecurityAnalysis" and "TimeSerie" modules
 - [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
   are irrelevant. They have been removed.
 - [IMPROVED] slightly the documentation on the "sovlers" part
-- [IMPROVED] `SuiteSparse` is upgraded to version 5.13 (issue with build system based on cmake and BLAS)
+- [IMPROVED] `SuiteSparse` is upgraded to version 5.13 (issue with build system based on cmake and BLAS for SuiteSparse >= 6.0)
 - [IMPROVED] upgrade to eigen `3.4.0` (stable release)
 
 [0.7.1] 2023-01-11

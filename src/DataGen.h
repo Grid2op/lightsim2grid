@@ -182,7 +182,7 @@ class DataGen: public DataGeneric
     void change_p(int gen_id, real_type new_p, bool & need_reset);
     void change_v(int gen_id, real_type new_v_pu, bool & need_reset);
 
-    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver);
     virtual void fillpv(std::vector<int>& bus_pv,
                         std::vector<bool> & has_bus_been_added,
                         Eigen::VectorXi & slack_bus_id_solver,
@@ -204,7 +204,7 @@ class DataGen: public DataGeneric
     this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
     the ac powerflow
     **/
-    void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver);
+    void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}

@@ -243,7 +243,7 @@ class SecurityAnalysis(object):
         """
         Retrieve the flows after each contingencies has been simulated.
 
-        Each row of the resulting flow matrix will correspond of a contingency simulated in the arguments.
+        Each row of the resulting flow matrix will correspond to a contingency simulated in the arguments.
 
         You can require only the result on some contingencies with the `args` argument, but in each case, all the results will
         be computed. If you don't specify anything, the results will be returned for all contingencies (which we recommend to do)
@@ -342,3 +342,9 @@ class SecurityAnalysis(object):
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
         self._mws = 1.0 * self.computer.compute_power_flows()
         return self._mws
+
+    def close(self):
+        """permanently close the object"""
+        self.grid2op_env.close()
+        self.clear()
+        self.computer.close()

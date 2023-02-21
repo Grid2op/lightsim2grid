@@ -2123,7 +2123,7 @@ const std::string DocComputers::get_voltages = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocComputers::get_sbuses = R"mydelimiter(
-    Ge the complex power injected at each (solver id) bus of the powergrid. Results are given in pair unit.
+    Get the complex power injected at each (solver id) bus of the powergrid. Results are given in pair unit.
     We do not recommend to use it as it uses the solver id and NOT the powergrid bus id (you can refer to 
     :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and 
     :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for more information)
@@ -2137,6 +2137,11 @@ const std::string DocComputers::get_sbuses = R"mydelimiter(
     -------
     Sbuses: ``numpy.ndarry`` (matrix)
         The complex power injected at each bus (pair unit, load sign convention)
+
+)mydelimiter";
+
+const std::string DocComputers::clear = R"mydelimiter(
+    Clear the solver and to as if the class never performed any powerflow.
 
 )mydelimiter";
 

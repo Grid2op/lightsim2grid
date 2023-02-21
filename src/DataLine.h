@@ -200,6 +200,13 @@ class DataLine : public DataGeneric
     Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
     Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
 
+    Eigen::Ref<const CplxVect> ydc_ff() const {return ydc_ff_;}
+    Eigen::Ref<const CplxVect> ydc_ft() const {return ydc_ft_;}
+    Eigen::Ref<const CplxVect> ydc_tf() const {return ydc_tf_;}
+    Eigen::Ref<const CplxVect> ydc_tt() const {return ydc_tt_;}
+    // for consistency with trafo, when used for example in BaseMultiplePowerflow...
+    Eigen::Ref<const RealVect> dc_x_tau_shift() const {return RealVect();}
+
     protected:
         void _update_model_coeffs();
 
