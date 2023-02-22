@@ -6,21 +6,11 @@ the world of power system.
 See the [Disclaimer](DISCLAIMER.md) to have a more detailed view on what is and what is not this package. For example
 this package should not be used for detailed power system computations or simulations.
 
-
 *   [1 Usage](#Usage)
     *   [1.1. As a grid2op backend (preferred method)](#1-as-a-grid2op-backend-preferred-method)
     *   [1.2. replacement of pandapower "newtonpf" method (advanced method)](#2-replacement-of-pandapower-newtonpf-method-advanced-method)
 *   [2 Installation (from pypi official repository, recommended)](#Installation-from-pypi-official-repository-recommended)
 *   [3 Installation (from source, for more advanced user)](#Installation-from-source-for-more-advanced-user)
-    *   [3.0 Important note](#Important-note)
-    *   [3.1. Retrieve the sources](#1-Retrieve-the-sources)
-    *   [(optional, recommended) Compilation of SuiteSparse](#optional-recommended-Compilation-of-SuiteSparse)
-        *   [option A. Compilation of SuiteSparse using "make"](#optional-option-a-Compilation-of-SuiteSparse-using-make)
-        *   [option B. Compilation of SuiteSparse using "cmake"](#optional-option-b-Compilation-of-SuiteSparse-using-cmake)
-    *   [(optional) Include NICSLU linear solver (experimental)](#optional-Include-NICSLU-linear-solver-experimental)
-    *   [(optional) Include CKTSO linear solver (experimental)](#optional-Include-CKTSO-linear-solver-experimental)
-    *   [(optional) customization of the installation](#optional-customization-of-the-installation)
-    *   [3.2 Installation of the python package](#2-Installation-of-the-python-package)
 *   [4. Benchmarks](#Benchmarks)
 *   [5. Philosophy](#Philosophy)
 *   [6. Miscellaneous](#Miscellaneous)
@@ -29,6 +19,7 @@ this package should not be used for detailed power system computations or simula
     * [6.3 Local testing](#Local-testing)
     * [6.4 Tests performed automatically](#Tests-performed-automatically)
     * [5.5 Known issues](#Known-issues)
+
 
 ## Usage
 Once installed (don't forget, if you used the optional virtual env
