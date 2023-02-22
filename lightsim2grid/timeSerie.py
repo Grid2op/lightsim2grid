@@ -192,7 +192,8 @@ class TimeSerie:
         """
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
-        mws = self.computer.compute_power_flows()
+        mws = 1. * self.computer.compute_power_flows() # If I don't copy, lazy eval may break stuff... 
+        # eg test_time_series_dc.py does behave stochastically
         return mws
 
     def get_flows(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):
