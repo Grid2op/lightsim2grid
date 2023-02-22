@@ -31,14 +31,14 @@ class TestSADC_14(unittest.TestCase):
         res_p, res_a, res_v  = self.sa.get_flows()
         
         self.sa.clear()
-        self.sa.computer.change_solver(SolverType.KLUDC)
+        self.sa.computer.change_solver(SolverType.SparseLUDC)
         self.sa.add_all_n1_contingencies()
         res_p_dc, res_a_dc, res_v_dc  = self.sa.get_flows()
         
         assert np.any(res_p != res_p_dc)
         assert np.any(res_a != res_a_dc)
         assert np.any(res_v != res_v_dc)
-        assert self.sa.computer.get_solver_type() == SolverType.KLUDC
+        assert self.sa.computer.get_solver_type() == SolverType.SparseLUDC
         
         nb_bus = self.env.n_sub
         nb_powerline = len(self.env.backend._grid.get_lines())
