@@ -32,6 +32,9 @@ typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
 typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
 
+// type of error in the different solvers
+enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue, SolverAnalyze, SolverFactor, SolverReFactor, SolverSolve, NotInitError, LicenseError};
+
 // define some constant for compilation outside of "setup.py"
 #ifndef VERSION_MAJOR
 #define VERSION_MAJOR -1

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,7 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-# TODO add the other solver now !
 __all__ = ["SolverType",
            "ErrorType",
            "AnySolver",  
@@ -44,6 +43,17 @@ try:
     __all__.append("NICSLUSolver")
     __all__.append("NICSLUSolverSingleSlack")
     __all__.append("NICSLUDCSolver")
+except Exception as exc_:
+    # NICSLU is not available
+    pass
+
+try:
+    from lightsim2grid_cpp import CKTSOSolver
+    from lightsim2grid_cpp import CKTSOSolverSingleSlack
+    from lightsim2grid_cpp import CKTSODCSolver
+    __all__.append("CKTSOSolver")
+    __all__.append("CKTSOSolverSingleSlack")
+    __all__.append("CKTSODCSolver")
 except Exception as exc_:
     # NICSLU is not available
     pass

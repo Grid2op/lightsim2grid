@@ -41,7 +41,7 @@ class ChooseSolver
         std::vector<SolverType> available_solvers() const
         {
             std::vector<SolverType> res;
-            res.reserve(11);
+            res.reserve(14);
 
             res.push_back(SolverType::SparseLU);
             res.push_back(SolverType::GaussSeidel);
@@ -88,7 +88,7 @@ class ChooseSolver
             #ifndef KLU_SOLVER_AVAILABLE
                 if((type == SolverType::KLU) || (type == SolverType::KLUDC) || (type == SolverType::KLUSingleSlack)){
                     std::string msg;
-                    msg = "Impossible to change for the KLU solver, that is not available on your platform.";
+                    msg = "Impossible to change for a solver using KLU for linear algebra. Please compile lightsim2grid from source to benefit from this.";
                     throw std::runtime_error(msg);
                 }
             #endif
@@ -96,7 +96,7 @@ class ChooseSolver
             #ifndef NICSLU_SOLVER_AVAILABLE
                 if((type == SolverType::NICSLU) || (type == SolverType::NICSLUDC) || (type ==  SolverType::NICSLUSingleSlack)){
                     std::string msg;
-                    msg = "Impossible to change for the NICSLU solver, that is not available on your platform.";
+                    msg = "Impossible to change for a solver using NICSLU for linear algebra. Please compile lightsim2grid from source to benefit from this.";
                     throw std::runtime_error(msg);
                 }
             #endif
@@ -104,7 +104,7 @@ class ChooseSolver
             #ifndef CKTSO_SOLVER_AVAILABLE
                 if((type == SolverType::CKTSO) || (type == SolverType::CKTSODC) || (type ==  SolverType::CKTSOSingleSlack)){
                     std::string msg;
-                    msg = "Impossible to change for the CKTSO solver, that is not available on your platform.";
+                    msg = "Impossible to change for a solver using CKTSO for linear algebra. Please compile lightsim2grid from source to benefit from this.";
                     throw std::runtime_error(msg);
                 }
             #endif
@@ -157,7 +157,7 @@ class ChooseSolver
         }
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const
         {
-            check_right_solver( "get_J");
+            check_right_solver("get_J");
             if(_solver_type == SolverType::SparseLU){
                 return _solver_lu.get_J();}
             #ifdef KLU_SOLVER_AVAILABLE
@@ -180,7 +180,10 @@ class ChooseSolver
             #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");}
-            else if(_solver_type == SolverType::DC){
+            else if(_solver_type == SolverType::DC || 
+                    _solver_type == SolverType::KLUDC || 
+                    _solver_type == SolverType::NICSLUDC ||
+                    _solver_type == SolverType::CKTSODC){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the DC powerflow.");}
             else if(_solver_type == SolverType::GaussSeidelSynch){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidelSynch powerflow.");}
@@ -341,7 +344,6 @@ class ChooseSolver
             CKTSOSolverSingleSlack _solver_cktso_single;
             CKTSODCSolver _solver_cktso_dc;
         #endif  // CKTSO_SOLVER_AVAILABLE
-
 };
 
 #endif  //CHOOSESOLVER_H

@@ -34,7 +34,8 @@ Change Log
 - [ADDED] support for the DC computation for "SecurityAnalysis" and "TimeSerie" modules
 - [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
   are irrelevant. They have been removed.
-- [IMPROVED] slightly the documentation on the "sovlers" part
+- [IMPROVED] the documentation on the "sovlers" part
+- [IMPROVED] move the "how to compile" section of the readme in the documentation
 - [IMPROVED] `SuiteSparse` is upgraded to version 5.13 (issue with build system based on cmake and BLAS for SuiteSparse >= 6.0)
 - [IMPROVED] upgrade to eigen `3.4.0` (stable release)
 

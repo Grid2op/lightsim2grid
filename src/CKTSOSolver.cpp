@@ -9,6 +9,7 @@
 
 // This file has been inspired from https://github.com/chenxm1986/cktso/blob/master/demo/demo.cpp
 #include "CKTSOSolver.h"
+#include <iostream>
 
 
 ErrorType CKTSOLinearSolver::reset(){

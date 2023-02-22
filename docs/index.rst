@@ -43,6 +43,7 @@ This is a work in progress at the moment
    :caption: Technical Documentation
 
    gridmodel
+   install_from_source
    lightsimbackend
    solvers
    time_series

@@ -9,13 +9,6 @@
 #ifndef SPARSELUSOLVER_H
 #define SPARSELUSOLVER_H
 
-#include <iostream>
-#include <vector>
-#include <stdio.h>
-#include <cstdint> // for int32
-#include <chrono>
-#include <cmath>  // for PI
-
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Utils.h"
@@ -24,8 +17,6 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "CustTimer.h"
-#include "BaseNRSolver.h"
 /**
 class to handle the solver using newton-raphson method, using a "SparseLU" algorithm from Eigein
 and sparse matrices.

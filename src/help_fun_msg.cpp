@@ -113,11 +113,11 @@ const std::string DocSolver::SparseLUSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLU)` at creation time    
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLU)` at creation time    
     
     .. note::
-        Available on all plateform, this is the default solver used when :class:`lightsim2grid.solver.SolverType.KLUSolverSingleSlack`
+        Available on all plateform, this is the default solver used when :class:`lightsim2grid.solver.KLUSolverSingleSlack`
         is not found (when a "single slack" is detected).
 
 )mydelimiter";
@@ -130,12 +130,12 @@ const std::string DocSolver::SparseLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `SparseLUSolverSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `SparseLUSingleSlack` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.SparseLUSolverSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLUSolverSingleSlack)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SparseLUSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLUSingleSlack)` at creation time
 
     .. note::
         Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.SolverType.KLUSolver`
@@ -155,8 +155,8 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.DC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.DC)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.DC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.DC)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -178,8 +178,8 @@ const std::string DocSolver::KLUSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.KLU)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.KLU)` at creation time
 
     .. note::
         This is the default solver used when a distributed slack bus is detected (when it's available, otherwise see :class:`lightsim2grid.solver.SparseLUSolver`).
@@ -198,8 +198,8 @@ const std::string DocSolver::KLUSolverSingleSlack = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLUSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.KLUSingleSlack)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.KLUSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.KLUSingleSlack)` at creation time
 
     .. note::
         This is the default solver used when available.
@@ -218,8 +218,8 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.KLUDC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.KLUDC)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.KLUDC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.KLUDC)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -241,8 +241,8 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.NICSLU)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLU)` at creation time
 
     .. note::
 
@@ -262,8 +262,8 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.NICSLUSingleSlack)` at creation time    
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLUSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUSingleSlack)` at creation time    
     
     .. note::
 
@@ -283,8 +283,8 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.NICSLUDC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.NICSLUDC)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLUDC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUDC)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -300,7 +300,7 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
 
 const std::string DocSolver::CKTSOSolver = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster CKTSO solver available in the CKTSO library
-    for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.CKTSOSolver`. (requires a build from source)
+    for the linear algebra (requires a build from source)
     
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -310,8 +310,8 @@ const std::string DocSolver::CKTSOSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.CKTSO)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSO)` at creation time
 
     .. note::
 
@@ -331,8 +331,8 @@ const std::string DocSolver::CKTSOSolverSingleSlack = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSOSingleSlack)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.CKTSOSingleSlack)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.CKTSOSingleSlack)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSOSingleSlack)` at creation time
 
     .. note::
 
@@ -352,8 +352,8 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.CKTSODC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SolverType.CKTSODC)` at creation time
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.CKTSODC)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSODC)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -375,7 +375,12 @@ const std::string DocSolver::GaussSeidelSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `GaussSeidel` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.GaussSeidel)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `GaussSeidel` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.GaussSeidel)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.GaussSeidel)` at creation time
 
     .. warning::
         It currently does not support distributed slack.
@@ -391,7 +396,12 @@ const std::string DocSolver::GaussSeidelSynchSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is referred to by the `GaussSeidelSynch` member (*eg* `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SolverType.GaussSeidelSynch)`).
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it called `GaussSeidelSynch` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.GaussSeidelSynch)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.GaussSeidelSynch)` at creation time
 
     .. warning::
         It currently does not support distributed slack.
@@ -667,7 +677,7 @@ const std::string DocIterator::is_slack = R"mydelimiter(
     .. note:: 
         Depending on the solver used, it is possible that a generator we asked to participate to the distributed slack bus
         do not participate to it (for example if there is a more than one generator where `is_slack` is ``True`` but the model used
-        to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.solver.SparseLUSolverSingleSlack`)
+        to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.solver.SparseLUSingleSlack`)
 
         This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.solver.SparseLUSolver` or 
         :class:`lightsim2grid.solver.KLUSolver` for example.

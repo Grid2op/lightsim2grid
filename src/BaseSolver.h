@@ -28,7 +28,6 @@
 #include "CustTimer.h"
 #include "BaseConstants.h"
 
-enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue, SolverAnalyze, SolverFactor, SolverReFactor, SolverSolve, NotInitError, LicenseError};
 /**
 This class represents a solver to compute powerflow.
 

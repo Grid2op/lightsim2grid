@@ -40,18 +40,18 @@ class TestTSDC_14(unittest.TestCase):
     def test_dc(self):
         V_init = 1.0 * np.abs(self.env.backend.V) + 0j
         
-        self.ts.computer.change_solver(SolverType.KLUSingleSlack)
+        self.ts.computer.change_solver(SolverType.SparseLUSingleSlack)
         self.ts.clear()
         res_p, res_a, res_v = self.ts.get_flows(scenario_id=self.scenario_id,
                                                 seed=self.seed,
                                                 v_init=V_init)
-        assert self.ts.computer.get_solver_type() == SolverType.KLUSingleSlack
+        assert self.ts.computer.get_solver_type() == SolverType.SparseLUSingleSlack
         self.ts.clear()
-        self.ts.computer.change_solver(SolverType.KLUDC)
+        self.ts.computer.change_solver(SolverType.DC)
         res_p_dc, res_a_dc, res_v_dc  = self.ts.get_flows(scenario_id=self.scenario_id,
                                                           seed=self.seed,
                                                           v_init=V_init)
-        assert self.ts.computer.get_solver_type() == SolverType.KLUDC
+        assert self.ts.computer.get_solver_type() == SolverType.DC
         assert np.any(res_p != res_p_dc)
         assert np.any(res_a != res_a_dc)
         assert np.any(res_v != res_v_dc)

@@ -10,13 +10,6 @@
 #ifndef CKTSOSOLVER_H
 #define CKTSOSOLVER_H
 
-#include <iostream>
-#include <vector>
-#include <stdio.h>
-#include <cstdint> // for int32
-#include <chrono>
-#include <cmath>  // for PI
-
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Utils.h"
@@ -27,8 +20,6 @@
 // import cktso package
 #include "cktso.h"
 
-#include "CustTimer.h"
-#include "BaseNRSolver.h"
 /**
 class to handle the solver using newton-raphson method, using CKTSO algorithm and sparse matrices.
 CKTSO, according to https://github.com/BDonnot/lightsim2grid/issues/52
@@ -44,7 +35,6 @@ can find a version of `https://github.com/chenxm1986/cktso`. Be careful though, 
 specific license.
 
 **/
-
 class CKTSOLinearSolver
 {
     public:

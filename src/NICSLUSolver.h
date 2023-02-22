@@ -10,13 +10,6 @@
 #ifndef NICSLUSOLVER_H
 #define NICSLUSOLVER_H
 
-#include <iostream>
-#include <vector>
-#include <stdio.h>
-#include <cstdint> // for int32
-#include <chrono>
-#include <cmath>  // for PI
-
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Utils.h"
@@ -27,8 +20,6 @@
 // import nicslu package
 #include "nicslu_cpp.inl"
 
-#include "CustTimer.h"
-#include "BaseNRSolver.h"
 /**
 class to handle the solver using newton-raphson method, using NICSLU algorithm and sparse matrices.
 
