@@ -27,6 +27,7 @@ Change Log
 - [FIXED] a bug in the DC comptuation: some "divergence" were not catched
 - [FIXED] a bug in the "Computer" (cpp) class where the intial voltage could lead to generator not
   participating correctly to the voltage regulation (wrong output voltage level).
+- [FIXED] a bug in the "set_bus" of shunt (wrong bus was assigned cpp side)
 - [ADDED] support for the CKTSO linear solver (on linux), which is slightly faster than SparseLU, KLU and NICSLU
   (this requires a compilation from source)
 - [ADDED] support for distributed slack bus in `LightSimBackend`

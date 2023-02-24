@@ -673,7 +673,7 @@ class LightSimBackend(Backend):
                     self._grid.deactivate_shunt(sh_id)
                 else:
                     self._grid.reactivate_shunt(sh_id)
-                    self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] * new_bus)
+                    self._grid.change_bus_shunt(sh_id, type(self).local_bus_to_global_int(new_bus, self.shunt_to_subid[sh_id]))
 
             for sh_id, new_p in shunt_p:
                 self._grid.change_p_shunt(sh_id, new_p)
