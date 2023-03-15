@@ -19,6 +19,7 @@ def get_env_name_displayed(env_name):
     res = re.sub("^l2rpn_", "", env_name)
     res = re.sub("_small$", "", res)
     res = re.sub("_large$", "", res)
+    res = re.sub("\\.json$", "", res)
     return res
 
 

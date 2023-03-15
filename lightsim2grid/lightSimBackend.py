@@ -34,7 +34,8 @@ class LightSimBackend(Backend):
                  tol: float=1e-8,
                  solver_type: Optional[SolverType]=None,
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
-                 dist_slack_non_renew: bool=False  # distribute the slack on non renewable turned on (and with P>0) generators
+                 dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
+                 use_static_gen: bool=False, # add the static generators as generator gri2dop side
                  ):
         try:
             # for grid2Op >= 1.7.1
@@ -45,7 +46,8 @@ class LightSimBackend(Backend):
                              max_iter=max_iter,
                              tol=tol,
                              turned_off_pv=turned_off_pv,
-                             dist_slack_non_renew=dist_slack_non_renew)
+                             dist_slack_non_renew=dist_slack_non_renew,
+                             use_static_gen=use_static_gen)
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
                           "you cannot set max_iter, tol nor solver_type arguments.")
@@ -160,6 +162,9 @@ class LightSimBackend(Backend):
         
         # distributed slack, on non renewable gen with P > 0
         self._dist_slack_non_renew = dist_slack_non_renew
+        
+        # add the static gen to the list of controlable gen in grid2Op
+        self._use_static_gen = use_static_gen  # TODO implement it
         
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
@@ -409,7 +414,7 @@ class LightSimBackend(Backend):
         self.name_load = self.init_pp_backend.name_load
         self.name_line = self.init_pp_backend.name_line
         self.name_sub = self.init_pp_backend.name_sub
-
+            
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
             self.n_storage = self.init_pp_backend.n_storage
