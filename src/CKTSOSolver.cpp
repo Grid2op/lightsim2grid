@@ -74,7 +74,7 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     }
 
     ret = solver_->Factorize(J.valuePtr(),
-                             false // @fast: whether to use fast factorization => was set to "false" in the demo
+                             true // @fast: whether to use fast factorization => was set to "false" in the demo
                              );
     if (ret < 0){
         err = ErrorType::SolverFactor;
