@@ -37,7 +37,7 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     if (ret_ < 0){   // fail
         if (ret_ == -99){
             // fail to initialize because of a license issue
-            std::string msg = "Fail to initilize the CKTSO solver because we cannot find the cktso.lic file.";
+            std::string msg = "Fail to initilize the CKTSO solver because we cannot find the cktso.lic file. ";
             msg += "Please copy this file at the location you want to use the CKTSO solver.";
             std::cout << msg << std::endl;
         }
@@ -60,11 +60,11 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     for(int i = 0; i < n+1; ++i){
         ap_[i] = static_cast<int>(ref_ap[i]);
     }
-    ret = solver_->Analyze(n,
+    ret = solver_->Analyze(false,  // complex or real
+                           n,
                            ap_,
                            ai_,
                            J.valuePtr(),
-                           1, // row0_colposi_trannega: 0 means row mode, positive means column mode, negative means transposed mode
                            nb_thread_);
     if (ret < 0){
         err = ErrorType::SolverAnalyze;
@@ -105,7 +105,7 @@ ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect 
     if(!stop){
         const auto n = J.cols(); // should be equal to J_.nrows()
         x = RealVect(n);
-        ret = solver_->Solve(&b(0), &x(0), false);
+        ret = solver_->Solve(&b(0), &x(0), false, 1);
         if (ret < 0) {
             // std::cout << "CKTSOLinearSolver::solve solver_.Solve error: " << ret << std::endl;
             err = ErrorType::SolverSolve;
