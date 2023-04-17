@@ -311,6 +311,7 @@ ext_modules = [
 # python 3.10+
 req_pkgs = [
         "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
+        "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
 
 pkgs = {
@@ -324,7 +325,6 @@ pkgs = {
             "autodocsumm>=0.1.13",
             "grid2op>=1.6.4",
             "recommonmark",
-            "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
         ],
         "benchmark": [
             "tabulate",
