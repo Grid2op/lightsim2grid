@@ -316,10 +316,10 @@ req_pkgs = [
 
 if sys.version_info.major == 3 and sys.version_info.minor <= 7:
     # typing "Literal" not available on python 3.7
-    req_pkgs["required"].append("typing_extensions")
+    req_pkgs.append("typing_extensions")
     # do not use pandapower 2.12 (broken on python 3.7 
     # see https://github.com/e2nIEE/pandapower/issues/1985
-    req_pkgs["required"][0] = "pandapower>=2.2.2,<2.12"
+    req_pkgs[0] = "pandapower>=2.2.2,<2.12"
 
 pkgs = {
     "required": req_pkgs,
