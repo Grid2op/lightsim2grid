@@ -324,6 +324,7 @@ pkgs = {
             "autodocsumm>=0.1.13",
             "grid2op>=1.6.4",
             "recommonmark",
+            "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
         ],
         "benchmark": [
             "tabulate",
