@@ -232,7 +232,7 @@ if __name__ == "__main__":
             total_time = env_lightsim.backend._timer_preproc + env_lightsim.backend._timer_solver # + env_lightsim.backend._timer_postproc
             g2op_times.append(total_time)
             g2op_speeds.append(1.0 * nb_step / total_time)
-            g2op_step_time.append(1.0 * env_lightsim._time_powerflow / nb_step)
+            g2op_step_time.append(1.0 * env_lightsim._time_step / nb_step)
             g2op_sizes.append(env_lightsim.n_sub)
         
         # Perform the computation using TimeSerie
