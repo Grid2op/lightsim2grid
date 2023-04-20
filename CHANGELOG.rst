@@ -28,11 +28,13 @@ Change Log
 - [FIXED] a bug in the "Computer" (cpp) class where the intial voltage could lead to generator not
   participating correctly to the voltage regulation (wrong output voltage level).
 - [FIXED] a bug in the "set_bus" of shunt (wrong bus was assigned cpp side)
+- [FIXED] an issue when slack bus is added from ext grid (wrong active power value - sign issue)
 - [ADDED] support for the CKTSO linear solver (on linux), which is slightly faster than SparseLU, KLU and NICSLU
   (this requires a compilation from source)
 - [ADDED] support for distributed slack bus in `LightSimBackend`
 - [ADDED] support for "generator with p=0. do not participate in voltage regulation" in `LightSimBackend`
 - [ADDED] support for the DC computation for "SecurityAnalysis" and "TimeSerie" modules
+- [ADDED] support for DC powerline (in lightsim, they are still not handled in grid2op)
 - [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
   are irrelevant. They have been removed.
 - [IMPROVED] the documentation on the "sovlers" part

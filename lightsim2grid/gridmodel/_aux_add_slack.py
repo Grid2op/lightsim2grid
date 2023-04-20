@@ -96,7 +96,7 @@ def _aux_add_slack(model, pp_net):
                 slack_coeff[:] = 1.0
                 
             slack_gen_ids = np.arange(nb_slack) + pp_net.gen.shape[0]
-            slack_contrib = (np.sum(pp_net.gen["p_mw"]) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
+            slack_contrib = -1.0 * (np.sum(pp_net.gen["p_mw"]) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
             vm_pu = 1.0 * pp_net.ext_grid["vm_pu"].values
             gen_p = np.concatenate((pp_net.gen["p_mw"].values, slack_contrib))
             gen_v = np.concatenate((pp_net.gen["vm_pu"].values, vm_pu))
