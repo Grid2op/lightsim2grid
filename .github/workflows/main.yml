@@ -76,7 +76,7 @@ jobs:
           # python3 -c "import lightsim2grid"
           # python3 -c "from lightsim2grid import *"
           # python3 -c "from lightsim2grid.newtonpf import newtonpf"
-          gdb -batch -ex r --args python3 -c "from lightsim2grid import *"
+          gdb -batch -ex r --args python3 -c "from lightsim2grid import *" -ex backtrace
 
       - name: Check LightSimBackend can be imported
         run: |
