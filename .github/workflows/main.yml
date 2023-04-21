@@ -15,31 +15,31 @@ jobs:
     strategy:
       matrix:
         python:
-          - {
-            name: cp37,
-            abi: cp37m,
-            version: '3.7',
-          }
+          # - {
+          #   name: cp37,
+          #   abi: cp37m,
+          #   version: '3.7',
+          # }
           - {
             name: cp38,
             abi: cp38,
             version: '3.8',
           }
-          - {
-            name: cp39,
-            abi: cp39,
-            version: '3.9',
-          }
-          - {
-            name: cp310,
-            abi: cp310,
-            version: '3.10',
-          }
-          - {
-            name: cp311,
-            abi: cp311,
-            version: '3.11',
-          }
+          # - {
+          #   name: cp39,
+          #   abi: cp39,
+          #   version: '3.9',
+          # }
+          # - {
+          #   name: cp310,
+          #   abi: cp310,
+          #   version: '3.10',
+          # }
+          # - {
+          #   name: cp311,
+          #   abi: cp311,
+          #   version: '3.11',
+          # }
 
     steps:
 
@@ -61,7 +61,7 @@ jobs:
 
       - name: Build wheel
         run: |
-          export __O3_OPTIM=1
+          # export __O3_OPTIM=1
           python3 setup.py bdist_wheel
           auditwheel repair dist/*.whl
 
@@ -200,7 +200,7 @@ jobs:
   package:
     name: Package wheels
     runs-on: ubuntu-latest
-    needs: [manylinux_build, macos_windows_build]
+    needs: [manylinux_build] #, macos_windows_build]
 
     steps:
       - name: Download wheels
