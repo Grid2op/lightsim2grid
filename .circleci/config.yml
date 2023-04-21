@@ -1,310 +1,310 @@
-# version: 2.1
+version: 2.1
 
-# orbs:
-#     win: circleci/windows@4.1 # The Windows orb give you everything you need to start using the Windows executor.
+orbs:
+    win: circleci/windows@4.1 # The Windows orb give you everything you need to start using the Windows executor.
 
 
-# executors:
-#     gcc_12:
-#         docker:
-#             - image: gcc:12
-#     gcc_11:
-#         docker:
-#             - image: gcc:11
-#     gcc_10:
-#         docker:
-#             - image: gcc:10
-#     gcc_9:
-#         docker:
-#             - image: gcc:9
-#     gcc_8:
-#         docker:
-#             - image: gcc:8
-#     clang14:
-#         docker:
-#             - image: silkeh/clang:14
-#     clang13:
-#         docker:
-#             - image: silkeh/clang:13
-#     clang12:
-#         docker:
-#             - image: silkeh/clang:12
-#     clang11:
-#         docker:
-#             - image: silkeh/clang:11
-#     clang10:
-#         docker:
-#             - image: silkeh/clang:10
-#     clang9:
-#         docker:
-#             - image: silkeh/clang:9  # no c++ 11, does not work
+executors:
+    gcc_12:
+        docker:
+            - image: gcc:12
+    gcc_11:
+        docker:
+            - image: gcc:11
+    gcc_10:
+        docker:
+            - image: gcc:10
+    gcc_9:
+        docker:
+            - image: gcc:9
+    gcc_8:
+        docker:
+            - image: gcc:8
+    clang14:
+        docker:
+            - image: silkeh/clang:14
+    clang13:
+        docker:
+            - image: silkeh/clang:13
+    clang12:
+        docker:
+            - image: silkeh/clang:12
+    clang11:
+        docker:
+            - image: silkeh/clang:11
+    clang10:
+        docker:
+            - image: silkeh/clang:10
+    clang9:
+        docker:
+            - image: silkeh/clang:9  # no c++ 11, does not work
 
-# jobs:
-#     compile_gcc11:
-#         executor: gcc_11
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                   command: |
-#                       source venv_test/bin/activate
-#                       pip install -U grid2op
-#                       pip install -U pybind11
-#                       git submodule init
-#                       git submodule update
-#                       make
-#                       CC=gcc python setup.py build
-#                       python -m pip install -U .
-#     compile_gcc10:
-#         executor: gcc_10
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                   command: |
-#                       source venv_test/bin/activate
-#                       pip install -U grid2op
-#                       pip install -U pybind11
-#                       git submodule init
-#                       git submodule update
-#                       make
-#                       CC=gcc python setup.py build
-#                       python -m pip install -U .
-#     compile_gcc9:
-#         executor: gcc_9
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                   command: |
-#                       source venv_test/bin/activate
-#                       pip install -U grid2op
-#                       pip install -U pybind11
-#                       git submodule init
-#                       git submodule update
-#                       make
-#                       CC=gcc python setup.py build
-#                       python -m pip install -U .
-#     compile_gcc8:
-#         executor: gcc_8
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U grid2op
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=gcc python setup.py build
-#                     python -m pip install -U .
-#     compile_gcc12:
-#         executor: gcc_12
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 name: "Install grid2op from source"
-#                 command: |
-#                     source venv_test/bin/activate
-#                     git clone https://github.com/rte-france/grid2op.git _grid2op
-#                     pip install -e _grid2op
-#             - run:
-#                 name: "Install lightsim2grid"
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=gcc python setup.py build
-#                     python -m pip install .[test]
-#             - run:
-#                 name: "make tests"
-#                 command: |
-#                     source venv_test/bin/activate
-#                     cd lightsim2grid/tests/
-#                     python -m unittest discover  -v
-#     compile_clang9:  # no c++ 11, will not work
-#         executor: clang9
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=clang python setup.py build
-#                     python -m pip install -U .
-#     compile_clang10:
-#         executor: clang10
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip git -y
-#             - run: 
-#                 command: |
-#                     git submodule init
-#                     git submodule update
-#                     make
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U pybind11
-#                     CC=clang python setup.py build
-#                     python -m pip install .
-#     compile_clang11:
-#         executor: clang11
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip git -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U grid2op
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=clang python setup.py build
-#                     CC=clang python -m pip install -U .
-#     compile_clang12:
-#         executor: clang12
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip git -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U grid2op
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=clang python setup.py build
-#                     CC=clang python -m pip install -U .
-#     compile_clang13:
-#         executor: clang13
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip git -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U grid2op
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=clang python setup.py build
-#                     CC=clang python -m pip install -U .
-#     compile_clang14:
-#         executor: clang14
-#         resource_class: small
-#         steps:
-#             - checkout
-#             - run: apt-get update && apt-get install python3-pip git -y
-#             - run: python3 -m pip install virtualenv
-#             - run: python3 -m virtualenv venv_test
-#             - run:
-#                 name: "Install grid2op from source"
-#                 command: |
-#                     source venv_test/bin/activate
-#                     git clone https://github.com/rte-france/grid2op.git _grid2op
-#                     pip install -e _grid2op
-#             - run:
-#                 name: "Install lightsim2grid"
-#                 command: |
-#                     source venv_test/bin/activate
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     make
-#                     CC=clang python setup.py build
-#                     CC=clang python -m pip install -e .[test]
-#             - run:
-#                 name: "make tests"
-#                 command: |
-#                     source venv_test/bin/activate
-#                     cd lightsim2grid/tests/
-#                     python -m unittest discover -v
-#     compile_windows:
-#         executor: 
-#             name: win/default  # executor type
-#             size: medium  # ("medium" "large" "xlarge" "2xlarge")
-#         steps:
-#             - checkout
-#             # - run:
-#             #     name: "Install Python"
-#             #     command: choco install python --version=3.9  # use python 3.9 for windows test
-#             - run: py -m pip install virtualenv
-#             - run: py -m virtualenv venv_test
-#             - run:
-#                 name: "Install grid2op from source"
-#                 command: |
-#                     .\venv_test\Scripts\activate
-#                     git clone https://github.com/rte-france/grid2op.git _grid2op
-#                     pip install -e _grid2op
-#             - run:
-#                 name: "Install lightsim2grid"
-#                 command: |
-#                     .\venv_test\Scripts\activate
-#                     pip install -U pybind11
-#                     git submodule init
-#                     git submodule update
-#                     py setup.py build
-#                     py -m pip install -e .[test]
-#             - run:
-#                 name: "make tests"
-#                 command: |
-#                     .\venv_test\Scripts\activate
-#                     cd lightsim2grid\tests
-#                     python -m unittest discover -v
+jobs:
+    compile_gcc11:
+        executor: gcc_11
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
+    compile_gcc10:
+        executor: gcc_10
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
+    compile_gcc9:
+        executor: gcc_9
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
+    compile_gcc8:
+        executor: gcc_8
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=gcc python setup.py build
+                    python -m pip install -U .
+    compile_gcc12:
+        executor: gcc_12
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                name: "Install grid2op from source"
+                command: |
+                    source venv_test/bin/activate
+                    git clone https://github.com/rte-france/grid2op.git _grid2op
+                    pip install -e _grid2op
+            - run:
+                name: "Install lightsim2grid"
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=gcc python setup.py build
+                    python -m pip install .[test]
+            - run:
+                name: "make tests"
+                command: |
+                    source venv_test/bin/activate
+                    cd lightsim2grid/tests/
+                    python -m unittest discover  -v
+    compile_clang9:  # no c++ 11, will not work
+        executor: clang9
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    python -m pip install -U .
+    compile_clang10:
+        executor: clang10
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip git -y
+            - run: 
+                command: |
+                    git submodule init
+                    git submodule update
+                    make
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U pybind11
+                    CC=clang python setup.py build
+                    python -m pip install .
+    compile_clang11:
+        executor: clang11
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip git -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_clang12:
+        executor: clang12
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip git -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_clang13:
+        executor: clang13
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip git -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_clang14:
+        executor: clang14
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip git -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                name: "Install grid2op from source"
+                command: |
+                    source venv_test/bin/activate
+                    git clone https://github.com/rte-france/grid2op.git _grid2op
+                    pip install -e _grid2op
+            - run:
+                name: "Install lightsim2grid"
+                command: |
+                    source venv_test/bin/activate
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -e .[test]
+            - run:
+                name: "make tests"
+                command: |
+                    source venv_test/bin/activate
+                    cd lightsim2grid/tests/
+                    python -m unittest discover -v
+    compile_windows:
+        executor: 
+            name: win/default  # executor type
+            size: medium  # ("medium" "large" "xlarge" "2xlarge")
+        steps:
+            - checkout
+            # - run:
+            #     name: "Install Python"
+            #     command: choco install python --version=3.9  # use python 3.9 for windows test
+            - run: py -m pip install virtualenv
+            - run: py -m virtualenv venv_test
+            - run:
+                name: "Install grid2op from source"
+                command: |
+                    .\venv_test\Scripts\activate
+                    git clone https://github.com/rte-france/grid2op.git _grid2op
+                    pip install -e _grid2op
+            - run:
+                name: "Install lightsim2grid"
+                command: |
+                    .\venv_test\Scripts\activate
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    py setup.py build
+                    py -m pip install -e .[test]
+            - run:
+                name: "make tests"
+                command: |
+                    .\venv_test\Scripts\activate
+                    cd lightsim2grid\tests
+                    python -m unittest discover -v
 
-# workflows:
-#     version: 2.1
-#     compile:
-#         jobs:
-#           - compile_gcc8
-#           - compile_gcc10
-#           - compile_gcc11
-#           - compile_gcc12
-#           # - compile_clang10  # does not work I don't know why, too lazy to check
-#           - compile_clang11
-#           - compile_clang13
-#           - compile_clang14
-#           - compile_windows
+workflows:
+    version: 2.1
+    compile:
+        jobs:
+          - compile_gcc8
+          - compile_gcc10
+          - compile_gcc11
+          - compile_gcc12
+          # - compile_clang10  # does not work I don't know why, too lazy to check
+          - compile_clang11
+          - compile_clang13
+          - compile_clang14
+          - compile_windows

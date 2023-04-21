@@ -1380,7 +1380,32 @@ const std::string DocIterator::target_vm_or_pu = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::target_vm_ex_pu = R"mydelimiter(
-    The target active voltage setpoint at the `or` side of the powerline (in pu NOT in kV).
+    The target active voltage setpoint at the `ex` side of the powerline (in pu NOT in kV).
+)mydelimiter";
+
+const std::string DocIterator::dc_line_formula = R"mydelimiter(
+    .. note::
+        A DC line is modeled by two connected generators and some losses to convert the power from one to the other.
+
+        Two types of losses are considered:
+        
+        - `flat` losses: `loss_mw` (in MW) 
+        - `relative` losses: `loss_percent` (no unit) 
+        
+        The formula for computing the power injected / produced by each generator is:
+
+        - if `or_mw` is positive, then `ex_mw = -1.0 * (or_mw - loss_mw) * (1.0 - 0.01 * loss_percent)`
+        - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw
+
+        Where `or_mw` denotes the power injected at the origin side and `ex_mw` the power injected at the `extremity`
+        side.
+
+    .. note::
+        By convention, a dc powerline adopts the `load convention`.
+
+        This means that if `or_mw` is positive then power is consumed at the `or` side, so the
+        power flows from `or` to `ex` and vice versa.
+
 )mydelimiter";
 
 const std::string DocIterator::loss_pct = R"mydelimiter(
@@ -1452,31 +1477,6 @@ const std::string DocIterator::gen_or = R"mydelimiter(
 const std::string DocIterator::gen_ex = R"mydelimiter(
     Direct access to the "ex" generators, directly returns a :class:`lightsim2grid.elements.GenInfo`
 )mydelimiter" + DocIterator::dc_line_formula;
-
-const std::string DocIterator::dc_line_formula = R"mydelimiter(
-    .. note::
-        A DC line is modeled by two connected generators and some losses to convert the power from one to the other.
-
-        Two types of losses are considered:
-        
-        - `flat` losses: `loss_mw` (in MW) 
-        - `relative` losses: `loss_percent` (no unit) 
-        
-        The formula for computing the power injected / produced by each generator is:
-
-        - if `or_mw` is positive, then `ex_mw = -1.0 * (or_mw - loss_mw) * (1.0 - 0.01 * loss_percent)`
-        - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw
-
-        Where `or_mw` denotes the power injected at the origin side and `ex_mw` the power injected at the `extremity`
-        side.
-
-    .. note::
-        By convention, a dc powerline adopts the `load convention`.
-
-        This means that if `or_mw` is positive then power is consumed at the `or` side, so the
-        power flows from `or` to `ex` and vice versa.
-
-)mydelimiter";
 
 const std::string DocGridModel::GridModel = R"mydelimiter(
     This class represent a lightsim2grid power network. All the elements that can be manipulated by

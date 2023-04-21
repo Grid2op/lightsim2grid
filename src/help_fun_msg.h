@@ -59,6 +59,7 @@ struct DocSolver
 struct DocIterator
 {
     // generic functions
+    static const std::string only_avail_res;
     static const std::string id;
     static const std::string connected;
     static const std::string bus_id;
@@ -78,7 +79,6 @@ struct DocIterator
     static const std::string r_pu;
     static const std::string x_pu;
     static const std::string h_pu;
-    static const std::string only_avail_res;
 
     // specific to generators
     static const std::string DataGen;
@@ -134,9 +134,9 @@ struct DocIterator
     static const std::string res_theta_ex_deg;
 
     // specific to dc lines
+    static const std::string dc_line_formula;
     static const std::string DataDCLine;
     static const std::string DCLineInfo;
-    static const std::string dc_line_formula;
     static const std::string target_p_or_mw;
     static const std::string target_vm_or_pu;
     static const std::string target_vm_ex_pu;

@@ -15,31 +15,31 @@ jobs:
     strategy:
       matrix:
         python:
-          # - {
-          #   name: cp37,
-          #   abi: cp37m,
-          #   version: '3.7',
-          # }
+          - {
+            name: cp37,
+            abi: cp37m,
+            version: '3.7',
+          }
           - {
             name: cp38,
             abi: cp38,
             version: '3.8',
           }
-          # - {
-          #   name: cp39,
-          #   abi: cp39,
-          #   version: '3.9',
-          # }
-          # - {
-          #   name: cp310,
-          #   abi: cp310,
-          #   version: '3.10',
-          # }
-          # - {
-          #   name: cp311,
-          #   abi: cp311,
-          #   version: '3.11',
-          # }
+          - {
+            name: cp39,
+            abi: cp39,
+            version: '3.9',
+          }
+          - {
+            name: cp310,
+            abi: cp310,
+            version: '3.10',
+          }
+          - {
+            name: cp311,
+            abi: cp311,
+            version: '3.11',
+          }
 
     steps:
 
@@ -90,121 +90,121 @@ jobs:
           name: lightsim2grid-wheel-linux-${{ matrix.python.name }}
           path: wheelhouse/*.whl
 
-  # macos_windows_build:
-  #   name: Build ${{ matrix.config.name }} ${{ matrix.python.name }} wheel
-  #   runs-on: ${{ matrix.config.os }}
-  #   strategy:
-  #     matrix:
-  #       config:
-  #         - {
-  #           name: darwin,
-  #           os: macos-latest,
-  #         }
-  #         - {
-  #           name: windows,
-  #           os: windows-2019,
-  #         }
-  #       python:
-  #         - {
-  #           name: cp37,
-  #           version: '3.7',
-  #         }
-  #         - {
-  #           name: cp38,
-  #           version: '3.8',
-  #         }
-  #         - {
-  #           name: cp39,
-  #           version: '3.9',
-  #         }
-  #         - {
-  #           name: cp310,
-  #           version: '3.10',
-  #         }
-  #         - {
-  #           name: cp311,
-  #           version: '3.11',
-  #         }
+  macos_windows_build:
+    name: Build ${{ matrix.config.name }} ${{ matrix.python.name }} wheel
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      matrix:
+        config:
+          - {
+            name: darwin,
+            os: macos-latest,
+          }
+          - {
+            name: windows,
+            os: windows-2019,
+          }
+        python:
+          - {
+            name: cp37,
+            version: '3.7',
+          }
+          - {
+            name: cp38,
+            version: '3.8',
+          }
+          - {
+            name: cp39,
+            version: '3.9',
+          }
+          - {
+            name: cp310,
+            version: '3.10',
+          }
+          - {
+            name: cp311,
+            version: '3.11',
+          }
 
-  #   steps:
+    steps:
 
-  #     - name: Checkout sources
-  #       uses: actions/checkout@v1
-  #       with:
-  #         submodules: true
+      - name: Checkout sources
+        uses: actions/checkout@v1
+        with:
+          submodules: true
 
-  #     - name: Setup Python
-  #       uses: actions/setup-python@v2
-  #       with:
-  #         python-version: ${{ matrix.python.version }}
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python.version }}
 
-  #     - name: Install Python dependencies
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         python -m pip install -r requirements.txt
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-  #     - name: Compile SuiteSparse make
-  #       if: matrix.config.name == 'darwin'
-  #       run: |
-  #         make
-  #         export __O3_OPTIM=1
-  #         python3 setup.py build
+      - name: Compile SuiteSparse make
+        if: matrix.config.name == 'darwin'
+        run: |
+          make
+          export __O3_OPTIM=1
+          python3 setup.py build
 
-  #     - name: Compile SuiteSparse cmake
-  #       if: matrix.config.name == 'windows'
-  #       run: |
-  #         cd build_cmake
-  #         python generate_c_files.py
-  #         mkdir build
-  #         cd build
-  #         cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..
-  #         cmake --build . --config Release
-  #         cmake --install . --prefix ..\built
-  #         cd ..
-  #         cd ..
-  #         set __O3_OPTIM=1
-  #         python setup.py build
+      - name: Compile SuiteSparse cmake
+        if: matrix.config.name == 'windows'
+        run: |
+          cd build_cmake
+          python generate_c_files.py
+          mkdir build
+          cd build
+          cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release
+          cmake --install . --prefix ..\built
+          cd ..
+          cd ..
+          set __O3_OPTIM=1
+          python setup.py build
 
-  #     - name: Build wheel
-  #       run: python setup.py bdist_wheel
+      - name: Build wheel
+        run: python setup.py bdist_wheel
 
-  #     - name: Build source archive
-  #       if: matrix.config.name == 'darwin' && matrix.python.name == 'cp39'
-  #       run: python setup.py sdist
+      - name: Build source archive
+        if: matrix.config.name == 'darwin' && matrix.python.name == 'cp39'
+        run: python setup.py sdist
 
-  #     - name: Install wheel
-  #       shell: bash
-  #       run: python -m pip install dist/*.whl --user
+      - name: Install wheel
+        shell: bash
+        run: python -m pip install dist/*.whl --user
 
-  #     - name: Check package can be imported
-  #       run: |
-  #         python -c "import lightsim2grid"
-  #         python -c "from lightsim2grid import *"
-  #         python -c "from lightsim2grid.newtonpf import newtonpf"
+      - name: Check package can be imported
+        run: |
+          python -c "import lightsim2grid"
+          python -c "from lightsim2grid import *"
+          python -c "from lightsim2grid.newtonpf import newtonpf"
       
-  #     - name: Check LightSimBackend can be imported
-  #       run: |
-  #         python -m pip install grid2op
-  #         python -c "from lightsim2grid import LightSimBackend"
-  #         python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
+      - name: Check LightSimBackend can be imported
+        run: |
+          python -m pip install grid2op
+          python -c "from lightsim2grid import LightSimBackend"
+          python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
-  #     - name: Upload wheel
-  #       uses: actions/upload-artifact@v2
-  #       with:
-  #         name: lightsim2grid-wheel-${{ matrix.config.name }}-${{ matrix.python.name }}
-  #         path: dist/*.whl
+      - name: Upload wheel
+        uses: actions/upload-artifact@v2
+        with:
+          name: lightsim2grid-wheel-${{ matrix.config.name }}-${{ matrix.python.name }}
+          path: dist/*.whl
 
-  #     - name: Upload source archive
-  #       uses: actions/upload-artifact@v2
-  #       if: matrix.config.name == 'darwin' && matrix.python.name == 'cp39'
-  #       with:
-  #         name: lightsim2grid-sources
-  #         path: dist/*.tar.gz
+      - name: Upload source archive
+        uses: actions/upload-artifact@v2
+        if: matrix.config.name == 'darwin' && matrix.python.name == 'cp39'
+        with:
+          name: lightsim2grid-sources
+          path: dist/*.tar.gz
 
   package:
     name: Package wheels
     runs-on: ubuntu-latest
-    needs: [manylinux_build] #, macos_windows_build]
+    needs: [manylinux_build, macos_windows_build]
 
     steps:
       - name: Download wheels
