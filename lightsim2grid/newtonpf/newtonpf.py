@@ -12,11 +12,11 @@ from scipy import sparse
 
 from lightsim2grid_cpp import SparseLUSolver, SparseLUSolverSingleSlack
 
-try:
-    from lightsim2grid_cpp import KLUSolver, KLUSolverSingleSlack
-    KLU_solver_available = True
-except ImportError:
-    KLU_solver_available = False
+# try:
+#     from lightsim2grid_cpp import KLUSolver, KLUSolverSingleSlack
+#     KLU_solver_available = True
+# except ImportError:
+#     KLU_solver_available = False
 
 _PP_VERSION_MAX = "2.7.0"
 
