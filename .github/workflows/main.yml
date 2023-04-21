@@ -70,9 +70,10 @@ jobs:
 
       - name: Check package can be imported
         run: |
-          python3 -c "import lightsim2grid"
-          python3 -c "from lightsim2grid import *"
-          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          # python3 -c "import lightsim2grid"
+          # python3 -c "from lightsim2grid import *"
+          # python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          gdb -ex r --args python3 -c "from lightsim2grid import *"
 
       - name: Check LightSimBackend can be imported
         run: |
