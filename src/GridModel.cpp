@@ -43,6 +43,9 @@ GridModel::GridModel(const GridModel & other)
     // 8. storage units
     storages_ = other.storages_;
 
+    // dc lines
+    dc_lines_ = other.dc_lines_;
+
     // copy the attributes specific grid2op (speed optimization)
     n_sub_ = other.n_sub_;
     load_pos_topo_vect_ = other.load_pos_topo_vect_;
@@ -81,6 +84,7 @@ GridModel::StateRes GridModel::get_state() const
     auto res_load = loads_.get_state();
     auto res_sgen = sgens_.get_state();
     auto res_storage = storages_.get_state();
+    auto res_dc_line = dc_lines_.get_state();
 
     GridModel::StateRes res(version_major,
                             version_medium,
@@ -95,7 +99,8 @@ GridModel::StateRes GridModel::get_state() const
                             res_gen,
                             res_load,
                             res_sgen,
-                            res_storage
+                            res_storage,
+                            res_dc_line
                             );
     return res;
 };
@@ -142,6 +147,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     DataSGen::StateRes & state_sgens= std::get<12>(my_state);
     // storage units
     DataLoad::StateRes & state_storages = std::get<13>(my_state);
+    // dc lines
+    DataDCLine::StateRes & state_dc_lines = std::get<14>(my_state);
 
     // assign it to this instance
 
@@ -166,6 +173,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     sgens_.set_state(state_sgens);
     // 7. storage units
     storages_.set_state(state_storages);
+    // dc lines
+    dc_lines_.set_state(state_dc_lines);
 };
 
 //init
@@ -247,6 +256,65 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     return res;
 };
 
+void GridModel::check_solution_q_values_onegen(CplxVect & res,
+                                               const DataGen::GenInfo& gen,
+                                               bool check_q_limits) const{
+    if(check_q_limits)
+    {
+        // i need to check the reactive can be absorbed / produced by the generator
+        real_type new_q = my_zero_;
+        real_type react_this_bus = std::imag(res.coeff(gen.bus_id));
+        if((react_this_bus >= gen.min_q_mvar) && (react_this_bus <= gen.max_q_mvar))
+        {
+            // this generator is able to handle all reactive
+            new_q = my_zero_;
+        }else if(react_this_bus < gen.min_q_mvar){
+            // generator cannot absorb enough reactive power
+            new_q = react_this_bus - gen.min_q_mvar; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
+        }else{
+            // generator cannot produce enough reactive power
+            new_q = react_this_bus - gen.max_q_mvar;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
+        }
+        res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), new_q};
+    }else{
+        // the q value for the bus at which the generator is connected will be 0
+        res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), my_zero_};
+    }
+}
+
+void GridModel::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
+    // test for iterator though generators
+    for(const auto & gen: generators_)
+    {
+        if(!gen.connected)
+        {
+            // the generator is disconnected, I do nothing
+            continue;
+        }
+        check_solution_q_values_onegen(res, gen, check_q_limits);
+
+        // if(gen.id == gen_slackbus_)
+        if(gen.is_slack)
+        {
+            // slack bus, by definition, can handle all active value
+            // This is probably not the case with distributed slack !
+            res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
+        }
+    }
+
+    // then do the same for dc powerlines
+    for(const auto & dcline: dc_lines_)
+    {
+        if(!dcline.connected)
+        {
+            // the generator is disconnected, I do nothing
+            continue;
+        }
+        check_solution_q_values_onegen(res, dcline.gen_or, check_q_limits);
+        check_solution_q_values_onegen(res, dcline.gen_ex, check_q_limits);
+    }
+}
+
 CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
@@ -270,44 +338,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     if(sn_mva_ != 1.) res *= sn_mva_;
 
     // now check reactive values for buses where there are generators and active values of slack bus
-    // test for iterator though generator
-    for(const auto & gen: generators_)
-    {
-        if(!gen.connected)
-        {
-            // the generator is disconnected, I do nothing
-            continue;
-        }
-        if(check_q_limits)
-        {
-            // i need to check the reactive can be absorbed / produced by the generator
-            real_type new_q = my_zero_;
-            real_type react_this_bus = std::imag(res.coeff(gen.bus_id));
-            if((react_this_bus >= gen.min_q_mvar) && (react_this_bus <= gen.max_q_mvar))
-            {
-                // this generator is able to handle all reactive
-                new_q = my_zero_;
-            }else if(react_this_bus < gen.min_q_mvar){
-                // generator cannot absorb enough reactive power
-                new_q = react_this_bus - gen.min_q_mvar; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
-            }else{
-                // generator cannot produce enough reactive power
-                new_q = react_this_bus - gen.max_q_mvar;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
-            }
-            res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), new_q};
-        }else{
-            // the q value for the bus at which the generator is connected will be 0
-            res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), my_zero_};
-        }
-
-        // if(gen.id == gen_slackbus_)
-        if(gen.is_slack)
-        {
-            // slack bus, by definition, can handle all active value
-            // This is probably not the case with distributed slack !
-            res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
-        }
-    }
+    check_solution_q_values(res, check_q_limits);
 
     // set to 0 the error on the disconnected bus (it is not initialized at 0.0 in _get_results_back_to_orig_nodes)
     for(int bus_id = 0; bus_id < nb_bus; ++bus_id)
@@ -351,7 +382,12 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver); // TODO what if pv and pq changed ? :O
     
-    generators_.init_q_vector(static_cast<int>(bus_vn_kv_.size()));
+    int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
+    total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
+    total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
+    total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
+    generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+    dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
     fillSbus_me(Sbus_, is_ac, id_me_to_solver);
 
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
@@ -362,6 +398,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         V(bus_solver_id) = tmp;
     }
     generators_.set_vm(V, id_me_to_solver);
+    dc_lines_.set_vm(V, id_me_to_solver);
     return V;
 }
 
@@ -472,6 +509,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     sgens_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     storages_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     generators_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    dc_lines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     res.setFromTriplets(tripletList.begin(), tripletList.end());
     res.makeCompressed();
 }
@@ -486,7 +524,7 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
     sgens_.fillSbus(Sbus, id_me_to_solver);
     storages_.fillSbus(Sbus, id_me_to_solver);
     generators_.fillSbus(Sbus, id_me_to_solver);
-
+    dc_lines_.fillSbus(Sbus, id_me_to_solver);
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
@@ -514,6 +552,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
     storages_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    dc_lines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
 
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
         if(is_in_vect(bus_id, slack_bus_id_solver)) continue;  // slack bus is not PQ either
@@ -545,6 +584,8 @@ void GridModel::compute_results(bool ac){
     shunts_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for prods
     generators_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    // for dclines
+    dc_lines_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
 
     //handle_slack_bus active power
     CplxVect mismatch;  // power mismatch at each bus (SOLVER BUS !!!)
@@ -568,7 +609,10 @@ void GridModel::compute_results(bool ac){
 
     if(ac) ractive_mismatch = mismatch.imag() * sn_mva_;
     // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
-    generators_.set_q(ractive_mismatch, id_me_to_solver, ac);
+    generators_.set_q(ractive_mismatch, id_me_to_solver, ac,
+                      total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+    dc_lines_.set_q(ractive_mismatch, id_me_to_solver, ac,
+                    total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
 }
 
 void GridModel::reset_results(){
@@ -579,6 +623,7 @@ void GridModel::reset_results(){
     sgens_.reset_results();
     storages_.reset_results();
     generators_.reset_results();
+    dc_lines_.reset_results();
 }
 
 CplxVect GridModel::dc_pf(const CplxVect & Vinit,

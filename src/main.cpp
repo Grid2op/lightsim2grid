@@ -415,6 +415,37 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_theta_or_deg", &DataLine::LineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg.c_str())
         .def_readonly("res_theta_ex_deg", &DataLine::LineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg.c_str());
 
+    // iterator for dc lines
+    py::class_<DataDCLine>(m, "DataDCLine", DocIterator::DataDCLine.c_str())
+        .def("__len__", [](const DataDCLine & data) { return data.nb(); })
+        .def("__getitem__", [](const DataDCLine & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataDCLine & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataDCLine::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
+        .def_readonly("id", &DataDCLine::DCLineInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataDCLine::DCLineInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_or_id", &DataDCLine::DCLineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus_ex_id", &DataDCLine::DCLineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("target_p_or_mw", &DataDCLine::DCLineInfo::target_p_or_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("target_vm_or_pu", &DataDCLine::DCLineInfo::target_vm_or_pu, DocIterator::target_vm_or_pu.c_str())
+        .def_readonly("target_vm_ex_pu", &DataDCLine::DCLineInfo::target_vm_ex_pu, DocIterator::target_vm_ex_pu.c_str())
+        .def_readonly("loss_pct", &DataDCLine::DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
+        .def_readonly("loss_mw", &DataDCLine::DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
+        .def_readonly("gen_or", &DataDCLine::DCLineInfo::gen_or, DocIterator::gen_or.c_str())
+        .def_readonly("gen_ex", &DataDCLine::DCLineInfo::gen_ex, DocIterator::gen_ex.c_str())
+        .def_readonly("has_res", &DataDCLine::DCLineInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_or_mw", &DataDCLine::DCLineInfo::res_p_or_mw, DocIterator::res_p_or_mw_dcline.c_str())
+        .def_readonly("res_p_ex_mw", &DataDCLine::DCLineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw_dcline.c_str())
+        .def_readonly("res_q_or_mvar", &DataDCLine::DCLineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar_dcline.c_str())
+        .def_readonly("res_q_ex_mvar", &DataDCLine::DCLineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar_dcline.c_str())
+        .def_readonly("res_v_or_kv", &DataDCLine::DCLineInfo::res_v_or_kv, DocIterator::res_v_or_kv_dcline.c_str())
+        .def_readonly("res_v_ex_kv", &DataDCLine::DCLineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv_dcline.c_str())
+        .def_readonly("res_theta_or_deg", &DataDCLine::DCLineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg_dcline.c_str())
+        .def_readonly("res_theta_ex_deg", &DataDCLine::DCLineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
+        ;
+
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
         .def(py::init<>())
@@ -474,11 +505,13 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_loads", &GridModel::init_loads, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_storages", &GridModel::init_storages, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_sgens", &GridModel::init_sgens, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("init_dclines", &GridModel::init_dclines, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus, DocGridModel::_internal_do_not_use.c_str()) // same
         .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus, DocGridModel::_internal_do_not_use.c_str())  // same
 
         // inspect the grid
         .def("get_lines", &GridModel::get_lines, DocGridModel::get_lines.c_str())
+        .def("get_dclines", &GridModel::get_dclines, DocGridModel::get_dclines.c_str())
         .def("get_trafos", &GridModel::get_trafos, DocGridModel::get_trafos.c_str())
         .def("get_generators", &GridModel::get_generators, DocGridModel::get_generators.c_str())
         .def("get_static_generators", &GridModel::get_static_generators, DocGridModel::get_static_generators.c_str())
@@ -544,6 +577,16 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_storage", &GridModel::get_bus_storage, DocGridModel::_internal_do_not_use.c_str())
         .def("change_p_storage", &GridModel::change_p_storage, DocGridModel::_internal_do_not_use.c_str())
         .def("change_q_storage", &GridModel::change_q_storage, DocGridModel::_internal_do_not_use.c_str())
+
+        .def("deactivate_dcline", &GridModel::deactivate_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("reactivate_dcline", &GridModel::reactivate_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_p_dcline", &GridModel::change_p_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_v_or_dcline", &GridModel::change_v_or_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_v_ex_dcline", &GridModel::change_v_ex_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus_dcline_or", &GridModel::change_bus_dcline_or, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus_dcline_ex", &GridModel::change_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_dcline_or", &GridModel::get_bus_dcline_or, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_dcline_ex", &GridModel::get_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str())
 
         // get back the results
         .def("get_V", &GridModel::get_V, DocGridModel::get_V.c_str())

@@ -113,6 +113,7 @@ class DataGen: public DataGeneric
        >  StateRes;
 
     DataGen():turnedoff_gen_pv_(true){};
+    DataGen(bool turnedoff_gen_pv):turnedoff_gen_pv_(turnedoff_gen_pv) {};
 
     // TODO add pmin and pmax here !
     void init(const RealVect & generators_p,
@@ -187,7 +188,10 @@ class DataGen: public DataGeneric
                         std::vector<bool> & has_bus_been_added,
                         Eigen::VectorXi & slack_bus_id_solver,
                         const std::vector<int> & id_grid_to_solver) const;
-    void init_q_vector(int nb_bus); // delta_q_per_gen_
+    void init_q_vector(int nb_bus,
+                       Eigen::VectorXi & total_gen_per_bus,
+                       RealVect & total_q_min_per_bus,
+                       RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,
@@ -197,7 +201,12 @@ class DataGen: public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    void set_q(const RealVect & reactive_mismatch, const std::vector<int> & id_grid_to_solver, bool ac);
+    void set_q(const RealVect & reactive_mismatch,
+               const std::vector<int> & id_grid_to_solver,
+               bool ac,
+               const Eigen::VectorXi & total_gen_per_bus,
+               const RealVect & total_q_min_per_bus,
+               const RealVect & total_q_max_per_bus);
 
     void get_vm_for_dc(RealVect & Vm);
     /**
@@ -233,9 +242,7 @@ class DataGen: public DataGeneric
         std::vector<real_type> gen_slack_weight_;
 
         // intermediate data
-        RealVect total_q_min_per_bus_;
-        RealVect total_q_max_per_bus_;
-        Eigen::VectorXi total_gen_per_bus_;
+        // Eigen::VectorXi total_gen_per_bus_;
         RealVect bus_slack_weight_;  // do not sum to 1., for each node of the grid, say the raw contribution for the generator
 
         //output data

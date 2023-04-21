@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -544,6 +544,14 @@ const std::string DocIterator::h_pu = R"mydelimiter(
 
 )mydelimiter" + DocIterator::line_model;
 
+
+const std::string DocIterator::only_avail_res = R"mydelimiter(
+    
+    .. warning::
+        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+
+)mydelimiter";
+
 const std::string DocIterator::res_p_mw = R"mydelimiter(
     Get the active production (or consumption) in MW for element of the grid supporting this feature.
 
@@ -551,10 +559,7 @@ const std::string DocIterator::res_p_mw = R"mydelimiter(
     
     For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_q_mvar = R"mydelimiter(
     Get the reactive production (or consumption) in MVAr for element of the grid supporting this feature.
@@ -563,32 +568,23 @@ const std::string DocIterator::res_q_mvar = R"mydelimiter(
     
     For loads (and storage units) it is given following the "load convention" (positive = power is absorbed from the grid)
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_deg = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which this object is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_kv = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which this object is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::target_vm_pu = R"mydelimiter(
     Get the voltage magnitude setpoint (in pair unit and NOT in kV) for each element of the grid supporting this feature.
@@ -1058,94 +1054,64 @@ const std::string DocIterator::bus_lv_id = R"mydelimiter(
 const std::string DocIterator::res_p_hv_mw = R"mydelimiter(
     Get the active power in MW for at the "hv" side of the transformer. If it is positive it means power is absorbed by the transformer.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_p_lv_mw = R"mydelimiter(
     Get the active power in MW for at the "lv" side of the transformer. If it is positive it means power is absorbed by the transformer.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_q_hv_mvar = R"mydelimiter(
     Get the reactive power in MVAr for at the "hv" side of the transformer. If it is positive it means power is absorbed by the transformer.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_q_lv_mvar = R"mydelimiter(
     Get the reactive power in MVAr for at the "lv" side of the transformer. If it is positive it means power is absorbed by the transformer.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_hv_deg = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "hv" side of the transformer is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_lv_deg = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "lv" side of the transformer is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_hv_kv = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which this "hv" side of the transformer is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_lv_kv = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which this "lv" side of the transformer is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_a_lv_ka = R"mydelimiter(
     Get the current flows (in kA) at the "lv" side of the transformer.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_a_hv_ka = R"mydelimiter(
     Get the current flows (in kA) at the "hv" side of the transformer.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::DataLine = R"mydelimiter(
     This class allows to iterate through the powerlines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
@@ -1241,92 +1207,274 @@ const std::string DocIterator::bus_ex_id = R"mydelimiter(
 const std::string DocIterator::res_p_or_mw = R"mydelimiter(
     Get the active power in MW for at the "or" side of the line. If it is positive it means power is absorbed by the line.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_p_ex_mw = R"mydelimiter(
     Get the active power in MW for at the "ex" side of the line. If it is positive it means power is absorbed by the line.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_q_or_mvar = R"mydelimiter(
     Get the reactive power in MVAr for at the "or" side of the line. If it is positive it means power is absorbed by the line.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_q_ex_mvar = R"mydelimiter(
     Get the reactive power in MVAr for at the "ex" side of the line. If it is positive it means power is absorbed by the line.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_or_deg = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "or" side of the line is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_theta_ex_deg = R"mydelimiter(
     Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "ex" side of the line is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_or_kv = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which this "or" side of the line is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_v_ex_kv = R"mydelimiter(
     Get the magnitude of the complex voltage (in kV) of the bus at which this "ex" side of the line is connected.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
     .. note::
         All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
 
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_a_or_ka = R"mydelimiter(
     Get the current flows (in kA) at the "or" side of the line.
 
-    .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
-
-)mydelimiter";
+)mydelimiter" + DocIterator::only_avail_res;
 
 const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
     Get the current flows (in kA) at the "ex" side of the line.
 
+)mydelimiter" + DocIterator::only_avail_res;
+
+
+const std::string DocIterator::DataDCLine = R"mydelimiter(
+    This class allows to iterate through the dc lines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
+    in a python list.
+
+    DC lines are modeled as in pandapower and can be represented a the 
+    `pandapower dclines <https://pandapower.readthedocs.io/en/latest/elements/dcline.html#electric-model>`_ . Basically
+    a dc line is made of 2 generators (one at each side `or` or `ex`). These
+    two generators are linked together: if one produces xx MW the other one consume yy MW (and there 
+    exists a relation between xx and yy).
+
+    To dive a bit into the modelling, the two underlying generators can be controlled independantly for the voltage
+    setpoint. But they are linked together for their active value. A dc powerline has some losses (both in MW and in 
+    percent) and the formula for computing the power injected / produced by each generator is:
+
+    - if `xx` is positive, then `yy = -1.0 * (xx - loss_mw) * (1.0 - 0.01 * loss_percent)`
+    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw
+
+    The first formula directly comes from pandapower. The second one ensures that if the direction of the flow is 
+    inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # manipulate the dc powerlines (usually there are none...)
+        for dcline in grid_model.get_dclines():
+            # do something with line !
+            dcline.bus_or_id
+
+        print(f"There are {len(grid_model.get_dclines())} lines on the grid.")
+
+        // first_dcline = grid_model.get_dclines()[0]
+
+    You can have a look at :class:`lightsim2grid.elements.DCLineInfo` for properties of these elements.
+
+)mydelimiter";
+
+
+const std::string DocIterator::DCLineInfo = R"mydelimiter(
+    This class represents what you get from retrieving the dc powerlines from :class:`lightsim2grid.elements.DataDCLine`.
+
+    It allows to read information from each dc powerline of the powergrid.
+
+    DC Powerlines have two sides, one is "or" for "origin" and one is "ex" for "extremity" that are connected and linked to each other
+    by some equations.
+
+    For accessing the results, it's basically the same as having two "elements" (so you get two "voltage_magnitude" `res_v_kv`,
+    two "injected power" `res_p_mw` etc.)
+
     .. warning::
-        This feature is only relevant if the results have been computed (for example if a powerflow has successfully run)
+        Data ca only be accessed from this element. You cannot modify (yet) the grid using this class.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        # create a lightsim2grid "gridmodel"
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # for powerlines
+        first_line = grid_model.get_dclines()[0]  # first dcline, this is a `DCLineInfo`
+        for dcline in grid_model.get_dclines():
+            # dcline is a `LineInfo`
+            dcline.bus_or_id
+
+    Notes
+    -----
+    DC lines are modeled by two underlying generators.
+    
+    Each of them can be controlled independantly for the voltage setpoint. 
+    
+    But they are linked together for their active value. A dc powerline has some losses (both in MW `loss_mw` and in 
+    percent `loss_percent`) and the formula for computing the power injected / produced by each generator is:
+
+    - if `xx` is positive, then `yy = -1.0 * (xx - loss_mw) * (1.0 - 0.01 * loss_percent)`
+    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw
+
+    The first formula directly comes from pandapower. The second one ensures that if the direction of the flow is 
+    inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
+
+    For the sake of simplicity, you can only control the active value at the `or` side of the dc powerline. The
+    active value at the `ex` side 
+)mydelimiter";
+
+const std::string DocIterator::target_p_or_mw = R"mydelimiter(
+    The target active production setpoint at the `or` side of the dc powerline (in MW).
+
+    .. note:: 
+        If it's positive it means that power is actually injected at the `or` side, so the
+        power flows from `ex` to `or`.
+        
+)mydelimiter";
+
+const std::string DocIterator::target_vm_or_pu = R"mydelimiter(
+    The target active voltage setpoint at the `or` side of the powerline (in pu NOT in kV).
+)mydelimiter";
+
+const std::string DocIterator::target_vm_ex_pu = R"mydelimiter(
+    The target active voltage setpoint at the `or` side of the powerline (in pu NOT in kV).
+)mydelimiter";
+
+const std::string DocIterator::loss_pct = R"mydelimiter(
+    The value of the `loss percent` parameter for the dc line.
+
+)mydelimiter" + DocIterator::dc_line_formula;
+
+const std::string DocIterator::loss_mw = R"mydelimiter(
+    The value of the `loss_mw` parameter for the dc line.
+
+)mydelimiter" + DocIterator::dc_line_formula;
+
+const std::string DocIterator::res_p_or_mw_dcline = R"mydelimiter(
+    The amount of active power injected at the `or` side of the dc powerline (in MW).
+
+)mydelimiter" + DocIterator::only_avail_res + DocIterator::dc_line_formula;
+
+const std::string DocIterator::res_p_ex_mw_dcline = R"mydelimiter(
+    The amount of active power injected at the `ex` side of the dc powerline (in MW).
+
+)mydelimiter" + DocIterator::only_avail_res + DocIterator::dc_line_formula;
+
+const std::string DocIterator::res_q_or_mvar_dcline = R"mydelimiter(
+    The amount of reactive power injected at the `or` side of the dc powerline (in MVAr).
+
+)mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::res_q_ex_mvar_dcline = R"mydelimiter(
+    The amount of reactive power injected at the `ex` side of the dc powerline (in MVAr).
+
+)mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::res_v_or_kv_dcline = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which this "or" side of the dc line is connected.
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
+
+)mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::res_v_ex_kv_dcline = R"mydelimiter(
+    Get the magnitude of the complex voltage (in kV) of the bus at which this "ex" side of the dc line is connected.
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_v_kv"
+
+)mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::res_theta_or_deg_dcline = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "or" side of the dc line is connected.
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
+
+)mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::res_theta_ex_deg_dcline = R"mydelimiter(
+    Get the angle of the complex voltage (in degree, not in radian) of the bus at which this "ex" side of the dc line is connected.
+
+    .. note::
+        All elements (load, generators, side of powerline etc.) connected at the same bus have the same "res_theta_deg"
+
+)mydelimiter" + DocIterator::only_avail_res;
+
+const std::string DocIterator::gen_or = R"mydelimiter(
+    Direct access to the "or" generators, directly returns a :class:`lightsim2grid.elements.GenInfo`
+)mydelimiter" + DocIterator::dc_line_formula;
+
+const std::string DocIterator::gen_ex = R"mydelimiter(
+    Direct access to the "ex" generators, directly returns a :class:`lightsim2grid.elements.GenInfo`
+)mydelimiter" + DocIterator::dc_line_formula;
+
+const std::string DocIterator::dc_line_formula = R"mydelimiter(
+    .. note::
+        A DC line is modeled by two connected generators and some losses to convert the power from one to the other.
+
+        Two types of losses are considered:
+        
+        - `flat` losses: `loss_mw` (in MW) 
+        - `relative` losses: `loss_percent` (no unit) 
+        
+        The formula for computing the power injected / produced by each generator is:
+
+        - if `or_mw` is positive, then `ex_mw = -1.0 * (or_mw - loss_mw) * (1.0 - 0.01 * loss_percent)`
+        - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw
+
+        Where `or_mw` denotes the power injected at the origin side and `ex_mw` the power injected at the `extremity`
+        side.
+
+    .. note::
+        By convention, a dc powerline adopts the `load convention`.
+
+        This means that if `or_mw` is positive then power is consumed at the `or` side, so the
+        power flows from `or` to `ex` and vice versa.
 
 )mydelimiter";
 
@@ -1562,6 +1710,26 @@ const std::string DocGridModel::get_loads = R"mydelimiter(
         print([el.target_p_mw for el in lightsim_grid_model.get_loads()]) # to print the active consumption for each load
 
 )mydelimiter";
+
+const std::string DocGridModel::get_dclines = R"mydelimiter(
+    This function allows to retrieve the dc powerlines (as a :class:`lightsim2grid.elements.DataDCLine` object,
+    see :ref:`elements-modeled` for more information)
+
+    Examples
+    ---------
+
+    .. code-block:: python
+        
+        # init the grid model
+        from lightsim2grid.gridmodel import init
+        pp_net = ...  # any pandapower grid
+        lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
+
+        # usage example: print some information about the powerlines
+        print([el.x_pu for el in lightsim_grid_model.get_dclines()]) # to print the "x" for each powerlines
+
+)mydelimiter";
+
 const std::string DocGridModel::_internal_do_not_use = R"mydelimiter(
         INTERNAL
 

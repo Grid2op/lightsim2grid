@@ -149,6 +149,7 @@ src_files = ['src/main.cpp',
              "src/DataLoad.cpp",
              "src/DataGen.cpp",
              "src/DataSGen.cpp",
+             "src/DataDCLine.cpp",
              "src/ChooseSolver.cpp",
              "src/GaussSeidelSolver.cpp",
              "src/GaussSeidelSynchSolver.cpp",
@@ -209,7 +210,7 @@ if "PATH_NICSLU" in os.environ:
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
         print("INFO: Using NICSLU package")
 
-# Try to locate the CKTSO sparse linaer solver
+# Try to locate the CKTSO sparse linear solver
 if "PATH_CKTSO" in os.environ:
     # user indicate the path for the CKTSO library (see https://github.com/chenxm1986/cktso)
     # eg "/home/user/Documents/cktso/"

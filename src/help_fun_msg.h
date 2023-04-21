@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -78,6 +78,7 @@ struct DocIterator
     static const std::string r_pu;
     static const std::string x_pu;
     static const std::string h_pu;
+    static const std::string only_avail_res;
 
     // specific to generators
     static const std::string DataGen;
@@ -132,6 +133,26 @@ struct DocIterator
     static const std::string res_theta_or_deg;
     static const std::string res_theta_ex_deg;
 
+    // specific to dc lines
+    static const std::string DataDCLine;
+    static const std::string DCLineInfo;
+    static const std::string dc_line_formula;
+    static const std::string target_p_or_mw;
+    static const std::string target_vm_or_pu;
+    static const std::string target_vm_ex_pu;
+    static const std::string loss_pct;
+    static const std::string loss_mw;
+    static const std::string res_p_or_mw_dcline;
+    static const std::string res_p_ex_mw_dcline;
+    static const std::string res_q_or_mvar_dcline;
+    static const std::string res_q_ex_mvar_dcline;
+    static const std::string res_v_or_kv_dcline;
+    static const std::string res_v_ex_kv_dcline;
+    static const std::string res_theta_or_deg_dcline;
+    static const std::string res_theta_ex_deg_dcline;
+    static const std::string gen_or;
+    static const std::string gen_ex;
+    
 };
 
 struct DocGridModel
@@ -158,6 +179,7 @@ struct DocGridModel
     static const std::string get_shunts;
     static const std::string get_storages;
     static const std::string get_loads;
+    static const std::string get_dclines;
     
     // retrieve the results
     static const std::string get_J_python;

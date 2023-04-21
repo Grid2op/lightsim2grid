@@ -319,12 +319,12 @@ void DataGen::set_p_slack(const RealVect& node_mismatch,
     }
 }
 
-void DataGen::init_q_vector(int nb_bus_total)  // total number of bus on the grid
+void DataGen::init_q_vector(int nb_bus,
+                            Eigen::VectorXi & total_gen_per_bus,
+                            RealVect & total_q_min_per_bus,
+                            RealVect & total_q_max_per_bus) const // delta_q_per_gen_)  // total number of bus on the grid
 {
     const int nb_gen = nb();
-    total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-    total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-    total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         if(!status_[gen_id]) continue;
@@ -332,13 +332,18 @@ void DataGen::init_q_vector(int nb_bus_total)  // total number of bus on the gri
         if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
         
         int bus_id = bus_id_(gen_id);
-        total_q_min_per_bus_(bus_id) += min_q_(gen_id);
-        total_q_max_per_bus_(bus_id) += max_q_(gen_id);
-        total_gen_per_bus_(bus_id) += 1;
+        total_q_min_per_bus(bus_id) += min_q_(gen_id);
+        total_q_max_per_bus(bus_id) += max_q_(gen_id);
+        total_gen_per_bus(bus_id) += 1;
     }
 }
 
-void DataGen::set_q(const RealVect & reactive_mismatch, const std::vector<int> & id_grid_to_solver, bool ac)
+void DataGen::set_q(const RealVect & reactive_mismatch,
+                    const std::vector<int> & id_grid_to_solver,
+                    bool ac,
+                    const Eigen::VectorXi & total_gen_per_bus,
+                    const RealVect & total_q_min_per_bus,
+                    const RealVect & total_q_max_per_bus)
 {
     const int nb_gen = nb();
     res_q_ = RealVect::Constant(nb_gen, 0.);
@@ -357,9 +362,9 @@ void DataGen::set_q(const RealVect & reactive_mismatch, const std::vector<int> &
         real_type q_to_absorb = reactive_mismatch[bus_solver];
         real_type max_q_me = max_q_(gen_id);
         real_type min_q_me = min_q_(gen_id);
-        real_type max_q_bus = total_q_max_per_bus_(bus_id);
-        real_type min_q_bus = total_q_min_per_bus_(bus_id);
-        int nb_gen_with_me = total_gen_per_bus_(bus_id);
+        real_type max_q_bus = total_q_max_per_bus(bus_id);
+        real_type min_q_bus = total_q_min_per_bus(bus_id);
+        int nb_gen_with_me = total_gen_per_bus(bus_id);
         if(nb_gen_with_me == 1){
             real_q = q_to_absorb;
         }else{

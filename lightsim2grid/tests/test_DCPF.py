@@ -154,7 +154,8 @@ class TestDCPF(unittest.TestCase):
         big_err_lid = np.where(np.abs(por_ls - por_pp) > 5000)[0]
         backend.line_ex_to_subid[big_err_lid]
         psub_ls, qsub_ls, pbus_ls, qbus_ls, diff_v_bus_ls = backend.check_kirchoff()
-        psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
+        # below it does not work due to a bug fixed in dev_1.8.2 (after 1.8.2.dev4)
+        # psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
         
         # check voltages
         line_or_theta_pp, line_ex_theta_pp, *_ = backend.init_pp_backend.get_theta()

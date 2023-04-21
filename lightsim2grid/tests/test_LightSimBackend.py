@@ -205,8 +205,8 @@ if __has_storage:
 
 
 class TestLoadingBackendLightSim(TestLoadingBackendPandaPower):
-    def get_backend(self):
-        return LightSimBackend()
+    def get_backend(self, detailed_infos_for_cascading_failures=True):
+        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
 
 class TestResetOkLS(TestResetOk):
