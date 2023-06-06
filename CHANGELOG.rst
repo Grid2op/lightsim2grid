@@ -19,7 +19,7 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.7.2] 2023-xx-yy
+[0.7.2] 2023-06-06
 --------------------
 - [FIXED] a bug in the `init` function that caused issue when importing a grid with multiple slack
   on some cases
