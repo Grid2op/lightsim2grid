@@ -28,7 +28,7 @@ class MakeTests(unittest.TestCase):
     def setUp(self) -> None:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make(backend=LightSimBackend(), test=True)
+            self.env = grid2op.make('rte_case14_realistic', backend=LightSimBackend(), test=True)
 
     def tearDown(self) -> None:
         self.env.close()
