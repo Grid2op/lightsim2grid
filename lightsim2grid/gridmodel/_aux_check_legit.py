@@ -41,9 +41,10 @@ def _aux_check_legit(pp_net):
     if "xward" in pp_net and pp_net.xward.shape[0]:
         raise RuntimeError("Unsupported element found (Extended Ward - \"pp_net.xward\") "
                            "in pandapower network")
-    if "dcline" in pp_net and pp_net.dcline.shape[0]:
-        raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "
-                           "in pandapower network")
+    # supported now
+    # if "dcline" in pp_net and pp_net.dcline.shape[0]:
+    #     raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "
+    #                        "in pandapower network")
 
     # bus indexes should start at 0 and be contiguous
     if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):

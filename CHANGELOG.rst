@@ -3,10 +3,14 @@ Change Log
 
 [TODO]
 --------
+- make an `init` function from pypowsybl
+- support DC powerline (as modeled in pandapower)
+- support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
+- use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
 - possibility to read CGMES files
 - possibility to read XIIDM files
@@ -14,6 +18,29 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
+
+[0.7.2] 2023-06-06
+--------------------
+- [FIXED] a bug in the `init` function that caused issue when importing a grid with multiple slack
+  on some cases
+- [FIXED] some bugs in the "SecurityAnalysis" and "TimeSerie" modules especially in DC mode.
+- [FIXED] a bug in the DC comptuation: some "divergence" were not catched
+- [FIXED] a bug in the "Computer" (cpp) class where the intial voltage could lead to generator not
+  participating correctly to the voltage regulation (wrong output voltage level).
+- [FIXED] a bug in the "set_bus" of shunt (wrong bus was assigned cpp side)
+- [FIXED] an issue when slack bus is added from ext grid (wrong active power value - sign issue)
+- [ADDED] support for the CKTSO linear solver (on linux), which is slightly faster than SparseLU, KLU and NICSLU
+  (this requires a compilation from source)
+- [ADDED] support for distributed slack bus in `LightSimBackend`
+- [ADDED] support for "generator with p=0. do not participate in voltage regulation" in `LightSimBackend`
+- [ADDED] support for the DC computation for "SecurityAnalysis" and "TimeSerie" modules
+- [ADDED] support for DC powerline (in lightsim, they are still not handled in grid2op)
+- [IMPROVED] now that multiple slacks is fully supported, the warnings when importing a grid with multiple slacks
+  are irrelevant. They have been removed.
+- [IMPROVED] the documentation on the "sovlers" part
+- [IMPROVED] move the "how to compile" section of the readme in the documentation
+- [IMPROVED] `SuiteSparse` is upgraded to version 5.13 (issue with build system based on cmake and BLAS for SuiteSparse >= 6.0)
+- [IMPROVED] upgrade to eigen `3.4.0` (stable release)
 
 [0.7.1] 2023-01-11
 ---------------------
@@ -110,7 +137,7 @@ Change Log
 - [FIXED] An issue where the backend could get "stuck" in a wrong state because of the way the Vinit was computed (see
   `Issue 30 <https://github.com/BDonnot/lightsim2grid/issues/30>`_)
 - [ADDED] experimental support for the `NICSLU` linear solver (requires a proper license and library, see
-  https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment.
+  https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment).
 - [IMPROVED] minor performance improvements for the solvers based on Newton Raphson (faster filling of the Jacobian
   matrix after the first iteration)
 

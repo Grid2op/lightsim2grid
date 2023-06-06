@@ -243,10 +243,19 @@ class MyTestCase(unittest.TestCase):
                                   "gen": np.array([], dtype=int), "branch": np.array([], dtype=int)}
         # convert pandapower net to ppc
         ppc, ppci = _pd2ppc(pp_net)
-        baseMVA, bus, gen, branch, ref, pv, pq, on, gbus, _, refgen = _get_pf_variables_from_ppci(ppci)
+        try:
+            baseMVA, bus, gen, branch, ref, pv, pq, on, gbus, _, refgen = _get_pf_variables_from_ppci(ppci)
+        except ValueError:
+            # change in pandapower 2.12
+            baseMVA, bus, gen, branch, svc, tcsc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+            
         Va0 = bus[:, VA] * (np.pi / 180.)
-        B, Bf, Pbusinj, Pfinj = makeBdc(bus, branch)
-
+        try:
+            B, Bf, Pbusinj, Pfinj = makeBdc(bus, branch)
+        except ValueError:
+            # change in pandapower 2.12
+            B, Bf, Pbusinj, Pfinj, Cft = makeBdc(bus, branch)
+            
         Pbus = makeSbus(baseMVA, bus, gen) - Pbusinj - bus[:, GS] / baseMVA
         Pbus_pp_ro = Pbus[pp_vect_converter]
         error_p = np.abs(np.real(Sdc_me) - np.real(Pbus_pp_ro))

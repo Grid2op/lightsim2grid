@@ -15,7 +15,7 @@ template<class LinearSolver>
 class BaseDCSolver: public BaseSolver
 {
     public:
-        BaseDCSolver():BaseSolver(), _linear_solver(), need_factorize_(true){};
+        BaseDCSolver():BaseSolver(false), _linear_solver(), need_factorize_(true){};
 
         ~BaseDCSolver(){}
 

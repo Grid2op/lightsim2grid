@@ -24,8 +24,12 @@ It can be used as:
     env = grid2op.make(env_name, backend=LightSimBackend())
 
     time_series = TimeSerie(env)
-    Vs = time_series.compute_V(scenario_id=..., seed=...)
-    As = time_series.compute_A()  # will contain the flows, in amps at each step (rows) for each powerline (column)
+    res_p, res_a, res_v = time_series.get_flows(scenario_id=..., seed=...)
+
+    # we have:
+    # res_p[row_id] will be the active power flows (origin side), on all powerlines corresponding to step "row_id"
+    # res_a[row_id] will be the current flows, on all powerlines corresponding to step "row_id"
+    # res_v[row_id] will be the complex voltage, on all bus of the grid at step "row_id"
 
 For now this relies on grid2op, but we could imagine a version of this class that can read
 to / from other data sources (for now please use the more basic :class:`lightsim2grid.timeSerie.Computers` for such purpose)

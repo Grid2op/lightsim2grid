@@ -18,7 +18,7 @@ template<class LinearSolver>
 class BaseNRSolver : public BaseSolver
 {
     public:
-        BaseNRSolver():need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
+        BaseNRSolver():BaseSolver(true), need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
 
         virtual
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {

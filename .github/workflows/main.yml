@@ -61,18 +61,22 @@ jobs:
 
       - name: Build wheel
         run: |
-          export __O3_OPTIM=1
+          # export __O3_OPTIM=1
           python3 setup.py bdist_wheel
           auditwheel repair dist/*.whl
 
       - name: Install wheel
         run: pip3 install wheelhouse/*.whl --user
 
+      - name: Install GDB
+        run: yum install -y gdb
+
       - name: Check package can be imported
         run: |
-          python3 -c "import lightsim2grid"
-          python3 -c "from lightsim2grid import *"
-          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          # python3 -c "import lightsim2grid"
+          # python3 -c "from lightsim2grid import *"
+          # python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          gdb -batch -ex r --args python3 -c "from lightsim2grid import *" -ex backtrace
 
       - name: Check LightSimBackend can be imported
         run: |

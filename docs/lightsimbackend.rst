@@ -43,6 +43,47 @@ For standard grid2op environment, you can use it like:
             # the `LightSimBackend` will be used to carry out the powerflow computation instead
             # of the default grid2op `PandaPowerBackend`
 
+Customization of the backend
+-------------------------------
+.. warning::
+    Use grid2op > 1.7.1 for this feature to work properly. Otherwise some bugs (hard to detect) will occur.
+
+You can customize the way the backend behaves in different ways:
+
+- `max_iter`: maximum number of iterations you allow the solver to perform. If a valid solution to the Kirchhoff Current Laws (KCL)
+  is not found after this number of iterations, then the backend will "diverge". Default is 10 which is a good value for medium size
+  powergrid if you use a Newton Raphson based method (default)
+- `tol`: During its internal iterations, the underlying solver will say the Kirchhoff Current Laws (KCL) are matched if the 
+  maximum value of the difference is lower than this. Default is `1e-8`.
+- `solver_type`: which type of "solver" you want to use. See :ref:`solvers_doc` for more information. By default it uses 
+  what it considers the fastest solver available which is likely to be :class:`lightsim2grid.solver.SolverType.KLUSolverSingleSlack`
+- `turned_off_pv` : by default (set to `turned_off_pv=True`) all generators partipate in the voltage regulation, which is not completely realistic.
+  When you initialize a backend with `turned_off_pv=False` then the generators that do not produce power (*eg* "p=0.") or that are
+  turned off are excluded from the voltage regulation.
+- `dist_slack_non_renew`: by default in most grid2op environment, the slack bus is "centralize" / "single slack". This parameters
+  allows to bypass this restriction and use all non renewable generators (and turned on and with  > 0.) in a distributed
+  slack bus setting. It might change the default `solver_type` used.
+- \* `detailed_infos_for_cascading_failures`: for exhaustivity, do not modify.
+- \* `can_be_copied`: for exhaustivity, do not modify.
+
+The easiest way to customize your backend is when you create the grid2op environment, like this:
+
+.. code-block:: python
+
+    import grid2op
+    import lightsim2grid
+    from lightsim2grid import LightSimBackend
+
+    env_name = ...
+    env = grid2op.make(env_name,
+                       backend=LightSimBackend(
+                        max_iter=15,
+                        tol=1e-9,
+                        solver_type=lightsim2grid.solver.SolverType.KLUSolverSingleSlack,
+                        # etc.
+                        )
+                      )
+
 Detailed documentation
 --------------------------
 

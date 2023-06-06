@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 from grid2op import make
+from grid2op.dtypes import dt_int
 from grid2op.Agent import AgentWithConverter
 from grid2op.Parameters import Parameters
 from grid2op.Rules import AlwaysLegal
@@ -149,8 +150,8 @@ class TestAgent(AgentWithConverter):
         self.action_space.all_actions = all_actions
 
         # add the action "reset everything to 1 bus"
-        self.action_space.all_actions.append(action_space({"set_bus": np.ones(action_space.dim_topo, dtype=np.int),
-                                                           "set_line_status": np.ones(action_space.n_line, dtype=np.int)}))
+        self.action_space.all_actions.append(action_space({"set_bus": np.ones(action_space.dim_topo, dtype=dt_int),
+                                                           "set_line_status": np.ones(action_space.n_line, dtype=dt_int)}))
         self.nb_act_done = 0
         self.act_this = True
 

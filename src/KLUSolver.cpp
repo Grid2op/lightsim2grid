@@ -8,6 +8,8 @@
 
 #include "KLUSolver.h"
 
+#include <iostream>
+
 ErrorType KLULinearSolver::reset(){
     klu_free_symbolic(&symbolic_, &common_);
     klu_free_numeric(&numeric_, &common_);

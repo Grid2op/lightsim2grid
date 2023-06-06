@@ -204,6 +204,12 @@ class DataTrafo : public DataGeneric
     Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
     Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
 
+    Eigen::Ref<const CplxVect> ydc_ff() const {return ydc_ff_;}
+    Eigen::Ref<const CplxVect> ydc_ft() const {return ydc_ft_;}
+    Eigen::Ref<const CplxVect> ydc_tf() const {return ydc_tf_;}
+    Eigen::Ref<const CplxVect> ydc_tt() const {return ydc_tt_;}
+    Eigen::Ref<const RealVect> dc_x_tau_shift() const {return dc_x_tau_shift_;}
+    
     const std::vector<bool>& get_status() const {return status_;}
 
     protected:

@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import copy
-from typing import Optional, Type
+from typing import Optional, Union
 import warnings
 import numpy as np
 import time
@@ -28,11 +28,15 @@ class LightSimBackend(Backend):
     coded in c++, aiming at speeding up the computations.
     """
     def __init__(self,
-                 detailed_infos_for_cascading_failures: bool =False,
-                 can_be_copied: bool =True,
+                 detailed_infos_for_cascading_failures: bool=False,
+                 can_be_copied: bool=True,
                  max_iter: int=10,
                  tol: float=1e-8,
-                 solver_type: Optional[SolverType] =None):
+                 solver_type: Optional[SolverType]=None,
+                 turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
+                 dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
+                 use_static_gen: bool=False, # add the static generators as generator gri2dop side
+                 ):
         try:
             # for grid2Op >= 1.7.1
             Backend.__init__(self,
@@ -40,7 +44,10 @@ class LightSimBackend(Backend):
                              can_be_copied=can_be_copied,
                              solver_type=solver_type,
                              max_iter=max_iter,
-                             tol=tol)
+                             tol=tol,
+                             turned_off_pv=turned_off_pv,
+                             dist_slack_non_renew=dist_slack_non_renew,
+                             use_static_gen=use_static_gen)
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
                           "you cannot set max_iter, tol nor solver_type arguments.")
@@ -148,7 +155,25 @@ class LightSimBackend(Backend):
         # TODO and should rather be handled in pandapower backend
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
-
+        
+        # does the "turned off" generators (including when p=0)
+        # are pv buses
+        self._turned_off_pv = turned_off_pv
+        
+        # distributed slack, on non renewable gen with P > 0
+        self._dist_slack_non_renew = dist_slack_non_renew
+        
+        # add the static gen to the list of controlable gen in grid2Op
+        self._use_static_gen = use_static_gen  # TODO implement it
+        
+    def turnedoff_no_pv(self):
+        self._turned_off_pv = False
+        self._grid.turnedoff_no_pv()
+        
+    def turnedoff_pv(self):
+        self._turned_off_pv = True
+        self._grid.turnedoff_pv()
+        
     def _fill_theta(self):
         # line_or_theta = np.empty(self.n_line)
         self.line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
@@ -188,7 +213,33 @@ class LightSimBackend(Backend):
                self.cst_1 * self.gen_theta, \
                self.cst_1 * self.storage_theta
 
-    def set_solver_type(self, solver_type):
+    def get_solver_types(self) -> Union[SolverType, SolverType]:
+        """Return the types of solver that are used in the form a tuple with 2 elements.
+        
+        The first one is the solver used for AC computation, the second one for DC computation (and also for
+        initialization of AC computations)
+        
+        You can use it to check what is used:
+        
+        .. code-block:: python
+
+            import grid2op
+            import lightsim2grid
+            from ligthsim2grid import LightSimBackend
+            
+            env_name = ...
+            env = grid2op.make(env_name, backend=LightSimBackend())
+            print(env.backend.get_solver_types())
+            # >>> (<SolverType.KLUSingleSlack: 7>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            
+            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLU))
+            print(env2.backend.get_solver_types())
+            # >>> (<SolverType.SparseLU: 0>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            
+        """
+        return self._grid.get_solver_type(), self._grid.get_dc_solver_type()
+        
+    def set_solver_type(self, solver_type: SolverType):
         """
         Change the type of solver you want to use.
 
@@ -237,11 +288,10 @@ class LightSimBackend(Backend):
         We do not recommend to modify the default value (10), unless you are using the GaussSeidel powerflow.
         This powerflow being slower, we do not recommend to use it.
 
-        Recommendation:
+        Recommendation, for medium sized grid (**eg** based on the ieee 118):
 
         - for SolverType.SparseLU: 10
         - for SolverType.GaussSeidel: 10000
-        - for SolverType.DC: this has no effect
         - for SolverType.SparseKLU: 10
 
         Parameters
@@ -286,38 +336,49 @@ class LightSimBackend(Backend):
         try:
             new_tol = float(new_tol)
         except Exception as exc_:
-            raise BackendError(f"Impossible to convert \"new_tol={new_tol}\" to an float with error \"{exc_}\"")
+            raise BackendError(f"Impossible to convert \"new_tol={new_tol}\" to an float with error \"{exc_}\"") from exc_
         if new_tol <= 0:
             raise BackendError("new_tol should be a strictly positive float (float > 0)")
         self.tol = new_tol
         self._idx_hack_storage = np.zeros(0, dtype=dt_int)
 
+    def _handle_turnedoff_pv(self):
+        if self._turned_off_pv:
+            self._grid.turnedoff_pv()
+        else:
+            self._grid.turnedoff_no_pv()
+    
+    def _assign_right_solver(self):
+        has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
+        if has_single_slack and not self._dist_slack_non_renew:
+            if SolverType.KLUSingleSlack in self.available_solvers:
+                # use the faster KLU if available
+                self._grid.change_solver(SolverType.KLUSingleSlack)
+            else:
+                self._grid.change_solver(SolverType.SparseLUSingleSlack)
+        else:
+            # grid has multiple slack      
+            if SolverType.KLU in self.available_solvers:
+                # use the faster KLU if available
+                self._grid.change_solver(SolverType.KLU)
+            else:
+                self._grid.change_solver(SolverType.SparseLU)
+        
     def load_grid(self, path=None, filename=None):
         # if self.init_pp_backend is None:
         self.init_pp_backend.load_grid(path, filename)
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
 
         self._grid = init(self.init_pp_backend._grid)
-
+        
+        self._handle_turnedoff_pv()
+            
         self.available_solvers = self._grid.available_solvers()
         if self.__current_solver_type is None:
             # previous default behaviour (< 0.7)
             # by default it builds the backend with the fastest solver
             # automatically found
-            has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
-            if has_single_slack:
-                if SolverType.KLUSingleSlack in self.available_solvers:
-                    # use the faster KLU if available
-                    self._grid.change_solver(SolverType.KLUSingleSlack)
-                else:
-                    self._grid.change_solver(SolverType.SparseLUSingleSlack)
-            else:
-                # grid has multiple slack      
-                if SolverType.KLUSingleSlack in self.available_solvers:
-                    # use the faster KLU if available
-                    self._grid.change_solver(SolverType.KLU)
-                else:
-                    self._grid.change_solver(SolverType.SparseLU)
+            self._assign_right_solver()
             
             if SolverType.KLUDC in self.available_solvers:
                 # use the faster KLU if available even for DC approximation
@@ -353,7 +414,7 @@ class LightSimBackend(Backend):
         self.name_load = self.init_pp_backend.name_load
         self.name_line = self.init_pp_backend.name_line
         self.name_sub = self.init_pp_backend.name_sub
-
+            
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
             self.n_storage = self.init_pp_backend.n_storage
@@ -617,8 +678,10 @@ class LightSimBackend(Backend):
                     self._grid.deactivate_shunt(sh_id)
                 else:
                     self._grid.reactivate_shunt(sh_id)
-                    self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] * new_bus)
-
+                    if hasattr(type(self), "local_bus_to_global_int"):
+                        self._grid.change_bus_shunt(sh_id, type(self).local_bus_to_global_int(new_bus, self.shunt_to_subid[sh_id]))
+                    else:
+                        self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] + (new_bus == 2) * type(self).n_sub)
             for sh_id, new_p in shunt_p:
                 self._grid.change_p_shunt(sh_id, new_p)
             for sh_id, new_q in shunt_q:
@@ -645,6 +708,12 @@ class LightSimBackend(Backend):
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
         # TODO have been correctly called before calling the function self._grid.update_topo
+        
+        self._handle_dist_slack()
+    
+    def _handle_dist_slack(self):
+        if self._dist_slack_non_renew:
+            self._grid.update_slack_weights(type(self).gen_redispatchable)
 
     def runpf(self, is_dc=False):
         my_exc_ = None
@@ -829,7 +898,8 @@ class LightSimBackend(Backend):
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
-                           "_my_kwargs"
+                           "_my_kwargs",
+                           "_turned_off_pv", "_dist_slack_non_renew"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -962,6 +1032,7 @@ class LightSimBackend(Backend):
         self._grid = self.__me_at_init.copy()
         self._grid.tell_topo_changed()
         self._grid.change_solver(self.__current_solver_type)
+        self._handle_turnedoff_pv()
         self.topo_vect[:] = self.__init_topo_vect
         self.comp_time = 0.
         self._timer_postproc = 0.

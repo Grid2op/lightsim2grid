@@ -9,6 +9,8 @@
 #ifndef CUSTTIMER_H
 #define CUSTTIMER_H
 
+#include <chrono>
+
 /**
 
 This class presents a basic timer that is used in KLUSolver to know on which part of the solver

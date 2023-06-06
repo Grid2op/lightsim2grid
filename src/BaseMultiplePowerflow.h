@@ -28,6 +28,7 @@ class BaseMultiplePowerflow
             n_total_(n_line_ + n_trafos_),
             _solver(),
             _amps_flows(),
+            _active_power_flows(),
             _voltages(),
             _nb_solved(0),
             _timer_compute_A(0.),
@@ -59,6 +60,16 @@ class BaseMultiplePowerflow
         double amps_computation_time() const {return _timer_compute_A;}
         double solver_time() const {return _timer_solver;}
         int nb_solved() const {return _nb_solved;}
+        virtual void clear() {
+            _solver.reset();
+            _amps_flows = RealMat();
+            _active_power_flows = RealMat();
+            _voltages = CplxMat();
+            _nb_solved = 0;
+            _timer_compute_A = 0;
+            _timer_compute_P = 0;
+            _timer_solver = 0;
+        }
 
         // results
         Eigen::Ref<const RealMat > get_flows() const {return _amps_flows;}
@@ -69,17 +80,23 @@ class BaseMultiplePowerflow
         template<class T>
         void compute_amps_flows(const T & structure_data,
                                 real_type sn_mva,
-                                Eigen::Index lag_id) 
+                                Eigen::Index lag_id,
+                                bool is_trafo) 
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status();
             const auto & bus_from = structure_data.get_bus_from();
             const auto & bus_to = structure_data.get_bus_to();
-            const auto & v_yac_ff = structure_data.yac_ff();
-            const auto & v_yac_ft = structure_data.yac_ft();
+            bool is_ac = _solver.ac_solver_used();
+
+            const auto & vect_y_ff = is_ac ? structure_data.yac_ff() : structure_data.ydc_ff();
+            const auto & vect_y_ft = is_ac ? structure_data.yac_ft() : structure_data.ydc_ft();
+            Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
+
             Eigen::Index nb_el = structure_data.nb();
             real_type sqrt_3 = sqrt(3.);
 
+            RealVect res;
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
 
@@ -95,16 +112,22 @@ class BaseMultiplePowerflow
                 const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
 
                 // retrieve physical parameters
-                const cplx_type yac_ff = v_yac_ff(el_id);  // scalar
-                const cplx_type yac_ft = v_yac_ft(el_id);
+                const cplx_type y_ff = vect_y_ff(el_id);  // scalar
+                const cplx_type y_ft = vect_y_ft(el_id);
 
-                // trafo equations (to get the power at the "from" side)
-                CplxVect I_ft =  yac_ff * Efrom + yac_ft * Eto;
-                I_ft = I_ft.array().conjugate();
-                const CplxVect S_ft = Efrom.array() * I_ft.array();
+                if(is_ac){
+                    // trafo equations (to get the power at the "from" side)
+                    CplxVect I_ft =  y_ff * Efrom + y_ft * Eto;
+                    I_ft = I_ft.array().conjugate();
+                    const CplxVect S_ft = Efrom.array() * I_ft.array();
 
-                // now compute the current flow
-                RealVect res = S_ft.array().abs() * sn_mva;
+                    // now compute the current flow
+                    res = S_ft.array().abs() * sn_mva;
+                }else{
+                    res = (std::real(y_ff) * Efrom.array().arg() + std::real(y_ft) * Eto.array().arg()) * sn_mva;
+                    if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
+                    res.array() = res.array().abs();
+                }
                 res.array() /= sqrt_3 * v_f_kv.array();
                 _amps_flows.col(el_id + lag_id) = res;
             }
@@ -112,16 +135,22 @@ class BaseMultiplePowerflow
         template<class T>
         void compute_active_power_flows(const T & structure_data,
                                         real_type sn_mva,
-                                        Eigen::Index lag_id) 
+                                        Eigen::Index lag_id,
+                                        bool is_trafo) 
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status();
             const auto & bus_from = structure_data.get_bus_from();
             const auto & bus_to = structure_data.get_bus_to();
-            const auto & v_yac_ff = structure_data.yac_ff();
-            const auto & v_yac_ft = structure_data.yac_ft();
+            bool is_ac = _solver.ac_solver_used();
+
+            Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_ff() : structure_data.ydc_ff();
+            Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_ft() : structure_data.ydc_ft();
+            Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
+
             Eigen::Index nb_el = structure_data.nb();
 
+            RealVect res;
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
 
@@ -137,16 +166,21 @@ class BaseMultiplePowerflow
                 const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
 
                 // retrieve physical parameters
-                const cplx_type yac_ff = v_yac_ff(el_id);  // scalar
-                const cplx_type yac_ft = v_yac_ft(el_id);
+                const cplx_type y_ff = vect_y_ff(el_id);  // scalar
+                const cplx_type y_ft = vect_y_ft(el_id);
 
                 // trafo equations (to get the power at the "from" side)
-                CplxVect I_ft = yac_ff * Efrom + yac_ft * Eto;
-                I_ft = I_ft.array().conjugate();
-                const CplxVect S_ft = Efrom.array() * I_ft.array();
+                if(is_ac){
+                    CplxVect I_ft = y_ff * Efrom + y_ft * Eto;
+                    I_ft = I_ft.array().conjugate();
+                    const CplxVect S_ft = Efrom.array() * I_ft.array();
 
-                // now compute the current flow
-                RealVect res = S_ft.array().real() * sn_mva;
+                    // now compute the active flow
+                    res = S_ft.array().real() * sn_mva;
+                }else{
+                    res = (std::real(y_ff) * Efrom.array().arg() + std::real(y_ft) * Eto.array().arg()) * sn_mva;
+                    if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
+                }
                 _active_power_flows.col(el_id + lag_id) = res;
             }
         }

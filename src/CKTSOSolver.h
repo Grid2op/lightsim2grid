@@ -6,9 +6,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifdef NICSLU_SOLVER_AVAILABLE
-#ifndef NICSLUSOLVER_H
-#define NICSLUSOLVER_H
+#ifdef CKTSO_SOLVER_AVAILABLE
+#ifndef CKTSOSOLVER_H
+#define CKTSOSOLVER_H
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -17,38 +17,46 @@
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 
-// import nicslu package
-#include "nicslu_cpp.inl"
+// import cktso package
+#include "cktso.h"
 
 /**
-class to handle the solver using newton-raphson method, using NICSLU algorithm and sparse matrices.
+class to handle the solver using newton-raphson method, using CKTSO algorithm and sparse matrices.
+CKTSO, according to https://github.com/BDonnot/lightsim2grid/issues/52
+is the successor of NICSLU.
 
 As long as the admittance matrix of the system does not change, you can reuse the same solver.
 Reusing the same solver is possible, but "reset" method must be called.
 
 Otherwise, unexpected behaviour might follow, including "segfault".
 
-NB: the code of NICSLU is not included in this repository. This class is only compiled if the "setup.py"
-can find a version of `https://github.com/chenxm1986/nicslu`. Be careful though, this code is under some
+NB: the code of CKTSO is not included in this repository. This class is only compiled if the "setup.py"
+can find a version of `https://github.com/chenxm1986/cktso`. Be careful though, this code is under some
 specific license.
 
 **/
-
-// TODO use the cpp API instead !
-class NICSLULinearSolver
+class CKTSOLinearSolver
 {
     public:
-        NICSLULinearSolver():
-            solver_(),
+        CKTSOLinearSolver():
+            solver_(nullptr),
             nb_thread_(1),
             ai_(nullptr), 
-            ap_(nullptr){}
+            ap_(nullptr),
+            iparm_(nullptr),
+            oparm_(nullptr)
+            {}
 
-        ~NICSLULinearSolver()
+        ~CKTSOLinearSolver()
          {
-            solver_.Free();
+            if(solver_!= nullptr) solver_->DestroySolver();
             if(ai_!= nullptr) delete [] ai_;
             if(ap_!= nullptr) delete [] ap_;
+            
+            // should not be deleted, see https://github.com/BDonnot/lightsim2grid/issues/52#issuecomment-1333565959
+            // if(iparm_!= nullptr) delete iparm_;
+            // if(oparm_!= nullptr) delete oparm_;
+            
          }
 
         // public api
@@ -57,17 +65,19 @@ class NICSLULinearSolver
         ErrorType solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
 
         // prevent copy and assignment
-        NICSLULinearSolver(const NICSLULinearSolver & other) = delete;
-        NICSLULinearSolver & operator=( const NICSLULinearSolver & ) = delete;
+        CKTSOLinearSolver(const CKTSOLinearSolver & other) = delete;
+        CKTSOLinearSolver & operator=( const CKTSOLinearSolver & ) = delete;
         
     private:
         // solver initialization
-        CNicsLU solver_;
+        ICktSo solver_;
         const unsigned int nb_thread_;
-        unsigned int * ai_;
-        unsigned int * ap_;
+        int * ai_;
+        int * ap_;
+        int * iparm_;
+        long long * oparm_;
 
 };
 
-#endif // NICSLUSOLVER_H
-#endif  // NICSLU_SOLVER_AVAILABLE
+#endif // CKTSOSOLVER_H
+#endif  // CKTSO_SOLVER_AVAILABLE

@@ -34,6 +34,7 @@
 #include "DataLoad.h"
 #include "DataGen.h"
 #include "DataSGen.h"
+#include "DataDCLine.h"
 
 
 // import newton raphson solvers using different linear algebra solvers
@@ -64,10 +65,12 @@ class GridModel : public DataGeneric
                 // static generators
                 DataSGen::StateRes,
                 // storage units
-                DataLoad::StateRes
+                DataLoad::StateRes,
+                //dc lines
+                DataDCLine::StateRes
                 >  StateRes;
 
-        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true),init_vm_pu_(1.04), sn_mva_(1.0){
+        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true), init_vm_pu_(1.04), sn_mva_(1.0){
             _dc_solver.change_solver(SolverType::DC);
         }
         GridModel(const GridModel & other);
@@ -83,10 +86,18 @@ class GridModel : public DataGeneric
 
         // retrieve the underlying data (raw class)
         const DataGen & get_generators_as_data() const {return generators_;}
+        void turnedoff_no_pv(){generators_.turnedoff_no_pv();}  // turned off generators are not pv
+        void turnedoff_pv(){generators_.turnedoff_pv();}  // turned off generators are pv
+        bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
+        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
+            generators_.update_slack_weights(could_be_slack, topo_changed_);
+        }
+
         const DataSGen & get_static_generators_as_data() const {return sgens_;}
         const DataLoad & get_loads_as_data() const {return loads_;}
         const DataLine & get_powerlines_as_data() const {return powerlines_;}
         const DataTrafo & get_trafos_as_data() const {return trafos_;}
+        const DataDCLine & get_dclines_as_data() const {return dc_lines_;}
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
 
         // solver "control"
@@ -166,6 +177,21 @@ class GridModel : public DataGeneric
                            const Eigen::VectorXi & storages_bus_id){
             storages_.init(storages_p, storages_q, storages_bus_id);
         }
+        void init_dclines(const Eigen::VectorXi & branch_from_id,
+                          const Eigen::VectorXi & branch_to_id,
+                          const RealVect & p_mw,
+                          const RealVect & loss_percent,
+                          const RealVect & loss_mw,
+                          const RealVect & vm_or_pu,
+                          const RealVect & vm_ex_pu,
+                          const RealVect & min_q_or,
+                          const RealVect & max_q_or,
+                          const RealVect & min_q_ex,
+                          const RealVect & max_q_ex){
+            dc_lines_.init(branch_from_id, branch_to_id, p_mw,
+                           loss_percent, loss_mw, vm_or_pu, vm_ex_pu,
+                           min_q_or, max_q_or, min_q_ex, max_q_ex);
+        }
 
         void add_gen_slackbus(int gen_id, real_type weight);
         void remove_gen_slackbus(int gen_id);
@@ -193,14 +219,14 @@ class GridModel : public DataGeneric
 
         // dc powerflow
         CplxVect dc_pf(const CplxVect & Vinit,
-                               int max_iter,  // not used for DC
-                               real_type tol  // not used for DC
-                               );
+                       int max_iter,  // not used for DC
+                       real_type tol  // not used for DC
+                       );
 
         // ac powerflow
         CplxVect ac_pf(const CplxVect & Vinit,
-                               int max_iter,
-                               real_type tol);
+                       int max_iter,
+                       real_type tol);
 
         // check the kirchoff law
         CplxVect check_solution(const CplxVect & V, bool check_q_limits);
@@ -216,6 +242,7 @@ class GridModel : public DataGeneric
 
         // read only data accessor
         const DataLine & get_lines() const {return powerlines_;}
+        const DataDCLine & get_dclines() const {return dc_lines_;}
         const DataTrafo & get_trafos() const {return trafos_;}
         const DataGen & get_generators() const {return generators_;}
         const DataLoad & get_loads() const {return loads_;}
@@ -290,6 +317,17 @@ class GridModel : public DataGeneric
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q(storage_id, new_q, topo_changed_); }
         int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id);}
 
+        //deactivate a powerline (disconnect it)
+        void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, topo_changed_); }
+        void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, topo_changed_); }
+        void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, topo_changed_); }
+        void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_or(dcline_id, new_v_pu, topo_changed_); }
+        void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_ex(dcline_id, new_v_pu, topo_changed_); }
+        void change_bus_dcline_or(int dcline_id, int new_bus_id) {dc_lines_.change_bus_or(dcline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_bus_dcline_ex(int dcline_id, int new_bus_id) {dc_lines_.change_bus_ex(dcline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
+        int get_bus_dcline_or(int dcline_id) {return dc_lines_.get_bus_or(dcline_id);}
+        int get_bus_dcline_ex(int dcline_id) {return dc_lines_.get_bus_ex(dcline_id);}
+
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
         const std::vector<bool>& get_loads_status() const { return loads_.get_status();}
@@ -307,6 +345,9 @@ class GridModel : public DataGeneric
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
         tuple3d get_sgens_res() const {return sgens_.get_res();}
         const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
+        tuple3d get_dclineor_res() const {return dc_lines_.get_or_res();}
+        tuple3d get_dclineex_res() const {return dc_lines_.get_ex_res();}
+        const std::vector<bool>& get_dclines_status() const { return dc_lines_.get_status();}
 
         Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
         Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
@@ -316,6 +357,8 @@ class GridModel : public DataGeneric
         Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_ex();}
         Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_hv();}
         Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_lv();}
+        Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_or();}
+        Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_ex();}
 
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
@@ -337,6 +380,9 @@ class GridModel : public DataGeneric
         }
         Eigen::Ref<const Eigen::VectorXi> get_slack_ids() const{
             return slack_bus_id_ac_solver_;
+        }
+        Eigen::Ref<const Eigen::VectorXi> get_slack_ids_dc() const{
+            return slack_bus_id_dc_solver_;
         }
         Eigen::Ref<const RealVect> get_slack_weights() const{
             return slack_weights_;
@@ -365,6 +411,8 @@ class GridModel : public DataGeneric
         void update_bus_status(int nb_bus_before,
                                Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
         void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                           Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         void update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
@@ -438,6 +486,10 @@ class GridModel : public DataGeneric
         {
             n_sub_ = n_sub;
         }
+        
+        void fillSbus_other(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver){
+            fillSbus_me(res, ac, id_me_to_solver);
+        }
 
     protected:
     // add method to change topology, change ratio of transformers, change
@@ -467,7 +519,7 @@ class GridModel : public DataGeneric
                        std::vector<int>& id_solver_to_me,
                        Eigen::VectorXi & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver, Eigen::VectorXi & slack_bus_id_solver);
+        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
                        Eigen::VectorXi & slack_bus_id_solver);
 
@@ -548,6 +600,10 @@ class GridModel : public DataGeneric
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                  std::vector<int> & id_me_to_solver,
                                                  int size);
+
+        void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
+        void check_solution_q_values_onegen(CplxVect & res, const DataGen::GenInfo& gen, bool check_q_limits) const;
+
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
@@ -585,6 +641,9 @@ class GridModel : public DataGeneric
         DataTrafo trafos_;
 
         // 5. generators
+        RealVect total_q_min_per_bus_;
+        RealVect total_q_max_per_bus_;
+        Eigen::VectorXi total_gen_per_bus_;
         DataGen generators_;
 
         // 6. loads
@@ -595,6 +654,9 @@ class GridModel : public DataGeneric
 
         // 7. storage units
         DataLoad storages_;
+
+        // hvdc
+        DataDCLine dc_lines_;
 
         // 8. slack bus
         // TODO multiple slack bus

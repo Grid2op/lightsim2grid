@@ -103,6 +103,18 @@ Transformers
     :autosummary:
 
 
+DC Powerlines (more exotic)
+++++++++++++++++++++++++++++
+
+.. autoclass:: lightsim2grid.elements.DataDCLine
+    :members:
+    :autosummary:
+
+.. autoclass:: lightsim2grid.elements.DCLineInfo
+    :members:
+    :autosummary:
+
+
 Detailed documentation
 --------------------------
 

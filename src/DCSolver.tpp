@@ -11,15 +11,15 @@
 // TODO SLACK !!!
 template<class LinearSolver>
 bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                        CplxVect & V,
-                                        const CplxVect & Sbus,
-                                        const Eigen::VectorXi & slack_ids,
-                                        const RealVect & slack_weights,
-                                        const Eigen::VectorXi & pv,
-                                        const Eigen::VectorXi & pq,
-                                        int max_iter,
-                                        real_type tol
-                                        )
+                                            CplxVect & V,
+                                            const CplxVect & Sbus,
+                                            const Eigen::VectorXi & slack_ids,
+                                            const RealVect & slack_weights,
+                                            const Eigen::VectorXi & pv,
+                                            const Eigen::VectorXi & pq,
+                                            int max_iter,
+                                            real_type tol
+                                            )
 {
     // max_iter is ignored
     // tol is ignored
@@ -27,17 +27,14 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     //   and for the slack bus both the magnitude and the angle are used.
 
     auto timer = CustTimer();
-    // std::cout << "entering DCSolver::compute_pf" << std::endl;
+
     const int nb_bus_solver = static_cast<int>(Ybus.rows());
-    // std::cout << "computed nb_bus_solver << " << nb_bus_solver << std::endl;
 
     #ifdef __COUT_TIMES
         auto timer_preproc = CustTimer();
     #endif // __COUT_TIMES
     Eigen::SparseMatrix<real_type> dcYbus = Eigen::SparseMatrix<real_type>(nb_bus_solver - 1, nb_bus_solver - 1);
 
-    // Eigen::SparseMatrix<cplx_type> dcYbus_tmp = Ybus;
-    // dcYbus_tmp.makeCompressed();
     const CplxVect & Sbus_tmp = Sbus;
 
     // TODO SLACK (for now i put all slacks as PV, except the first one)
@@ -47,7 +44,6 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
     // find the slack bus
     int slack_bus_id_solver = extract_slack_bus_id(my_pv, pq, nb_bus_solver);
-    // std::cout << "slack_bus_id_solver extracted" << std::endl;
 
     // remove the slack bus from Ybus
     // and extract only real part
@@ -68,7 +64,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     }
     dcYbus.setFromTriplets(tripletList.begin(), tripletList.end());
     dcYbus.makeCompressed();
-    // std::cout << "dcYbus made" << std::endl;
+    
     #ifdef __COUT_TIMES
         std::cout << "\t dc: preproc: " << 1000. * timer_preproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
@@ -79,28 +75,14 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     #endif // __COUT_TIMES
     bool just_factorize = false;
     if(need_factorize_){
-        // dc_solver_.analyzePattern(dcYbus);
         ErrorType status_init = _linear_solver.initialize(dcYbus);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
             return false;
         }
-        // std::cout << "\t dc: need_factorize_: " << need_factorize_ << std::endl;
         need_factorize_ = false;
         just_factorize = true;
     }
-    // else{
-    //     std::cout << "\t dc: no need factorize: " << need_factorize_ << std::endl;
-    // }
-
-    // factorize the matrix
-    // dc_solver_.factorize(dcYbus);
-    // if(dc_solver_.info() != Eigen::Success) {
-    //     // matrix is not connected
-    //     timer_total_nr_ += timer.duration();
-    //     err_ = 1;
-    //     return false;
-    // }
 
     // remove the slack bus from Sbus
     RealVect dcSbus = RealVect::Constant(nb_bus_solver - 1, my_zero_);
@@ -113,10 +95,6 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
     // solve for theta: Sbus = dcY . theta
     RealVect Va_dc_without_slack = dcSbus;
-    // for(real_type el: dcSbus){
-    //     std::cout << el << ", ";
-    // }
-    // std::cout << std::endl;
 
     ErrorType error = _linear_solver.solve(dcYbus, Va_dc_without_slack, just_factorize);
     if(error != ErrorType::NoError){
@@ -124,14 +102,18 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         timer_total_nr_ += timer.duration();
         return false;
     }
-    // RealVect Va_dc_without_slack = dc_solver_.solve(dcSbus);
-    // if(dc_solver_.info() != Eigen::Success) {
-    //     // solving failed, this should not happen in dc ...
-    //     // matrix is not connected
-    //     timer_total_nr_ += timer.duration();
-    //     err_ = 3;
-    //     return false;
-    // }
+
+    if(!Va_dc_without_slack.array().allFinite()){
+        // for convergence, all values should be finite
+        err_ = ErrorType::SolverSolve;
+        V = CplxVect();
+        V_ = CplxVect();
+        Vm_ = RealVect();
+        Va_ = RealVect();
+        timer_total_nr_ += timer.duration();
+        return false;
+    }
+
     #ifdef __COUT_TIMES
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;
         auto timer_postproc = CustTimer();
@@ -151,24 +133,22 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
     // save the results
     Va_ = Va_dc;
+
     // add the Voltage setpoints of the generator
-    Vm_ = V.array().abs(); // RealVect::Constant(V.size(), my_one_);
-    //    Vm_(pv) = V(pv).array().abs();
-    // for(int i = 0; i < pq.size(); ++i) Vm_(pq[i]) = 1.;  // ADDED
+    Vm_ = V.array().abs();
     Vm_(slack_bus_id_solver) = std::abs(V(slack_bus_id_solver));
 
     // now compute the resulting complex voltage
     V_ = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>());
+
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
     V = V_;
-
+    
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
 
-    // Vm_ = V.array().abs();
-    // Va_ = V.array().arg();
     timer_total_nr_ += timer.duration();
     return true;
 }

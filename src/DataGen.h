@@ -101,6 +101,7 @@ class DataGen: public DataGeneric
 
     public:
     typedef std::tuple<
+       bool,
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // vm_pu_
        std::vector<real_type>, // min_q_
@@ -111,7 +112,8 @@ class DataGen: public DataGeneric
        std::vector<real_type> // gen_slack_weight_
        >  StateRes;
 
-    DataGen() {};
+    DataGen():turnedoff_gen_pv_(true){};
+    DataGen(bool turnedoff_gen_pv):turnedoff_gen_pv_(turnedoff_gen_pv) {};
 
     // TODO add pmin and pmax here !
     void init(const RealVect & generators_p,
@@ -166,6 +168,12 @@ class DataGen: public DataGeneric
     void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
 
     // modification
+    void turnedoff_no_pv(){turnedoff_gen_pv_=false;}  // turned off generators are not pv
+    void turnedoff_pv(){turnedoff_gen_pv_=true;}  // turned off generators are pv
+    bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
+    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+                              bool & need_reset);
+
     void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
@@ -175,12 +183,15 @@ class DataGen: public DataGeneric
     void change_p(int gen_id, real_type new_p, bool & need_reset);
     void change_v(int gen_id, real_type new_v_pu, bool & need_reset);
 
-    virtual void fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);
+    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver);
     virtual void fillpv(std::vector<int>& bus_pv,
                         std::vector<bool> & has_bus_been_added,
                         Eigen::VectorXi & slack_bus_id_solver,
                         const std::vector<int> & id_grid_to_solver) const;
-    void init_q_vector(int nb_bus); // delta_q_per_gen_
+    void init_q_vector(int nb_bus,
+                       Eigen::VectorXi & total_gen_per_bus,
+                       RealVect & total_q_min_per_bus,
+                       RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,
@@ -190,14 +201,19 @@ class DataGen: public DataGeneric
                          real_type sn_mva,
                          bool ac);
     void reset_results();
-    void set_q(const RealVect & reactive_mismatch, const std::vector<int> & id_grid_to_solver, bool ac);
+    void set_q(const RealVect & reactive_mismatch,
+               const std::vector<int> & id_grid_to_solver,
+               bool ac,
+               const Eigen::VectorXi & total_gen_per_bus,
+               const RealVect & total_q_min_per_bus,
+               const RealVect & total_q_max_per_bus);
 
     void get_vm_for_dc(RealVect & Vm);
     /**
     this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
     the ac powerflow
     **/
-    void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver);
+    void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
@@ -226,9 +242,7 @@ class DataGen: public DataGeneric
         std::vector<real_type> gen_slack_weight_;
 
         // intermediate data
-        RealVect total_q_min_per_bus_;
-        RealVect total_q_max_per_bus_;
-        Eigen::VectorXi total_gen_per_bus_;
+        // Eigen::VectorXi total_gen_per_bus_;
         RealVect bus_slack_weight_;  // do not sum to 1., for each node of the grid, say the raw contribution for the generator
 
         //output data
@@ -236,6 +250,9 @@ class DataGen: public DataGeneric
         RealVect res_q_;  // in MVar
         RealVect res_v_;  // in kV
         RealVect res_theta_;  // in deg (and not rad)
+
+        // different parameter of the behaviour of the class
+        bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?
 };
 
 #endif  //DATAGEN_H

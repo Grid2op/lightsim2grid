@@ -47,7 +47,7 @@ void DataLoad::set_state(DataLoad::StateRes & my_state )
 }
 
 
-void DataLoad::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataLoad::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){
     int nb_load = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
@@ -65,7 +65,7 @@ void DataLoad::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_gr
             throw std::runtime_error(exc_.str());
         }
         tmp = static_cast<cplx_type>(p_mw_(load_id));
-        if(ac) tmp += my_i * q_mvar_(load_id);
+        tmp += my_i * q_mvar_(load_id);
         Sbus.coeffRef(bus_id_solver) -= tmp;
     }
 }

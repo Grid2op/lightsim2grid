@@ -54,12 +54,12 @@ distclean: purge
 all: prelude
 
 prelude:
-	(cd $(LIBPATH)/SuiteSparse_config/ && make CC=gcc)
-	(cd $(LIBPATH)/CXSparse/Lib/ && make CC=gcc)
-	(cd $(LIBPATH)/AMD/Lib/ && make CC=gcc)
-	(cd $(LIBPATH)/BTF/Lib/ && make CC=gcc)
-	(cd $(LIBPATH)/COLAMD/Lib/ && make CC=gcc)
-	(cd $(LIBPATH)/KLU/Lib/ && make CC=gcc)
+	(cd $(LIBPATH)/SuiteSparse_config/ && CC=gcc make)
+	(cd $(LIBPATH)/CXSparse/Lib/ && CC=gcc make )
+	(cd $(LIBPATH)/AMD/Lib/ && Cc=gcc make)
+	(cd $(LIBPATH)/BTF/Lib/ && CC=gcc make)
+	(cd $(LIBPATH)/COLAMD/Lib/ && CC=gcc make)
+	(cd $(LIBPATH)/KLU/Lib/ && CC=gcc make)
 
 ##################################
 # this is the documentation

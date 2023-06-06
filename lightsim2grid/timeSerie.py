@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 __all__ = ["Computers", "TimeSerie"]
-import os
+
 import numpy as np
 import warnings
 
@@ -16,6 +16,7 @@ from grid2op.Chronics import Multifolder, GridStateFromFile
 from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import Computers
+
 
 class TimeSerie:
     """
@@ -67,8 +68,7 @@ class TimeSerie:
         env = grid2op.make(env_name, param=param, backend=LightSimBackend())
 
         time_series = TimeSerie(env)
-        Vs = time_series.compute_V(scenario_id=..., seed=...)
-        As = time_series.compute_A()
+        res_p, res_a, res_v = time_series.get_flows(scenario_id=..., seed=...)
 
     """
     def __init__(self, grid2op_env):
@@ -137,12 +137,14 @@ class TimeSerie:
                                f"is different that the number of columns of the provided load_q data: "
                                f"load_q.shape[1] = {load_q.shape[1]}")
         if v_init is None:
-            v_init = self.grid2op_env.backend.V
+            v_init_comp = self.grid2op_env.backend.V
+        else:
+            v_init_comp = 1.0 * v_init  # make a copy !
         status = self.computer.compute_Vs(prod_p,
                                           np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
                                           load_p,
                                           load_q,
-                                          v_init,
+                                          v_init_comp,
                                           self.grid2op_env.backend.max_it,
                                           self.grid2op_env.backend.tol)
         if status != 1 and not ignore_errors:
@@ -151,7 +153,8 @@ class TimeSerie:
         elif status != 1:
             # only raise a warning in this case
             warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
-        Vs = self.computer.get_voltages()
+        Vs = 1.0 * self.computer.get_voltages()  # If I don't copy, lazy eval may break stuff... 
+        # eg test_time_series_dc.py does behave stochastically
         self.__computed = True
         return Vs
         
@@ -190,9 +193,57 @@ class TimeSerie:
         """
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
-        mws = self.computer.compute_power_flows()
+        mws = 1. * self.computer.compute_power_flows() # If I don't copy, lazy eval may break stuff... 
+        # eg test_time_series_dc.py does behave stochastically
         return mws
 
+    def get_flows(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):
+        """
+        Retrieve the flows for each step simulated.
+
+        Each row of the resulting flow matrix will correspond to a step.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            import grid2op
+            from lightsim2grid import TimeSerie
+            from lightsim2grid import LightSimBackend
+            env_name = ...
+            env = grid2op.make(env_name, backend=LightSimBackend())
+
+            timeserie = TimeSerie(env)
+            res_p, res_a, res_v = timeserie.get_flows(scenario_id, seed, v_init, ignore_errors)
+
+            # in this results, then
+            # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
+            # you can retrieve it with `security_analysis.contingency_order[row_id]`
+        """
+        
+        Vs = self.compute_V(scenario_id, seed, v_init, ignore_errors)
+        amps = self.compute_A()
+        Ps = self.compute_P()
+        return Ps, amps, Vs
+    
+    def clear(self):
+        """
+        Clear everything, as if nothing has been computed
+        """
+        self.computer.clear()
+        self.__computed = False
+        
+        self.prod_p = None
+        self.load_p = None
+        self.load_q = None
+    
+    def close(self):
+        """permanently close the object"""
+        self.grid2op_env.close()
+        self.clear()
+        self.computer.close()
+         
     def _extract_inj(self):
         data_loader = None
         if isinstance(self.grid2op_env.chronics_handler.real_data, Multifolder):

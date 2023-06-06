@@ -6,6 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-from lightsim2grid.newtonpf.newtonpf import newtonpf, newtonpf_new, newtonpf_old
-
 __all__ = ["newtonpf", "newtonpf_new", "newtonpf_old"]
+
+from lightsim2grid.newtonpf.newtonpf import newtonpf, newtonpf_new, newtonpf_old

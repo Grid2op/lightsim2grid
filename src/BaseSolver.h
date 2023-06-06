@@ -28,7 +28,6 @@
 #include "CustTimer.h"
 #include "BaseConstants.h"
 
-enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue, SolverAnalyze, SolverFactor, SolverReFactor, SolverSolve, NotInitError, LicenseError};
 /**
 This class represents a solver to compute powerflow.
 
@@ -37,7 +36,18 @@ It can be derived for different usecase, for example for DC powerflow, AC powerf
 class BaseSolver : public BaseConstants
 {
     public:
-        BaseSolver():BaseConstants(),n_(-1),err_(ErrorType::NotInitError),timer_Fx_(0.),timer_solve_(0.),timer_check_(0.),timer_total_nr_(0.){};
+        const bool IS_AC;  // should be static ideally...
+
+    public:
+        BaseSolver(bool is_ac=true):
+            BaseConstants(),
+            IS_AC(is_ac),
+            n_(-1),
+            err_(ErrorType::NotInitError),
+            timer_Fx_(0.),
+            timer_solve_(0.),
+            timer_check_(0.),
+            timer_total_nr_(0.){};
 
         virtual ~BaseSolver(){}
 

@@ -44,6 +44,7 @@ void DataGen::init(const RealVect & generators_p,
     status_ = std::vector<bool>(generators_p.size(), true);
     gen_slackbus_ = std::vector<bool>(generators_p.size(), false);
     gen_slack_weight_ = std::vector<real_type>(generators_p.size(), 0.);
+    turnedoff_gen_pv_ = true;
 }
 
 
@@ -57,21 +58,25 @@ DataGen::StateRes DataGen::get_state() const
      std::vector<bool> status = status_;
      std::vector<bool> slack_bus = gen_slackbus_;
      std::vector<real_type> slack_weight = gen_slack_weight_;
-     DataGen::StateRes res(p_mw, vm_pu, min_q, max_q, bus_id, status, slack_bus, slack_weight);
+     DataGen::StateRes res(turnedoff_gen_pv_, p_mw, vm_pu, min_q, max_q, bus_id, status, slack_bus, slack_weight);
      return res;
 }
+
 void DataGen::set_state(DataGen::StateRes & my_state )
 {
     reset_results();
+    
+    turnedoff_gen_pv_ = std::get<0>(my_state);
 
-    std::vector<real_type> & p_mw = std::get<0>(my_state);
-    std::vector<real_type> & vm_pu = std::get<1>(my_state);
-    std::vector<real_type> & min_q = std::get<2>(my_state);
-    std::vector<real_type> & max_q = std::get<3>(my_state);
-    std::vector<int> & bus_id = std::get<4>(my_state);
-    std::vector<bool> & status = std::get<5>(my_state);
-    std::vector<bool> & slack_bus = std::get<6>(my_state);
-    std::vector<real_type> & slack_weight = std::get<7>(my_state);
+    // the generators themelves
+    std::vector<real_type> & p_mw = std::get<1>(my_state);
+    std::vector<real_type> & vm_pu = std::get<2>(my_state);
+    std::vector<real_type> & min_q = std::get<3>(my_state);
+    std::vector<real_type> & max_q = std::get<4>(my_state);
+    std::vector<int> & bus_id = std::get<5>(my_state);
+    std::vector<bool> & status = std::get<6>(my_state);
+    std::vector<bool> & slack_bus = std::get<7>(my_state);
+    std::vector<real_type> & slack_weight = std::get<8>(my_state);
     // TODO check sizes
 
     // input data
@@ -102,7 +107,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        if(gen_slackbus_[gen_id])  res.coeffRef(bus_id_solver) += gen_slack_weight_[gen_id];
+        if(gen_slackbus_[gen_id]) res.coeffRef(bus_id_solver) += gen_slack_weight_[gen_id];
     }
     bus_slack_weight_ = res;
     real_type sum_res = res.sum();
@@ -110,7 +115,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
     return res;
 }
 
-void DataGen::fillSbus(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     real_type tmp;
@@ -146,6 +151,9 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
+        
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
@@ -190,6 +198,9 @@ void DataGen::get_vm_for_dc(RealVect & Vm){
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
+
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+
         bus_id_me = bus_id_(gen_id);
         real_type tmp = vm_pu_(gen_id);
         if(tmp != 0.) Vm(bus_id_me) = tmp;
@@ -207,6 +218,16 @@ void DataGen::change_p(int gen_id, real_type new_p, bool & need_reset)
         exc_ << gen_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
+    }
+    if(!turnedoff_gen_pv_){
+        // if turned off generators (including these with p==0)
+        // are not pv, if we change the active generation, it changes
+        // the list of pv buses, so I need to refactorize the solver
+        // on the other hand, if all generators are pv then I do not need to refactorize in this case
+        if((p_mw_(gen_id) == 0. && new_p != 0.) || 
+           (p_mw_(gen_id) != 0. && new_p == 0.)){
+            need_reset = true;
+           }
     }
     p_mw_(gen_id) = new_p;
 }
@@ -226,13 +247,15 @@ void DataGen::change_v(int gen_id, real_type new_v_pu, bool & need_reset)
     vm_pu_(gen_id) = new_v_pu;
 }
 
-void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver)
+void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
+        
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
@@ -291,27 +314,36 @@ void DataGen::set_p_slack(const RealVect& node_mismatch,
         const auto total_contrib_slack = bus_slack_weight_(bus_id_solver);
         const auto my_contrib_slack = gen_slack_weight_[gen_id];
         // now take "my part"
+        // std::cout << "gen_id " << gen_id << " my_contrib_slack " << my_contrib_slack << ", " << total_contrib_slack << " node_mismatch " << node_mismatch(bus_id_solver) << std::endl;
         res_p_(gen_id) += node_mismatch(bus_id_solver) * my_contrib_slack / total_contrib_slack;
     }
 }
 
-void DataGen::init_q_vector(int nb_bus_total)  // total number of bus on the grid
+void DataGen::init_q_vector(int nb_bus,
+                            Eigen::VectorXi & total_gen_per_bus,
+                            RealVect & total_q_min_per_bus,
+                            RealVect & total_q_max_per_bus) const // delta_q_per_gen_)  // total number of bus on the grid
 {
     const int nb_gen = nb();
-    total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-    total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-    total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         if(!status_[gen_id]) continue;
+
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+        
         int bus_id = bus_id_(gen_id);
-        total_q_min_per_bus_(bus_id) += min_q_(gen_id);
-        total_q_max_per_bus_(bus_id) += max_q_(gen_id);
-        total_gen_per_bus_(bus_id) += 1;
+        total_q_min_per_bus(bus_id) += min_q_(gen_id);
+        total_q_max_per_bus(bus_id) += max_q_(gen_id);
+        total_gen_per_bus(bus_id) += 1;
     }
 }
 
-void DataGen::set_q(const RealVect & reactive_mismatch, const std::vector<int> & id_grid_to_solver, bool ac)
+void DataGen::set_q(const RealVect & reactive_mismatch,
+                    const std::vector<int> & id_grid_to_solver,
+                    bool ac,
+                    const Eigen::VectorXi & total_gen_per_bus,
+                    const RealVect & total_q_min_per_bus,
+                    const RealVect & total_q_max_per_bus)
 {
     const int nb_gen = nb();
     res_q_ = RealVect::Constant(nb_gen, 0.);
@@ -321,15 +353,18 @@ void DataGen::set_q(const RealVect & reactive_mismatch, const std::vector<int> &
     {
         real_type real_q = 0.;
         if(!status_[gen_id]) continue;  // set at 0 for disconnected generators
+
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+
         int bus_id = bus_id_(gen_id);
         const auto bus_solver = id_grid_to_solver[bus_id];
         // TODO DEBUG MODE: check that the bus is correct!
         real_type q_to_absorb = reactive_mismatch[bus_solver];
         real_type max_q_me = max_q_(gen_id);
         real_type min_q_me = min_q_(gen_id);
-        real_type max_q_bus = total_q_max_per_bus_(bus_id);
-        real_type min_q_bus = total_q_min_per_bus_(bus_id);
-        int nb_gen_with_me = total_gen_per_bus_(bus_id);
+        real_type max_q_bus = total_q_max_per_bus(bus_id);
+        real_type min_q_bus = total_q_min_per_bus(bus_id);
+        int nb_gen_with_me = total_gen_per_bus(bus_id);
         if(nb_gen_with_me == 1){
             real_q = q_to_absorb;
         }else{
@@ -340,3 +375,28 @@ void DataGen::set_q(const RealVect & reactive_mismatch, const std::vector<int> &
     }
 }
 
+
+void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+                                   bool & need_reset)
+{
+    const int nb_gen = nb();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(could_be_slack(gen_id) && status_[gen_id]){
+            // gen is connected and participate to the slack
+            if(p_mw_(gen_id) > 0.){
+                // gen is properly connected
+                if(!gen_slackbus_[gen_id]) need_reset = true; // it was not in the slack before, so I need to reset the solver
+                add_slackbus(gen_id, p_mw_(gen_id));
+
+            }else{
+                // gen is now "turned off"
+                if(gen_slackbus_[gen_id]) need_reset = true;  // it was in the slack before, so I need to reset the solver
+                remove_slackbus(gen_id);
+            }
+        }else{
+            if(gen_slackbus_[gen_id]) need_reset = true;  // it was in the slack before, I need to reset the solver
+            remove_slackbus(gen_id);
+        }
+    }
+}

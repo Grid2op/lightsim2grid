@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -149,9 +149,7 @@ src_files = ['src/main.cpp',
              "src/DataLoad.cpp",
              "src/DataGen.cpp",
              "src/DataSGen.cpp",
-            #  "src/BaseNRSolver.cpp",  # moved as a template class
-            #  "src/BaseNRSolverSingleSlack.cpp",  # moved as a template class
-            #  "src/DCSolver.cpp",  # moved as a template class
+             "src/DataDCLine.cpp",
              "src/ChooseSolver.cpp",
              "src/GaussSeidelSolver.cpp",
              "src/GaussSeidelSynchSolver.cpp",
@@ -212,6 +210,54 @@ if "PATH_NICSLU" in os.environ:
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
         print("INFO: Using NICSLU package")
 
+# Try to locate the CKTSO sparse linear solver
+if "PATH_CKTSO" in os.environ:
+    # user indicate the path for the CKTSO library (see https://github.com/chenxm1986/cktso)
+    # eg "/home/user/Documents/cktso/"
+    
+    path_cktso = os.path.abspath(os.environ["PATH_CKTSO"])
+    include_cktso = True
+    # check for appropriate license
+    if not os.path.exists(path_cktso):
+        print(f"WARNING: nothing for CKTSO at at: {path_cktso}")
+        include_cktso = False
+    license_path = os.path.join(path_cktso, "license")
+    if include_cktso and not os.path.exists(license_path):
+        # license not located at the right directory
+        print(f"WARNING: no license path found for CKTSO at: {license_path}")
+        include_cktso = False
+    license_file = os.path.join(license_path, "cktso.lic")
+    if include_cktso and not os.path.exists(license_file):
+        # no license found
+        print(f"WARNING: no license file is found for CKTSO at: {license_file}")
+        include_cktso = False
+    libcktso_path = None
+    if include_cktso:
+        if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
+            libcktso_path = os.path.join(path_cktso, "ubuntu1804_x64_gcc750/libcktso.so")  # TODO CHANGE THAT !
+            if not os.path.exists(libcktso_path):
+                print(f"WARNING: cannot locate the CKTSO shared object that should be at: {libcktso_path}")
+                include_cktso = False
+                libcktso_path = None
+        elif sys.platform.startswith("win"):
+            libcktso_path = os.path.join(path_cktso, "win7_x64/cktso.lib")  # TODO CHANGE THAT !
+            if not os.path.exists(libcktso_path):
+                print(f"WARNING: cannot locate the CKTSO shared object that should be at: {libcktso_path}")
+                include_cktso = False
+                libcktso_path = None
+        else:
+            print(f"WARNING: CKTSO can only be added when using linux, darwin (MacOS) or win (Windows) python version, you are using {sys.platform}")
+            include_cktso = False
+            libcktso_path = None
+
+    if include_cktso and libcktso_path is not None:
+        LIBS.append(os.path.join(path_cktso, libcktso_path))
+        include_dirs.append(os.path.join(path_cktso, "include"))
+        src_files.append("src/CKTSOSolver.cpp")
+        extra_compile_args.append("-DCKTSO_SOLVER_AVAILABLE")
+        print("INFO: Using CKTSO package")
+        
+        
 if "__COUT_TIMES" in os.environ:
     # to add extra info in cout for the computation times, we do not recommend to use it !
     if os.environ["__COUT_TIMES"] == "1":
@@ -266,7 +312,15 @@ ext_modules = [
 # python 3.10+
 req_pkgs = [
         "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
+        "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
+
+if sys.version_info.major == 3 and sys.version_info.minor <= 7:
+    # typing "Literal" not available on python 3.7
+    req_pkgs.append("typing_extensions")
+    # do not use pandapower 2.12 (broken on python 3.7 
+    # see https://github.com/e2nIEE/pandapower/issues/1985
+    req_pkgs[0] = "pandapower>=2.2.2,<2.12"
 
 pkgs = {
     "required": req_pkgs,

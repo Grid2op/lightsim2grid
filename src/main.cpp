@@ -36,6 +36,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("NICSLU", SolverType::NICSLU, "denotes the :class:`lightsim2grid.solver.NICSLUSolver`")
         .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack, "denotes the :class:`lightsim2grid.solver.NICSLUSolverSingleSlack`")
         .value("NICSLUDC", SolverType::NICSLUDC, "denotes the :class:`lightsim2grid.solver.NICSLUDCSolver`")
+        .value("CKTSO", SolverType::CKTSO, "denotes the :class:`lightsim2grid.solver.CKTSOSolver`")
+        .value("CKTSOSingleSlack", SolverType::CKTSOSingleSlack, "denotes the :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`")
+        .value("CKTSODC", SolverType::CKTSODC, "denotes the :class:`lightsim2grid.solver.CKTSODCSolver`")
         .export_values();
 
     py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")
@@ -133,7 +136,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("compute_pf", &KLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
             .def("get_timers", &KLUDCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &KLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
-    #endif  // KLU_SOLVER_AVAILABLE (or )
+    #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
         py::class_<NICSLUSolver>(m, "NICSLUSolver", DocSolver::NICSLUSolver.c_str())
@@ -177,6 +180,49 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("get_timers", &NICSLUDCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &NICSLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
     #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
+
+    #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
+        py::class_<CKTSOSolver>(m, "CKTSOSolver", DocSolver::CKTSOSolver.c_str())
+            .def(py::init<>())
+            .def("get_J", &CKTSOSolver::get_J_python, DocSolver::get_J_python.c_str())  // (get the jacobian matrix, sparse csc matrix)
+            .def("get_Va", &CKTSOSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &CKTSOSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &CKTSOSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &CKTSOSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &CKTSOSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &CKTSOSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &CKTSOSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+            .def("get_timers", &CKTSOSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<CKTSOSolverSingleSlack>(m, "CKTSOSolverSingleSlack", DocSolver::CKTSOSolverSingleSlack.c_str())
+            .def(py::init<>())
+            .def("get_J", &CKTSOSolverSingleSlack::get_J_python, DocSolver::get_J_python.c_str())  // (get the jacobian matrix, sparse csc matrix)
+            .def("get_Va", &CKTSOSolverSingleSlack::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &CKTSOSolverSingleSlack::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &CKTSOSolverSingleSlack::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &CKTSOSolverSingleSlack::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &CKTSOSolverSingleSlack::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &CKTSOSolverSingleSlack::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &CKTSOSolverSingleSlack::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &CKTSOSolverSingleSlack::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+            .def("get_timers", &CKTSOSolverSingleSlack::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &CKTSOSolverSingleSlack::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<CKTSODCSolver>(m, "CKTSODCSolver", DocSolver::CKTSODCSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &CKTSODCSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &CKTSODCSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &CKTSODCSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &CKTSODCSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &CKTSODCSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &CKTSODCSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &CKTSODCSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &CKTSODCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+            .def("get_timers", &CKTSODCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &CKTSODCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+    #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver", DocSolver::GaussSeidelSolver.c_str())
         .def(py::init<>())
@@ -369,6 +415,37 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_theta_or_deg", &DataLine::LineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg.c_str())
         .def_readonly("res_theta_ex_deg", &DataLine::LineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg.c_str());
 
+    // iterator for dc lines
+    py::class_<DataDCLine>(m, "DataDCLine", DocIterator::DataDCLine.c_str())
+        .def("__len__", [](const DataDCLine & data) { return data.nb(); })
+        .def("__getitem__", [](const DataDCLine & data, int k){return data[k]; } )
+        .def("__iter__", [](const DataDCLine & data) {
+       return py::make_iterator(data.begin(), data.end());
+    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+    py::class_<DataDCLine::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
+        .def_readonly("id", &DataDCLine::DCLineInfo::id, DocIterator::id.c_str())
+        .def_readonly("connected", &DataDCLine::DCLineInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_or_id", &DataDCLine::DCLineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus_ex_id", &DataDCLine::DCLineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("target_p_or_mw", &DataDCLine::DCLineInfo::target_p_or_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("target_vm_or_pu", &DataDCLine::DCLineInfo::target_vm_or_pu, DocIterator::target_vm_or_pu.c_str())
+        .def_readonly("target_vm_ex_pu", &DataDCLine::DCLineInfo::target_vm_ex_pu, DocIterator::target_vm_ex_pu.c_str())
+        .def_readonly("loss_pct", &DataDCLine::DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
+        .def_readonly("loss_mw", &DataDCLine::DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
+        .def_readonly("gen_or", &DataDCLine::DCLineInfo::gen_or, DocIterator::gen_or.c_str())
+        .def_readonly("gen_ex", &DataDCLine::DCLineInfo::gen_ex, DocIterator::gen_ex.c_str())
+        .def_readonly("has_res", &DataDCLine::DCLineInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_or_mw", &DataDCLine::DCLineInfo::res_p_or_mw, DocIterator::res_p_or_mw_dcline.c_str())
+        .def_readonly("res_p_ex_mw", &DataDCLine::DCLineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw_dcline.c_str())
+        .def_readonly("res_q_or_mvar", &DataDCLine::DCLineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar_dcline.c_str())
+        .def_readonly("res_q_ex_mvar", &DataDCLine::DCLineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar_dcline.c_str())
+        .def_readonly("res_v_or_kv", &DataDCLine::DCLineInfo::res_v_or_kv, DocIterator::res_v_or_kv_dcline.c_str())
+        .def_readonly("res_v_ex_kv", &DataDCLine::DCLineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv_dcline.c_str())
+        .def_readonly("res_theta_or_deg", &DataDCLine::DCLineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg_dcline.c_str())
+        .def_readonly("res_theta_ex_deg", &DataDCLine::DCLineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
+        ;
+
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
         .def(py::init<>())
@@ -428,11 +505,13 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_loads", &GridModel::init_loads, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_storages", &GridModel::init_storages, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_sgens", &GridModel::init_sgens, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("init_dclines", &GridModel::init_dclines, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus, DocGridModel::_internal_do_not_use.c_str()) // same
         .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus, DocGridModel::_internal_do_not_use.c_str())  // same
 
         // inspect the grid
         .def("get_lines", &GridModel::get_lines, DocGridModel::get_lines.c_str())
+        .def("get_dclines", &GridModel::get_dclines, DocGridModel::get_dclines.c_str())
         .def("get_trafos", &GridModel::get_trafos, DocGridModel::get_trafos.c_str())
         .def("get_generators", &GridModel::get_generators, DocGridModel::get_generators.c_str())
         .def("get_static_generators", &GridModel::get_static_generators, DocGridModel::get_static_generators.c_str())
@@ -441,6 +520,12 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_loads", &GridModel::get_loads, DocGridModel::get_loads.c_str())
 
         // modify the grid
+        .def("turnedoff_no_pv", &GridModel::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")
+        .def("turnedoff_pv", &GridModel::turnedoff_pv, "Turned off (or generators with p = 0) generators will be pv buses, they will maintain voltage (default)")
+        .def("get_turnedoff_gen_pv", &GridModel::get_turnedoff_gen_pv, "TODO")
+        .def("update_slack_weights", &GridModel::update_slack_weights, "TODO")
+        
+        .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
         .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_bus", &GridModel::reactivate_bus, DocGridModel::_internal_do_not_use.c_str())
 
@@ -492,6 +577,16 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_storage", &GridModel::get_bus_storage, DocGridModel::_internal_do_not_use.c_str())
         .def("change_p_storage", &GridModel::change_p_storage, DocGridModel::_internal_do_not_use.c_str())
         .def("change_q_storage", &GridModel::change_q_storage, DocGridModel::_internal_do_not_use.c_str())
+
+        .def("deactivate_dcline", &GridModel::deactivate_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("reactivate_dcline", &GridModel::reactivate_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_p_dcline", &GridModel::change_p_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_v_or_dcline", &GridModel::change_v_or_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_v_ex_dcline", &GridModel::change_v_ex_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus_dcline_or", &GridModel::change_bus_dcline_or, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus_dcline_ex", &GridModel::change_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_dcline_or", &GridModel::get_bus_dcline_or, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_dcline_ex", &GridModel::get_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str())
 
         // get back the results
         .def("get_V", &GridModel::get_V, DocGridModel::get_V.c_str())
@@ -555,6 +650,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
          // it is not recommended to use it outside of grid2Op.
         .def("update_bus_status", &GridModel::update_bus_status, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_p", &GridModel::update_gens_p, DocGridModel::_internal_do_not_use.c_str())
+        .def("update_sgens_p", &GridModel::update_sgens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_v", &GridModel::update_gens_v, DocGridModel::_internal_do_not_use.c_str())
         .def("update_loads_p", &GridModel::update_loads_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_loads_q", &GridModel::update_loads_q, DocGridModel::_internal_do_not_use.c_str())
@@ -596,6 +692,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // status
         .def("get_status", &Computers::get_status, DocComputers::get_status.c_str())
+        .def("clear", &Computers::clear, DocComputers::clear.c_str())
+        .def("close", &Computers::clear, DocComputers::clear.c_str())
 
         // perform the computations
         .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
@@ -625,6 +723,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // remove some defaults (TODO)
         .def("reset", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
         .def("clear", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("close", &SecurityAnalysis::clear, DocComputers::clear.c_str())
         .def("remove_n1", &SecurityAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
         .def("remove_nk", &SecurityAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
         .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())

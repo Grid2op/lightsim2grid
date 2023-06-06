@@ -55,12 +55,13 @@ void BaseMultiplePowerflow::compute_flows_from_Vs(bool amps)
     
     // compute the flows for the powerlines
     Eigen::Index lag_id = 0;
-    if (amps) compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
-    else compute_active_power_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id);
+    if (amps) compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id, false);
+    else compute_active_power_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id, false);
+
     // compute the flows for the trafos
     lag_id = n_line_;
-    if (amps) compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
-    else compute_active_power_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id);
+    if (amps) compute_amps_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id, true);
+    else compute_active_power_flows(_grid_model.get_trafos_as_data(), sn_mva, lag_id, true);
 
     if (amps) _timer_compute_A = timer_compute.duration();
     else _timer_compute_P = timer_compute.duration();
