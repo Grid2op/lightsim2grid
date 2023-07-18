@@ -73,7 +73,7 @@ class SecurityAnalysis(object):
 
     """
     try:
-        STR_TYPES = (str, np.str, np.str_)
+        STR_TYPES = (str, np.str_ ) #, np.str)
     except AttributeError:
         # deprecation in numpy 1.24 of np.str
         STR_TYPES = (str, np.str_)
