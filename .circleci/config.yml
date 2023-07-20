@@ -118,7 +118,7 @@ jobs:
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
-            - run: python3 -m pip install virtualenv
+            # - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"

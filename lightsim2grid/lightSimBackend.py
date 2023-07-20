@@ -15,8 +15,11 @@ import time
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
 from grid2op.Exceptions import BackendError, DivergingPowerFlow
-from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
+try:
+    from grid2op.Action._backendAction import _BackendAction
+except ImportError as exc_:
+    from grid2op.Action._BackendAction import _BackendAction
 
 from lightsim2grid.gridmodel import init
 from lightsim2grid.solver import SolverType
