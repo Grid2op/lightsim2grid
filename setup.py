@@ -348,7 +348,8 @@ pkgs = {
         "test": [
             "grid2op>=1.6.4",
             "numba",
-            "pandapower>=2.8.0"
+            "pandapower>=2.8.0",
+            "packaging"
         ]
     }
 }
