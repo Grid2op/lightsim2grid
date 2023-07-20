@@ -24,6 +24,7 @@ Change Log
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed
   if it modifies the load (or gen), because you "cannot change the value of a disconnected load (or gen)"
 - [IMPROVED] initialize the underlying "PandaPowerBackend" without numba
+- [IMPROVED] grid2op import to be more compliant with renaming of 
 
 [0.7.2] 2023-06-06
 --------------------
