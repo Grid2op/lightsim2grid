@@ -15,8 +15,11 @@ import time
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
 from grid2op.Exceptions import BackendError, DivergingPowerFlow
-from grid2op.Action._BackendAction import _BackendAction
 from grid2op.dtypes import dt_float, dt_int, dt_bool
+try:
+    from grid2op.Action._backendAction import _BackendAction
+except ImportError as exc_:
+    from grid2op.Action._BackendAction import _BackendAction
 
 from lightsim2grid.gridmodel import init
 from lightsim2grid.solver import SolverType
@@ -82,8 +85,13 @@ class LightSimBackend(Backend):
         self.topo_vect = None
         self.shunt_topo_vect = None
 
-        self.init_pp_backend = PandaPowerBackend()
-
+        try:
+            self.init_pp_backend = PandaPowerBackend(with_numba=False)
+        except TypeError as exc_:
+            # oldest version of grid2op do not support the kwargs "with_numba"
+            # (before 1.9.1)
+            self.init_pp_backend = PandaPowerBackend()
+        
         self.V = None
         self.max_it = max_iter
         self.tol = tol  # tolerance for the solver
@@ -651,6 +659,11 @@ class LightSimBackend(Backend):
         """
         active_bus, *_, topo__, shunts__ = backendAction()
 
+        # change the overall topology
+        chgt = backendAction.current_topo.changed
+        self._grid.update_topo(chgt, backendAction.current_topo.values)
+        self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
+        
         # update the injections
         self._grid.update_gens_p(backendAction.prod_p.changed,
                                  backendAction.prod_p.values)
@@ -687,7 +700,6 @@ class LightSimBackend(Backend):
             for sh_id, new_q in shunt_q:
                 self._grid.change_q_shunt(sh_id, new_q)
 
-        # and now change the overall topology
         # TODO hack for storage units: if 0. production i pretend they are disconnected on the
         # TODO c++ side
         # this is to deal with the test that "if a storage unit is alone on a bus, but produces 0, then it's fine)
@@ -703,9 +715,6 @@ class LightSimBackend(Backend):
         #     chgt = backendAction.current_topo.changed
         #     my_val = backendAction.current_topo.values
         # self._grid.update_topo(changed, my_val)
-        chgt = backendAction.current_topo.changed
-        self._grid.update_topo(chgt, backendAction.current_topo.values)
-        self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
         # TODO have been correctly called before calling the function self._grid.update_topo
         

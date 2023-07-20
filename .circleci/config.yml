@@ -117,8 +117,8 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
-            - run: python3 -m pip install virtualenv
+            - run: apt-get update && apt-get install python3-pip python3-virtualenv -y
+            # - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"

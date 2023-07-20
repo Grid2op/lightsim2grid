@@ -22,7 +22,7 @@ copyright = '2019, RTE France'
 author = 'Benjamin DONNOT'
 
 # The full version, including alpha/beta/rc tags
-release = "0.7.2"
+release = "0.7.3"
 version = '0.7'
 
 # -- General configuration ---------------------------------------------------
@@ -79,3 +79,4 @@ highlight_language = 'python3'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+

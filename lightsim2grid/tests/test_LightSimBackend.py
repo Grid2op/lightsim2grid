@@ -12,6 +12,7 @@ import unittest
 import warnings
 import grid2op
 import numpy as np
+from packaging import version
 
 from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 
@@ -176,6 +177,7 @@ class TestChangeBusSlack(HelperTests, BaseTestChangeBusSlack):
 
 
 class TestIssuesTest(HelperTests, BaseIssuesTest):
+    tests_skipped = ["test_issue_125"]  if version.parse(grid2op.__version__) < version.parse("1.9.2") else []
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
