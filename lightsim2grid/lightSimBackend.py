@@ -88,7 +88,6 @@ class LightSimBackend(Backend):
         class _DoNotUseANywherePandaPowerBackend(PandaPowerBackend):
             """used to duplicate the class attr of PandaPowerBackend"""
             pass
-        _DoNotUseANywherePandaPowerBackend = PandaPowerBackend
 
         try:
             self.init_pp_backend = _DoNotUseANywherePandaPowerBackend(with_numba=False)
