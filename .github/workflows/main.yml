@@ -144,7 +144,7 @@ jobs:
         env:
           CIBW_ARCHS_LINUX: auto aarch64  # not used I believe
           CIBW_ARCHS_MACOS: x86_64 universal2
-          CIBW_BUILD: "{{matrix.python.name}}-*"
+          CIBW_BUILD: ${{matrix.python.name}}"-*"
 
       - name: Install Python dependencies
         run: |
