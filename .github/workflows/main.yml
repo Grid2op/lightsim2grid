@@ -143,12 +143,24 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Compile SuiteSparse make
-        if: matrix.config.name == 'darwin'
+      - name: Compile SuiteSparse make (3.7 or 3.11+)
+        if: (matrix.config.name == 'darwin') && ((matrix.python.version == 3.7) || (matrix.python.version >= 3.11) )
         run: |
           make
           export __O3_OPTIM=1
           python3 setup.py build
+
+      - name: Compile SuiteSparse make (3.8, 3.9, 3.10)
+        if: (matrix.config.name == 'darwin') && (matrix.python.version == 3.7)
+        uses: pypa/cibuildwheel@v2.15.0
+        env:
+          # configure cibuildwheel to build native archs ('auto'), and some
+          # emulated ones
+          CIBW_ARCHS_LINUX: x86_64 arm64
+        run: |
+          make
+          export __O3_OPTIM=1
+          python3 -m cibuildwheel --output-dir wheelhouse
 
       - name: Compile SuiteSparse cmake
         if: matrix.config.name == 'windows'

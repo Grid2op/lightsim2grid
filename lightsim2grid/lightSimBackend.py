@@ -85,16 +85,16 @@ class LightSimBackend(Backend):
         self.topo_vect = None
         self.shunt_topo_vect = None
 
-        class _DoNotUseANywherePandaPowerBackend(PandaPowerBackend):
+        class _DoNotUseAnywherePandaPowerBackend(PandaPowerBackend):
             """used to duplicate the class attr of PandaPowerBackend"""
             pass
 
         try:
-            self.init_pp_backend = _DoNotUseANywherePandaPowerBackend(with_numba=False)
+            self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend(with_numba=False)
         except TypeError as exc_:
             # oldest version of grid2op do not support the kwargs "with_numba"
             # (before 1.9.1)
-            self.init_pp_backend = _DoNotUseANywherePandaPowerBackend()
+            self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
         self.V = None
         self.max_it = max_iter
