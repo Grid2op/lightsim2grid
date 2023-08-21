@@ -156,7 +156,7 @@ jobs:
           export __O3_OPTIM=1
           python3 setup.py build
 
-      - name: Compile SuiteSparse make for python 3.8, 3.9, 3.10
+      - name: Compile SuiteSparse make for python 3.8, 3.9, 3.10, and build wheel
         if: (matrix.config.name == 'darwin') && ((matrix.python.version >= 3.8) || (matrix.python.version < 3.11) )          
         run: |
           make
@@ -179,7 +179,7 @@ jobs:
           python setup.py build
 
       - name: Build wheel
-        if: ! ( (matrix.config.name == 'darwin') && ((matrix.python.version >= 3.8) || (matrix.python.version < 3.11) ) )     
+        if: (matrix.config.name == 'windows') || ((matrix.config.name == 'darwin') && ((matrix.python.version == 3.7) || (matrix.python.version >= 3.11) )) 
         run: python setup.py bdist_wheel
 
       - name: Build source archive
