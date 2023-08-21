@@ -19,12 +19,16 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.7.3] 2023-07-xx
+[0.7.3] 2023-08-xx
 --------------------
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed
   if it modifies the load (or gen), because you "cannot change the value of a disconnected load (or gen)"
+- [FIXED] read-the-docs template is not compatible with latest sphinx version (7.0.0)
+  see https://github.com/readthedocs/sphinx_rtd_theme/issues/1463
 - [IMPROVED] initialize the underlying "PandaPowerBackend" without numba
-- [IMPROVED] grid2op import to be more compliant with renaming of 
+- [IMPROVED] grid2op import to be more compliant with renaming of uppercased file names
+- [IMPROVED] decoupling of the PandapowerBackend class and the class "internally" used by LightSimBackend
+  when loading the grid. This caused some issue, *eg* https://github.com/rte-france/Grid2Op/issues/508
 
 [0.7.2] 2023-06-06
 --------------------
