@@ -161,6 +161,7 @@ jobs:
       - name: Compile SuiteSparse make for python 3.8, 3.9, 3.10, and build wheel
         if: (matrix.config.name == 'darwin') && ((matrix.python.version >= 3.8) || (matrix.python.version < 3.11) )          
         run: |
+          python3 -m pip install cibuildwheel
           make
           export __O3_OPTIM=1
           python3 -m cibuildwheel --output-dir wheelhouse
