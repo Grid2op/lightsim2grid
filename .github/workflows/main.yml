@@ -44,7 +44,7 @@ jobs:
   #   steps:
 
   #     - name: Checkout sources
-  #       uses: actions/checkout@v1
+  #       uses: actions/checkout@v3
   #       with:
   #         submodules: true
 
@@ -134,12 +134,12 @@ jobs:
   #   steps:
 
   #     - name: Checkout sources
-  #       uses: actions/checkout@v1
+  #       uses: actions/checkout@v3
   #       with:
   #         submodules: true
 
   #     - name: Setup Python
-  #       uses: actions/setup-python@v2
+  #       uses: actions/setup-python@v4
   #       with:
   #         python-version: ${{ matrix.python.version }}
 
@@ -199,12 +199,12 @@ jobs:
   #         }
   #   steps:
   #     - name: Checkout sources
-  #       uses: actions/checkout@v1
+  #       uses: actions/checkout@v3
   #       with:
   #         submodules: true
 
   #     - name: Setup Python
-  #       uses: actions/setup-python@v2
+  #       uses: actions/setup-python@v4
   #       with:
   #         python-version: ${{ matrix.python.version }}
 
@@ -250,18 +250,18 @@ jobs:
     strategy:
       matrix:
         python:
-          # - {
-          #   name: cp38,
-          #   version: '3.8',
-          # }
-          # - {
-          #   name: cp39,
-          #   version: '3.9',
-          # }
-          # - {
-          #   name: cp310,
-          #   version: '3.10',
-          # }
+          - {
+            name: cp38,
+            version: '3.8',
+          }
+          - {
+            name: cp39,
+            version: '3.9',
+          }
+          - {
+            name: cp310,
+            version: '3.10',
+          }
           - {
             name: cp311,
             version: '3.11',
@@ -273,12 +273,12 @@ jobs:
     steps:
 
       - name: Checkout sources
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
           submodules: true
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python.version }}
 
@@ -308,7 +308,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: wheels
+          name: wheels-darwin-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
 
   package:
