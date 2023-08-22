@@ -250,18 +250,18 @@ jobs:
     strategy:
       matrix:
         python:
-          - {
-            name: cp38,
-            version: '3.8',
-          }
-          - {
-            name: cp39,
-            version: '3.9',
-          }
-          - {
-            name: cp310,
-            version: '3.10',
-          }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
+          # - {
+          #   name: cp39,
+          #   version: '3.9',
+          # }
+          # - {
+          #   name: cp310,
+          #   version: '3.10',
+          # }
           - {
             name: cp311,
             version: '3.11',
@@ -296,7 +296,7 @@ jobs:
           CIBW_ARCHS_MACOS: x86_64 universal2 arm64
           CIBW_ENVIRONMENT: __O3_OPTIM=1
           CIBW_BEFORE_BUILD: make clean && make  # and not CIBW_BEFORE_ALL !
-          CIBW_TEST_REQUIRES: grid2op numba pandapower packaging
+          CIBW_TEST_REQUIRES: grid2op pandapower
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" && 
             python -c "from lightsim2grid import *" &&
@@ -306,10 +306,10 @@ jobs:
             python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
-          path: dist/*.whl
+          name: wheels
+          path: ./wheelhouse/*.whl
 
   package:
     name: Package wheels
