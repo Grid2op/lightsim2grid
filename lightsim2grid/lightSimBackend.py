@@ -58,7 +58,7 @@ class LightSimBackend(Backend):
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
         # lazy loading because it crashes...
-        from grid2op.Backend import PandaPowerBackend
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
         if not self.__has_storage:
@@ -84,10 +84,6 @@ class LightSimBackend(Backend):
 
         self.topo_vect = None
         self.shunt_topo_vect = None
-
-        class _DoNotUseAnywherePandaPowerBackend(PandaPowerBackend):
-            """used to duplicate the class attr of PandaPowerBackend"""
-            pass
 
         try:
             self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend(with_numba=False)
