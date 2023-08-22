@@ -187,7 +187,7 @@ jobs:
   #         name: lightsim2grid-wheel-${{ matrix.config.name }}-${{ matrix.python.name }}
   #         path: dist/*.whl
 
-  # macos_build_37_311:
+  # macos_build_37:
   #   name: Build macos ${{ matrix.python.name }} wheel
   #   runs-on: macos-latest
   #   strategy:
@@ -196,10 +196,6 @@ jobs:
   #         - {
   #           name: cp37,
   #           version: '3.7',
-  #         }
-  #         - {
-  #           name: cp311,
-  #           version: '3.11',
   #         }
   #   steps:
   #     - name: Checkout sources
@@ -248,7 +244,7 @@ jobs:
   #         name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
   #         path: dist/*.whl
 
-  macos_build_38_39_310:
+  macos_build_38_:
     name: Build darwin ${{ matrix.python.name }} wheel
     runs-on: macos-latest
     strategy:
@@ -265,6 +261,10 @@ jobs:
           - {
             name: cp310,
             version: '3.10',
+          }
+          - {
+            name: cp311,
+            version: '3.11',
           }
     env:
       RUNNER_OS: macos-latest
@@ -295,12 +295,13 @@ jobs:
           CIBW_ARCHS_LINUX: auto aarch64  # not used I believe
           CIBW_ARCHS_MACOS: x86_64 universal2 arm64
           CIBW_ENVIRONMENT: __O3_OPTIM=1
-          CIBW_BEFORE_BUILD: make  # and not CIBW_BEFORE_ALL !
+          CIBW_BEFORE_BUILD: make clean && make  # and not CIBW_BEFORE_ALL !
           CIBW_TEST_REQUIRES: grid2op numba pandapower packaging
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" && 
             python -c "from lightsim2grid import *" &&
             python -c "from lightsim2grid.newtonpf import newtonpf" && 
+            python -c "from lightsim2grid.solver import KLUSolver" && 
             python -c "from lightsim2grid import LightSimBackend" &&
             python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
@@ -313,8 +314,8 @@ jobs:
   package:
     name: Package wheels
     runs-on: ubuntu-latest
-    # needs: [manylinux_build, windows_build, macos_build_37_311, macos_build_38_39_310]
-    needs: [macos_build_38_39_310]
+    # needs: [manylinux_build, windows_build, macos_build_37, macos_build_38_]
+    needs: [macos_build_38_]
 
     steps:
       - name: Download wheels
