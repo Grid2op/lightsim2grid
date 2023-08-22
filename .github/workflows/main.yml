@@ -125,6 +125,9 @@ jobs:
             name: cp311,
             version: '3.11',
           }
+    env:
+      RUNNER_OS: ${{ matrix.config.os }}
+      PYTHON_VERSION: ${{ matrix.python.version }}
 
     steps:
 
@@ -138,13 +141,19 @@ jobs:
         with:
           python-version: ${{ matrix.python.version }}
 
+      - name: Set Additional Envs
+        shell: bash
+        run: |
+          echo "PYTHON_SUBVERSION=$(echo $PYTHON_VERSION | cut -c 3-)" >> $GITHUB_ENV
+          echo "DEPLOY=$( [[ $GITHUB_EVENT_NAME == 'push' && $GITHUB_REF == 'refs/tags'* ]] && echo 'True' || echo 'False' )" >> $GITHUB_ENV
+
       - name: Get CIBUILDWHEEL for python 3.8, 3.9, 3.10
         if: (matrix.config.name == 'darwin') && ((matrix.python.version != 3.7) || (matrix.python.version < 3.11) )  
         uses: pypa/cibuildwheel@v2.15.0
         env:
+          CIBW_BUILD: "cp3${{env.PYTHON_SUBVERSION}}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
           CIBW_ARCHS_LINUX: auto aarch64  # not used I believe
           CIBW_ARCHS_MACOS: x86_64 universal2
-          CIBW_BUILD: ${{matrix.python.name}}-*
 
       - name: Install Python dependencies
         run: |
