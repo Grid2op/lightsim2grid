@@ -85,6 +85,10 @@ Pypi packages are available for linux, windows and macos with python versions:
 - 3.8
 - 3.9
 - 3.10 (lightsim2grid >= 0.6.1)
+- 3.11 (lightsim2grid >= 0.7.1)
+
+**NB** on some version of MacOs (thanks Apple !), especially the one using M1 or M2 chip, lightsim2grid is only available
+on pypi starting from version 0.7.3
 
 ## Installation (from source, for more advanced user)
 

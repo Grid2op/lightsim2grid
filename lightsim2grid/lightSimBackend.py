@@ -58,7 +58,7 @@ class LightSimBackend(Backend):
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
         # lazy loading because it crashes...
-        from grid2op.Backend import PandaPowerBackend
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
         if not self.__has_storage:
@@ -84,13 +84,12 @@ class LightSimBackend(Backend):
 
         self.topo_vect = None
         self.shunt_topo_vect = None
-
         try:
-            self.init_pp_backend = PandaPowerBackend(with_numba=False)
+            self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend(with_numba=False)
         except TypeError as exc_:
             # oldest version of grid2op do not support the kwargs "with_numba"
             # (before 1.9.1)
-            self.init_pp_backend = PandaPowerBackend()
+            self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
         self.V = None
         self.max_it = max_iter
@@ -174,6 +173,22 @@ class LightSimBackend(Backend):
         # add the static gen to the list of controlable gen in grid2Op
         self._use_static_gen = use_static_gen  # TODO implement it
         
+        # storage data for this object (otherwise it's in the class)
+        self.n_storage = None
+        self.storage_to_subid = None
+        self.storage_pu_to_kv = None
+        self.name_storage = None
+        self.storage_to_sub_pos = None
+        self.storage_type = None
+        self.storage_Emin = None
+        self.storage_Emax = None
+        self.storage_max_p_prod = None
+        self.storage_max_p_absorb = None
+        self.storage_marginal_cost = None
+        self.storage_loss = None
+        self.storage_discharging_efficiency = None
+        self.storage_charging_efficiency = None
+
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
         self._grid.turnedoff_no_pv()
@@ -439,7 +454,7 @@ class LightSimBackend(Backend):
             self.storage_loss = self.init_pp_backend.storage_loss
             self.storage_discharging_efficiency = self.init_pp_backend.storage_discharging_efficiency
             self.storage_charging_efficiency = self.init_pp_backend.storage_charging_efficiency
-
+        
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
         self.thermal_limit_a = copy.deepcopy(self.init_pp_backend.thermal_limit_a)
@@ -477,7 +492,7 @@ class LightSimBackend(Backend):
                                              tmp.reshape(-1, 1)), axis=-1)
 
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
-
+        
         self._compute_pos_big_topo()
 
         # set up the "lightsim grid" accordingly
@@ -591,8 +606,8 @@ class LightSimBackend(Backend):
         """
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
-        self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self)
-        self._backend_action_class = _BackendAction.init_grid(self)
+        self.init_pp_backend.__class__ = type(self.init_pp_backend).init_grid(type(self))
+        self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:
             # feature added in grid2op 1.4 or 1.5

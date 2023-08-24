@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.7.3"
+__version__ = "0.7.4"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -327,7 +327,7 @@ pkgs = {
     "extras": {
         "docs": [
             "numpydoc>=0.9.2",
-            "sphinx>=2.4.4",
+            "sphinx>=2.4.4,<7",
             "sphinx-rtd-theme>=0.4.3",
             "sphinxcontrib-trio>=1.1.0",
             "autodocsumm>=0.1.13",
