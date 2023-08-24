@@ -19,7 +19,7 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.7.3] 2023-08-xx
+[0.7.3] 2023-08-24
 --------------------
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed
   if it modifies the load (or gen), because you "cannot change the value of a disconnected load (or gen)"
