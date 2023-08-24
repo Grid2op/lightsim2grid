@@ -84,7 +84,6 @@ class LightSimBackend(Backend):
 
         self.topo_vect = None
         self.shunt_topo_vect = None
-
         try:
             self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend(with_numba=False)
         except TypeError as exc_:
@@ -607,8 +606,8 @@ class LightSimBackend(Backend):
         """
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
-        # self.init_pp_backend.__class__ = self.init_pp_backend.init_grid(self)
-        self._backend_action_class = _BackendAction.init_grid(self)
+        self.init_pp_backend.__class__ = type(self.init_pp_backend).init_grid(type(self))
+        self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:
             # feature added in grid2op 1.4 or 1.5
