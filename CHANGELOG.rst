@@ -4,7 +4,6 @@ Change Log
 [TODO]
 --------
 - make an `init` function from pypowsybl
-- support DC powerline (as modeled in pandapower)
 - support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
@@ -19,7 +18,13 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
-[0.7.3] 2023-08-24
+[0.7.5] 2023-xx-yy
+--------------------
+- [IMPROVED] now shipping `src` and `eigen` directory in the source of 
+  lightsim2grid to allow their installation if wheels are not provided.
+
+
+[0.7.3/4] 2023-08-24
 --------------------
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed
   if it modifies the load (or gen), because you "cannot change the value of a disconnected load (or gen)"

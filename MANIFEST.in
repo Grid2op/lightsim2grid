@@ -1,0 +1,18 @@
+graft eigen
+graft src
+prune eigen/doc
+prune eigen/unsupported
+prune eigen/test
+prune eigen/failtest
+prune eigen/demos
+prune eigen/scripts
+prune eigen/cmake
+prune eigen/ci
+prune eigen/bench
+prune eigen/.gitlab
+prune eigen/.git
+prune eigen/.gitignore
+prune eigen/debug
+recursive-exclude eigen *.git*
+global-exclude __pycache__
+global-exclude *.py[co]
