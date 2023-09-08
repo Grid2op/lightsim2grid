@@ -61,14 +61,17 @@ def init(net : pypo.network):
     # TODO net.get_ratio_tap_changers()
     # TODO net.get_phase_tap_changers()
     shift_ = np.zeros(df_trafo.shape[0])
-    tap_step_pct = shift_
     tap_pos = shift_
     is_tap_hv_side = np.ones(df_trafo.shape[0], dtype=bool)  # TODO
     
     # per unit
     trafo_from_kv = net.get_voltage_levels().loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
     trafo_to_kv = net.get_voltage_levels().loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
-    trafo_from_pu = trafo_from_kv * trafo_to_kv / sn_mva_
+    trafo_from_pu = trafo_to_kv * trafo_to_kv / sn_mva_
+    # tap
+    tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
+    tap_pos += 1
+    
     model.init_trafo(df_trafo["r"].values / trafo_from_pu,
                      df_trafo["x"].values / trafo_from_pu,
                      2.*(df_trafo["g"].values + 1j*df_trafo["b"].values) * trafo_from_pu,

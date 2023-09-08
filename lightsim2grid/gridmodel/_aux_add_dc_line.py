@@ -29,7 +29,10 @@ def _aux_add_dc_line(model, pp_net):
         raise RuntimeError("Cannot handle 'parallel' dcline columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.dcline[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
-
+    if pp_net.dcline.shape[0] == 0:
+        # nothing to do if no dc line
+        return
+    
     branch_from_id = pp_net.dcline["from_bus"].values
     branch_to_id = pp_net.dcline["to_bus"].values
     p_mw = -pp_net.dcline["p_mw"].values

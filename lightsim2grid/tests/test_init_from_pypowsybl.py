@@ -10,26 +10,33 @@ import pypowsybl as pp
 import pypowsybl.loadflow as lf
 import numpy as np
 import unittest
+import tempfile
+import os
 
 from lightsim2grid.gridmodel.from_pypowsybl import init
 
 import pandapower.networks as pn
+import pandapower.converter as pc
 from lightsim2grid.gridmodel import init as init_from_pp
 
 
-class TestInitFromPyPowSyBl(unittest.TestCase):
-    def pp_equiv_grid(self):
-        return pn.case14()
-    
+class TestInitFromPyPowSyBl(unittest.TestCase):    
     def setUp(self) -> None:
         self.network = pp.network.create_ieee14()
-        self.gridmodel = init(self.network)
-        tmp = self.pp_equiv_grid()
-        if tmp is not None:
-            self.pp_gridmo = init_from_pp(tmp)
+        # self.network = pp.network.create_ieee118()
+        
+        with tempfile.TemporaryDirectory() as f:
+            tmp_f = os.path.join(f, 'cgmes_ieee118.zip')
+            self.network.dump(tmp_f, format='CGMES')
+            # if tmp is not None:
+            pp_grid = pc.from_cim.from_cim(tmp_f, sn_mva=100.)
+            self.pp_gridmo = init_from_pp(pp_grid)
             self.can_pp = True
-        else:
-            self.can_pp = False
+            
+        # init lightsim2grid model
+        self.gridmodel = init(self.network)
+        
+        # use some data
         self.nb_bus_total = self.network.get_buses().shape[0]
         self.V_init = 1.0 * self.network.get_buses()["v_mag"].values
         self.tol = 1e-7
@@ -47,27 +54,28 @@ class TestInitFromPyPowSyBl(unittest.TestCase):
     def test_compare_pp(self):
         if not self.can_pp:
             self.skipTest("no equivalent pandapower grid")
-        import pdb
-        # pdb.set_trace()
-        for l_id, (l_pypo, l_pp) in enumerate(zip(self.gridmodel.get_lines(), self.pp_gridmo.get_lines())):
-        #     assert abs(l_pypo.r_pu - l_pp.r_pu) <= self.tol_eq, f"error for powerline {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}"
-        #     assert abs(l_pypo.x_pu - l_pp.x_pu) <= self.tol_eq, f"error for powerline {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}"
-        #     assert abs(l_pypo.h_pu - l_pp.h_pu) <= self.tol_eq, f"error for powerline {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}"
-            print(f"error for line {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}")
-            print(f"error for line {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}")
-            print(f"error for line {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}")
             
-        for l_id, (l_pypo, l_pp) in enumerate(zip(self.gridmodel.get_trafos(), self.pp_gridmo.get_trafos())):
+        for l_id, (l_pypo, l_pp) in enumerate(zip(self.gridmodel.get_lines(), self.pp_gridmo.get_lines())):
+            assert abs(l_pypo.r_pu - l_pp.r_pu) <= self.tol_eq, f"error for powerline {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}"
+            assert abs(l_pypo.x_pu - l_pp.x_pu) <= self.tol_eq, f"error for powerline {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}"
+            assert abs(l_pypo.h_pu - l_pp.h_pu) <= self.tol_eq, f"error for powerline {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}"
+            # print(f"error for line {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}")
+            # print(f"error for line {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}")
+            # print(f"error for line {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}")
+            
+        # for l_id, (l_pypo, l_pp) in enumerate(zip(self.gridmodel.get_trafos(), self.pp_gridmo.get_trafos())):
             # assert abs(l_pypo.r_pu - l_pp.r_pu) <= self.tol_eq, f"error for trafo {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}"
             # assert abs(l_pypo.x_pu - l_pp.x_pu) <= self.tol_eq, f"error for trafo {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}"
             # assert abs(l_pypo.h_pu - l_pp.h_pu) <= self.tol_eq, f"error for trafo {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}"
-            print(f"error for trafo {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}")
-            print(f"error for trafo {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}")
-            print(f"error for trafo {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}")
+            # print(f"error for trafo {l_id} r: {l_pypo.r_pu} vs {l_pp.r_pu}")
+            # print(f"error for trafo {l_id} x: {l_pypo.x_pu} vs {l_pp.x_pu}")
+            # print(f"error for trafo {l_id} h: {l_pypo.h_pu} vs {l_pp.h_pu}")
 
     def test_dc_pf(self):
         v_ls = self.gridmodel.dc_pf(self.V_init, 2, self.tol)
         lf.run_dc(self.network)
+        p_or_ls = [el.res_p_or_mw for el in self.gridmodel.get_lines()]
+        p_or_pypo = self.network.get_lines()["p1"].values
         
 if __name__ == "__main__":
     unittest.main()

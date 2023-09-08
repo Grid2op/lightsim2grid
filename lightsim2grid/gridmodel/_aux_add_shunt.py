@@ -25,6 +25,10 @@ def _aux_add_shunt(model, pp_net):
         raise RuntimeError("Cannot handle 'parallel' sgen columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.sgen[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
+    if pp_net.shunt.shape[0] == 0:
+        # nothing to do if no shunt
+        return
+    
     model.init_shunt(pp_net.shunt["p_mw"].values,
                      pp_net.shunt["q_mvar"].values,
                      pp_net.shunt["bus"].values
