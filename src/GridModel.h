@@ -132,6 +132,18 @@ class GridModel : public DataGeneric
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
         }
+        void init_powerlines_full(const RealVect & branch_r,
+                                  const RealVect & branch_x,
+                                  const CplxVect & branch_h_or,
+                                  const CplxVect & branch_h_ex,
+                                  const Eigen::VectorXi & branch_from_id,
+                                  const Eigen::VectorXi & branch_to_id
+                             ){
+            powerlines_.init(branch_r, branch_x, branch_h_or,
+                             branch_h_ex, branch_from_id, 
+                             branch_to_id);
+        }
+
         void init_shunt(const RealVect & shunt_p_mw,
                         const RealVect & shunt_q_mvar,
                         const Eigen::VectorXi & shunt_bus_id){

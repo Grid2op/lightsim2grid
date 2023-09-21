@@ -20,9 +20,11 @@ Change Log
 
 [0.7.5] 2023-xx-yy
 --------------------
+- [ADDED] possibility to initialize a powergrid based on pypowsybl
 - [IMPROVED] now shipping `src` and `eigen` directory in the source of 
   lightsim2grid to allow their installation if wheels are not provided.
-
+- [IMPROVED] in the underlying cpp GridModel powerlines can now have 2
+  different values for the `h` parameters (`h_or` and `h_ex`).
 
 [0.7.3/4] 2023-08-24
 --------------------

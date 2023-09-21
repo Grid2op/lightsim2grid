@@ -402,7 +402,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("bus_ex_id", &DataLine::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
         .def_readonly("r_pu", &DataLine::LineInfo::r_pu, DocIterator::r_pu.c_str())
         .def_readonly("x_pu", &DataLine::LineInfo::x_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_pu", &DataLine::LineInfo::h_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h_pu", &DataLine::LineInfo::h_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_or_pu", &DataLine::LineInfo::h_or_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h_ex_pu", &DataLine::LineInfo::h_ex_pu, DocIterator::h_pu.c_str())
         .def_readonly("has_res", &DataLine::LineInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_or_mw", &DataLine::LineInfo::res_p_or_mw, DocIterator::res_p_or_mw.c_str())
         .def_readonly("res_q_or_mvar", &DataLine::LineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar.c_str())
@@ -499,6 +501,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init its elements
         .def("init_powerlines", &GridModel::init_powerlines, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
+        .def("init_powerlines_full", &GridModel::init_powerlines_full, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_shunt", &GridModel::init_shunt, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_trafo", &GridModel::init_trafo, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_generators", &GridModel::init_generators, DocGridModel::_internal_do_not_use.c_str())  // same

@@ -10,11 +10,13 @@ import numpy as np
 import pypowsybl as pypo
 from lightsim2grid_cpp import GridModel
 
+
 def init(net : pypo.network, gen_slack_id: int = None):
     model = GridModel()
     # for substation
-    # self.network.get_voltage_levels()["substation_id"]
-    # self.network.get_substations()
+    # network.get_voltage_levels()["substation_id"]
+    # network.get_substations()
+    # network.get_busbar_sections()
     
     
     # initialize and use converters
@@ -54,16 +56,39 @@ def init(net : pypo.network, gen_slack_id: int = None):
     # for lines
     df_line = net.get_lines()
     # TODO add g1 / b1 and g2 / b2 in lightsim2grid
-    line_h = (1j*df_line["g1"].values + df_line["b1"].values + 1j*df_line["g2"].values + df_line["b2"].values)
+    # line_h = (1j*df_line["g1"].values + df_line["b1"].values + 1j*df_line["g2"].values + df_line["b2"].values)
     # per unit
     branch_from_kv = net.get_voltage_levels().loc[df_line["voltage_level1_id"].values]["nominal_v"].values
-    branch_from_pu = branch_from_kv * branch_from_kv / sn_mva_
-    model.init_powerlines(df_line["r"].values / branch_from_pu,
-                          df_line["x"].values / branch_from_pu,
-                          line_h * branch_from_pu,
-                          1 * bus_df.loc[df_line["bus1_id"].values]["bus_id"].values,
-                          1 * bus_df.loc[df_line["bus2_id"].values]["bus_id"].values
-                         )
+    branch_to_kv = net.get_voltage_levels().loc[df_line["voltage_level2_id"].values]["nominal_v"].values
+    
+    # only valid for lines with same voltages at both side...
+    # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva_
+    # line_r = df_line["r"].values / branch_from_pu
+    # line_x = df_line["x"].values / branch_from_pu  
+    # line_h_or = (1j*df_line["g1"].values + df_line["b1"].values) * branch_from_pu
+    # line_h_ex = (1j*df_line["g2"].values + df_line["b2"].values) * branch_from_pu
+    # real per unit conversion 
+    # see https://github.com/powsybl/pypowsybl/issues/642
+    # see https://github.com/powsybl/powsybl-core/blob/266442cbbd84f630acf786018618eaa3d496c6ba/ieee-cdf/ieee-cdf-converter/src/main/java/com/powsybl/ieeecdf/converter/IeeeCdfImporter.java#L347
+    # for right formula
+    v1 = branch_from_kv
+    v2 = branch_to_kv
+    line_r = sn_mva_ *  df_line["r"].values / v1 / v2
+    line_x = sn_mva_ *  df_line["x"].values / v1 / v2
+    tmp_ = np.reciprocal(df_line["r"].values + 1j*df_line["x"].values)
+    b1 = df_line["b1"].values * v1*v1/sn_mva_ + (v1-v2)*tmp_.imag*v1/sn_mva_
+    b2 = df_line["b2"].values * v2*v2/sn_mva_ + (v2-v1)*tmp_.imag*v2/sn_mva_
+    g1 = df_line["g1"].values * v1*v1/sn_mva_ + (v1-v2)*tmp_.real*v1/sn_mva_
+    g2 = df_line["g2"].values * v2*v2/sn_mva_ + (v2-v1)*tmp_.real*v2/sn_mva_
+    line_h_or = (b1 + 1j * g1)
+    line_h_ex = (b2 + 1j * g2)
+    model.init_powerlines_full(line_r,
+                               line_x,
+                               line_h_or,
+                               line_h_ex,
+                               1 * bus_df.loc[df_line["bus1_id"].values]["bus_id"].values,
+                               1 * bus_df.loc[df_line["bus2_id"].values]["bus_id"].values
+                              )
             
     # for trafo
     df_trafo = net.get_2_windings_transformers()
@@ -80,7 +105,6 @@ def init(net : pypo.network, gen_slack_id: int = None):
     # tap
     tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
     tap_pos += 1
-    
     model.init_trafo(df_trafo["r"].values / trafo_to_pu,
                      df_trafo["x"].values / trafo_to_pu,
                      2.*(1j*df_trafo["g"].values + df_trafo["b"].values) * trafo_to_pu,

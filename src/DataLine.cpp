@@ -30,7 +30,38 @@ void DataLine::init(const RealVect & branch_r,
 
     bus_or_id_ = branch_from_id;
     bus_ex_id_ = branch_to_id;
-    powerlines_h_ = branch_h;
+    powerlines_h_or_ = 0.5 * branch_h;
+    powerlines_h_ex_ = 0.5 * branch_h;
+    powerlines_r_ = branch_r;
+    powerlines_x_ = branch_x;
+    status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
+    _update_model_coeffs();
+}
+
+void DataLine::init(const RealVect & branch_r,
+                    const RealVect & branch_x,
+                    const CplxVect & branch_h_or,
+                    const CplxVect & branch_h_ex,
+                    const Eigen::VectorXi & branch_from_id,
+                    const Eigen::VectorXi & branch_to_id
+                    )
+{
+    /**
+    This method initialize the Ybus matrix from the branch matrix.
+    It has to be called once when the solver is initialized. Afterwards, a call to
+    "updateYbus" should be made for performance optimiaztion instead. //TODO
+    **/
+
+    // TODO check what can be checked: branch_* have same size, no id in branch_to_id that are
+    // TODO not in [0, .., buv_vn_kv.size()] etc.
+
+    //TODO consistency with trafo: have a converter methods to convert this value into pu, and store the pu
+    // in this method
+
+    bus_or_id_ = branch_from_id;
+    bus_ex_id_ = branch_to_id;
+    powerlines_h_or_ = branch_h_or;
+    powerlines_h_ex_ = branch_h_ex;
     powerlines_r_ = branch_r;
     powerlines_x_ = branch_x;
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
@@ -41,11 +72,12 @@ DataLine::StateRes DataLine::get_state() const
 {
      std::vector<real_type> branch_r(powerlines_r_.begin(), powerlines_r_.end());
      std::vector<real_type> branch_x(powerlines_x_.begin(), powerlines_x_.end());
-     std::vector<cplx_type > branch_h(powerlines_h_.begin(), powerlines_h_.end());
+     std::vector<cplx_type > branch_hor(powerlines_h_or_.begin(), powerlines_h_or_.end());
+     std::vector<cplx_type > branch_hex(powerlines_h_ex_.begin(), powerlines_h_ex_.end());
      std::vector<int > branch_from_id(bus_or_id_.begin(), bus_or_id_.end());
      std::vector<int > branch_to_id(bus_ex_id_.begin(), bus_ex_id_.end());
      std::vector<bool> status = status_;
-     DataLine::StateRes res(branch_r, branch_x, branch_h, branch_from_id, branch_to_id, status);
+     DataLine::StateRes res(branch_r, branch_x, branch_hor, branch_hex, branch_from_id, branch_to_id, status);
      return res;
 }
 void DataLine::set_state(DataLine::StateRes & my_state)
@@ -54,16 +86,18 @@ void DataLine::set_state(DataLine::StateRes & my_state)
 
     std::vector<real_type> & branch_r = std::get<0>(my_state);
     std::vector<real_type> & branch_x = std::get<1>(my_state);
-    std::vector<cplx_type > & branch_h = std::get<2>(my_state);
-    std::vector<int> & branch_from_id = std::get<3>(my_state);
-    std::vector<int> & branch_to_id = std::get<4>(my_state);
-    std::vector<bool> & status = std::get<5>(my_state);
+    std::vector<cplx_type > & branch_h_or = std::get<2>(my_state);
+    std::vector<cplx_type > & branch_h_ex = std::get<3>(my_state);
+    std::vector<int> & branch_from_id = std::get<4>(my_state);
+    std::vector<int> & branch_to_id = std::get<5>(my_state);
+    std::vector<bool> & status = std::get<6>(my_state);
     // TODO check sizes
 
     // now assign the values
     powerlines_r_ = RealVect::Map(&branch_r[0], branch_r.size());
     powerlines_x_ = RealVect::Map(&branch_x[0], branch_x.size());
-    powerlines_h_ = CplxVect::Map(&branch_h[0], branch_h.size());
+    powerlines_h_or_ = CplxVect::Map(&branch_h_or[0], branch_h_or.size());
+    powerlines_h_ex_ = CplxVect::Map(&branch_h_ex[0], branch_h_ex.size());
 
     // input data
     bus_or_id_ = Eigen::VectorXi::Map(&branch_from_id[0], branch_from_id.size());
@@ -91,9 +125,10 @@ void DataLine::_update_model_coeffs()
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
         const cplx_type ys = 1. / (powerlines_r_(i) + my_i * powerlines_x_(i));
-        const cplx_type h = my_i * powerlines_h_(i) * 0.5;
-        yac_ff_(i) = (ys + h);
-        yac_tt_(i) = (ys + h);
+        const cplx_type h_or = my_i * powerlines_h_or_(i);
+        const cplx_type h_ex = my_i * powerlines_h_ex_(i);
+        yac_ff_(i) = (ys + h_or);
+        yac_tt_(i) = (ys + h_ex);
         yac_tf_(i) = -ys;
         yac_ft_(i) = -ys;
 
@@ -180,7 +215,6 @@ void DataLine::reset_results()
     res_powerline_vex_ = RealVect();  // in kV
     res_powerline_aex_ = RealVect();  // in kA
 }
-
 
 void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const Eigen::Ref<const RealVect> & Vm,
