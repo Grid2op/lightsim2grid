@@ -104,7 +104,9 @@ def init(net : pypo.network, gen_slack_id: int = None):
     trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva_
     # tap
     tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
-    tap_pos += 1
+    has_tap = tap_step_pct != 0.
+    tap_pos[has_tap] += 1
+    tap_step_pct[~has_tap] = 1.0  # or any other values...
     model.init_trafo(df_trafo["r"].values / trafo_to_pu,
                      df_trafo["x"].values / trafo_to_pu,
                      2.*(1j*df_trafo["g"].values + df_trafo["b"].values) * trafo_to_pu,

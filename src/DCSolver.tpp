@@ -27,7 +27,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     //   and for the slack bus both the magnitude and the angle are used.
 
     auto timer = CustTimer();
-
+    BaseSolver::reset_timer();
     const int nb_bus_solver = static_cast<int>(Ybus.rows());
 
     #ifdef __COUT_TIMES

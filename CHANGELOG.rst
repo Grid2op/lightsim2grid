@@ -20,6 +20,8 @@ Change Log
 
 [0.7.5] 2023-xx-yy
 --------------------
+- [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
+  multiple powerflows used the same solver
 - [ADDED] possibility to initialize a powergrid based on pypowsybl
 - [IMPROVED] now shipping `src` and `eigen` directory in the source of 
   lightsim2grid to allow their installation if wheels are not provided.

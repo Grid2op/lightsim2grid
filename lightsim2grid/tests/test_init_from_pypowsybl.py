@@ -10,6 +10,7 @@ import pypowsybl as pp
 import pypowsybl.loadflow as lf
 import numpy as np
 import unittest
+import warnings
 
 from lightsim2grid.gridmodel.from_pypowsybl import init
 
@@ -45,7 +46,9 @@ class AuxInitFromPyPowSyBl:
         tmp = self.get_equiv_pdp_grid()
         if tmp is not None:
             self.pp_samecase = tmp
-            self.ref_samecase = init_from_pp(self.pp_samecase)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                self.ref_samecase = init_from_pp(self.pp_samecase)
             self.can_pp = True
         else:
             # TODO will crash later if no equiv grid
@@ -85,9 +88,6 @@ class AuxInitFromPyPowSyBl:
         slack_id = self.get_slackbus_id()
         # (array([ 30,  31, 212, 218, 265]), array([265,  31, 212, 218,  30]))
         
-        import pdb
-        pdb.set_trace()
-        
         # for case 118
         # bus_or = [64]
         # bus_ex = [67]
@@ -105,17 +105,15 @@ class AuxInitFromPyPowSyBl:
         # np.where(tmp_.todense() >= 2000)
         # (array([ 30,  31, 212, 218, 265]), array([265,  31, 212, 218,  30]))
 
-        bus_or = [64]
-        bus_ex = [67]
-        lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
-        lines_ref = [el.id for el in self.ref_samecase.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
-        if not lines_ref:
-            lines_ref = [el.id for el in self.ref_samecase.get_trafos() if (el.bus_hv_id in bus_or and el.bus_lv_id in bus_ex) or (el.bus_hv_id in bus_ex and el.bus_lv_id in bus_or)]
-        import pdb
-        pdb.set_trace()
-        # self.pp_samecase["_ppc"]["internal"]["Bbus"]
-        self.pp_samecase["_ppc"]["internal"]["Ybus"][64,67]
-        self.pp_samecase["_ppc"]["internal"]["bus"]
+        # bus_or = [64]
+        # bus_ex = [67]
+        # lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
+        # lines_ref = [el.id for el in self.ref_samecase.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
+        # if not lines_ref:
+        #     lines_ref = [el.id for el in self.ref_samecase.get_trafos() if (el.bus_hv_id in bus_or and el.bus_lv_id in bus_ex) or (el.bus_hv_id in bus_ex and el.bus_lv_id in bus_or)]
+        # # self.pp_samecase["_ppc"]["internal"]["Bbus"]
+        # self.pp_samecase["_ppc"]["internal"]["Ybus"][64,67]
+        # self.pp_samecase["_ppc"]["internal"]["bus"]
                 
         assert np.abs(v_ls - v_ls_ref).max() <= self.tol_eq, "error for vresults for dc"
         tmp_ = self.gridmodel.get_dcYbus() - self.ref_samecase.get_dcYbus()
@@ -148,12 +146,12 @@ class AuxInitFromPyPowSyBl:
         
         # for case 300
         # np.where(np.abs(v_ang_ls - v_ang_pypo) > 3)  # => 173, 177
-        bus_or = [173]
-        bus_ex = [177]
-        # lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
-        lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or or el.bus_or_id in bus_ex or el.bus_ex_id in bus_or or el.bus_ex_id in bus_ex)]
-        trafos = [el.id for el in self.gridmodel.get_trafos() if (el.bus_hv_id in bus_or or el.bus_hv_id in bus_ex or el.bus_lv_id in bus_or or el.bus_lv_id in bus_ex)]
-        shunts = [el.id for el in  self.gridmodel.get_shunts() if el.bus_id in bus_or or el.bus_id in bus_ex]
+        # bus_or = [173]
+        # bus_ex = [177]
+        # # lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
+        # lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or or el.bus_or_id in bus_ex or el.bus_ex_id in bus_or or el.bus_ex_id in bus_ex)]
+        # trafos = [el.id for el in self.gridmodel.get_trafos() if (el.bus_hv_id in bus_or or el.bus_hv_id in bus_ex or el.bus_lv_id in bus_or or el.bus_lv_id in bus_ex)]
+        # shunts = [el.id for el in  self.gridmodel.get_shunts() if el.bus_id in bus_or or el.bus_id in bus_ex]
         # trafo 77 => 204    2040    in cdf file
         # trafo 85 => 
         
@@ -184,12 +182,10 @@ class AuxInitFromPyPowSyBl:
         res_pypow = lf.run_ac(self.network_ref, parameters=param)
         if self.compare_pp():
             pdp.runpp(self.pp_samecase, init="flat")
-        
+            
         # check voltage angles
         v_ang_pypo = self.network_ref.get_buses()["v_angle"].values
         v_ang_ls = np.rad2deg(np.angle(v_ls))
-        import pdb
-        pdb.set_trace()
         if self.compare_pp():
             v_ang_pp = self.pp_samecase.res_bus["va_degree"].values - self.pp_samecase.ext_grid["va_degree"].values
             assert np.abs(v_ang_ls - v_ang_pp).max() <= self.tol_eq, "error for va results for ac"
@@ -206,6 +202,12 @@ class AuxInitFromPyPowSyBl:
         if res_pypow[0].status == pp._pypowsybl.LoadFlowComponentStatus.CONVERGED:
             assert np.abs(v_mag_ls - v_mag_pypo).max() <= self.tol_eq
         
+        # check that pypow solution is "feasible" as seen by lightsim2grid
+        if res_pypow[0].status == pp._pypowsybl.LoadFlowComponentStatus.CONVERGED:
+            v_pypow = v_mag_pypo * np.exp(1j * np.deg2rad(v_ang_pypo))
+            v_pypow_ls = self.gridmodel.check_solution(v_pypow, False)
+            assert np.abs(v_pypow_ls).max() <= 10. * self.tol_eq
+     
         
 class TestCase14FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
     pass
@@ -223,7 +225,17 @@ class TestCase30FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
 class TestCase57FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
     # does not appear to be the same grid !
     def get_pypo_grid(self):
-        return pp.network.create_ieee57()
+        res = pp.network.create_ieee57()
+        # df = res.get_2_windings_transformers()[["rated_u1"]]
+        # df["rated_u1"] = 1.0
+        # res.update_2_windings_transformers(df)
+        
+        # df = res.get_lines()[["b1", "b2", "r"]]
+        # df["b1"] = 0.
+        # df["b2"] = 0.
+        # df["r"] = 0.
+        # res.update_lines(df)
+        return res
     
     def get_equiv_pdp_grid(self):
         return pn.case57()
@@ -257,8 +269,9 @@ class TestCase118FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
         return False
                 
         
-class TestCase300FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
-        # does not work, probably grid not ordered the same
+class TestCase300FromPypo(AuxInitFromPyPowSyBl):
+    # does not work, probably grid not ordered the same
+    # need further investigation
     def get_pypo_grid(self):
         return pp.network.create_ieee300()
     
