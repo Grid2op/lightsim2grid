@@ -166,6 +166,23 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::FDPF_SparseLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver, it uses the default Eigen sparse lu decomposition for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_SparseLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
+
+)mydelimiter";
+
 const std::string DocSolver::KLUSolver = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster KLU solver available in the SuiteSparse library
     for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`.
@@ -229,6 +246,23 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::FDPF_KLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver, it uses the fast KLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_KLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
+
+)mydelimiter";
+
 const std::string DocSolver::NICSLUSolver = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster NICSLU solver available in the NICSLU library
     for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`. (requires a build from source)
@@ -243,6 +277,10 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
         
         - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLU)` at creation time
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
 
     .. note::
 
@@ -264,7 +302,11 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
         
         - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLUSingleSlack)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUSingleSlack)` at creation time    
-    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
     .. note::
 
         NICSLU is available at https://github.com/chenxm1986/nicslu
@@ -292,10 +334,39 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
 
         Otherwise, it is used internally to find good starting point to intialize the real AC solver.
 
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
     .. note::
 
         NICSLU is available at https://github.com/chenxm1986/nicslu
  
+)mydelimiter";
+
+const std::string DocSolver::FDPF_NICSLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver, it uses the fast NICSLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_NICSLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
+
 )mydelimiter";
 
 const std::string DocSolver::CKTSOSolver = R"mydelimiter(
@@ -360,6 +431,31 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
         it when you create the grid2op environment, for example with "param.ENV_DC=True".
 
         Otherwise, it is used internally to find good starting point to intialize the real AC solver.
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_CKTSOSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver, it uses the fast CKTSO library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_CKTSO` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for cktso.
 
     .. note::
 

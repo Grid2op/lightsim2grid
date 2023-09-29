@@ -121,6 +121,18 @@ bool BaseSolver::_check_for_convergence(const RealVect & F,
     return res;
 }
 
+bool BaseSolver::_check_for_convergence(const RealVect & p,
+                                        const RealVect & q,
+                                        real_type tol)
+{
+    auto timer = CustTimer();
+    const auto norm_inf_p = p.lpNorm<Eigen::Infinity>();
+    const auto norm_inf_q = q.lpNorm<Eigen::Infinity>();
+    bool res =  (norm_inf_p  < tol) && (norm_inf_q < tol);
+    timer_check_ += timer.duration();
+    return res;
+}
+
 int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
                                      const Eigen::VectorXi & pq,
                                      unsigned int nb_bus)

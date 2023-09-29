@@ -32,18 +32,22 @@ struct DocSolver
     static const std::string SparseLUSolver;
     static const std::string SparseLUSolverSingleSlack;
     static const std::string DCSolver;
+    static const std::string FDPF_SparseLUSolver;
 
     static const std::string KLUSolver;
     static const std::string KLUSolverSingleSlack;
     static const std::string KLUDCSolver;
+    static const std::string FDPF_KLUSolver;
 
     static const std::string NICSLUSolver;
     static const std::string NICSLUSolverSingleSlack;
     static const std::string NICSLUDCSolver;
+    static const std::string FDPF_NICSLUSolver;
 
     static const std::string CKTSOSolver;
     static const std::string CKTSOSolverSingleSlack;
     static const std::string CKTSODCSolver;
+    static const std::string FDPF_CKTSOSolver;
 
     static const std::string GaussSeidelSolver;
     static const std::string GaussSeidelSynchSolver;

@@ -30,13 +30,13 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
         std::ostringstream exc_;
-        exc_ << "BaseNRSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseNRSolverSingleSlack::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
         exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         std::ostringstream exc_;
-        exc_ << "BaseNRSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseNRSolverSingleSlack::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
         exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<<", "<<Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }

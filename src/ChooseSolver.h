@@ -20,7 +20,9 @@
 enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU, 
                        SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack, 
                        KLUDC, NICSLUDC,
-                       CKTSO, CKTSOSingleSlack, CKTSODC};
+                       CKTSO, CKTSOSingleSlack, CKTSODC,
+                       FDPF_SparseLU, FDPF_KLU, FDPF_NICSLU, FDPF_CKTSO,  // from 0.7.5
+                       };
 
 // TODO define a template class instead of these weird stuff !!!
 // TODO export all methods from base class !
@@ -48,20 +50,24 @@ class ChooseSolver
             res.push_back(SolverType::DC);
             res.push_back(SolverType::GaussSeidelSynch);
             res.push_back(SolverType::SparseLUSingleSlack);
+            res.push_back(SolverType::FDPF_SparseLU);
             #ifdef KLU_SOLVER_AVAILABLE
                 res.push_back(SolverType::KLU);
                 res.push_back(SolverType::KLUSingleSlack);
                 res.push_back(SolverType::KLUDC);
+                res.push_back(SolverType::FDPF_KLU);
             #endif
             #ifdef NICSLU_SOLVER_AVAILABLE
                 res.push_back(SolverType::NICSLU);
                 res.push_back(SolverType::NICSLUSingleSlack);
                 res.push_back(SolverType::NICSLUDC);
+                res.push_back(SolverType::FDPF_NICSLU);
             #endif
             #ifdef CKTSO_SOLVER_AVAILABLE
                 res.push_back(SolverType::CKTSO);
                 res.push_back(SolverType::CKTSOSingleSlack);
                 res.push_back(SolverType::CKTSODC);
+                res.push_back(SolverType::FDPF_CKTSO);
             #endif
             return res;
         }
@@ -86,7 +92,11 @@ class ChooseSolver
             if(type == _solver_type) return;
 
             #ifndef KLU_SOLVER_AVAILABLE
-                if((type == SolverType::KLU) || (type == SolverType::KLUDC) || (type == SolverType::KLUSingleSlack)){
+                if((type == SolverType::KLU) || 
+                   (type == SolverType::KLUDC) || 
+                   (type == SolverType::KLUSingleSlack) ||
+                   (type == SolverType::FDPF_KLU)
+                   ){
                     std::string msg;
                     msg = "Impossible to change for a solver using KLU for linear algebra. Please compile lightsim2grid from source to benefit from this.";
                     throw std::runtime_error(msg);
@@ -94,7 +104,11 @@ class ChooseSolver
             #endif
 
             #ifndef NICSLU_SOLVER_AVAILABLE
-                if((type == SolverType::NICSLU) || (type == SolverType::NICSLUDC) || (type ==  SolverType::NICSLUSingleSlack)){
+                if((type == SolverType::NICSLU) || 
+                   (type == SolverType::NICSLUDC) || 
+                   (type ==  SolverType::NICSLUSingleSlack) || 
+                   (type ==  SolverType::FDPF_NICSLU)
+                   ){
                     std::string msg;
                     msg = "Impossible to change for a solver using NICSLU for linear algebra. Please compile lightsim2grid from source to benefit from this.";
                     throw std::runtime_error(msg);
@@ -102,7 +116,11 @@ class ChooseSolver
             #endif
 
             #ifndef CKTSO_SOLVER_AVAILABLE
-                if((type == SolverType::CKTSO) || (type == SolverType::CKTSODC) || (type ==  SolverType::CKTSOSingleSlack)){
+                if((type == SolverType::CKTSO) || 
+                   (type == SolverType::CKTSODC) || 
+                   (type ==  SolverType::CKTSOSingleSlack) ||
+                   (type ==  SolverType::FDPF_CKTSO)
+                   ){
                     std::string msg;
                     msg = "Impossible to change for a solver using CKTSO for linear algebra. Please compile lightsim2grid from source to benefit from this.";
                     throw std::runtime_error(msg);
@@ -178,15 +196,20 @@ class ChooseSolver
             else if(_solver_type == SolverType::CKTSOSingleSlack){
                 return _solver_cktso_single.get_J();}
             #endif // CKTSO_SOLVER_AVAILABLE
-            else if(_solver_type == SolverType::GaussSeidel){
-                throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");}
             else if(_solver_type == SolverType::DC || 
                     _solver_type == SolverType::KLUDC || 
                     _solver_type == SolverType::NICSLUDC ||
                     _solver_type == SolverType::CKTSODC){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the DC powerflow.");}
+            else if(_solver_type == SolverType::FDPF_SparseLU || 
+                    _solver_type == SolverType::FDPF_KLU || 
+                    _solver_type == SolverType::FDPF_NICSLU ||
+                    _solver_type == SolverType::FDPF_CKTSO){
+                throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the FDPF powerflow.");}
             else if(_solver_type == SolverType::GaussSeidelSynch){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidelSynch powerflow.");}
+            else if(_solver_type == SolverType::GaussSeidel){
+                throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");}
             else throw std::runtime_error("Unknown solver type encountered");
         }
 
@@ -224,39 +247,48 @@ class ChooseSolver
             
             #ifndef KLU_SOLVER_AVAILABLE
                 if(_solver_type == SolverType::KLU){
-                    std::string msg = "Impossible to use the KLU solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the KLU linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 } else if(_solver_type == SolverType::KLUSingleSlack){
-                    std::string msg = "Impossible to use the KLU solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the KLU linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 } else if(_solver_type == SolverType::KLUDC){
-                    std::string msg = "Impossible to use the KLU solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the KLU linear solver, your version of lightsim2grid has not been compiled to use it.";
+                    throw std::runtime_error(msg);
+                } else if(_solver_type == SolverType::FDPF_KLU){
+                    std::string msg = "Impossible to use the KLU linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 }
             #endif  // KLU_SOLVER_AVAILABLE
 
             #ifndef NICSLU_SOLVER_AVAILABLE
                 if(_solver_type == SolverType::NICSLU){
-                    std::string msg = "Impossible to use the NICSLU solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the NICSLU linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 } else if(_solver_type == SolverType::NICSLUSingleSlack){
-                    std::string msg = "Impossible to use the NICSLU solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the NICSLU linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 } else if(_solver_type == SolverType::NICSLUDC){
-                    std::string msg = "Impossible to use the NICSLU solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the NICSLU linear solver, your version of lightsim2grid has not been compiled to use it.";
+                    throw std::runtime_error(msg);
+                } else if(_solver_type == SolverType::FDPF_NICSLU){
+                    std::string msg = "Impossible to use the NICSLU linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 }
             #endif  // NICSLU_SOLVER_AVAILABLE
 
             #ifndef CKTSO_SOLVER_AVAILABLE
                 if(_solver_type == SolverType::CKTSO){
-                    std::string msg = "Impossible to use the CKTSO solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the CKTSO linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 } else if(_solver_type == SolverType::CKTSOSingleSlack){
-                    std::string msg = "Impossible to use the CKTSO solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the CKTSO linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 } else if(_solver_type == SolverType::CKTSODC){
-                    std::string msg = "Impossible to use the CKTSO solver, it is not available on your platform.";
+                    std::string msg = "Impossible to use the CKTSO linear solver, your version of lightsim2grid has not been compiled to use it.";
+                    throw std::runtime_error(msg);
+                } else if(_solver_type == SolverType::FDPF_CKTSO){
+                    std::string msg = "Impossible to use the CKTSO linear solver, your version of lightsim2grid has not been compiled to use it.";
                     throw std::runtime_error(msg);
                 }
             #endif  // CKTSO_SOLVER_AVAILABLE
@@ -272,20 +304,24 @@ class ChooseSolver
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
+            else if(_solver_type == SolverType::FDPF_SparseLU){res = &_solver_fdpf_lu;}
             #ifdef KLU_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::KLU){res = & _solver_klu;}
             else if(_solver_type == SolverType::KLUSingleSlack){res = &_solver_klu_single;}
             else if(_solver_type == SolverType::KLUDC){res = &_solver_klu_dc;}
+            else if(_solver_type == SolverType::FDPF_KLU){res = &_solver_fdpf_klu;}
             #endif  // KLU_SOLVER_AVAILABLE
             #ifdef NICSLU_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::NICSLU){res = &_solver_nicslu;}
             else if(_solver_type == SolverType::NICSLUSingleSlack){res = &_solver_nicslu_single;}
             else if(_solver_type == SolverType::NICSLUDC){res = &_solver_nicslu_dc;}
+            else if(_solver_type == SolverType::FDPF_NICSLU){res = &_solver_fdpf_nicslu;}
             #endif // NICSLU_SOLVER_AVAILABLE
             #ifdef CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::CKTSO){res = &_solver_cktso;}
             else if(_solver_type == SolverType::CKTSOSingleSlack){res = &_solver_cktso_single;}
             else if(_solver_type == SolverType::CKTSODC){res = &_solver_cktso_dc;}
+            else if(_solver_type == SolverType::FDPF_CKTSO){res = &_solver_fdpf_cktso;}
             #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){res = &_solver_gaussseidel;}
             else if(_solver_type == SolverType::GaussSeidelSynch){res = &_solver_gaussseidelsynch;}
@@ -298,20 +334,24 @@ class ChooseSolver
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
+            else if(_solver_type == SolverType::FDPF_SparseLU){res = &_solver_fdpf_lu;}
             #ifdef KLU_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::KLU){res = & _solver_klu;}
             else if(_solver_type == SolverType::KLUSingleSlack){res = &_solver_klu_single;}
             else if(_solver_type == SolverType::KLUDC){res = &_solver_klu_dc;}
+            else if(_solver_type == SolverType::FDPF_KLU){res = &_solver_fdpf_klu;}
             #endif  // KLU_SOLVER_AVAILABLE
             #ifdef NICSLU_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::NICSLU){res = &_solver_nicslu;}
             else if(_solver_type == SolverType::NICSLUSingleSlack){res = &_solver_nicslu_single;}
             else if(_solver_type == SolverType::NICSLUDC){res = &_solver_nicslu_dc;}
+            else if(_solver_type == SolverType::FDPF_NICSLU){res = &_solver_fdpf_nicslu;}
             #endif // NICSLU_SOLVER_AVAILABLE
             #ifdef CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::CKTSO){res = &_solver_cktso;}
             else if(_solver_type == SolverType::CKTSOSingleSlack){res = &_solver_cktso_single;}
             else if(_solver_type == SolverType::CKTSODC){res = &_solver_cktso_dc;}
+            else if(_solver_type == SolverType::FDPF_CKTSO){res = &_solver_fdpf_cktso;}
             #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){res = &_solver_gaussseidel;}
             else if(_solver_type == SolverType::GaussSeidelSynch){res = &_solver_gaussseidelsynch;}
@@ -329,20 +369,24 @@ class ChooseSolver
         GaussSeidelSolver _solver_gaussseidel;
         GaussSeidelSynchSolver _solver_gaussseidelsynch;
         DCSolver _solver_dc;
+        FDPF_SparseLUSolver _solver_fdpf_lu;
         #ifdef KLU_SOLVER_AVAILABLE
             KLUSolver _solver_klu;
             KLUSolverSingleSlack _solver_klu_single;
             KLUDCSolver _solver_klu_dc;
+            FDPF_KLUSolver _solver_fdpf_klu;
         #endif  // KLU_SOLVER_AVAILABLE
         #ifdef NICSLU_SOLVER_AVAILABLE
             NICSLUSolver _solver_nicslu;
             NICSLUSolverSingleSlack _solver_nicslu_single;
             NICSLUDCSolver _solver_nicslu_dc;
+            FDPF_NICSLUSolver _solver_fdpf_nicslu;
         #endif  // NICSLU_SOLVER_AVAILABLE
         #ifdef CKTSO_SOLVER_AVAILABLE
             CKTSOSolver _solver_cktso;
             CKTSOSolverSingleSlack _solver_cktso_single;
             CKTSODCSolver _solver_cktso_dc;
+            FDPF_CKTSOSolver _solver_fdpf_cktso;
         #endif  // CKTSO_SOLVER_AVAILABLE
 };
 

@@ -126,6 +126,10 @@ class BaseSolver : public BaseConstants
         bool _check_for_convergence(const RealVect & F,
                                     real_type tol);
 
+        bool _check_for_convergence(const RealVect & p,
+                                    const RealVect & q,
+                                    real_type tol);
+
         void one_iter_all_at_once(CplxVect & tmp_Sbus,
                                   const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   const Eigen::VectorXi & pv,

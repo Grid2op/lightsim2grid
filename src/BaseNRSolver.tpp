@@ -114,7 +114,7 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
             Va_(pq) -= F.segment(n_pv + 1, n_pq);
             Vm_(pq) -= F.segment(n_pv + n_pq + 1, n_pq);
         }
-        slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the last component
+        slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the first component
 
         // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
         // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
