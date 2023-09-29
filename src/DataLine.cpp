@@ -151,7 +151,7 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, con
 void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                         bool ac,
                         const std::vector<int> & id_grid_to_solver,
-                        real_type sn_mva)
+                        real_type sn_mva) const
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
@@ -201,6 +201,52 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_or_solver_id, ytf));
         res.push_back(Eigen::Triplet<cplx_type> (bus_or_solver_id, bus_or_solver_id, yff));
         res.push_back(Eigen::Triplet<cplx_type> (bus_ex_solver_id, bus_ex_solver_id, ytt));
+    }
+}
+
+void DataLine::fillBp(std::vector<Eigen::Triplet<real_type> > & res,
+                      const std::vector<int> & id_grid_to_solver,
+                      real_type sn_mva,
+                      FDPFMethod xb_or_bx) const
+{
+
+    // temp_branch[:, BR_B] = zeros(nl)           ## zero out line charging shunts
+    // temp_branch[:, TAP] = ones(nl)             ## cancel out taps
+
+    const Eigen::Index nb_line = static_cast<int>(powerlines_r_.size());
+    real_type yft, ytf, yff, ytt;
+
+    //diagonal coefficients
+    for(Eigen::Index line_id =0; line_id < nb_line; ++line_id){
+        // i only add this if the powerline is connected
+        if(!status_[line_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_or_id_(line_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillYbusBranch: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_ex_id_(line_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillYbusBranch: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+
+        // and now add them
+        res.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, yft));
+        res.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, ytf));
+        res.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, yff));
+        res.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, ytt));
+
     }
 }
 

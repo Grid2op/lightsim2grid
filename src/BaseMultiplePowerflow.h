@@ -53,8 +53,8 @@ class BaseMultiplePowerflow
         void change_solver(const SolverType & type){
             _solver.change_solver(type);
         }
-        std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
-        SolverType get_solver_type() {return _solver.get_type(); }
+        std::vector<SolverType> available_solvers() const {return _solver.available_solvers(); }
+        SolverType get_solver_type() const {return _solver.get_type(); }
 
         // utlities informations
         double amps_computation_time() const {return _timer_compute_A;}

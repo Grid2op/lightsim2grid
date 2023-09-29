@@ -7,6 +7,8 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "GridModel.h"
+#include "ChooseSolver.h"  // to avoid circular references
+
 
 GridModel::GridModel(const GridModel & other)
 {
@@ -68,6 +70,8 @@ GridModel::GridModel(const GridModel & other)
     _solver.change_solver(other._solver.get_type());
     _dc_solver.change_solver(other._dc_solver.get_type());
     compute_results_ = other.compute_results_;
+    _dc_solver.set_gridmodel(this);
+    _solver.set_gridmodel(this);
 }
 
 //pickle
@@ -217,6 +221,8 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     if (reset_solver){
         _solver.reset();
         _dc_solver.reset();
+        _solver.set_gridmodel(this);
+        _dc_solver.set_gridmodel(this);
     }
     // std::cout << "GridModel::reset called" << std::endl;
 }
@@ -826,3 +832,22 @@ void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen:
                         &GridModel::deactivate_trafo
                         );
 }
+
+// for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
+void GridModel::fillBp(Eigen::SparseMatrix<real_type> & res, FDPFMethod xb_or_bx) const{
+    // init the Bp matrix for Fast Decoupled Powerflow  (TODO FDPF: optim when it's NOT needed just like for Ybus)
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
+    powerlines_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    shunts_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    trafos_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    loads_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    sgens_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    storages_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    generators_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    dc_lines_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    res.setFromTriplets(tripletList.begin(), tripletList.end());
+    res.makeCompressed();
+}
+
+void GridModel::fillBpp(Eigen::SparseMatrix<real_type> & res, FDPFMethod xb_or_bx) const {};

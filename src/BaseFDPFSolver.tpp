@@ -8,17 +8,17 @@
 
 // inspired from pypower https://github.com/rwl/PYPOWER/blob/master/pypower/fdpf.py
 
-template<class LinearSolver>
-bool BaseFDPFSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                              CplxVect & V,
-                                              const CplxVect & Sbus,
-                                              const Eigen::VectorXi & slack_ids,
-                                              const RealVect & slack_weights,
-                                              const Eigen::VectorXi & pv,
-                                              const Eigen::VectorXi & pq,
-                                              int max_iter,
-                                              real_type tol
-                                              )
+template<class LinearSolver, FDPFMethod XB_BX>
+bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                                     CplxVect & V,
+                                                     const CplxVect & Sbus,
+                                                     const Eigen::VectorXi & slack_ids,
+                                                     const RealVect & slack_weights,
+                                                     const Eigen::VectorXi & pv,
+                                                     const Eigen::VectorXi & pq,
+                                                     int max_iter,
+                                                     real_type tol
+                                                     )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -59,6 +59,17 @@ bool BaseFDPFSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_typ
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq;  // pvpq = r_[pv, pq]
 
+    // TODO FDPF inheritance (or specialization for FDXB or FDBX)
+    Eigen::SparseMatrix<real_type> Bp;
+    Eigen::SparseMatrix<real_type> Bpp;
+    fillBp(Bp);
+    fillBpp(Bpp);
+
+    // TODO FDPF 
+    // Bp = Bp[array([pvpq]).T, pvpq].tocsc() # splu requires a CSC matrix
+    // Bpp = Bpp[array([pq]).T, pq].tocsc()
+    // then init the solvers !  TODO FDPF 
+    
     // some clever tricks are used in the making of the Jacobian to handle the slack bus 
     // (in case there is a distributed slack bus)
     const auto n_pvpq = pvpq.size();
@@ -95,7 +106,7 @@ bool BaseFDPFSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_typ
             break;
         }
         Va_(pvpq) -= p_;  // Va[pvpq] = Va[pvpq] + dVa
-        tmp_va.array() = (Va_.array().cos().cast<cplx_type>() + my_i * Va_.array().sin().cast<cplx_type>() );  // reused for Q iteration
+        tmp_va.array() = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );  // reused for Q iteration
 
         if(has_converged(tmp_va, Ybus, Sbus, slack_bus_id, slack_absorbed, slack_weights, pvpq, pq, tol)) break;
 

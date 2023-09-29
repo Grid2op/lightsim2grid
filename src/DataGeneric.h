@@ -70,9 +70,19 @@ class DataGeneric : public BaseConstants
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,
                               const std::vector<int> & id_grid_to_solver,
-                              real_type sn_mva) {};
+                              real_type sn_mva) const {};
+
+        virtual void fillBp(std::vector<Eigen::Triplet<real_type> > & res,
+                            const std::vector<int> & id_grid_to_solver,
+                            real_type sn_mva,
+                            FDPFMethod xb_or_bx) const {};
+        virtual void fillBpp(std::vector<Eigen::Triplet<real_type> > & res,
+                             const std::vector<int> & id_grid_to_solver,
+                             real_type sn_mva,
+                             FDPFMethod xb_or_bx) const {};
+
         virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){};
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver) const {};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             Eigen::VectorXi & slack_bus_id_solver,

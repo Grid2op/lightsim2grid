@@ -246,8 +246,9 @@ benchmarks/benchmark.png
 benchmarks/benchmark2.png
 cktso
 _pandapower
-benchmarks/slacks.py
+_pypower
 _gridcal
+benchmarks/slacks.py
 *grid.json
 bug_pandapower.py
 bug_pp.py
@@ -263,3 +264,8 @@ nicslu
 **nicslu.lic
 test_milad.py
 test_issue_50.py
+reverse_pypow.py
+test_issue_58.py
+test_issue_58_old.py
+lightsim2grid/gridmodel/pypowsybl.ipynb
+lightsim2grid/tests/test.mat

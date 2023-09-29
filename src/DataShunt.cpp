@@ -49,7 +49,8 @@ void DataShunt::set_state(DataShunt::StateRes & my_state )
 void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                          bool ac,
                          const std::vector<int> & id_grid_to_solver,
-                         real_type sn_mva){
+                         real_type sn_mva) const
+{
     const int nb_shunt = static_cast<int>(q_mvar_.size());
     cplx_type tmp;
     int bus_id_me, bus_id_solver;
@@ -75,7 +76,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver)  // in DC i need that
+void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver) const  // in DC i need that
 {
     // if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;

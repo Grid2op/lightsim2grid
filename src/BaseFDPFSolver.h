@@ -12,22 +12,13 @@
 #include "BaseSolver.h"
 
 /**
-Base class for Newton Raphson based solver
+Base class for Fast Decoupled Powerflow based solver
 **/
-template<class LinearSolver>
+template<class LinearSolver, FDPFMethod XB_BX>
 class BaseFDPFSolver : public BaseSolver
 {
     public:
         BaseFDPFSolver():BaseSolver(true), need_factorize_(true) {}
-
-        // virtual
-        // std::tuple<double, double, double, double, double, double, double> get_timers_jacobian()
-        // {
-        //     // TODO refacto that, and change the order
-        //     auto res = std::tuple<double, double, double, double, double, double, double>(
-        //       timer_Fx_, timer_solve_, timer_initialize_, timer_check_, timer_dSbus_, timer_fillJ_, timer_total_nr_);
-        //     return res;
-        // }
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -39,32 +30,41 @@ class BaseFDPFSolver : public BaseSolver
                         const Eigen::VectorXi & pq,
                         int max_iter,
                         real_type tol
-                        ) ;
+                        ) ;  // requires a gridmodel !
+
+        // bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+        //                 const Eigen::SparseMatrix<cplx_type> & Bp,
+        //                 const Eigen::SparseMatrix<cplx_type> & Bpp,
+        //                 CplxVect & V,
+        //                 const CplxVect & Sbus,
+        //                 const Eigen::VectorXi & slack_ids,
+        //                 const RealVect & slack_weights,
+        //                 const Eigen::VectorXi & pv,
+        //                 const Eigen::VectorXi & pq,
+        //                 int max_iter,
+        //                 real_type tol
+        //                 ) ;  // TODO add Bp and Bpp as argument for use in python directly !
 
         virtual void reset()
         {   
             BaseSolver::reset();
-            
-            // reset linear solvers
-            ErrorType reset_status = _linear_solver_Bp.reset();
-            if(reset_status != ErrorType::NoError) err_ = reset_status;
-            reset_status = _linear_solver_Bpp.reset();
-            if(reset_status != ErrorType::NoError) err_ = reset_status;
-
             // solution of the problem
             Bp_ = Eigen::SparseMatrix<real_type> ();  // the B prime matrix (size n_pvpq)
             Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
             p_ = RealVect();
             q_ = RealVect();
             need_factorize_ = true;
+
+            // reset linear solvers
+            ErrorType reset_status = _linear_solver_Bp.reset();
+            if(reset_status != ErrorType::NoError) err_ = reset_status;
+            reset_status = _linear_solver_Bpp.reset();
+            if((reset_status != ErrorType::NoError) && (err_ != ErrorType::NotInitError)) err_ = reset_status;
         }
 
     protected:
         virtual void reset_timer(){
             BaseSolver::reset_timer();
-            // timer_dSbus_ = 0.;
-            // timer_fillJ_ = 0.;
-            // timer_initialize_ = 0.;
         }
 
         CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
@@ -80,6 +80,9 @@ class BaseFDPFSolver : public BaseSolver
             return mis;
         }
         
+        void fillBp(Eigen::SparseMatrix<real_type> & res) const;  // defined in Solvers.cpp !
+        void fillBpp(Eigen::SparseMatrix<real_type> & res) const;  // defined in Solvers.cpp !
+
         // TODO !!!
         // virtual
         // void initialize(){

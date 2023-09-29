@@ -156,7 +156,8 @@ src_files = ['src/main.cpp',
              "src/BaseSolver.cpp",
              "src/BaseMultiplePowerflow.cpp",
              "src/Computers.cpp",
-             "src/SecurityAnalysis.cpp"]
+             "src/SecurityAnalysis.cpp",
+             "src/Solvers.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")

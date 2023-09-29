@@ -166,7 +166,7 @@ void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, co
 void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                          bool ac,
                          const std::vector<int> & id_grid_to_solver,
-                         real_type sn_mva)
+                         real_type sn_mva) const
 {
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if" for ac / dc

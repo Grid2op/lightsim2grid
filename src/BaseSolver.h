@@ -28,6 +28,9 @@
 #include "CustTimer.h"
 #include "BaseConstants.h"
 
+class GridModel;
+
+
 /**
 This class represents a solver to compute powerflow.
 
@@ -50,6 +53,10 @@ class BaseSolver : public BaseConstants
             timer_total_nr_(0.){};
 
         virtual ~BaseSolver(){}
+
+        void set_gridmodel(const GridModel * gridmodel){
+            _gridmodel = gridmodel;
+        }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -194,11 +201,13 @@ class BaseSolver : public BaseConstants
         // 4: end of possible iterations (divergence because nr_iter_ >= max_iter)
 
         // timers
-         double timer_Fx_;
-         double timer_solve_;
-         double timer_check_;
-         double timer_total_nr_;
+        double timer_Fx_;
+        double timer_solve_;
+        double timer_check_;
+        double timer_total_nr_;
 
+        const GridModel * _gridmodel;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
+        
     private:
         // no copy allowed
         BaseSolver( const BaseSolver & ) ;

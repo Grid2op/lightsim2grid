@@ -47,7 +47,7 @@ void DataLoad::set_state(DataLoad::StateRes & my_state )
 }
 
 
-void DataLoad::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver){
+void DataLoad::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver) const {
     int nb_load = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;

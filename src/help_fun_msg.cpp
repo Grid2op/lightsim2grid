@@ -166,8 +166,25 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_SparseLUSolver =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver, it uses the default Eigen sparse lu decomposition for 
+const std::string DocSolver::FDPF_XB_SparseLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_SparseLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_SparseLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
@@ -246,8 +263,25 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_KLUSolver =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver, it uses the fast KLU library for 
+const std::string DocSolver::FDPF_XB_KLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdbx"  in pypower / pandapower), it uses the fast KLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_KLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_KLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdxb"  in pypower / pandapower), it uses the fast KLU library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
@@ -344,8 +378,33 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
  
 )mydelimiter";
 
-const std::string DocSolver::FDPF_NICSLUSolver =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver, it uses the fast NICSLU library for 
+const std::string DocSolver::FDPF_XB_NICSLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast NICSLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_NICSLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_NICSLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast NICSLU library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
@@ -438,8 +497,33 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_CKTSOSolver =  R"mydelimiter(
-    Default implementation of the Fast Decoupled Powerflow solver, it uses the fast CKTSO library for 
+const std::string DocSolver::FDPF_XB_CKTSOSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast CKTSO library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_CKTSO` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for cktso.
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_CKTSOSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast CKTSO library for 
     its underlying sparse matrix manipulation.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
