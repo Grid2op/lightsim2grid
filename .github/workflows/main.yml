@@ -73,15 +73,14 @@ jobs:
       - name: Install wheel
         run: pip3 install wheelhouse/*.whl --user
 
-      - name: Install GDB
-        run: yum install -y gdb
+      # - name: Install GDB
+      #   run: yum install -y gdb
 
       - name: Check package can be imported
         run: |
-          # python3 -c "import lightsim2grid"
-          # python3 -c "from lightsim2grid import *"
-          # python3 -c "from lightsim2grid.newtonpf import newtonpf"
-          gdb -batch -ex r --args python3 -c "from lightsim2grid import *" -ex backtrace
+          python3 -c "import lightsim2grid"
+          python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid.newtonpf import newtonpf"
 
       - name: Check LightSimBackend can be imported
         run: |

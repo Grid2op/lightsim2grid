@@ -41,7 +41,23 @@ class BaseFDPFSolver : public BaseSolver
                         real_type tol
                         ) ;
 
-        virtual void reset();
+        virtual void reset()
+        {   
+            BaseSolver::reset();
+            
+            // reset linear solvers
+            ErrorType reset_status = _linear_solver_Bp.reset();
+            if(reset_status != ErrorType::NoError) err_ = reset_status;
+            reset_status = _linear_solver_Bpp.reset();
+            if(reset_status != ErrorType::NoError) err_ = reset_status;
+
+            // solution of the problem
+            Bp_ = Eigen::SparseMatrix<real_type> ();  // the B prime matrix (size n_pvpq)
+            Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
+            p_ = RealVect();
+            q_ = RealVect();
+            need_factorize_ = true;
+        }
 
     protected:
         virtual void reset_timer(){
@@ -203,18 +219,18 @@ class BaseFDPFSolver : public BaseSolver
         // solution of the problem
         Eigen::SparseMatrix<real_type> Bp_;  // the B prime matrix (size n_pvpq)
         Eigen::SparseMatrix<real_type> Bpp_;  // the B double prime matrix  (size n_pq)
-        RealVect p_;
-        RealVect q_;
+        RealVect p_;  // (size n_pvpq)
+        RealVect q_;  // (size n_pq)
         bool need_factorize_;
 
         // to store the mapping from the element of J_ in dS_dVm_ and dS_dVa_
         // it does not own any memory at all !
-        std::vector<cplx_type*> value_map_;
+        // std::vector<cplx_type*> value_map_;
 
         // timers
-        double timer_initialize_;
-        double timer_dSbus_;
-        double timer_fillJ_;
+        // double timer_initialize_;
+        // double timer_dSbus_;
+        // double timer_fillJ_;
 
     private:
         // no copy allowed
