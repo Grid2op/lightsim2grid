@@ -41,6 +41,11 @@ jobs:
             abi: cp311,
             version: '3.11',
           }
+          - {
+            name: cp312,
+            abi: cp312,
+            version: '3.12',
+          }
 
     steps:
 
@@ -82,10 +87,17 @@ jobs:
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
 
-      - name: Check LightSimBackend can be imported
-        run: |
+      - name: Check LightSimBackend can be imported (install grid2op)
+        run: | 
           python3 -m pip install grid2op
+          python3 -m pip freeze
+
+      - name: Check LightSimBackend can be imported 1
+        run:
           python3 -c "from lightsim2grid import LightSimBackend"
+
+      - name: Check LightSimBackend can be imported 2
+        run:
           python3 -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
@@ -127,6 +139,10 @@ jobs:
           - {
             name: cp311,
             version: '3.11',
+          }
+          - {
+            name: cp312,
+            version: '3.12',
           }
     env:
       RUNNER_OS: windows-2019
@@ -268,6 +284,10 @@ jobs:
           - {
             name: cp311,
             version: '3.11',
+          }
+          - {
+            name: cp312,
+            version: '3.12',
           }
     env:
       RUNNER_OS: macos-latest
