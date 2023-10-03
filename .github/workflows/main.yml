@@ -94,11 +94,11 @@ jobs:
 
       - name: Check LightSimBackend can be imported 1
         run:
-          python3 -c "from lightsim2grid import LightSimBackend"
+          python3 -v -c "from lightsim2grid import LightSimBackend"
 
       - name: Check LightSimBackend can be imported 2
         run:
-          python3 -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
+          python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v3
