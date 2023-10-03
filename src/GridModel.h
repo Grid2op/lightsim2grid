@@ -506,8 +506,22 @@ class GridModel : public DataGeneric
         }
 
         //for FDPF
-        void fillBp(Eigen::SparseMatrix<real_type> & res, FDPFMethod xb_or_bx) const;
-        void fillBpp(Eigen::SparseMatrix<real_type> & res, FDPFMethod xb_or_bx) const;
+        void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
+                        Eigen::SparseMatrix<real_type> & Bpp, 
+                        FDPFMethod xb_or_bx) const;
+
+        Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
+            Eigen::SparseMatrix<real_type> Bp;
+            Eigen::SparseMatrix<real_type> Bpp;
+            fillBp_Bpp(Bp, Bpp, xb_or_bx);
+            return Bp;
+        }
+        Eigen::SparseMatrix<real_type> debug_get_Bpp_python(FDPFMethod xb_or_bx){
+            Eigen::SparseMatrix<real_type> Bp;
+            Eigen::SparseMatrix<real_type> Bpp;
+            fillBp_Bpp(Bp, Bpp, xb_or_bx);
+            return Bpp;
+        }
 
     protected:
     // add method to change topology, change ratio of transformers, change

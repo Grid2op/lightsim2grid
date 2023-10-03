@@ -204,20 +204,28 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataLine::fillBp(std::vector<Eigen::Triplet<real_type> > & res,
-                      const std::vector<int> & id_grid_to_solver,
-                      real_type sn_mva,
-                      FDPFMethod xb_or_bx) const
+void DataLine::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                          std::vector<Eigen::Triplet<real_type> > & Bpp,
+                          const std::vector<int> & id_grid_to_solver,
+                          real_type sn_mva,
+                          FDPFMethod xb_or_bx) const
 {
 
+    // For Bp
     // temp_branch[:, BR_B] = zeros(nl)           ## zero out line charging shunts
     // temp_branch[:, TAP] = ones(nl)             ## cancel out taps
+    // if alg == 2:                               ## if XB method
+    //    temp_branch[:, BR_R] = zeros(nl)       ## zero out line resistance
 
+    // For Bpp
+    // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
+    // if alg == 3:                               ## if BX method
+    //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
     const Eigen::Index nb_line = static_cast<int>(powerlines_r_.size());
-    real_type yft, ytf, yff, ytt;
-
+    real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
+    real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
     //diagonal coefficients
-    for(Eigen::Index line_id =0; line_id < nb_line; ++line_id){
+    for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
         // i only add this if the powerline is connected
         if(!status_[line_id]) continue;
 
@@ -226,7 +234,7 @@ void DataLine::fillBp(std::vector<Eigen::Triplet<real_type> > & res,
         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
         if(bus_or_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataLine::fillYbusBranch: the line with id ";
+            exc_ << "DataLine::fillBp_Bpp: the line with id ";
             exc_ << line_id;
             exc_ << " is connected (or side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -235,17 +243,47 @@ void DataLine::fillBp(std::vector<Eigen::Triplet<real_type> > & res,
         int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
         if(bus_ex_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataLine::fillYbusBranch: the line with id ";
+            exc_ << "DataLine::fillBp_Bpp: the line with id ";
             exc_ << line_id;
             exc_ << " is connected (ex side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
 
+        // get the coefficients
+        cplx_type ys_bp, ys_bpp;
+        if(xb_or_bx==FDPFMethod::XB){
+            ys_bp = 1. / (0. + my_i * powerlines_x_(line_id));
+            ys_bpp = 1. / (powerlines_r_(line_id) + my_i * powerlines_x_(line_id));
+        }else if (xb_or_bx==FDPFMethod::BX){
+            ys_bp = 1. / (powerlines_r_(line_id) + my_i * powerlines_x_(line_id));
+            ys_bpp = 1. / (0. + my_i * powerlines_x_(line_id));
+        }else{
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+            exc_ << line_id;
+            throw std::runtime_error(exc_.str());            
+        }
+        const real_type ys_bp_r = std::imag(ys_bp); 
+        yff_bp = ys_bp_r;
+        ytt_bp = ys_bp_r;
+        yft_bp = -ys_bp_r;
+        ytf_bp = -ys_bp_r;
+        const real_type ys_bpp_r = std::imag(ys_bpp); 
+        yff_bpp = ys_bpp_r + std::imag(my_i * powerlines_h_or_(line_id));
+        ytt_bpp = ys_bpp_r + std::imag(my_i * powerlines_h_ex_(line_id));
+        yft_bpp = -ys_bpp_r;
+        ytf_bpp = -ys_bpp_r;
+
         // and now add them
-        res.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, yft));
-        res.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, ytf));
-        res.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, yff));
-        res.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, ytt));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -yft_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -ytf_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bp));
+
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -yft_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -ytf_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bpp));
 
     }
 }

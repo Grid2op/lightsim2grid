@@ -136,8 +136,13 @@ class DataShunt : public DataGeneric
                           bool ac,
                           const std::vector<int> & id_grid_to_solver,
                           real_type sn_mva) const;
+    virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                            std::vector<Eigen::Triplet<real_type> > & Bpp,
+                            const std::vector<int> & id_grid_to_solver,
+                            real_type sn_mva,
+                            FDPFMethod xb_or_bx) const;
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
-    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver) const;  // in DC i need that
+    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,

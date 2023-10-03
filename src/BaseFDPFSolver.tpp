@@ -46,7 +46,6 @@ bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<c
     reset_timer();
     auto timer = CustTimer();
     if(!is_linear_solver_valid()) return false;
-
     err_ = ErrorType::NoError;  // reset the error if previous error happened
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
@@ -59,24 +58,21 @@ bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<c
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq;  // pvpq = r_[pv, pq]
 
-    // TODO FDPF inheritance (or specialization for FDXB or FDBX)
-    Eigen::SparseMatrix<real_type> Bp;
-    Eigen::SparseMatrix<real_type> Bpp;
-    fillBp(Bp);
-    fillBpp(Bpp);
-
-    // TODO FDPF 
-    // Bp = Bp[array([pvpq]).T, pvpq].tocsc() # splu requires a CSC matrix
-    // Bpp = Bpp[array([pq]).T, pq].tocsc()
-    // then init the solvers !  TODO FDPF 
+    // fill the sparse matrix Bp and Bpp (depends on the method: BX or XB)
+    //TODO     if(need_factorize_) ???
+    Eigen::SparseMatrix<real_type> grid_Bp;
+    Eigen::SparseMatrix<real_type> grid_Bpp;
+    fillBp_Bpp(grid_Bp, grid_Bpp);
     
-    // some clever tricks are used in the making of the Jacobian to handle the slack bus 
-    // (in case there is a distributed slack bus)
+    // fill the solver matrices Bp and Bpp : 
+    // Bp_ = Bp[array([pvpq]).T, pvpq].tocsc() # splu requires a CSC matrix
+    // Bpp_ = Bpp[array([pq]).T, pq].tocsc()
     const auto n_pvpq = pvpq.size();
     std::vector<int> pvpq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+    fill_sparse_matrices(grid_Bp, grid_Bpp, pvpq_inv, pq_inv, n_pvpq, n_pq);
 
     V_ = V;  // V = V0
     Vm_ = V_.array().abs();   // Vm = abs(V)
@@ -85,31 +81,45 @@ bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<c
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
     CplxVect mis = evaluate_mismatch(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights);
-    p_ = mis.real()(pvpq);  // P = mis[pvpq].real
-    q_ = mis.imag()(pq);  // Q = mis[pq].imag
+    mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm
+    p_ = mis(pvpq).real();  // P = mis[pvpq].real
+    q_ = mis(pq).imag();  // Q = mis[pq].imag
     
     CplxVect tmp_va;
-
-    bool converged = _check_for_convergence(p_, q_, tol);
     nr_iter_ = 0; //current step
+    bool converged = _check_for_convergence(p_, q_, tol);
     bool res = true;  // have i converged or not
-    bool ls_bp_has_just_been_initialized = false; // TODO !
-    bool ls_bpp_has_just_been_initialized = false; // TODO !
+    bool ls_bp_has_just_been_initialized = false;
+    bool ls_bpp_has_just_been_initialized = false;
+
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
 
+        if(need_factorize_){
+            initialize();
+            if(err_ != ErrorType::NoError){
+                // I got an error during the initialization of the linear system, i need to stop here
+                res = false;
+                break;
+            }
+            ls_bp_has_just_been_initialized = true;
+            ls_bpp_has_just_been_initialized = true;
+        }
+
         // do the P iteration (for Va)
-        solve(_linear_solver_Bp, Bp_, p_, ls_bp_has_just_been_initialized);  //  dVa = -Bp_solver.solve(P)        
+        RealVect x = p_;
+        solve(_linear_solver_Bp, Bp_, x, ls_bp_has_just_been_initialized);  //  dVa = -Bp_solver.solve(P)     
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
             break;
         }
-        Va_(pvpq) -= p_;  // Va[pvpq] = Va[pvpq] + dVa
+        Va_(pvpq) -= x;  // Va[pvpq] = Va[pvpq] + dVa
         tmp_va.array() = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );  // reused for Q iteration
-
-        if(has_converged(tmp_va, Ybus, Sbus, slack_bus_id, slack_absorbed, slack_weights, pvpq, pq, tol)) break;
-
+        if(has_converged(tmp_va, Ybus, Sbus, slack_bus_id, slack_absorbed, slack_weights, pvpq, pq, tol)){
+            converged = true;
+            break;
+        }
         // do the Q iterations (for Vm)
         solve(_linear_solver_Bpp, Bpp_, q_, ls_bpp_has_just_been_initialized);  //  dVm = -Bpp_solver.solve(Q)   
         if(err_ != ErrorType::NoError){
@@ -136,4 +146,45 @@ bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<c
                   << "\n\n";
     #endif // __COUT_TIMES
     return res;
+}
+
+template<class LinearSolver, FDPFMethod XB_BX>
+void BaseFDPFSolver<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
+                                                               const Eigen::SparseMatrix<real_type> & grid_Bpp,
+                                                               const std::vector<int> & pvpq_inv,
+                                                               const std::vector<int> & pq_inv,
+                                                               Eigen::Index n_pvpq,
+                                                               Eigen::Index n_pq)
+{
+  /**
+   Init Bp_ and Bpp_ such that:
+    // Bp_ = grid_Bp[array([pvpq]).T, pvpq].tocsc() # splu requires a CSC matrix
+    // Bpp_ = grid_Bpp[array([pq]).T, pq].tocsc()
+   **/
+  aux_fill_sparse_matrices(grid_Bp, pvpq_inv, n_pvpq, Bp_);
+  aux_fill_sparse_matrices(grid_Bpp, pq_inv, n_pq, Bpp_);
+}
+
+template<class LinearSolver, FDPFMethod XB_BX>
+void BaseFDPFSolver<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
+                                                                   const std::vector<int> & ind_inv,
+                                                                   Eigen::Index mat_dim,
+                                                                   Eigen::SparseMatrix<real_type> & res)
+{
+    // clear previous matrix
+    res = Eigen::SparseMatrix<real_type>(mat_dim, mat_dim);
+    // compute the coefficients
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(grid_Bp_Bpp.nonZeros());
+    for (int k = 0; k < grid_Bp_Bpp.outerSize(); ++k){
+        for (Eigen::SparseMatrix<real_type>::InnerIterator it(grid_Bp_Bpp, k); it; ++it){
+            if ((ind_inv[it.row()] >= 0) && (ind_inv[it.col()] >= 0)){
+                auto tmp = Eigen::Triplet<real_type>(ind_inv[it.row()], ind_inv[it.col()], it.value());
+                tripletList.push_back(tmp);
+            }
+        }
+    }
+    // put them in the matrix
+    res.setFromTriplets(tripletList.begin(), tripletList.end());
+    res.makeCompressed();
 }

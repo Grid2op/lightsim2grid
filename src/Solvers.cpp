@@ -13,39 +13,25 @@
 // this is why i need to define them here for every specialization.
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFSolver<LinearSolver, XB_BX>::fillBp(Eigen::SparseMatrix<real_type> & res) const
+void BaseFDPFSolver<LinearSolver, XB_BX>::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const
 {
-    _gridmodel->fillBp(res, XB_BX);
+    _gridmodel->fillBp_Bpp(Bp, Bpp, XB_BX);
 }
 
-template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFSolver<LinearSolver, XB_BX>::fillBpp(Eigen::SparseMatrix<real_type> & res) const
-{
-    _gridmodel->fillBpp(res, XB_BX);
-}
-
-template void FDPF_XB_SparseLUSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_XB_SparseLUSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_SparseLUSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_SparseLUSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
+template void FDPF_XB_SparseLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
+template void FDPF_BX_SparseLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 
 #ifdef KLU_SOLVER_AVAILABLE
-template void FDPF_XB_KLUSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_XB_KLUSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_KLUSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_KLUSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
+template void FDPF_XB_KLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
+template void FDPF_BX_KLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 #endif  // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
-template void FDPF_XB_NICSLUSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_XB_NICSLUSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_NICSLUSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_NICSLUSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
+template void FDPF_XB_NICSLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const
+template void FDPF_BX_NICSLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 #endif  // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
-template void FDPF_XB_CKTSOSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_XB_CKTSOSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_CKTSOSolver::fillBp(Eigen::SparseMatrix<real_type> & res) const;
-template void FDPF_BX_CKTSOSolver::fillBpp(Eigen::SparseMatrix<real_type> & res) const;
+template void FDPF_XB_CKTSOSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
+template void FDPF_BX_CKTSOSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 #endif  // CKTSO_SOLVER_AVAILABLE

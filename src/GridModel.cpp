@@ -523,14 +523,14 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
 void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver)
 {
     // init the Sbus vector
-    powerlines_.fillSbus(Sbus, id_me_to_solver);
-    trafos_.fillSbus(Sbus, id_me_to_solver);
-    shunts_.fillSbus(Sbus, id_me_to_solver);
-    loads_.fillSbus(Sbus, id_me_to_solver);
-    sgens_.fillSbus(Sbus, id_me_to_solver);
-    storages_.fillSbus(Sbus, id_me_to_solver);
-    generators_.fillSbus(Sbus, id_me_to_solver);
-    dc_lines_.fillSbus(Sbus, id_me_to_solver);
+    powerlines_.fillSbus(Sbus, id_me_to_solver, ac);
+    trafos_.fillSbus(Sbus, id_me_to_solver, ac);
+    shunts_.fillSbus(Sbus, id_me_to_solver, ac);
+    loads_.fillSbus(Sbus, id_me_to_solver, ac);
+    sgens_.fillSbus(Sbus, id_me_to_solver, ac);
+    storages_.fillSbus(Sbus, id_me_to_solver, ac);
+    generators_.fillSbus(Sbus, id_me_to_solver, ac);
+    dc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
@@ -834,20 +834,32 @@ void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen:
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
-void GridModel::fillBp(Eigen::SparseMatrix<real_type> & res, FDPFMethod xb_or_bx) const{
-    // init the Bp matrix for Fast Decoupled Powerflow  (TODO FDPF: optim when it's NOT needed just like for Ybus)
-    std::vector<Eigen::Triplet<real_type> > tripletList;
-    tripletList.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
-    powerlines_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    shunts_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    trafos_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    loads_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    sgens_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    storages_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    generators_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    dc_lines_.fillBp(tripletList, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    res.setFromTriplets(tripletList.begin(), tripletList.end());
-    res.makeCompressed();
-}
+void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
+                           Eigen::SparseMatrix<real_type> & Bpp, 
+                           FDPFMethod xb_or_bx) const
+{
+    // clear the matrices
+    const int nb_bus_solver = static_cast<int>(id_ac_solver_to_me_.size());
+    Bp = Eigen::SparseMatrix<real_type>(nb_bus_solver, nb_bus_solver);
+    Bpp = Eigen::SparseMatrix<real_type>(nb_bus_solver, nb_bus_solver);
 
-void GridModel::fillBpp(Eigen::SparseMatrix<real_type> & res, FDPFMethod xb_or_bx) const {};
+    // init the Bp and Bpp matrices for Fast Decoupled Powerflow  (TODO FDPF: optim when it's NOT needed just like for Ybus)
+    std::vector<Eigen::Triplet<real_type> > tripletList_Bp;
+    std::vector<Eigen::Triplet<real_type> > tripletList_Bpp;
+    tripletList_Bp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
+    tripletList_Bpp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
+    // run through the grid and get the parameters to fill them
+    powerlines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    shunts_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    trafos_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    loads_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    sgens_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    storages_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    generators_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    dc_lines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    // now make the matrices effectively
+    Bp.setFromTriplets(tripletList_Bp.begin(), tripletList_Bp.end());
+    Bp.makeCompressed();
+    Bpp.setFromTriplets(tripletList_Bpp.begin(), tripletList_Bpp.end());
+    Bpp.makeCompressed();
+}

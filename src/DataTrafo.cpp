@@ -230,7 +230,7 @@ void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const s
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillSbus: the trafo with id ";
+            exc_ << "DataTrafo::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -239,7 +239,7 @@ void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const s
         bus_id_solver_hv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_hv == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillSbus: the trafo with id ";
+            exc_ << "DataTrafo::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -350,4 +350,104 @@ void DataTrafo::reset_results(){
     res_q_lv_ = RealVect();  // in MVar
     res_v_lv_ = RealVect();  // in kV
     res_a_lv_ = RealVect();  // in kA
+}
+
+void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                          std::vector<Eigen::Triplet<real_type> > & Bpp,
+                          const std::vector<int> & id_grid_to_solver,
+                          real_type sn_mva,
+                          FDPFMethod xb_or_bx) const
+{
+
+    // For Bp
+    // temp_branch[:, BR_B] = zeros(nl)           ## zero out line charging shunts
+    // temp_branch[:, TAP] = ones(nl)             ## cancel out taps
+    // if alg == 2:                               ## if XB method
+    //    temp_branch[:, BR_R] = zeros(nl)       ## zero out line resistance
+
+    // For Bpp
+    // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
+    // if alg == 3:                               ## if BX method
+    //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
+    const Eigen::Index nb_trafo = static_cast<int>(nb());
+    real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
+    real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
+
+    //diagonal coefficients
+    for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
+        // i only add this if the powerline is connected
+        if(!status_[tr_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_hv_id_(tr_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillBp_Bpp: the trafo with id ";
+            exc_ << tr_id;
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_lv_id_(tr_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillBp_Bpp: the trafo with id ";
+            exc_ << tr_id;
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+
+        // get the coefficients
+        // tau is needed for Bpp
+        double tau_bpp = is_tap_hv_side_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
+        // for Bp we need shift
+        const real_type theta_shift = shift_(tr_id);
+        cplx_type eitheta_shift_bp  = {my_one_, my_zero_};  // exp(j  * alpha)
+        cplx_type emitheta_shift_bp = {my_one_, my_zero_};  // exp(-j * alpha)
+        if(theta_shift != 0.)
+        {
+            const real_type cos_theta = std::cos(theta_shift);
+            const real_type sin_theta = std::sin(theta_shift);
+            eitheta_shift_bp = {cos_theta, sin_theta};
+            emitheta_shift_bp = {cos_theta, -sin_theta};
+        }
+        // depending on XB or BX we define the y differently
+        cplx_type ys_bp, ys_bpp;
+        if(xb_or_bx==FDPFMethod::XB){
+            ys_bp = 1. / (0. + my_i * x_(tr_id));
+            ys_bpp = 1. / (r_(tr_id) + my_i * x_(tr_id));
+        }else if (xb_or_bx==FDPFMethod::BX){
+            ys_bp = 1. / (r_(tr_id) + my_i * x_(tr_id));
+            ys_bpp = 1. / (0. + my_i * x_(tr_id));
+        }else{
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+            exc_ << tr_id;
+            throw std::runtime_error(exc_.str());            
+        }
+
+        const real_type ys_bp_r = std::imag(ys_bp); 
+        yff_bp = ys_bp_r;
+        ytt_bp = ys_bp_r;
+        ytf_bp = -std::imag(ys_bp * emitheta_shift_bp);
+        yft_bp = -std::imag(ys_bp * eitheta_shift_bp);
+        const real_type ys_bpp_r = std::imag(ys_bpp); 
+        yff_bpp = (ys_bpp_r + std::imag(0.5 * my_i * h_(tr_id))) / (tau_bpp * tau_bpp);
+        ytt_bpp = ys_bpp_r + std::imag(0.5 * my_i * h_(tr_id));
+        ytf_bpp = -ys_bpp_r / tau_bpp;
+        yft_bpp = -ys_bpp_r / tau_bpp;
+
+        // and now add them
+        Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -yft_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -ytf_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bp));
+
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -yft_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -ytf_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bpp));
+
+    }
 }

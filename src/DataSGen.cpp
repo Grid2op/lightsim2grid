@@ -82,7 +82,7 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
 }
 
 
-void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver) const {
+void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     const int nb_sgen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;

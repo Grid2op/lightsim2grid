@@ -3,12 +3,14 @@ Change Log
 
 [TODO]
 --------
-- make an `init` function from pypowsybl
+- [refacto] have a structure in cpp for the buses
+- [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
+- a mode to do both `Computer` and `SecurityAnalysisCPP`
 - use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
 - possibility to read CGMES files
@@ -16,13 +18,15 @@ Change Log
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
-- code NR with dense matrices
 
 [0.7.5] 2023-xx-yy
 --------------------
 - [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
   multiple powerflows used the same solver
+- [FIXED] a bug in AC and DC powerflow when shunts had active values
 - [ADDED] possibility to initialize a powergrid based on pypowsybl
+- [ADDED] some more algorithm to perform powerflow: Fast Decoupled Powerflow (in BX and XB variant)
+  see https://github.com/BDonnot/lightsim2grid/issues/63
 - [IMPROVED] now shipping `src` and `eigen` directory in the source of 
   lightsim2grid to allow their installation if wheels are not provided.
 - [IMPROVED] in the underlying cpp GridModel powerlines can now have 2

@@ -88,7 +88,11 @@ class ChooseSolver
             return res;
         }
         SolverType get_type() const {return _solver_type;}
-        
+
+        // TODO DO that for all solvers
+        FDPF_XB_SparseLUSolver & get_fdpf_xb_lu() { return _solver_fdpf_xb_lu;}
+        FDPF_BX_SparseLUSolver & get_fdpf_bx_lu() { return _solver_fdpf_bx_lu;}
+
         void set_gridmodel(const GridModel * gridmodel){
             _solver_lu.set_gridmodel(gridmodel);
             _solver_lu_single.set_gridmodel(gridmodel);
@@ -255,7 +259,7 @@ class ChooseSolver
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidelSynch powerflow.");}
             else if(_solver_type == SolverType::GaussSeidel){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");}
-            else throw std::runtime_error("Unknown solver type encountered");
+            else throw std::runtime_error("Unknown solver type encountered (get_J)");
         }
 
         /** apparently i cannot pass a const ref for a sparse matrix in python**/
@@ -359,7 +363,7 @@ class ChooseSolver
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
             else if(_solver_type == SolverType::FDPF_XB_SparseLU){res = &_solver_fdpf_xb_lu;}
-            else if(_solver_type == SolverType::FDPF_XB_SparseLU){res = &_solver_fdpf_bx_lu;}
+            else if(_solver_type == SolverType::FDPF_BX_SparseLU){res = &_solver_fdpf_bx_lu;}
             #ifdef KLU_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::KLU){res = & _solver_klu;}
             else if(_solver_type == SolverType::KLUSingleSlack){res = &_solver_klu_single;}
@@ -383,7 +387,7 @@ class ChooseSolver
             #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){res = &_solver_gaussseidel;}
             else if(_solver_type == SolverType::GaussSeidelSynch){res = &_solver_gaussseidelsynch;}
-            else throw std::runtime_error("Unknown solver type encountered");
+            else throw std::runtime_error("Unknown solver type encountered (ChooseSolver get_prt_solver const)");
             return res;
         }
         BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
@@ -417,7 +421,7 @@ class ChooseSolver
             #endif // CKTSO_SOLVER_AVAILABLE
             else if(_solver_type == SolverType::GaussSeidel){res = &_solver_gaussseidel;}
             else if(_solver_type == SolverType::GaussSeidelSynch){res = &_solver_gaussseidelsynch;}
-            else throw std::runtime_error("Unknown solver type encountered");
+            else throw std::runtime_error("Unknown solver type encountered (ChooseSolver get_prt_solver non const)");
             return res;
         }
     protected:

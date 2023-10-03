@@ -23,6 +23,12 @@ namespace py = pybind11;
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
 
+    // solver method for FDPF
+    py::enum_<FDPFMethod>(m, "FDPFMethod", "This enum controls the type of method you can use for Fast Decoupled Powerflow (XB or BX)")
+        .value("XB", FDPFMethod::XB, "denotes the XB method")
+        .value("BX", FDPFMethod::BX, "denotes the BX method")
+        .export_values();
+
     // solvers
     py::enum_<SolverType>(m, "SolverType", "This enum controls the solver you want to use.")
         .value("GaussSeidel", SolverType::GaussSeidel, "denotes the :class:`lightsim2grid.solver.GaussSeidelSolver`")
@@ -114,7 +120,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("converged", &FDPF_XB_SparseLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
         .def("compute_pf", &FDPF_XB_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
         .def("get_timers", &FDPF_XB_SparseLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &FDPF_XB_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        .def("solve", &FDPF_XB_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bp_python", &FDPF_XB_SparseLUSolver::debug_get_Bp_python, DocGridModel::_internal_do_not_use.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bpp_python", &FDPF_XB_SparseLUSolver::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());  // perform the newton raphson optimization
 
     py::class_<FDPF_BX_SparseLUSolver>(m, "FDPF_BX_SparseLUSolver", DocSolver::FDPF_BX_SparseLUSolver.c_str())
         .def(py::init<>())
@@ -127,7 +135,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("converged", &FDPF_BX_SparseLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
         .def("compute_pf", &FDPF_BX_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
         .def("get_timers", &FDPF_BX_SparseLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &FDPF_BX_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        .def("solve", &FDPF_BX_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bp_python", &FDPF_BX_SparseLUSolver::debug_get_Bp_python, DocGridModel::_internal_do_not_use.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bpp_python", &FDPF_BX_SparseLUSolver::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());  // perform the newton raphson optimization
 
     #if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
         py::class_<KLUSolver>(m, "KLUSolver", DocSolver::KLUSolver.c_str())
@@ -381,7 +391,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_error", &ChooseSolver::get_error, DocSolver::get_V.c_str()) 
         .def("get_nb_iter", &ChooseSolver::get_nb_iter, DocSolver::get_nb_iter.c_str()) 
         .def("converged", &ChooseSolver::converged, DocSolver::converged.c_str()) 
-        .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str());
+        .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str())
+        .def("get_fdpf_xb_lu", &ChooseSolver::get_fdpf_xb_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())  // TODO this for all solver !
+        .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 
     // iterator for generators
     py::class_<DataGen>(m, "DataGen", DocIterator::DataGen.c_str())
@@ -791,6 +803,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_trafo_hv_to_subid", &GridModel::set_trafo_hv_to_subid, DocGridModel::_internal_do_not_use.c_str())
         .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid, DocGridModel::_internal_do_not_use.c_str())
         .def("set_storage_to_subid", &GridModel::set_storage_to_subid, DocGridModel::_internal_do_not_use.c_str())
+
+        // debug function (might disappear without further notice)
+        .def("debug_get_Bp_python", &GridModel::debug_get_Bp_python, DocGridModel::_internal_do_not_use.c_str())
+        .def("debug_get_Bpp_python", &GridModel::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str())
         ;
 
     py::class_<Computers>(m, "Computers", DocComputers::Computers.c_str())

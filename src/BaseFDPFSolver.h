@@ -62,6 +62,9 @@ class BaseFDPFSolver : public BaseSolver
             if((reset_status != ErrorType::NoError) && (err_ != ErrorType::NotInitError)) err_ = reset_status;
         }
 
+        Eigen::SparseMatrix<real_type> debug_get_Bp_python() { return Bp_;}
+        Eigen::SparseMatrix<real_type> debug_get_Bpp_python() { return Bpp_;}
+
     protected:
         virtual void reset_timer(){
             BaseSolver::reset_timer();
@@ -80,23 +83,37 @@ class BaseFDPFSolver : public BaseSolver
             return mis;
         }
         
-        void fillBp(Eigen::SparseMatrix<real_type> & res) const;  // defined in Solvers.cpp !
-        void fillBpp(Eigen::SparseMatrix<real_type> & res) const;  // defined in Solvers.cpp !
+        void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
 
-        // TODO !!!
-        // virtual
-        // void initialize(){
-        //     auto timer = CustTimer();
-        //     n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
-        //     err_ = ErrorType::NoError; // reset error message
-        //     const ErrorType init_status = _linear_solver.initialize(J_);
-        //     if(init_status != ErrorType::NoError){
-        //         // std::cout << "init_ok " << init_ok << std::endl;
-        //         err_ = init_status;
-        //     }
-        //     need_factorize_ = false;
-        //     timer_initialize_ += timer.duration();
-        // }
+        virtual
+        void initialize(){
+            auto timer = CustTimer();
+            err_ = ErrorType::NoError; // reset error message
+            // init Bp solver
+            ErrorType init_status = _linear_solver_Bp.initialize(Bp_);
+            if(init_status != ErrorType::NoError){
+                _linear_solver_Bp.reset();
+                _linear_solver_Bpp.reset();
+                err_ = init_status;
+                need_factorize_ = true;
+                timer_initialize_ += timer.duration();
+                return;
+            }
+            // init Bpp solver (if Bp is sucesfull of course)
+            init_status = _linear_solver_Bpp.initialize(Bpp_);
+            if(init_status != ErrorType::NoError){
+                _linear_solver_Bp.reset();
+                _linear_solver_Bpp.reset();
+                err_ = init_status;
+                need_factorize_ = true;
+                timer_initialize_ += timer.duration();
+                return;
+            }
+
+            // everything went well
+            need_factorize_ = false;
+            timer_initialize_ += timer.duration();
+        }
 
         virtual
         void solve(LinearSolver& linear_solver,
@@ -152,70 +169,32 @@ class BaseFDPFSolver : public BaseSolver
             Vm_ = V_.array().abs();
             Va_ = V_.array().arg();
             auto mis = evaluate_mismatch(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights);  // mis = (V * conj(Ybus * V) - Sbus) / Vm
+            mis.array() /= Vm_.array();  // mis = (V * conj(Ybus * V) - Sbus) / Vm (do not forget the / Vm !)
+
             bool tmp = mis.allFinite();
             if(!tmp){
                 err_ = ErrorType::InifiniteValue;
                 return false; // divergence due to Nans
             }
-            p_ = mis.real()(pvpq);  // P = mis[pvpq].real
-            q_ = mis.imag()(pq);  // Q = mis[pq].imag
+            p_ = mis(pvpq).real();  // P = mis[pvpq].real
+            q_ = mis(pq).imag();  // Q = mis[pq].imag
             return _check_for_convergence(p_, q_, tol);
         }
 
-        void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
-                       const Eigen::Ref<const CplxVect > & V);
-
-        void _get_values_J(int & nb_obj_this_col,
-                           std::vector<Eigen::Index> & inner_index,
-                           std::vector<real_type> & values,
-                           const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
-                           const std::vector<int> & index_row_inv, // ex. pvpq_inv
-                           const Eigen::VectorXi & index_col, // ex. pvpq
-                           Eigen::Index col_id,
-                           Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
-                           Eigen::Index col_lag
-                           );
-        void _get_values_J(int & nb_obj_this_col,
-                           std::vector<Eigen::Index> & inner_index,
-                           std::vector<real_type> & values,
-                           const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
-                           const std::vector<int> & index_row_inv, // ex. pvpq_inv
-                           Eigen::Index col_id_mat, // ex. pvpq(col_id)
-                           Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
-                           Eigen::Index col_lag  // to remove the ref slack bus from this
-                           );
-
-        void fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                  const CplxVect & V,
-                                  Eigen::Index slack_bus_id,
-                                  const RealVect & slack_weights,
-                                  const Eigen::VectorXi & pq,
-                                  const Eigen::VectorXi & pvpq,
+        void fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
+                                  const Eigen::SparseMatrix<real_type> & grid_Bpp,
+                                  const std::vector<int> & pvpq_inv,
                                   const std::vector<int> & pq_inv,
-                                  const std::vector<int> & pvpq_inv
-                                  );
-        void fill_jacobian_matrix_kown_sparsity_pattern(
-                 Eigen::Index slack_bus_id,
-                 const Eigen::VectorXi & pq,
-                 const Eigen::VectorXi & pvpq
-                 );
-        void fill_jacobian_matrix_unkown_sparsity_pattern(
-                 const Eigen::SparseMatrix<cplx_type> & Ybus,
-                 const CplxVect & V,
-                 Eigen::Index slack_bus_id,
-                 const RealVect & slack_weights,
-                 const Eigen::VectorXi & pq,
-                 const Eigen::VectorXi & pvpq,
-                 const std::vector<int> & pq_inv,
-                 const std::vector<int> & pvpq_inv
-                 );
+                                  Eigen::Index n_pvpq,
+                                  Eigen::Index n_pq);
 
-        void fill_value_map(Eigen::Index slack_bus_id,
-                            const Eigen::VectorXi & pq,
-                            const Eigen::VectorXi & pvpq);
+        void aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
+                                      const std::vector<int> & ind_inv,
+                                      Eigen::Index mat_dim,
+                                      Eigen::SparseMatrix<real_type> & res);
 
     protected:
-        // used linear solver
+        // use 2 linear solvers
         LinearSolver _linear_solver_Bp;
         LinearSolver _linear_solver_Bpp;
 
@@ -226,12 +205,8 @@ class BaseFDPFSolver : public BaseSolver
         RealVect q_;  // (size n_pq)
         bool need_factorize_;
 
-        // to store the mapping from the element of J_ in dS_dVm_ and dS_dVa_
-        // it does not own any memory at all !
-        // std::vector<cplx_type*> value_map_;
-
         // timers
-        // double timer_initialize_;
+        double timer_initialize_;
         // double timer_dSbus_;
         // double timer_fillJ_;
 

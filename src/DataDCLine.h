@@ -198,9 +198,9 @@ class DataDCLine : public DataGeneric
     }
 
     // solver stuff
-    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver) const{
-        from_gen_.fillSbus(Sbus, id_grid_to_solver);   
-        to_gen_.fillSbus(Sbus, id_grid_to_solver);   
+    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const{
+        from_gen_.fillSbus(Sbus, id_grid_to_solver, ac);   
+        to_gen_.fillSbus(Sbus, id_grid_to_solver, ac);   
     } 
 
     virtual void fillpv(std::vector<int>& bus_pv,
