@@ -20,10 +20,10 @@ from lightsim2grid.solver import ErrorType
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
     __all__.append("LightSimBackend")
-except ImportError as exc:
+except ImportError as exc_:
     # grid2op is not installed, the Backend will not be available
     pass
-    print(f"LightSimBackend import error: {exc}")
+    print(f"LightSimBackend import error: {exc_}")
 
 try:
     from lightsim2grid.physical_law_checker import PhysicalLawChecker
@@ -31,7 +31,7 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the PhysicalLawChecker will not be available
     pass
-    print(f"PhysicalLawChecker import error: {exc}")
+    print(f"PhysicalLawChecker import error: {exc_}")
 
 try:
     from lightsim2grid.timeSerie import TimeSerie
@@ -40,7 +40,7 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the TimeSeries module will not be available
     pass
-    print(f"TimeSerie import error: {exc}")
+    print(f"TimeSerie import error: {exc_}")
 
 try:
     from lightsim2grid.securityAnalysis import SecurityAnalysis
@@ -49,4 +49,4 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    print(f"SecurityAnalysis import error: {exc}")
+    print(f"SecurityAnalysis import error: {exc_}")
