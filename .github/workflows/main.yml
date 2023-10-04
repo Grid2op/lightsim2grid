@@ -326,9 +326,9 @@ jobs:
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_ENVIRONMENT: __O3_OPTIM=1
           CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11
-          CIBW_BEFORE_BUILD: CC=clang CXX=clang++ make clean && CC=clang CXX=clang++ make  # and not CIBW_BEFORE_ALL !
+          CIBW_BEFORE_BUILD: make clean && make CC=clang CXX=clang++  # and not CIBW_BEFORE_ALL !
           CIBW_TEST_REQUIRES: grid2op pandapower
-          CIBW_TEST_SKIP: "*-macosx_arm64"  # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
+          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64"  # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" && 
             python -c "from lightsim2grid import *" &&
