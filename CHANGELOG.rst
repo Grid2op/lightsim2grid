@@ -27,10 +27,15 @@ Change Log
 - [ADDED] possibility to initialize a powergrid based on pypowsybl
 - [ADDED] some more algorithm to perform powerflow: Fast Decoupled Powerflow (in BX and XB variant)
   see https://github.com/BDonnot/lightsim2grid/issues/63
+- [ADDED] build lightsim2grid for python 3.12
+- [ADDED] support for non distributed slack but multiple slack buses
+  see https://github.com/BDonnot/lightsim2grid/issues/50 (ONLY FOR AC powerflow)
 - [IMPROVED] now shipping `src` and `eigen` directory in the source of 
   lightsim2grid to allow their installation if wheels are not provided.
 - [IMPROVED] in the underlying cpp GridModel powerlines can now have 2
   different values for the `h` parameters (`h_or` and `h_ex`).
+- [IMPROVED] now lightsim2grid is able to load a pandapower network with non
+  contiguous non starting at 0 bus index
 
 [0.7.3/4] 2023-08-24
 --------------------

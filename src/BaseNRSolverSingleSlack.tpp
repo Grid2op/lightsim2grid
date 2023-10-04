@@ -47,7 +47,8 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     BaseNRSolver<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
-    Eigen::VectorXi my_pv = BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
+    // Eigen::VectorXi my_pv = BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
+    Eigen::VectorXi my_pv = pv;
     // Eigen::VectorXi my_pv = pv; // BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
 
     const int n_pv = static_cast<int>(my_pv.size());

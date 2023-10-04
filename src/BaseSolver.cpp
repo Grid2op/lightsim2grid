@@ -133,9 +133,9 @@ bool BaseSolver::_check_for_convergence(const RealVect & p,
     return res;
 }
 
-int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
-                                     const Eigen::VectorXi & pq,
-                                     unsigned int nb_bus)
+Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
+                                                 const Eigen::VectorXi & pq,
+                                                 unsigned int nb_bus)
 {
     // pv: list of index of pv nodes
     // pq: list of index of pq nodes
@@ -143,7 +143,8 @@ int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     // returns: res: the id of the unique slack bus (throw an error if no slack bus is found)
     // /!\ does not support multiple slack bus!!!
 
-    int res=-1;
+    Eigen::VectorXi res(nb_bus - pv.size() - pq.size());
+    Eigen::Index i_res = 0;
     bool found=false;
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
@@ -160,15 +161,18 @@ int BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     {
         if(tmp[k])
         {
-            if(!found){
-                res = k;
-                found = true;
-            }else{
-                throw std::runtime_error("BaseSolver::extract_slack_bus_id: multiple slack bus found on your grid !");
-            }
+            res[i_res] = k;
+            ++i_res;
+            // if(!found){
+            //     res = k;
+            //     found = true;
+            // }else{
+            //     throw std::runtime_error("BaseSolver::extract_slack_bus_id: multiple slack bus found on your grid !");
+            // }
         }
     }
-    if(res == -1){
+    // if(res == -1){
+    if(res.size() != i_res){
         throw std::runtime_error("BaseSolver::extract_slack_bus_id: No slack bus is found in your grid");
     }
     return res;

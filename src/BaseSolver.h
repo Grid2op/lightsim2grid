@@ -148,9 +148,9 @@ class BaseSolver : public BaseConstants
                       const Eigen::VectorXi & pq
                       );
 
-        int extract_slack_bus_id(const Eigen::VectorXi & pv,
-                                 const Eigen::VectorXi & pq,
-                                 unsigned int nb_bus);
+        Eigen::VectorXi extract_slack_bus_id(const Eigen::VectorXi & pv,
+                                             const Eigen::VectorXi & pq,
+                                             unsigned int nb_bus);
 
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
@@ -182,6 +182,14 @@ class BaseSolver : public BaseConstants
             return my_pv;
         }
         
+        // terribly inefficient way to know if an element is in a vector
+        bool isin(int k, const Eigen::VectorXi vect) const{
+            for(auto el : vect){
+                if(el == k) return true;
+            }
+            return false;
+        }
+
     protected:
         // solver initialization
         int n_;

@@ -44,11 +44,15 @@
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class GridModel : public DataGeneric
 {
+    public:  // can be modified python side
+        IntVect _ls_to_pp;  // for converter from bus in lightsim2grid index to bus in pandapower index
+
     public:
         typedef std::tuple<
                 int, // version major
                 int, // version medium
                 int, // version minor
+                std::vector<int>, // ls_to_pp
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
                 std::vector<real_type>,  // bus_vn_kv
@@ -639,6 +643,7 @@ class GridModel : public DataGeneric
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
+
         bool need_reset_;
         bool topo_changed_;
         bool compute_results_;

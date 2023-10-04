@@ -5,10 +5,12 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 import numpy as np
+from ._pp_bus_to_ls_bus import pp_bus_to_ls
 
 
-def _aux_add_shunt(model, pp_net):
+def _aux_add_shunt(model, pp_net, pp_to_ls):
     """
     Add the shunts of the pp_net into the lightsim2grid "model"
 
@@ -31,7 +33,7 @@ def _aux_add_shunt(model, pp_net):
     
     model.init_shunt(pp_net.shunt["p_mw"].values,
                      pp_net.shunt["q_mvar"].values,
-                     pp_net.shunt["bus"].values
+                     pp_bus_to_ls(pp_net.shunt["bus"].values, pp_to_ls)
                      )
     for sh_id, is_connected in enumerate(pp_net.shunt["in_service"].values):
         if not is_connected:
