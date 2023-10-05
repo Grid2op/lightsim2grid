@@ -31,44 +31,67 @@ To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
 
 .. code-block:: bash
 
-    python3 benchmark_solvers.py --name l2rpn_case14_sandbox --no_test --number 1000
-    python3 benchmark_solvers.py --name l2rpn_neurips_2020_track2_small --no_test --number 1000
+    python3 benchmark_solvers.py --env_name l2rpn_case14_sandbox --no_test --number 1000
+    python3 benchmark_solvers.py --env_name l2rpn_neurips_2020_track2_small --no_test --number 1000
 
 (results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
 
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-We compare up to 11 different solvers:
+We compare up to 19 different solvers:
 
 - **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
   acceleration). It is our reference solver.
-- **LS+GS** (LightSimBackend+Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
+- **GS** (Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
   solver to compute the powerflows.
-- **LS+GS S** (LightSimBackend+Gauss Seidel Synchronous): the grid2op backend based on lightsim2grid that uses a
-  variant of the "Gauss Seidel" method to compute the powerflows).
-- **LS+SLU** (Newton Raphson+SparseLU): the grid2op backend based on lightsim2grid that uses the 
+- **GS synch** (Gauss Seidel synch version): the grid2op backend based on lightsim2grid that uses a
+  variant of the "Gauss Seidel" method to compute the powerflows.
+- **NR single (SLU)** (Newton Raphson -single slack- with SparseLU): the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver "SparseLU" from the
   Eigen c++ library (available on all platform). This solver supports distributed slack bus.
-- **LS+SLU (single)** (Newton Raphson+SparseLU): same as above but this solver does not support distributed slack bus and
+- **NR (SLU)** (Newton Raphson -distributed slack- with SparseLU): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **LS+KLU** (Newton Raphson+KLU): he grid2op backend based on lightsim2grid that uses the 
+- **NR (KLU)** (Newton Raphson -distributed slack- with KLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "KLU" from the `SuiteSparse` C package. This solver supports distributed slack bus.
-- **LS+KLU (single)** (Newton Raphson+KLU): same as above but this solver does not support distributed slack bus and
+- **NR single (KLU)** (Newton Raphson -single slack- with KLU): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **LS+NICSLU** (Newton Raphson+NICSLU): he grid2op backend based on lightsim2grid that uses the 
+- **NR (NICSLU *)** (Newton Raphson -distributed slack- with NICSLU): he grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "NICSLU". [**NB** NICSLU is a free software but not open source, in order to use
   it with lightsim2grid, you need to install lightsim2grid from source for such solver]
-- **LS+NICSLU (single)** (Newton Raphson+NICSLU): same as above but this solver does not support distributed slack bus and
+- **NR single (NICSLU *)** (Newton Raphson -single slack- with NICSLU): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
-- **LS+CKTSO** (Newton Raphson+CKTSO): he grid2op backend based on lightsim2grid that uses the 
+- **NR (CKTSO *)** (Newton Raphson -distributed slack- with CKTSO): the grid2op backend based on lightsim2grid that uses the 
   "Newton Raphson" algorithm coupled with the linear solver 
   "CKTSO". [**NB** CKTSO is a free software but not open source, in order to use
   it with lightsim2grid, you need to install lightsim2grid from source for such solver]
-- **LS+CKTSO (single)** (Newton Raphson+CKTSO): same as above but this solver does not support distributed slack bus and
+- **NR single (CKTSO *)** (Newton Raphson -single slack- with CKTSO): same as above but this solver does not support distributed slack bus and
   can thus be slightly faster.
+- **FDPF XB (SLU)** (Fast Decoupled Powerflow, XB variant - with SparseLU linear solver): It is the lightsim2grid 
+  implementation of the Fast Decoupled powerflow (in its "XB" variant) that uses the native linear solver in 
+  Eigen (called SparseLU in this documentation)
+- **FDPF BX (SLU)** (Fast Decoupled Powerflow, BX variant - with SparseLU linear solver): It is the lightsim2grid 
+  implementation of the Fast Decoupled powerflow (in its "BX" variant) that uses the native linear solver in 
+  Eigen (called SparseLU in this documentation)
+- **FDPF XB (KLU)** (Fast Decoupled Powerflow, XB variant - with KLU linear solver) same as `FDPF XB (SLU)` but using KLU instead 
+  of SparseLU
+- **FDPF BX (KLU)** (Fast Decoupled Powerflow, BX variant - with KLU linear solver) same as `FDPF BX (SLU)` but using KLU instead 
+  of SparseLU
+- **FDPF XB (NICSLU *)** (Fast Decoupled Powerflow, XB variant - with NICSLU linear solver) same as `FDPF XB (SLU)` but using NICSLU instead 
+  of SparseLU
+- **FDPF BX (NICSLU *)** (Fast Decoupled Powerflow, BX variant - with NICSLU linear solver) same as `FDPF BX (SLU)` but using NICSLU instead 
+  of SparseLU
+- **FDPF XB (CKTSO *)** (Fast Decoupled Powerflow, XB variant - with CKTSO linear solver) same as `FDPF XB (SLU)` but using CKTSO instead 
+  of SparseLU
+- **FDPF BX (CKTSO *)** (Fast Decoupled Powerflow, BX variant - with CKTSO linear solver) same as `FDPF BX (SLU)` but using CKTSO instead 
+  of SparseLU
+
+**NB** all backend above are implemented in lightsim2grid.
+
+**NB** solver with \* are available provided that lightsim2grid is installed from source and following the instructions 
+in the documentation.
 
 All benchmarks where done with all the customization (for speed, *eg* `-O3` and `-march=native` for linux). 
 See the readme for more information.

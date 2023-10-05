@@ -27,7 +27,7 @@ template void FDPF_BX_KLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
 #endif  // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
-template void FDPF_XB_NICSLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const
+template void FDPF_XB_NICSLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 template void FDPF_BX_NICSLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 #endif  // NICSLU_SOLVER_AVAILABLE
 
