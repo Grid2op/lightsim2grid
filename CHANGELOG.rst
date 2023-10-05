@@ -19,12 +19,13 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.7.5] 2023-xx-yy
+[0.7.5] 2023-10-05
 --------------------
 - [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
   multiple powerflows used the same solver
 - [FIXED] a bug in AC and DC powerflow when shunts had active values
-- [ADDED] possibility to initialize a powergrid based on pypowsybl
+- [ADDED] possibility to initialize a powergrid based on pypowsybl 
+  see https://github.com/BDonnot/lightsim2grid/issues/53
 - [ADDED] some more algorithm to perform powerflow: Fast Decoupled Powerflow (in BX and XB variant)
   see https://github.com/BDonnot/lightsim2grid/issues/63
 - [ADDED] build lightsim2grid for python 3.12
