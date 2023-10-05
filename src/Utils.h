@@ -29,6 +29,7 @@ typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType> > tuple4d;
+typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
 typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
 

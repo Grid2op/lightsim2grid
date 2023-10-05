@@ -30,13 +30,13 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     // TODO Ybus (nrow or ncol), pv and pq have value that are between 0 and nrow etc.
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
         std::ostringstream exc_;
-        exc_ << "BaseNRSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseNRSolverSingleSlack::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
         exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         std::ostringstream exc_;
-        exc_ << "BaseNRSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseNRSolverSingleSlack::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
         exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<<", "<<Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
@@ -47,7 +47,8 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     BaseNRSolver<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();
     // initialize once and for all the "inverse" of these vectors
-    Eigen::VectorXi my_pv = BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
+    // Eigen::VectorXi my_pv = BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
+    Eigen::VectorXi my_pv = pv;
     // Eigen::VectorXi my_pv = pv; // BaseNRSolver<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
 
     const int n_pv = static_cast<int>(my_pv.size());

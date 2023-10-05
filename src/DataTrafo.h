@@ -179,7 +179,12 @@ class DataTrafo : public DataGeneric
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                           bool ac,
                           const std::vector<int> & id_grid_to_solver,
-                          real_type sn_mva);
+                          real_type sn_mva) const;
+    virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                            std::vector<Eigen::Triplet<real_type> > & Bpp,
+                            const std::vector<int> & id_grid_to_solver,
+                            real_type sn_mva,
+                            FDPFMethod xb_or_bx) const;
     virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,

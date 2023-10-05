@@ -5,13 +5,15 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 import warnings
 
 import numpy as np
 from ._aux_add_sgen import SOME_KIND_OF_INF_FOR_PMIN_PMAX
+from ._pp_bus_to_ls_bus import pp_bus_to_ls
 
 
-def _aux_add_dc_line(model, pp_net):
+def _aux_add_dc_line(model, pp_net, pp_to_ls):
     """
     Add the transformers of the pp_net into the lightsim2grid "model"
 
@@ -29,9 +31,12 @@ def _aux_add_dc_line(model, pp_net):
         raise RuntimeError("Cannot handle 'parallel' dcline columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.dcline[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
-
-    branch_from_id = pp_net.dcline["from_bus"].values
-    branch_to_id = pp_net.dcline["to_bus"].values
+    if pp_net.dcline.shape[0] == 0:
+        # nothing to do if no dc line
+        return
+    
+    branch_from_id = pp_bus_to_ls(pp_net.dcline["from_bus"].values, pp_to_ls)
+    branch_to_id = pp_bus_to_ls(pp_net.dcline["to_bus"].values, pp_to_ls)
     p_mw = -pp_net.dcline["p_mw"].values
     if np.any(~np.isfinite(p_mw)):
         warnings.warn("Some non finite values are found for p_mw, they have been replaced by 0.")

@@ -28,6 +28,9 @@
 #include "CustTimer.h"
 #include "BaseConstants.h"
 
+class GridModel;
+
+
 /**
 This class represents a solver to compute powerflow.
 
@@ -50,6 +53,10 @@ class BaseSolver : public BaseConstants
             timer_total_nr_(0.){};
 
         virtual ~BaseSolver(){}
+
+        void set_gridmodel(const GridModel * gridmodel){
+            _gridmodel = gridmodel;
+        }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -126,6 +133,10 @@ class BaseSolver : public BaseConstants
         bool _check_for_convergence(const RealVect & F,
                                     real_type tol);
 
+        bool _check_for_convergence(const RealVect & p,
+                                    const RealVect & q,
+                                    real_type tol);
+
         void one_iter_all_at_once(CplxVect & tmp_Sbus,
                                   const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   const Eigen::VectorXi & pv,
@@ -137,9 +148,9 @@ class BaseSolver : public BaseConstants
                       const Eigen::VectorXi & pq
                       );
 
-        int extract_slack_bus_id(const Eigen::VectorXi & pv,
-                                 const Eigen::VectorXi & pq,
-                                 unsigned int nb_bus);
+        Eigen::VectorXi extract_slack_bus_id(const Eigen::VectorXi & pv,
+                                             const Eigen::VectorXi & pq,
+                                             unsigned int nb_bus);
 
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
@@ -171,6 +182,14 @@ class BaseSolver : public BaseConstants
             return my_pv;
         }
         
+        // terribly inefficient way to know if an element is in a vector
+        bool isin(int k, const Eigen::VectorXi vect) const{
+            for(auto el : vect){
+                if(el == k) return true;
+            }
+            return false;
+        }
+
     protected:
         // solver initialization
         int n_;
@@ -190,11 +209,13 @@ class BaseSolver : public BaseConstants
         // 4: end of possible iterations (divergence because nr_iter_ >= max_iter)
 
         // timers
-         double timer_Fx_;
-         double timer_solve_;
-         double timer_check_;
-         double timer_total_nr_;
+        double timer_Fx_;
+        double timer_solve_;
+        double timer_check_;
+        double timer_total_nr_;
 
+        const GridModel * _gridmodel;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
+        
     private:
         // no copy allowed
         BaseSolver( const BaseSolver & ) ;

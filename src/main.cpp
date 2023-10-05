@@ -23,6 +23,12 @@ namespace py = pybind11;
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
 
+    // solver method for FDPF
+    py::enum_<FDPFMethod>(m, "FDPFMethod", "This enum controls the type of method you can use for Fast Decoupled Powerflow (XB or BX)")
+        .value("XB", FDPFMethod::XB, "denotes the XB method")
+        .value("BX", FDPFMethod::BX, "denotes the BX method")
+        .export_values();
+
     // solvers
     py::enum_<SolverType>(m, "SolverType", "This enum controls the solver you want to use.")
         .value("GaussSeidel", SolverType::GaussSeidel, "denotes the :class:`lightsim2grid.solver.GaussSeidelSolver`")
@@ -39,6 +45,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("CKTSO", SolverType::CKTSO, "denotes the :class:`lightsim2grid.solver.CKTSOSolver`")
         .value("CKTSOSingleSlack", SolverType::CKTSOSingleSlack, "denotes the :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`")
         .value("CKTSODC", SolverType::CKTSODC, "denotes the :class:`lightsim2grid.solver.CKTSODCSolver`")
+        .value("FDPF_XB_SparseLU", SolverType::FDPF_XB_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_SparseLUSolver`")
+        .value("FDPF_BX_SparseLU", SolverType::FDPF_BX_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_SparseLUSolver`")
+        .value("FDPF_XB_KLU", SolverType::FDPF_XB_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_KLUSolver`")
+        .value("FDPF_BX_KLU", SolverType::FDPF_BX_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_KLUSolver`")
+        .value("FDPF_XB_NICSLU", SolverType::FDPF_XB_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_NICSLUSolver`")
+        .value("FDPF_BX_NICSLU", SolverType::FDPF_BX_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_NICSLUSolver`")
+        .value("FDPF_XB_CKTSO", SolverType::FDPF_XB_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_XB_CKTSOSolver`")
+        .value("FDPF_BX_CKTSO", SolverType::FDPF_BX_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_BX_CKTSOSolver`")
         .export_values();
 
     py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")
@@ -95,6 +109,36 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_timers", &DCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
         .def("solve", &DCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
 
+    py::class_<FDPF_XB_SparseLUSolver>(m, "FDPF_XB_SparseLUSolver", DocSolver::FDPF_XB_SparseLUSolver.c_str())
+        .def(py::init<>())
+        .def("get_Va", &FDPF_XB_SparseLUSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &FDPF_XB_SparseLUSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+        .def("get_V", &FDPF_XB_SparseLUSolver::get_V, DocSolver::get_V.c_str()) 
+        .def("get_error", &FDPF_XB_SparseLUSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &FDPF_XB_SparseLUSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+        .def("reset", &FDPF_XB_SparseLUSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+        .def("converged", &FDPF_XB_SparseLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+        .def("compute_pf", &FDPF_XB_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+        .def("get_timers", &FDPF_XB_SparseLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &FDPF_XB_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bp_python", &FDPF_XB_SparseLUSolver::debug_get_Bp_python, DocGridModel::_internal_do_not_use.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bpp_python", &FDPF_XB_SparseLUSolver::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());  // perform the newton raphson optimization
+
+    py::class_<FDPF_BX_SparseLUSolver>(m, "FDPF_BX_SparseLUSolver", DocSolver::FDPF_BX_SparseLUSolver.c_str())
+        .def(py::init<>())
+        .def("get_Va", &FDPF_BX_SparseLUSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &FDPF_BX_SparseLUSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+        .def("get_V", &FDPF_BX_SparseLUSolver::get_V, DocSolver::get_V.c_str()) 
+        .def("get_error", &FDPF_BX_SparseLUSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &FDPF_BX_SparseLUSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+        .def("reset", &FDPF_BX_SparseLUSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+        .def("converged", &FDPF_BX_SparseLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+        .def("compute_pf", &FDPF_BX_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+        .def("get_timers", &FDPF_BX_SparseLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &FDPF_BX_SparseLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bp_python", &FDPF_BX_SparseLUSolver::debug_get_Bp_python, DocGridModel::_internal_do_not_use.c_str())  // perform the newton raphson optimization
+        .def("debug_get_Bpp_python", &FDPF_BX_SparseLUSolver::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());  // perform the newton raphson optimization
+
     #if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
         py::class_<KLUSolver>(m, "KLUSolver", DocSolver::KLUSolver.c_str())
             .def(py::init<>())
@@ -136,6 +180,33 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("compute_pf", &KLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
             .def("get_timers", &KLUDCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &KLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<FDPF_XB_KLUSolver>(m, "FDPF_XB_KLUSolver", DocSolver::FDPF_XB_KLUSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &FDPF_XB_KLUSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &FDPF_XB_KLUSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &FDPF_XB_KLUSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &FDPF_XB_KLUSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &FDPF_XB_KLUSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &FDPF_XB_KLUSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &FDPF_XB_KLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &FDPF_XB_KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+            .def("get_timers", &FDPF_XB_KLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &FDPF_XB_KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+                
+        py::class_<FDPF_BX_KLUSolver>(m, "FDPF_BX_KLUSolver", DocSolver::FDPF_BX_KLUSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &FDPF_BX_KLUSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &FDPF_BX_KLUSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &FDPF_BX_KLUSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &FDPF_BX_KLUSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &FDPF_BX_KLUSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &FDPF_BX_KLUSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &FDPF_BX_KLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &FDPF_BX_KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+            .def("get_timers", &FDPF_BX_KLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &FDPF_BX_KLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+                
     #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -179,6 +250,33 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("compute_pf", &NICSLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
             .def("get_timers", &NICSLUDCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &NICSLUDCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<FDPF_XB_NICSLUSolver>(m, "FDPF_XB_NICSLUSolver", DocSolver::FDPF_XB_NICSLUSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &FDPF_XB_NICSLUSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &FDPF_XB_NICSLUSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &FDPF_XB_NICSLUSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &FDPF_XB_NICSLUSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &FDPF_XB_NICSLUSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &FDPF_XB_NICSLUSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &FDPF_XB_NICSLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &FDPF_XB_NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+            .def("get_timers", &FDPF_XB_NICSLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &FDPF_XB_NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        
+        py::class_<FDPF_BX_NICSLUSolver>(m, "FDPF_BX_NICSLUSolver", DocSolver::FDPF_BX_NICSLUSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &FDPF_BX_NICSLUSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &FDPF_BX_NICSLUSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &FDPF_BX_NICSLUSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &FDPF_BX_NICSLUSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &FDPF_BX_NICSLUSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &FDPF_BX_NICSLUSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &FDPF_BX_NICSLUSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &FDPF_BX_NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+            .def("get_timers", &FDPF_BX_NICSLUSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &FDPF_BX_NICSLUSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+    
     #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -222,6 +320,33 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             .def("compute_pf", &CKTSODCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // perform the newton raphson optimization
             .def("get_timers", &CKTSODCSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
             .def("solve", &CKTSODCSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+
+        py::class_<FDPF_XB_CKTSOSolver>(m, "FDPF_XB_CKTSOSolver", DocSolver::FDPF_XB_CKTSOSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &FDPF_XB_CKTSOSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &FDPF_XB_CKTSOSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &FDPF_XB_CKTSOSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &FDPF_XB_CKTSOSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &FDPF_XB_CKTSOSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &FDPF_XB_CKTSOSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &FDPF_XB_CKTSOSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &FDPF_XB_CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+            .def("get_timers", &FDPF_XB_CKTSOSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &FDPF_XB_CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+    
+        py::class_<FDPF_BX_CKTSOSolver>(m, "FDPF_BX_CKTSOSolver", DocSolver::FDPF_BX_CKTSOSolver.c_str())
+            .def(py::init<>())
+            .def("get_Va", &FDPF_BX_CKTSOSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+            .def("get_Vm", &FDPF_BX_CKTSOSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+            .def("get_V", &FDPF_BX_CKTSOSolver::get_V, DocSolver::get_V.c_str()) 
+            .def("get_error", &FDPF_BX_CKTSOSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+            .def("get_nb_iter", &FDPF_BX_CKTSOSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+            .def("reset", &FDPF_BX_CKTSOSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+            .def("converged", &FDPF_BX_CKTSOSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
+            .def("compute_pf", &FDPF_BX_CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+            .def("get_timers", &FDPF_BX_CKTSOSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+            .def("solve", &FDPF_BX_CKTSOSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+    
     #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver", DocSolver::GaussSeidelSolver.c_str())
@@ -266,7 +391,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_error", &ChooseSolver::get_error, DocSolver::get_V.c_str()) 
         .def("get_nb_iter", &ChooseSolver::get_nb_iter, DocSolver::get_nb_iter.c_str()) 
         .def("converged", &ChooseSolver::converged, DocSolver::converged.c_str()) 
-        .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str());
+        .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str())
+        .def("get_fdpf_xb_lu", &ChooseSolver::get_fdpf_xb_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())  // TODO this for all solver !
+        .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 
     // iterator for generators
     py::class_<DataGen>(m, "DataGen", DocIterator::DataGen.c_str())
@@ -402,7 +529,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("bus_ex_id", &DataLine::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
         .def_readonly("r_pu", &DataLine::LineInfo::r_pu, DocIterator::r_pu.c_str())
         .def_readonly("x_pu", &DataLine::LineInfo::x_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_pu", &DataLine::LineInfo::h_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h_pu", &DataLine::LineInfo::h_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_or_pu", &DataLine::LineInfo::h_or_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h_ex_pu", &DataLine::LineInfo::h_ex_pu, DocIterator::h_pu.c_str())
         .def_readonly("has_res", &DataLine::LineInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_or_mw", &DataLine::LineInfo::res_p_or_mw, DocIterator::res_p_or_mw.c_str())
         .def_readonly("res_q_or_mvar", &DataLine::LineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar.c_str())
@@ -457,6 +586,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy)
+        .def_readwrite("_ls_to_pp", &GridModel::_ls_to_pp, "for converter from bus in lightsim2grid index to bus in pandapower index")
 
         // pickle
         .def(py::pickle(
@@ -499,6 +629,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init its elements
         .def("init_powerlines", &GridModel::init_powerlines, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
+        .def("init_powerlines_full", &GridModel::init_powerlines_full, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_shunt", &GridModel::init_shunt, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_trafo", &GridModel::init_trafo, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_generators", &GridModel::init_generators, DocGridModel::_internal_do_not_use.c_str())  // same
@@ -673,6 +804,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_trafo_hv_to_subid", &GridModel::set_trafo_hv_to_subid, DocGridModel::_internal_do_not_use.c_str())
         .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid, DocGridModel::_internal_do_not_use.c_str())
         .def("set_storage_to_subid", &GridModel::set_storage_to_subid, DocGridModel::_internal_do_not_use.c_str())
+
+        // debug function (might disappear without further notice)
+        .def("debug_get_Bp_python", &GridModel::debug_get_Bp_python, DocGridModel::_internal_do_not_use.c_str())
+        .def("debug_get_Bpp_python", &GridModel::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str())
         ;
 
     py::class_<Computers>(m, "Computers", DocComputers::Computers.c_str())

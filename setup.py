@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.7.4"
+__version__ = "0.7.5"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -156,7 +156,8 @@ src_files = ['src/main.cpp',
              "src/BaseSolver.cpp",
              "src/BaseMultiplePowerflow.cpp",
              "src/Computers.cpp",
-             "src/SecurityAnalysis.cpp"]
+             "src/SecurityAnalysis.cpp",
+             "src/Solvers.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
     src_files.append("src/KLUSolver.cpp")
@@ -333,6 +334,7 @@ pkgs = {
             "autodocsumm>=0.1.13",
             "grid2op>=1.6.4",
             "recommonmark",
+            "pypowsybl"
         ],
         "benchmark": [
             "tabulate",
@@ -349,7 +351,8 @@ pkgs = {
             "grid2op>=1.6.4",
             "numba",
             "pandapower>=2.8.0",
-            "packaging"
+            "packaging", 
+            "pypowsybl"
         ]
     }
 }

@@ -26,4 +26,8 @@ class BaseConstants
         static const real_type my_zero_;
 };
 
+enum class FDPFMethod {XB, BX};  // Different type of FDPF powerflow
+// FDPFMethod::XB => alg = 2 in pypower / pandapower
+// FDPFMethod::BX => alg = 3 in pypower / pandapower
+
 #endif // BASECONSTANTS_H

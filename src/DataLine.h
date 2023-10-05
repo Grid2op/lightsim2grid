@@ -44,6 +44,8 @@ class DataLine : public DataGeneric
                 real_type r_pu;
                 real_type x_pu;
                 cplx_type h_pu;
+                cplx_type h_or_pu;
+                cplx_type h_ex_pu;
 
                 bool has_res;
                 real_type res_p_or_mw;
@@ -58,13 +60,15 @@ class DataLine : public DataGeneric
                 real_type res_theta_ex_deg;
 
                 LineInfo(const DataLine & r_data_line, int my_id):
-                id(-1),
+                id(my_id),
                 connected(false),
                 bus_or_id(-1),
                 bus_ex_id(-1),
                 r_pu(-1.0),
                 x_pu(-1.0),
                 h_pu(0., 0.),
+                h_or_pu(0., 0.),
+                h_ex_pu(0., 0.),
                 has_res(false),
                 res_p_or_mw(0.),
                 res_q_or_mvar(0.),
@@ -85,7 +89,9 @@ class DataLine : public DataGeneric
                         bus_ex_id = r_data_line.bus_ex_id_.coeff(my_id);
                         r_pu = r_data_line.powerlines_r_.coeff(my_id);
                         x_pu = r_data_line.powerlines_x_.coeff(my_id);
-                        h_pu = r_data_line.powerlines_h_.coeff(my_id);
+                        h_or_pu = r_data_line.powerlines_h_or_.coeff(my_id);
+                        h_ex_pu = r_data_line.powerlines_h_ex_.coeff(my_id);
+                        h_pu = (h_or_pu + h_ex_pu);
 
                         has_res = r_data_line.res_powerline_por_.size() > 0;
                         if(has_res)
@@ -114,6 +120,7 @@ class DataLine : public DataGeneric
                std::vector<real_type>, // branch_r
                std::vector<real_type>, // branch_x
                std::vector<cplx_type>, // branch_h
+               std::vector<cplx_type>, // branch_h
                std::vector<int>, // branch_from_id
                std::vector<int>, // branch_to_id
                std::vector<bool> // status_
@@ -124,6 +131,14 @@ class DataLine : public DataGeneric
     void init(const RealVect & branch_r,
               const RealVect & branch_x,
               const CplxVect & branch_h,
+              const Eigen::VectorXi & branch_from_id,
+              const Eigen::VectorXi & branch_to_id
+              );
+
+    void init(const RealVect & branch_r,
+              const RealVect & branch_x,
+              const CplxVect & branch_h_or,
+              const CplxVect & branch_h_ex,
               const Eigen::VectorXi & branch_from_id,
               const Eigen::VectorXi & branch_to_id
               );
@@ -173,7 +188,12 @@ class DataLine : public DataGeneric
                           bool ac,
                           const std::vector<int> & id_grid_to_solver,
                           real_type sn_mva
-                          );
+                          ) const;
+    virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                            std::vector<Eigen::Triplet<real_type> > & Bpp,
+                            const std::vector<int> & id_grid_to_solver,
+                            real_type sn_mva,
+                            FDPFMethod xb_or_bx) const;
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -214,7 +234,8 @@ class DataLine : public DataGeneric
         // physical properties
         RealVect powerlines_r_;
         RealVect powerlines_x_;
-        CplxVect powerlines_h_;
+        CplxVect powerlines_h_or_;
+        CplxVect powerlines_h_ex_;
 
         // input data
         Eigen::VectorXi bus_or_id_;

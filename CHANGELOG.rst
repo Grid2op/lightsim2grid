@@ -3,13 +3,14 @@ Change Log
 
 [TODO]
 --------
-- make an `init` function from pypowsybl
-- support DC powerline (as modeled in pandapower)
+- [refacto] have a structure in cpp for the buses
+- [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
 - support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
+- a mode to do both `Computer` and `SecurityAnalysisCPP`
 - use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
 - possibility to read CGMES files
@@ -17,9 +18,27 @@ Change Log
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
-- code NR with dense matrices
 
-[0.7.3] 2023-08-24
+[0.7.5] 2023-10-05
+--------------------
+- [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
+  multiple powerflows used the same solver
+- [FIXED] a bug in AC and DC powerflow when shunts had active values
+- [ADDED] possibility to initialize a powergrid based on pypowsybl 
+  see https://github.com/BDonnot/lightsim2grid/issues/53
+- [ADDED] some more algorithm to perform powerflow: Fast Decoupled Powerflow (in BX and XB variant)
+  see https://github.com/BDonnot/lightsim2grid/issues/63
+- [ADDED] build lightsim2grid for python 3.12
+- [ADDED] support for non distributed slack but multiple slack buses
+  see https://github.com/BDonnot/lightsim2grid/issues/50 (ONLY FOR AC powerflow)
+- [IMPROVED] now shipping `src` and `eigen` directory in the source of 
+  lightsim2grid to allow their installation if wheels are not provided.
+- [IMPROVED] in the underlying cpp GridModel powerlines can now have 2
+  different values for the `h` parameters (`h_or` and `h_ex`).
+- [IMPROVED] now lightsim2grid is able to load a pandapower network with non
+  contiguous non starting at 0 bus index
+
+[0.7.3/4] 2023-08-24
 --------------------
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed
   if it modifies the load (or gen), because you "cannot change the value of a disconnected load (or gen)"

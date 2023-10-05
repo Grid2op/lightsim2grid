@@ -5,11 +5,7 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
-
-import faulthandler
-faulthandler.enable()
-
-__version__ = "0.7.4"
+__version__ = "0.7.5"
 
 __all__ = ["newtonpf", "SolverType", "ErrorType", "solver"]
 
@@ -20,9 +16,10 @@ from lightsim2grid.solver import ErrorType
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
     __all__.append("LightSimBackend")
-except ImportError:
+except ImportError as exc_:
     # grid2op is not installed, the Backend will not be available
     pass
+    print(f"LightSimBackend import error: {exc_}")
 
 try:
     from lightsim2grid.physical_law_checker import PhysicalLawChecker
@@ -30,6 +27,7 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the PhysicalLawChecker will not be available
     pass
+    print(f"PhysicalLawChecker import error: {exc_}")
 
 try:
     from lightsim2grid.timeSerie import TimeSerie
@@ -38,6 +36,7 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the TimeSeries module will not be available
     pass
+    print(f"TimeSerie import error: {exc_}")
 
 try:
     from lightsim2grid.securityAnalysis import SecurityAnalysis
@@ -46,3 +45,4 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
+    print(f"SecurityAnalysis import error: {exc_}")

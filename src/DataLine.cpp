@@ -30,7 +30,38 @@ void DataLine::init(const RealVect & branch_r,
 
     bus_or_id_ = branch_from_id;
     bus_ex_id_ = branch_to_id;
-    powerlines_h_ = branch_h;
+    powerlines_h_or_ = 0.5 * branch_h;
+    powerlines_h_ex_ = 0.5 * branch_h;
+    powerlines_r_ = branch_r;
+    powerlines_x_ = branch_x;
+    status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
+    _update_model_coeffs();
+}
+
+void DataLine::init(const RealVect & branch_r,
+                    const RealVect & branch_x,
+                    const CplxVect & branch_h_or,
+                    const CplxVect & branch_h_ex,
+                    const Eigen::VectorXi & branch_from_id,
+                    const Eigen::VectorXi & branch_to_id
+                    )
+{
+    /**
+    This method initialize the Ybus matrix from the branch matrix.
+    It has to be called once when the solver is initialized. Afterwards, a call to
+    "updateYbus" should be made for performance optimiaztion instead. //TODO
+    **/
+
+    // TODO check what can be checked: branch_* have same size, no id in branch_to_id that are
+    // TODO not in [0, .., buv_vn_kv.size()] etc.
+
+    //TODO consistency with trafo: have a converter methods to convert this value into pu, and store the pu
+    // in this method
+
+    bus_or_id_ = branch_from_id;
+    bus_ex_id_ = branch_to_id;
+    powerlines_h_or_ = branch_h_or;
+    powerlines_h_ex_ = branch_h_ex;
     powerlines_r_ = branch_r;
     powerlines_x_ = branch_x;
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
@@ -41,11 +72,12 @@ DataLine::StateRes DataLine::get_state() const
 {
      std::vector<real_type> branch_r(powerlines_r_.begin(), powerlines_r_.end());
      std::vector<real_type> branch_x(powerlines_x_.begin(), powerlines_x_.end());
-     std::vector<cplx_type > branch_h(powerlines_h_.begin(), powerlines_h_.end());
+     std::vector<cplx_type > branch_hor(powerlines_h_or_.begin(), powerlines_h_or_.end());
+     std::vector<cplx_type > branch_hex(powerlines_h_ex_.begin(), powerlines_h_ex_.end());
      std::vector<int > branch_from_id(bus_or_id_.begin(), bus_or_id_.end());
      std::vector<int > branch_to_id(bus_ex_id_.begin(), bus_ex_id_.end());
      std::vector<bool> status = status_;
-     DataLine::StateRes res(branch_r, branch_x, branch_h, branch_from_id, branch_to_id, status);
+     DataLine::StateRes res(branch_r, branch_x, branch_hor, branch_hex, branch_from_id, branch_to_id, status);
      return res;
 }
 void DataLine::set_state(DataLine::StateRes & my_state)
@@ -54,16 +86,18 @@ void DataLine::set_state(DataLine::StateRes & my_state)
 
     std::vector<real_type> & branch_r = std::get<0>(my_state);
     std::vector<real_type> & branch_x = std::get<1>(my_state);
-    std::vector<cplx_type > & branch_h = std::get<2>(my_state);
-    std::vector<int> & branch_from_id = std::get<3>(my_state);
-    std::vector<int> & branch_to_id = std::get<4>(my_state);
-    std::vector<bool> & status = std::get<5>(my_state);
+    std::vector<cplx_type > & branch_h_or = std::get<2>(my_state);
+    std::vector<cplx_type > & branch_h_ex = std::get<3>(my_state);
+    std::vector<int> & branch_from_id = std::get<4>(my_state);
+    std::vector<int> & branch_to_id = std::get<5>(my_state);
+    std::vector<bool> & status = std::get<6>(my_state);
     // TODO check sizes
 
     // now assign the values
     powerlines_r_ = RealVect::Map(&branch_r[0], branch_r.size());
     powerlines_x_ = RealVect::Map(&branch_x[0], branch_x.size());
-    powerlines_h_ = CplxVect::Map(&branch_h[0], branch_h.size());
+    powerlines_h_or_ = CplxVect::Map(&branch_h_or[0], branch_h_or.size());
+    powerlines_h_ex_ = CplxVect::Map(&branch_h_ex[0], branch_h_ex.size());
 
     // input data
     bus_or_id_ = Eigen::VectorXi::Map(&branch_from_id[0], branch_from_id.size());
@@ -91,9 +125,10 @@ void DataLine::_update_model_coeffs()
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
         const cplx_type ys = 1. / (powerlines_r_(i) + my_i * powerlines_x_(i));
-        const cplx_type h = my_i * powerlines_h_(i) * 0.5;
-        yac_ff_(i) = (ys + h);
-        yac_tt_(i) = (ys + h);
+        const cplx_type h_or = my_i * powerlines_h_or_(i);
+        const cplx_type h_ex = my_i * powerlines_h_ex_(i);
+        yac_ff_(i) = (ys + h_or);
+        yac_tt_(i) = (ys + h_ex);
         yac_tf_(i) = -ys;
         yac_ft_(i) = -ys;
 
@@ -116,7 +151,7 @@ void DataLine::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, con
 void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                         bool ac,
                         const std::vector<int> & id_grid_to_solver,
-                        real_type sn_mva)
+                        real_type sn_mva) const
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
@@ -169,6 +204,90 @@ void DataLine::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
+void DataLine::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                          std::vector<Eigen::Triplet<real_type> > & Bpp,
+                          const std::vector<int> & id_grid_to_solver,
+                          real_type sn_mva,
+                          FDPFMethod xb_or_bx) const
+{
+
+    // For Bp
+    // temp_branch[:, BR_B] = zeros(nl)           ## zero out line charging shunts
+    // temp_branch[:, TAP] = ones(nl)             ## cancel out taps
+    // if alg == 2:                               ## if XB method
+    //    temp_branch[:, BR_R] = zeros(nl)       ## zero out line resistance
+
+    // For Bpp
+    // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
+    // if alg == 3:                               ## if BX method
+    //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
+    const Eigen::Index nb_line = static_cast<int>(powerlines_r_.size());
+    real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
+    real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
+    //diagonal coefficients
+    for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
+        // i only add this if the powerline is connected
+        if(!status_[line_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_or_id_(line_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBp_Bpp: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_ex_id_(line_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBp_Bpp: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+
+        // get the coefficients
+        cplx_type ys_bp, ys_bpp;
+        if(xb_or_bx==FDPFMethod::XB){
+            ys_bp = 1. / (0. + my_i * powerlines_x_(line_id));
+            ys_bpp = 1. / (powerlines_r_(line_id) + my_i * powerlines_x_(line_id));
+        }else if (xb_or_bx==FDPFMethod::BX){
+            ys_bp = 1. / (powerlines_r_(line_id) + my_i * powerlines_x_(line_id));
+            ys_bpp = 1. / (0. + my_i * powerlines_x_(line_id));
+        }else{
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+            exc_ << line_id;
+            throw std::runtime_error(exc_.str());            
+        }
+        const real_type ys_bp_r = std::imag(ys_bp); 
+        yff_bp = ys_bp_r;
+        ytt_bp = ys_bp_r;
+        yft_bp = -ys_bp_r;
+        ytf_bp = -ys_bp_r;
+        const real_type ys_bpp_r = std::imag(ys_bpp); 
+        yff_bpp = ys_bpp_r + std::imag(my_i * powerlines_h_or_(line_id));
+        ytt_bpp = ys_bpp_r + std::imag(my_i * powerlines_h_ex_(line_id));
+        yft_bpp = -ys_bpp_r;
+        ytf_bpp = -ys_bpp_r;
+
+        // and now add them
+        Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -yft_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -ytf_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bp));
+        Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bp));
+
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -yft_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -ytf_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bpp));
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bpp));
+
+    }
+}
+
 void DataLine::reset_results()
 {
     res_powerline_por_ = RealVect();  // in MW
@@ -180,7 +299,6 @@ void DataLine::reset_results()
     res_powerline_vex_ = RealVect();  // in kV
     res_powerline_aex_ = RealVect();  // in kA
 }
-
 
 void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const Eigen::Ref<const RealVect> & Vm,

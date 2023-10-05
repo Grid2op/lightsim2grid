@@ -7,10 +7,14 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "GridModel.h"
+#include "ChooseSolver.h"  // to avoid circular references
+
 
 GridModel::GridModel(const GridModel & other)
 {
     reset(true, true, true);
+
+    _ls_to_pp = other._ls_to_pp;
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -68,12 +72,15 @@ GridModel::GridModel(const GridModel & other)
     _solver.change_solver(other._solver.get_type());
     _dc_solver.change_solver(other._dc_solver.get_type());
     compute_results_ = other.compute_results_;
+    _dc_solver.set_gridmodel(this);
+    _solver.set_gridmodel(this);
 }
 
 //pickle
 GridModel::StateRes GridModel::get_state() const
 {
     std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
+    std::vector<int> ls_to_pp(_ls_to_pp.begin(), _ls_to_pp.end());
     int version_major = VERSION_MAJOR;
     int version_medium = VERSION_MEDIUM;
     int version_minor = VERSION_MINOR;
@@ -89,6 +96,7 @@ GridModel::StateRes GridModel::get_state() const
     GridModel::StateRes res(version_major,
                             version_medium,
                             version_minor,
+                            ls_to_pp,
                             init_vm_pu_,
                             sn_mva_,
                             bus_vn_kv,
@@ -128,30 +136,32 @@ void GridModel::set_state(GridModel::StateRes & my_state)
         exc_ << "It is not possible. Please reinstall it.";
         throw std::runtime_error(exc_.str());
     }
-    init_vm_pu_ = std::get<3>(my_state);
-    sn_mva_ = std::get<4>(my_state);
-    std::vector<real_type> & bus_vn_kv = std::get<5>(my_state);
-    std::vector<bool> & bus_status = std::get<6>(my_state);
+    std::vector<int> ls_to_pp_ = std::get<3>(my_state);
+    init_vm_pu_ = std::get<4>(my_state);
+    sn_mva_ = std::get<5>(my_state);
+    std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
+    std::vector<bool> & bus_status = std::get<7>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<7>(my_state);
+    DataLine::StateRes & state_lines = std::get<8>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<8>(my_state);
+    DataShunt::StateRes & state_shunts = std::get<9>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<9>(my_state);
+    DataTrafo::StateRes & state_trafos = std::get<10>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<10>(my_state);
+    DataGen::StateRes & state_gens = std::get<11>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<11>(my_state);
+    DataLoad::StateRes & state_loads = std::get<12>(my_state);
     // static gen
-    DataSGen::StateRes & state_sgens= std::get<12>(my_state);
+    DataSGen::StateRes & state_sgens= std::get<13>(my_state);
     // storage units
-    DataLoad::StateRes & state_storages = std::get<13>(my_state);
+    DataLoad::StateRes & state_storages = std::get<14>(my_state);
     // dc lines
-    DataDCLine::StateRes & state_dc_lines = std::get<14>(my_state);
+    DataDCLine::StateRes & state_dc_lines = std::get<15>(my_state);
 
     // assign it to this instance
 
+    _ls_to_pp =IntVect::Map(&ls_to_pp_[0], ls_to_pp_.size());
     // buses
     // 1. bus_vn_kv_
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
@@ -217,6 +227,8 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     if (reset_solver){
         _solver.reset();
         _dc_solver.reset();
+        _solver.set_gridmodel(this);
+        _dc_solver.set_gridmodel(this);
     }
     // std::cout << "GridModel::reset called" << std::endl;
 }
@@ -517,14 +529,14 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
 void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver)
 {
     // init the Sbus vector
-    powerlines_.fillSbus(Sbus, id_me_to_solver);
-    trafos_.fillSbus(Sbus, id_me_to_solver);
-    shunts_.fillSbus(Sbus, id_me_to_solver);
-    loads_.fillSbus(Sbus, id_me_to_solver);
-    sgens_.fillSbus(Sbus, id_me_to_solver);
-    storages_.fillSbus(Sbus, id_me_to_solver);
-    generators_.fillSbus(Sbus, id_me_to_solver);
-    dc_lines_.fillSbus(Sbus, id_me_to_solver);
+    powerlines_.fillSbus(Sbus, id_me_to_solver, ac);
+    trafos_.fillSbus(Sbus, id_me_to_solver, ac);
+    shunts_.fillSbus(Sbus, id_me_to_solver, ac);
+    loads_.fillSbus(Sbus, id_me_to_solver, ac);
+    sgens_.fillSbus(Sbus, id_me_to_solver, ac);
+    storages_.fillSbus(Sbus, id_me_to_solver, ac);
+    generators_.fillSbus(Sbus, id_me_to_solver, ac);
+    dc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
     if (sn_mva_ != 1.0) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
@@ -825,4 +837,35 @@ void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen:
                         &GridModel::change_bus_trafo_lv,
                         &GridModel::deactivate_trafo
                         );
+}
+
+// for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
+void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
+                           Eigen::SparseMatrix<real_type> & Bpp, 
+                           FDPFMethod xb_or_bx) const
+{
+    // clear the matrices
+    const int nb_bus_solver = static_cast<int>(id_ac_solver_to_me_.size());
+    Bp = Eigen::SparseMatrix<real_type>(nb_bus_solver, nb_bus_solver);
+    Bpp = Eigen::SparseMatrix<real_type>(nb_bus_solver, nb_bus_solver);
+
+    // init the Bp and Bpp matrices for Fast Decoupled Powerflow  (TODO FDPF: optim when it's NOT needed just like for Ybus)
+    std::vector<Eigen::Triplet<real_type> > tripletList_Bp;
+    std::vector<Eigen::Triplet<real_type> > tripletList_Bpp;
+    tripletList_Bp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
+    tripletList_Bpp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
+    // run through the grid and get the parameters to fill them
+    powerlines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    shunts_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    trafos_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    loads_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    sgens_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    storages_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    generators_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    dc_lines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    // now make the matrices effectively
+    Bp.setFromTriplets(tripletList_Bp.begin(), tripletList_Bp.end());
+    Bp.makeCompressed();
+    Bpp.setFromTriplets(tripletList_Bpp.begin(), tripletList_Bpp.end());
+    Bpp.makeCompressed();
 }

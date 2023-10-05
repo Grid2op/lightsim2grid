@@ -49,17 +49,19 @@ void DataShunt::set_state(DataShunt::StateRes & my_state )
 void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                          bool ac,
                          const std::vector<int> & id_grid_to_solver,
-                         real_type sn_mva){
-    const int nb_shunt = static_cast<int>(q_mvar_.size());
+                         real_type sn_mva) const
+{
+    if(!ac) return; // no shunt in DC
+
+    const Eigen::Index nb_shunt = static_cast<int>(q_mvar_.size());
     cplx_type tmp;
     int bus_id_me, bus_id_solver;
-    for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+    for(Eigen::Index shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = {p_mw_(shunt_id), my_zero_};
-        if(ac) tmp += my_i * q_mvar_(shunt_id);
+        tmp = {p_mw_(shunt_id), -q_mvar_(shunt_id)};
 
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
@@ -71,13 +73,42 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             throw std::runtime_error(exc_.str());
         }
         if(sn_mva != 1.) tmp /= sn_mva;
-        res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, -tmp));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, tmp));
     }
 }
 
-void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver)  // in DC i need that
+void DataShunt::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                           std::vector<Eigen::Triplet<real_type> > & Bpp,
+                           const std::vector<int> & id_grid_to_solver,
+                           real_type sn_mva,
+                           FDPFMethod xb_or_bx) const
 {
-    // if(ac) return;  // in AC I do not do that
+    const Eigen::Index nb_shunt = static_cast<int>(q_mvar_.size());
+    real_type tmp;
+    int bus_id_me, bus_id_solver;
+    for(Eigen::Index shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+        // i don't do anything if the shunt is disconnected
+        if(!status_[shunt_id]) continue;
+
+        bus_id_me = bus_id_(shunt_id);
+        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataShunt::fillBp_Bpp: the shunt with id ";
+            exc_ << shunt_id;
+            exc_ << " is connected to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        // assign diagonal coefficient
+        tmp = q_mvar_(shunt_id);
+        if(sn_mva != 1.) tmp /= sn_mva;
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_id_solver, bus_id_solver, tmp));  // -(-tmp) [-tmp for the "correct" value, but then for Bpp i have -(-tmp)]
+    }
+}
+
+void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const  // in DC i need that
+{
+    if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;
     // - bus[:, GS] / baseMVA  # in pandapower
     // yish=gish+jbish -> so g is the MW !
@@ -96,24 +127,7 @@ void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_so
 }
 
 void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
-    const int nb_shunt = static_cast<int>(q_mvar_.size());
-    //TODO this is no more used!!!! see the other fillYbus
-    cplx_type tmp;
-    int bus_id_me, bus_id_solver;
-    for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
-        // i don't do anything if the shunt is disconnected
-        if(!status_[shunt_id]) continue;
-
-        // assign diagonal coefficient
-        tmp = p_mw_(shunt_id) + my_i * q_mvar_(shunt_id);
-        bus_id_me = bus_id_(shunt_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
-        if(bus_id_solver == _deactivated_bus_id){
-            throw std::runtime_error("GridModel::fillYbusShunt: A shunt is connected to a disconnected bus.");
-        }
-        res.coeffRef(bus_id_solver, bus_id_solver) -= tmp;
-    }
-    //TODO this is no more used!!!! see the other fillYbus
+    throw std::runtime_error("DataShunt::fillYbus_spmat: should not be used anymore !");
 }
 
 void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,

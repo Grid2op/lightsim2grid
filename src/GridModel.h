@@ -36,18 +36,23 @@
 #include "DataSGen.h"
 #include "DataDCLine.h"
 
-
 // import newton raphson solvers using different linear algebra solvers
 #include "ChooseSolver.h"
+// class ChooseSolver;
+// enum class SolverType;
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class GridModel : public DataGeneric
 {
+    public:  // can be modified python side
+        IntVect _ls_to_pp;  // for converter from bus in lightsim2grid index to bus in pandapower index
+
     public:
         typedef std::tuple<
                 int, // version major
                 int, // version medium
                 int, // version minor
+                std::vector<int>, // ls_to_pp
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
                 std::vector<real_type>,  // bus_vn_kv
@@ -72,6 +77,7 @@ class GridModel : public DataGeneric
 
         GridModel():need_reset_(true), topo_changed_(true), compute_results_(true), init_vm_pu_(1.04), sn_mva_(1.0){
             _dc_solver.change_solver(SolverType::DC);
+            _solver.set_gridmodel(this);
         }
         GridModel(const GridModel & other);
         GridModel copy() const{
@@ -132,6 +138,18 @@ class GridModel : public DataGeneric
                              ){
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
         }
+        void init_powerlines_full(const RealVect & branch_r,
+                                  const RealVect & branch_x,
+                                  const CplxVect & branch_h_or,
+                                  const CplxVect & branch_h_ex,
+                                  const Eigen::VectorXi & branch_from_id,
+                                  const Eigen::VectorXi & branch_to_id
+                             ){
+            powerlines_.init(branch_r, branch_x, branch_h_or,
+                             branch_h_ex, branch_from_id, 
+                             branch_to_id);
+        }
+
         void init_shunt(const RealVect & shunt_p_mw,
                         const RealVect & shunt_q_mvar,
                         const Eigen::VectorXi & shunt_bus_id){
@@ -491,6 +509,24 @@ class GridModel : public DataGeneric
             fillSbus_me(res, ac, id_me_to_solver);
         }
 
+        //for FDPF
+        void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
+                        Eigen::SparseMatrix<real_type> & Bpp, 
+                        FDPFMethod xb_or_bx) const;
+
+        Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
+            Eigen::SparseMatrix<real_type> Bp;
+            Eigen::SparseMatrix<real_type> Bpp;
+            fillBp_Bpp(Bp, Bpp, xb_or_bx);
+            return Bp;
+        }
+        Eigen::SparseMatrix<real_type> debug_get_Bpp_python(FDPFMethod xb_or_bx){
+            Eigen::SparseMatrix<real_type> Bp;
+            Eigen::SparseMatrix<real_type> Bpp;
+            fillBp_Bpp(Bp, Bpp, xb_or_bx);
+            return Bpp;
+        }
+
     protected:
     // add method to change topology, change ratio of transformers, change
 
@@ -607,6 +643,7 @@ class GridModel : public DataGeneric
     protected:
         // member of the grid
         // static const int _deactivated_bus_id;
+
         bool need_reset_;
         bool topo_changed_;
         bool compute_results_;
