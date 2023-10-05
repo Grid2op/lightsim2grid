@@ -40,7 +40,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // TODO SLACK (for now i put all slacks as PV, except the first one)
     // this should be handled in Sbus, because we know the amount of power absorbed by the slack
     // so we can compute it correctly !
-    Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
+    const Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);
     // const Eigen::VectorXi & my_pv = pv;
 
     // find the slack buses
@@ -95,7 +95,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     }
 
     // remove the slack bus from Sbus
-    RealVect dcSbus = RealVect::Constant(nb_bus_solver - my_pv.size(), my_zero_);
+    RealVect dcSbus = RealVect::Constant(nb_bus_solver - slack_bus_ids_solver.size(), my_zero_);
     for (int k=0; k < nb_bus_solver; ++k){
         if(ybus_to_me(k) == -1) continue;  // I don't add anything to the slack bus
         const int col_res = ybus_to_me(k);
