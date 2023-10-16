@@ -21,6 +21,11 @@ try:
 except ImportError as exc_:
     from grid2op.Action._BackendAction import _BackendAction
 
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
+    
 from lightsim2grid.gridmodel import init
 from lightsim2grid.solver import SolverType
 
@@ -39,6 +44,8 @@ class LightSimBackend(Backend):
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
+                 loader_method: Literal["pandapower", "pypowsybl"] = "pandapower",
+                 loader_kwargs : Optional[dict] = None,
                  ):
         try:
             # for grid2Op >= 1.7.1
@@ -50,7 +57,9 @@ class LightSimBackend(Backend):
                              tol=tol,
                              turned_off_pv=turned_off_pv,
                              dist_slack_non_renew=dist_slack_non_renew,
-                             use_static_gen=use_static_gen)
+                             use_static_gen=use_static_gen,
+                             loader_method=loader_method,
+                             loader_kwargs=loader_kwargs)
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
                           "you cannot set max_iter, tol nor solver_type arguments.")
@@ -64,7 +73,9 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
-
+        self._loader_method = loader_method
+        self._loader_kwargs = loader_kwargs
+        
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
         self.__nb_powerline = None
@@ -174,20 +185,20 @@ class LightSimBackend(Backend):
         self._use_static_gen = use_static_gen  # TODO implement it
         
         # storage data for this object (otherwise it's in the class)
-        self.n_storage = None
-        self.storage_to_subid = None
-        self.storage_pu_to_kv = None
-        self.name_storage = None
-        self.storage_to_sub_pos = None
-        self.storage_type = None
-        self.storage_Emin = None
-        self.storage_Emax = None
-        self.storage_max_p_prod = None
-        self.storage_max_p_absorb = None
-        self.storage_marginal_cost = None
-        self.storage_loss = None
-        self.storage_discharging_efficiency = None
-        self.storage_charging_efficiency = None
+        # self.n_storage = None
+        # self.storage_to_subid = None
+        # self.storage_pu_to_kv = None
+        # self.name_storage = None
+        # self.storage_to_sub_pos = None
+        # self.storage_type = None
+        # self.storage_Emin = None
+        # self.storage_Emax = None
+        # self.storage_max_p_prod = None
+        # self.storage_max_p_absorb = None
+        # self.storage_marginal_cost = None
+        # self.storage_loss = None
+        # self.storage_discharging_efficiency = None
+        # self.storage_charging_efficiency = None
 
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
@@ -386,14 +397,92 @@ class LightSimBackend(Backend):
                 self._grid.change_solver(SolverType.KLU)
             else:
                 self._grid.change_solver(SolverType.SparseLU)
+                
+    def load_grid(self, path=None, filename=None):    
+        if self._loader_method == "pandapower":
+            self._load_grid_pandapower(path, filename)
+        elif self._loader_method == "pypowsybl":
+            self._load_grid_pypowsybl(path, filename)
+        else:
+            raise BackendError(f"Impossible to initialize the backend with '{self._loader_method}'")
+    
+    def _load_grid_pypowsybl(self, path=None, filename=None):
+        from lightsim2grid.gridmodel.from_pypowsybl import init as init_pypow
+        import pypowsybl.network as pypow_net
+        loader_kwargs = {}
+        if self._loader_kwargs is not None:
+            loader_kwargs = self._loader_kwargs
+            
+        full_path = self.make_complete_path(path, filename)
+        grid_tmp = pypow_net.load(full_path)
+        self._grid = init_pypow(grid_tmp, gen_slack_id=None)  # TODO gen_slack_id !     
+        self._aux_setup_right_after_grid_init()   
         
-    def load_grid(self, path=None, filename=None):
-        # if self.init_pp_backend is None:
-        self.init_pp_backend.load_grid(path, filename)
-        self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
-
-        self._grid = init(self.init_pp_backend._grid)
+        # mandatory for the backend
+        self.n_line = len(self._grid.get_lines()) + len(self._grid.get_trafos())
+        self.n_gen = len(self._grid.get_generators())
+        self.n_load = len(self._grid.get_loads())
+        self.n_storage = len(self._grid.get_storages())
+        self.n_shunt = len(self._grid.get_shunts())
         
+        df = grid_tmp.get_substations()
+        from_sub = True
+        
+        if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
+                df = grid_tmp.get_buses()
+                from_sub = False
+        self.n_sub = df.shape[0]
+        self.name_sub = ["sub_{}".format(i) for i, _ in df.iterrows()]
+        
+        if not from_sub:
+            self.load_to_subid = np.array([el.bus_id for el in self._grid.get_loads()], dtype=dt_int)
+            self.gen_to_subid = np.array([el.bus_id for el in self._grid.get_generators()], dtype=dt_int)
+            self.line_or_to_subid = np.array([el.bus_or_id for el in self._grid.get_lines()] + 
+                                             [el.bus_hv_id for el in self._grid.get_trafos()],
+                                             dtype=dt_int)
+            self.line_ex_to_subid = np.array([el.bus_ex_id for el in self._grid.get_lines()] + 
+                                             [el.bus_lv_id for el in self._grid.get_trafos()],
+                                             dtype=dt_int)
+            self.storage_to_subid = np.array([el.bus_id for el in self._grid.get_storages()], dtype=dt_int)
+            self.shunt_to_subid = np.array([el.bus_id for el in self._grid.get_shunts()], dtype=dt_int)
+        else:
+            # TODO get back the sub id from the grid_tmp.get_substations()
+            raise NotImplementedError("TODO")
+        
+        # the names
+        self.name_load = np.array([f"load_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())])
+        self.name_gen = np.array([f"gen_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())])
+        self.name_line = np.array([f"{el.bus_or_id}_{el.bus_ex_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
+                                  [f"{el.bus_hv_id}_{el.bus_lv_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_trafos())])
+        self.name_storage = np.array([f"storage_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())])
+        self.name_shunt = np.array([f"shunt_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())])
+        
+        # complete the other vectors
+        self._compute_pos_big_topo()
+        
+        self.__nb_powerline = len(self._grid.get_lines())
+        self.__nb_bus_before = len(self._grid.get_buses())
+        self.shunts_data_available = True
+        
+        # init this
+        self.prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)
+        self.next_prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)
+        
+        # now handle the legacy "make as if there are 2 busbars per substation"
+        # as it is done with grid2Op simulated environment
+        if "double_bus_per_sub" in loader_kwargs and loader_kwargs["double_bus_per_sub"]:
+            bus_init = self._grid.get_buses()
+            bus_doubled = np.concatenate((bus_init, bus_init))
+            self._grid.init_bus(bus_doubled, 0, 0)
+            for i in range(self.__nb_bus_before):
+                self._grid.deactivate_bus(i + self.__nb_bus_before)
+        self.nb_bus_total = len(self._grid.get_buses())
+        
+        # and now things needed by the backend (legacy)
+        self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
+        self._aux_finish_setup_after_reading()
+    
+    def _aux_setup_right_after_grid_init(self):
         self._handle_turnedoff_pv()
             
         self.available_solvers = self._grid.available_solvers()
@@ -413,6 +502,13 @@ class LightSimBackend(Backend):
             self._check_suitable_solver_type(self.__current_solver_type)
             self._grid.change_solver(self.__current_solver_type)
             
+    def _load_grid_pandapower(self, path=None, filename=None):
+        self.init_pp_backend.load_grid(path, filename)
+        self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
+
+        self._grid = init(self.init_pp_backend._grid)
+        self._aux_setup_right_after_grid_init()
+
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen
         self.n_load = self.init_pp_backend.n_load
@@ -494,106 +590,107 @@ class LightSimBackend(Backend):
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
         
         self._compute_pos_big_topo()
+        
+        self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
+        self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
+        self.n_shunt = self.init_pp_backend.n_shunt
+        self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
+        self.name_shunt = self.init_pp_backend.name_shunt
+        if hasattr(self.init_pp_backend, "_sh_vnkv"):
+            # attribute has been added in grid2op ~1.3 or 1.4
+            self._sh_vnkv = self.init_pp_backend._sh_vnkv
+        self.shunts_data_available = self.init_pp_backend.shunts_data_available
+        
+        self._aux_finish_setup_after_reading()
 
+    def _aux_finish_setup_after_reading(self):
         # set up the "lightsim grid" accordingly
+        cls = type(self)
+        
         self._grid.set_n_sub(self.__nb_bus_before)
-        self._grid.set_load_pos_topo_vect(self.load_pos_topo_vect)
-        self._grid.set_gen_pos_topo_vect(self.gen_pos_topo_vect)
-        self._grid.set_line_or_pos_topo_vect(self.line_or_pos_topo_vect[:self.__nb_powerline])
-        self._grid.set_line_ex_pos_topo_vect(self.line_ex_pos_topo_vect[:self.__nb_powerline])
-        self._grid.set_trafo_hv_pos_topo_vect(self.line_or_pos_topo_vect[self.__nb_powerline:])
-        self._grid.set_trafo_lv_pos_topo_vect(self.line_ex_pos_topo_vect[self.__nb_powerline:])
+        self._grid.set_load_pos_topo_vect(cls.load_pos_topo_vect)
+        self._grid.set_gen_pos_topo_vect(cls.gen_pos_topo_vect)
+        self._grid.set_line_or_pos_topo_vect(cls.line_or_pos_topo_vect[:self.__nb_powerline])
+        self._grid.set_line_ex_pos_topo_vect(cls.line_ex_pos_topo_vect[:self.__nb_powerline])
+        self._grid.set_trafo_hv_pos_topo_vect(cls.line_or_pos_topo_vect[self.__nb_powerline:])
+        self._grid.set_trafo_lv_pos_topo_vect(cls.line_ex_pos_topo_vect[self.__nb_powerline:])
 
-        self._grid.set_load_to_subid(self.load_to_subid)
-        self._grid.set_gen_to_subid(self.gen_to_subid)
-        self._grid.set_line_or_to_subid(self.line_or_to_subid[:self.__nb_powerline])
-        self._grid.set_line_ex_to_subid(self.line_ex_to_subid[:self.__nb_powerline])
-        self._grid.set_trafo_hv_to_subid(self.line_or_to_subid[self.__nb_powerline:])
-        self._grid.set_trafo_lv_to_subid(self.line_ex_to_subid[self.__nb_powerline:])
+        self._grid.set_load_to_subid(cls.load_to_subid)
+        self._grid.set_gen_to_subid(cls.gen_to_subid)
+        self._grid.set_line_or_to_subid(cls.line_or_to_subid[:self.__nb_powerline])
+        self._grid.set_line_ex_to_subid(cls.line_ex_to_subid[:self.__nb_powerline])
+        self._grid.set_trafo_hv_to_subid(cls.line_or_to_subid[self.__nb_powerline:])
+        self._grid.set_trafo_lv_to_subid(cls.line_ex_to_subid[self.__nb_powerline:])
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
-            self._grid.set_storage_to_subid(self.storage_to_subid)
-            self._grid.set_storage_pos_topo_vect(self.storage_pos_topo_vect)
+            self._grid.set_storage_to_subid(cls.storage_to_subid)
+            self._grid.set_storage_pos_topo_vect(cls.storage_pos_topo_vect)
 
         nm_ = "load"
-        for load_id, pos_big_topo  in enumerate(self.load_pos_topo_vect):
+        for load_id, pos_big_topo  in enumerate(cls.load_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (load_id, nm_)
         nm_ = "gen"
-        for gen_id, pos_big_topo  in enumerate(self.gen_pos_topo_vect):
+        for gen_id, pos_big_topo  in enumerate(cls.gen_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (gen_id, nm_)
         nm_ = "lineor"
-        for l_id, pos_big_topo in enumerate(self.line_or_pos_topo_vect):
+        for l_id, pos_big_topo in enumerate(cls.line_or_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
         nm_ = "lineex"
-        for l_id, pos_big_topo  in enumerate(self.line_ex_pos_topo_vect):
+        for l_id, pos_big_topo  in enumerate(cls.line_ex_pos_topo_vect):
             self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
             nm_ = "storage"
-            for l_id, pos_big_topo  in enumerate(self.storage_pos_topo_vect):
+            for l_id, pos_big_topo  in enumerate(cls.storage_pos_topo_vect):
                 self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
-
-        self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
-        self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
-
-        # for shunts
-        self.n_shunt = self.init_pp_backend.n_shunt
-        self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
-        self.name_shunt = self.init_pp_backend.name_shunt
-
-        if hasattr(self.init_pp_backend, "_sh_vnkv"):
-            # attribute has been added in grid2op ~1.3 or 1.4
-            self._sh_vnkv = self.init_pp_backend._sh_vnkv
-
-        self.shunts_data_available = self.init_pp_backend.shunts_data_available
 
         # number of object per bus, to activate, deactivate them
         self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int)
 
-        self.topo_vect = np.ones(self.dim_topo, dtype=dt_int)
+        self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
         if self.shunts_data_available:
-            self.shunt_topo_vect = np.ones(self.n_shunt, dtype=dt_int)
+            self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
-            self.sh_p = np.full(self.n_shunt, dtype=dt_float, fill_value=np.NaN)
-            self.sh_q = np.full(self.n_shunt, dtype=dt_float, fill_value=np.NaN)
-            self.sh_v = np.full(self.n_shunt, dtype=dt_float, fill_value=np.NaN)
-            self.sh_bus = np.full(self.n_shunt, dtype=dt_int, fill_value=-1)
+            self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN)
+            self.sh_q = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN)
+            self.sh_v = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN)
+            self.sh_bus = np.full(cls.n_shunt, dtype=dt_int, fill_value=-1)
 
-        self.p_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.q_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.v_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.a_or = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.p_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.q_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.v_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.a_ex = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.p_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.q_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.v_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.a_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.p_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.q_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.v_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.a_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
 
-        self.load_p = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
-        self.load_q = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
-        self.load_v = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.load_p = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.load_q = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.load_v = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
 
-        self.prod_p = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
-        self.prod_q = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
-        self.prod_v = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.prod_p = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.prod_q = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.prod_v = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
         
-        self.line_or_theta = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.line_ex_theta = np.full(self.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.load_theta = np.full(self.n_load, dtype=dt_float, fill_value=np.NaN)
-        self.gen_theta = np.full(self.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.line_or_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.line_ex_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.load_theta = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.gen_theta = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
-            self.storage_p = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
-            self.storage_q = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
-            self.storage_v = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
-            self.storage_theta = np.full(self.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_p = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_q = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_v = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
 
         self._count_object_per_bus()
         self._grid.tell_topo_changed()
         self.__me_at_init = self._grid.copy()
-        self.__init_topo_vect = np.ones(self.dim_topo, dtype=dt_int)
+        self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
         
     def assert_grid_correct_after_powerflow(self):
@@ -680,19 +777,20 @@ class LightSimBackend(Backend):
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         
         # update the injections
-        self._grid.update_gens_p(backendAction.prod_p.changed,
-                                 backendAction.prod_p.values)
-        self._grid.update_gens_v(backendAction.prod_v.changed,
-                                 backendAction.prod_v.values / self.prod_pu_to_kv)
-        self._grid.update_loads_p(backendAction.load_p.changed,
-                                  backendAction.load_p.values)
-        self._grid.update_loads_q(backendAction.load_q.changed,
-                                  backendAction.load_q.values)
+        try:
+            self._grid.update_gens_p(backendAction.prod_p.changed,
+                                     backendAction.prod_p.values)
+            self._grid.update_gens_v(backendAction.prod_v.changed,
+                                     backendAction.prod_v.values / self.prod_pu_to_kv)
+            self._grid.update_loads_p(backendAction.load_p.changed,
+                                      backendAction.load_p.values)
+            self._grid.update_loads_q(backendAction.load_q.changed,
+                                      backendAction.load_q.values)
+        except RuntimeError as exc_:
+            # see https://github.com/BDonnot/lightsim2grid/issues/66 (even though it's not a "bug" and has not been replicated)
+            raise BackendError(f"{exc_}")
+        
         if self.__has_storage:
-            # TODO
-            # reactivate the storage that i deactivate because of the "hack". See
-            # for stor_id in self._idx_hack_storage:
-            #     self._grid.reactivate_storage(stor_id)
             self._grid.update_storages_p(backendAction.storage_power.changed,
                                          backendAction.storage_power.values)
 
@@ -714,24 +812,6 @@ class LightSimBackend(Backend):
                 self._grid.change_p_shunt(sh_id, new_p)
             for sh_id, new_q in shunt_q:
                 self._grid.change_q_shunt(sh_id, new_q)
-
-        # TODO hack for storage units: if 0. production i pretend they are disconnected on the
-        # TODO c++ side
-        # this is to deal with the test that "if a storage unit is alone on a bus, but produces 0, then it's fine)
-        # if self.__has_storage and self.n_storage > 0:
-        #     chgt = copy.copy(backendAction.current_topo.changed)
-        #     my_val = 1 * backendAction.current_topo.values
-        #     self._idx_hack_storage = np.where((backendAction.storage_power.values == 0.))[0]
-        #     idx_storage_topo = self.storage_pos_topo_vect[self._idx_hack_storage]
-        #     changed[idx_storage_topo] = my_val[idx_storage_topo] != -1
-        #     my_val[idx_storage_topo] = -1
-        # else:
-        #     self._idx_hack_storage = []
-        #     chgt = backendAction.current_topo.changed
-        #     my_val = backendAction.current_topo.values
-        # self._grid.update_topo(changed, my_val)
-        # TODO c++ side: have a check to be sure that the set_***_pos_topo_vect and set_***_to_sub_id
-        # TODO have been correctly called before calling the function self._grid.update_topo
         
         self._handle_dist_slack()
     
@@ -927,7 +1007,8 @@ class LightSimBackend(Backend):
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
                            "_my_kwargs",
-                           "_turned_off_pv", "_dist_slack_non_renew"
+                           "_turned_off_pv", "_dist_slack_non_renew",
+                           "_loader_method", "_loader_kwargs"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):

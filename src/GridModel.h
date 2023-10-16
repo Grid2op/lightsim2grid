@@ -267,7 +267,8 @@ class GridModel : public DataGeneric
         const DataLoad & get_storages() const {return storages_;}
         const DataSGen & get_static_generators() const {return sgens_;}
         const DataShunt & get_shunts() const {return shunts_;}
-
+        const RealVect & get_buses() const {return bus_vn_kv_;}
+        
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, topo_changed_); }

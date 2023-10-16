@@ -649,6 +649,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_shunts", &GridModel::get_shunts, DocGridModel::get_shunts.c_str())
         .def("get_storages", &GridModel::get_storages, DocGridModel::get_storages.c_str())
         .def("get_loads", &GridModel::get_loads, DocGridModel::get_loads.c_str())
+        .def("get_buses", &GridModel::get_buses, DocGridModel::_internal_do_not_use.c_str())
 
         // modify the grid
         .def("turnedoff_no_pv", &GridModel::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")
