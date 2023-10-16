@@ -269,3 +269,8 @@ test_issue_58.py
 test_issue_58_old.py
 lightsim2grid/gridmodel/pypowsybl.ipynb
 lightsim2grid/tests/test.mat
+output_test.txt
+req_test.txt
+test.txt
+test_output.txt
+test_pypower_fdpf.py

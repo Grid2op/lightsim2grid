@@ -814,6 +814,8 @@ class LightSimBackend(Backend):
             self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._grid.get_gen_res()
             if self.__has_storage:
                 self.storage_p[:], self.storage_q[:], self.storage_v[:] = self._grid.get_storages_res()
+            self.storage_v[self.storage_v == -1.] = 0.  # voltage is 0. for disconnected elements in grid2op
+            
             self.next_prod_p[:] = self.prod_p
 
             if np.any(~np.isfinite(self.load_v)) or np.any(self.load_v <= 0.):
@@ -825,7 +827,7 @@ class LightSimBackend(Backend):
                 disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
                 gen_disco = np.where(disco)[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
-                raise DivergingPowerFlow(f"At least one generator is disconnected (check loads {gen_disco})")
+                raise DivergingPowerFlow(f"At least one generator is disconnected (check gen {gen_disco})")
             # TODO storage case of divergence !
 
             if self.shunts_data_available:
@@ -833,6 +835,8 @@ class LightSimBackend(Backend):
             
             self._fill_theta()
 
+            if (self.line_or_theta >= 1e6).any() or (self.line_ex_theta >= 1e6).any():
+                raise DivergingPowerFlow(f"Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_topo_changed()
             self._timer_postproc += time.perf_counter() - beg_postroc
@@ -1039,6 +1043,7 @@ class LightSimBackend(Backend):
         res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
         res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
         self.sh_bus[:] = res_bus
+        self.sh_v[self.sh_v == -1.] = 0.  # in grid2op disco element have voltage of 0. and -1.
 
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1

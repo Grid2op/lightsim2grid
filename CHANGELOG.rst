@@ -19,6 +19,13 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+[0.7.6] 2023-xx-yy
+--------------------
+- [FIXED] now voltage is properly set to 0. when shunts are disconnected
+- [FIXED] now voltage is properly set to 0. when storage units are disconnected
+- [FIXED] a bug where non connected grid were not spotted in DC
+- [IMPROVED] now making the new grid2op `create_test_suite` 
+
 [0.7.5] 2023-10-05
 --------------------
 - [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
