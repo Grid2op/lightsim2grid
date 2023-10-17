@@ -647,45 +647,45 @@ class LightSimBackend(Backend):
                 self._big_topo_to_obj[pos_big_topo] = (l_id, nm_)
 
         # number of object per bus, to activate, deactivate them
-        self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int)
+        self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int).reshape(-1)
 
-        self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
+        self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int).reshape(-1)
         if self.shunts_data_available:
             self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
-            self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN)
-            self.sh_q = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN)
-            self.sh_v = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN)
-            self.sh_bus = np.full(cls.n_shunt, dtype=dt_int, fill_value=-1)
+            self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.sh_q = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.sh_v = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.sh_bus = np.full(cls.n_shunt, dtype=dt_int, fill_value=-1).reshape(-1)
 
-        self.p_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.q_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.v_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.a_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.p_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.q_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.v_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.a_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
+        self.p_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.q_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.v_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.a_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.p_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.q_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.v_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.a_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
-        self.load_p = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
-        self.load_q = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
-        self.load_v = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
+        self.load_p = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.load_q = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.load_v = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
-        self.prod_p = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
-        self.prod_q = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
-        self.prod_v = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.prod_p = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.prod_q = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.prod_v = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
         
-        self.line_or_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.line_ex_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN)
-        self.load_theta = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN)
-        self.gen_theta = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN)
+        self.line_or_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.line_ex_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.load_theta = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.gen_theta = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
-            self.storage_p = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
-            self.storage_q = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
-            self.storage_v = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
-            self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN)
+            self.storage_p = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.storage_q = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.storage_v = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
         self._count_object_per_bus()
         self._grid.tell_topo_changed()
