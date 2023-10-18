@@ -12,7 +12,17 @@ import os
 from lightsim2grid import LightSimBackend
 import grid2op
 
+try:
+    from grid2op._create_test_suite import create_test_suite
+    CAN_DO_TEST_SUITE = True
+except ImportError as exc_:
+    CAN_DO_TEST_SUITE = False
 
+
+def _aux_get_loader_kwargs():
+    return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 6}
+    
+    
 class BackendTester(unittest.TestCase):
     """issue is still not replicated and these tests pass"""
     def setUp(self) -> None:
@@ -27,12 +37,9 @@ class BackendTester(unittest.TestCase):
         backend.load_redispacthing_data(self.path)
         backend.assert_grid_correct()  
     
-    def _aux_get_loader_kwargs(self):
-        return {"use_buses_for_sub": True, "double_bus_per_sub": True}
-    
     def test_load_grid(self):
         backend = LightSimBackend(loader_method="pypowsybl",
-                                  loader_kwargs=self._aux_get_loader_kwargs())
+                                  loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         cls = type(backend)
         assert cls.n_line == 20, f"wrong number of line {cls.n_line} vs 20"
@@ -49,7 +56,7 @@ class BackendTester(unittest.TestCase):
         assert backend.nb_bus_total == 28
         
     def test_runpf(self):
-        backend = LightSimBackend(loader_method="pypowsybl", loader_kwargs=self._aux_get_loader_kwargs())
+        backend = LightSimBackend(loader_method="pypowsybl", loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         # AC powerflow
         conv, exc_ = backend.runpf()
@@ -57,7 +64,46 @@ class BackendTester(unittest.TestCase):
         # DC powerflow
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
-                
+
+if CAN_DO_TEST_SUITE:
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    path_case_14_storage_iidm = os.path.join(dir_path, "case_14_storage_iidm")
+    from grid2op.tests.aaa_test_backend_interface import AAATestBackendAPI
+    
+    class TestBackendAPI_PyPoBk(AAATestBackendAPI, unittest.TestCase):
+        def get_path(self):
+            return path_case_14_storage_iidm
+        
+        def get_casefile(self):
+            return "grid.xiidm"
+        
+        def make_backend(self, detailed_infos_for_cascading_failures=False):
+            return  LightSimBackend(loader_method="pypowsybl",
+                                    loader_kwargs=_aux_get_loader_kwargs(),
+                                    detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+                            
+    # # add test of grid2op for the backend based on pypowsybl
+    # def this_make_backend(self, detailed_infos_for_cascading_failures=False):
+    #     return LightSimBackend(
+    #             loader_method="pypowsybl",
+    #             loader_kwargs=_aux_get_loader_kwargs(),
+    #             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures
+    #         )
+    # add_name_cls = "test_LightSimBackend_pypowsybl"
+
+    # def get_path_test_api(self):
+    #     return path
+    
+    # def get_casefile(self):
+    #     return "grid.xiidm"
+    
+    # res = create_test_suite(make_backend_fun=this_make_backend,
+    #                         add_name_cls=add_name_cls,
+    #                         add_to_module=__name__,
+    #                         extended_test=False,  # for now keep `extended_test=False` until all problems are solved
+    #                         get_paths={"AAATestBackendAPI": get_path_test_api},
+    #                         get_casefiles={"AAATestBackendAPI": get_casefile}
+    #                         )         
 # TODO env tester
 if __name__ == "__main__":
     unittest.main()

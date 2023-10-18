@@ -11,33 +11,36 @@ import pypowsybl as pypo
 from lightsim2grid_cpp import GridModel
 
 
-def init(net : pypo.network, gen_slack_id: int = None):
+def init(net : pypo.network,
+         gen_slack_id: int = None,
+         sn_mva = 100.,
+         f_hz = 50.):
     model = GridModel()
     # for substation
     # network.get_voltage_levels()["substation_id"]
     # network.get_substations()
     # network.get_busbar_sections()
     
-    
-    # initialize and use converters
-    sn_mva_ = 100.  # TODO read from net
-    f_hz = 50.   # TODO read from net
-    
     # assign unique id to the buses
-    bus_df = net.get_buses().copy()
+    bus_df = net.get_buses().sort_index().copy()
     bus_df["bus_id"] = np.arange(bus_df.shape[0])
-    model.set_sn_mva(sn_mva_)
+    model.set_sn_mva(sn_mva)
     model.set_init_vm_pu(1.06)
     model.init_bus(net.get_voltage_levels().loc[bus_df["voltage_level_id"].values]["nominal_v"].values,
                    0, 0  # unused
                    )
         
     # do the generators
-    df_gen = net.get_generators()
+    df_gen = net.get_generators().sort_index()
+    min_q = df_gen["min_q"].values.astype(np.float32)
+    max_q = df_gen["min_q"].values.astype(np.float32)
+    # to handle encoding in 32 bits and overflow when "splitting" the Q values among generators
+    min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min / 2. + 1.
+    max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max / 2. - 1.
     model.init_generators(df_gen["target_p"].values,
                           df_gen["target_v"].values / net.get_voltage_levels().loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
-                          df_gen["min_q"].values,
-                          df_gen["max_q"].values,
+                          min_q,
+                          max_q,
                           1 * bus_df.loc[df_gen["bus_id"].values]["bus_id"].values
                           )
     # TODO dist slack
@@ -47,14 +50,14 @@ def init(net : pypo.network, gen_slack_id: int = None):
         model.add_gen_slackbus(gen_slack_id, 1.)
     
     # for loads
-    df_load = net.get_loads()
+    df_load = net.get_loads().sort_index()
     model.init_loads(df_load["p0"].values,
                      df_load["q0"].values,
                      1 * bus_df.loc[df_load["bus_id"].values]["bus_id"].values
                      )
     
     # for lines
-    df_line = net.get_lines()
+    df_line = net.get_lines().sort_index()
     # TODO add g1 / b1 and g2 / b2 in lightsim2grid
     # line_h = (1j*df_line["g1"].values + df_line["b1"].values + 1j*df_line["g2"].values + df_line["b2"].values)
     # per unit
@@ -62,7 +65,7 @@ def init(net : pypo.network, gen_slack_id: int = None):
     branch_to_kv = net.get_voltage_levels().loc[df_line["voltage_level2_id"].values]["nominal_v"].values
     
     # only valid for lines with same voltages at both side...
-    # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva_
+    # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva
     # line_r = df_line["r"].values / branch_from_pu
     # line_x = df_line["x"].values / branch_from_pu  
     # line_h_or = (1j*df_line["g1"].values + df_line["b1"].values) * branch_from_pu
@@ -73,13 +76,13 @@ def init(net : pypo.network, gen_slack_id: int = None):
     # for right formula
     v1 = branch_from_kv
     v2 = branch_to_kv
-    line_r = sn_mva_ *  df_line["r"].values / v1 / v2
-    line_x = sn_mva_ *  df_line["x"].values / v1 / v2
+    line_r = sn_mva *  df_line["r"].values / v1 / v2
+    line_x = sn_mva *  df_line["x"].values / v1 / v2
     tmp_ = np.reciprocal(df_line["r"].values + 1j*df_line["x"].values)
-    b1 = df_line["b1"].values * v1*v1/sn_mva_ + (v1-v2)*tmp_.imag*v1/sn_mva_
-    b2 = df_line["b2"].values * v2*v2/sn_mva_ + (v2-v1)*tmp_.imag*v2/sn_mva_
-    g1 = df_line["g1"].values * v1*v1/sn_mva_ + (v1-v2)*tmp_.real*v1/sn_mva_
-    g2 = df_line["g2"].values * v2*v2/sn_mva_ + (v2-v1)*tmp_.real*v2/sn_mva_
+    b1 = df_line["b1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.imag*v1/sn_mva
+    b2 = df_line["b2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.imag*v2/sn_mva
+    g1 = df_line["g1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.real*v1/sn_mva
+    g2 = df_line["g2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.real*v2/sn_mva
     line_h_or = (b1 + 1j * g1)
     line_h_ex = (b2 + 1j * g2)
     model.init_powerlines_full(line_r,
@@ -91,7 +94,7 @@ def init(net : pypo.network, gen_slack_id: int = None):
                               )
             
     # for trafo
-    df_trafo = net.get_2_windings_transformers()
+    df_trafo = net.get_2_windings_transformers().sort_index()
     # TODO net.get_ratio_tap_changers()
     # TODO net.get_phase_tap_changers()
     shift_ = np.zeros(df_trafo.shape[0])
@@ -101,7 +104,7 @@ def init(net : pypo.network, gen_slack_id: int = None):
     # per unit
     trafo_from_kv = net.get_voltage_levels().loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
     trafo_to_kv = net.get_voltage_levels().loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
-    trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva_
+    trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva
     # tap
     tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
     has_tap = tap_step_pct != 0.
@@ -118,7 +121,7 @@ def init(net : pypo.network, gen_slack_id: int = None):
                      1 * bus_df.loc[df_trafo["bus2_id"].values]["bus_id"].values)    
     
     # for shunt
-    df_shunt = net.get_shunt_compensators()
+    df_shunt = net.get_shunt_compensators().sort_index()
     shunt_kv = net.get_voltage_levels().loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
     model.init_shunt(-df_shunt["g"].values * shunt_kv**2,
                      -df_shunt["b"].values * shunt_kv**2,
@@ -126,7 +129,7 @@ def init(net : pypo.network, gen_slack_id: int = None):
                     )
     
     # for hvdc (TODO not tested yet)
-    df_dc = net.get_hvdc_lines()
+    df_dc = net.get_hvdc_lines().sort_index()
     df_sations = net.get_vsc_converter_stations()
     bus_from_id = df_sations.loc[df_dc["converter_station1_id"].values]["bus_id"].values
     bus_to_id = df_sations.loc[df_dc["converter_station2_id"].values]["bus_id"].values
@@ -146,7 +149,7 @@ def init(net : pypo.network, gen_slack_id: int = None):
                        )
     
     # storage units  (TODO not tested yet)
-    df_batt = net.get_batteries()
+    df_batt = net.get_batteries().sort_index()
     model.init_storages(df_batt["target_p"].values,
                         df_batt["target_q"].values,
                         1 * bus_df.loc[df_batt["bus_id"].values]["bus_id"].values

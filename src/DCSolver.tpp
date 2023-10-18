@@ -112,8 +112,9 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         return false;
     }
 
-    if(!Va_dc_without_slack.array().allFinite()){
+    if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
         // for convergence, all values should be finite
+        // and it's not realistic if some Va are too high
         err_ = ErrorType::SolverSolve;
         V = CplxVect();
         V_ = CplxVect();

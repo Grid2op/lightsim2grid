@@ -412,9 +412,12 @@ class LightSimBackend(Backend):
         loader_kwargs = {}
         if self._loader_kwargs is not None:
             loader_kwargs = self._loader_kwargs
-            
+        
         full_path = self.make_complete_path(path, filename)
         grid_tmp = pypow_net.load(full_path)
+        gen_slack_id = None
+        if "gen_slack_id" in loader_kwargs:
+            gen_slack_id = int(loader_kwargs["gen_slack_id"])
         self._grid = init_pypow(grid_tmp, gen_slack_id=None)  # TODO gen_slack_id !     
         self._aux_setup_right_after_grid_init()   
         
@@ -481,6 +484,8 @@ class LightSimBackend(Backend):
         # and now things needed by the backend (legacy)
         self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
         self._aux_finish_setup_after_reading()
+        self.prod_pu_to_kv = 1.0 * self._grid.get_buses()[[el.bus_id for el in self._grid.get_generators()]]
+        self.prod_pu_to_kv = self.prod_pu_to_kv.astype(dt_float) 
     
     def _aux_setup_right_after_grid_init(self):
         self._handle_turnedoff_pv()
