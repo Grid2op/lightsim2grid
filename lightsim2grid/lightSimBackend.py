@@ -465,7 +465,7 @@ class LightSimBackend(Backend):
         
         self.__nb_powerline = len(self._grid.get_lines())
         self.__nb_bus_before = len(self._grid.get_buses())
-        self.shunts_data_available = True
+        type(self).shunts_data_available = True
         
         # init this
         self.prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)
@@ -593,18 +593,16 @@ class LightSimBackend(Backend):
                                              tmp.reshape(-1, 1)), axis=-1)
 
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
-        
-        self._compute_pos_big_topo()
-        
         self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         self.n_shunt = self.init_pp_backend.n_shunt
         self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
         self.name_shunt = self.init_pp_backend.name_shunt
+        
+        self._compute_pos_big_topo()
         if hasattr(self.init_pp_backend, "_sh_vnkv"):
             # attribute has been added in grid2op ~1.3 or 1.4
             self._sh_vnkv = self.init_pp_backend._sh_vnkv
-        self.shunts_data_available = self.init_pp_backend.shunts_data_available
         
         self._aux_finish_setup_after_reading()
 
@@ -655,7 +653,8 @@ class LightSimBackend(Backend):
         self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int).reshape(-1)
 
         self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int).reshape(-1)
-        if self.shunts_data_available:
+        
+        if type(self).shunts_data_available:
             self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
             self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
@@ -760,7 +759,7 @@ class LightSimBackend(Backend):
         arr_ = self.line_ex_to_subid[is_connected] + self.__nb_bus_before * (arr_[is_connected] -1)
         self.nb_obj_per_bus[arr_] += 1
 
-        if self.shunts_data_available:
+        if type(self).shunts_data_available:
             arr_ = self.shunt_topo_vect
             is_connected = arr_ > 0
             arr_ = self.shunt_to_subid[is_connected] + self.__nb_bus_before * (arr_[is_connected] - 1)
@@ -800,7 +799,7 @@ class LightSimBackend(Backend):
                                          backendAction.storage_power.values)
 
         # handle shunts
-        if self.shunts_data_available:
+        if type(self).shunts_data_available:
             shunt_p, shunt_q, shunt_bus = backendAction.shunt_p, backendAction.shunt_q, backendAction.shunt_bus
             # shunt topology
             # (need to be done before to avoid error like "impossible to set reactive value of a disconnected shunt")
@@ -868,7 +867,7 @@ class LightSimBackend(Backend):
                 self.comp_time += self._grid.get_dc_computation_time()
             else:
                 self.comp_time += self._grid.get_computation_time()
-                
+                   
             self.V[:] = V
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
@@ -915,7 +914,7 @@ class LightSimBackend(Backend):
                 raise DivergingPowerFlow(f"At least one generator is disconnected (check gen {gen_disco})")
             # TODO storage case of divergence !
 
-            if self.shunts_data_available:
+            if type(self).shunts_data_available:
                 self._set_shunt_info()
             
             self._fill_theta()
@@ -963,7 +962,7 @@ class LightSimBackend(Backend):
         self.load_theta[:] = np.NaN
         self.gen_theta[:] = np.NaN
 
-        if self.shunts_data_available:
+        if type(self).shunts_data_available:
             self.sh_p[:] = np.NaN
             self.sh_q[:] = np.NaN
             self.sh_v[:] = np.NaN
@@ -1060,7 +1059,7 @@ class LightSimBackend(Backend):
                     ] + type(self)._li_attr_disp
 
         for attr_nm in cls_attr:
-            if hasattr(self, attr_nm):
+            if hasattr(self, attr_nm) and not hasattr(type(self), attr_nm):
                 # this test is needed for backward compatibility with other grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
         ###############
@@ -1124,7 +1123,7 @@ class LightSimBackend(Backend):
 
     def _set_shunt_info(self):
         self.sh_p[:], self.sh_q[:], self.sh_v[:]  = self._grid.get_shunts_res()
-        shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(self.n_shunt)], dtype=dt_int)
+        shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(type(self).n_shunt)], dtype=dt_int)
         res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)  # by default all shunts are on bus one
         res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
         res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
