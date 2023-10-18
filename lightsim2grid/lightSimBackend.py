@@ -35,6 +35,9 @@ class LightSimBackend(Backend):
     This is a specialization of the grid2op Backend class to use the lightsim2grid solver,
     coded in c++, aiming at speeding up the computations.
     """
+    
+    shunts_data_available = True
+    
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
                  can_be_copied: bool=True,
