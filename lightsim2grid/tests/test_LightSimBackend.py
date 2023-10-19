@@ -19,7 +19,33 @@ from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 from grid2op.Space import GridObjects  # lazy import
 __has_storage = hasattr(GridObjects, "n_storage")
 
-from grid2op.tests.helper_path_test import HelperTests
+try:
+    # new way of doing, does not need to inherit from HelperTests but from unittest.TestCase
+    from grid2op._create_test_suite import create_test_suite
+    from grid2op.tests.helper_path_test import HelperTests as DEPRECATEDHelper
+    
+    class _Garbage:
+        def setUp(self):
+            pass
+        
+    class _SuperGarbage(DEPRECATEDHelper, _Garbage):
+        pass
+    
+    _garbage = _SuperGarbage()
+    _garbage.setUp()
+    
+    class HelperTests(unittest.TestCase):
+        def setUp(self) -> None:
+            self.tol_one = _garbage.tol_one
+            self.tolvect = _garbage.tolvect
+            return super().setUp()
+        
+        def tearDown(self) -> None:
+            return super().tearDown()
+    
+except ImportError as exc_:
+    # old way of doing, need to inherit from that
+    from grid2op.tests.helper_path_test import HelperTests
 from grid2op.tests.BaseBackendTest import BaseTestNames, BaseTestLoadingCase, BaseTestLoadingBackendFunc
 from grid2op.tests.BaseBackendTest import BaseTestTopoAction, BaseTestEnvPerformsCorrectCascadingFailures
 from grid2op.tests.BaseBackendTest import BaseTestChangeBusAffectRightBus, BaseTestShuntAction
@@ -36,6 +62,7 @@ PATH_DATA_TEST = PATH_DATA_TEST_PP
 from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
 from grid2op.Runner import Runner
+
 
 class TestNames(HelperTests, BaseTestNames):
     def make_backend(self, detailed_infos_for_cascading_failures=False):

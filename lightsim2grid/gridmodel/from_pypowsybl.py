@@ -6,14 +6,19 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import copy
 import numpy as np
 import pypowsybl as pypo
+# import pypowsybl.loadflow as lf
+
 from lightsim2grid_cpp import GridModel
 
 
 def init(net : pypo.network,
          gen_slack_id: int = None,
+         slack_bus_id: int = None,
          sn_mva = 100.,
+         sort_index=True,
          f_hz = 50.):
     model = GridModel()
     # for substation
@@ -21,48 +26,74 @@ def init(net : pypo.network,
     # network.get_substations()
     # network.get_busbar_sections()
     
+    if gen_slack_id is not None and slack_bus_id is not None:
+        raise RuntimeError("Impossible to intialize a grid with both gen_slack_id and slack_bus_id")
+    
     # assign unique id to the buses
-    bus_df = net.get_buses().sort_index().copy()
+    bus_df_orig = net.get_buses()
+    if sort_index:
+        bus_df = bus_df_orig.sort_index()
+    else:
+        bus_df = bus_df_orig
     bus_df["bus_id"] = np.arange(bus_df.shape[0])
+    bus_df_orig["bus_id"] = bus_df.loc[bus_df_orig.index]["bus_id"]
+    model._ls_to_orig = 1 * bus_df_orig["bus_id"].values
+    voltage_levels = net.get_voltage_levels()
     model.set_sn_mva(sn_mva)
     model.set_init_vm_pu(1.06)
-    model.init_bus(net.get_voltage_levels().loc[bus_df["voltage_level_id"].values]["nominal_v"].values,
+    model.init_bus(voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values,
                    0, 0  # unused
                    )
         
     # do the generators
-    df_gen = net.get_generators().sort_index()
+    if sort_index:
+        df_gen = net.get_generators().sort_index()
+    else:
+        df_gen = net.get_generators()
+    # to handle encoding in 32 bits and overflow when "splitting" the Q values among 
     min_q = df_gen["min_q"].values.astype(np.float32)
-    max_q = df_gen["min_q"].values.astype(np.float32)
-    # to handle encoding in 32 bits and overflow when "splitting" the Q values among generators
+    max_q = df_gen["max_q"].values.astype(np.float32)
     min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min / 2. + 1.
     max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max / 2. - 1.
     model.init_generators(df_gen["target_p"].values,
-                          df_gen["target_v"].values / net.get_voltage_levels().loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
+                          df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
                           min_q,
                           max_q,
                           1 * bus_df.loc[df_gen["bus_id"].values]["bus_id"].values
                           )
     # TODO dist slack
-    if gen_slack_id is None:
-        model.add_gen_slackbus(0, 1.)
-    else:
+    if gen_slack_id is not None:
         model.add_gen_slackbus(gen_slack_id, 1.)
-    
+    elif slack_bus_id is not None:
+        gen_bus = np.array([el.bus_id for el in model.get_generators()])
+        gen_is_conn_slack = gen_bus == model._ls_to_orig[slack_bus_id]
+        nb_conn = gen_is_conn_slack.sum()
+        if nb_conn == 0:
+            raise RuntimeError(f"There is no generator connected to bus {slack_bus_id}. It cannot be the slack")
+        for gen_id, is_slack in enumerate(gen_is_conn_slack):
+            if is_slack:
+                model.add_gen_slackbus(gen_id, 1. / nb_conn)   
+    else:
+        model.add_gen_slackbus(0, 1.)
+        
     # for loads
-    df_load = net.get_loads().sort_index()
+    if sort_index:
+        df_load = net.get_loads().sort_index()
+    else:
+        df_load = net.get_loads()
     model.init_loads(df_load["p0"].values,
                      df_load["q0"].values,
                      1 * bus_df.loc[df_load["bus_id"].values]["bus_id"].values
                      )
     
     # for lines
-    df_line = net.get_lines().sort_index()
-    # TODO add g1 / b1 and g2 / b2 in lightsim2grid
-    # line_h = (1j*df_line["g1"].values + df_line["b1"].values + 1j*df_line["g2"].values + df_line["b2"].values)
+    if sort_index:
+        df_line = net.get_lines().sort_index()
+    else:
+        df_line = net.get_lines()
     # per unit
-    branch_from_kv = net.get_voltage_levels().loc[df_line["voltage_level1_id"].values]["nominal_v"].values
-    branch_to_kv = net.get_voltage_levels().loc[df_line["voltage_level2_id"].values]["nominal_v"].values
+    branch_from_kv = voltage_levels.loc[df_line["voltage_level1_id"].values]["nominal_v"].values
+    branch_to_kv = voltage_levels.loc[df_line["voltage_level2_id"].values]["nominal_v"].values
     
     # only valid for lines with same voltages at both side...
     # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva
@@ -94,7 +125,10 @@ def init(net : pypo.network,
                               )
             
     # for trafo
-    df_trafo = net.get_2_windings_transformers().sort_index()
+    if sort_index:
+        df_trafo = net.get_2_windings_transformers().sort_index()
+    else:
+        df_trafo = net.get_2_windings_transformers()
     # TODO net.get_ratio_tap_changers()
     # TODO net.get_phase_tap_changers()
     shift_ = np.zeros(df_trafo.shape[0])
@@ -102,8 +136,8 @@ def init(net : pypo.network,
     is_tap_hv_side = np.ones(df_trafo.shape[0], dtype=bool)  # TODO
     
     # per unit
-    trafo_from_kv = net.get_voltage_levels().loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
-    trafo_to_kv = net.get_voltage_levels().loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
+    trafo_from_kv = voltage_levels.loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
+    trafo_to_kv = voltage_levels.loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
     trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva
     # tap
     tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
@@ -121,16 +155,34 @@ def init(net : pypo.network,
                      1 * bus_df.loc[df_trafo["bus2_id"].values]["bus_id"].values)    
     
     # for shunt
-    df_shunt = net.get_shunt_compensators().sort_index()
-    shunt_kv = net.get_voltage_levels().loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
+    if sort_index:
+        df_shunt = net.get_shunt_compensators().sort_index()
+    else:
+        df_shunt = net.get_shunt_compensators()
+        
+    is_on = copy.deepcopy(df_shunt["connected"])
+    if (~is_on).any():
+        df_shunt["connected"] = True
+        net.update_shunt_compensators(df_shunt[["connected"]])
+        if sort_index:
+            df_shunt = net.get_shunt_compensators().sort_index()
+        else:
+            df_shunt = net.get_shunt_compensators()
+        df_shunt["connected"] = is_on
+        net.update_shunt_compensators(df_shunt[["connected"]])
+        
+    shunt_kv = voltage_levels.loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
     model.init_shunt(-df_shunt["g"].values * shunt_kv**2,
                      -df_shunt["b"].values * shunt_kv**2,
                      1 * bus_df.loc[df_shunt["bus_id"].values]["bus_id"].values
                     )
-    
+    for shunt_id, conn in enumerate(is_on):
+        if not conn:
+           model.deactivate_shunt(shunt_id) 
+           
     # for hvdc (TODO not tested yet)
     df_dc = net.get_hvdc_lines().sort_index()
-    df_sations = net.get_vsc_converter_stations()
+    df_sations = net.get_vsc_converter_stations().sort_index()
     bus_from_id = df_sations.loc[df_dc["converter_station1_id"].values]["bus_id"].values
     bus_to_id = df_sations.loc[df_dc["converter_station2_id"].values]["bus_id"].values
     loss_percent = np.zeros(df_dc.shape[0])  # TODO 
@@ -140,8 +192,8 @@ def init(net : pypo.network,
                        df_dc["target_p"].values,
                        loss_percent,
                        loss_mw,
-                       net.get_voltage_levels().loc[df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values]["nominal_v"].values,
-                       net.get_voltage_levels().loc[df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values]["nominal_v"].values,
+                       voltage_levels.loc[df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values]["nominal_v"].values,
+                       voltage_levels.loc[df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values]["nominal_v"].values,
                        df_sations.loc[df_dc["converter_station1_id"].values]["min_q"].values,
                        df_sations.loc[df_dc["converter_station1_id"].values]["max_q"].values,
                        df_sations.loc[df_dc["converter_station2_id"].values]["min_q"].values,
@@ -149,15 +201,20 @@ def init(net : pypo.network,
                        )
     
     # storage units  (TODO not tested yet)
-    df_batt = net.get_batteries().sort_index()
+    if sort_index:
+        df_batt = net.get_batteries().sort_index()
+    else:
+        df_batt = net.get_batteries()
     model.init_storages(df_batt["target_p"].values,
                         df_batt["target_q"].values,
                         1 * bus_df.loc[df_batt["bus_id"].values]["bus_id"].values
                         )
     
     # TODO
-    # sgen
+    # sgen => regular gen (from net.get_generators()) with voltage_regulator off TODO 
     
     # TODO checks
     # no 3windings trafo and other exotic stuff
+    if net.get_phase_tap_changers().shape[0] > 0:
+        raise RuntimeError("Impossible currently to init a grid with tap changers at the moment.")
     return model

@@ -81,7 +81,7 @@ def init(pp_net):
 
     tmp_bus_ind = np.argsort(pp_net.bus.index)
     if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
-        model._ls_to_pp = 1 * pp_net.bus.index.values.astype(int)
+        model._ls_to_orig = 1 * pp_net.bus.index.values.astype(int)
         pp_to_ls = {pp_bus: ls_bus for pp_bus, ls_bus in zip(pp_net.bus.index, tmp_bus_ind)}
     else:
         pp_to_ls = None

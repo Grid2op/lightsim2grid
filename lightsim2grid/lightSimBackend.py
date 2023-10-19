@@ -79,6 +79,8 @@ class LightSimBackend(Backend):
         self._loader_method = loader_method
         self._loader_kwargs = loader_kwargs
         
+        self.shunts_data_available = True  # needs to be self and not type(self) here
+        
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
         self.__nb_powerline = None
@@ -468,7 +470,6 @@ class LightSimBackend(Backend):
         
         self.__nb_powerline = len(self._grid.get_lines())
         self.__nb_bus_before = len(self._grid.get_buses())
-        type(self).shunts_data_available = True
         
         # init this
         self.prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)

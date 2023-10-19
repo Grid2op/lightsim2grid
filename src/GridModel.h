@@ -45,7 +45,7 @@
 class GridModel : public DataGeneric
 {
     public:  // can be modified python side
-        IntVect _ls_to_pp;  // for converter from bus in lightsim2grid index to bus in pandapower index
+        IntVect _ls_to_orig;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
 
     public:
         typedef std::tuple<

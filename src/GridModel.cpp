@@ -14,7 +14,7 @@ GridModel::GridModel(const GridModel & other)
 {
     reset(true, true, true);
 
-    _ls_to_pp = other._ls_to_pp;
+    _ls_to_orig = other._ls_to_orig;
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -80,7 +80,7 @@ GridModel::GridModel(const GridModel & other)
 GridModel::StateRes GridModel::get_state() const
 {
     std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
-    std::vector<int> ls_to_pp(_ls_to_pp.begin(), _ls_to_pp.end());
+    std::vector<int> ls_to_pp(_ls_to_orig.begin(), _ls_to_orig.end());
     int version_major = VERSION_MAJOR;
     int version_medium = VERSION_MEDIUM;
     int version_minor = VERSION_MINOR;
@@ -161,7 +161,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 
     // assign it to this instance
 
-    _ls_to_pp =IntVect::Map(&ls_to_pp_[0], ls_to_pp_.size());
+    _ls_to_orig =IntVect::Map(&ls_to_pp_[0], ls_to_pp_.size());
     // buses
     // 1. bus_vn_kv_
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
