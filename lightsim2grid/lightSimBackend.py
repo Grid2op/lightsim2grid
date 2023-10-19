@@ -820,8 +820,12 @@ class LightSimBackend(Backend):
             raise BackendError(f"{exc_}")
         
         if self.__has_storage:
-            self._grid.update_storages_p(backendAction.storage_power.changed,
-                                         backendAction.storage_power.values)
+            try:
+                self._grid.update_storages_p(backendAction.storage_power.changed,
+                                            backendAction.storage_power.values)
+            except RuntimeError as exc_:
+                # modification of power of disconnected storage has no effect in lightsim2grid
+                pass
 
         # handle shunts
         if type(self).shunts_data_available:

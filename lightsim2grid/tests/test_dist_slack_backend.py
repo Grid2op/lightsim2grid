@@ -98,7 +98,7 @@ class TestDistSlackBackend(unittest.TestCase):
         runner_ds = Runner(**self.env_ds.get_params_for_runner())
         res_ss = runner_ss.run(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True)
         res_ds = runner_ds.run(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True)
-        assert res_ss[0][3] == res_ds[0][3]  # same number of steps survived
+        assert res_ss[0][3] == res_ds[0][3], f"{res_ss[0][3]} vs {res_ds[0][3]}"  # same number of steps survived
         assert res_ss[0][2] != res_ds[0][2]  # not the same reward
         ep_ss = res_ss[0][-1]
         ep_ds = res_ds[0][-1]

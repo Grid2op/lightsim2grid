@@ -9,6 +9,7 @@
 import unittest
 import warnings
 from lightsim2grid import LightSimBackend
+from grid2op.Action import PlayableAction
 import grid2op
 
 class Issue66Tester(unittest.TestCase):
@@ -16,7 +17,8 @@ class Issue66Tester(unittest.TestCase):
     def setUp(self) -> None:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+            self.env = grid2op.make("educ_case14_storage", test=True, backend=LightSimBackend(),
+                                    action_class=PlayableAction)
         return super().setUp()
     
     def tearDown(self) -> None:
@@ -66,6 +68,20 @@ class Issue66Tester(unittest.TestCase):
         act = self.env.action_space({"set_bus": {"lines_ex_id": [(0, 1)]}})
         obs, reward, done, info = self.env.step(act)
         assert done
+        
+    def test_disco_storage(self):
+        """test i can disconnect a storage unit"""
+        obs = self.env.reset()
+        act = self.env.action_space({"set_bus": {"storages_id": [(0, -1)]}})
+        obs, reward, done, info = self.env.step(act)
+        assert not done
+        # should not raise any RuntimeError
+        
+        act = self.env.action_space({"storage_p": [(0, -1)]})
+        obs, reward, done, info = self.env.step(act)
+        assert not done
+        # should not raise any RuntimeError
+        
         
 if __name__ == "__main__":
     unittest.main()
