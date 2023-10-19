@@ -418,7 +418,28 @@ class LightSimBackend(Backend):
         if self._loader_kwargs is not None:
             loader_kwargs = self._loader_kwargs
         
-        full_path = self.make_complete_path(path, filename)
+        try:
+            full_path = self.make_complete_path(path, filename)
+        except AttributeError as exc_:
+            warnings.warn("Please upgrade your grid2op version")
+            import os
+            from grid2op.Exceptions import Grid2OpException
+            def make_complete_path(path, filename):
+                if path is None and filename is None:
+                    raise Grid2OpException(
+                        "You must provide at least one of path or file to load a powergrid."
+                    )
+                if path is None:
+                    full_path = filename
+                elif filename is None:
+                    full_path = path
+                else:
+                    full_path = os.path.join(path, filename)
+                if not os.path.exists(full_path):
+                    raise Grid2OpException('There is no powergrid at "{}"'.format(full_path))
+                return full_path
+            full_path = make_complete_path(path, filename)
+            
         grid_tmp = pypow_net.load(full_path)
         gen_slack_id = None
         if "gen_slack_id" in loader_kwargs:

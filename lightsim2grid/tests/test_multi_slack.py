@@ -77,7 +77,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
         # Ybus seen by pandapower
         pp.runpp(self.net, **self.get_pp_options())
         Ybus_pp_tmp = self.net["_ppc"]["internal"]["Ybus"]
-        id_bus_pp = self.net._pd2ppc_lookups["bus"][self.gridmodel._ls_to_pp]
+        id_bus_pp = self.net._pd2ppc_lookups["bus"][self.gridmodel._ls_to_orig]
         assert (id_bus_pp == np.arange(id_bus_pp.size)).all()  # assert bus are sorted correctly and in the same order
         # Ybus_pp = Ybus_pp_tmp[id_bus_pp, id_bus_pp]  # does not work in don't know why... anyway
         Ybus_pp = Ybus_pp_tmp
@@ -91,7 +91,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
     def test_Sbus(self):
         # Ybus seen by pandapower
         pp.runpp(self.net, **self.get_pp_options())
-        bus_lookup = self.net._pd2ppc_lookups["bus"]  #[self.gridmodel._ls_to_pp]
+        bus_lookup = self.net._pd2ppc_lookups["bus"]  #[self.gridmodel._ls_to_orig]
         Sbus_pp = self.net["_ppc"]["internal"]["Sbus"]
         *_, V0 = self._aux_get_init_pp_data()
         # Ybus from lightsim2grid

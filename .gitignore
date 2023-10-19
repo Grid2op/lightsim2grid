@@ -274,3 +274,4 @@ req_test.txt
 test.txt
 test_output.txt
 test_pypower_fdpf.py
+lightsim2grid/tests/_grid2op_for_test/
