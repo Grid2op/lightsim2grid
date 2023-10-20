@@ -19,8 +19,11 @@ except ImportError as exc_:
     CAN_DO_TEST_SUITE = False
 
 
-def _aux_get_loader_kwargs():
+def _aux_get_loader_kwargs_storage():
     return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 6}
+
+def _aux_get_loader_kwargs():
+    return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 5}
     
     
 class BackendTester(unittest.TestCase):
@@ -79,31 +82,39 @@ if CAN_DO_TEST_SUITE:
         
         def make_backend(self, detailed_infos_for_cascading_failures=False):
             return  LightSimBackend(loader_method="pypowsybl",
-                                    loader_kwargs=_aux_get_loader_kwargs(),
+                                    loader_kwargs=_aux_get_loader_kwargs_storage(),
                                     detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
                             
     # # add test of grid2op for the backend based on pypowsybl
     # def this_make_backend(self, detailed_infos_for_cascading_failures=False):
     #     return LightSimBackend(
     #             loader_method="pypowsybl",
-    #             loader_kwargs=_aux_get_loader_kwargs(),
+    #             loader_kwargs=_aux_get_loader_kwargs_storage(),
     #             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures
     #         )
     # add_name_cls = "test_LightSimBackend_pypowsybl"
 
-    # def get_path_test_api(self):
-    #     return path
-    
-    # def get_casefile(self):
-    #     return "grid.xiidm"
-    
-    # res = create_test_suite(make_backend_fun=this_make_backend,
-    #                         add_name_cls=add_name_cls,
-    #                         add_to_module=__name__,
-    #                         extended_test=False,  # for now keep `extended_test=False` until all problems are solved
-    #                         get_paths={"AAATestBackendAPI": get_path_test_api},
-    #                         get_casefiles={"AAATestBackendAPI": get_casefile}
-    #                         )         
+if CAN_DO_TEST_SUITE:
+    # requires grid2Op 1.9.6 at least
+    class EnvTester(unittest.TestCase):
+        def setUp(self) -> None:
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            path_case_14_storage_iidm = os.path.join(dir_path, "case_14_storage_iidm")
+            self.env = grid2op.make(path_case_14_storage_iidm,
+                                    backend=LightSimBackend(loader_method="pypowsybl",
+                                                            loader_kwargs=_aux_get_loader_kwargs_storage(),
+                                                            )
+                                    )
+            super().setUp()
+            
+        def tearDown(self) -> None:
+            self.env.close()
+            return super().tearDown()
+        
+        def test_can_make(self):
+            self.env.reset()
+            1 + 1
+        
 # TODO env tester
 if __name__ == "__main__":
     unittest.main()

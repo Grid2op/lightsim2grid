@@ -18,7 +18,7 @@
 #include "Eigen/SparseLU"
 
 /**
-class to handle the solver using newton-raphson method, using a "SparseLU" algorithm from Eigein
+class to handle the solver using newton-raphson method, using a "SparseLU" algorithm from Eigen
 and sparse matrices.
 
 As long as the admittance matrix of the sytem does not change, you can reuse the same solver.

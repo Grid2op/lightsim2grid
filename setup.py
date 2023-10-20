@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.7.5"
+__version__ = "0.7.6.dev0"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -386,6 +386,7 @@ setup(name='LightSim2Grid',
             'Programming Language :: Python :: 3.9',
             'Programming Language :: Python :: 3.10',
             'Programming Language :: Python :: 3.11',
+            'Programming Language :: Python :: 3.12',
             "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
             "Intended Audience :: Developers",
             "Intended Audience :: Education",

@@ -79,6 +79,13 @@ class LightSimBackend(Backend):
         self._loader_method = loader_method
         self._loader_kwargs = loader_kwargs
         
+        if loader_method == "pandapower":
+            self.supported_grid_format = ("json", )  # new in 1.9.6
+        elif loader_method == "pypowsybl":
+            self.supported_grid_format = ("xiidm", )  # new in 1.9.6
+        else:
+            raise BackendError(f"Uknown loader_metho : '{loader_method}'")
+            
         self.shunts_data_available = True  # needs to be self and not type(self) here
         
         self.nb_bus_total = None
@@ -444,7 +451,7 @@ class LightSimBackend(Backend):
         gen_slack_id = None
         if "gen_slack_id" in loader_kwargs:
             gen_slack_id = int(loader_kwargs["gen_slack_id"])
-        self._grid = init_pypow(grid_tmp, gen_slack_id=None)  # TODO gen_slack_id !     
+        self._grid = init_pypow(grid_tmp, gen_slack_id=None)  # TODO gen_slack_id, make things crash !     
         self._aux_setup_right_after_grid_init()   
         
         # mandatory for the backend
@@ -458,10 +465,10 @@ class LightSimBackend(Backend):
         from_sub = True
         
         if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
-                df = grid_tmp.get_buses()
-                from_sub = False
+            df = grid_tmp.get_buses()
+            from_sub = False
         self.n_sub = df.shape[0]
-        self.name_sub = ["sub_{}".format(i) for i, _ in df.iterrows()]
+        self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(df.iterrows())]
         
         if not from_sub:
             self.load_to_subid = np.array([el.bus_id for el in self._grid.get_loads()], dtype=dt_int)
@@ -510,7 +517,14 @@ class LightSimBackend(Backend):
         self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
         self._aux_finish_setup_after_reading()
         self.prod_pu_to_kv = 1.0 * self._grid.get_buses()[[el.bus_id for el in self._grid.get_generators()]]
-        self.prod_pu_to_kv = self.prod_pu_to_kv.astype(dt_float) 
+        self.prod_pu_to_kv = self.prod_pu_to_kv.astype(dt_float)
+        
+        # TODO
+        max_not_too_max = (np.finfo(dt_float).max * 0.5 - 1.)
+        self.thermal_limit_a = max_not_too_max * np.ones(self.n_line, dtype=dt_float)
+        bus_vn_kv = np.array(self._grid.get_buses())
+        shunt_bus_id = np.array([el.bus_id for el in self._grid.get_shunts()])
+        self._sh_vnkv = bus_vn_kv[shunt_bus_id]
     
     def _aux_setup_right_after_grid_init(self):
         self._handle_turnedoff_pv()
@@ -738,7 +752,7 @@ class LightSimBackend(Backend):
         try:
             # feature added in grid2op 1.4 or 1.5
             _init_action_to_set = self.get_action_to_set()
-        except TypeError:
+        except TypeError as exc_:
             _init_action_to_set = self._get_action_to_set_deprecated()
         self._init_action_to_set += _init_action_to_set
 
@@ -817,12 +831,12 @@ class LightSimBackend(Backend):
                                       backendAction.load_q.values)
         except RuntimeError as exc_:
             # see https://github.com/BDonnot/lightsim2grid/issues/66 (even though it's not a "bug" and has not been replicated)
-            raise BackendError(f"{exc_}")
+            raise BackendError(f"{exc_}") from exc_
         
         if self.__has_storage:
             try:
                 self._grid.update_storages_p(backendAction.storage_power.changed,
-                                            backendAction.storage_power.values)
+                                             backendAction.storage_power.values)
             except RuntimeError as exc_:
                 # modification of power of disconnected storage has no effect in lightsim2grid
                 pass
@@ -872,7 +886,6 @@ class LightSimBackend(Backend):
                 if (self.V is None) or (self.V.shape[0] == 0):
                     # create the vector V as it is not created
                     self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
-
                 if self.initdc:
                     self._grid.deactivate_result_computation()
                     # if I init with dc values, it should depends on previous state

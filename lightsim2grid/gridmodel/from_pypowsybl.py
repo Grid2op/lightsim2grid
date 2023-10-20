@@ -50,11 +50,12 @@ def init(net : pypo.network,
         df_gen = net.get_generators().sort_index()
     else:
         df_gen = net.get_generators()
+        
     # to handle encoding in 32 bits and overflow when "splitting" the Q values among 
     min_q = df_gen["min_q"].values.astype(np.float32)
     max_q = df_gen["max_q"].values.astype(np.float32)
-    min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min / 2. + 1.
-    max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max / 2. - 1.
+    min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min * 0.5 + 1.
+    max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max * 0.5 - 1.
     model.init_generators(df_gen["target_p"].values,
                           df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
                           min_q,
