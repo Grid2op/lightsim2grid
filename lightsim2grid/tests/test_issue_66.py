@@ -10,6 +10,7 @@ import unittest
 import warnings
 from lightsim2grid import LightSimBackend
 from grid2op.Action import PlayableAction
+from grid2op.Rules import AlwaysLegal
 import grid2op
 
 class Issue66Tester(unittest.TestCase):
@@ -18,7 +19,13 @@ class Issue66Tester(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("educ_case14_storage", test=True, backend=LightSimBackend(),
-                                    action_class=PlayableAction)
+                                    action_class=PlayableAction,
+                                    gamerules_class=AlwaysLegal)
+        param = self.env.parameters
+        param.NB_TIMESTEP_COOLDOWN_LINE = 0
+        param.NB_TIMESTEP_COOLDOWN_SUB = 0
+        self.env.change_parameters(param)
+        self.env.change_forecast_parameters(param)
         return super().setUp()
     
     def tearDown(self) -> None:
@@ -47,6 +54,7 @@ class Issue66Tester(unittest.TestCase):
         act = self.env.action_space({"set_bus": {"loads_id": [(9, 2)],
                                                  "lines_or_id": [(14, 2)]}})
         obs, reward, done, info = self.env.step(act)
+        assert len(info['exception']) == 0
         assert not done
         # should not raise any RuntimeError
         
@@ -61,10 +69,11 @@ class Issue66Tester(unittest.TestCase):
         act = self.env.action_space({"set_bus": {"generators_id": [(0, 2)],
                                                  "lines_ex_id": [(0, 2)]}})
         obs, reward, done, info = self.env.step(act)
+        assert len(info['exception']) == 0
         assert not done
         # should not raise any RuntimeError
         
-        # isolate the load
+        # isolate the generator
         act = self.env.action_space({"set_bus": {"lines_ex_id": [(0, 1)]}})
         obs, reward, done, info = self.env.step(act)
         assert done
@@ -74,11 +83,13 @@ class Issue66Tester(unittest.TestCase):
         obs = self.env.reset()
         act = self.env.action_space({"set_bus": {"storages_id": [(0, -1)]}})
         obs, reward, done, info = self.env.step(act)
+        assert len(info['exception']) == 0
         assert not done
         # should not raise any RuntimeError
         
-        act = self.env.action_space({"storage_p": [(0, -1)]})
+        act = self.env.action_space({"set_storage": [(0, -1)]})
         obs, reward, done, info = self.env.step(act)
+        assert len(info['exception']) == 0
         assert not done
         # should not raise any RuntimeError
         
