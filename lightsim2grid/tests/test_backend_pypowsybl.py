@@ -114,9 +114,9 @@ if CAN_DO_TEST_SUITE:
             return "grid.xiidm"
         
         def make_backend(self, detailed_infos_for_cascading_failures=False):
-            return  LightSimBackend(loader_method="pypowsybl",
-                                    loader_kwargs=_aux_get_loader_kwargs_storage(),
-                                    detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+            return LightSimBackend(loader_method="pypowsybl",
+                                   loader_kwargs=_aux_get_loader_kwargs_storage(),
+                                   detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
                             
     # # add test of grid2op for the backend based on pypowsybl
     # def this_make_backend(self, detailed_infos_for_cascading_failures=False):

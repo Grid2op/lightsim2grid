@@ -14,8 +14,6 @@ GridModel::GridModel(const GridModel & other)
 {
     reset(true, true, true);
 
-    set_ls_to_orig(other._ls_to_orig);  // set also orig_to_ls
-
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
 
@@ -23,6 +21,7 @@ GridModel::GridModel(const GridModel & other)
     // 1. bus
     bus_vn_kv_ = other.bus_vn_kv_;
     bus_status_ = other.bus_status_;
+    set_ls_to_orig(other._ls_to_orig);  // set also orig_to_ls
 
     // 2. powerline
     powerlines_ = other.powerlines_;

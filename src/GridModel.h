@@ -49,7 +49,7 @@ class GridModel : public DataGeneric
                 int, // version major
                 int, // version medium
                 int, // version minor
-                std::vector<int>, // ls_to_pp
+                std::vector<int>, // ls_to_orig
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
                 std::vector<real_type>,  // bus_vn_kv

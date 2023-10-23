@@ -513,14 +513,13 @@ class LightSimBackend(Backend):
             for i in range(self.__nb_bus_before):
                 self._grid.deactivate_bus(i + self.__nb_bus_before)
             new_orig_to_ls = np.concatenate((orig_to_ls,
-                                             np.zeros(orig_to_ls.shape[0], dtype=orig_to_ls.dtype) + self.__nb_bus_before)
+                                             orig_to_ls + self.__nb_bus_before)
                                             )
             self._grid._orig_to_ls = new_orig_to_ls
         self.nb_bus_total = len(self._grid.get_buses())
         
         # and now things needed by the backend (legacy)
         self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
-        self._aux_finish_setup_after_reading()
         self.prod_pu_to_kv = 1.0 * self._grid.get_buses()[[el.bus_id for el in self._grid.get_generators()]]
         self.prod_pu_to_kv = self.prod_pu_to_kv.astype(dt_float)
         
@@ -530,6 +529,7 @@ class LightSimBackend(Backend):
         bus_vn_kv = np.array(self._grid.get_buses())
         shunt_bus_id = np.array([el.bus_id for el in self._grid.get_shunts()])
         self._sh_vnkv = bus_vn_kv[shunt_bus_id]
+        self._aux_finish_setup_after_reading()
     
     def _aux_setup_right_after_grid_init(self):
         self._handle_turnedoff_pv()

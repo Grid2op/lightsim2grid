@@ -17,17 +17,11 @@ except ImportError as exc_:
 from lightsim2grid import LightSimBackend
 
 if CAN_PERFORM_THESE:
-    def this_make_backend(self, detailed_infos_for_cascading_failures=False):
-        return LightSimBackend(
-                detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures
-            )
-    add_name_cls = "test_LightSimBackend"
-
-    res = create_test_suite(make_backend_fun=this_make_backend,
-                            add_name_cls=add_name_cls,
-                            add_to_module=__name__,
-                            extended_test=False,  # for now keep `extended_test=False` until all problems are solved
-                            )
+    from grid2op.tests.aaa_test_backend_interface import AAATestBackendAPI
+    class TestBackendAPI_LSTester(AAATestBackendAPI, unittest.TestCase):        
+        def make_backend(self, detailed_infos_for_cascading_failures=False):
+            return  LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        
 else:
     print("Have you installed grid2op in dev / editable mode ? We cannot make the `create_test_suite` :-(")
     
