@@ -26,14 +26,12 @@ void DataGeneric::_get_amps(RealVect & a, const RealVect & p, const RealVect & q
     }
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
-void DataGeneric::_reactivate(int el_id, std::vector<bool> & status, bool & need_reset){
+void DataGeneric::_reactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
-    if(!val) need_reset = true;  // I need to recompute the grid, if a status has changed
     status.at(el_id) = true;  //TODO why it's needed to do that again
 }
-void DataGeneric::_deactivate(int el_id, std::vector<bool> & status, bool & need_reset){
+void DataGeneric::_deactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
-    if(val) need_reset = true;  // I need to recompute the grid, if a status has changed
     status.at(el_id) = false;  //TODO why it's needed to do that again
 }
 void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, bool & need_reset, int nb_bus){

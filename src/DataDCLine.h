@@ -156,20 +156,20 @@ class DataDCLine : public DataGeneric
               );
 
     // accessor / modifiers
-    void deactivate(int dcline_id, bool & need_reset) {
-        _deactivate(dcline_id, status_, need_reset);
-        from_gen_.deactivate(dcline_id, need_reset);
-        to_gen_.deactivate(dcline_id, need_reset);
+    void deactivate(int dcline_id, SolverControl & solver_control) {
+        _deactivate(dcline_id, status_);
+        from_gen_.deactivate(dcline_id, solver_control);
+        to_gen_.deactivate(dcline_id, solver_control);
         }
-    void reactivate(int dcline_id, bool & need_reset) {
-        _reactivate(dcline_id, status_, need_reset);
-        from_gen_.reactivate(dcline_id, need_reset);
-        to_gen_.reactivate(dcline_id, need_reset);
+    void reactivate(int dcline_id, SolverControl & solver_control) {
+        _reactivate(dcline_id, status_);
+        from_gen_.reactivate(dcline_id, solver_control);
+        to_gen_.reactivate(dcline_id, solver_control);
         }
-    void change_bus_or(int dcline_id, int new_bus_id, bool & need_reset, int nb_bus) {
-        from_gen_.change_bus(dcline_id, new_bus_id, need_reset, nb_bus);}
-    void change_bus_ex(int dcline_id, int new_bus_id, bool & need_reset, int nb_bus) {
-        to_gen_.change_bus(dcline_id, new_bus_id, need_reset, nb_bus);}
+    void change_bus_or(int dcline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        from_gen_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);}
+    void change_bus_ex(int dcline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        to_gen_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);}
     int get_bus_or(int dcline_id) {return from_gen_.get_bus(dcline_id);}
     int get_bus_ex(int dcline_id) {return to_gen_.get_bus(dcline_id);}
     real_type get_qmin_or(int dcline_id) {return from_gen_.get_qmin(dcline_id);}
@@ -185,16 +185,16 @@ class DataDCLine : public DataGeneric
                               ;
         return new_p_ext;
     }
-    void change_p(int dcline_id, real_type new_p, bool & need_reset){
-        from_gen_.change_p(dcline_id, -1.0 * new_p, need_reset);
+    void change_p(int dcline_id, real_type new_p, SolverControl & sovler_control){
+        from_gen_.change_p(dcline_id, -1.0 * new_p, sovler_control);
 
-        to_gen_.change_p(dcline_id, -1.0 * get_to_mw(dcline_id, new_p), need_reset);
+        to_gen_.change_p(dcline_id, -1.0 * get_to_mw(dcline_id, new_p), sovler_control);
     }
-    void change_v_or(int dcline_id, real_type new_v_pu, bool & need_reset){
-        from_gen_.change_v(dcline_id, new_v_pu, need_reset);
+    void change_v_or(int dcline_id, real_type new_v_pu, SolverControl & sovler_control){
+        from_gen_.change_v(dcline_id, new_v_pu, sovler_control);
     }
-    void change_v_ex(int dcline_id, real_type new_v_pu, bool & need_reset){
-        to_gen_.change_v(dcline_id, new_v_pu, need_reset);
+    void change_v_ex(int dcline_id, real_type new_v_pu, SolverControl & sovler_control){
+        to_gen_.change_v(dcline_id, new_v_pu, sovler_control);
     }
 
     // solver stuff

@@ -171,17 +171,16 @@ class DataGen: public DataGeneric
     void turnedoff_no_pv(){turnedoff_gen_pv_=false;}  // turned off generators are not pv
     void turnedoff_pv(){turnedoff_gen_pv_=true;}  // turned off generators are pv
     bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
-    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-                              bool & need_reset);
+    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack, SolverControl & solver_control);
 
-    void deactivate(int gen_id, bool & need_reset) {_deactivate(gen_id, status_, need_reset);}
-    void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
-    void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void deactivate(int gen_id, SolverControl & solver_control) {_deactivate(gen_id, status_, need_reset);}
+    void reactivate(int gen_id, SolverControl & sovler_control) {_reactivate(gen_id, status_, need_reset);}
+    void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
-    void change_p(int gen_id, real_type new_p, bool & need_reset);
-    void change_v(int gen_id, real_type new_v_pu, bool & need_reset);
+    void change_p(int gen_id, real_type new_p, SolverControl & solver_control);
+    void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
     virtual void fillpv(std::vector<int>& bus_pv,

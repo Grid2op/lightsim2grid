@@ -118,9 +118,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
     reset(true, true, true);
-    need_reset_ = true;
+    solver_control_.tell_all_changed();
     compute_results_ = true;
-    topo_changed_ = true;
 
     // extract data from the state
     int version_major = std::get<0>(my_state);
@@ -252,8 +251,7 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
     slack_weights_ = RealVect();
-    need_reset_ = true;
-    topo_changed_ = true;
+    solver_control_.tell_all_changed();
 
     // reset the solvers
     if (reset_solver){
@@ -282,12 +280,12 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
-    bool reset_solver = topo_changed_;   // I reset the solver only if the topology change
     CplxVect V = pre_process_solver(Vinit, Ybus_ac_,
                                     id_me_to_ac_solver_,
                                     id_ac_solver_to_me_,
                                     slack_bus_id_ac_solver_,
-                                    is_ac, reset_solver);
+                                    is_ac,
+                                    solver_control_);
 
     // start the solver
     slack_weights_ = generators_.get_slack_weights(Ybus_ac_.rows(), id_me_to_ac_solver_); 
@@ -364,7 +362,8 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
     bool is_ac = true;
-    bool reset_solver = false;
+    SolverControl reset_solver;
+    reset_solver.tell_none_changed();  // TODO reset solver
     CplxVect V = pre_process_solver(V_proposed, Ybus_ac_, 
                                     id_me_to_ac_solver_, id_ac_solver_to_me_, slack_bus_id_ac_solver_,
                                     is_ac, reset_solver);
@@ -399,40 +398,26 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                                        std::vector<int> & id_solver_to_me,
                                        Eigen::VectorXi & slack_bus_id_solver,
                                        bool is_ac,
-                                       bool reset_solver)
+                                       const SolverControl & solver_control)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
-    // std::cout << "GridModel::pre_process_solver : topo_changed_ " << topo_changed_ << std::endl;
-    // std::cout << "GridModel::pre_process_solver : reset_solver " << reset_solver << std::endl;
-
-    bool reset_ac = topo_changed_ && is_ac;
-    bool reset_dc = topo_changed_ && !is_ac;
-    // if(need_reset_){ // TODO optimization when it's not mandatory to start from scratch
-    if(topo_changed_) reset(reset_solver, reset_ac, reset_dc);  // TODO what if pv and pq changed ? :O
-    else{
-        // topo is not changed, but i can still reset the solver (TODO: no necessarily needed !)
-        if (reset_solver)
-        {
-            if(is_ac) _solver.reset();
-            else _dc_solver.reset();
-        }
-    }
+    if(is_ac) _solver.reset(solver_control);
+    else _dc_solver.reset(solver_control);
     slack_bus_id_ = generators_.get_slack_bus_id();
-    if(topo_changed_){
-        // TODO do not reinit Ybus if the topology does not change
-        init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
-        fillYbus(Ybus, is_ac, id_me_to_solver);
-    }
-    init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
-    fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver); // TODO what if pv and pq changed ? :O
+    if (solver_control.ybus_change_sparsity_pattern() || solver_control.has_dimension_changed()) init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
+    if (solver_control.ybus_change_sparsity_pattern() || solver_control.has_dimension_changed() || solver_control.need_recompute_ybus()) fillYbus(Ybus, is_ac, id_me_to_solver);
+    if (solver_control.has_dimension_changed()) init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+    fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
     
-    int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
-    total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-    total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
-    total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
-    generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-    dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-    fillSbus_me(Sbus_, is_ac, id_me_to_solver);
+    if (solver_control.need_recompute_sbus()){
+        int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
+        total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
+        total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
+        total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
+        generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+        dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+        fillSbus_me(Sbus_, is_ac, id_me_to_solver);
+    }
 
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
@@ -576,13 +561,19 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
 
 void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
                           std::vector<int>& id_solver_to_me,
-                          Eigen::VectorXi & slack_bus_id_solver)
+                          Eigen::VectorXi & slack_bus_id_solver,
+                          const SolverControl & solver_control)
 {
+    // Nothing to do if neither pv, nor pq nor the dimension of the problem has changed
+    if(!solver_control.has_pq_changed() && !solver_control.has_pv_changed() && !solver_control.has_dimension_changed()) return;
+
     // init pq and pv vector
     // TODO remove the order here..., i could be faster in this piece of code (looping once through the buses)
     const int nb_bus = static_cast<int>(id_solver_to_me.size());  // number of bus in the solver!
     std::vector<int> bus_pq;
+    bus_pq.reserve(nb_bus);
     std::vector<int> bus_pv;
+    bus_pv.reserve(nb_bus);
     std::vector<bool> has_bus_been_added(nb_bus, false);
 
     // std::cout << "id_me_to_solver.size(): " << id_me_to_solver.size() << std::endl;

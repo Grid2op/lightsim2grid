@@ -49,4 +49,69 @@ enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue
 #define VERSION_MINOR -1
 #endif
 
+class SolverControl
+{
+    public:
+        SolverControl(): 
+            change_dimension_(true),
+            pv_changed_(true),
+            pq_changed_(true),
+            slack_participate_changed_(true),
+            need_reset_solver_(true), 
+            need_recompute_sbus_(true),
+            need_recompute_ybus_(true),
+            ybus_change_sparsity_pattern_(true)
+            {};
+
+        void tell_all_changed(){
+            change_dimension_ = true;
+            pv_changed_ = true;
+            pq_changed_ = true;
+            slack_participate_changed_ = true;
+            need_reset_solver_ = true;
+            need_recompute_sbus_ = true;
+            need_recompute_ybus_ = true;
+            ybus_change_sparsity_pattern_ = true;
+        }
+
+        void tell_none_changed(){
+            change_dimension_ = false;
+            pv_changed_ = false;
+            pq_changed_ = true;
+            slack_participate_changed_ = false;
+            need_reset_solver_ = false;
+            need_recompute_sbus_ = false;
+            need_recompute_ybus_ = false;
+            ybus_change_sparsity_pattern_ = false;
+        }
+
+        void tell_dimension_changed(){change_dimension_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_pv_changed(){pv_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_pq_changed(){pq_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_slack_participate_changed(){slack_participate_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_recompute_ybus(){need_recompute_ybus_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_recompute_sbus(){need_recompute_sbus_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_solver_need_reset(){need_reset_solver_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_ybus_change_sparsity_pattern(){ybus_change_sparsity_pattern_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+
+        bool has_dimension_changed() const {return change_dimension_;}
+        bool has_pv_changed() const {return pv_changed_;}
+        bool has_pq_changed() const {return pq_changed_;}
+        bool has_tell_slack_participate_changed() const {return slack_participate_changed_;}
+        bool need_reset_solver() const {return need_reset_solver_;}
+        bool need_recompute_sbus() const {return need_recompute_sbus_;}
+        bool need_recompute_ybus() const {return need_recompute_ybus_;}
+        bool ybus_change_sparsity_pattern() const {return ybus_change_sparsity_pattern_;}
+
+    protected:    
+        bool change_dimension_;
+        bool pv_changed_;
+        bool pq_changed_;
+        bool slack_participate_changed_;
+        bool need_reset_solver_;  // some matrices change size, needs to be computed
+        bool need_recompute_sbus_;  // some coeff of sbus changed, need to recompute it
+        bool need_recompute_ybus_;  // some coeff of ybus changed, but not its sparsity pattern
+        bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
+};
+
 #endif // UTILS_H

@@ -72,7 +72,10 @@ class GridModel : public DataGeneric
                 DataDCLine::StateRes
                 >  StateRes;
 
-        GridModel():need_reset_(true), topo_changed_(true), compute_results_(true), init_vm_pu_(1.04), sn_mva_(1.0){
+        GridModel():
+          solver_control_(),
+          init_vm_pu_(1.04),
+          sn_mva_(1.0){
             _dc_solver.change_solver(SolverType::DC);
             _solver.set_gridmodel(this);
         }
@@ -99,7 +102,7 @@ class GridModel : public DataGeneric
         void turnedoff_pv(){generators_.turnedoff_pv();}  // turned off generators are pv
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
         void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
-            generators_.update_slack_weights(could_be_slack, topo_changed_);
+            generators_.update_slack_weights(could_be_slack, solver_control_);
         }
 
         const DataSGen & get_static_generators_as_data() const {return sgens_;}
@@ -111,8 +114,7 @@ class GridModel : public DataGeneric
 
         // solver "control"
         void change_solver(const SolverType & type){
-            need_reset_ = true;
-            topo_changed_ = true;
+            solver_control_.tell_all_changed();
             if(_solver.is_dc(type)) _dc_solver.change_solver(type);
             else _solver.change_solver(type);
         }
@@ -235,8 +237,14 @@ class GridModel : public DataGeneric
 
         //powerflows
         // control the need to refactorize the topology
-        void unset_topo_changed(){topo_changed_ = false;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
-        void tell_topo_changed(){topo_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void unset_changes(){
+            solver_control_.tell_none_changed();
+        }  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_recompute_ybus(){solver_control_.tell_recompute_ybus();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_recompute_sbus(){solver_control_.tell_recompute_sbus();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_solver_need_reset(){solver_control_.tell_solver_need_reset();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        void tell_ybus_change_sparsity_pattern(){solver_control_.tell_ybus_change_sparsity_pattern();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        const SolverControl & get_solver_control() const { return solver_control_;}
 
         // dc powerflow
         CplxVect dc_pf(const CplxVect & Vinit,
@@ -254,9 +262,27 @@ class GridModel : public DataGeneric
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         //still connected to it, it will throw an exception
-        void deactivate_bus(int bus_id) {_deactivate(bus_id, bus_status_, topo_changed_); }
+        void deactivate_bus(int bus_id) {
+            if(bus_status_[bus_id]){
+                // bus was connected, dim of matrix change
+                solver_control_.need_reset_solver();
+                solver_control_.need_recompute_sbus();
+                solver_control_.need_recompute_ybus();
+                solver_control_.ybus_change_sparsity_pattern();
+                _deactivate(bus_id, bus_status_);
+            }
+        }
         // if a bus is connected, but isolated, it will make the powerflow diverge
-        void reactivate_bus(int bus_id) {_reactivate(bus_id, bus_status_, topo_changed_); }
+        void reactivate_bus(int bus_id) {
+            if(!bus_status_[bus_id]){
+                // bus was not connected, dim of matrix change
+                solver_control_.need_reset_solver();
+                solver_control_.need_recompute_sbus();
+                solver_control_.need_recompute_ybus();
+                solver_control_.ybus_change_sparsity_pattern();
+                _reactivate(bus_id, bus_status_); 
+            }
+        }
         int nb_bus() const;  // number of activated buses
         Eigen::Index nb_powerline() const {return powerlines_.nb();}
         Eigen::Index nb_trafo() const {return trafos_.nb();}
@@ -273,57 +299,57 @@ class GridModel : public DataGeneric
         const RealVect & get_buses() const {return bus_vn_kv_;}
         
         //deactivate a powerline (disconnect it)
-        void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }
-        void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, topo_changed_); }
-        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
+        void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, solver_control_); }
+        void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, solver_control_); }
+        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
 
         //deactivate trafo
-        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, topo_changed_); }
-        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, topo_changed_); }
-        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
+        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
+        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, solver_control_); }
+        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
 
         //load
-        void deactivate_load(int load_id) {loads_.deactivate(load_id, topo_changed_); }
-        void reactivate_load(int load_id) {loads_.reactivate(load_id, topo_changed_); }
-        void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_load(int load_id, real_type new_p) {loads_.change_p(load_id, new_p, topo_changed_); }
-        void change_q_load(int load_id, real_type new_q) {loads_.change_q(load_id, new_q, topo_changed_); }
+        void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
+        void reactivate_load(int load_id) {loads_.reactivate(load_id, solver_control_); }
+        void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_p_load(int load_id, real_type new_p) {loads_.change_p(load_id, new_p, solver_control_); }
+        void change_q_load(int load_id, real_type new_q) {loads_.change_q(load_id, new_q, solver_control_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
 
         //generator
-        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, topo_changed_); }
-        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, topo_changed_); }
-        void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p(gen_id, new_p, topo_changed_); }
-        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v(gen_id, new_v_pu, topo_changed_); }
+        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, solver_control_); }
+        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, solver_control_); }
+        void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p(gen_id, new_p, solver_control_); }
+        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v(gen_id, new_v_pu, solver_control_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
 
         //shunt
-        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, topo_changed_); }
-        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, topo_changed_); }
-        void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size()));  }
-        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, topo_changed_); }
-        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, topo_changed_); }
+        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, solver_control_); }
+        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, solver_control_); }
+        void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size()));  }
+        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, solver_control_); }
+        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, solver_control_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
 
         //static gen
-        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, topo_changed_); }
-        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, topo_changed_); }
-        void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p(sgen_id, new_p, topo_changed_); }
-        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, topo_changed_); }
+        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, solver_control_); }
+        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, solver_control_); }
+        void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p(sgen_id, new_p, solver_control_); }
+        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, solver_control_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
 
         //storage units
-        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, topo_changed_); }
-        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, topo_changed_); }
-        void change_bus_storage(int storage_id, int new_bus_id) {storages_.change_bus(storage_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
+        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, solver_control_); }
+        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, solver_control_); }
+        void change_bus_storage(int storage_id, int new_bus_id) {storages_.change_bus(storage_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
         void change_p_storage(int storage_id, real_type new_p) {
 //            if(new_p == 0.)
 //            {
@@ -334,19 +360,19 @@ class GridModel : public DataGeneric
 //                reactivate_storage(storage_id);  // requirement from grid2op, might be discussed
 //                storages_.change_p(storage_id, new_p, need_reset_);
 //            }
-               storages_.change_p(storage_id, new_p, topo_changed_);
+               storages_.change_p(storage_id, new_p, solver_control_);
             }
-        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q(storage_id, new_q, topo_changed_); }
+        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q(storage_id, new_q, solver_control_); }
         int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id);}
 
         //deactivate a powerline (disconnect it)
-        void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, topo_changed_); }
-        void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, topo_changed_); }
-        void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, topo_changed_); }
-        void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_or(dcline_id, new_v_pu, topo_changed_); }
-        void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_ex(dcline_id, new_v_pu, topo_changed_); }
-        void change_bus_dcline_or(int dcline_id, int new_bus_id) {dc_lines_.change_bus_or(dcline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_bus_dcline_ex(int dcline_id, int new_bus_id) {dc_lines_.change_bus_ex(dcline_id, new_bus_id, topo_changed_, static_cast<int>(bus_vn_kv_.size())); }
+        void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, solver_control_); }
+        void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, solver_control_); }
+        void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, solver_control_); }
+        void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_or(dcline_id, new_v_pu, solver_control_); }
+        void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_ex(dcline_id, new_v_pu, solver_control_); }
+        void change_bus_dcline_or(int dcline_id, int new_bus_id) {dc_lines_.change_bus_or(dcline_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
+        void change_bus_dcline_ex(int dcline_id, int new_bus_id) {dc_lines_.change_bus_ex(dcline_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
         int get_bus_dcline_or(int dcline_id) {return dc_lines_.get_bus_or(dcline_id);}
         int get_bus_dcline_ex(int dcline_id) {return dc_lines_.get_bus_ex(dcline_id);}
 
@@ -550,7 +576,7 @@ class GridModel : public DataGeneric
                                     std::vector<int> & id_solver_to_me,
                                     Eigen::VectorXi & slack_bus_id_solver,
                                     bool is_ac,
-                                    bool reset_solver);
+                                    const SolverControl & solver_control);
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        std::vector<int> & id_me_to_solver,
                        std::vector<int>& id_solver_to_me);
@@ -561,7 +587,8 @@ class GridModel : public DataGeneric
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
-                       Eigen::VectorXi & slack_bus_id_solver);
+                       Eigen::VectorXi & slack_bus_id_solver,
+                       const SolverControl & solver_control);
 
         // results
         /**process the results from the solver to this instance
@@ -652,8 +679,11 @@ class GridModel : public DataGeneric
         // member of the grid
         // static const int _deactivated_bus_id;
 
-        bool need_reset_;
-        bool topo_changed_;
+        // bool need_reset_solver_;  // some matrices change size, needs to be computed
+        // bool need_recompute_sbus_;  // some coeff of sbus changed, need to recompute it
+        // bool need_recompute_ybus_;  // some coeff of ybus changed, but not its sparsity pattern
+        // bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff)
+        SolverControl solver_control_;
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         real_type sn_mva_;

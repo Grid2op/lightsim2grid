@@ -377,7 +377,7 @@ void DataGen::set_q(const RealVect & reactive_mismatch,
 
 
 void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-                                   bool & need_reset)
+                                   bool & need_reset_solver)
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
@@ -386,16 +386,16 @@ void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic,
             // gen is connected and participate to the slack
             if(p_mw_(gen_id) > 0.){
                 // gen is properly connected
-                if(!gen_slackbus_[gen_id]) need_reset = true; // it was not in the slack before, so I need to reset the solver
+                if(!gen_slackbus_[gen_id]) need_reset_solver = true; // it was not in the slack before, so I need to reset the solver
                 add_slackbus(gen_id, p_mw_(gen_id));
 
             }else{
                 // gen is now "turned off"
-                if(gen_slackbus_[gen_id]) need_reset = true;  // it was in the slack before, so I need to reset the solver
+                if(gen_slackbus_[gen_id]) need_reset_solver = true;  // it was in the slack before, so I need to reset the solver
                 remove_slackbus(gen_id);
             }
         }else{
-            if(gen_slackbus_[gen_id]) need_reset = true;  // it was in the slack before, I need to reset the solver
+            if(gen_slackbus_[gen_id]) need_reset_solver = true;  // it was in the slack before, I need to reset the solver
             remove_slackbus(gen_id);
         }
     }

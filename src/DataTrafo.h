@@ -168,10 +168,10 @@ class DataTrafo : public DataGeneric
     }
 
     // method used within lightsim
-    void deactivate(int trafo_id, bool & need_reset) {_deactivate(trafo_id, status_, need_reset);}
-    void reactivate(int trafo_id, bool & need_reset) {_reactivate(trafo_id, status_, need_reset);}
-    void change_bus_hv(int trafo_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}
-    void change_bus_lv(int trafo_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_lv_id_, need_reset, nb_bus);}
+    void deactivate(int trafo_id, SolverControl & solver_control) {_deactivate(trafo_id, status_, need_reset);}
+    void reactivate(int trafo_id, SolverControl & solver_control) {_reactivate(trafo_id, status_, need_reset);}
+    void change_bus_hv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}
+    void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_lv_id_, need_reset, nb_bus);}
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
 

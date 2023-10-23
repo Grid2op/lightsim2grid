@@ -99,7 +99,7 @@ class BaseSolver : public BaseConstants
                         ) = 0 ;
 
         virtual
-        void reset();
+        void reset(const SolverControl & solver_control);
         
     protected:
         virtual void reset_timer(){

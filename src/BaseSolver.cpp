@@ -8,15 +8,15 @@
 
 #include "BaseSolver.h"
 
-void BaseSolver::reset(){
+void BaseSolver::reset(const SolverControl & solver_control){
     // reset timers
     reset_timer();
 
     //reset the attribute
     n_ = -1;
     Vm_ = RealVect();  // voltage magnitude
-    Va_= RealVect();  // voltage angle
-    V_= RealVect();  // voltage angle
+    Va_ = RealVect();  // voltage angle
+    V_ = RealVect();  // voltage angle  // TODO solver control: see if I could reuse some of these
     nr_iter_ = 0;  // number of iteration performs by the algorithm
     err_ = ErrorType::NotInitError; //error message:
 }

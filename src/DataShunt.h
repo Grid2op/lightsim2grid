@@ -125,11 +125,11 @@ class DataShunt : public DataGeneric
 
     int nb() const { return static_cast<int>(p_mw_.size()); }
 
-    void deactivate(int shunt_id, bool & need_reset) {_deactivate(shunt_id, status_, need_reset);}
-    void reactivate(int shunt_id, bool & need_reset) {_reactivate(shunt_id, status_, need_reset);}
-    void change_bus(int shunt_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, need_reset, nb_bus);}
-    void change_p(int shunt_id, real_type new_p, bool & need_reset);
-    void change_q(int shunt_id, real_type new_q, bool & need_reset);
+    void deactivate(int shunt_id, SolverControl & solver_control) {_deactivate(shunt_id, status_, need_reset);}
+    void reactivate(int shunt_id, SolverControl & solver_control) {_reactivate(shunt_id, status_, need_reset);}
+    void change_bus(int shunt_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void change_p(int shunt_id, real_type new_p, SolverControl & solver_control);
+    void change_q(int shunt_id, real_type new_q, SolverControl & solver_control);
     int get_bus(int shunt_id) {return _get_bus(shunt_id, status_, bus_id_);}
 
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
