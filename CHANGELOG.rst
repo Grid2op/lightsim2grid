@@ -24,6 +24,7 @@ Change Log
 - [FIXED] now voltage is properly set to 0. when shunts are disconnected
 - [FIXED] now voltage is properly set to 0. when storage units are disconnected
 - [FIXED] a bug where non connected grid were not spotted in DC
+- [FIXED] a bug when trying to set the slack for a non existing genererator
 - [IMPROVED] now making the new grid2op `create_test_suite` 
 
 [0.7.5] 2023-10-05

@@ -44,9 +44,6 @@
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class GridModel : public DataGeneric
 {
-    public:  // can be modified python side
-        IntVect _ls_to_orig;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
-
     public:
         typedef std::tuple<
                 int, // version major
@@ -84,6 +81,12 @@ class GridModel : public DataGeneric
             GridModel res(*this);
             return res;
         }
+
+        void set_ls_to_orig(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
+        void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
+        const IntVect & get_ls_to_orig(void) const {return _ls_to_orig;}
+        const IntVect & get_orig_to_ls(void) const {return _orig_to_ls;}
+
         Eigen::Index total_bus() const {return bus_vn_kv_.size();}
         const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
         const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
@@ -642,6 +645,10 @@ class GridModel : public DataGeneric
         void check_solution_q_values_onegen(CplxVect & res, const DataGen::GenInfo& gen, bool check_q_limits) const;
 
     protected:
+        // memory for the import
+        IntVect _ls_to_orig;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
+        IntVect _orig_to_ls;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
+
         // member of the grid
         // static const int _deactivated_bus_id;
 

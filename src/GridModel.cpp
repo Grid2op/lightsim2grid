@@ -14,7 +14,7 @@ GridModel::GridModel(const GridModel & other)
 {
     reset(true, true, true);
 
-    _ls_to_orig = other._ls_to_orig;
+    set_ls_to_orig(other._ls_to_orig);  // set also orig_to_ls
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -80,7 +80,7 @@ GridModel::GridModel(const GridModel & other)
 GridModel::StateRes GridModel::get_state() const
 {
     std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
-    std::vector<int> ls_to_pp(_ls_to_orig.begin(), _ls_to_orig.end());
+    std::vector<int> ls_to_orig(_ls_to_orig.begin(), _ls_to_orig.end());
     int version_major = VERSION_MAJOR;
     int version_medium = VERSION_MEDIUM;
     int version_minor = VERSION_MINOR;
@@ -96,7 +96,7 @@ GridModel::StateRes GridModel::get_state() const
     GridModel::StateRes res(version_major,
                             version_medium,
                             version_minor,
-                            ls_to_pp,
+                            ls_to_orig,
                             init_vm_pu_,
                             sn_mva_,
                             bus_vn_kv,
@@ -161,7 +161,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 
     // assign it to this instance
 
-    _ls_to_orig =IntVect::Map(&ls_to_pp_[0], ls_to_pp_.size());
+    set_ls_to_orig(IntVect::Map(&ls_to_pp_[0], ls_to_pp_.size()));  // set also _orig_to_ls
+
     // buses
     // 1. bus_vn_kv_
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
@@ -187,6 +188,35 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     dc_lines_.set_state(state_dc_lines);
 };
 
+void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
+    if(ls_to_orig.size() != bus_vn_kv_.size()) 
+        throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
+    _ls_to_orig = ls_to_orig;
+    const auto size = ls_to_orig.lpNorm<Eigen::Infinity>();
+    _orig_to_ls = IntVect::Zero(size);
+    _orig_to_ls.array() -= 1;
+    for(auto i = 0; i < size; ++i){
+        _orig_to_ls[i] = _ls_to_orig[i];
+    }
+}
+
+void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
+    _orig_to_ls = orig_to_ls;
+    Eigen::Index nb_bus_ls = 0;
+    for(const auto el : orig_to_ls){
+        if (el != -1) nb_bus_ls += 1;
+    }
+    _ls_to_orig = IntVect::Zero(nb_bus_ls);
+    Eigen::Index ls2or_ind = 0;
+    for(auto or2ls_ind = 0; or2ls_ind < nb_bus_ls; ++or2ls_ind){
+        const auto my_ind = _orig_to_ls[or2ls_ind];
+        if(my_ind >= 0){
+            _ls_to_orig[ls2or_ind] = my_ind;
+            ls2or_ind++;
+        }
+    }
+}
+
 //init
 void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
     /**
@@ -198,6 +228,8 @@ void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
     bus_vn_kv_ = bus_vn_kv;  // base_kv
 
     bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
+    _orig_to_ls = IntVect();
+    _ls_to_orig = IntVect();
 }
 
 void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
@@ -696,7 +728,7 @@ void GridModel::add_gen_slackbus(int gen_id, real_type weight){
         exc_ << gen_id;
         throw std::runtime_error(exc_.str());
     }
-    if(gen_id > generators_.nb())
+    if(gen_id >= generators_.nb())
     {
         std::ostringstream exc_;
         exc_ << "GridModel::add_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
@@ -720,7 +752,7 @@ void GridModel::remove_gen_slackbus(int gen_id){
         exc_ << gen_id;
         throw std::runtime_error(exc_.str());
     }
-    if(gen_id > generators_.nb())
+    if(gen_id >= generators_.nb())
     {
         // TODO DEBUG MODE: only check when in debug mode
         std::ostringstream exc_;

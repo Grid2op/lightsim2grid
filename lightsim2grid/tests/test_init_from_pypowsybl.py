@@ -84,7 +84,7 @@ class AuxInitFromPyPowSyBl:
         v_ls = self.gridmodel.dc_pf(1.0 * self.V_init_dc, 2, self.tol)
         v_ls_ref = self.ref_samecase.dc_pf(1.0 * self.V_init_dc, 2, self.tol)
         slack_id = self.get_slackbus_id()
-        reorder = self.gridmodel._ls_to_orig.reshape(1, -1)
+        reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
         
         # for case 118
         # reorder_flat = reorder.reshape(-1)
@@ -150,7 +150,7 @@ class AuxInitFromPyPowSyBl:
     def test_dc_pf(self):
         """test I get the same results as pandapower in dc"""
         v_ls = self.gridmodel.dc_pf(self.V_init_dc, 2, self.tol)
-        reorder = self.gridmodel._ls_to_orig.reshape(1, -1)
+        reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
         if self.compare_pp():
             v_ls_ref = self.ref_samecase.dc_pf(self.V_init_dc, 2, self.tol)
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for dc: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"
@@ -170,7 +170,7 @@ class AuxInitFromPyPowSyBl:
     def test_ac_pf(self):
         # run the powerflows
         v_ls = self.gridmodel.ac_pf(1.0 * self.V_init_ac, 10, self.tol)
-        reorder = self.gridmodel._ls_to_orig.reshape(1, -1)
+        reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
         if self.compare_pp():
             v_ls_ref = self.ref_samecase.ac_pf(1.0 * self.V_init_ac, 10, self.tol)   
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for ac: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"

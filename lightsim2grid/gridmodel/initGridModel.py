@@ -80,15 +80,14 @@ def init(pp_net):
     model.set_sn_mva(pp_net.sn_mva)
 
     tmp_bus_ind = np.argsort(pp_net.bus.index)
+    model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
+                   pp_net.line.shape[0],
+                   pp_net.trafo.shape[0])
     if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
         model._ls_to_orig = 1 * pp_net.bus.index.values.astype(int)
         pp_to_ls = {pp_bus: ls_bus for pp_bus, ls_bus in zip(pp_net.bus.index, tmp_bus_ind)}
     else:
         pp_to_ls = None
-    model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
-                   pp_net.line.shape[0],
-                   pp_net.trafo.shape[0])
-
     # deactivate in lightsim the deactivated bus in pandapower
     for bus_id in range(pp_net.bus.shape[0]):
         if not pp_net.bus["in_service"].values[bus_id]:

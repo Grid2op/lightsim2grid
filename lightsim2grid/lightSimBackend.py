@@ -451,7 +451,7 @@ class LightSimBackend(Backend):
         gen_slack_id = None
         if "gen_slack_id" in loader_kwargs:
             gen_slack_id = int(loader_kwargs["gen_slack_id"])
-        self._grid = init_pypow(grid_tmp, gen_slack_id=None)  # TODO gen_slack_id, make things crash !     
+        self._grid = init_pypow(grid_tmp, gen_slack_id=gen_slack_id, sort_index=True)
         self._aux_setup_right_after_grid_init()   
         
         # mandatory for the backend
@@ -507,10 +507,15 @@ class LightSimBackend(Backend):
         # as it is done with grid2Op simulated environment
         if "double_bus_per_sub" in loader_kwargs and loader_kwargs["double_bus_per_sub"]:
             bus_init = self._grid.get_buses()
+            orig_to_ls = np.array(self._grid._orig_to_ls)
             bus_doubled = np.concatenate((bus_init, bus_init))
             self._grid.init_bus(bus_doubled, 0, 0)
             for i in range(self.__nb_bus_before):
                 self._grid.deactivate_bus(i + self.__nb_bus_before)
+            new_orig_to_ls = np.concatenate((orig_to_ls,
+                                             np.zeros(orig_to_ls.shape[0], dtype=orig_to_ls.dtype) + self.__nb_bus_before)
+                                            )
+            self._grid._orig_to_ls = new_orig_to_ls
         self.nb_bus_total = len(self._grid.get_buses())
         
         # and now things needed by the backend (legacy)
@@ -1052,7 +1057,7 @@ class LightSimBackend(Backend):
                            "_big_topo_to_obj", "max_it", "tol", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
-                           "_my_kwargs",
+                           "_my_kwargs", "supported_grid_format", 
                            "_turned_off_pv", "_dist_slack_non_renew",
                            "_loader_method", "_loader_kwargs"
                            ]
@@ -1105,7 +1110,6 @@ class LightSimBackend(Backend):
                 # this test is needed for backward compatibility with other grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
         ###############
-
 
         # handle the most complicated
         res._grid = mygrid.copy()

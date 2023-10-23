@@ -586,7 +586,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy)
-        .def_readwrite("_ls_to_orig", &GridModel::_ls_to_orig, "for converter from bus in lightsim2grid index to bus index in original file format (*eg* pandapower of pypowsybl)")
+        .def_property("_ls_to_orig", &GridModel::get_ls_to_orig, &GridModel::set_ls_to_orig, "remember the conversion from bus index in lightsim2grid to bus index in original file format (*eg* pandapower of pypowsybl).")
+        .def_property("_orig_to_ls", &GridModel::get_orig_to_ls, &GridModel::set_orig_to_ls, "remember the conversion from bus index in original file format (*eg* pandapower of pypowsybl) to bus index in lightsim2grid.")
 
         // pickle
         .def(py::pickle(

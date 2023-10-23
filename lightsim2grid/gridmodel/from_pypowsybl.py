@@ -37,13 +37,13 @@ def init(net : pypo.network,
         bus_df = bus_df_orig
     bus_df["bus_id"] = np.arange(bus_df.shape[0])
     bus_df_orig["bus_id"] = bus_df.loc[bus_df_orig.index]["bus_id"]
-    model._ls_to_orig = 1 * bus_df_orig["bus_id"].values
     voltage_levels = net.get_voltage_levels()
     model.set_sn_mva(sn_mva)
     model.set_init_vm_pu(1.06)
     model.init_bus(voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values,
                    0, 0  # unused
                    )
+    model._orig_to_ls = 1 * bus_df_orig["bus_id"].values
         
     # do the generators
     if sort_index:
@@ -67,7 +67,7 @@ def init(net : pypo.network,
         model.add_gen_slackbus(gen_slack_id, 1.)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
-        gen_is_conn_slack = gen_bus == model._ls_to_orig[slack_bus_id]
+        gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
         nb_conn = gen_is_conn_slack.sum()
         if nb_conn == 0:
             raise RuntimeError(f"There is no generator connected to bus {slack_bus_id}. It cannot be the slack")
