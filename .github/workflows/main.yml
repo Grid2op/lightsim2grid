@@ -195,12 +195,16 @@ jobs:
 
       - name: Check package can be imported
         run: |
+          mkdir tmp_for_import_checking
+          cd tmp_for_import_checking
           python -c "import lightsim2grid"
           python -c "from lightsim2grid import *"
           python -c "from lightsim2grid.newtonpf import newtonpf"
+          cd ..
       
       - name: Check LightSimBackend can be imported
         run: |
+          cd tmp_for_import_checking
           python -m pip install grid2op
           python -c "from lightsim2grid import LightSimBackend"
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
@@ -253,16 +257,20 @@ jobs:
 
       - name: Check package can be imported
         run: |
+          mkdir tmp_for_import_checking
+          cd tmp_for_import_checking
           python -c "import lightsim2grid"
           python -c "from lightsim2grid import *"
           python -c "from lightsim2grid.newtonpf import newtonpf"
+          cd ..
       
       - name: Check LightSimBackend can be imported
         run: |
+          cd tmp_for_import_checking
           python -m pip install grid2op
           python -c "from lightsim2grid import LightSimBackend"
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
-
+        
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
