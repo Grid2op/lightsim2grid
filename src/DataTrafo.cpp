@@ -369,7 +369,7 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
     // if alg == 3:                               ## if BX method
     //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
-    const Eigen::Index nb_trafo = static_cast<int>(nb());
+    const Eigen::Index nb_trafo = nb();
     real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
     real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
 
@@ -449,5 +449,36 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bpp));
         Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bpp));
 
+    }
+}
+
+void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+
+    const Eigen::Index nb_trafo = nb();
+    for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
+        // don't do anything if the element is disconnected
+        if(!status_[trafo_id]) continue;
+        
+        const auto bus_or_id_me = bus_hv_id_(trafo_id);        
+        if(bus_or_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::reconnect_connected_buses: Trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_or_id_me] = true;
+
+        const auto bus_ex_id_me = bus_lv_id_(trafo_id);        
+        if(bus_ex_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::reconnect_connected_buses: Trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_ex_id_me] = true;
     }
 }

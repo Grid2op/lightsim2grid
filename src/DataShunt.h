@@ -131,6 +131,7 @@ class DataShunt : public DataGeneric
     void change_p(int shunt_id, real_type new_p, bool & need_reset);
     void change_q(int shunt_id, real_type new_q, bool & need_reset);
     int get_bus(int shunt_id) {return _get_bus(shunt_id, status_, bus_id_);}
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
 
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                           bool ac,

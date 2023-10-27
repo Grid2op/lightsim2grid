@@ -118,3 +118,21 @@ void DataLoad::change_q(int load_id, real_type new_q, bool & need_reset)
     }
     q_mvar_(load_id) = new_q;
 }
+
+void DataLoad::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_load = nb();
+    for(int load_id = 0; load_id < nb_load; ++load_id)
+    {
+        if(!status_[load_id]) continue;
+        const auto my_bus = bus_id_(load_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataLoad::reconnect_connected_buses: Load with id ";
+            exc_ << load_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_load(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
+}

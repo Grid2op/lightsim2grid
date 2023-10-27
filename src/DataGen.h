@@ -178,6 +178,7 @@ class DataGen: public DataGeneric
     void reactivate(int gen_id, bool & need_reset) {_reactivate(gen_id, status_, need_reset);}
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
     void change_p(int gen_id, real_type new_p, bool & need_reset);

@@ -172,6 +172,11 @@ class DataDCLine : public DataGeneric
         to_gen_.change_bus(dcline_id, new_bus_id, need_reset, nb_bus);}
     int get_bus_or(int dcline_id) {return from_gen_.get_bus(dcline_id);}
     int get_bus_ex(int dcline_id) {return to_gen_.get_bus(dcline_id);}
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {
+        from_gen_.reconnect_connected_buses(bus_status);
+        to_gen_.reconnect_connected_buses(bus_status);
+    }
+
     real_type get_qmin_or(int dcline_id) {return from_gen_.get_qmin(dcline_id);}
     real_type get_qmax_or(int dcline_id) {return  from_gen_.get_qmax(dcline_id);}
     real_type get_qmin_ex(int dcline_id) {return to_gen_.get_qmin(dcline_id);}

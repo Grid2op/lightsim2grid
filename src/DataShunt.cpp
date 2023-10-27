@@ -19,7 +19,6 @@ void DataShunt::init(const RealVect & shunt_p_mw,
     status_ = std::vector<bool>(p_mw_.size(), true); // by default everything is connected
 }
 
-
 DataShunt::StateRes DataShunt::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
@@ -29,6 +28,7 @@ DataShunt::StateRes DataShunt::get_state() const
      DataShunt::StateRes res(p_mw, q_mvar, bus_id, status);
      return res;
 }
+
 void DataShunt::set_state(DataShunt::StateRes & my_state )
 {
     reset_results();
@@ -181,4 +181,22 @@ void DataShunt::change_q(int shunt_id, real_type new_q, bool & need_reset)
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
     if(q_mvar_(shunt_id) != new_q) need_reset = true;
     q_mvar_(shunt_id) = new_q;
+}
+
+void DataShunt::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_shunt = nb();
+    for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id)
+    {
+        if(!status_[shunt_id]) continue;
+        const auto my_bus = bus_id_(shunt_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataShunt::reconnect_connected_buses: Shunt with id ";
+            exc_ << shunt_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_shunt(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
 }

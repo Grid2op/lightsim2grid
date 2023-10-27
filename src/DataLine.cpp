@@ -390,3 +390,34 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
     _get_amps(res_powerline_aor_, res_powerline_por_, res_powerline_qor_, res_powerline_vor_);
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
 }
+
+void DataLine::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+
+    const auto my_size = powerlines_r_.size();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        
+        const auto bus_or_id_me = bus_or_id_(line_id);        
+        if(bus_or_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataLine::reconnect_connected_buses: Line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (origin) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_powerline(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_or_id_me] = true;
+
+        const auto bus_ex_id_me = bus_ex_id_(line_id);        
+        if(bus_ex_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataLine::reconnect_connected_buses: Line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ext) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_powerline(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_ex_id_me] = true;
+    }
+}

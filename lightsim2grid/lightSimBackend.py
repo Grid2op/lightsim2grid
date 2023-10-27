@@ -14,7 +14,7 @@ import time
 
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
-from grid2op.Exceptions import BackendError, DivergingPowerFlow
+from grid2op.Exceptions import BackendError
 from grid2op.dtypes import dt_float, dt_int, dt_bool
 try:
     from grid2op.Action._backendAction import _BackendAction
@@ -497,7 +497,7 @@ class LightSimBackend(Backend):
         self._compute_pos_big_topo()
         
         self.__nb_powerline = len(self._grid.get_lines())
-        self.__nb_bus_before = len(self._grid.get_buses())
+        self.__nb_bus_before = len(self._grid.get_bus_vn_kv())
         
         # init this
         self.prod_p = np.array([el.target_p_mw for el in self._grid.get_generators()], dtype=dt_float)
@@ -506,7 +506,7 @@ class LightSimBackend(Backend):
         # now handle the legacy "make as if there are 2 busbars per substation"
         # as it is done with grid2Op simulated environment
         if "double_bus_per_sub" in loader_kwargs and loader_kwargs["double_bus_per_sub"]:
-            bus_init = self._grid.get_buses()
+            bus_init = self._grid.get_bus_vn_kv()
             orig_to_ls = np.array(self._grid._orig_to_ls)
             bus_doubled = np.concatenate((bus_init, bus_init))
             self._grid.init_bus(bus_doubled, 0, 0)
@@ -516,17 +516,17 @@ class LightSimBackend(Backend):
                                              orig_to_ls + self.__nb_bus_before)
                                             )
             self._grid._orig_to_ls = new_orig_to_ls
-        self.nb_bus_total = len(self._grid.get_buses())
+        self.nb_bus_total = len(self._grid.get_bus_vn_kv())
         
         # and now things needed by the backend (legacy)
         self._big_topo_to_obj = [(None, None) for _ in range(type(self).dim_topo)]
-        self.prod_pu_to_kv = 1.0 * self._grid.get_buses()[[el.bus_id for el in self._grid.get_generators()]]
+        self.prod_pu_to_kv = 1.0 * self._grid.get_bus_vn_kv()[[el.bus_id for el in self._grid.get_generators()]]
         self.prod_pu_to_kv = self.prod_pu_to_kv.astype(dt_float)
         
         # TODO
         max_not_too_max = (np.finfo(dt_float).max * 0.5 - 1.)
         self.thermal_limit_a = max_not_too_max * np.ones(self.n_line, dtype=dt_float)
-        bus_vn_kv = np.array(self._grid.get_buses())
+        bus_vn_kv = np.array(self._grid.get_bus_vn_kv())
         shunt_bus_id = np.array([el.bus_id for el in self._grid.get_shunts()])
         self._sh_vnkv = bus_vn_kv[shunt_bus_id]
         self._aux_finish_setup_after_reading()
@@ -886,7 +886,7 @@ class LightSimBackend(Backend):
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid). Detailed error: {self._grid.get_dc_solver().get_error()}")
+                    raise BackendError(f"Divergence of DC powerflow (non connected grid). Detailed error: {self._grid.get_dc_solver().get_error()}")
             else:
                 if (self.V is None) or (self.V.shape[0] == 0):
                     # create the vector V as it is not created
@@ -898,7 +898,7 @@ class LightSimBackend(Backend):
                     Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
                     if Vdc.shape[0] == 0:
-                        raise DivergingPowerFlow(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
+                        raise BackendError(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
                     V_init = Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
@@ -907,7 +907,7 @@ class LightSimBackend(Backend):
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
-                    raise DivergingPowerFlow(f"Divergence of AC powerflow. Detailed error: {self._grid.get_solver().get_error()}")
+                    raise BackendError(f"Divergence of AC powerflow. Detailed error: {self._grid.get_solver().get_error()}")
 
             beg_postroc = time.perf_counter()
             if is_dc:
@@ -953,12 +953,12 @@ class LightSimBackend(Backend):
                 disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
                 load_disco = np.where(disco)[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
-                raise DivergingPowerFlow(f"At least one load is disconnected (check loads {load_disco})")
+                raise BackendError(f"At least one load is disconnected (check loads {load_disco})")
             if np.any(~np.isfinite(self.prod_v)) or np.any(self.prod_v <= 0.):
                 disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
                 gen_disco = np.where(disco)[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
-                raise DivergingPowerFlow(f"At least one generator is disconnected (check gen {gen_disco})")
+                raise BackendError(f"At least one generator is disconnected (check gen {gen_disco})")
             # TODO storage case of divergence !
 
             if type(self).shunts_data_available:
@@ -967,7 +967,7 @@ class LightSimBackend(Backend):
             self._fill_theta()
 
             if (self.line_or_theta >= 1e6).any() or (self.line_ex_theta >= 1e6).any():
-                raise DivergingPowerFlow(f"Some theta are above 1e6 which should not be happening !")
+                raise BackendError(f"Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_topo_changed()
             self._timer_postproc += time.perf_counter() - beg_postroc
@@ -977,7 +977,8 @@ class LightSimBackend(Backend):
             self._fill_nans()
             res = False
             my_exc_ = exc_
-
+            if not isinstance(my_exc_, BackendError):
+                my_exc_ = BackendError(f"Converted the error of type {type(my_exc_)}, message was: {my_exc_}")
             if is_dc:
                 # set back the solver to its previous state
                 self._grid.change_solver(self.__current_solver_type)

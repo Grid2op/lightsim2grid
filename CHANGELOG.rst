@@ -25,7 +25,11 @@ Change Log
 - [FIXED] now voltage is properly set to 0. when storage units are disconnected
 - [FIXED] a bug where non connected grid were not spotted in DC
 - [FIXED] a bug when trying to set the slack for a non existing genererator
-- [IMPROVED] now making the new grid2op `create_test_suite` 
+- [FIXED] a bug in init from pypowsybl when some object were disconnected. It raises
+  an error (because they are not connected to a bus): now this function properly handles
+  these cases.
+- [IMPROVED] now performing the new grid2op `create_test_suite` 
+- [IMPROVED] now lightsim2grid properly throw BackendError
 
 [0.7.5] 2023-10-05
 --------------------

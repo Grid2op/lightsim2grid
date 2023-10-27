@@ -6,12 +6,31 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-import copy
 import numpy as np
 import pypowsybl as pypo
-# import pypowsybl.loadflow as lf
 
 from lightsim2grid_cpp import GridModel
+
+
+def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
+    if df.shape[0] == 0:
+        # no element of this type so no problem
+        return np.zeros(0, dtype=int), np.ones(0, dtype=bool)
+    # retrieve which elements are disconnected 
+    mask_disco = ~df[conn_key]
+    if mask_disco.all():
+        raise RuntimeError("All element of the same type are disconnected, the init will not work.")
+    first_el_co = np.where(~mask_disco.values)[0][0]
+    # retrieve the bus where the element are
+    tmp_bus_id = df[bus_key].copy()
+    tmp_bus_id[mask_disco] = df.iloc[first_el_co][bus_key]  # assign a "random" bus to disco element
+    bus_id = bus_df.loc[tmp_bus_id.values]["bus_id"].values
+    # deactivate the element not on the main component
+    wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
+    mask_disco[wrong_component] = True
+    # assign bus -1 to disconnected elements
+    bus_id[mask_disco] = -1
+    return bus_id , mask_disco.values
 
 
 def init(net : pypo.network,
@@ -50,18 +69,22 @@ def init(net : pypo.network,
         df_gen = net.get_generators().sort_index()
     else:
         df_gen = net.get_generators()
-        
     # to handle encoding in 32 bits and overflow when "splitting" the Q values among 
     min_q = df_gen["min_q"].values.astype(np.float32)
     max_q = df_gen["max_q"].values.astype(np.float32)
     min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min * 0.5 + 1.
     max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max * 0.5 - 1.
+    gen_bus, gen_disco = _aux_get_bus(bus_df, df_gen)
     model.init_generators(df_gen["target_p"].values,
                           df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
                           min_q,
                           max_q,
-                          1 * bus_df.loc[df_gen["bus_id"].values]["bus_id"].values
+                          gen_bus
                           )
+    for gen_id, is_disco in enumerate(gen_disco):
+        if is_disco:
+            model.deactivate_gen(gen_id)
+            
     # TODO dist slack
     if gen_slack_id is not None:
         model.add_gen_slackbus(gen_slack_id, 1.)
@@ -82,10 +105,14 @@ def init(net : pypo.network,
         df_load = net.get_loads().sort_index()
     else:
         df_load = net.get_loads()
+    load_bus, load_disco = _aux_get_bus(bus_df, df_load)
     model.init_loads(df_load["p0"].values,
                      df_load["q0"].values,
-                     1 * bus_df.loc[df_load["bus_id"].values]["bus_id"].values
+                     load_bus
                      )
+    for load_id, is_disco in enumerate(load_disco):
+        if is_disco:
+            model.deactivate_load(load_id)
     
     # for lines
     if sort_index:
@@ -117,13 +144,18 @@ def init(net : pypo.network,
     g2 = df_line["g2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.real*v2/sn_mva
     line_h_or = (b1 + 1j * g1)
     line_h_ex = (b2 + 1j * g2)
+    lor_bus, lor_disco = _aux_get_bus(bus_df, df_line, conn_key="connected1", bus_key="bus1_id")
+    lex_bus, lex_disco = _aux_get_bus(bus_df, df_line, conn_key="connected2", bus_key="bus2_id")
     model.init_powerlines_full(line_r,
                                line_x,
                                line_h_or,
                                line_h_ex,
-                               1 * bus_df.loc[df_line["bus1_id"].values]["bus_id"].values,
-                               1 * bus_df.loc[df_line["bus2_id"].values]["bus_id"].values
+                               lor_bus,
+                               lex_bus
                               )
+    for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
+        if is_or_disc or is_ex_disc:
+            model.deactivate_powerline(line_id)
             
     # for trafo
     if sort_index:
@@ -145,6 +177,8 @@ def init(net : pypo.network,
     has_tap = tap_step_pct != 0.
     tap_pos[has_tap] += 1
     tap_step_pct[~has_tap] = 1.0  # or any other values...
+    tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
+    tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
     model.init_trafo(df_trafo["r"].values / trafo_to_pu,
                      df_trafo["x"].values / trafo_to_pu,
                      2.*(1j*df_trafo["g"].values + df_trafo["b"].values) * trafo_to_pu,
@@ -152,8 +186,11 @@ def init(net : pypo.network,
                      tap_pos,
                      shift_,
                      is_tap_hv_side,
-                     1 * bus_df.loc[df_trafo["bus1_id"].values]["bus_id"].values, # TODO do I need to change hv / lv
-                     1 * bus_df.loc[df_trafo["bus2_id"].values]["bus_id"].values)    
+                     tor_bus, # TODO do I need to change hv / lv
+                     tex_bus)    
+    for t_id, (is_or_disc, is_ex_disc) in enumerate(zip(tor_disco, tex_disco)):
+        if is_or_disc or is_ex_disc:
+            model.deactivate_trafo(t_id)
     
     # for shunt
     if sort_index:
@@ -161,35 +198,27 @@ def init(net : pypo.network,
     else:
         df_shunt = net.get_shunt_compensators()
         
-    is_on = copy.deepcopy(df_shunt["connected"])
-    if (~is_on).any():
-        df_shunt["connected"] = True
-        net.update_shunt_compensators(df_shunt[["connected"]])
-        if sort_index:
-            df_shunt = net.get_shunt_compensators().sort_index()
-        else:
-            df_shunt = net.get_shunt_compensators()
-        df_shunt["connected"] = is_on
-        net.update_shunt_compensators(df_shunt[["connected"]])
-        
+    sh_bus, sh_disco = _aux_get_bus(bus_df, df_shunt)    
     shunt_kv = voltage_levels.loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
     model.init_shunt(-df_shunt["g"].values * shunt_kv**2,
                      -df_shunt["b"].values * shunt_kv**2,
-                     1 * bus_df.loc[df_shunt["bus_id"].values]["bus_id"].values
+                     sh_bus
                     )
-    for shunt_id, conn in enumerate(is_on):
-        if not conn:
+    for shunt_id, disco in enumerate(sh_disco):
+        if disco:
            model.deactivate_shunt(shunt_id) 
            
     # for hvdc (TODO not tested yet)
     df_dc = net.get_hvdc_lines().sort_index()
     df_sations = net.get_vsc_converter_stations().sort_index()
-    bus_from_id = df_sations.loc[df_dc["converter_station1_id"].values]["bus_id"].values
-    bus_to_id = df_sations.loc[df_dc["converter_station2_id"].values]["bus_id"].values
+    # bus_from_id = df_sations.loc[df_dc["converter_station1_id"].values]["bus_id"].values
+    # bus_to_id = df_sations.loc[df_dc["converter_station2_id"].values]["bus_id"].values
+    bus_from_id, hvdc_from_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
+    bus_to_id, hvdc_to_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
     loss_percent = np.zeros(df_dc.shape[0])  # TODO 
     loss_mw = np.zeros(df_dc.shape[0])  # TODO
-    model.init_dclines(bus_df.loc[bus_from_id]["bus_id"].values,
-                       bus_df.loc[bus_to_id]["bus_id"].values,
+    model.init_dclines(bus_from_id,
+                       bus_to_id,
                        df_dc["target_p"].values,
                        loss_percent,
                        loss_mw,
@@ -200,16 +229,24 @@ def init(net : pypo.network,
                        df_sations.loc[df_dc["converter_station2_id"].values]["min_q"].values,
                        df_sations.loc[df_dc["converter_station2_id"].values]["max_q"].values
                        )
-    
+    # TODO will probably not work !
+    for hvdc_id, (is_or_disc, is_ex_disc) in enumerate(zip(hvdc_from_disco, hvdc_to_disco)):
+        if is_or_disc or is_ex_disc:
+            model.deactivate_hvdc(hvdc_id)
+                
     # storage units  (TODO not tested yet)
     if sort_index:
         df_batt = net.get_batteries().sort_index()
     else:
         df_batt = net.get_batteries()
+    batt_bus, batt_disco = _aux_get_bus(bus_df, df_batt)
     model.init_storages(df_batt["target_p"].values,
                         df_batt["target_q"].values,
-                        1 * bus_df.loc[df_batt["bus_id"].values]["bus_id"].values
+                        batt_bus
                         )
+    for batt_id, disco in enumerate(batt_disco):
+        if disco:
+           model.deactivate_storage(batt_id) 
     
     # TODO
     # sgen => regular gen (from net.get_generators()) with voltage_regulator off TODO 
@@ -217,5 +254,8 @@ def init(net : pypo.network,
     # TODO checks
     # no 3windings trafo and other exotic stuff
     if net.get_phase_tap_changers().shape[0] > 0:
-        raise RuntimeError("Impossible currently to init a grid with tap changers at the moment.")
+        pass
+        # raise RuntimeError("Impossible currently to init a grid with tap changers at the moment.")
+    model.init_bus_status()
+    np.sum(model.get_bus_status())
     return model

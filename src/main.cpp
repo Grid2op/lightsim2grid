@@ -623,6 +623,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init the grid
         .def("init_bus", &GridModel::init_bus, DocGridModel::_internal_do_not_use.c_str())
+        .def("init_bus_status", &GridModel::init_bus_status, DocGridModel::_internal_do_not_use.c_str())
         .def("set_init_vm_pu", &GridModel::set_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())  // TODO use python "property" for that
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())
         .def("set_sn_mva", &GridModel::set_sn_mva, DocGridModel::_internal_do_not_use.c_str())   // TODO use python "property" for that
@@ -650,7 +651,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_shunts", &GridModel::get_shunts, DocGridModel::get_shunts.c_str())
         .def("get_storages", &GridModel::get_storages, DocGridModel::get_storages.c_str())
         .def("get_loads", &GridModel::get_loads, DocGridModel::get_loads.c_str())
-        .def("get_buses", &GridModel::get_buses, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_vn_kv", &GridModel::get_bus_vn_kv, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_status", &GridModel::get_bus_status, DocGridModel::_internal_do_not_use.c_str())
 
         // modify the grid
         .def("turnedoff_no_pv", &GridModel::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")

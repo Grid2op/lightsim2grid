@@ -213,6 +213,18 @@ class GridModel : public DataGeneric
                            loss_percent, loss_mw, vm_or_pu, vm_ex_pu,
                            min_q_or, max_q_or, min_q_ex, max_q_ex);
         }
+        void init_bus_status(){
+            const int nb_bus = static_cast<int>(bus_status_.size());
+            for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
+            powerlines_.reconnect_connected_buses(bus_status_);
+            shunts_.reconnect_connected_buses(bus_status_);
+            trafos_.reconnect_connected_buses(bus_status_);
+            generators_.reconnect_connected_buses(bus_status_);
+            loads_.reconnect_connected_buses(bus_status_);
+            sgens_.reconnect_connected_buses(bus_status_);
+            storages_.reconnect_connected_buses(bus_status_);
+            dc_lines_.reconnect_connected_buses(bus_status_);
+        }
 
         void add_gen_slackbus(int gen_id, real_type weight);
         void remove_gen_slackbus(int gen_id);
@@ -270,7 +282,7 @@ class GridModel : public DataGeneric
         const DataLoad & get_storages() const {return storages_;}
         const DataSGen & get_static_generators() const {return sgens_;}
         const DataShunt & get_shunts() const {return shunts_;}
-        const RealVect & get_buses() const {return bus_vn_kv_;}
+        const std::vector<bool> & get_bus_status() const {return bus_status_;}
         
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }

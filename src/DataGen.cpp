@@ -400,3 +400,21 @@ void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic,
         }
     }
 }
+
+void DataGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_gen = nb();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+    {
+        if(!status_[gen_id]) continue;
+        const auto my_bus = bus_id_(gen_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataGen::reconnect_connected_buses: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_gen(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
+}

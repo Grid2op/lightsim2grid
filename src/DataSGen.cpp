@@ -34,7 +34,6 @@ void DataSGen::init(const RealVect & sgen_p,
     status_ = std::vector<bool>(sgen_p.size(), true);
 }
 
-
 DataSGen::StateRes DataSGen::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
@@ -48,6 +47,7 @@ DataSGen::StateRes DataSGen::get_state() const
      DataSGen::StateRes res(p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
      return res;
 }
+
 void DataSGen::set_state(DataSGen::StateRes & my_state )
 {
     reset_results();
@@ -80,7 +80,6 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
     status_ = status;
 }
-
 
 void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     const int nb_sgen = nb();
@@ -153,4 +152,22 @@ void DataSGen::change_q(int sgen_id, real_type new_q, bool & need_reset)
         throw std::runtime_error(exc_.str());
     }
     q_mvar_(sgen_id) = new_q;
+}
+
+void DataSGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_sgen = nb();
+    for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id)
+    {
+        if(!status_[sgen_id]) continue;
+        const auto my_bus = bus_id_(sgen_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataSGen::reconnect_connected_buses: Static Generator with id ";
+            exc_ << sgen_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_sgen(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
 }

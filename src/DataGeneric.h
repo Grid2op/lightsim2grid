@@ -90,6 +90,7 @@ class DataGeneric : public BaseConstants
         void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver) {};
     
         static const int _deactivated_bus_id;
+        virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {};
 
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         virtual ~DataGeneric() {};
