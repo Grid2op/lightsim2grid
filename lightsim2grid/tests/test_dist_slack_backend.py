@@ -93,14 +93,17 @@ class TestDistSlackBackend(unittest.TestCase):
         self._aux_test_different(self.env_ss, self.env_ds)
     
     def _aux_get_kwargs_runner(self):
-        return dict(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True, seed=0)
+        return dict(nb_episode=1,
+                    max_iter=self.max_iter_real,
+                    add_detailed_output=True,
+                    env_seeds=[0])
     
     def test_after_runner(self):
         """test I can use the runner"""
         runner_ss = Runner(**self.env_ss.get_params_for_runner())
         runner_ds = Runner(**self.env_ds.get_params_for_runner())
-        res_ss = runner_ss.run(self._aux_get_kwargs_runner())
-        res_ds = runner_ds.run(self._aux_get_kwargs_runner())
+        res_ss = runner_ss.run(**self._aux_get_kwargs_runner())
+        res_ds = runner_ds.run(**self._aux_get_kwargs_runner())
         if res_ss[0][3] != res_ds[0][3]: # same number of steps survived
             raise RuntimeError(f"{res_ss[0][3]} vs {res_ds[0][3]}: ")
         assert res_ss[0][2] != res_ds[0][2]  # not the same reward
