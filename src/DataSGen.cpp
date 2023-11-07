@@ -171,3 +171,27 @@ void DataSGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
         bus_status[my_bus] = true;  // this bus is connected
     }
 }
+
+void DataSGen::gen_p_per_bus(std::vector<real_type> & res) const
+{
+    const int nb_gen = nb();
+    for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
+    {
+        if(!status_[sgen_id]) continue;
+        const auto my_bus = bus_id_(sgen_id);
+        res[my_bus] += p_mw_(sgen_id);
+    }
+}
+
+void DataSGen::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+    const int nb_el = nb();
+    for(int el_id = 0; el_id < nb_el; ++el_id)
+    {
+        if(!status_[el_id]) continue;
+        const auto my_bus = bus_id_(el_id);
+        if(!busbar_in_main_component[my_bus]){
+            bool tmp = false;
+            deactivate(el_id, tmp);
+        }
+    }    
+}

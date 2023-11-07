@@ -421,3 +421,42 @@ void DataLine::reconnect_connected_buses(std::vector<bool> & bus_status) const{
         bus_status[bus_ex_id_me] = true;
     }
 }
+
+void DataLine::nb_line_end(std::vector<int> & res) const{
+    const auto my_size = powerlines_r_.size();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        const auto bus_or = bus_or_id_(line_id);
+        const auto bus_ex = bus_ex_id_(line_id);
+        res[bus_or] += 1;
+        res[bus_ex] += 1;
+    }
+}
+
+void DataLine::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+{
+    const auto my_size = powerlines_r_.size();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        const auto bus_or = bus_or_id_(line_id);
+        const auto bus_ex = bus_ex_id_(line_id);
+        res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
+        res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
+    }
+}
+
+void DataLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+{
+    auto nb_line = nb();
+    for(unsigned int i = 0; i < nb_line; ++i){
+        if(!status_[i]) continue;
+        auto bus_or = bus_or_id_(i);
+        auto bus_ex = bus_ex_id_(i);
+        if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
+            bool tmp = false;
+            deactivate(i, tmp);
+        }
+    }
+}

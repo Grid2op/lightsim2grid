@@ -108,6 +108,8 @@ class GridModel : public DataGeneric
         const DataTrafo & get_trafos_as_data() const {return trafos_;}
         const DataDCLine & get_dclines_as_data() const {return dc_lines_;}
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
+        std::tuple<int, int> assign_slack_to_most_connected();
+        void consider_only_main_component();
 
         // solver "control"
         void change_solver(const SolverType & type){
@@ -716,7 +718,6 @@ class GridModel : public DataGeneric
         DataDCLine dc_lines_;
 
         // 8. slack bus
-        // TODO multiple slack bus
         std::vector<int> slack_bus_id_;
         Eigen::VectorXi slack_bus_id_ac_solver_;
         Eigen::VectorXi slack_bus_id_dc_solver_;

@@ -58,3 +58,42 @@ void DataDCLine::init(const Eigen::VectorXi & branch_from_id,
     }
     to_gen_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);
 }
+
+void DataDCLine::nb_line_end(std::vector<int> & res) const
+{
+    auto nb = from_gen_.nb();
+    const auto & bus_or_id = get_bus_id_or();
+    const auto & bus_ex_id = get_bus_id_ex();
+    for(unsigned int i = 0; i < nb; ++i){
+        if(!status_[i]) continue;
+        auto bus_or = bus_or_id(i);
+        auto bus_ex = bus_ex_id(i);
+        res[bus_or] += 1;
+        res[bus_ex] += 1;
+    }
+}
+
+// TODO DC LINE: one side might be in the connected comp and not the other !
+void DataDCLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+{
+    auto nb = from_gen_.nb();
+    const auto & bus_or_id = get_bus_id_or();
+    const auto & bus_ex_id = get_bus_id_ex(); 
+    for(unsigned int i = 0; i < nb; ++i){
+        if(!status_[i]) continue;
+        auto bus_or = bus_or_id(i);
+        auto bus_ex = bus_ex_id(i);
+        if(!busbar_in_main_component[bus_or]) {
+            bool tmp = false;
+            from_gen_.deactivate(i, tmp);
+        }
+        if(!busbar_in_main_component[bus_ex]) {
+            bool tmp = false;
+            to_gen_.deactivate(i, tmp);
+        }
+        // if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
+        //     bool tmp = false;
+        //     deactivate(i, tmp);
+        // }
+    }
+}

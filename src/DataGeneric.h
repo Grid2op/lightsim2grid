@@ -92,6 +92,12 @@ class DataGeneric : public BaseConstants
         static const int _deactivated_bus_id;
         virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {};
 
+        /**computes the total amount of power for each bus (for generator only)**/
+        virtual void gen_p_per_bus(std::vector<real_type> & res) const {};
+        virtual void nb_line_end(std::vector<int> & res) const {};
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) {};
+
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         virtual ~DataGeneric() {};
         

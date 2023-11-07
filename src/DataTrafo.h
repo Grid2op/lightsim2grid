@@ -175,6 +175,10 @@ class DataTrafo : public DataGeneric
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
     void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    
+    virtual void nb_line_end(std::vector<int> & res) const;
+    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
     
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,

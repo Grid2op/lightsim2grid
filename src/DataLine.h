@@ -178,6 +178,9 @@ class DataLine : public DataGeneric
         return LineInfo(*this, id);
     }
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    virtual void nb_line_end(std::vector<int> & res) const;
+    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
 
     void deactivate(int powerline_id, bool & need_reset) {_deactivate(powerline_id, status_, need_reset);}
     void reactivate(int powerline_id, bool & need_reset) {_reactivate(powerline_id, status_, need_reset);}

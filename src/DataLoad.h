@@ -139,6 +139,7 @@ class DataLoad : public DataGeneric
     void change_p(int load_id, real_type new_p, bool & need_reset);
     void change_q(int load_id, real_type new_q, bool & need_reset);
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
 

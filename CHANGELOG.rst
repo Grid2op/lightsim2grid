@@ -28,6 +28,8 @@ Change Log
 - [FIXED] a bug in init from pypowsybl when some object were disconnected. It raises
   an error (because they are not connected to a bus): now this function properly handles
   these cases.
+- [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
+  one.
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw BackendError
 

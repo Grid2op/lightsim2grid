@@ -8,6 +8,7 @@
 
 #include "GridModel.h"
 #include "ChooseSolver.h"  // to avoid circular references
+#include <queue>
 
 
 GridModel::GridModel(const GridModel & other)
@@ -558,7 +559,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     // init the Ybus matrix
     std::vector<Eigen::Triplet<cplx_type> > tripletList;
     tripletList.reserve(bus_vn_kv_.size() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
-    powerlines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    powerlines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     trafos_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     loads_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
@@ -573,7 +574,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
 void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id_me_to_solver)
 {
     // init the Sbus vector
-    powerlines_.fillSbus(Sbus, id_me_to_solver, ac);
+    powerlines_.fillSbus(Sbus, id_me_to_solver, ac);  // TODO have a function to dispatch that to all type of elements
     trafos_.fillSbus(Sbus, id_me_to_solver, ac);
     shunts_.fillSbus(Sbus, id_me_to_solver, ac);
     loads_.fillSbus(Sbus, id_me_to_solver, ac);
@@ -601,7 +602,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
 
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
-    powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     loads_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
@@ -627,7 +628,7 @@ void GridModel::compute_results(bool ac){
 
     const std::vector<int> & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
     // for powerlines
-    powerlines_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    powerlines_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);  // TODO have a function to dispatch that to all type of elements
     // for trafo
     trafos_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
     // for loads
@@ -672,7 +673,7 @@ void GridModel::compute_results(bool ac){
 }
 
 void GridModel::reset_results(){
-    powerlines_.reset_results();
+    powerlines_.reset_results();  // TODO have a function to dispatch that to all type of elements
     shunts_.reset_results();
     trafos_.reset_results();
     loads_.reset_results();
@@ -899,7 +900,7 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
     tripletList_Bp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
     tripletList_Bpp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
     // run through the grid and get the parameters to fill them
-    powerlines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    powerlines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
     trafos_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
     loads_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
@@ -912,4 +913,114 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
     Bp.makeCompressed();
     Bpp.setFromTriplets(tripletList_Bpp.begin(), tripletList_Bpp.end());
     Bpp.makeCompressed();
+}
+
+// returns only the gen_id with the highest p that is connected to this bus !
+// returns bus_id, gen_bus_id
+std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
+    auto res = std::tuple<int, int>(-1, -1);
+    int res_bus_id = -1;
+    int res_gen_id = -1;
+    int max_line = -1;
+    const auto nb_busbars = bus_status_.size();
+    std::vector<real_type> gen_p_per_bus(nb_busbars, 0.);
+    std::vector<int> nb_line_end_per_bus(nb_busbars, 0);
+
+    // computes the total amount of power produce at each nodes
+    powerlines_.gen_p_per_bus(gen_p_per_bus);  // TODO have a function to dispatch that to all type of elements
+    shunts_.gen_p_per_bus(gen_p_per_bus);
+    trafos_.gen_p_per_bus(gen_p_per_bus);
+    loads_.gen_p_per_bus(gen_p_per_bus);
+    sgens_.gen_p_per_bus(gen_p_per_bus);
+    storages_.gen_p_per_bus(gen_p_per_bus);
+    generators_.gen_p_per_bus(gen_p_per_bus);
+    dc_lines_.gen_p_per_bus(gen_p_per_bus);
+
+    // computes the total number of "neighbors" (extremity of connected powerlines and trafo, not real neighbors)
+    powerlines_.nb_line_end(nb_line_end_per_bus);  // TODO have a function to dispatch that to all type of elements
+    shunts_.nb_line_end(nb_line_end_per_bus);
+    trafos_.nb_line_end(nb_line_end_per_bus);
+    loads_.nb_line_end(nb_line_end_per_bus);
+    sgens_.nb_line_end(nb_line_end_per_bus);
+    storages_.nb_line_end(nb_line_end_per_bus);
+    generators_.nb_line_end(nb_line_end_per_bus);
+    dc_lines_.nb_line_end(nb_line_end_per_bus);
+    
+    // now find the most connected buses
+    for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id)
+    {
+        const auto & nb_lines_this = nb_line_end_per_bus[bus_id];
+        if((nb_lines_this > max_line) && (gen_p_per_bus[bus_id] > 0.)){
+            res_bus_id = bus_id;
+            max_line = nb_lines_this;
+        }
+    }
+    // TODO DEBUG MODE
+    if(res_bus_id == -1) throw std::runtime_error("GridModel::assign_slack_to_most_connected: impossible to find anything connected to a node.");
+    std::get<0>(res) = res_bus_id;
+
+    // and reset the slack bus
+    generators_.remove_all_slackbus();
+    res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus);
+    std::get<1>(res) = res_gen_id;
+    slack_bus_id_ = std::vector<int>();
+    slack_weights_ = RealVect();
+    return res;
+}
+
+// TODO DC LINE: one side might be in the connected comp and not the other !
+void GridModel::consider_only_main_component(){
+    const auto & slack_buses_id = generators_.get_slack_bus_id();
+
+    // TODO DEBUG MODE
+    if(slack_buses_id.size() == 0) throw std::runtime_error("GridModel::consider_only_main_component: no slack is defined on your grid. This function cannot be used.");
+    
+    // build the graph
+    const auto nb_busbars = bus_status_.size();
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(2 * powerlines_.nb() + 2 * trafos_.nb());
+    powerlines_.get_graph(tripletList);  // TODO have a function to dispatch that to all type of elements
+    shunts_.get_graph(tripletList);
+    trafos_.get_graph(tripletList);
+    loads_.get_graph(tripletList);
+    sgens_.get_graph(tripletList);
+    storages_.get_graph(tripletList);
+    generators_.get_graph(tripletList);
+    dc_lines_.get_graph(tripletList);
+    Eigen::SparseMatrix<real_type> graph = Eigen::SparseMatrix<real_type>(nb_busbars, nb_busbars);
+    graph.setFromTriplets(tripletList.begin(), tripletList.end());
+    graph.makeCompressed();
+
+    // find the connected buses
+    // TODO copy paste from SecurityAnalysis
+    std::queue<Eigen::Index> neighborhood;
+    for(const auto & el : slack_buses_id) neighborhood.push(el);
+    std::vector<bool> visited(nb_busbars, false);
+    while (true)
+    {
+        const Eigen::Index col_id = neighborhood.front();
+        visited[col_id] = true;
+        for (Eigen::SparseMatrix<real_type>::InnerIterator it(graph, col_id); it; ++it)
+        {
+            // add in the queue all my neighbor (if the coefficient is big enough)
+            if(!visited[it.row()] ){  // && abs(it.value()) > 1e-8
+                neighborhood.push(it.row());
+            }
+        }
+        if(neighborhood.empty()) break;
+        neighborhood.pop();
+    }
+
+    // disconnected elements not in main component
+    powerlines_.disconnect_if_not_in_main_component(visited);
+    shunts_.disconnect_if_not_in_main_component(visited);
+    trafos_.disconnect_if_not_in_main_component(visited);
+    loads_.disconnect_if_not_in_main_component(visited);
+    sgens_.disconnect_if_not_in_main_component(visited);
+    storages_.disconnect_if_not_in_main_component(visited);
+    generators_.disconnect_if_not_in_main_component(visited);
+    dc_lines_.disconnect_if_not_in_main_component(visited);
+
+    // and finally deal with the buses
+    init_bus_status();
 }

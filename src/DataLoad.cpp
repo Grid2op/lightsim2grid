@@ -136,3 +136,16 @@ void DataLoad::reconnect_connected_buses(std::vector<bool> & bus_status) const {
         bus_status[my_bus] = true;  // this bus is connected
     }
 }
+
+void DataLoad::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+    const int nb_el = nb();
+    for(int el_id = 0; el_id < nb_el; ++el_id)
+    {
+        if(!status_[el_id]) continue;
+        const auto my_bus = bus_id_(el_id);
+        if(!busbar_in_main_component[my_bus]){
+            bool tmp = false;
+            deactivate(el_id, tmp);
+        }
+    }    
+}

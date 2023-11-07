@@ -154,11 +154,41 @@ class DataGen: public DataGeneric
     void add_slackbus(int gen_id, real_type weight){
         gen_slackbus_[gen_id] = true;
         gen_slack_weight_[gen_id] = weight;
+        // TODO DEBUG MODE
+        if(weight <= 0.) throw std::runtime_error("DataGen::add_slackbus Cannot assign a negative weight to the slack bus.");
     }
     void remove_slackbus(int gen_id){
         gen_slackbus_[gen_id] = false;
         gen_slack_weight_[gen_id] = 0.;
     }
+    void remove_all_slackbus(){
+        const int nb_gen = nb();
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+        {
+            remove_slackbus(gen_id);
+        }
+    }
+    // returns only the gen_id with the highest p that is connected to this bus !
+    int assign_slack_bus(int slack_bus_id, const std::vector<real_type> & gen_p_per_bus){
+        const int nb_gen = nb();
+        int res_gen_id = -1;
+        real_type max_p = -1.;
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+        {
+            if(!status_[gen_id]) continue;
+            if(bus_id_(gen_id) != slack_bus_id) continue;
+            const real_type p_mw = p_mw_(gen_id);
+            add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id]);
+            if((p_mw > max_p) || (res_gen_id == -1) ){
+                res_gen_id = gen_id;
+                max_p = p_mw;
+            }
+        }
+        // TODO DEBUG MODE
+        if(res_gen_id == -1) throw std::runtime_error("DataGen::assign_slack_bus No generator connected to the desired buses");
+        return res_gen_id;
+    }
+
     /**
     Retrieve the normalized (=sum to 1.000) slack weights for all the buses
     **/
@@ -179,6 +209,8 @@ class DataGen: public DataGeneric
     void change_bus(int gen_id, int new_bus_id, bool & need_reset, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
     void change_p(int gen_id, real_type new_p, bool & need_reset);
@@ -215,6 +247,8 @@ class DataGen: public DataGeneric
     the ac powerflow
     **/
     void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
+
+    virtual void gen_p_per_bus(std::vector<real_type> & res) const;
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}

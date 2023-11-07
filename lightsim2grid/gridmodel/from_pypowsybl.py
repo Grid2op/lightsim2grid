@@ -84,21 +84,6 @@ def init(net : pypo.network,
     for gen_id, is_disco in enumerate(gen_disco):
         if is_disco:
             model.deactivate_gen(gen_id)
-            
-    # TODO dist slack
-    if gen_slack_id is not None:
-        model.add_gen_slackbus(gen_slack_id, 1.)
-    elif slack_bus_id is not None:
-        gen_bus = np.array([el.bus_id for el in model.get_generators()])
-        gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
-        nb_conn = gen_is_conn_slack.sum()
-        if nb_conn == 0:
-            raise RuntimeError(f"There is no generator connected to bus {slack_bus_id}. It cannot be the slack")
-        for gen_id, is_slack in enumerate(gen_is_conn_slack):
-            if is_slack:
-                model.add_gen_slackbus(gen_id, 1. / nb_conn)   
-    else:
-        model.add_gen_slackbus(0, 1.)
         
     # for loads
     if sort_index:
@@ -247,7 +232,26 @@ def init(net : pypo.network,
     for batt_id, disco in enumerate(batt_disco):
         if disco:
            model.deactivate_storage(batt_id) 
-    
+
+    # TODO dist slack
+    if gen_slack_id is None and slack_bus_id is None:
+        # if nothing is given, by default I assign a slack bus to a bus where a lot of lines are connected
+        # quite central in the grid
+        bus_id, gen_id = model.assign_slack_to_most_connected()
+    elif gen_slack_id is not None:
+        if slack_bus_id is not None:
+            raise RuntimeError(f"You provided both gen_slack_id and slack_bus_id which is not possible.")
+        model.add_gen_slackbus(gen_slack_id, 1.)
+    elif slack_bus_id is not None:
+        gen_bus = np.array([el.bus_id for el in model.get_generators()])
+        gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
+        nb_conn = gen_is_conn_slack.sum()
+        if nb_conn == 0:
+            raise RuntimeError(f"There is no generator connected to bus {slack_bus_id}. It cannot be the slack")
+        for gen_id, is_slack in enumerate(gen_is_conn_slack):
+            if is_slack:
+                model.add_gen_slackbus(gen_id, 1. / nb_conn)
+            
     # TODO
     # sgen => regular gen (from net.get_generators()) with voltage_regulator off TODO 
     
@@ -256,6 +260,8 @@ def init(net : pypo.network,
     if net.get_phase_tap_changers().shape[0] > 0:
         pass
         # raise RuntimeError("Impossible currently to init a grid with tap changers at the moment.")
-    model.init_bus_status()
-    np.sum(model.get_bus_status())
+        
+    # and now deactivate all elements and nodes not in the main component
+    # TODO DC LINE: one side might be in the connected comp and not the other !
+    model.consider_only_main_component()
     return model

@@ -659,8 +659,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("turnedoff_pv", &GridModel::turnedoff_pv, "Turned off (or generators with p = 0) generators will be pv buses, they will maintain voltage (default)")
         .def("get_turnedoff_gen_pv", &GridModel::get_turnedoff_gen_pv, "TODO")
         .def("update_slack_weights", &GridModel::update_slack_weights, "TODO")
+        .def("assign_slack_to_most_connected", &GridModel::assign_slack_to_most_connected, "TODO")
+        .def("consider_only_main_component", &GridModel::consider_only_main_component, "TODO and TODO DC LINE: one side might be in the connected comp and not the other !")
         
-        .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
         .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_bus", &GridModel::reactivate_bus, DocGridModel::_internal_do_not_use.c_str())
 
