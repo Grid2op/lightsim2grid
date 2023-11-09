@@ -181,6 +181,16 @@ class GridModel : public DataGeneric
                              const Eigen::VectorXi & generators_bus_id){
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
         }
+        void init_generators_full(const RealVect & generators_p,
+                                  const RealVect & generators_v,
+                                  const RealVect & generators_q,
+                                  const std::vector<bool> & voltage_regulator_on,
+                                  const RealVect & generators_min_q,
+                                  const RealVect & generators_max_q,
+                                  const Eigen::VectorXi & generators_bus_id){
+            generators_.init_full(generators_p, generators_v, generators_q, voltage_regulator_on,
+                                  generators_min_q, generators_max_q, generators_bus_id);
+        }
         void init_loads(const RealVect & loads_p,
                         const RealVect & loads_q,
                         const Eigen::VectorXi & loads_bus_id){

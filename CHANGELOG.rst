@@ -30,6 +30,7 @@ Change Log
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.
+- [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
 

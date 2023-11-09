@@ -410,8 +410,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("bus_id", &DataGen::GenInfo::bus_id, DocIterator::bus_id.c_str())
         .def_readonly("is_slack", &DataGen::GenInfo::is_slack, DocIterator::is_slack.c_str())
         .def_readonly("slack_weight", &DataGen::GenInfo::slack_weight, DocIterator::slack_weight.c_str())
+        .def_readonly("voltage_regulator_on", &DataGen::GenInfo::voltage_regulator_on, "TODO")
         .def_readonly("target_p_mw", &DataGen::GenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
         .def_readonly("target_vm_pu", &DataGen::GenInfo::target_vm_pu, DocIterator::target_vm_pu.c_str())
+        .def_readonly("target_q_mvar", &DataGen::GenInfo::target_q_mvar, "TODO")
         .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &DataGen::GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
         .def_readonly("has_res", &DataGen::GenInfo::has_res, DocIterator::has_res.c_str())
@@ -642,6 +644,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_shunt", &GridModel::init_shunt, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_trafo", &GridModel::init_trafo, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_generators", &GridModel::init_generators, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("init_generators_full", &GridModel::init_generators_full, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_loads", &GridModel::init_loads, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_storages", &GridModel::init_storages, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_sgens", &GridModel::init_sgens, DocGridModel::_internal_do_not_use.c_str())  // same

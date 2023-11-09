@@ -45,8 +45,10 @@ class DataGen: public DataGeneric
             bool is_slack;
             real_type slack_weight;
 
+            bool voltage_regulator_on;
             real_type target_p_mw;
             real_type target_vm_pu;
+            real_type target_q_mvar;
             real_type min_q_mvar;
             real_type max_q_mvar;
             bool has_res;
@@ -62,8 +64,10 @@ class DataGen: public DataGeneric
             bus_id(-1),
             is_slack(false),
             slack_weight(-1.0),
+            voltage_regulator_on(false),
             target_p_mw(0.),
             target_vm_pu(0.),
+            target_q_mvar(0.),
             min_q_mvar(0.),
             max_q_mvar(0.),
             has_res(false),
@@ -83,8 +87,10 @@ class DataGen: public DataGeneric
                     is_slack = r_data_gen.gen_slackbus_[my_id];
                     slack_weight = r_data_gen.gen_slack_weight_[my_id];
 
+                    voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];
                     target_p_mw = r_data_gen.p_mw_.coeff(my_id);
                     target_vm_pu = r_data_gen.vm_pu_.coeff(my_id);
+                    target_q_mvar = r_data_gen.q_mvar_.coeff(my_id);
                     min_q_mvar = r_data_gen.min_q_.coeff(my_id);
                     max_q_mvar = r_data_gen.max_q_.coeff(my_id);
 
@@ -108,8 +114,10 @@ class DataGen: public DataGeneric
     typedef std::tuple<
        std::vector<std::string>,
        bool,
+       std::vector<bool>, // voltage_regulator_on
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // vm_pu_
+       std::vector<real_type>, // q_mvar_
        std::vector<real_type>, // min_q_
        std::vector<real_type>, // max_q_
        std::vector<int>, // bus_id
@@ -128,6 +136,15 @@ class DataGen: public DataGeneric
               const RealVect & generators_max_q,
               const Eigen::VectorXi & generators_bus_id
               );
+
+    void init_full(const RealVect & generators_p,
+                   const RealVect & generators_v,
+                   const RealVect & generators_q,
+                   const std::vector<bool> & voltage_regulator_on,
+                   const RealVect & generators_min_q,
+                   const RealVect & generators_max_q,
+                   const Eigen::VectorXi & generators_bus_id
+                   );
 
     int nb() const { return static_cast<int>(p_mw_.size()); }
 
@@ -220,6 +237,7 @@ class DataGen: public DataGeneric
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
     void change_p(int gen_id, real_type new_p, bool & need_reset);
+    void change_q(int gen_id, real_type new_q, bool & need_reset);
     void change_v(int gen_id, real_type new_v_pu, bool & need_reset);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
@@ -271,8 +289,10 @@ class DataGen: public DataGeneric
         // physical properties
 
         // input data
+        std::vector<bool> voltage_regulator_on_;
         RealVect p_mw_;
         RealVect vm_pu_;
+        RealVect q_mvar_;
         RealVect min_q_;
         RealVect max_q_;
         Eigen::VectorXi bus_id_;

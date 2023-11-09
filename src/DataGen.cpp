@@ -45,6 +45,22 @@ void DataGen::init(const RealVect & generators_p,
     gen_slackbus_ = std::vector<bool>(generators_p.size(), false);
     gen_slack_weight_ = std::vector<real_type>(generators_p.size(), 0.);
     turnedoff_gen_pv_ = true;
+    voltage_regulator_on_ = std::vector<bool>(generators_p.size(), true);
+    q_mvar_ = RealVect::Zero(generators_p.size());
+}
+
+void DataGen::init_full(const RealVect & generators_p,
+                        const RealVect & generators_v,
+                        const RealVect & generators_q,
+                        const std::vector<bool> & voltage_regulator_on,
+                        const RealVect & generators_min_q,
+                        const RealVect & generators_max_q,
+                        const Eigen::VectorXi & generators_bus_id
+                        )
+{
+    init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
+    voltage_regulator_on_ = voltage_regulator_on;
+    q_mvar_ = generators_q;
 }
 
 
@@ -52,13 +68,17 @@ DataGen::StateRes DataGen::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> vm_pu(vm_pu_.begin(), vm_pu_.end());
+     std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
      std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
      std::vector<bool> slack_bus = gen_slackbus_;
+     std::vector<bool> voltage_regulator_on = voltage_regulator_on_;
      std::vector<real_type> slack_weight = gen_slack_weight_;
-     DataGen::StateRes res(names_, turnedoff_gen_pv_, p_mw, vm_pu, min_q, max_q, bus_id, status, slack_bus, slack_weight);
+     DataGen::StateRes res(names_, turnedoff_gen_pv_, voltage_regulator_on,
+                           p_mw, vm_pu, q_mvar,
+                           min_q, max_q, bus_id, status, slack_bus, slack_weight);
      return res;
 }
 
@@ -69,19 +89,23 @@ void DataGen::set_state(DataGen::StateRes & my_state)
     turnedoff_gen_pv_ = std::get<1>(my_state);
 
     // the generators themelves
-    std::vector<real_type> & p_mw = std::get<2>(my_state);
-    std::vector<real_type> & vm_pu = std::get<3>(my_state);
-    std::vector<real_type> & min_q = std::get<4>(my_state);
-    std::vector<real_type> & max_q = std::get<5>(my_state);
-    std::vector<int> & bus_id = std::get<6>(my_state);
-    std::vector<bool> & status = std::get<7>(my_state);
-    std::vector<bool> & slack_bus = std::get<8>(my_state);
-    std::vector<real_type> & slack_weight = std::get<9>(my_state);
+    std::vector<bool> & voltage_regulator_on = std::get<2>(my_state);
+    std::vector<real_type> & p_mw = std::get<3>(my_state);
+    std::vector<real_type> & vm_pu = std::get<4>(my_state);
+    std::vector<real_type> & q_mvar = std::get<5>(my_state);
+    std::vector<real_type> & min_q = std::get<6>(my_state);
+    std::vector<real_type> & max_q = std::get<7>(my_state);
+    std::vector<int> & bus_id = std::get<8>(my_state);
+    std::vector<bool> & status = std::get<9>(my_state);
+    std::vector<bool> & slack_bus = std::get<10>(my_state);
+    std::vector<real_type> & slack_weight = std::get<11>(my_state);
     // TODO check sizes
 
     // input data
+    voltage_regulator_on_ = voltage_regulator_on;
     p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
     vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
+    q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
     min_q_ = RealVect::Map(&min_q[0], min_q.size());
     max_q_ = RealVect::Map(&max_q[0], max_q.size());
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
@@ -118,7 +142,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
 void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
-    real_type tmp;
+    cplx_type tmp;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the load is disconnected
         if(!status_[gen_id]) continue;
@@ -133,7 +157,11 @@ void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solv
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        tmp = p_mw_(gen_id);
+        tmp = {p_mw_(gen_id), 0.};
+        if(!voltage_regulator_on_[gen_id]){
+            // gen is pq if voltage regulaton is off
+            tmp += my_i * q_mvar_(gen_id);
+        }
         Sbus.coeffRef(bus_id_solver) += tmp;
     }
 }
@@ -148,12 +176,11 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
+        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
-        
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
-
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
@@ -162,7 +189,7 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        // if(bus_id_solver == slack_bus_id_solver) continue;  // slack bus is not PV
+
         if(is_in_vect(bus_id_solver, slack_bus_id_solver)) continue;  // slack bus is not PV
         if(has_bus_been_added[bus_id_solver]) continue; // i already added this bus
         bus_pv.push_back(bus_id_solver);
@@ -199,6 +226,7 @@ void DataGen::get_vm_for_dc(RealVect & Vm){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
 
+        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
@@ -232,6 +260,23 @@ void DataGen::change_p(int gen_id, real_type new_p, bool & need_reset)
     p_mw_(gen_id) = new_p;
 }
 
+void DataGen::change_q(int gen_id, real_type new_q, bool & need_reset)
+{
+    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
+    if(!my_status)
+    {
+        // TODO DEBUG MODE only this in debug mode
+        std::ostringstream exc_;
+        exc_ << "DataGen::change_q: Impossible to change the reactive value of a disconnected generator (check gen. id ";
+        exc_ << gen_id;
+        exc_ << ")";
+        throw std::runtime_error(exc_.str());
+    }
+    // TODO DEBUG MODE : raise an error if generator is regulating voltage, maybe ? 
+    // this would have not effect
+    q_mvar_(gen_id) = new_q;
+}
+
 void DataGen::change_v(int gen_id, real_type new_v_pu, bool & need_reset)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
@@ -255,6 +300,7 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) c
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
         
+        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
@@ -329,6 +375,7 @@ void DataGen::init_q_vector(int nb_bus,
     {
         if(!status_[gen_id]) continue;
 
+        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
         
         int bus_id = bus_id_(gen_id);
@@ -354,6 +401,7 @@ void DataGen::set_q(const RealVect & reactive_mismatch,
         real_type real_q = 0.;
         if(!status_[gen_id]) continue;  // set at 0 for disconnected generators
 
+        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
         int bus_id = bus_id_(gen_id);
