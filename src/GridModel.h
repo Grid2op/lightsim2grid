@@ -286,6 +286,31 @@ class GridModel : public DataGeneric
         const DataShunt & get_shunts() const {return shunts_;}
         const std::vector<bool> & get_bus_status() const {return bus_status_;}
         
+        void set_line_names(const std::vector<std::string> & names){
+            powerlines_.set_names(names);
+        }
+        void set_dcline_names(const std::vector<std::string> & names){
+            dc_lines_.set_names(names);
+        }
+        void set_trafo_names(const std::vector<std::string> & names){
+            trafos_.set_names(names);
+        }
+        void set_gen_names(const std::vector<std::string> & names){
+            generators_.set_names(names);
+        }
+        void set_load_names(const std::vector<std::string> & names){
+            loads_.set_names(names);
+        }
+        void set_storage_names(const std::vector<std::string> & names){
+            storages_.set_names(names);
+        }
+        void set_sgen_names(const std::vector<std::string> & names){
+            sgens_.set_names(names);
+        }
+        void set_shunt_names(const std::vector<std::string> & names){
+            shunts_.set_names(names);
+        }
+
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, topo_changed_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, topo_changed_); }

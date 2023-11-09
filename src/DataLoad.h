@@ -44,6 +44,7 @@ class DataLoad : public DataGeneric
                 // members
                 // TODO add some const here (value should not be changed !) !!!
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_id;
 
@@ -57,6 +58,7 @@ class DataLoad : public DataGeneric
 
                 LoadInfo(const DataLoad & r_data_load, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_id(-1),
                 target_p_mw(0.),
@@ -70,6 +72,9 @@ class DataLoad : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_load.nb()))
                     {
                         id = my_id;
+                        if(r_data_load.names_.size()){
+                            name = r_data_load.names_[my_id];
+                        }
                         connected = r_data_load.status_[my_id];
                         bus_id = r_data_load.bus_id_[my_id];
 
@@ -112,6 +117,7 @@ class DataLoad : public DataGeneric
     // regular implementation
     public:
     typedef std::tuple<
+       std::vector<std::string>,
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // q_mvar
        std::vector<int>, // bus_id

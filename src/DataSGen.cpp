@@ -44,22 +44,23 @@ DataSGen::StateRes DataSGen::get_state() const
      std::vector<real_type> q_max(q_max_mvar_.begin(), q_max_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataSGen::StateRes res(p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
+     DataSGen::StateRes res(names_, p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
      return res;
 }
 
 void DataSGen::set_state(DataSGen::StateRes & my_state )
 {
     reset_results();
-
-    std::vector<real_type> & p_mw = std::get<0>(my_state);
-    std::vector<real_type> & q_mvar = std::get<1>(my_state);
-    std::vector<real_type> & p_min = std::get<2>(my_state);
-    std::vector<real_type> & p_max = std::get<3>(my_state);
-    std::vector<real_type> & q_min = std::get<4>(my_state);
-    std::vector<real_type> & q_max = std::get<5>(my_state);
-    std::vector<int> & bus_id = std::get<6>(my_state);
-    std::vector<bool> & status = std::get<7>(my_state);
+    
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & p_mw = std::get<1>(my_state);
+    std::vector<real_type> & q_mvar = std::get<2>(my_state);
+    std::vector<real_type> & p_min = std::get<3>(my_state);
+    std::vector<real_type> & p_max = std::get<4>(my_state);
+    std::vector<real_type> & q_min = std::get<5>(my_state);
+    std::vector<real_type> & q_max = std::get<6>(my_state);
+    std::vector<int> & bus_id = std::get<7>(my_state);
+    std::vector<bool> & status = std::get<8>(my_state);
     auto size = p_mw.size();
     DataGeneric::check_size(p_mw, size, "p_mw");
     DataGeneric::check_size(q_mvar, size, "q_mvar");

@@ -30,6 +30,7 @@ class DataDCLine : public DataGeneric
             public:
                 // members
                 int id;  // id of the dcline
+                std::string name;
                 bool connected;
                 int bus_or_id;
                 int bus_ex_id;
@@ -53,6 +54,7 @@ class DataDCLine : public DataGeneric
 
                 DCLineInfo(const DataDCLine & r_data_dcline, int my_id):
                     id(-1),
+                    name(""),
                     connected(false),
                     bus_or_id(-1),
                     bus_ex_id(-1),
@@ -76,6 +78,9 @@ class DataDCLine : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_dcline.nb()))
                     {
                         id = my_id;
+                        if(r_data_dcline.names_.size()){
+                            name = r_data_dcline.names_[my_id];
+                        }
                         loss_pct = r_data_dcline.loss_percent_(my_id);
                         loss_mw = r_data_dcline.loss_mw_(my_id);
 
@@ -108,6 +113,7 @@ class DataDCLine : public DataGeneric
 
     public:
     typedef std::tuple<
+               std::vector<std::string>,
                DataGen::StateRes,
                DataGen::StateRes,
                std::vector<double>, // loss_percent

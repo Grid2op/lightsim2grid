@@ -65,22 +65,23 @@ DataTrafo::StateRes DataTrafo::get_state() const
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
      std::vector<real_type> shift(shift_.begin(), shift_.end());
      std::vector<bool> is_tap_hv_side = is_tap_hv_side_;
-     DataTrafo::StateRes res(branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
+     DataTrafo::StateRes res(names_, branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
      return res;
 }
 void DataTrafo::set_state(DataTrafo::StateRes & my_state)
 {
     reset_results();
 
-    std::vector<real_type> & branch_r = std::get<0>(my_state);
-    std::vector<real_type> & branch_x = std::get<1>(my_state);
-    std::vector<cplx_type> & branch_h = std::get<2>(my_state);
-    std::vector<int> & bus_hv_id = std::get<3>(my_state);
-    std::vector<int> & bus_lv_id = std::get<4>(my_state);
-    std::vector<bool> & status = std::get<5>(my_state);
-    std::vector<real_type> & ratio = std::get<6>(my_state);
-    std::vector<bool> & is_tap_hv_side = std::get<7>(my_state);
-    std::vector<real_type> & shift = std::get<8>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & branch_r = std::get<1>(my_state);
+    std::vector<real_type> & branch_x = std::get<2>(my_state);
+    std::vector<cplx_type> & branch_h = std::get<3>(my_state);
+    std::vector<int> & bus_hv_id = std::get<4>(my_state);
+    std::vector<int> & bus_lv_id = std::get<5>(my_state);
+    std::vector<bool> & status = std::get<6>(my_state);
+    std::vector<real_type> & ratio = std::get<7>(my_state);
+    std::vector<bool> & is_tap_hv_side = std::get<8>(my_state);
+    std::vector<real_type> & shift = std::get<9>(my_state);
 
     auto size = branch_r.size();
     DataGeneric::check_size(branch_r, size, "branch_r");

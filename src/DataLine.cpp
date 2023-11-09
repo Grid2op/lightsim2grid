@@ -77,20 +77,20 @@ DataLine::StateRes DataLine::get_state() const
      std::vector<int > branch_from_id(bus_or_id_.begin(), bus_or_id_.end());
      std::vector<int > branch_to_id(bus_ex_id_.begin(), bus_ex_id_.end());
      std::vector<bool> status = status_;
-     DataLine::StateRes res(branch_r, branch_x, branch_hor, branch_hex, branch_from_id, branch_to_id, status);
+     DataLine::StateRes res(names_, branch_r, branch_x, branch_hor, branch_hex, branch_from_id, branch_to_id, status);
      return res;
 }
 void DataLine::set_state(DataLine::StateRes & my_state)
 {
     reset_results();
-
-    std::vector<real_type> & branch_r = std::get<0>(my_state);
-    std::vector<real_type> & branch_x = std::get<1>(my_state);
-    std::vector<cplx_type > & branch_h_or = std::get<2>(my_state);
-    std::vector<cplx_type > & branch_h_ex = std::get<3>(my_state);
-    std::vector<int> & branch_from_id = std::get<4>(my_state);
-    std::vector<int> & branch_to_id = std::get<5>(my_state);
-    std::vector<bool> & status = std::get<6>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & branch_r = std::get<1>(my_state);
+    std::vector<real_type> & branch_x = std::get<2>(my_state);
+    std::vector<cplx_type > & branch_h_or = std::get<3>(my_state);
+    std::vector<cplx_type > & branch_h_ex = std::get<4>(my_state);
+    std::vector<int> & branch_from_id = std::get<5>(my_state);
+    std::vector<int> & branch_to_id = std::get<6>(my_state);
+    std::vector<bool> & status = std::get<7>(my_state);
     // TODO check sizes
 
     // now assign the values

@@ -38,6 +38,7 @@ class DataTrafo : public DataGeneric
             public:
                 // members
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_hv_id;
                 int bus_lv_id;
@@ -62,6 +63,7 @@ class DataTrafo : public DataGeneric
 
                 TrafoInfo(const DataTrafo & r_data_trafo, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_hv_id(-1),
                 bus_lv_id(-1),
@@ -86,6 +88,9 @@ class DataTrafo : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_trafo.nb()))
                     {
                         id = my_id;
+                        if(r_data_trafo.names_.size()){
+                            name = r_data_trafo.names_[my_id];
+                        }
                         connected = r_data_trafo.status_[my_id];
                         bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
                         bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
@@ -120,6 +125,7 @@ class DataTrafo : public DataGeneric
 
     public:
     typedef std::tuple<
+               std::vector<std::string>,
                std::vector<real_type>, // branch_r
                std::vector<real_type>, // branch_x
                std::vector<cplx_type >, // branch_h

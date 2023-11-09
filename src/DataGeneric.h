@@ -98,9 +98,15 @@ class DataGeneric : public BaseConstants
         virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
         virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) {};
 
+        void set_names(const std::vector<std::string> & names){
+            names_ = names;
+        }
+        
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         virtual ~DataGeneric() {};
-        
+    protected:
+        std::vector<std::string> names_;
+
     protected:
         /**
         activation / deactivation of elements

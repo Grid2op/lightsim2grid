@@ -42,6 +42,7 @@ class DataSGen: public DataGeneric
                 // members
                 // TODO add some const here (value should not be changed !) !!!
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_id;
 
@@ -61,6 +62,7 @@ class DataSGen: public DataGeneric
 
                 SGenInfo(const DataSGen & r_data_sgen, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_id(-1),
                 min_q_mvar(0.),
@@ -78,6 +80,9 @@ class DataSGen: public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_sgen.nb()))
                     {
                         id = my_id;
+                        if(r_data_sgen.names_.size()){
+                            name = r_data_sgen.names_[my_id];
+                        }
                         connected = r_data_sgen.status_[my_id];
                         bus_id = r_data_sgen.bus_id_[my_id];
 
@@ -124,6 +129,7 @@ class DataSGen: public DataGeneric
 
     public:
     typedef std::tuple<
+       std::vector<std::string>,
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // q_mvar
        std::vector<real_type>, // p_min

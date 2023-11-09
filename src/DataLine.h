@@ -38,6 +38,7 @@ class DataLine : public DataGeneric
             public:
                 // members
                 int id;  // id of the line
+                std::string name;
                 bool connected;
                 int bus_or_id;
                 int bus_ex_id;
@@ -61,6 +62,7 @@ class DataLine : public DataGeneric
 
                 LineInfo(const DataLine & r_data_line, int my_id):
                 id(my_id),
+                name(""),
                 connected(false),
                 bus_or_id(-1),
                 bus_ex_id(-1),
@@ -84,6 +86,9 @@ class DataLine : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_line.nb()))
                     {
                         id = my_id;
+                        if(r_data_line.names_.size()){
+                            name = r_data_line.names_[my_id];
+                        }
                         connected = r_data_line.status_[my_id];
                         bus_or_id = r_data_line.bus_or_id_.coeff(my_id);
                         bus_ex_id = r_data_line.bus_ex_id_.coeff(my_id);
@@ -117,6 +122,7 @@ class DataLine : public DataGeneric
 
     public:
     typedef std::tuple<
+               std::vector<std::string>,
                std::vector<real_type>, // branch_r
                std::vector<real_type>, // branch_x
                std::vector<cplx_type>, // branch_h

@@ -633,7 +633,7 @@ const std::string DocSolver::get_computation_time = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::id = R"mydelimiter(
-    Get the ideas of the element. Ids are integer from 0 to n-1 (if `n` denotes the number of such elements on the grid.)
+    Get the id of the element. Ids are integer from 0 to n-1 (if `n` denotes the number of such elements on the grid.)
 
     Examples
     --------
@@ -654,6 +654,34 @@ const std::string DocIterator::id = R"mydelimiter(
 
         first_gen = grid_model.get_generators()[0]  # or get_loads for loads, etc.
         first_gen.id  # should be 0
+
+)mydelimiter";
+
+const std::string DocIterator::name = R"mydelimiter(
+    Get the name of the element. Names are string that should be unique. But if you really want things unique, use the `id`
+
+    .. warning::
+        Names are optional and might not be set when reading the grid. 
+
+    Examples
+    --------
+    We give the example only for generators, but it works similarly for every other types of objects
+    in a :class:`lightsim2grid.gridmodel.GridModel`.
+    
+    This gives something like:
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+
+        grid_model = env.backend._grid
+
+        first_gen = grid_model.get_generators()[0]  # or get_loads for loads, etc.
+        first_gen.name 
 
 )mydelimiter";
 

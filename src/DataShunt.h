@@ -38,6 +38,7 @@ class DataShunt : public DataGeneric
                 // members
                 // TODO add some const here (value should not be changed !) !!!
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_id;
 
@@ -51,6 +52,7 @@ class DataShunt : public DataGeneric
 
                 ShuntInfo(const DataShunt & r_data_shunt, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_id(-1),
                 target_p_mw(0.),
@@ -64,6 +66,9 @@ class DataShunt : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_shunt.nb()))
                     {
                         id = my_id;
+                        if(r_data_shunt.names_.size()){
+                            name = r_data_shunt.names_[my_id];
+                        }
                         connected = r_data_shunt.status_[my_id];
                         bus_id = r_data_shunt.bus_id_[my_id];
 
@@ -105,6 +110,7 @@ class DataShunt : public DataGeneric
 
     public:
     typedef std::tuple<
+           std::vector<std::string>, 
            std::vector<real_type>, // p_mw
            std::vector<real_type>, // q_mvar
            std::vector<int>, // bus_id

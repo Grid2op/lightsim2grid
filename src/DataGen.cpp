@@ -58,25 +58,25 @@ DataGen::StateRes DataGen::get_state() const
      std::vector<bool> status = status_;
      std::vector<bool> slack_bus = gen_slackbus_;
      std::vector<real_type> slack_weight = gen_slack_weight_;
-     DataGen::StateRes res(turnedoff_gen_pv_, p_mw, vm_pu, min_q, max_q, bus_id, status, slack_bus, slack_weight);
+     DataGen::StateRes res(names_, turnedoff_gen_pv_, p_mw, vm_pu, min_q, max_q, bus_id, status, slack_bus, slack_weight);
      return res;
 }
 
-void DataGen::set_state(DataGen::StateRes & my_state )
+void DataGen::set_state(DataGen::StateRes & my_state)
 {
     reset_results();
-    
-    turnedoff_gen_pv_ = std::get<0>(my_state);
+    names_ = std::get<0>(my_state);
+    turnedoff_gen_pv_ = std::get<1>(my_state);
 
     // the generators themelves
-    std::vector<real_type> & p_mw = std::get<1>(my_state);
-    std::vector<real_type> & vm_pu = std::get<2>(my_state);
-    std::vector<real_type> & min_q = std::get<3>(my_state);
-    std::vector<real_type> & max_q = std::get<4>(my_state);
-    std::vector<int> & bus_id = std::get<5>(my_state);
-    std::vector<bool> & status = std::get<6>(my_state);
-    std::vector<bool> & slack_bus = std::get<7>(my_state);
-    std::vector<real_type> & slack_weight = std::get<8>(my_state);
+    std::vector<real_type> & p_mw = std::get<2>(my_state);
+    std::vector<real_type> & vm_pu = std::get<3>(my_state);
+    std::vector<real_type> & min_q = std::get<4>(my_state);
+    std::vector<real_type> & max_q = std::get<5>(my_state);
+    std::vector<int> & bus_id = std::get<6>(my_state);
+    std::vector<bool> & status = std::get<7>(my_state);
+    std::vector<bool> & slack_bus = std::get<8>(my_state);
+    std::vector<real_type> & slack_weight = std::get<9>(my_state);
     // TODO check sizes
 
     // input data

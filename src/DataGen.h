@@ -39,6 +39,7 @@ class DataGen: public DataGeneric
             // members
             // TODO add some const here (value should not be changed !) !!!
             int id;  // id of the generator
+            std::string name;
             bool connected;
             int bus_id;
             bool is_slack;
@@ -56,6 +57,7 @@ class DataGen: public DataGeneric
 
             GenInfo(const DataGen & r_data_gen, int my_id):
             id(-1),
+            name(""),
             connected(false),
             bus_id(-1),
             is_slack(false),
@@ -73,6 +75,9 @@ class DataGen: public DataGeneric
                 if((my_id >= 0) & (my_id < r_data_gen.nb()))
                 {
                     id = my_id;
+                    if(r_data_gen.names_.size()){
+                        name = r_data_gen.names_[my_id];
+                    }
                     connected = r_data_gen.status_[my_id];
                     bus_id = r_data_gen.bus_id_[my_id];
                     is_slack = r_data_gen.gen_slackbus_[my_id];
@@ -101,6 +106,7 @@ class DataGen: public DataGeneric
 
     public:
     typedef std::tuple<
+       std::vector<std::string>,
        bool,
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // vm_pu_

@@ -25,18 +25,18 @@ DataShunt::StateRes DataShunt::get_state() const
      std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataShunt::StateRes res(p_mw, q_mvar, bus_id, status);
+     DataShunt::StateRes res(names_, p_mw, q_mvar, bus_id, status);
      return res;
 }
 
 void DataShunt::set_state(DataShunt::StateRes & my_state )
 {
     reset_results();
-
-    std::vector<real_type> & p_mw = std::get<0>(my_state);
-    std::vector<real_type> & q_mvar = std::get<1>(my_state);
-    std::vector<int> & bus_id = std::get<2>(my_state);
-    std::vector<bool> & status = std::get<3>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & p_mw = std::get<1>(my_state);
+    std::vector<real_type> & q_mvar = std::get<2>(my_state);
+    std::vector<int> & bus_id = std::get<3>(my_state);
+    std::vector<bool> & status = std::get<4>(my_state);
     // TODO check sizes
 
     // input data

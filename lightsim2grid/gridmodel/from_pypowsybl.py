@@ -26,8 +26,8 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
     tmp_bus_id[mask_disco] = df.iloc[first_el_co][bus_key]  # assign a "random" bus to disco element
     bus_id = bus_df.loc[tmp_bus_id.values]["bus_id"].values
     # deactivate the element not on the main component
-    wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
-    mask_disco[wrong_component] = True
+    # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
+    # mask_disco[wrong_component] = True
     # assign bus -1 to disconnected elements
     bus_id[mask_disco] = -1
     return bus_id , mask_disco.values
@@ -38,8 +38,11 @@ def init(net : pypo.network,
          slack_bus_id: int = None,
          sn_mva = 100.,
          sort_index=True,
-         f_hz = 50.):
+         f_hz = 50.,
+         only_main_component=True):
     model = GridModel()
+    # model.set_f_hz(f_hz)
+    
     # for substation
     # network.get_voltage_levels()["substation_id"]
     # network.get_substations()
@@ -84,6 +87,7 @@ def init(net : pypo.network,
     for gen_id, is_disco in enumerate(gen_disco):
         if is_disco:
             model.deactivate_gen(gen_id)
+    model.set_gen_names(df_gen.index)        
         
     # for loads
     if sort_index:
@@ -98,6 +102,7 @@ def init(net : pypo.network,
     for load_id, is_disco in enumerate(load_disco):
         if is_disco:
             model.deactivate_load(load_id)
+    model.set_load_names(df_load.index)     
     
     # for lines
     if sort_index:
@@ -141,6 +146,7 @@ def init(net : pypo.network,
     for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_powerline(line_id)
+    model.set_line_names(df_line.index)     
             
     # for trafo
     if sort_index:
@@ -176,6 +182,7 @@ def init(net : pypo.network,
     for t_id, (is_or_disc, is_ex_disc) in enumerate(zip(tor_disco, tex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_trafo(t_id)
+    model.set_trafo_names(df_trafo.index)     
     
     # for shunt
     if sort_index:
@@ -192,6 +199,7 @@ def init(net : pypo.network,
     for shunt_id, disco in enumerate(sh_disco):
         if disco:
            model.deactivate_shunt(shunt_id) 
+    model.set_shunt_names(df_trafo.index)     
            
     # for hvdc (TODO not tested yet)
     df_dc = net.get_hvdc_lines().sort_index()
@@ -218,6 +226,7 @@ def init(net : pypo.network,
     for hvdc_id, (is_or_disc, is_ex_disc) in enumerate(zip(hvdc_from_disco, hvdc_to_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_hvdc(hvdc_id)
+    model.set_dcline_names(df_sations.index)   
                 
     # storage units  (TODO not tested yet)
     if sort_index:
@@ -232,6 +241,7 @@ def init(net : pypo.network,
     for batt_id, disco in enumerate(batt_disco):
         if disco:
            model.deactivate_storage(batt_id) 
+    model.set_storage_names(df_batt.index)   
 
     # TODO dist slack
     if gen_slack_id is None and slack_bus_id is None:
@@ -262,6 +272,6 @@ def init(net : pypo.network,
         # raise RuntimeError("Impossible currently to init a grid with tap changers at the moment.")
         
     # and now deactivate all elements and nodes not in the main component
-    # TODO DC LINE: one side might be in the connected comp and not the other !
-    model.consider_only_main_component()
+    if only_main_component:
+        model.consider_only_main_component()
     return model

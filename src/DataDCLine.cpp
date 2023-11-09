@@ -15,7 +15,8 @@ DataDCLine::StateRes DataDCLine::get_state() const
     std::vector<real_type> loss_percent(loss_percent_.begin(), loss_percent_.end());
     std::vector<real_type> loss_mw(loss_mw_.begin(), loss_mw_.end());
      std::vector<bool> status = status_;
-    DataDCLine::StateRes res(from_gen_.get_state(),
+    DataDCLine::StateRes res(names_,
+                             from_gen_.get_state(),
                              to_gen_.get_state(),
                              loss_percent,
                              loss_mw,
@@ -25,11 +26,12 @@ DataDCLine::StateRes DataDCLine::get_state() const
 
 void DataDCLine::set_state(DataDCLine::StateRes & my_state){
     reset_results();
-    from_gen_.set_state(std::get<0>(my_state));
-    to_gen_.set_state(std::get<1>(my_state));
-    std::vector<real_type> & loss_percent = std::get<2>(my_state);
-    std::vector<real_type> & loss_mw = std::get<3>(my_state);
-    std::vector<bool> & status = std::get<4>(my_state);
+    names_ = std::get<0>(my_state);
+    from_gen_.set_state(std::get<1>(my_state));
+    to_gen_.set_state(std::get<2>(my_state));
+    std::vector<real_type> & loss_percent = std::get<3>(my_state);
+    std::vector<real_type> & loss_mw = std::get<4>(my_state);
+    std::vector<bool> & status = std::get<5>(my_state);
     status_ = status;
     loss_percent_ = RealVect::Map(&loss_percent[0], loss_percent.size());
     loss_mw_ = RealVect::Map(&loss_mw[0], loss_percent.size());
