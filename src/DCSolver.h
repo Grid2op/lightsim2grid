@@ -34,6 +34,10 @@ class BaseDCSolver: public BaseSolver
                         real_type tol
                         );
 
+        virtual Eigen::SparseMatrix<real_type> get_ptdf();  // TODO
+        virtual Eigen::SparseMatrix<real_type> get_lodf();  // TODO
+        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO
+
     private:
         // no copy allowed
         BaseDCSolver( const BaseSolver & ) =delete ;
@@ -42,6 +46,8 @@ class BaseDCSolver: public BaseSolver
     protected:
         LinearSolver  _linear_solver;
         bool need_factorize_;
+        RealVect Sbus_noslack_;
+        Eigen::SparseMatrix<real_type> Ybus_noslack_;
 
 };
 

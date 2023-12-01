@@ -720,6 +720,13 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     return res;
 }
 
+Eigen::SparseMatrix<real_type> GridModel::get_ptdf(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("Cannot get the ptdf without having first computed a dc powerflow.");
+    }
+    return _dc_solver.get_ptdf();
+}
+
 /**
 Retrieve the number of connected buses
 **/

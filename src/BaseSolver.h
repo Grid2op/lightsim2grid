@@ -98,6 +98,16 @@ class BaseSolver : public BaseConstants
                         real_type tol
                         ) = 0 ;
 
+        virtual Eigen::SparseMatrix<real_type> get_ptdf(){
+            throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
+        }
+        virtual Eigen::SparseMatrix<real_type> get_lodf(){  // TODO interface is likely to change
+            throw std::runtime_error("Impossible to get the LODF matrix with this solver type.");
+        }
+        virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change
+            throw std::runtime_error("Impossible to get the BSDF matrix with this solver type.");
+        }
+
         virtual
         void reset();
         

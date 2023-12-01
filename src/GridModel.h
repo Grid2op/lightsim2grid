@@ -267,6 +267,7 @@ class GridModel : public DataGeneric
                        int max_iter,  // not used for DC
                        real_type tol  // not used for DC
                        );
+        Eigen::SparseMatrix<real_type> get_ptdf();
 
         // ac powerflow
         CplxVect ac_pf(const CplxVect & Vinit,

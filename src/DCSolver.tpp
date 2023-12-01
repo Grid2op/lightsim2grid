@@ -169,3 +169,25 @@ void BaseDCSolver<LinearSolver>::reset(){
     _linear_solver.reset();
     need_factorize_ = true;
 }
+
+template<class LinearSolver>
+Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_ptdf(){
+    // TODO
+    // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+    // and -1. / x / tap for (1..nb_branch, to_bus) 
+    return Ybus_noslack_;
+}
+
+template<class LinearSolver>
+Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_lodf(){
+    // TODO
+    return Ybus_noslack_;
+
+}
+
+template<class LinearSolver>
+Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_bsdf(){
+    // TODO
+    return Ybus_noslack_;
+
+}

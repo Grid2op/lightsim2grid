@@ -30,7 +30,7 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
     # mask_disco[wrong_component] = True
     # assign bus -1 to disconnected elements
     bus_id[mask_disco] = -1
-    return bus_id , mask_disco.values
+    return bus_id, mask_disco.values
 
 
 def init(net : pypo.network,
