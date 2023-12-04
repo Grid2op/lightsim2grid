@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+const bool KLULinearSolver::CAN_SOLVE_MAT = false;
+
 ErrorType KLULinearSolver::reset(){
     klu_free_symbolic(&symbolic_, &common_);
     klu_free_numeric(&numeric_, &common_);

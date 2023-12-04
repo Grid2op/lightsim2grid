@@ -11,6 +11,8 @@
 #include "CKTSOSolver.h"
 #include <iostream>
 
+const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;
+
 
 ErrorType CKTSOLinearSolver::reset(){
     // free everything

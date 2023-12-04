@@ -48,6 +48,9 @@ class KLULinearSolver
         ErrorType initialize(Eigen::SparseMatrix<real_type>& J);
         ErrorType solve(Eigen::SparseMatrix<real_type>& J, RealVect & b, bool has_just_been_inialized);
 
+        // can this linear solver solve problem where RHS is a matrix
+        static const bool CAN_SOLVE_MAT;
+        
     private:
         // solver initialization
         klu_symbolic* symbolic_;

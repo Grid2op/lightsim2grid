@@ -9,6 +9,8 @@
 #include "NICSLUSolver.h"
 #include <iostream>
 
+const bool NICSLULinearSolver::CAN_SOLVE_MAT = false;
+
 ErrorType NICSLULinearSolver::reset(){
     // free everything
     solver_.Free();
