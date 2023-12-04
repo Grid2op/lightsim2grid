@@ -446,7 +446,6 @@ class LightSimBackend(Backend):
                     raise Grid2OpException('There is no powergrid at "{}"'.format(full_path))
                 return full_path
             full_path = make_complete_path(path, filename)
-            
         grid_tmp = pypow_net.load(full_path)
         gen_slack_id = None
         if "gen_slack_id" in loader_kwargs:

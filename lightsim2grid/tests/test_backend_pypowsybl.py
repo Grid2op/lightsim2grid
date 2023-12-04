@@ -92,7 +92,8 @@ class BackendTester2(unittest.TestCase):
         grid.ac_pf(np.ones(14, dtype=np.complex128), 10, 1e-6)
         
     def test_runpf(self):
-        backend = LightSimBackend(loader_method="pypowsybl", loader_kwargs=_aux_get_loader_kwargs())
+        backend = LightSimBackend(loader_method="pypowsybl",
+                                  loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         # AC powerflow
         conv, exc_ = backend.runpf()

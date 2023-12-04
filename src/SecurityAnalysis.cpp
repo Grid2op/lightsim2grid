@@ -12,6 +12,7 @@
 
 bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
     std::vector<bool> visited(Ybus.cols(), false); 
+    std::vector<bool> already_added(Ybus.cols(), false);
     std::queue<Eigen::Index> neighborhood;
     Eigen::Index col_id = 0;  // start by node 0, why not
     while (true)
@@ -20,8 +21,9 @@ bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Y
         for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_id); it; ++it)
         {
             // add in the queue all my neighbor (if the coefficient is big enough)
-            if(!visited[it.row()] && abs(it.value()) > 1e-8){
+            if(!visited[it.row()] && !already_added[it.row()] && abs(it.value()) > 1e-8){
                 neighborhood.push(it.row());
+                already_added[it.row()] = true;
             }
         }
         if(neighborhood.empty()) break;

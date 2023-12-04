@@ -1002,20 +1002,25 @@ void GridModel::consider_only_main_component(){
     // TODO copy paste from SecurityAnalysis
     std::queue<Eigen::Index> neighborhood;
     for(const auto & el : slack_buses_id) neighborhood.push(el);
+    if(neighborhood.empty()){
+        throw std::runtime_error("There is no slack buses defined in your grid. You cannot isolate the main component.");
+    }
     std::vector<bool> visited(nb_busbars, false);
+    std::vector<bool> already_added(nb_busbars, false);
     while (true)
     {
         const Eigen::Index col_id = neighborhood.front();
+        neighborhood.pop();
         visited[col_id] = true;
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(graph, col_id); it; ++it)
         {
             // add in the queue all my neighbor (if the coefficient is big enough)
-            if(!visited[it.row()] ){  // && abs(it.value()) > 1e-8
+            if(!visited[it.row()] && !already_added[it.row()]){  // && abs(it.value()) > 1e-8
                 neighborhood.push(it.row());
+                already_added[it.row()] = true;
             }
         }
         if(neighborhood.empty()) break;
-        neighborhood.pop();
     }
 
     // disconnected elements not in main component
@@ -1027,7 +1032,6 @@ void GridModel::consider_only_main_component(){
     storages_.disconnect_if_not_in_main_component(visited);
     generators_.disconnect_if_not_in_main_component(visited);
     dc_lines_.disconnect_if_not_in_main_component(visited);
-
     // and finally deal with the buses
     init_bus_status();
 }

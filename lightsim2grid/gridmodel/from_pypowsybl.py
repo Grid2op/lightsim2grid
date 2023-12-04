@@ -38,7 +38,7 @@ def init(net : pypo.network,
          slack_bus_id: int = None,
          sn_mva = 100.,
          sort_index=True,
-         f_hz = 50.,
+         f_hz = 50.,  # unused
          only_main_component=True):
     model = GridModel()
     # model.set_f_hz(f_hz)
@@ -89,8 +89,8 @@ def init(net : pypo.network,
     for gen_id, is_disco in enumerate(gen_disco):
         if is_disco:
             model.deactivate_gen(gen_id)
-    model.set_gen_names(df_gen.index)        
-        
+    model.set_gen_names(df_gen.index)   
+    
     # for loads
     if sort_index:
         df_load = net.get_loads().sort_index()
@@ -104,7 +104,7 @@ def init(net : pypo.network,
     for load_id, is_disco in enumerate(load_disco):
         if is_disco:
             model.deactivate_load(load_id)
-    model.set_load_names(df_load.index)     
+    model.set_load_names(df_load.index)
     
     # for lines
     if sort_index:
@@ -148,7 +148,7 @@ def init(net : pypo.network,
     for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_powerline(line_id)
-    model.set_line_names(df_line.index)     
+    model.set_line_names(df_line.index)
             
     # for trafo
     if sort_index:
@@ -184,7 +184,7 @@ def init(net : pypo.network,
     for t_id, (is_or_disc, is_ex_disc) in enumerate(zip(tor_disco, tex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_trafo(t_id)
-    model.set_trafo_names(df_trafo.index)     
+    model.set_trafo_names(df_trafo.index)
     
     # for shunt
     if sort_index:
@@ -201,7 +201,7 @@ def init(net : pypo.network,
     for shunt_id, disco in enumerate(sh_disco):
         if disco:
            model.deactivate_shunt(shunt_id) 
-    model.set_shunt_names(df_trafo.index)     
+    model.set_shunt_names(df_trafo.index)
            
     # for hvdc (TODO not tested yet)
     df_dc = net.get_hvdc_lines().sort_index()
@@ -228,7 +228,7 @@ def init(net : pypo.network,
     for hvdc_id, (is_or_disc, is_ex_disc) in enumerate(zip(hvdc_from_disco, hvdc_to_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_hvdc(hvdc_id)
-    model.set_dcline_names(df_sations.index)   
+    model.set_dcline_names(df_sations.index)
                 
     # storage units  (TODO not tested yet)
     if sort_index:
@@ -243,7 +243,7 @@ def init(net : pypo.network,
     for batt_id, disco in enumerate(batt_disco):
         if disco:
            model.deactivate_storage(batt_id) 
-    model.set_storage_names(df_batt.index)   
+    model.set_storage_names(df_batt.index)
 
     # TODO dist slack
     if gen_slack_id is None and slack_bus_id is None:
@@ -262,8 +262,8 @@ def init(net : pypo.network,
             raise RuntimeError(f"There is no generator connected to bus {slack_bus_id}. It cannot be the slack")
         for gen_id, is_slack in enumerate(gen_is_conn_slack):
             if is_slack:
-                model.add_gen_slackbus(gen_id, 1. / nb_conn)
-            
+                model.add_gen_slackbus(gen_id, 1. / nb_conn)    
+    
     # TODO
     # sgen => regular gen (from net.get_generators()) with voltage_regulator off TODO 
     
