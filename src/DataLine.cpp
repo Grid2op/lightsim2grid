@@ -288,6 +288,50 @@ void DataLine::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     }
 }
 
+
+void DataLine::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                               const std::vector<int> & id_grid_to_solver,
+                               real_type sn_mva,
+                               int nb_line) const
+{
+    const Eigen::Index nb_line = static_cast<int>(powerlines_r_.size());
+
+    for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
+        // i only add this if the powerline is connected
+        if(!status_[line_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_or_id_(line_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBf_for_PTDF: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_ex_id_(line_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBf_for_PTDF: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        real_type x = powerlines_x_(line_id);
+        
+        // TODO
+        // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+        // and -1. / x / tap for (1..nb_branch, to_bus) 
+
+        Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_or_id_me, 1. / x));
+        Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_ex_solver_id, -1. / x));
+    }
+
+}
+
+
 void DataLine::reset_results()
 {
     res_powerline_por_ = RealVect();  // in MW

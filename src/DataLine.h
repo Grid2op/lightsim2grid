@@ -204,6 +204,11 @@ class DataLine : public DataGeneric
                             const std::vector<int> & id_grid_to_solver,
                             real_type sn_mva,
                             FDPFMethod xb_or_bx) const;
+    virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                                 const std::vector<int> & id_grid_to_solver,
+                                 real_type sn_mva,
+                                 int nb_line) const;
+                                 
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,

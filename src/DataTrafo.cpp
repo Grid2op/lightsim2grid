@@ -54,6 +54,7 @@ void DataTrafo::init(const RealVect & trafo_r,
 
 }
 
+
 DataTrafo::StateRes DataTrafo::get_state() const
 {
      std::vector<real_type> branch_r(r_.begin(), r_.end());
@@ -68,6 +69,8 @@ DataTrafo::StateRes DataTrafo::get_state() const
      DataTrafo::StateRes res(names_, branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
      return res;
 }
+
+
 void DataTrafo::set_state(DataTrafo::StateRes & my_state)
 {
     reset_results();
@@ -108,6 +111,7 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
     is_tap_hv_side_ = is_tap_hv_side;
     _update_model_coeffs();
 }
+
 
 void DataTrafo::_update_model_coeffs()
 {
@@ -353,6 +357,7 @@ void DataTrafo::reset_results(){
     res_a_lv_ = RealVect();  // in kA
 }
 
+
 void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                           std::vector<Eigen::Triplet<real_type> > & Bpp,
                           const std::vector<int> & id_grid_to_solver,
@@ -452,6 +457,50 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 
     }
 }
+
+
+void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                               const std::vector<int> & id_grid_to_solver,
+                               real_type sn_mva,
+                               int nb_line) const
+{
+    const Eigen::Index nb_line = static_cast<int>(r_.size());
+
+    for(Eigen::Index tr_id=0; tr_id < nb_line; ++tr_id){
+        // i only add this if the powerline is connected
+        if(!status_[tr_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_hv_id_(tr_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillBf_for_PTDF: the line with id ";
+            exc_ << tr_id;
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_lv_id_(tr_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "tr_id::fillBf_for_PTDF: the line with id ";
+            exc_ << tr_id;
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        real_type x = x_(tr_id);
+        real_type _1_tau = is_tap_hv_side_[tr_id] ? 1. / ratio_(tr_id) : ratio_(tr_id); // 1. / tau
+
+        // TODO
+        // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+        // and -1. / x / tap for (1..nb_branch, to_bus) 
+        Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_line, bus_or_id_me, 1. / x * _1_tau));
+        Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_line, bus_ex_solver_id, -1. / x * _1_tau));
+    }
+
+}
+
 
 void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
 

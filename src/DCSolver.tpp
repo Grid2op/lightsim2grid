@@ -28,7 +28,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
     auto timer = CustTimer();
     BaseSolver::reset_timer();
-    const int nb_bus_solver = static_cast<int>(Ybus.rows());
+    nb_dcbus_solver_ = static_cast<int>(Ybus.rows());
 
     #ifdef __COUT_TIMES
         auto timer_preproc = CustTimer();
@@ -43,14 +43,14 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // const Eigen::VectorXi & my_pv = pv;
 
     // find the slack buses
-    slack_buses_ids_solver_ = extract_slack_bus_id(my_pv_, pq, nb_bus_solver);
+    slack_buses_ids_solver_ = extract_slack_bus_id(my_pv_, pq, nb_dcbus_solver_);
 
     // corresp bus -> solverbus
-    fill_mat_bus_id(nb_bus_solver);
+    fill_mat_bus_id(nb_dcbus_solver_);
 
     // remove the slack bus from Ybus
     // and extract only real part
-    fill_dcYbus_noslack(nb_bus_solver, Ybus);
+    fill_dcYbus_noslack(nb_dcbus_solver_, Ybus);
     
     #ifdef __COUT_TIMES
         std::cout << "\t dc: preproc: " << 1000. * timer_preproc.duration() << "ms" << std::endl;
@@ -72,8 +72,8 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     }
 
     // remove the slack bus from Sbus
-    dcSbus_noslack_ = RealVect::Constant(nb_bus_solver - slack_buses_ids_solver_.size(), my_zero_);
-    for (int k=0; k < nb_bus_solver; ++k){
+    dcSbus_noslack_ = RealVect::Constant(nb_dcbus_solver_ - slack_buses_ids_solver_.size(), my_zero_);
+    for (int k=0; k < nb_dcbus_solver_; ++k){
         if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
         const int col_res = mat_bus_id_(k);
         dcSbus_noslack_(col_res) = std::real(Sbus_tmp(k));
@@ -108,9 +108,9 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // retrieve back the results in the proper shape (add back the slack bus)
     // TODO have a better way for this, for example using `.segment(0,npv)`
     // see the BaseSolver.cpp: _evaluate_Fx
-    RealVect Va_dc = RealVect::Constant(nb_bus_solver, my_zero_);
+    RealVect Va_dc = RealVect::Constant(nb_dcbus_solver_, my_zero_);
     // fill Va from dc approx
-    for (int ybus_id=0; ybus_id < nb_bus_solver; ++ybus_id){
+    for (int ybus_id=0; ybus_id < nb_dcbus_solver_; ++ybus_id){
         if(mat_bus_id_(ybus_id) == -1) continue;  // slack bus is handled elsewhere
         const int bus_me = mat_bus_id_(ybus_id);
         Va_dc(ybus_id) = Va_dc_without_slack(bus_me);
@@ -185,6 +185,7 @@ void BaseDCSolver<LinearSolver>::reset(){
     BaseSolver::reset();
     _linear_solver.reset();
     need_factorize_ = true;
+    nb_dcbus_solver_ = 0;
     dcSbus_noslack_ = RealVect();
     dcYbus_noslack_ = Eigen::SparseMatrix<real_type>();
     my_pv_ = Eigen::VectorXi();
@@ -194,10 +195,10 @@ void BaseDCSolver<LinearSolver>::reset(){
 
 template<class LinearSolver>
 Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_ptdf(){
-    // TODO
-    // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
-    // and -1. / x / tap for (1..nb_branch, to_bus) 
-    return dcYbus_noslack_;
+    Eigen::SparseMatrix<real_type> Bf_with_slack;
+    get_Bf(Bf_with_slack);
+    
+    return Bf_with_slack;
 }
 
 template<class LinearSolver>

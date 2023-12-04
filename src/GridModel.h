@@ -568,6 +568,8 @@ class GridModel : public DataGeneric
                         Eigen::SparseMatrix<real_type> & Bpp, 
                         FDPFMethod xb_or_bx) const;
 
+        void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf) const;
+
         Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
             Eigen::SparseMatrix<real_type> Bpp;

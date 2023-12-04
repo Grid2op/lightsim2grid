@@ -922,6 +922,29 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
     Bpp.makeCompressed();
 }
 
+
+void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf) const
+{
+    const int nb_bus_solver = static_cast<int>(id_ac_solver_to_me_.size());
+    // TODO PTDF: nb_line, nb_bus or nb_branch, nb_bus ???
+    // TODO PTDF: if we don't have nb_branch we need a converter line_id => branch id
+    Bf = Eigen::SparseMatrix<real_type>(powerlines_.nb() + trafos_.nb(), nb_bus_solver);
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(bus_vn_kv_.size() + 2 * powerlines_.nb() + 2 * trafos_.nb());
+    
+    powerlines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());  // TODO have a function to dispatch that to all type of elements
+    shunts_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    trafos_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    loads_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    sgens_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    storages_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    generators_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    dc_lines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+
+    Bf.setFromTriplets(tripletList.begin(), tripletList.end());
+    Bf.makeCompressed();
+}
+
 // returns only the gen_id with the highest p that is connected to this bus !
 // returns bus_id, gen_bus_id
 std::tuple<int, int> GridModel::assign_slack_to_most_connected(){

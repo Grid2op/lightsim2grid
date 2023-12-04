@@ -170,3 +170,9 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     }
     return res;
 }
+
+
+void BaseSolver::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
+    if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
+    _gridmodel->fillBf_for_PTDF(Bf);
+}

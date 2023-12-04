@@ -200,6 +200,8 @@ class BaseSolver : public BaseConstants
             return false;
         }
 
+        void get_Bf(Eigen::SparseMatrix<real_type> & Bf) const;
+        
     protected:
         // solver initialization
         int n_;
