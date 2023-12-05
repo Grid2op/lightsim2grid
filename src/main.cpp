@@ -762,6 +762,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_Ybus", &GridModel::get_Ybus, DocGridModel::get_Ybus.c_str())
         .def("get_dcYbus", &GridModel::get_dcYbus, DocGridModel::get_dcYbus.c_str())
         .def("get_Sbus", &GridModel::get_Sbus, DocGridModel::get_Sbus.c_str())
+        .def("get_dcSbus", &GridModel::get_dcSbus, DocGridModel::_internal_do_not_use.c_str())
 
         .def("check_solution", &GridModel::check_solution, DocGridModel::check_solution.c_str())
 
@@ -801,6 +802,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("unset_topo_changed", &GridModel::unset_topo_changed, DocGridModel::_internal_do_not_use.c_str())
         .def("tell_topo_changed", &GridModel::tell_topo_changed, DocGridModel::_internal_do_not_use.c_str())
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
+        .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
 
          // apply action faster (optimized for grid2op representation)
          // it is not recommended to use it outside of grid2Op.

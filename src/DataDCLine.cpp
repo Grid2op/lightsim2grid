@@ -54,8 +54,8 @@ void DataDCLine::init(const Eigen::VectorXi & branch_from_id,
 
     from_gen_.init(p_mw, vm_or_pu, min_q_or, max_q_or, branch_from_id);
     RealVect p_ex = p_mw;
-    unsigned int size_ = p_mw.size();
-    for(unsigned int i = 0; i < size_; ++i){
+    Eigen::Index size_ = p_mw.size();
+    for(Eigen::Index i = 0; i < size_; ++i){
         p_ex(i) = get_to_mw(i, p_ex(i));
     }
     to_gen_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);
@@ -63,10 +63,10 @@ void DataDCLine::init(const Eigen::VectorXi & branch_from_id,
 
 void DataDCLine::nb_line_end(std::vector<int> & res) const
 {
-    auto nb = from_gen_.nb();
+    const Eigen::Index nb = from_gen_.nb();
     const auto & bus_or_id = get_bus_id_or();
     const auto & bus_ex_id = get_bus_id_ex();
-    for(unsigned int i = 0; i < nb; ++i){
+    for(Eigen::Index i = 0; i < nb; ++i){
         if(!status_[i]) continue;
         auto bus_or = bus_or_id(i);
         auto bus_ex = bus_ex_id(i);
@@ -78,10 +78,10 @@ void DataDCLine::nb_line_end(std::vector<int> & res) const
 // TODO DC LINE: one side might be in the connected comp and not the other !
 void DataDCLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
 {
-    auto nb = from_gen_.nb();
+    const Eigen::Index nb = from_gen_.nb();
     const auto & bus_or_id = get_bus_id_or();
     const auto & bus_ex_id = get_bus_id_ex(); 
-    for(unsigned int i = 0; i < nb; ++i){
+    for(Eigen::Index i = 0; i < nb; ++i){
         if(!status_[i]) continue;
         auto bus_or = bus_or_id(i);
         auto bus_ex = bus_ex_id(i);

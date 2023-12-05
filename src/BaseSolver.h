@@ -98,7 +98,7 @@ class BaseSolver : public BaseConstants
                         real_type tol
                         ) = 0 ;
 
-        virtual Eigen::SparseMatrix<real_type> get_ptdf(){
+        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
             throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
         }
         virtual Eigen::SparseMatrix<real_type> get_lodf(){  // TODO interface is likely to change
@@ -108,8 +108,7 @@ class BaseSolver : public BaseConstants
             throw std::runtime_error("Impossible to get the BSDF matrix with this solver type.");
         }
 
-        virtual
-        void reset();
+        virtual void reset();
         
     protected:
         virtual void reset_timer(){
@@ -201,6 +200,7 @@ class BaseSolver : public BaseConstants
         }
 
         void get_Bf(Eigen::SparseMatrix<real_type> & Bf) const;
+        void get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const;
         
     protected:
         // solver initialization

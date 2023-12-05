@@ -462,11 +462,12 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
                                const std::vector<int> & id_grid_to_solver,
                                real_type sn_mva,
-                               int nb_line) const
+                               int nb_powerline,
+                               bool transpose) const
 {
-    const Eigen::Index nb_line = static_cast<int>(r_.size());
+    const Eigen::Index nb_trafo = r_.size();
 
-    for(Eigen::Index tr_id=0; tr_id < nb_line; ++tr_id){
+    for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
         // i only add this if the powerline is connected
         if(!status_[tr_id]) continue;
 
@@ -495,8 +496,13 @@ void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
         // TODO
         // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
         // and -1. / x / tap for (1..nb_branch, to_bus) 
-        Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_line, bus_or_id_me, 1. / x * _1_tau));
-        Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_line, bus_ex_solver_id, -1. / x * _1_tau));
+        if(transpose){
+            Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, tr_id + nb_powerline, 1. / x * _1_tau));
+            Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, tr_id + nb_powerline, -1. / x * _1_tau));
+        }else{
+            Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_or_solver_id, 1. / x * _1_tau));
+            Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_ex_solver_id, -1. / x * _1_tau));
+        }
     }
 
 }
@@ -561,8 +567,8 @@ void DataTrafo::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
 
 void DataTrafo::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
 {
-    auto nb_line = nb();
-    for(unsigned int i = 0; i < nb_line; ++i){
+    const Eigen::Index nb_line = nb();
+    for(Eigen::Index i = 0; i < nb_line; ++i){
         if(!status_[i]) continue;
         auto bus_or = bus_hv_id_(i);
         auto bus_ex = bus_lv_id_(i);

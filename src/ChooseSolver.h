@@ -263,15 +263,15 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered (get_J)");
         }
 
-        Eigen::SparseMatrix<real_type> get_ptdf(){
+        RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
                 if(_solver_type != SolverType::DC && 
-                    _solver_type != SolverType::KLUDC && 
-                    _solver_type != SolverType::NICSLUDC &&
-                    _solver_type != SolverType::CKTSODC){
+                   _solver_type != SolverType::KLUDC && 
+                   _solver_type != SolverType::NICSLUDC &&
+                   _solver_type != SolverType::CKTSODC){
                 throw std::runtime_error("ChooseSolver::get_ptdf: cannot get ptdf for a solver that is not DC.");
                 }
             auto p_solver = get_prt_solver("get_ptdf", true);
-            const auto & res =  p_solver -> get_ptdf();
+            const auto & res =  p_solver -> get_ptdf(dcYbus);
             return res;
         }
 

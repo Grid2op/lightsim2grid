@@ -267,7 +267,8 @@ class GridModel : public DataGeneric
                        int max_iter,  // not used for DC
                        real_type tol  // not used for DC
                        );
-        Eigen::SparseMatrix<real_type> get_ptdf();
+        RealMat get_ptdf();
+        Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow
         CplxVect ac_pf(const CplxVect & Vinit,
@@ -444,6 +445,9 @@ class GridModel : public DataGeneric
         Eigen::Ref<const CplxVect> get_Sbus() const{
             return Sbus_;
         }
+        Eigen::Ref<const CplxVect> get_dcSbus() const{
+            return dcSbus_;
+        }
         Eigen::Ref<const Eigen::VectorXi> get_pv() const{
             return bus_pv_;
         }
@@ -568,7 +572,7 @@ class GridModel : public DataGeneric
                         Eigen::SparseMatrix<real_type> & Bpp, 
                         FDPFMethod xb_or_bx) const;
 
-        void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf) const;
+        void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose=false) const;
 
         Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
@@ -765,6 +769,7 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;
         Eigen::SparseMatrix<cplx_type> Ybus_dc_;
         CplxVect Sbus_;
+        CplxVect dcSbus_;
         Eigen::VectorXi bus_pv_;  // id are the solver internal id and NOT the initial id
         Eigen::VectorXi bus_pq_;  // id are the solver internal id and NOT the initial id
 

@@ -292,9 +292,10 @@ void DataLine::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 void DataLine::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
                                const std::vector<int> & id_grid_to_solver,
                                real_type sn_mva,
-                               int nb_line) const
+                               int nb_powerline,
+                               bool transpose) const
 {
-    const Eigen::Index nb_line = static_cast<int>(powerlines_r_.size());
+    const Eigen::Index nb_line = powerlines_r_.size();
 
     for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
         // i only add this if the powerline is connected
@@ -324,9 +325,13 @@ void DataLine::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
         // TODO
         // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
         // and -1. / x / tap for (1..nb_branch, to_bus) 
-
-        Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_or_id_me, 1. / x));
-        Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_ex_solver_id, -1. / x));
+        if(transpose){
+            Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, line_id, 1. / x));
+            Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, line_id, -1. / x));
+        }else{
+            Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_or_solver_id, 1. / x));
+            Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_ex_solver_id, -1. / x));
+        }
     }
 
 }
@@ -493,8 +498,8 @@ void DataLine::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
 
 void DataLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
 {
-    auto nb_line = nb();
-    for(unsigned int i = 0; i < nb_line; ++i){
+    const Eigen::Index nb_line = nb();
+    for(Eigen::Index i = 0; i < nb_line; ++i){
         if(!status_[i]) continue;
         auto bus_or = bus_or_id_(i);
         auto bus_ex = bus_ex_id_(i);

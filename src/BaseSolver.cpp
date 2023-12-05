@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "BaseSolver.h"
+#include "GridModel.h"  // needs to be included here because of the forward declaration
 
 void BaseSolver::reset(){
     // reset timers
@@ -175,4 +176,9 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
 void BaseSolver::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
     _gridmodel->fillBf_for_PTDF(Bf);
+}
+
+void BaseSolver::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
+    if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
+    _gridmodel->fillBf_for_PTDF(Bf_T, true);
 }

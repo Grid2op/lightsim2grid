@@ -262,6 +262,7 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     }
 
     Sbus_ = CplxVect();
+    dcSbus_ = CplxVect();
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
     slack_weights_ = RealVect();
@@ -436,7 +437,8 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
         fillYbus(Ybus, is_ac, id_me_to_solver);
     }
-    init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+    auto & this_Sbus = is_ac ? Sbus_ : dcSbus_;
+    init_Sbus(this_Sbus, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
     fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver); // TODO what if pv and pq changed ? :O
     
     int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
@@ -445,7 +447,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
     generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
     dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-    fillSbus_me(Sbus_, is_ac, id_me_to_solver);
+    fillSbus_me(this_Sbus, is_ac, id_me_to_solver);
 
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
@@ -660,7 +662,7 @@ void GridModel::compute_results(bool ac){
         // to split among the contributing generators) so it's possible to "mess with" Sbus 
         // for such purpose
         const auto id_slack = slack_bus_id_dc_solver_(0);
-        active_mismatch(id_slack) = -Sbus_.real().sum() * sn_mva_;
+        active_mismatch(id_slack) = -dcSbus_.real().sum() * sn_mva_;
     }
     generators_.set_p_slack(active_mismatch, id_me_to_solver);
 
@@ -713,18 +715,27 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
 
     // start the solver
     slack_weights_ = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
-    conv = _dc_solver.compute_pf(Ybus_dc_, V, Sbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
+    conv = _dc_solver.compute_pf(Ybus_dc_, V, dcSbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
 
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, false, id_me_to_dc_solver_);
     return res;
 }
 
-Eigen::SparseMatrix<real_type> GridModel::get_ptdf(){
+RealMat GridModel::get_ptdf(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("Cannot get the ptdf without having first computed a dc powerflow.");
+        throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    return _dc_solver.get_ptdf();
+    return _dc_solver.get_ptdf(Ybus_dc_);
+}
+
+Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
+    }
+    Eigen::SparseMatrix<real_type> Bf;
+    fillBf_for_PTDF(Bf);
+    return Bf;
 }
 
 /**
@@ -923,23 +934,30 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
 }
 
 
-void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf) const
+void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose) const
 {
-    const int nb_bus_solver = static_cast<int>(id_ac_solver_to_me_.size());
+    const int nb_bus_solver = static_cast<int>(id_me_to_dc_solver_.size());
+    // TODO DEBUG MODE
+    if(nb_bus_solver == 0) throw std::runtime_error("GridModel::fillBf_for_PTDF: it appears no DC powerflow has run on your grid.");
+    
     // TODO PTDF: nb_line, nb_bus or nb_branch, nb_bus ???
-    // TODO PTDF: if we don't have nb_branch we need a converter line_id => branch id
-    Bf = Eigen::SparseMatrix<real_type>(powerlines_.nb() + trafos_.nb(), nb_bus_solver);
+    // TODO PTDF: if we don't have nb_branch we need a converter line_id => branch 
+    if(transpose){
+        Bf = Eigen::SparseMatrix<real_type>(nb_bus_solver, powerlines_.nb() + trafos_.nb());
+    }else{
+        Bf = Eigen::SparseMatrix<real_type>(powerlines_.nb() + trafos_.nb(), nb_bus_solver);
+    }
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(bus_vn_kv_.size() + 2 * powerlines_.nb() + 2 * trafos_.nb());
     
-    powerlines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());  // TODO have a function to dispatch that to all type of elements
-    shunts_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
-    trafos_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
-    loads_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
-    sgens_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
-    storages_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
-    generators_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
-    dc_lines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb());
+    powerlines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);  // TODO have a function to dispatch that to all type of elements
+    shunts_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    trafos_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    loads_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    sgens_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    storages_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    generators_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    dc_lines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
 
     Bf.setFromTriplets(tripletList.begin(), tripletList.end());
     Bf.makeCompressed();

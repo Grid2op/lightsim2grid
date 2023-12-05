@@ -161,7 +161,7 @@ void BaseDCSolver<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Ei
 template<class LinearSolver>
 template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
 void BaseDCSolver<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
-    res_mat = Eigen::SparseMatrix<real_type>(nb_bus_solver - 1, nb_bus_solver - 1);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
+    res_mat = Eigen::SparseMatrix<real_type>(nb_bus_solver - slack_buses_ids_solver_.size(), nb_bus_solver - slack_buses_ids_solver_.size());  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(ref_mat.nonZeros());
     for (int k=0; k < nb_bus_solver; ++k){
@@ -194,11 +194,76 @@ void BaseDCSolver<LinearSolver>::reset(){
 }
 
 template<class LinearSolver>
-Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_ptdf(){
-    Eigen::SparseMatrix<real_type> Bf_with_slack;
-    get_Bf(Bf_with_slack);
+RealMat BaseDCSolver<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+    Eigen::SparseMatrix<real_type> Bf_T_with_slack;
+    RealMat PTDF;
+    RealVect rhs;
+    // TODO PTDF: sparse matrix ?
+    // TODO PTDF: distributed slack
+    // TODO PTDF: check that the solver has converged
+
+
+    //extract the Bf matrix
+    BaseSolver::get_Bf_transpose(Bf_T_with_slack);  // Bf_T_with_slack : [bus_id, line_or_trafo_id]
+    const int nb_bus = Bf_T_with_slack.rows();
+    const int nb_pow_tr = Bf_T_with_slack.cols();  // cols and not rows because Bf_T_with_slack is transposed
     
-    return Bf_with_slack;
+    // get the index of buses without slacks
+    std::vector<int> ind_no_slack_;
+    ind_no_slack_.reserve(nb_bus);
+    for(int bus_id = 0; bus_id < nb_bus; ++bus_id){
+        if(mat_bus_id_(bus_id) == -1) continue;
+        ind_no_slack_.push_back(bus_id);
+    }
+    const Eigen::VectorXi ind_no_slack = Eigen::VectorXi::Map(&ind_no_slack_[0], ind_no_slack_.size());
+
+    // solve iteratively the linear systems (one per powerline)
+    PTDF = RealMat(Bf_T_with_slack.cols(), Bf_T_with_slack.rows());  // rows and cols are "inverted" because the matrix Bf is transposed
+    rhs = RealVect::Zero(Bf_T_with_slack.cols() - slack_buses_ids_solver_.size());    // TODO dist slack: -1 or -mat_bus_id_.size() here ????
+    for (int line_id=0; line_id < nb_pow_tr; ++line_id){
+        // build the rhs vector
+        for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, line_id); it; ++it)
+        {
+            const auto bus_id = it.row();
+            if(mat_bus_id_(bus_id) == -1) continue;  // I don't add anything if it's the slack
+            const auto col_res = mat_bus_id_(bus_id);
+            rhs[col_res] = it.value();
+        }
+        if (line_id == 16){
+            std::cout << "line 16\n";
+            for(auto i = 0; i < nb_bus; ++i) std::cout << rhs[i] << ", ";
+            std::cout << std::endl;
+        }
+        if (line_id == 17){
+            std::cout << "line 17\n";
+            for(auto i = 0; i < nb_bus; ++i) std::cout << rhs[i] << ", ";
+            std::cout << std::endl;
+        }
+        if (line_id == 18){
+            std::cout << "line 18\n";
+            for(auto i = 0; i < nb_bus; ++i) std::cout << rhs[i] << ", ";
+            std::cout << std::endl;
+        }
+
+        // solve the linear system
+        _linear_solver.solve(dcYbus_noslack_, rhs, true);  // I don't need to refactorize the matrix (hence the `true`)
+
+        if (line_id == 18){
+            std::cout << "res for 18\n";
+            RealVect res = dcYbus_noslack_ * rhs;
+            for(auto i = 0; i < nb_bus; ++i) std::cout << res[i] << ", ";
+            std::cout << std::endl;
+        }
+
+        // assign results to the PTDF matrix
+        PTDF(line_id, ind_no_slack) = rhs;
+
+        // reset the rhs vector to 0.
+        rhs.array() = 0.;
+        // rhs = RealVect::Zero(Bf_T_with_slack.cols() - slack_buses_ids_solver_.size());
+    }
+    // TODO PTDF: if the solver can solve the  directly, do that instead
+    return PTDF;
 }
 
 template<class LinearSolver>

@@ -34,9 +34,9 @@ class BaseDCSolver: public BaseSolver
                         real_type tol
                         );
 
-        virtual Eigen::SparseMatrix<real_type> get_ptdf();  // TODO
-        virtual Eigen::SparseMatrix<real_type> get_lodf();  // TODO
-        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO
+        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus);  // TODO PTDF
+        virtual Eigen::SparseMatrix<real_type> get_lodf();  // TODO PTDF
+        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO PTDF
 
     private:
         // no copy allowed

@@ -33,6 +33,9 @@ typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
 typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
 
+typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic> RealMat;
+typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> CplxMat;
+
 // type of error in the different solvers
 enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue, SolverAnalyze, SolverFactor, SolverReFactor, SolverSolve, NotInitError, LicenseError};
 
