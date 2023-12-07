@@ -34,7 +34,6 @@ void DataSGen::init(const RealVect & sgen_p,
     status_ = std::vector<bool>(sgen_p.size(), true);
 }
 
-
 DataSGen::StateRes DataSGen::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
@@ -45,21 +44,23 @@ DataSGen::StateRes DataSGen::get_state() const
      std::vector<real_type> q_max(q_max_mvar_.begin(), q_max_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataSGen::StateRes res(p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
+     DataSGen::StateRes res(names_, p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
      return res;
 }
+
 void DataSGen::set_state(DataSGen::StateRes & my_state )
 {
     reset_results();
-
-    std::vector<real_type> & p_mw = std::get<0>(my_state);
-    std::vector<real_type> & q_mvar = std::get<1>(my_state);
-    std::vector<real_type> & p_min = std::get<2>(my_state);
-    std::vector<real_type> & p_max = std::get<3>(my_state);
-    std::vector<real_type> & q_min = std::get<4>(my_state);
-    std::vector<real_type> & q_max = std::get<5>(my_state);
-    std::vector<int> & bus_id = std::get<6>(my_state);
-    std::vector<bool> & status = std::get<7>(my_state);
+    
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & p_mw = std::get<1>(my_state);
+    std::vector<real_type> & q_mvar = std::get<2>(my_state);
+    std::vector<real_type> & p_min = std::get<3>(my_state);
+    std::vector<real_type> & p_max = std::get<4>(my_state);
+    std::vector<real_type> & q_min = std::get<5>(my_state);
+    std::vector<real_type> & q_max = std::get<6>(my_state);
+    std::vector<int> & bus_id = std::get<7>(my_state);
+    std::vector<bool> & status = std::get<8>(my_state);
     auto size = p_mw.size();
     DataGeneric::check_size(p_mw, size, "p_mw");
     DataGeneric::check_size(q_mvar, size, "q_mvar");
@@ -80,7 +81,6 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
     status_ = status;
 }
-
 
 void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     const int nb_sgen = nb();
@@ -127,7 +127,7 @@ void DataSGen::reset_results(){
     res_v_ = RealVect();  // in kV
 }
 
-void DataSGen::change_p(int sgen_id, real_type new_p, bool & need_reset)
+void DataSGen::change_p(int sgen_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(sgen_id); // and this check that load_id is not out of bound
     if(!my_status)
@@ -138,10 +138,11 @@ void DataSGen::change_p(int sgen_id, real_type new_p, bool & need_reset)
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    if (p_mw_(sgen_id) != new_p) solver_control.tell_recompute_sbus();
     p_mw_(sgen_id) = new_p;
 }
 
-void DataSGen::change_q(int sgen_id, real_type new_q, bool & need_reset)
+void DataSGen::change_q(int sgen_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(sgen_id); // and this check that load_id is not out of bound
     if(!my_status)
@@ -152,5 +153,48 @@ void DataSGen::change_q(int sgen_id, real_type new_q, bool & need_reset)
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    if (q_mvar_(sgen_id) != new_q) solver_control.tell_recompute_sbus();
     q_mvar_(sgen_id) = new_q;
+}
+
+void DataSGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_sgen = nb();
+    for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id)
+    {
+        if(!status_[sgen_id]) continue;
+        const auto my_bus = bus_id_(sgen_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataSGen::reconnect_connected_buses: Static Generator with id ";
+            exc_ << sgen_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_sgen(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
+}
+
+void DataSGen::gen_p_per_bus(std::vector<real_type> & res) const
+{
+    const int nb_gen = nb();
+    for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
+    {
+        if(!status_[sgen_id]) continue;
+        const auto my_bus = bus_id_(sgen_id);
+        res[my_bus] += p_mw_(sgen_id);
+    }
+}
+
+void DataSGen::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+    const int nb_el = nb();
+    SolverControl unused_solver_control;
+    for(int el_id = 0; el_id < nb_el; ++el_id)
+    {
+        if(!status_[el_id]) continue;
+        const auto my_bus = bus_id_(el_id);
+        if(!busbar_in_main_component[my_bus]){
+            deactivate(el_id, unused_solver_control);
+        }
+    }    
 }

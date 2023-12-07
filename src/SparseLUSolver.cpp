@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+const bool SparseLULinearSolver::CAN_SOLVE_MAT = true;
+
 ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
     // default Eigen representation: column major, which is good for klu !
     // J is const here

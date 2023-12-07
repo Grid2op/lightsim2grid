@@ -38,6 +38,7 @@ class DataShunt : public DataGeneric
                 // members
                 // TODO add some const here (value should not be changed !) !!!
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_id;
 
@@ -51,6 +52,7 @@ class DataShunt : public DataGeneric
 
                 ShuntInfo(const DataShunt & r_data_shunt, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_id(-1),
                 target_p_mw(0.),
@@ -64,6 +66,9 @@ class DataShunt : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_shunt.nb()))
                     {
                         id = my_id;
+                        if(r_data_shunt.names_.size()){
+                            name = r_data_shunt.names_[my_id];
+                        }
                         connected = r_data_shunt.status_[my_id];
                         bus_id = r_data_shunt.bus_id_[my_id];
 
@@ -105,6 +110,7 @@ class DataShunt : public DataGeneric
 
     public:
     typedef std::tuple<
+           std::vector<std::string>, 
            std::vector<real_type>, // p_mw
            std::vector<real_type>, // q_mvar
            std::vector<int>, // bus_id
@@ -114,8 +120,8 @@ class DataShunt : public DataGeneric
     DataShunt() {};
 
     void init(const RealVect & shunt_p_mw,
-                     const RealVect & shunt_q_mvar,
-                     const Eigen::VectorXi & shunt_bus_id
+              const RealVect & shunt_q_mvar,
+              const Eigen::VectorXi & shunt_bus_id
               );
 
     // pickle (python)
@@ -125,13 +131,25 @@ class DataShunt : public DataGeneric
 
     int nb() const { return static_cast<int>(p_mw_.size()); }
 
-    void deactivate(int shunt_id, SolverControl & solver_control) {_deactivate(shunt_id, status_, need_reset);}
-    void reactivate(int shunt_id, SolverControl & solver_control) {_reactivate(shunt_id, status_, need_reset);}
-    void change_bus(int shunt_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void deactivate(int shunt_id, SolverControl & solver_control) {
+        if(status_[shunt_id]){
+            solver_control.tell_recompute_sbus();
+        }
+        _deactivate(shunt_id, status_);
+    }
+    void reactivate(int shunt_id, SolverControl & solver_control) {
+        if(status_[shunt_id]){
+            solver_control.tell_recompute_sbus();
+        }
+        _reactivate(shunt_id, status_);
+    }
+    void change_bus(int shunt_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     void change_p(int shunt_id, real_type new_p, SolverControl & solver_control);
     void change_q(int shunt_id, real_type new_q, SolverControl & solver_control);
     int get_bus(int shunt_id) {return _get_bus(shunt_id, status_, bus_id_);}
-
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                           bool ac,
                           const std::vector<int> & id_grid_to_solver,

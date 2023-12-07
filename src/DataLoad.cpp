@@ -26,17 +26,17 @@ DataLoad::StateRes DataLoad::get_state() const
      std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataLoad::StateRes res(p_mw, q_mvar, bus_id, status);
+     DataLoad::StateRes res(names_, p_mw, q_mvar, bus_id, status);
      return res;
 }
 void DataLoad::set_state(DataLoad::StateRes & my_state )
 {
     reset_results();
-
-    std::vector<real_type> & p_mw = std::get<0>(my_state);
-    std::vector<real_type> & q_mvar = std::get<1>(my_state);
-    std::vector<int> & bus_id = std::get<2>(my_state);
-    std::vector<bool> & status = std::get<3>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & p_mw = std::get<1>(my_state);
+    std::vector<real_type> & q_mvar = std::get<2>(my_state);
+    std::vector<int> & bus_id = std::get<3>(my_state);
+    std::vector<bool> & status = std::get<4>(my_state);
     // TODO check sizes
 
     // input data
@@ -91,7 +91,7 @@ void DataLoad::reset_results(){
     res_v_ = RealVect();  // in kV
 }
 
-void DataLoad::change_p(int load_id, real_type new_p, bool & need_reset)
+void DataLoad::change_p(int load_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
     if(!my_status)
@@ -102,10 +102,11 @@ void DataLoad::change_p(int load_id, real_type new_p, bool & need_reset)
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    if (p_mw_(load_id) != new_p) solver_control.tell_recompute_sbus();
     p_mw_(load_id) = new_p;
 }
 
-void DataLoad::change_q(int load_id, real_type new_q, bool & need_reset)
+void DataLoad::change_q(int load_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
     if(!my_status)
@@ -116,5 +117,37 @@ void DataLoad::change_q(int load_id, real_type new_q, bool & need_reset)
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    if (q_mvar_(load_id) != new_q) solver_control.tell_recompute_sbus();
     q_mvar_(load_id) = new_q;
+}
+
+void DataLoad::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_load = nb();
+    for(int load_id = 0; load_id < nb_load; ++load_id)
+    {
+        if(!status_[load_id]) continue;
+        const auto my_bus = bus_id_(load_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataLoad::reconnect_connected_buses: Load with id ";
+            exc_ << load_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_load(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
+}
+
+void DataLoad::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+    const int nb_el = nb();
+    SolverControl unused_solver_control;
+    for(int el_id = 0; el_id < nb_el; ++el_id)
+    {
+        if(!status_[el_id]) continue;
+        const auto my_bus = bus_id_(el_id);
+        if(!busbar_in_main_component[my_bus]){
+            deactivate(el_id, unused_solver_control);
+        }
+    }    
 }

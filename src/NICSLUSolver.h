@@ -56,6 +56,9 @@ class NICSLULinearSolver
         ErrorType initialize(Eigen::SparseMatrix<real_type> & J);
         ErrorType solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
 
+        // can this linear solver solve problem where RHS is a matrix
+        static const bool CAN_SOLVE_MAT;
+
         // prevent copy and assignment
         NICSLULinearSolver(const NICSLULinearSolver & other) = delete;
         NICSLULinearSolver & operator=( const NICSLULinearSolver & ) = delete;

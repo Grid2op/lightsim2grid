@@ -5,6 +5,7 @@ Change Log
 --------
 - [refacto] have a structure in cpp for the buses
 - [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
+- [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
 - support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
@@ -13,8 +14,6 @@ Change Log
 - a mode to do both `Computer` and `SecurityAnalysisCPP`
 - use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
-- possibility to read CGMES files
-- possibility to read XIIDM files
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
@@ -25,7 +24,15 @@ Change Log
 - [FIXED] now voltage is properly set to 0. when storage units are disconnected
 - [FIXED] a bug where non connected grid were not spotted in DC
 - [FIXED] a bug when trying to set the slack for a non existing genererator
-- [IMPROVED] now making the new grid2op `create_test_suite` 
+- [FIXED] a bug in init from pypowsybl when some object were disconnected. It raises
+  an error (because they are not connected to a bus): now this function properly handles
+  these cases.
+- [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
+  one.
+- [ADDED] possibility to set / retrieve the names of each elements of the grid.
+- [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
+- [IMPROVED] now performing the new grid2op `create_test_suite` 
+- [IMPROVED] now lightsim2grid properly throw `BackendError`
 
 [0.7.5] 2023-10-05
 --------------------

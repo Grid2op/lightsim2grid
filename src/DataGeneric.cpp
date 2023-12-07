@@ -34,7 +34,7 @@ void DataGeneric::_deactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     status.at(el_id) = false;  //TODO why it's needed to do that again
 }
-void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, bool & need_reset, int nb_bus){
+void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
     if(el_id >= el_bus_ids.size())
@@ -79,7 +79,16 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
         throw std::out_of_range(exc_.str());
     }
     int & bus_me_id = el_bus_ids(el_id);
-    if(bus_me_id != new_bus_me_id) need_reset = true;  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+    
+    if(bus_me_id != new_bus_me_id) {
+        // TODO speed: here the dimension changed only if nothing was connected before
+        solver_control.tell_dimension_changed();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+        
+        // TODO speed: sparsity pattern might not change if something is already there  
+        solver_control.tell_ybus_change_sparsity_pattern();
+        solver_control.tell_recompute_sbus();
+        solver_control.tell_recompute_ybus();
+    }
     bus_me_id = new_bus_me_id;
 }
 

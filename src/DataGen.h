@@ -39,13 +39,16 @@ class DataGen: public DataGeneric
             // members
             // TODO add some const here (value should not be changed !) !!!
             int id;  // id of the generator
+            std::string name;
             bool connected;
             int bus_id;
             bool is_slack;
             real_type slack_weight;
 
+            bool voltage_regulator_on;
             real_type target_p_mw;
             real_type target_vm_pu;
+            real_type target_q_mvar;
             real_type min_q_mvar;
             real_type max_q_mvar;
             bool has_res;
@@ -56,12 +59,15 @@ class DataGen: public DataGeneric
 
             GenInfo(const DataGen & r_data_gen, int my_id):
             id(-1),
+            name(""),
             connected(false),
             bus_id(-1),
             is_slack(false),
             slack_weight(-1.0),
+            voltage_regulator_on(false),
             target_p_mw(0.),
             target_vm_pu(0.),
+            target_q_mvar(0.),
             min_q_mvar(0.),
             max_q_mvar(0.),
             has_res(false),
@@ -73,13 +79,18 @@ class DataGen: public DataGeneric
                 if((my_id >= 0) & (my_id < r_data_gen.nb()))
                 {
                     id = my_id;
+                    if(r_data_gen.names_.size()){
+                        name = r_data_gen.names_[my_id];
+                    }
                     connected = r_data_gen.status_[my_id];
                     bus_id = r_data_gen.bus_id_[my_id];
                     is_slack = r_data_gen.gen_slackbus_[my_id];
                     slack_weight = r_data_gen.gen_slack_weight_[my_id];
 
+                    voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];
                     target_p_mw = r_data_gen.p_mw_.coeff(my_id);
                     target_vm_pu = r_data_gen.vm_pu_.coeff(my_id);
+                    target_q_mvar = r_data_gen.q_mvar_.coeff(my_id);
                     min_q_mvar = r_data_gen.min_q_.coeff(my_id);
                     max_q_mvar = r_data_gen.max_q_.coeff(my_id);
 
@@ -101,9 +112,12 @@ class DataGen: public DataGeneric
 
     public:
     typedef std::tuple<
+       std::vector<std::string>,
        bool,
+       std::vector<bool>, // voltage_regulator_on
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // vm_pu_
+       std::vector<real_type>, // q_mvar_
        std::vector<real_type>, // min_q_
        std::vector<real_type>, // max_q_
        std::vector<int>, // bus_id
@@ -122,6 +136,15 @@ class DataGen: public DataGeneric
               const RealVect & generators_max_q,
               const Eigen::VectorXi & generators_bus_id
               );
+
+    void init_full(const RealVect & generators_p,
+                   const RealVect & generators_v,
+                   const RealVect & generators_q,
+                   const std::vector<bool> & voltage_regulator_on,
+                   const RealVect & generators_min_q,
+                   const RealVect & generators_max_q,
+                   const Eigen::VectorXi & generators_bus_id
+                   );
 
     int nb() const { return static_cast<int>(p_mw_.size()); }
 
@@ -154,11 +177,41 @@ class DataGen: public DataGeneric
     void add_slackbus(int gen_id, real_type weight){
         gen_slackbus_[gen_id] = true;
         gen_slack_weight_[gen_id] = weight;
+        // TODO DEBUG MODE
+        if(weight <= 0.) throw std::runtime_error("DataGen::add_slackbus Cannot assign a negative weight to the slack bus.");
     }
     void remove_slackbus(int gen_id){
         gen_slackbus_[gen_id] = false;
         gen_slack_weight_[gen_id] = 0.;
     }
+    void remove_all_slackbus(){
+        const int nb_gen = nb();
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+        {
+            remove_slackbus(gen_id);
+        }
+    }
+    // returns only the gen_id with the highest p that is connected to this bus !
+    int assign_slack_bus(int slack_bus_id, const std::vector<real_type> & gen_p_per_bus){
+        const int nb_gen = nb();
+        int res_gen_id = -1;
+        real_type max_p = -1.;
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+        {
+            if(!status_[gen_id]) continue;
+            if(bus_id_(gen_id) != slack_bus_id) continue;
+            const real_type p_mw = p_mw_(gen_id);
+            add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id]);
+            if((p_mw > max_p) || (res_gen_id == -1) ){
+                res_gen_id = gen_id;
+                max_p = p_mw;
+            }
+        }
+        // TODO DEBUG MODE
+        if(res_gen_id == -1) throw std::runtime_error("DataGen::assign_slack_bus No generator connected to the desired buses");
+        return res_gen_id;
+    }
+
     /**
     Retrieve the normalized (=sum to 1.000) slack weights for all the buses
     **/
@@ -173,14 +226,34 @@ class DataGen: public DataGeneric
     bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
     void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack, SolverControl & solver_control);
 
-    void deactivate(int gen_id, SolverControl & solver_control) {_deactivate(gen_id, status_, need_reset);}
-    void reactivate(int gen_id, SolverControl & sovler_control) {_reactivate(gen_id, status_, need_reset);}
-    void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void deactivate(int gen_id, SolverControl & solver_control) {
+        if (status_[gen_id]){
+            solver_control.tell_recompute_sbus();
+            if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
+            if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
+            if(gen_slack_weight_[gen_id]) solver_control.tell_slack_participate_changed();
+        }
+        _deactivate(gen_id, status_);
+    }
+    void reactivate(int gen_id, SolverControl & solver_control) {
+        if(!status_[gen_id]){
+            solver_control.tell_recompute_sbus();
+            if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
+            if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
+            if(gen_slack_weight_[gen_id]) solver_control.tell_slack_participate_changed();
+        }
+        _reactivate(gen_id, status_);
+    }
+    void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
     void change_p(int gen_id, real_type new_p, SolverControl & solver_control);
     void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
+    void change_q(int gen_id, real_type new_q, SolverControl & solver_control);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
     virtual void fillpv(std::vector<int>& bus_pv,
@@ -214,6 +287,8 @@ class DataGen: public DataGeneric
     **/
     void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
 
+    virtual void gen_p_per_bus(std::vector<real_type> & res) const;
+
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
 
@@ -229,8 +304,10 @@ class DataGen: public DataGeneric
         // physical properties
 
         // input data
+        std::vector<bool> voltage_regulator_on_;
         RealVect p_mw_;
         RealVect vm_pu_;
+        RealVect q_mvar_;
         RealVect min_q_;
         RealVect max_q_;
         Eigen::VectorXi bus_id_;

@@ -92,7 +92,8 @@ class BackendTester2(unittest.TestCase):
         grid.ac_pf(np.ones(14, dtype=np.complex128), 10, 1e-6)
         
     def test_runpf(self):
-        backend = LightSimBackend(loader_method="pypowsybl", loader_kwargs=_aux_get_loader_kwargs())
+        backend = LightSimBackend(loader_method="pypowsybl",
+                                  loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         # AC powerflow
         conv, exc_ = backend.runpf()
@@ -114,9 +115,9 @@ if CAN_DO_TEST_SUITE:
             return "grid.xiidm"
         
         def make_backend(self, detailed_infos_for_cascading_failures=False):
-            return  LightSimBackend(loader_method="pypowsybl",
-                                    loader_kwargs=_aux_get_loader_kwargs_storage(),
-                                    detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+            return LightSimBackend(loader_method="pypowsybl",
+                                   loader_kwargs=_aux_get_loader_kwargs_storage(),
+                                   detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
                             
     # # add test of grid2op for the backend based on pypowsybl
     # def this_make_backend(self, detailed_infos_for_cascading_failures=False):

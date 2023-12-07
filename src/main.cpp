@@ -405,12 +405,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataGen::GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
         .def_readonly("id", &DataGen::GenInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataGen::GenInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataGen::GenInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_id", &DataGen::GenInfo::bus_id, DocIterator::bus_id.c_str())
         .def_readonly("is_slack", &DataGen::GenInfo::is_slack, DocIterator::is_slack.c_str())
         .def_readonly("slack_weight", &DataGen::GenInfo::slack_weight, DocIterator::slack_weight.c_str())
+        .def_readonly("voltage_regulator_on", &DataGen::GenInfo::voltage_regulator_on, "TODO")
         .def_readonly("target_p_mw", &DataGen::GenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
         .def_readonly("target_vm_pu", &DataGen::GenInfo::target_vm_pu, DocIterator::target_vm_pu.c_str())
+        .def_readonly("target_q_mvar", &DataGen::GenInfo::target_q_mvar, "TODO")
         .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &DataGen::GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
         .def_readonly("has_res", &DataGen::GenInfo::has_res, DocIterator::has_res.c_str())
@@ -429,6 +432,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataSGen::SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
         .def_readonly("id", &DataSGen::SGenInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataSGen::SGenInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataSGen::SGenInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_id", &DataSGen::SGenInfo::bus_id, DocIterator::bus_id.c_str())
         .def_readonly("min_q_mvar", &DataSGen::SGenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
@@ -453,6 +457,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataLoad::LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
         .def_readonly("id", &DataLoad::LoadInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataLoad::LoadInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataLoad::LoadInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_id", &DataLoad::LoadInfo::bus_id, DocIterator::bus_id.c_str())
         .def_readonly("target_p_mw", &DataLoad::LoadInfo::target_p_mw, DocIterator::target_p_mw.c_str())
@@ -473,6 +478,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataShunt::ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
         .def_readonly("id", &DataShunt::ShuntInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataShunt::ShuntInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataShunt::ShuntInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_id", &DataShunt::ShuntInfo::bus_id, DocIterator::bus_id.c_str())
         .def_readonly("target_p_mw", &DataShunt::ShuntInfo::target_p_mw, DocIterator::target_p_mw.c_str())
@@ -493,6 +499,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataTrafo::TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
         .def_readonly("id", &DataTrafo::TrafoInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataTrafo::TrafoInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataTrafo::TrafoInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_hv_id", &DataTrafo::TrafoInfo::bus_hv_id, DocIterator::bus_hv_id.c_str())
         .def_readonly("bus_lv_id", &DataTrafo::TrafoInfo::bus_lv_id, DocIterator::bus_lv_id.c_str())
@@ -524,6 +531,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataLine::LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &DataLine::LineInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataLine::LineInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataLine::LineInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_or_id", &DataLine::LineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
         .def_readonly("bus_ex_id", &DataLine::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
@@ -554,6 +562,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
     py::class_<DataDCLine::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DataDCLine::DCLineInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DataDCLine::DCLineInfo::name, DocIterator::name.c_str())
         .def_readonly("connected", &DataDCLine::DCLineInfo::connected, DocIterator::connected.c_str())
         .def_readonly("bus_or_id", &DataDCLine::DCLineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
         .def_readonly("bus_ex_id", &DataDCLine::DCLineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
@@ -636,6 +645,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // init the grid
         .def("init_bus", &GridModel::init_bus, DocGridModel::_internal_do_not_use.c_str())
+        .def("init_bus_status", &GridModel::init_bus_status, DocGridModel::_internal_do_not_use.c_str())
         .def("set_init_vm_pu", &GridModel::set_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())  // TODO use python "property" for that
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())
         .def("set_sn_mva", &GridModel::set_sn_mva, DocGridModel::_internal_do_not_use.c_str())   // TODO use python "property" for that
@@ -647,6 +657,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("init_shunt", &GridModel::init_shunt, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_trafo", &GridModel::init_trafo, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_generators", &GridModel::init_generators, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("init_generators_full", &GridModel::init_generators_full, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_loads", &GridModel::init_loads, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_storages", &GridModel::init_storages, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_sgens", &GridModel::init_sgens, DocGridModel::_internal_do_not_use.c_str())  // same
@@ -663,15 +674,27 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_shunts", &GridModel::get_shunts, DocGridModel::get_shunts.c_str())
         .def("get_storages", &GridModel::get_storages, DocGridModel::get_storages.c_str())
         .def("get_loads", &GridModel::get_loads, DocGridModel::get_loads.c_str())
-        .def("get_buses", &GridModel::get_buses, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_vn_kv", &GridModel::get_bus_vn_kv, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus_status", &GridModel::get_bus_status, DocGridModel::_internal_do_not_use.c_str())
 
         // modify the grid
         .def("turnedoff_no_pv", &GridModel::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")
         .def("turnedoff_pv", &GridModel::turnedoff_pv, "Turned off (or generators with p = 0) generators will be pv buses, they will maintain voltage (default)")
         .def("get_turnedoff_gen_pv", &GridModel::get_turnedoff_gen_pv, "TODO")
         .def("update_slack_weights", &GridModel::update_slack_weights, "TODO")
+        .def("assign_slack_to_most_connected", &GridModel::assign_slack_to_most_connected, "TODO")
+        .def("consider_only_main_component", &GridModel::consider_only_main_component, "TODO and TODO DC LINE: one side might be in the connected comp and not the other !")
         
-        .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
+        // names
+        .def("set_line_names", &GridModel::set_line_names, "TODO")
+        .def("set_dcline_names", &GridModel::set_dcline_names, "TODO")
+        .def("set_trafo_names", &GridModel::set_trafo_names, "TODO")
+        .def("set_gen_names", &GridModel::set_gen_names, "TODO")
+        .def("set_load_names", &GridModel::set_load_names, "TODO")
+        .def("set_storage_names", &GridModel::set_storage_names,  "TODO")
+        .def("set_sgen_names", &GridModel::set_sgen_names, "TODO")
+        .def("set_shunt_names", &GridModel::set_shunt_names, "TODO")
+
         .def("deactivate_bus", &GridModel::deactivate_bus, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_bus", &GridModel::reactivate_bus, DocGridModel::_internal_do_not_use.c_str())
 
@@ -752,6 +775,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_Ybus", &GridModel::get_Ybus, DocGridModel::get_Ybus.c_str())
         .def("get_dcYbus", &GridModel::get_dcYbus, DocGridModel::get_dcYbus.c_str())
         .def("get_Sbus", &GridModel::get_Sbus, DocGridModel::get_Sbus.c_str())
+        .def("get_dcSbus", &GridModel::get_dcSbus, DocGridModel::_internal_do_not_use.c_str())
 
         .def("check_solution", &GridModel::check_solution, DocGridModel::check_solution.c_str())
 
@@ -795,6 +819,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("tell_ybus_change_sparsity_pattern", &GridModel::tell_ybus_change_sparsity_pattern, DocGridModel::_internal_do_not_use.c_str())
         .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
+        .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
 
          // apply action faster (optimized for grid2op representation)
          // it is not recommended to use it outside of grid2Op.

@@ -30,6 +30,7 @@ class DataDCLine : public DataGeneric
             public:
                 // members
                 int id;  // id of the dcline
+                std::string name;
                 bool connected;
                 int bus_or_id;
                 int bus_ex_id;
@@ -53,6 +54,7 @@ class DataDCLine : public DataGeneric
 
                 DCLineInfo(const DataDCLine & r_data_dcline, int my_id):
                     id(-1),
+                    name(""),
                     connected(false),
                     bus_or_id(-1),
                     bus_ex_id(-1),
@@ -76,6 +78,9 @@ class DataDCLine : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_dcline.nb()))
                     {
                         id = my_id;
+                        if(r_data_dcline.names_.size()){
+                            name = r_data_dcline.names_[my_id];
+                        }
                         loss_pct = r_data_dcline.loss_percent_(my_id);
                         loss_mw = r_data_dcline.loss_mw_(my_id);
 
@@ -108,6 +113,7 @@ class DataDCLine : public DataGeneric
 
     public:
     typedef std::tuple<
+               std::vector<std::string>,
                DataGen::StateRes,
                DataGen::StateRes,
                std::vector<double>, // loss_percent
@@ -172,6 +178,19 @@ class DataDCLine : public DataGeneric
         to_gen_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);}
     int get_bus_or(int dcline_id) {return from_gen_.get_bus(dcline_id);}
     int get_bus_ex(int dcline_id) {return to_gen_.get_bus(dcline_id);}
+
+    // for buses only connected through dc line, i don't add them
+    // they are not in the same "connected component"
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {
+        // from_gen_.reconnect_connected_buses(bus_status);
+        // to_gen_.reconnect_connected_buses(bus_status);
+    }
+    // for buses only connected through dc line, i don't add them
+    // they are not in the same "connected component"
+    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const  {};
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    virtual void nb_line_end(std::vector<int> & res) const;
+
     real_type get_qmin_or(int dcline_id) {return from_gen_.get_qmin(dcline_id);}
     real_type get_qmax_or(int dcline_id) {return  from_gen_.get_qmax(dcline_id);}
     real_type get_qmin_ex(int dcline_id) {return to_gen_.get_qmin(dcline_id);}

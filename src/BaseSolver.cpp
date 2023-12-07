@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "BaseSolver.h"
+#include "GridModel.h"  // needs to be included here because of the forward declaration
 
 void BaseSolver::reset(const SolverControl & solver_control){
     // reset timers
@@ -140,12 +141,11 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     // pv: list of index of pv nodes
     // pq: list of index of pq nodes
     // nb_bus: total number of bus in the grid
-    // returns: res: the id of the unique slack bus (throw an error if no slack bus is found)
-    // /!\ does not support multiple slack bus!!!
+    // returns: res: the ids of all the slack buses (by def: not PV and not PQ)
 
     Eigen::VectorXi res(nb_bus - pv.size() - pq.size());
     Eigen::Index i_res = 0;
-    bool found=false;
+    
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
     for(unsigned int k=0; k < pv.size(); ++k)
@@ -163,17 +163,22 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
         {
             res[i_res] = k;
             ++i_res;
-            // if(!found){
-            //     res = k;
-            //     found = true;
-            // }else{
-            //     throw std::runtime_error("BaseSolver::extract_slack_bus_id: multiple slack bus found on your grid !");
-            // }
         }
     }
-    // if(res == -1){
     if(res.size() != i_res){
+        // TODO DEBUG MODE
         throw std::runtime_error("BaseSolver::extract_slack_bus_id: No slack bus is found in your grid");
     }
     return res;
+}
+
+
+void BaseSolver::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
+    if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
+    _gridmodel->fillBf_for_PTDF(Bf);
+}
+
+void BaseSolver::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
+    if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
+    _gridmodel->fillBf_for_PTDF(Bf_T, true);
 }

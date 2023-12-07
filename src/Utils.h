@@ -33,6 +33,9 @@ typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
 typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
 
+typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic> RealMat;
+typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> CplxMat;
+
 // type of error in the different solvers
 enum class ErrorType {NoError, SingularMatrix, TooManyIterations, InifiniteValue, SolverAnalyze, SolverFactor, SolverReFactor, SolverSolve, NotInitError, LicenseError};
 
@@ -60,6 +63,7 @@ class SolverControl
             need_reset_solver_(true), 
             need_recompute_sbus_(true),
             need_recompute_ybus_(true),
+            v_changed_(true),
             ybus_change_sparsity_pattern_(true)
             {};
 
@@ -71,6 +75,7 @@ class SolverControl
             need_reset_solver_ = true;
             need_recompute_sbus_ = true;
             need_recompute_ybus_ = true;
+            v_changed_ = true;
             ybus_change_sparsity_pattern_ = true;
         }
 
@@ -82,17 +87,28 @@ class SolverControl
             need_reset_solver_ = false;
             need_recompute_sbus_ = false;
             need_recompute_ybus_ = false;
+            v_changed_ = false;
             ybus_change_sparsity_pattern_ = false;
         }
 
+        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes) 
         void tell_dimension_changed(){change_dimension_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // some pv generators are now pq or the opposite
         void tell_pv_changed(){pv_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // some pq nodes are now pv or the opposite
         void tell_pq_changed(){pq_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // some generators that participated to the slack bus now do not, or the opposite
         void tell_slack_participate_changed(){slack_participate_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // ybus need to be recomputed for some reason
         void tell_recompute_ybus(){need_recompute_ybus_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // sbus need to be recomputed for some reason
         void tell_recompute_sbus(){need_recompute_sbus_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // solver needs to be reset from scratch for some reason
         void tell_solver_need_reset(){need_reset_solver_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // the sparsity pattern of ybus changed
         void tell_ybus_change_sparsity_pattern(){ybus_change_sparsity_pattern_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+        // tell at least one generator changed its v setpoint
+        void tell_v_changed(){v_changed_ = true;}
 
         bool has_dimension_changed() const {return change_dimension_;}
         bool has_pv_changed() const {return pv_changed_;}
@@ -102,6 +118,7 @@ class SolverControl
         bool need_recompute_sbus() const {return need_recompute_sbus_;}
         bool need_recompute_ybus() const {return need_recompute_ybus_;}
         bool ybus_change_sparsity_pattern() const {return ybus_change_sparsity_pattern_;}
+        bool v_changed() const {return v_changed_;}
 
     protected:    
         bool change_dimension_;
@@ -111,6 +128,7 @@ class SolverControl
         bool need_reset_solver_;  // some matrices change size, needs to be computed
         bool need_recompute_sbus_;  // some coeff of sbus changed, need to recompute it
         bool need_recompute_ybus_;  // some coeff of ybus changed, but not its sparsity pattern
+        bool v_changed_;
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
 };
 

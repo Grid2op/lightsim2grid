@@ -218,6 +218,7 @@ class ChooseSolver
             auto p_solver = get_prt_solver("get_Vm", true);
             return p_solver -> get_Vm();
         }
+
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const
         {
             check_right_solver("get_J");
@@ -260,6 +261,18 @@ class ChooseSolver
             else if(_solver_type == SolverType::GaussSeidel){
                 throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for the GaussSeidel powerflow.");}
             else throw std::runtime_error("Unknown solver type encountered (get_J)");
+        }
+
+        RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+                if(_solver_type != SolverType::DC && 
+                   _solver_type != SolverType::KLUDC && 
+                   _solver_type != SolverType::NICSLUDC &&
+                   _solver_type != SolverType::CKTSODC){
+                throw std::runtime_error("ChooseSolver::get_ptdf: cannot get ptdf for a solver that is not DC.");
+                }
+            auto p_solver = get_prt_solver("get_ptdf", true);
+            const auto & res =  p_solver -> get_ptdf(dcYbus);
+            return res;
         }
 
         /** apparently i cannot pass a const ref for a sparse matrix in python**/

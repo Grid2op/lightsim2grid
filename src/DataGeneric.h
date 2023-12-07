@@ -77,6 +77,12 @@ class DataGeneric : public BaseConstants
                                 const std::vector<int> & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const {};
+                                
+        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                                     const std::vector<int> & id_grid_to_solver,
+                                     real_type sn_mva,
+                                     int nb_line,
+                                     bool transpose) const {};
 
         virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
         virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {};
@@ -90,10 +96,23 @@ class DataGeneric : public BaseConstants
         void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver) {};
     
         static const int _deactivated_bus_id;
+        virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {};
 
+        /**computes the total amount of power for each bus (for generator only)**/
+        virtual void gen_p_per_bus(std::vector<real_type> & res) const {};
+        virtual void nb_line_end(std::vector<int> & res) const {};
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) {};
+
+        void set_names(const std::vector<std::string> & names){
+            names_ = names;
+        }
+        
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         virtual ~DataGeneric() {};
-        
+    protected:
+        std::vector<std::string> names_;
+
     protected:
         /**
         activation / deactivation of elements

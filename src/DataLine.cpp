@@ -77,20 +77,20 @@ DataLine::StateRes DataLine::get_state() const
      std::vector<int > branch_from_id(bus_or_id_.begin(), bus_or_id_.end());
      std::vector<int > branch_to_id(bus_ex_id_.begin(), bus_ex_id_.end());
      std::vector<bool> status = status_;
-     DataLine::StateRes res(branch_r, branch_x, branch_hor, branch_hex, branch_from_id, branch_to_id, status);
+     DataLine::StateRes res(names_, branch_r, branch_x, branch_hor, branch_hex, branch_from_id, branch_to_id, status);
      return res;
 }
 void DataLine::set_state(DataLine::StateRes & my_state)
 {
     reset_results();
-
-    std::vector<real_type> & branch_r = std::get<0>(my_state);
-    std::vector<real_type> & branch_x = std::get<1>(my_state);
-    std::vector<cplx_type > & branch_h_or = std::get<2>(my_state);
-    std::vector<cplx_type > & branch_h_ex = std::get<3>(my_state);
-    std::vector<int> & branch_from_id = std::get<4>(my_state);
-    std::vector<int> & branch_to_id = std::get<5>(my_state);
-    std::vector<bool> & status = std::get<6>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & branch_r = std::get<1>(my_state);
+    std::vector<real_type> & branch_x = std::get<2>(my_state);
+    std::vector<cplx_type > & branch_h_or = std::get<3>(my_state);
+    std::vector<cplx_type > & branch_h_ex = std::get<4>(my_state);
+    std::vector<int> & branch_from_id = std::get<5>(my_state);
+    std::vector<int> & branch_to_id = std::get<6>(my_state);
+    std::vector<bool> & status = std::get<7>(my_state);
     // TODO check sizes
 
     // now assign the values
@@ -288,6 +288,55 @@ void DataLine::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     }
 }
 
+
+void DataLine::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                               const std::vector<int> & id_grid_to_solver,
+                               real_type sn_mva,
+                               int nb_powerline,
+                               bool transpose) const
+{
+    const Eigen::Index nb_line = powerlines_r_.size();
+
+    for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
+        // i only add this if the powerline is connected
+        if(!status_[line_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_or_id_(line_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBf_for_PTDF: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (or side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_ex_id_(line_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataLine::fillBf_for_PTDF: the line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ex side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        real_type x = powerlines_x_(line_id);
+        
+        // TODO
+        // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+        // and -1. / x / tap for (1..nb_branch, to_bus) 
+        if(transpose){
+            Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, line_id, 1. / x));
+            Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, line_id, -1. / x));
+        }else{
+            Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_or_solver_id, 1. / x));
+            Bf.push_back(Eigen::Triplet<real_type> (line_id, bus_ex_solver_id, -1. / x));
+        }
+    }
+
+}
+
+
 void DataLine::reset_results()
 {
     res_powerline_por_ = RealVect();  // in MW
@@ -389,4 +438,74 @@ void DataLine::compute_results(const Eigen::Ref<const RealVect> & Va,
     }
     _get_amps(res_powerline_aor_, res_powerline_por_, res_powerline_qor_, res_powerline_vor_);
     _get_amps(res_powerline_aex_, res_powerline_pex_, res_powerline_qex_, res_powerline_vex_);
+}
+
+void DataLine::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+
+    const auto my_size = powerlines_r_.size();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        
+        const auto bus_or_id_me = bus_or_id_(line_id);        
+        if(bus_or_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataLine::reconnect_connected_buses: Line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (origin) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_powerline(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_or_id_me] = true;
+
+        const auto bus_ex_id_me = bus_ex_id_(line_id);        
+        if(bus_ex_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataLine::reconnect_connected_buses: Line with id ";
+            exc_ << line_id;
+            exc_ << " is connected (ext) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_powerline(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_ex_id_me] = true;
+    }
+}
+
+void DataLine::nb_line_end(std::vector<int> & res) const{
+    const auto my_size = powerlines_r_.size();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        const auto bus_or = bus_or_id_(line_id);
+        const auto bus_ex = bus_ex_id_(line_id);
+        res[bus_or] += 1;
+        res[bus_ex] += 1;
+    }
+}
+
+void DataLine::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+{
+    const auto my_size = powerlines_r_.size();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        const auto bus_or = bus_or_id_(line_id);
+        const auto bus_ex = bus_ex_id_(line_id);
+        res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
+        res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
+    }
+}
+
+void DataLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+{
+    const Eigen::Index nb_line = nb();
+    SolverControl unused_solver_control;
+    for(Eigen::Index i = 0; i < nb_line; ++i){
+        if(!status_[i]) continue;
+        auto bus_or = bus_or_id_(i);
+        auto bus_ex = bus_ex_id_(i);
+        if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
+            deactivate(i, unused_solver_control);
+        }
+    }
 }

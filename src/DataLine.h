@@ -38,6 +38,7 @@ class DataLine : public DataGeneric
             public:
                 // members
                 int id;  // id of the line
+                std::string name;
                 bool connected;
                 int bus_or_id;
                 int bus_ex_id;
@@ -61,6 +62,7 @@ class DataLine : public DataGeneric
 
                 LineInfo(const DataLine & r_data_line, int my_id):
                 id(my_id),
+                name(""),
                 connected(false),
                 bus_or_id(-1),
                 bus_ex_id(-1),
@@ -84,6 +86,9 @@ class DataLine : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_line.nb()))
                     {
                         id = my_id;
+                        if(r_data_line.names_.size()){
+                            name = r_data_line.names_[my_id];
+                        }
                         connected = r_data_line.status_[my_id];
                         bus_or_id = r_data_line.bus_or_id_.coeff(my_id);
                         bus_ex_id = r_data_line.bus_ex_id_.coeff(my_id);
@@ -117,6 +122,7 @@ class DataLine : public DataGeneric
 
     public:
     typedef std::tuple<
+               std::vector<std::string>,
                std::vector<real_type>, // branch_r
                std::vector<real_type>, // branch_x
                std::vector<cplx_type>, // branch_h
@@ -177,11 +183,27 @@ class DataLine : public DataGeneric
         }
         return LineInfo(*this, id);
     }
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    virtual void nb_line_end(std::vector<int> & res) const;
+    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
 
-    void deactivate(int powerline_id, SolverControl & solver_control) {_deactivate(powerline_id, status_, need_reset);}
-    void reactivate(int powerline_id, SolverControl & solver_control) {_reactivate(powerline_id, status_, need_reset);}
-    void change_bus_or(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_or_id_, need_reset, nb_bus);}
-    void change_bus_ex(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_ex_id_, need_reset, nb_bus);}
+    void deactivate(int powerline_id, SolverControl & solver_control) {
+        if(status_[powerline_id]){
+            solver_control.tell_recompute_ybus();
+            // but sparsity pattern do not change here (possibly one more coeff at 0.)
+        }
+        _deactivate(powerline_id, status_);
+    }
+    void reactivate(int powerline_id, SolverControl & solver_control) {
+        if(!status_[powerline_id]){
+            solver_control.tell_recompute_ybus();
+            solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+        }
+        _reactivate(powerline_id, status_);
+    }
+    void change_bus_or(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_or_id_, solver_control, nb_bus);}
+    void change_bus_ex(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_ex_id_, solver_control, nb_bus);}
     int get_bus_or(int powerline_id) {return _get_bus(powerline_id, status_, bus_or_id_);}
     int get_bus_ex(int powerline_id) {return _get_bus(powerline_id, status_, bus_ex_id_);}
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
@@ -194,6 +216,12 @@ class DataLine : public DataGeneric
                             const std::vector<int> & id_grid_to_solver,
                             real_type sn_mva,
                             FDPFMethod xb_or_bx) const;
+    virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                                 const std::vector<int> & id_grid_to_solver,
+                                 real_type sn_mva,
+                                 int nb_powerline,
+                                 bool transpose) const;
+                                 
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,

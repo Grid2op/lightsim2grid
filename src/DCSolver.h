@@ -15,7 +15,12 @@ template<class LinearSolver>
 class BaseDCSolver: public BaseSolver
 {
     public:
-        BaseDCSolver():BaseSolver(false), _linear_solver(), need_factorize_(true){};
+        BaseDCSolver():
+            BaseSolver(false),
+            _linear_solver(),
+            need_factorize_(true),
+            sizeYbus_with_slack_(0),
+            sizeYbus_without_slack_(0){};
 
         ~BaseDCSolver(){}
 
@@ -34,14 +39,36 @@ class BaseDCSolver: public BaseSolver
                         real_type tol
                         );
 
+        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus);  // TODO PTDF
+        virtual Eigen::SparseMatrix<real_type> get_lodf();  // TODO PTDF
+        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO PTDF
+
     private:
         // no copy allowed
         BaseDCSolver( const BaseSolver & ) =delete ;
         BaseDCSolver & operator=( const BaseSolver & ) =delete;
 
     protected:
+        void fill_mat_bus_id(int nb_bus_solver);
+        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat);
+
+        // remove_slack_buses: res_mat is initialized and make_compressed in this function
+        template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
+        void remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
+
+    protected:
         LinearSolver  _linear_solver;
         bool need_factorize_;
+
+        // save this not to recompute them when not needed
+        int sizeYbus_with_slack_;
+        int sizeYbus_without_slack_;
+        RealVect dcSbus_noslack_;
+        Eigen::SparseMatrix<real_type> dcYbus_noslack_;
+        Eigen::VectorXi my_pv_;
+        Eigen::VectorXi slack_buses_ids_solver_;
+        // -1 if bus is slack , else the id of the row / column used in the linear solver representing this bus
+        Eigen::VectorXi mat_bus_id_;   // formerly `ybus_to_me`
 
 };
 

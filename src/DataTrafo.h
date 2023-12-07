@@ -38,6 +38,7 @@ class DataTrafo : public DataGeneric
             public:
                 // members
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_hv_id;
                 int bus_lv_id;
@@ -62,6 +63,7 @@ class DataTrafo : public DataGeneric
 
                 TrafoInfo(const DataTrafo & r_data_trafo, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_hv_id(-1),
                 bus_lv_id(-1),
@@ -86,6 +88,9 @@ class DataTrafo : public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_trafo.nb()))
                     {
                         id = my_id;
+                        if(r_data_trafo.names_.size()){
+                            name = r_data_trafo.names_[my_id];
+                        }
                         connected = r_data_trafo.status_[my_id];
                         bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
                         bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
@@ -120,6 +125,7 @@ class DataTrafo : public DataGeneric
 
     public:
     typedef std::tuple<
+               std::vector<std::string>,
                std::vector<real_type>, // branch_r
                std::vector<real_type>, // branch_x
                std::vector<cplx_type >, // branch_h
@@ -168,13 +174,30 @@ class DataTrafo : public DataGeneric
     }
 
     // method used within lightsim
-    void deactivate(int trafo_id, SolverControl & solver_control) {_deactivate(trafo_id, status_, need_reset);}
-    void reactivate(int trafo_id, SolverControl & solver_control) {_reactivate(trafo_id, status_, need_reset);}
-    void change_bus_hv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, need_reset, nb_bus);}
-    void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_lv_id_, need_reset, nb_bus);}
+    void deactivate(int trafo_id, SolverControl & solver_control) {
+        if(status_[trafo_id]){
+            solver_control.tell_recompute_ybus();
+            // but sparsity pattern do not change here (possibly one more coeff at 0.)
+        }
+        _deactivate(trafo_id, status_);
+    }
+    void reactivate(int trafo_id, SolverControl & solver_control) {
+        if(!status_[trafo_id]){
+            solver_control.tell_recompute_ybus();
+            solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+        }
+        _reactivate(trafo_id, status_);
+    }
+    void change_bus_hv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, solver_control, nb_bus);}
+    void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_lv_id_, solver_control, nb_bus);}
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
-
+    void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    
+    virtual void nb_line_end(std::vector<int> & res) const;
+    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
+    
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                           bool ac,
@@ -185,6 +208,11 @@ class DataTrafo : public DataGeneric
                             const std::vector<int> & id_grid_to_solver,
                             real_type sn_mva,
                             FDPFMethod xb_or_bx) const;
+    virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                                 const std::vector<int> & id_grid_to_solver,
+                                 real_type sn_mva,
+                                 int nb_powerline,
+                                 bool transpose) const;
     virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,

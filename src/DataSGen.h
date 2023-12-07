@@ -42,6 +42,7 @@ class DataSGen: public DataGeneric
                 // members
                 // TODO add some const here (value should not be changed !) !!!
                 int id;  // id of the generator
+                std::string name;
                 bool connected;
                 int bus_id;
 
@@ -61,6 +62,7 @@ class DataSGen: public DataGeneric
 
                 SGenInfo(const DataSGen & r_data_sgen, int my_id):
                 id(-1),
+                name(""),
                 connected(false),
                 bus_id(-1),
                 min_q_mvar(0.),
@@ -78,6 +80,9 @@ class DataSGen: public DataGeneric
                     if((my_id >= 0) & (my_id < r_data_sgen.nb()))
                     {
                         id = my_id;
+                        if(r_data_sgen.names_.size()){
+                            name = r_data_sgen.names_[my_id];
+                        }
                         connected = r_data_sgen.status_[my_id];
                         bus_id = r_data_sgen.bus_id_[my_id];
 
@@ -124,6 +129,7 @@ class DataSGen: public DataGeneric
 
     public:
     typedef std::tuple<
+       std::vector<std::string>,
        std::vector<real_type>, // p_mw
        std::vector<real_type>, // q_mvar
        std::vector<real_type>, // p_min
@@ -152,14 +158,27 @@ class DataSGen: public DataGeneric
 
     int nb() const { return static_cast<int>(p_mw_.size()); }
 
-    void deactivate(int sgen_id, SolverControl & solver_control) {_deactivate(sgen_id, status_, need_reset);}
-    void reactivate(int sgen_id, SolverControl & solver_control) {_reactivate(sgen_id, status_, need_reset);}
-    void change_bus(int sgen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(sgen_id, new_bus_id, bus_id_, need_reset, nb_bus);}
+    void deactivate(int sgen_id, SolverControl & solver_control) {
+        if(status_[sgen_id]){
+            solver_control.tell_recompute_sbus();
+        }
+        _deactivate(sgen_id, status_);
+    }
+    void reactivate(int sgen_id, SolverControl & solver_control) {
+        if(!status_[sgen_id]){
+            solver_control.tell_recompute_sbus();
+        }
+        _reactivate(sgen_id, status_);
+    }
+    void change_bus(int sgen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(sgen_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     int get_bus(int sgen_id) {return _get_bus(sgen_id, status_, bus_id_);}
     void change_p(int sgen_id, real_type new_p, SolverControl & solver_control);
     void change_q(int sgen_id, real_type new_q, SolverControl & solver_control);
-
+    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
+    
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const ;
+    virtual void gen_p_per_bus(std::vector<real_type> & res) const;
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,

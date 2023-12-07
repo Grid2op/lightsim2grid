@@ -54,6 +54,7 @@ void DataTrafo::init(const RealVect & trafo_r,
 
 }
 
+
 DataTrafo::StateRes DataTrafo::get_state() const
 {
      std::vector<real_type> branch_r(r_.begin(), r_.end());
@@ -65,22 +66,25 @@ DataTrafo::StateRes DataTrafo::get_state() const
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
      std::vector<real_type> shift(shift_.begin(), shift_.end());
      std::vector<bool> is_tap_hv_side = is_tap_hv_side_;
-     DataTrafo::StateRes res(branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
+     DataTrafo::StateRes res(names_, branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
      return res;
 }
+
+
 void DataTrafo::set_state(DataTrafo::StateRes & my_state)
 {
     reset_results();
 
-    std::vector<real_type> & branch_r = std::get<0>(my_state);
-    std::vector<real_type> & branch_x = std::get<1>(my_state);
-    std::vector<cplx_type> & branch_h = std::get<2>(my_state);
-    std::vector<int> & bus_hv_id = std::get<3>(my_state);
-    std::vector<int> & bus_lv_id = std::get<4>(my_state);
-    std::vector<bool> & status = std::get<5>(my_state);
-    std::vector<real_type> & ratio = std::get<6>(my_state);
-    std::vector<bool> & is_tap_hv_side = std::get<7>(my_state);
-    std::vector<real_type> & shift = std::get<8>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & branch_r = std::get<1>(my_state);
+    std::vector<real_type> & branch_x = std::get<2>(my_state);
+    std::vector<cplx_type> & branch_h = std::get<3>(my_state);
+    std::vector<int> & bus_hv_id = std::get<4>(my_state);
+    std::vector<int> & bus_lv_id = std::get<5>(my_state);
+    std::vector<bool> & status = std::get<6>(my_state);
+    std::vector<real_type> & ratio = std::get<7>(my_state);
+    std::vector<bool> & is_tap_hv_side = std::get<8>(my_state);
+    std::vector<real_type> & shift = std::get<9>(my_state);
 
     auto size = branch_r.size();
     DataGeneric::check_size(branch_r, size, "branch_r");
@@ -107,6 +111,7 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
     is_tap_hv_side_ = is_tap_hv_side;
     _update_model_coeffs();
 }
+
 
 void DataTrafo::_update_model_coeffs()
 {
@@ -352,6 +357,7 @@ void DataTrafo::reset_results(){
     res_a_lv_ = RealVect();  // in kA
 }
 
+
 void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                           std::vector<Eigen::Triplet<real_type> > & Bpp,
                           const std::vector<int> & id_grid_to_solver,
@@ -369,7 +375,7 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
     // if alg == 3:                               ## if BX method
     //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
-    const Eigen::Index nb_trafo = static_cast<int>(nb());
+    const Eigen::Index nb_trafo = nb();
     real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
     real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
 
@@ -449,5 +455,126 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -yff_bpp));
         Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -ytt_bpp));
 
+    }
+}
+
+
+void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                               const std::vector<int> & id_grid_to_solver,
+                               real_type sn_mva,
+                               int nb_powerline,
+                               bool transpose) const
+{
+    const Eigen::Index nb_trafo = r_.size();
+
+    for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
+        // i only add this if the powerline is connected
+        if(!status_[tr_id]) continue;
+
+        // get the from / to bus id
+        int bus_or_id_me = bus_hv_id_(tr_id);
+        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+        if(bus_or_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::fillBf_for_PTDF: the line with id ";
+            exc_ << tr_id;
+            exc_ << " is connected (hv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        int bus_ex_id_me = bus_lv_id_(tr_id);
+        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+        if(bus_ex_solver_id == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "tr_id::fillBf_for_PTDF: the line with id ";
+            exc_ << tr_id;
+            exc_ << " is connected (lv side) to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        real_type x = x_(tr_id);
+        real_type _1_tau = is_tap_hv_side_[tr_id] ? 1. / ratio_(tr_id) : ratio_(tr_id); // 1. / tau
+
+        // TODO
+        // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+        // and -1. / x / tap for (1..nb_branch, to_bus) 
+        if(transpose){
+            Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, tr_id + nb_powerline, 1. / x * _1_tau));
+            Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, tr_id + nb_powerline, -1. / x * _1_tau));
+        }else{
+            Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_or_solver_id, 1. / x * _1_tau));
+            Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_ex_solver_id, -1. / x * _1_tau));
+        }
+    }
+
+}
+
+
+void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+
+    const Eigen::Index nb_trafo = nb();
+    for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
+        // don't do anything if the element is disconnected
+        if(!status_[trafo_id]) continue;
+        
+        const auto bus_or_id_me = bus_hv_id_(trafo_id);        
+        if(bus_or_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::reconnect_connected_buses: Trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_or_id_me] = true;
+
+        const auto bus_ex_id_me = bus_lv_id_(trafo_id);        
+        if(bus_ex_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataTrafo::reconnect_connected_buses: Trafo with id ";
+            exc_ << trafo_id;
+            exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[bus_ex_id_me] = true;
+    }
+}
+
+void DataTrafo::nb_line_end(std::vector<int> & res) const{
+
+    const Eigen::Index nb_trafo = nb();
+    for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
+        // don't do anything if the element is disconnected
+        if(!status_[trafo_id]) continue;
+        const auto bus_or = bus_hv_id_(trafo_id);
+        const auto bus_ex = bus_lv_id_(trafo_id);
+        res[bus_or] += 1;
+        res[bus_ex] += 1;
+    }
+}
+
+void DataTrafo::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+{
+    const auto my_size = nb();
+    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+        // don't do anything if the element is disconnected
+        if(!status_[line_id]) continue;
+        const auto bus_or = bus_hv_id_(line_id);
+        const auto bus_ex = bus_lv_id_(line_id);
+        res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
+        res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
+    }
+}
+
+void DataTrafo::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+{
+    const Eigen::Index nb_line = nb();
+    SolverControl unused_solver_control;
+    for(Eigen::Index i = 0; i < nb_line; ++i){
+        if(!status_[i]) continue;
+        auto bus_or = bus_hv_id_(i);
+        auto bus_ex = bus_lv_id_(i);
+        if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
+            deactivate(i, unused_solver_control);
+        }
     }
 }

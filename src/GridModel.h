@@ -49,7 +49,7 @@ class GridModel : public DataGeneric
                 int, // version major
                 int, // version medium
                 int, // version minor
-                std::vector<int>, // ls_to_pp
+                std::vector<int>, // ls_to_orig
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
                 std::vector<real_type>,  // bus_vn_kv
@@ -111,6 +111,8 @@ class GridModel : public DataGeneric
         const DataTrafo & get_trafos_as_data() const {return trafos_;}
         const DataDCLine & get_dclines_as_data() const {return dc_lines_;}
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
+        std::tuple<int, int> assign_slack_to_most_connected();
+        void consider_only_main_component();
 
         // solver "control"
         void change_solver(const SolverType & type){
@@ -181,6 +183,16 @@ class GridModel : public DataGeneric
                              const Eigen::VectorXi & generators_bus_id){
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
         }
+        void init_generators_full(const RealVect & generators_p,
+                                  const RealVect & generators_v,
+                                  const RealVect & generators_q,
+                                  const std::vector<bool> & voltage_regulator_on,
+                                  const RealVect & generators_min_q,
+                                  const RealVect & generators_max_q,
+                                  const Eigen::VectorXi & generators_bus_id){
+            generators_.init_full(generators_p, generators_v, generators_q, voltage_regulator_on,
+                                  generators_min_q, generators_max_q, generators_bus_id);
+        }
         void init_loads(const RealVect & loads_p,
                         const RealVect & loads_q,
                         const Eigen::VectorXi & loads_bus_id){
@@ -214,6 +226,18 @@ class GridModel : public DataGeneric
             dc_lines_.init(branch_from_id, branch_to_id, p_mw,
                            loss_percent, loss_mw, vm_or_pu, vm_ex_pu,
                            min_q_or, max_q_or, min_q_ex, max_q_ex);
+        }
+        void init_bus_status(){
+            const int nb_bus = static_cast<int>(bus_status_.size());
+            for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
+            powerlines_.reconnect_connected_buses(bus_status_);
+            shunts_.reconnect_connected_buses(bus_status_);
+            trafos_.reconnect_connected_buses(bus_status_);
+            generators_.reconnect_connected_buses(bus_status_);
+            loads_.reconnect_connected_buses(bus_status_);
+            sgens_.reconnect_connected_buses(bus_status_);
+            storages_.reconnect_connected_buses(bus_status_);
+            dc_lines_.reconnect_connected_buses(bus_status_);
         }
 
         void add_gen_slackbus(int gen_id, real_type weight);
@@ -251,6 +275,8 @@ class GridModel : public DataGeneric
                        int max_iter,  // not used for DC
                        real_type tol  // not used for DC
                        );
+        RealMat get_ptdf();
+        Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow
         CplxVect ac_pf(const CplxVect & Vinit,
@@ -296,8 +322,33 @@ class GridModel : public DataGeneric
         const DataLoad & get_storages() const {return storages_;}
         const DataSGen & get_static_generators() const {return sgens_;}
         const DataShunt & get_shunts() const {return shunts_;}
-        const RealVect & get_buses() const {return bus_vn_kv_;}
+        const std::vector<bool> & get_bus_status() const {return bus_status_;}
         
+        void set_line_names(const std::vector<std::string> & names){
+            powerlines_.set_names(names);
+        }
+        void set_dcline_names(const std::vector<std::string> & names){
+            dc_lines_.set_names(names);
+        }
+        void set_trafo_names(const std::vector<std::string> & names){
+            trafos_.set_names(names);
+        }
+        void set_gen_names(const std::vector<std::string> & names){
+            generators_.set_names(names);
+        }
+        void set_load_names(const std::vector<std::string> & names){
+            loads_.set_names(names);
+        }
+        void set_storage_names(const std::vector<std::string> & names){
+            storages_.set_names(names);
+        }
+        void set_sgen_names(const std::vector<std::string> & names){
+            sgens_.set_names(names);
+        }
+        void set_shunt_names(const std::vector<std::string> & names){
+            shunts_.set_names(names);
+        }
+
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, solver_control_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, solver_control_); }
@@ -419,6 +470,9 @@ class GridModel : public DataGeneric
         }
         Eigen::Ref<const CplxVect> get_Sbus() const{
             return Sbus_;
+        }
+        Eigen::Ref<const CplxVect> get_dcSbus() const{
+            return dcSbus_;
         }
         Eigen::Ref<const Eigen::VectorXi> get_pv() const{
             return bus_pv_;
@@ -543,6 +597,8 @@ class GridModel : public DataGeneric
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                         Eigen::SparseMatrix<real_type> & Bpp, 
                         FDPFMethod xb_or_bx) const;
+
+        void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose=false) const;
 
         Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
@@ -734,7 +790,6 @@ class GridModel : public DataGeneric
         DataDCLine dc_lines_;
 
         // 8. slack bus
-        // TODO multiple slack bus
         std::vector<int> slack_bus_id_;
         Eigen::VectorXi slack_bus_id_ac_solver_;
         Eigen::VectorXi slack_bus_id_dc_solver_;
@@ -744,6 +799,7 @@ class GridModel : public DataGeneric
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;
         Eigen::SparseMatrix<cplx_type> Ybus_dc_;
         CplxVect Sbus_;
+        CplxVect dcSbus_;
         Eigen::VectorXi bus_pv_;  // id are the solver internal id and NOT the initial id
         Eigen::VectorXi bus_pq_;  // id are the solver internal id and NOT the initial id
 

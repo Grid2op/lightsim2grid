@@ -19,24 +19,24 @@ void DataShunt::init(const RealVect & shunt_p_mw,
     status_ = std::vector<bool>(p_mw_.size(), true); // by default everything is connected
 }
 
-
 DataShunt::StateRes DataShunt::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataShunt::StateRes res(p_mw, q_mvar, bus_id, status);
+     DataShunt::StateRes res(names_, p_mw, q_mvar, bus_id, status);
      return res;
 }
+
 void DataShunt::set_state(DataShunt::StateRes & my_state )
 {
     reset_results();
-
-    std::vector<real_type> & p_mw = std::get<0>(my_state);
-    std::vector<real_type> & q_mvar = std::get<1>(my_state);
-    std::vector<int> & bus_id = std::get<2>(my_state);
-    std::vector<bool> & status = std::get<3>(my_state);
+    names_ = std::get<0>(my_state);
+    std::vector<real_type> & p_mw = std::get<1>(my_state);
+    std::vector<real_type> & q_mvar = std::get<2>(my_state);
+    std::vector<int> & bus_id = std::get<3>(my_state);
+    std::vector<bool> & status = std::get<4>(my_state);
     // TODO check sizes
 
     // input data
@@ -166,19 +166,50 @@ void DataShunt::reset_results(){
     res_v_ = RealVect();  // in kV
 }
 
-void DataShunt::change_p(int shunt_id, real_type new_p, bool & need_reset)
+void DataShunt::change_p(int shunt_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected shunt");
-    if(p_mw_(shunt_id) != new_p) need_reset = true;
+    if(p_mw_(shunt_id) != new_p) solver_control.tell_recompute_sbus();
     p_mw_(shunt_id) = new_p;
 
 }
 
-void DataShunt::change_q(int shunt_id, real_type new_q, bool & need_reset)
+void DataShunt::change_q(int shunt_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
-    if(q_mvar_(shunt_id) != new_q) need_reset = true;
+    if(q_mvar_(shunt_id) != new_q) solver_control.tell_recompute_sbus();
     q_mvar_(shunt_id) = new_q;
+}
+
+void DataShunt::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    const int nb_shunt = nb();
+    for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id)
+    {
+        if(!status_[shunt_id]) continue;
+        const auto my_bus = bus_id_(shunt_id);
+        if(my_bus == _deactivated_bus_id){
+            // TODO DEBUG MODE only this in debug mode
+            std::ostringstream exc_;
+            exc_ << "DataShunt::reconnect_connected_buses: Shunt with id ";
+            exc_ << shunt_id;
+            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_shunt(...)` ?.";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_status[my_bus] = true;  // this bus is connected
+    }
+}
+
+void DataShunt::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+    const int nb_el = nb();
+    SolverControl unused_solver_control;
+    for(int el_id = 0; el_id < nb_el; ++el_id)
+    {
+        if(!status_[el_id]) continue;
+        const auto my_bus = bus_id_(el_id);
+        if(!busbar_in_main_component[my_bus]){
+            deactivate(el_id, unused_solver_control);
+        }
+    }    
 }

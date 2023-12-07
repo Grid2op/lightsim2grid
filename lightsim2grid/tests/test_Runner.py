@@ -11,7 +11,7 @@ import warnings
 import grid2op
 from grid2op.tests.test_Runner import TestRunner as TestRunner_glop
 from grid2op.tests.test_RunnerFast import TestRunner as TestRunnerFast_glop
-from grid2op.tests.test_Runner import HelperTests, L2RPNReward, make
+from grid2op.tests.test_Runner import HelperTests, L2RPNReward
 from grid2op.Runner import Runner
 
 from lightsim2grid.lightSimBackend import LightSimBackend

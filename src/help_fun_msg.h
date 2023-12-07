@@ -69,6 +69,7 @@ struct DocIterator
     // generic functions
     static const std::string only_avail_res;
     static const std::string id;
+    static const std::string name;
     static const std::string connected;
     static const std::string bus_id;
     static const std::string target_p_mw;

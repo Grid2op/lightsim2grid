@@ -8,8 +8,6 @@
 
 __all__ = ["SecurityAnalysisCPP", "SecurityAnalysis"]
 
-import os
-import warnings
 import copy
 import numpy as np
 from collections.abc import Iterable
