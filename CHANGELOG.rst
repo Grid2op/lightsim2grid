@@ -20,6 +20,9 @@ Change Log
 
 [0.7.6] 2023-xx-yy
 --------------------
+- [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
+  If you previously used `gridmodel.get_Subus()` to retrieve the Sbus used for DC powerflow, please use
+  `gridmodel.get_dcSbus()` instead.
 - [FIXED] now voltage is properly set to 0. when shunts are disconnected
 - [FIXED] now voltage is properly set to 0. when storage units are disconnected
 - [FIXED] a bug where non connected grid were not spotted in DC
@@ -31,6 +34,7 @@ Change Log
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.
 - [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
+- [ADDED] computation of PTPF (Power Transfer Distribution Factor) is now possible
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
 

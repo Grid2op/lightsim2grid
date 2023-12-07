@@ -219,8 +219,8 @@ class MyTestCase(unittest.TestCase):
         Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
         backend._grid.reactivate_result_computation()
         backend._grid.tell_topo_changed()
-        Ydc_me = copy.deepcopy(backend._grid.get_Ybus())
-        Sdc_me = copy.deepcopy(backend._grid.get_Sbus())
+        Ydc_me = copy.deepcopy(backend._grid.get_dcYbus())
+        Sdc_me = copy.deepcopy(backend._grid.get_dcSbus())
         assert np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) <= 100.*self.tol,\
             f"\t Error for the DC approximation: resulting voltages are different " \
             f"{np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])):.5f}pu"
