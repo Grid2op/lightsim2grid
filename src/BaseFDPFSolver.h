@@ -121,7 +121,8 @@ class BaseFDPFSolver : public BaseSolver
                    RealVect & b,
                    bool has_just_been_inialized){
             auto timer = CustTimer();
-            const ErrorType solve_status = linear_solver.solve(mat, b, has_just_been_inialized);
+            // const ErrorType solve_status = linear_solver.solve(mat, b, has_just_been_inialized);
+            const ErrorType solve_status = linear_solver.solve(mat, b, true);  // true because i don't need to refactorize the matrix
             if(solve_status != ErrorType::NoError){
                 // std::cout << "solve error: " << solve_status << std::endl;
                 err_ = solve_status;
