@@ -15,7 +15,12 @@ template<class LinearSolver>
 class BaseDCSolver: public BaseSolver
 {
     public:
-        BaseDCSolver():BaseSolver(false), _linear_solver(), need_factorize_(true), nb_dcbus_solver_(0){};
+        BaseDCSolver():
+            BaseSolver(false),
+            _linear_solver(),
+            need_factorize_(true),
+            sizeYbus_with_slack_(0),
+            sizeYbus_without_slack_(0){};
 
         ~BaseDCSolver(){}
 
@@ -56,7 +61,8 @@ class BaseDCSolver: public BaseSolver
         bool need_factorize_;
 
         // save this not to recompute them when not needed
-        int nb_dcbus_solver_;
+        int sizeYbus_with_slack_;
+        int sizeYbus_without_slack_;
         RealVect dcSbus_noslack_;
         Eigen::SparseMatrix<real_type> dcYbus_noslack_;
         Eigen::VectorXi my_pv_;
