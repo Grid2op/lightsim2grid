@@ -125,12 +125,12 @@ class AuxInitFromPyPowSyBl:
         mat_pp = self.ref_samecase.get_dcYbus().todense()
         assert max_ <= self.tol_eq, f"error for dcYbus: {max_:.2e}"
         # check Sbus without slack
-        Sbus_ordered = self.gridmodel.get_Sbus()[reorder].reshape(-1)
+        Sbus_ordered = self.gridmodel.get_dcSbus()[reorder].reshape(-1)
         if slack_id > 0:
-            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_Sbus()[:slack_id]).max()
+            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_dcSbus()[:slack_id]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
-        if slack_id != self.gridmodel.get_Sbus().shape[0] - 1:
-            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_Sbus()[(slack_id+1):]).max()
+        if slack_id != self.gridmodel.get_dcSbus().shape[0] - 1:
+            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_dcSbus()[(slack_id+1):]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
 
         # same in AC
