@@ -27,6 +27,8 @@ enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
                        FDPF_XB_CKTSO,  FDPF_BX_CKTSO  // from 0.7.5
                        };
 
+
+std::ostream& operator<<(std::ostream& out, const SolverType& solver_type);
 // TODO define a template class instead of these weird stuff !!!
 // TODO export all methods from base class !
 
@@ -278,7 +280,7 @@ class ChooseSolver
         }
 
         void tell_solver_control(const SolverControl & solver_control){
-            auto p_solver = get_prt_solver("get_ptdf", true);
+            auto p_solver = get_prt_solver("tell_solver_control", false);
             p_solver -> tell_solver_control(solver_control);
         }
 
@@ -312,7 +314,17 @@ class ChooseSolver
     private:
         void check_right_solver(const std::string & error_msg) const
         {
-            if(_solver_type != _type_used_for_nr) throw std::runtime_error("ChooseSolver: Solver mismatch when calling '"+error_msg+"': current solver is not the last solver used to perform a powerflow");
+            if(_solver_type != _type_used_for_nr){
+                std::ostringstream exc_;
+                exc_ << "ChooseSolver: Solver mismatch when calling '";
+                exc_ << error_msg;
+                exc_ << ": current solver (";
+                exc_ << _solver_type;
+                exc_ << ") is not the one used to perform a powerflow (";
+                exc_ << _type_used_for_nr;
+                exc_ << ").";
+                throw std::runtime_error(exc_.str());
+            }
             
             #ifndef KLU_SOLVER_AVAILABLE
                 if(_solver_type == SolverType::KLU){

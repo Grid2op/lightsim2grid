@@ -414,24 +414,66 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                                        const SolverControl & solver_control)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
-    if(is_ac) _solver.tell_solver_control(solver_control);
-    else _dc_solver.tell_solver_control(solver_control);
+    if(is_ac){
+        _solver.tell_solver_control(solver_control);
+        if(solver_control.need_reset_solver()) _solver.reset();
+    } else {
+        _dc_solver.tell_solver_control(solver_control);
+        if(solver_control.need_reset_solver()){
+            std::cout << "_dc_solver.reset();" << std::endl;
+            _dc_solver.reset();
+        }
+    }
 
-    if (solver_control.has_slack_participate_changed()) slack_bus_id_ = generators_.get_slack_bus_id();
-    if (solver_control.ybus_change_sparsity_pattern() || solver_control.has_dimension_changed()) init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
-    if (solver_control.ybus_change_sparsity_pattern() || solver_control.has_dimension_changed() || solver_control.need_recompute_ybus()) fillYbus(Ybus, is_ac, id_me_to_solver);
-    if (solver_control.has_dimension_changed()) init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
-    if (solver_control.has_slack_participate_changed() || solver_control.has_pv_changed() || solver_control.has_pq_changed()) fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
+    if (solver_control.need_reset_solver() || 
+        solver_control.has_slack_participate_changed()){
+            std::cout << "get_slack_bus_id;" << std::endl;
+            slack_bus_id_ = generators_.get_slack_bus_id();
+        }
+    if (solver_control.need_reset_solver() ||
+        solver_control.ybus_change_sparsity_pattern() || 
+        solver_control.has_dimension_changed()){
+            init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
+            std::cout << "init_Ybus;" << std::endl;
+        }
+    if (solver_control.need_reset_solver() ||
+        solver_control.ybus_change_sparsity_pattern() || 
+        solver_control.has_dimension_changed() || 
+        solver_control.need_recompute_ybus()){
+            fillYbus(Ybus, is_ac, id_me_to_solver);
+            std::cout << "fillYbus;" << std::endl;
+        }
+    if (solver_control.need_reset_solver() || 
+        solver_control.has_dimension_changed()) {
+            init_Sbus(Sbus_, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+            std::cout << "init_Sbus;" << std::endl;
+        }
+    if (solver_control.need_reset_solver() || 
+        solver_control.has_slack_participate_changed() || 
+        solver_control.has_pv_changed() || 
+        solver_control.has_pq_changed()) {
+            fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
+            std::cout << "fillpv_pq;" << std::endl;
+        }
     
-    if (solver_control.has_dimension_changed() || solver_control.need_recompute_sbus() && is_ac){
+    if (is_ac && (solver_control.need_reset_solver() || 
+                  solver_control.has_dimension_changed() || 
+                  solver_control.need_recompute_sbus())){
         int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
         total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
         generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
         dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-        fillSbus_me(Sbus_, is_ac, id_me_to_solver);
+        std::cout << "total_gen_per_bus_;" << std::endl;
     }
+
+    if (solver_control.need_reset_solver() || 
+        solver_control.has_slack_participate_changed() || 
+        solver_control.has_pq_changed()) {
+            fillSbus_me(Sbus_, is_ac, id_me_to_solver);
+            std::cout << "fillSbus_me;" << std::endl;
+        }
 
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
@@ -442,6 +484,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     }
     generators_.set_vm(V, id_me_to_solver);
     dc_lines_.set_vm(V, id_me_to_solver);
+    std::cout << nb_bus_solver << std::endl;
     return V;
 }
 
@@ -701,15 +744,17 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     CplxVect V = pre_process_solver(Vinit, Ybus_dc_,
                                     id_me_to_dc_solver_, id_dc_solver_to_me_, slack_bus_id_dc_solver_,
                                     is_ac, solver_control_);
-
+    std::cout << "after pre proces\n";
     // start the solver
     if(solver_control_.has_slack_participate_changed() || 
        solver_control_.has_pv_changed() || 
        solver_control_.has_slack_weight_changed()) slack_weights_ = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
+    std::cout << "slack_weights\n";
     conv = _dc_solver.compute_pf(Ybus_dc_, V, dcSbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
-
+    std::cout << "after compute_pf\n";
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, false, id_me_to_dc_solver_);
+    std::cout << "after compute_pf\n";
     return res;
 }
 

@@ -23,6 +23,7 @@ void BaseSolver::reset(){
     err_ = ErrorType::NotInitError; //error message:
 
     _solver_control = SolverControl();
+    _solver_control.tell_all_changed();
 }
 
 

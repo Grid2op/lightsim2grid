@@ -87,11 +87,9 @@ void DataDCLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_
         auto bus_or = bus_or_id(i);
         auto bus_ex = bus_ex_id(i);
         if(!busbar_in_main_component[bus_or]) {
-            bool tmp = false;
             from_gen_.deactivate(i, unused_solver_control);
         }
         if(!busbar_in_main_component[bus_ex]) {
-            bool tmp = false;
             to_gen_.deactivate(i, unused_solver_control);
         }
         // if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){

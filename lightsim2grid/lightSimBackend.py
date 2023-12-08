@@ -735,7 +735,7 @@ class LightSimBackend(Backend):
             self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
         self._count_object_per_bus()
-        self._grid.tell_topo_changed()
+        self._grid.tell_solver_need_reset()
         self.__me_at_init = self._grid.copy()
         self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
@@ -894,7 +894,9 @@ class LightSimBackend(Backend):
                     self._grid.deactivate_result_computation()
                     # if I init with dc values, it should depends on previous state
                     self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
+                    print("before dc pf")
                     Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
+                    print("after dc pf")
                     self._grid.reactivate_result_computation()
                     if Vdc.shape[0] == 0:
                         raise BackendError(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
@@ -903,6 +905,7 @@ class LightSimBackend(Backend):
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
+                print("before ac pf")
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
@@ -968,11 +971,11 @@ class LightSimBackend(Backend):
             if (self.line_or_theta >= 1e6).any() or (self.line_ex_theta >= 1e6).any():
                 raise BackendError(f"Some theta are above 1e6 which should not be happening !")
             res = True
-            self._grid.unset_topo_changed()
+            self._grid.unset_changes()
             self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
-            self._grid.tell_topo_changed()
+            self._grid.unset_changes()
             self._fill_nans()
             res = False
             my_exc_ = exc_
@@ -1190,7 +1193,7 @@ class LightSimBackend(Backend):
     def reset(self, grid_path, grid_filename=None):
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
-        self._grid.tell_topo_changed()
+        self._grid.unset_changes()
         self._grid.change_solver(self.__current_solver_type)
         self._handle_turnedoff_pv()
         self.topo_vect[:] = self.__init_topo_vect

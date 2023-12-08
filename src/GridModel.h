@@ -76,8 +76,11 @@ class GridModel : public DataGeneric
           solver_control_(),
           init_vm_pu_(1.04),
           sn_mva_(1.0){
+            _solver.change_solver(SolverType::SparseLU);
             _dc_solver.change_solver(SolverType::DC);
             _solver.set_gridmodel(this);
+            _dc_solver.set_gridmodel(this);
+            solver_control_.tell_all_changed();
         }
         GridModel(const GridModel & other);
         GridModel copy() const{
@@ -166,7 +169,6 @@ class GridModel : public DataGeneric
                         const RealVect & trafo_x,
                         const CplxVect & trafo_b,
                         const RealVect & trafo_tap_step_pct,
-            //                        const RealVect & trafo_tap_step_degree,
                         const RealVect & trafo_tap_pos,
                         const RealVect & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
