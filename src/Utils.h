@@ -64,6 +64,7 @@ class SolverControl
             need_recompute_sbus_(true),
             need_recompute_ybus_(true),
             v_changed_(true),
+            slack_weight_changed_(true),
             ybus_change_sparsity_pattern_(true)
             {};
 
@@ -76,6 +77,7 @@ class SolverControl
             need_recompute_sbus_ = true;
             need_recompute_ybus_ = true;
             v_changed_ = true;
+            slack_weight_changed_ = true;
             ybus_change_sparsity_pattern_ = true;
         }
 
@@ -88,6 +90,7 @@ class SolverControl
             need_recompute_sbus_ = false;
             need_recompute_ybus_ = false;
             v_changed_ = false;
+            slack_weight_changed_ = false;
             ybus_change_sparsity_pattern_ = false;
         }
 
@@ -109,16 +112,19 @@ class SolverControl
         void tell_ybus_change_sparsity_pattern(){ybus_change_sparsity_pattern_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
         // tell at least one generator changed its v setpoint
         void tell_v_changed(){v_changed_ = true;}
+        // at least one generator has changed its slack participation
+        void tell_slack_weight_changed(){slack_weight_changed_ = true;}
 
         bool has_dimension_changed() const {return change_dimension_;}
         bool has_pv_changed() const {return pv_changed_;}
         bool has_pq_changed() const {return pq_changed_;}
-        bool has_tell_slack_participate_changed() const {return slack_participate_changed_;}
+        bool has_slack_participate_changed() const {return slack_participate_changed_;}
         bool need_reset_solver() const {return need_reset_solver_;}
         bool need_recompute_sbus() const {return need_recompute_sbus_;}
         bool need_recompute_ybus() const {return need_recompute_ybus_;}
         bool ybus_change_sparsity_pattern() const {return ybus_change_sparsity_pattern_;}
-        bool v_changed() const {return v_changed_;}
+        bool has_slack_weight_changed() const {return slack_weight_changed_;}
+        bool has_v_changed() const {return v_changed_;}
 
     protected:    
         bool change_dimension_;
@@ -129,6 +135,7 @@ class SolverControl
         bool need_recompute_sbus_;  // some coeff of sbus changed, need to recompute it
         bool need_recompute_ybus_;  // some coeff of ybus changed, but not its sparsity pattern
         bool v_changed_;
+        bool slack_weight_changed_;
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
 };
 

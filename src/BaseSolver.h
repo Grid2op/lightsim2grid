@@ -98,10 +98,10 @@ class BaseSolver : public BaseConstants
                         real_type tol
                         ) = 0 ;
 
-<<<<<<< HEAD
-        virtual
-        void reset(const SolverControl & solver_control);
-=======
+        void tell_solver_control(const SolverControl & solver_control){
+            _solver_control = solver_control;
+        }
+        virtual void reset();
         virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
             throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
         }
@@ -111,9 +111,6 @@ class BaseSolver : public BaseConstants
         virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the BSDF matrix with this solver type.");
         }
-
-        virtual void reset();
->>>>>>> bd-dev
         
     protected:
         virtual void reset_timer(){
@@ -232,7 +229,8 @@ class BaseSolver : public BaseConstants
         double timer_total_nr_;
 
         const GridModel * _gridmodel;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
-        
+        SolverControl _solver_control;
+
     private:
         // no copy allowed
         BaseSolver( const BaseSolver & ) ;

@@ -173,10 +173,12 @@ class ChooseSolver
             #endif
 
             // now switch the union (see https://en.cppreference.com/w/cpp/language/union)
+            // reset the old solver
             reset();
-
             // and assign the right solver
             _solver_type = type;
+            // and now reset the new one
+            reset();
         }
 
         void reset()
@@ -273,6 +275,11 @@ class ChooseSolver
             auto p_solver = get_prt_solver("get_ptdf", true);
             const auto & res =  p_solver -> get_ptdf(dcYbus);
             return res;
+        }
+
+        void tell_solver_control(const SolverControl & solver_control){
+            auto p_solver = get_prt_solver("get_ptdf", true);
+            p_solver -> tell_solver_control(solver_control);
         }
 
         /** apparently i cannot pass a const ref for a sparse matrix in python**/

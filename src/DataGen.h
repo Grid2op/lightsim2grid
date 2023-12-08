@@ -174,25 +174,29 @@ class DataGen: public DataGeneric
     we suppose that the data are correct (ie gen_id in the proper range, and weight > 0.)
     This is checked in GridModel, and not at this stage
     **/
-    void add_slackbus(int gen_id, real_type weight){
-        gen_slackbus_[gen_id] = true;
-        gen_slack_weight_[gen_id] = weight;
+    void add_slackbus(int gen_id, real_type weight, SolverControl & solver_control){
         // TODO DEBUG MODE
         if(weight <= 0.) throw std::runtime_error("DataGen::add_slackbus Cannot assign a negative weight to the slack bus.");
+        if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
+        gen_slackbus_[gen_id] = true;
+        if(gen_slack_weight_[gen_id] != weight) solver_control.tell_slack_weight_changed();
+        gen_slack_weight_[gen_id] = weight;
     }
-    void remove_slackbus(int gen_id){
+    void remove_slackbus(int gen_id, SolverControl & solver_control){
+        if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
         gen_slackbus_[gen_id] = false;
         gen_slack_weight_[gen_id] = 0.;
     }
     void remove_all_slackbus(){
         const int nb_gen = nb();
+        SolverControl unused_solver_control;
         for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
         {
-            remove_slackbus(gen_id);
+            remove_slackbus(gen_id, unused_solver_control);
         }
     }
     // returns only the gen_id with the highest p that is connected to this bus !
-    int assign_slack_bus(int slack_bus_id, const std::vector<real_type> & gen_p_per_bus){
+    int assign_slack_bus(int slack_bus_id, const std::vector<real_type> & gen_p_per_bus, SolverControl & solver_control){
         const int nb_gen = nb();
         int res_gen_id = -1;
         real_type max_p = -1.;
@@ -201,7 +205,7 @@ class DataGen: public DataGeneric
             if(!status_[gen_id]) continue;
             if(bus_id_(gen_id) != slack_bus_id) continue;
             const real_type p_mw = p_mw_(gen_id);
-            add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id]);
+            add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id], solver_control);
             if((p_mw > max_p) || (res_gen_id == -1) ){
                 res_gen_id = gen_id;
                 max_p = p_mw;
@@ -224,14 +228,18 @@ class DataGen: public DataGeneric
     void turnedoff_no_pv(){turnedoff_gen_pv_=false;}  // turned off generators are not pv
     void turnedoff_pv(){turnedoff_gen_pv_=true;}  // turned off generators are pv
     bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
-    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack, SolverControl & solver_control);
+    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+                              SolverControl & solver_control);
 
     void deactivate(int gen_id, SolverControl & solver_control) {
         if (status_[gen_id]){
             solver_control.tell_recompute_sbus();
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
             if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
-            if(gen_slack_weight_[gen_id]) solver_control.tell_slack_participate_changed();
+            if(gen_slack_weight_[gen_id]){
+                solver_control.tell_slack_participate_changed();
+                solver_control.tell_slack_weight_changed();
+            }
         }
         _deactivate(gen_id, status_);
     }
@@ -240,7 +248,10 @@ class DataGen: public DataGeneric
             solver_control.tell_recompute_sbus();
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
             if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
-            if(gen_slack_weight_[gen_id]) solver_control.tell_slack_participate_changed();
+            if(gen_slack_weight_[gen_id]){
+                solver_control.tell_slack_participate_changed();
+                solver_control.tell_slack_weight_changed();
+            }
         }
         _reactivate(gen_id, status_);
     }

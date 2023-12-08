@@ -704,7 +704,8 @@ class GridModel : public DataGeneric
                     {
                         (this->*fun_react)(el_id); // eg reactivate_load(load_id);
                         (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
-                        topo_changed_ = true;
+                        // topo_changed_ = true;
+                        solver_control_.tell_dimension_changed();
                     }
                 } else{
                     if(has_changed(el_pos))
@@ -714,7 +715,8 @@ class GridModel : public DataGeneric
                         // bus_status_ is set to "false" in GridModel.update_topo
                         // and a bus is activated if (and only if) one element is connected to it.
                         // I must not set `bus_status_[new_bus_backend] = false;` in this case !
-                        topo_changed_ = true;
+                        // topo_changed_ = true;
+                        solver_control_.tell_dimension_changed();
                     }
                 }
             }

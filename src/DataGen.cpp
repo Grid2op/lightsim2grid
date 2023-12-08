@@ -438,16 +438,16 @@ void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic,
             if(p_mw_(gen_id) > 0.){
                 // gen is properly connected
                 if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed(); // it was not in the slack before, so I need to reset the solver
-                add_slackbus(gen_id, p_mw_(gen_id));
+                add_slackbus(gen_id, p_mw_(gen_id), solver_control);
 
             }else{
                 // gen is now "turned off"
                 if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, so I need to reset the solver
-                remove_slackbus(gen_id);
+                remove_slackbus(gen_id, solver_control);
             }
         }else{
             if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, I need to reset the solver
-            remove_slackbus(gen_id);
+            remove_slackbus(gen_id, solver_control);
         }
     }
 }

@@ -9,7 +9,8 @@
 #include "BaseSolver.h"
 #include "GridModel.h"  // needs to be included here because of the forward declaration
 
-void BaseSolver::reset(const SolverControl & solver_control){
+
+void BaseSolver::reset(){
     // reset timers
     reset_timer();
 
@@ -20,7 +21,10 @@ void BaseSolver::reset(const SolverControl & solver_control){
     V_ = RealVect();  // voltage angle  // TODO solver control: see if I could reuse some of these
     nr_iter_ = 0;  // number of iteration performs by the algorithm
     err_ = ErrorType::NotInitError; //error message:
+
+    _solver_control = SolverControl();
 }
+
 
 RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
