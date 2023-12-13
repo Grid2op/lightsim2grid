@@ -255,7 +255,7 @@ class GridModel : public DataGeneric
             unsigned int size_th = 6;
             if (my_state.size() != size_th)
             {
-                std::cout << "LightSim::GridModel state size " << my_state.size() << " instead of "<< size_th << std::endl;
+                // std::cout << "LightSim::GridModel state size " << my_state.size() << " instead of "<< size_th << std::endl;
                 // TODO more explicit error message
                 throw std::runtime_error("Invalid state when loading LightSim::GridModel");
             }
@@ -471,7 +471,7 @@ class GridModel : public DataGeneric
             return Ybus_dc_;  // This is copied to python
         }
         Eigen::Ref<const CplxVect> get_Sbus() const{
-            return Sbus_;
+            return acSbus_;
         }
         Eigen::Ref<const CplxVect> get_dcSbus() const{
             return dcSbus_;
@@ -629,23 +629,30 @@ class GridModel : public DataGeneric
         if you will perform a powerflow after it or not. (usually put ``true`` here).
         **/
         CplxVect pre_process_solver(const CplxVect & Vinit,
+                                    CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
                                     std::vector<int> & id_me_to_solver,
                                     std::vector<int> & id_solver_to_me,
                                     Eigen::VectorXi & slack_bus_id_solver,
                                     bool is_ac,
                                     const SolverControl & solver_control);
+
+        // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
+        // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        std::vector<int> & id_me_to_solver,
                        std::vector<int>& id_solver_to_me);
-        void init_Sbus(CplxVect & Sbus,
-                       std::vector<int> & id_me_to_solver,
-                       std::vector<int>& id_solver_to_me,
-                       Eigen::VectorXi & slack_bus_id_solver);
+
+        // converts the slack_bus_id from gridmodel ordering into solver ordering
+        void init_slack_bus(const CplxVect & Sbus,
+                            const std::vector<int> & id_me_to_solver,
+                            const std::vector<int>& id_solver_to_me,
+                            Eigen::VectorXi & slack_bus_id_solver);
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillpv_pq(const std::vector<int>& id_me_to_solver, std::vector<int>& id_solver_to_me,
-                       Eigen::VectorXi & slack_bus_id_solver,
+        void fillpv_pq(const std::vector<int>& id_me_to_solver,
+                       const std::vector<int>& id_solver_to_me,
+                       const Eigen::VectorXi & slack_bus_id_solver,
                        const SolverControl & solver_control);
 
         // results
@@ -794,7 +801,7 @@ class GridModel : public DataGeneric
         DataDCLine dc_lines_;
 
         // 8. slack bus
-        std::vector<int> slack_bus_id_;
+        // std::vector<int> slack_bus_id_;
         Eigen::VectorXi slack_bus_id_ac_solver_;
         Eigen::VectorXi slack_bus_id_dc_solver_;
         RealVect slack_weights_;
@@ -802,7 +809,7 @@ class GridModel : public DataGeneric
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;
         Eigen::SparseMatrix<cplx_type> Ybus_dc_;
-        CplxVect Sbus_;
+        CplxVect acSbus_;
         CplxVect dcSbus_;
         Eigen::VectorXi bus_pv_;  // id are the solver internal id and NOT the initial id
         Eigen::VectorXi bus_pq_;  // id are the solver internal id and NOT the initial id

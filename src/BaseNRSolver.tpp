@@ -13,15 +13,15 @@
 
 template<class LinearSolver>
 bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                              CplxVect & V,
-                              const CplxVect & Sbus,
-                              const Eigen::VectorXi & slack_ids,
-                              const RealVect & slack_weights,
-                              const Eigen::VectorXi & pv,
-                              const Eigen::VectorXi & pq,
-                              int max_iter,
-                              real_type tol
-                              )
+                                            CplxVect & V,
+                                            const CplxVect & Sbus,
+                                            const Eigen::VectorXi & slack_ids,
+                                            const RealVect & slack_weights,
+                                            const Eigen::VectorXi & pv,
+                                            const Eigen::VectorXi & pq,
+                                            int max_iter,
+                                            real_type tol
+                                            )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -36,19 +36,28 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         // TODO DEBUG MODE
         std::ostringstream exc_;
         exc_ << "BaseNRSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
+        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
         exc_ << "BaseNRSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.rows() << ").";
+        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     reset_timer();
+    // std::cout << "dist slack" << std::endl;
+
+    if(_solver_control.need_reset_solver() || 
+       _solver_control.has_dimension_changed()){
+        reset();
+    }
     auto timer = CustTimer();
-    if(!is_linear_solver_valid()) return false;
+    if(!is_linear_solver_valid()) {
+        // err_ = ErrorType::NotInitError;
+        return false;
+    }
 
     err_ = ErrorType::NoError;  // reset the error if previous error happened
 
@@ -85,6 +94,11 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
     // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
+    BaseNRSolver<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+    BaseNRSolver<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+    BaseNRSolver<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRSolver<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRSolver<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
@@ -146,6 +160,7 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
                   << "\n\t timer_total_nr_: " << timer_total_nr_
                   << "\n\n";
     #endif // __COUT_TIMES
+    _solver_control.tell_none_changed();
     return res;
 }
 
@@ -165,7 +180,7 @@ void BaseNRSolver<LinearSolver>::reset(){
 
 template<class LinearSolver>
 void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
-                             const Eigen::Ref<const CplxVect > & V){
+                                           const Eigen::Ref<const CplxVect > & V){
     auto timer = CustTimer();
     const auto size_dS = V.size();
     const CplxVect Vnorm = V.array() / V.array().abs();
@@ -331,6 +346,7 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
         fill_jacobian_matrix_unkown_sparsity_pattern(Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+        fill_value_map(slack_bus_id, pq, pvpq);
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
         #endif  // __COUT_TIMES
@@ -339,7 +355,8 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<
         // properly and faster (approx 3 times faster than the previous one)
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
-        #endif  // __COUT_TIMES
+        #endif  // 
+        if (BaseNRSolver<LinearSolver>::value_map_.size() == 0) fill_value_map(slack_bus_id,pq, pvpq);
         fill_jacobian_matrix_kown_sparsity_pattern(slack_bus_id,
                                                    pq, pvpq
                                                    );
@@ -404,7 +421,7 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
     // optim : if the matrix was already computed, i don't initialize it, i instead reuse as much as i can
     // i can do that because the matrix will ALWAYS have the same non zero coefficients.
     // in this if, i allocate it in a "large enough" place to avoid copy when first filling it
-    if(J_.cols() != size_j) J_ = Eigen::SparseMatrix<real_type>(size_j,size_j);
+    if(J_.cols() != size_j) J_ = Eigen::SparseMatrix<real_type>(size_j, size_j);
 
     std::vector<Eigen::Triplet<double> > coeffs;  // HERE FOR PERF OPTIM (3)
     coeffs.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros())  + slack_weights.size());  // HERE FOR PERF OPTIM (3)
@@ -512,7 +529,6 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
     J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     // std::cout << "end fill jacobian unknown " << std::endl;
     J_.makeCompressed();
-    fill_value_map(slack_bus_id, pq, pvpq);
     // std::cout << "end fill_value_map" << std::endl;
 }
 

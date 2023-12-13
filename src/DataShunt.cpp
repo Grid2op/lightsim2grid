@@ -170,7 +170,10 @@ void DataShunt::change_p(int shunt_id, real_type new_p, SolverControl & solver_c
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected shunt");
-    if(p_mw_(shunt_id) != new_p) solver_control.tell_recompute_sbus();
+    if(p_mw_(shunt_id) != new_p){
+        solver_control.tell_recompute_ybus();
+        solver_control.tell_recompute_sbus();  // in dc mode sbus is modified
+    }
     p_mw_(shunt_id) = new_p;
 
 }
@@ -179,7 +182,9 @@ void DataShunt::change_q(int shunt_id, real_type new_q, SolverControl & solver_c
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
-    if(q_mvar_(shunt_id) != new_q) solver_control.tell_recompute_sbus();
+    if(q_mvar_(shunt_id) != new_q){
+        solver_control.tell_recompute_ybus();
+    }
     q_mvar_(shunt_id) = new_q;
 }
 

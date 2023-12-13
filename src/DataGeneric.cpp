@@ -86,8 +86,8 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
         
         // TODO speed: sparsity pattern might not change if something is already there  
         solver_control.tell_ybus_change_sparsity_pattern();
-        solver_control.tell_recompute_sbus();
-        solver_control.tell_recompute_ybus();
+        solver_control.tell_recompute_sbus();  // if a bus changed for load / generator
+        solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
     }
     bus_me_id = new_bus_me_id;
 }

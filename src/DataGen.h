@@ -221,7 +221,7 @@ class DataGen: public DataGeneric
     **/
     RealVect get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
 
-    std::vector<int> get_slack_bus_id() const;
+    Eigen::VectorXi get_slack_bus_id() const;
     void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
 
     // modification
@@ -236,7 +236,7 @@ class DataGen: public DataGeneric
             solver_control.tell_recompute_sbus();
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
             if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
-            if(gen_slack_weight_[gen_id]){
+            if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
                 solver_control.tell_slack_participate_changed();
                 solver_control.tell_slack_weight_changed();
             }
@@ -248,14 +248,18 @@ class DataGen: public DataGeneric
             solver_control.tell_recompute_sbus();
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
             if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
-            if(gen_slack_weight_[gen_id]){
+            if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
                 solver_control.tell_slack_participate_changed();
                 solver_control.tell_slack_weight_changed();
             }
         }
         _reactivate(gen_id, status_);
     }
-    void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(gen_id, new_bus_id, bus_id_, solver_control, nb_bus);}
+    void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        if (new_bus_id != bus_id_[gen_id]){
+            if (gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]) solver_control.has_slack_participate_changed();
+        }
+        _change_bus(gen_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
@@ -269,7 +273,7 @@ class DataGen: public DataGeneric
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
     virtual void fillpv(std::vector<int>& bus_pv,
                         std::vector<bool> & has_bus_been_added,
-                        Eigen::VectorXi & slack_bus_id_solver,
+                        const Eigen::VectorXi & slack_bus_id_solver,
                         const std::vector<int> & id_grid_to_solver) const;
     void init_q_vector(int nb_bus,
                        Eigen::VectorXi & total_gen_per_bus,

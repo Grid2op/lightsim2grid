@@ -26,6 +26,15 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
 
+    if(!is_linear_solver_valid()) {
+        // err_ = ErrorType::NotInitError;
+        return false;
+    }
+    if(_solver_control.need_reset_solver() || 
+       _solver_control.has_dimension_changed()){
+       reset();
+    }
+
     auto timer = CustTimer();
     BaseSolver::reset_timer();
     sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());
@@ -135,7 +144,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
-
+    _solver_control.tell_none_changed();
     timer_total_nr_ += timer.duration();
     return true;
 }

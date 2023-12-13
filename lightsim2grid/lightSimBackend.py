@@ -894,9 +894,9 @@ class LightSimBackend(Backend):
                     self._grid.deactivate_result_computation()
                     # if I init with dc values, it should depends on previous state
                     self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
-                    print("before dc pf")
+                    # print(f"{self.V[:14] = }")
                     Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
-                    print("after dc pf")
+                    # print(f"{Vdc[:14] = }")
                     self._grid.reactivate_result_computation()
                     if Vdc.shape[0] == 0:
                         raise BackendError(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
@@ -905,7 +905,6 @@ class LightSimBackend(Backend):
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
-                print("before ac pf")
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:

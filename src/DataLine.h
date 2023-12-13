@@ -192,6 +192,7 @@ class DataLine : public DataGeneric
         if(status_[powerline_id]){
             solver_control.tell_recompute_ybus();
             // but sparsity pattern do not change here (possibly one more coeff at 0.)
+            solver_control.tell_ybus_some_coeffs_zero();
         }
         _deactivate(powerline_id, status_);
     }

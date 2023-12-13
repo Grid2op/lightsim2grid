@@ -122,6 +122,7 @@ bool BaseSolver::_check_for_convergence(const RealVect & F,
 {
     auto timer = CustTimer();
     const auto norm_inf = F.lpNorm<Eigen::Infinity>();
+    // std::cout << "\t\tnorm_inf: " << norm_inf << std::endl;
     bool res =  norm_inf  < tol;
     timer_check_ += timer.duration();
     return res;

@@ -224,7 +224,7 @@ class DataDCLine : public DataGeneric
 
     virtual void fillpv(std::vector<int>& bus_pv,
                         std::vector<bool> & has_bus_been_added,
-                        Eigen::VectorXi & slack_bus_id_solver,
+                        const Eigen::VectorXi & slack_bus_id_solver,
                         const std::vector<int> & id_grid_to_solver) const {
         from_gen_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   
         to_gen_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   

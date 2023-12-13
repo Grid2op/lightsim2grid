@@ -178,6 +178,7 @@ class DataTrafo : public DataGeneric
         if(status_[trafo_id]){
             solver_control.tell_recompute_ybus();
             // but sparsity pattern do not change here (possibly one more coeff at 0.)
+            solver_control.tell_ybus_some_coeffs_zero();
         }
         _deactivate(trafo_id, status_);
     }

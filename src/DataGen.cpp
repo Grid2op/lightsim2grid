@@ -168,7 +168,7 @@ void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solv
 
 void DataGen::fillpv(std::vector<int> & bus_pv,
                      std::vector<bool> & has_bus_been_added,
-                     Eigen::VectorXi & slack_bus_id_solver,
+                     const Eigen::VectorXi & slack_bus_id_solver,
                      const std::vector<int> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
@@ -216,7 +216,7 @@ void DataGen::reset_results(){
     res_q_ = RealVect();  // in MVar
     res_v_ = RealVect();  // in kV
     res_theta_ = RealVect();  // in deg
-    bus_slack_weight_ = RealVect();
+    // bus_slack_weight_ = RealVect();
 }
 
 void DataGen::get_vm_for_dc(RealVect & Vm){
@@ -331,16 +331,18 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) c
     }
 }
 
-std::vector<int> DataGen::get_slack_bus_id() const{
-    std::vector<int> res;
+Eigen::VectorXi DataGen::get_slack_bus_id() const{
+    std::vector<int> tmp;
+    Eigen::VectorXi res;
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(gen_slackbus_[gen_id]){
             const auto my_bus = bus_id_(gen_id);
             // do not add twice the same "slack bus"
-            if(!is_in_vect(my_bus, res)) res.push_back(my_bus);
+            if(!is_in_vect(my_bus, tmp)) tmp.push_back(my_bus);
         }
     }
+    res = Eigen::VectorXi::Map(&tmp[0], tmp.size());  // force the copy of the data apparently
     return res;
 }
 
@@ -349,7 +351,7 @@ void DataGen::set_p_slack(const RealVect& node_mismatch,
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
-        throw std::runtime_error("Impossible to set the active value of generators for the slack bus");
+        throw std::runtime_error("DataGen::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called DataGen::get_slack_weights first)");
     }
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){

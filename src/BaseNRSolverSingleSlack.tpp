@@ -11,15 +11,15 @@
 
 template<class LinearSolver>
 bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                         CplxVect & V,
-                                         const CplxVect & Sbus,
-                                         const Eigen::VectorXi & slack_ids,
-                                         const RealVect & slack_weights,  // unused here
-                                         const Eigen::VectorXi & pv,
-                                         const Eigen::VectorXi & pq,
-                                         int max_iter,
-                                         real_type tol
-                                         )
+                                                       CplxVect & V,
+                                                       const CplxVect & Sbus,
+                                                       const Eigen::VectorXi & slack_ids,
+                                                       const RealVect & slack_weights,  // unused here
+                                                       const Eigen::VectorXi & pv,
+                                                       const Eigen::VectorXi & pq,
+                                                       int max_iter,
+                                                       real_type tol
+                                                       )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -31,18 +31,26 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
         std::ostringstream exc_;
         exc_ << "BaseNRSolverSingleSlack::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
+        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         std::ostringstream exc_;
         exc_ << "BaseNRSolverSingleSlack::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<<", "<<Ybus.rows() << ").";
+        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<<", "<<Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     BaseNRSolver<LinearSolver>::reset_timer();
-    
-    if(!BaseNRSolver<LinearSolver>::is_linear_solver_valid()) return false;
+    // std::cout << "singleslack" << std::endl;
+
+    if(BaseNRSolver<LinearSolver>::_solver_control.need_reset_solver() || 
+       BaseNRSolver<LinearSolver>::_solver_control.has_dimension_changed()){
+       BaseNRSolver<LinearSolver>::reset();
+    }
+
+    if(!BaseNRSolver<LinearSolver>::is_linear_solver_valid()){
+        return false;
+    }
 
     BaseNRSolver<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();
@@ -73,14 +81,20 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
 
     const cplx_type m_i = BaseNRSolver<LinearSolver>::my_i;  // otherwise it does not compile
-
+    BaseNRSolver<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed
+    BaseNRSolver<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed
+    BaseNRSolver<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed
+    // BaseNRSolver<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRSolver<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
     while ((!converged) & (BaseNRSolver<LinearSolver>::nr_iter_ < max_iter)){
         BaseNRSolver<LinearSolver>::nr_iter_++;
+        // std::cout << "\tnr_iter_ " << BaseNRSolver<LinearSolver>::nr_iter_ << std::endl;
         fill_jacobian_matrix(Ybus, BaseNRSolver<LinearSolver>::V_, pq, pvpq, pq_inv, pvpq_inv);
         if(BaseNRSolver<LinearSolver>::need_factorize_){
             BaseNRSolver<LinearSolver>::initialize();
             if(BaseNRSolver<LinearSolver>::err_ != ErrorType::NoError){
                 // I got an error during the initialization of the linear system, i need to stop here
+                // std::cout << BaseNRSolver<LinearSolver>::err_ << std::endl;
                 res = false;
                 break;
             }
@@ -95,6 +109,7 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
         has_just_been_initialized = false;
         if(BaseNRSolver<LinearSolver>::err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
+            // std::cout << BaseNRSolver<LinearSolver>::err_ << std::endl;
             res = false;
             break;
         }
@@ -117,7 +132,11 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
 
         F = BaseNRSolver<LinearSolver>::_evaluate_Fx(Ybus, BaseNRSolver<LinearSolver>::V_, Sbus, my_pv, pq);
         bool tmp = F.allFinite();
-        if(!tmp) break; // divergence due to Nans
+        if(!tmp){
+            BaseNRSolver<LinearSolver>::err_ = ErrorType::InifiniteValue;
+            // std::cout << BaseNRSolver<LinearSolver>::err_ << std::endl;
+            break; // divergence due to Nans
+        }
         converged = BaseNRSolver<LinearSolver>::_check_for_convergence(F, tol);
     }
     if(!converged){
@@ -135,17 +154,18 @@ bool BaseNRSolverSingleSlack<LinearSolver>::compute_pf(const Eigen::SparseMatrix
                   << "\n\t timer_total_nr_: " << BaseNRSolver<LinearSolver>::timer_total_nr_
                   << "\n\n";
     #endif // __COUT_TIMES
+    BaseNRSolver<LinearSolver>::_solver_control.tell_none_changed();
     return res;
 }
 
 template<class LinearSolver>
 void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                   const CplxVect & V,
-                                                   const Eigen::VectorXi & pq,
-                                                   const Eigen::VectorXi & pvpq,
-                                                   const std::vector<int> & pq_inv,
-                                                   const std::vector<int> & pvpq_inv
-                                                   )
+                                                                 const CplxVect & V,
+                                                                 const Eigen::VectorXi & pq,
+                                                                 const Eigen::VectorXi & pvpq,
+                                                                 const std::vector<int> & pq_inv,
+                                                                 const std::vector<int> & pvpq_inv
+                                                                 )
 {
     /**
     J has the shape
@@ -165,7 +185,6 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix(const Eigen::Sp
     const int n_pvpq = static_cast<int>(pvpq.size());
     const int n_pq = static_cast<int>(pq.size());
     const int size_j = n_pvpq + n_pq;
-
     // TODO to gain a bit more time below, try to compute directly, in _dSbus_dV(Ybus, V);
     // TODO the `dS_dVa_[pvpq, pvpq]`
     // TODO so that it's easier to retrieve in the next few lines !
@@ -177,6 +196,8 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix(const Eigen::Sp
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
         fill_jacobian_matrix_unkown_sparsity_pattern(Ybus, V, pq, pvpq, pq_inv, pvpq_inv);
+        fill_value_map(pq, pvpq);
+        // std::cout << "\t\tfill_jacobian_matrix_unkown_sparsity_pattern" << std::endl;
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
         #endif  // __COUT_TIMES
@@ -186,7 +207,12 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix(const Eigen::Sp
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // __COUT_TIMES
+        if (BaseNRSolver<LinearSolver>::value_map_.size() == 0){
+            // std::cout << "\t\tfill_value_map called" << std::endl;
+            fill_value_map(pq, pvpq);
+        }
         fill_jacobian_matrix_kown_sparsity_pattern(pq, pvpq);
+        // std::cout << "\t\tfill_jacobian_matrix_kown_sparsity_pattern" << std::endl;
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_kown_sparsity_pattern : " << timer3.duration() << std::endl;
         #endif  // __COUT_TIMES
@@ -323,7 +349,6 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_jacobian_matrix_unkown_sparsity
     }
     // J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     BaseNRSolver<LinearSolver>::J_.makeCompressed();
-    fill_value_map(pq, pvpq);
 }
 
 /**
@@ -340,9 +365,9 @@ void BaseNRSolverSingleSlack<LinearSolver>::fill_value_map(
     const int n_pvpq = static_cast<int>(pvpq.size());
     BaseNRSolver<LinearSolver>::value_map_ = std::vector<cplx_type*> (BaseNRSolver<LinearSolver>::J_.nonZeros());
 
-    const int n_row = static_cast<int>(BaseNRSolver<LinearSolver>::J_.cols());
+    const int n_col = static_cast<int>(BaseNRSolver<LinearSolver>::J_.cols());
     unsigned int pos_el = 0;
-    for (int col_=0; col_ < n_row; ++col_){
+    for (int col_=0; col_ < n_col; ++col_){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(BaseNRSolver<LinearSolver>::J_, col_); it; ++it)
         {
             const int row_id = static_cast<int>(it.row());
