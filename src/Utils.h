@@ -96,7 +96,7 @@ class SolverControl
         void tell_none_changed(){
             change_dimension_ = false;
             pv_changed_ = false;
-            pq_changed_ = true;
+            pq_changed_ = false;
             slack_participate_changed_ = false;
             need_reset_solver_ = false;
             need_recompute_sbus_ = false;

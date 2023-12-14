@@ -333,6 +333,7 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) c
 
 Eigen::VectorXi DataGen::get_slack_bus_id() const{
     std::vector<int> tmp;
+    tmp.reserve(gen_slackbus_.size());
     Eigen::VectorXi res;
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
@@ -342,7 +343,8 @@ Eigen::VectorXi DataGen::get_slack_bus_id() const{
             if(!is_in_vect(my_bus, tmp)) tmp.push_back(my_bus);
         }
     }
-    res = Eigen::VectorXi::Map(&tmp[0], tmp.size());  // force the copy of the data apparently
+    if(tmp.empty()) throw std::runtime_error("DataGen::get_slack_bus_id: no generator are tagged slack bus for this grid.");
+    res = Eigen::VectorXi::Map(tmp.data(), tmp.size());  // force the copy of the data apparently
     return res;
 }
 

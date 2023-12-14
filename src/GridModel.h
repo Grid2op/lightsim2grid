@@ -74,6 +74,7 @@ class GridModel : public DataGeneric
 
         GridModel():
           solver_control_(),
+          compute_results_(true),
           init_vm_pu_(1.04),
           sn_mva_(1.0){
             _solver.change_solver(SolverType::SparseLU);
@@ -633,6 +634,7 @@ class GridModel : public DataGeneric
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
                                     std::vector<int> & id_me_to_solver,
                                     std::vector<int> & id_solver_to_me,
+                                    Eigen::VectorXi & slack_bus_id_me,
                                     Eigen::VectorXi & slack_bus_id_solver,
                                     bool is_ac,
                                     const SolverControl & solver_control);
@@ -647,7 +649,9 @@ class GridModel : public DataGeneric
         void init_slack_bus(const CplxVect & Sbus,
                             const std::vector<int> & id_me_to_solver,
                             const std::vector<int>& id_solver_to_me,
-                            Eigen::VectorXi & slack_bus_id_solver);
+                            const Eigen::VectorXi & slack_bus_id_me,
+                            Eigen::VectorXi & slack_bus_id_solver
+                        );
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver,
@@ -802,7 +806,9 @@ class GridModel : public DataGeneric
 
         // 8. slack bus
         // std::vector<int> slack_bus_id_;
-        Eigen::VectorXi slack_bus_id_ac_solver_;
+        Eigen::VectorXi slack_bus_id_ac_me_;  // slack bus id, gridmodel number
+        Eigen::VectorXi slack_bus_id_ac_solver_;  // slack bus id, solver number
+        Eigen::VectorXi slack_bus_id_dc_me_;
         Eigen::VectorXi slack_bus_id_dc_solver_;
         RealVect slack_weights_;
 

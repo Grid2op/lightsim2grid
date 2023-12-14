@@ -136,8 +136,16 @@ class BaseNRSolver : public BaseSolver
 
         void fill_value_map(Eigen::Index slack_bus_id,
                             const Eigen::VectorXi & pq,
-                            const Eigen::VectorXi & pvpq);
+                            const Eigen::VectorXi & pvpq,
+                            bool reset_J);
 
+        void reset_if_needed(){
+            if(_solver_control.need_reset_solver() || 
+               _solver_control.has_dimension_changed() ||
+               _solver_control.has_ybus_some_coeffs_zero()){
+               reset();
+            }
+        }
     protected:
         // used linear solver
         LinearSolver _linear_solver;
@@ -151,6 +159,8 @@ class BaseNRSolver : public BaseSolver
         // to store the mapping from the element of J_ in dS_dVm_ and dS_dVa_
         // it does not own any memory at all !
         std::vector<cplx_type*> value_map_;
+        // std::vector<int> col_map_;
+        // std::vector<int> row_map_;
 
         // timers
         double timer_initialize_;

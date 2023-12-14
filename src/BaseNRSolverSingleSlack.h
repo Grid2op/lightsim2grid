@@ -58,7 +58,8 @@ class BaseNRSolverSingleSlack : public BaseNRSolver<LinearSolver>
                  );
 
         void fill_value_map(const Eigen::VectorXi & pq,
-                            const Eigen::VectorXi & pvpq);
+                            const Eigen::VectorXi & pvpq,
+                            bool reset_J);
 
 };
 

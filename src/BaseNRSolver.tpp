@@ -46,20 +46,14 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
         exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
-    reset_timer();
-    // std::cout << "dist slack" << std::endl;
-
-    if(_solver_control.need_reset_solver() || 
-       _solver_control.has_dimension_changed()){
-        reset();
-    }
-    auto timer = CustTimer();
     if(!is_linear_solver_valid()) {
         // err_ = ErrorType::NotInitError;
         return false;
     }
-
+    reset_timer();
+    reset_if_needed();
     err_ = ErrorType::NoError;  // reset the error if previous error happened
+    auto timer = CustTimer();
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
     real_type slack_absorbed = std::real(Sbus.sum());  // initial guess for slack_absorbed
@@ -94,9 +88,11 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
     // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
-    BaseNRSolver<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-    BaseNRSolver<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
-    BaseNRSolver<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+    value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRSolver<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRSolver<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+    dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+    dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
     // BaseNRSolver<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
     // BaseNRSolver<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
     while ((!converged) & (nr_iter_ < max_iter)){
@@ -181,6 +177,7 @@ void BaseNRSolver<LinearSolver>::reset(){
 template<class LinearSolver>
 void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                                            const Eigen::Ref<const CplxVect > & V){
+    // std::cout << "Ybus.nonZeros(): " << Ybus.nonZeros() << std::endl;
     auto timer = CustTimer();
     const auto size_dS = V.size();
     const CplxVect Vnorm = V.array() / V.array().abs();
@@ -198,6 +195,12 @@ void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseM
 
     cplx_type * ds_dvm_x_ptr = dS_dVm_.valuePtr();
     cplx_type * ds_dva_x_ptr = dS_dVa_.valuePtr();
+
+    // there can be more value in dS_dVm_ or dS_dVa_ than in Ybus, if a line is disconnected for example
+    // TODO smarter solver
+    // const Eigen::Index * col_ptr = dS_dVm_.outerIndexPtr();
+    // const Eigen::Index * row_ptr = dS_dVm_.innerIndexPtr();
+
     unsigned int pos_el = 0;
     for (int col_id=0; col_id < size_dS; ++col_id){
         for (Eigen::Ref<const Eigen::SparseMatrix<cplx_type> >::InnerIterator it(Ybus, col_id); it; ++it)
@@ -298,14 +301,14 @@ void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
 
 template<class LinearSolver>
 void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                        const CplxVect & V,
-                                        Eigen::Index slack_bus_id,
-                                        const RealVect & slack_weights,
-                                        const Eigen::VectorXi & pq,
-                                        const Eigen::VectorXi & pvpq,
-                                        const std::vector<int> & pq_inv,
-                                        const std::vector<int> & pvpq_inv
-                                        )
+                                                      const CplxVect & V,
+                                                      Eigen::Index slack_bus_id,
+                                                      const RealVect & slack_weights,
+                                                      const Eigen::VectorXi & pq,
+                                                      const Eigen::VectorXi & pvpq,
+                                                      const std::vector<int> & pq_inv,
+                                                      const std::vector<int> & pvpq_inv
+                                                      )
 {
     /**
     Remember, J has the shape:
@@ -346,7 +349,7 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
         fill_jacobian_matrix_unkown_sparsity_pattern(Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-        fill_value_map(slack_bus_id, pq, pvpq);
+        fill_value_map(slack_bus_id, pq, pvpq, false);
         #ifdef __COUT_TIMES
             std::cout << "\t\t fill_jacobian_matrix_unkown_sparsity_pattern : " << timer2.duration() << std::endl;
         #endif  // __COUT_TIMES
@@ -356,7 +359,7 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // 
-        if (BaseNRSolver<LinearSolver>::value_map_.size() == 0) fill_value_map(slack_bus_id,pq, pvpq);
+        if (BaseNRSolver<LinearSolver>::value_map_.size() == 0) fill_value_map(slack_bus_id, pq, pvpq, true);
         fill_jacobian_matrix_kown_sparsity_pattern(slack_bus_id,
                                                    pq, pvpq
                                                    );
@@ -541,11 +544,15 @@ template<class LinearSolver>
 void BaseNRSolver<LinearSolver>::fill_value_map(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
-        const Eigen::VectorXi & pvpq
+        const Eigen::VectorXi & pvpq,
+        bool reset_J
         )
 {
     const int n_pvpq = static_cast<int>(pvpq.size());
-    value_map_ = std::vector<cplx_type*> (J_.nonZeros());
+    value_map_ = std::vector<cplx_type*> ();
+    value_map_.reserve(BaseNRSolver<LinearSolver>::J_.nonZeros());
+    // col_map_ = std::vector<int> (J_.nonZeros());
+    // row_map_ = std::vector<int> (J_.nonZeros());
 
     const auto n_row = J_.cols();
     unsigned int pos_el = 0;
@@ -554,16 +561,18 @@ void BaseNRSolver<LinearSolver>::fill_value_map(
         {
             auto row_id = it.row();
             const auto col_id = it.col() - 1;  // it's equal to "col_"
+            if(reset_J) it.valueRef() = 0.; // "forget" previous J value in this setting
+
             if(row_id==0){
                 // this is the row of the slack bus
                 const Eigen::Index row_id_dS_dVx_r = slack_bus_id;  // same for both matrices
                 if(col_id < n_pvpq){
                     const int col_id_dS_dVa_r = pvpq[col_id];
-                    value_map_[pos_el] = &dS_dVa_.coeffRef(row_id_dS_dVx_r, col_id_dS_dVa_r);
+                    value_map_.push_back(&dS_dVa_.coeffRef(row_id_dS_dVx_r, col_id_dS_dVa_r));
                 }
                 else{
                     const int col_id_dS_dVm_r = pq[col_id - n_pvpq];
-                    value_map_[pos_el] = &dS_dVm_.coeffRef(row_id_dS_dVx_r, col_id_dS_dVm_r);
+                    value_map_.push_back(&dS_dVm_.coeffRef(row_id_dS_dVx_r, col_id_dS_dVm_r));
                 }
             }else{
                 row_id -= 1;  // "do not consider" the row for slack bus (handled above)
@@ -573,7 +582,7 @@ void BaseNRSolver<LinearSolver>::fill_value_map(
                     const int row_id_dS_dVa_r = pvpq[row_id];
                     const int col_id_dS_dVa_r = pvpq[col_id];
                     // this_el = dS_dVa_r.coeff(row_id_dS_dVa_r, col_id_dS_dVa_r);
-                    value_map_[pos_el] = &dS_dVa_.coeffRef(row_id_dS_dVa_r, col_id_dS_dVa_r);
+                    value_map_.push_back(&dS_dVa_.coeffRef(row_id_dS_dVa_r, col_id_dS_dVa_r));
 
                     // I don't need to perform these checks: if they failed, the element would not be in J_ in the first place
                     // const int is_row_non_null = pq_inv[row_id_dS_dVa_r];
@@ -587,25 +596,27 @@ void BaseNRSolver<LinearSolver>::fill_value_map(
                     const int row_id_dS_dVa_i = pq[row_id - n_pvpq];
                     const int col_id_dS_dVa_i = pvpq[col_id];
                     // this_el = dS_dVa_i.coeff(row_id_dS_dVa_i, col_id_dS_dVa_i);
-                    value_map_[pos_el] = &dS_dVa_.coeffRef(row_id_dS_dVa_i, col_id_dS_dVa_i);
+                    value_map_.push_back(&dS_dVa_.coeffRef(row_id_dS_dVa_i, col_id_dS_dVa_i));
                 }else if((col_id >= n_pvpq) && (row_id < n_pvpq)){
                     // this is the J12 part (dS_dVm_r)
                     const int row_id_dS_dVm_r = pvpq[row_id];
                     const int col_id_dS_dVm_r = pq[col_id - n_pvpq];
                     // this_el = dS_dVm_r.coeff(row_id_dS_dVm_r, col_id_dS_dVm_r);
-                    value_map_[pos_el] = &dS_dVm_.coeffRef(row_id_dS_dVm_r, col_id_dS_dVm_r);
+                    value_map_.push_back(&dS_dVm_.coeffRef(row_id_dS_dVm_r, col_id_dS_dVm_r));
                 }else if((col_id >= n_pvpq) && (row_id >= n_pvpq)){
                     // this is the J22 part (dS_dVm_i)
                     const int row_id_dS_dVm_i = pq[row_id - n_pvpq];
                     const int col_id_dS_dVm_i = pq[col_id - n_pvpq];
                     // this_el = dS_dVm_i.coeff(row_id_dS_dVm_i, col_id_dS_dVm_i);
-                    value_map_[pos_el] = &dS_dVm_.coeffRef(row_id_dS_dVm_i, col_id_dS_dVm_i);
+                    value_map_.push_back(&dS_dVm_.coeffRef(row_id_dS_dVm_i, col_id_dS_dVm_i));
                 }
             }
             // go to the next element
             ++pos_el;
         }
     }
+    dS_dVa_.makeCompressed();
+    dS_dVm_.makeCompressed();
 }
 
 template<class LinearSolver>

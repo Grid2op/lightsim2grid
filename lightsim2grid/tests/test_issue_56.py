@@ -49,7 +49,7 @@ class TestSADC_14(unittest.TestCase):
                 grid_model.deactivate_powerline(l_id)
             else:
                 grid_model.deactivate_trafo(l_id - nb_powerline)
-            grid_model.tell_topo_changed()
+            grid_model.tell_solver_need_reset()
             V = 1.0 * self.env.backend.V  # np.ones(2 * self.env.n_sub, dtype=np.complex_)
             res = grid_model.dc_pf(V, 10, 1e-8)
             if len(res):

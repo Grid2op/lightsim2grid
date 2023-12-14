@@ -30,6 +30,8 @@ Change Log
 - [FIXED] a bug in init from pypowsybl when some object were disconnected. It raises
   an error (because they are not connected to a bus): now this function properly handles
   these cases.
+- [FIXED] a bug leading to not propagate correctly the "compute_results" flag when the 
+  environment was copied (for example)
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.

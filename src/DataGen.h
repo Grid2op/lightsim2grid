@@ -234,6 +234,7 @@ class DataGen: public DataGeneric
     void deactivate(int gen_id, SolverControl & solver_control) {
         if (status_[gen_id]){
             solver_control.tell_recompute_sbus();
+            solver_control.tell_pq_changed();  // bus might now be pq
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
             if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
             if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
@@ -246,6 +247,7 @@ class DataGen: public DataGeneric
     void reactivate(int gen_id, SolverControl & solver_control) {
         if(!status_[gen_id]){
             solver_control.tell_recompute_sbus();
+            solver_control.tell_pq_changed();  // bus might now be pv
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
             if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
             if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){

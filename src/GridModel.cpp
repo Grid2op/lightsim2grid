@@ -17,6 +17,7 @@ GridModel::GridModel(const GridModel & other)
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
+    compute_results_ = other.compute_results_;
 
     // copy the powersystem representation
     // 1. bus
@@ -72,8 +73,11 @@ GridModel::GridModel(const GridModel & other)
     _solver.change_solver(other._solver.get_type());
     _dc_solver.change_solver(other._dc_solver.get_type());
     compute_results_ = other.compute_results_;
+    solver_control_.tell_all_changed();
     _dc_solver.set_gridmodel(this);
     _solver.set_gridmodel(this);
+    _dc_solver.tell_solver_control(solver_control_);
+    _solver.tell_solver_control(solver_control_);
 }
 
 //pickle
@@ -264,8 +268,13 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     dcSbus_ = CplxVect();
     bus_pv_ = Eigen::VectorXi();
     bus_pq_ = Eigen::VectorXi();
-    slack_weights_ = RealVect();
     solver_control_.tell_all_changed();
+    
+    slack_bus_id_ac_me_ = Eigen::VectorXi();  // slack bus id, gridmodel number
+    slack_bus_id_ac_solver_ = Eigen::VectorXi();  // slack bus id, solver number
+    slack_bus_id_dc_me_ = Eigen::VectorXi();
+    slack_bus_id_dc_solver_ = Eigen::VectorXi();
+    slack_weights_ = RealVect();
 
     // reset the solvers
     if (reset_solver){
@@ -274,6 +283,7 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
         _solver.set_gridmodel(this);
         _dc_solver.set_gridmodel(this);
     }
+
 }
 
 CplxVect GridModel::ac_pf(const CplxVect & Vinit,
@@ -301,6 +311,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                     Ybus_ac_,
                                     id_me_to_ac_solver_,
                                     id_ac_solver_to_me_,
+                                    slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
                                     is_ac,
                                     solver_control_);
@@ -397,6 +408,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
                                     Ybus_ac_, 
                                     id_me_to_ac_solver_,
                                     id_ac_solver_to_me_,
+                                    slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
                                     is_ac, reset_solver);
 
@@ -429,6 +441,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                                        Eigen::SparseMatrix<cplx_type> & Ybus,
                                        std::vector<int> & id_me_to_solver,
                                        std::vector<int> & id_solver_to_me,
+                                       Eigen::VectorXi & slack_bus_id_me,
                                        Eigen::VectorXi & slack_bus_id_solver,
                                        bool is_ac,
                                        const SolverControl & solver_control)
@@ -451,7 +464,8 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (solver_control.need_reset_solver() || 
         solver_control.has_dimension_changed() ||
         solver_control.has_slack_participate_changed()){
-            slack_bus_id_solver = generators_.get_slack_bus_id();
+            // std::cout << "slack_bus_id_solver\n";
+            slack_bus_id_me = generators_.get_slack_bus_id();
             // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
             // conversion to solver ordering is done in init_slack_bus
 
@@ -462,6 +476,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed()){
+            // std::cout << "init_Ybus;" << std::endl;
             init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
             // std::cout << "init_Ybus;" << std::endl;
         }
@@ -469,12 +484,14 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed() || 
         solver_control.need_recompute_ybus()){
+            // std::cout << "fillYbus;" << std::endl;
             fillYbus(Ybus, is_ac, id_me_to_solver);
             // std::cout << "fillYbus;" << std::endl;
         }
     if (solver_control.need_reset_solver() || 
         solver_control.has_dimension_changed()) {
             // init Sbus
+            // std::cout << "init_Sbus;" << std::endl;
             Sbus = CplxVect::Constant(id_solver_to_me.size(), 0.);
             // std::cout << "init_Sbus;" << std::endl;
         }
@@ -483,7 +500,9 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pv_changed() || 
         solver_control.has_pq_changed()) {
-            init_slack_bus(Sbus, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
+            // std::cout << "init_slack_bus;" << std::endl;
+            init_slack_bus(Sbus, id_me_to_solver, id_solver_to_me, slack_bus_id_me, slack_bus_id_solver);
+            // std::cout << "fillpv_pq;" << std::endl;
             fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
             // std::cout << "fillpv_pq;" << std::endl;
         }
@@ -491,6 +510,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (is_ac && (solver_control.need_reset_solver() || 
                   solver_control.has_dimension_changed() || 
                   solver_control.need_recompute_sbus())){
+        // std::cout << "total_gen_per_bus_;" << std::endl;
         int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
         total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
@@ -504,6 +524,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         solver_control.has_dimension_changed() ||
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pq_changed()) {
+            // std::cout << "fillSbus_me;" << std::endl;
             fillSbus_me(Sbus, is_ac, id_me_to_solver);
             // std::cout << "fillSbus_me;" << std::endl;
         }
@@ -566,6 +587,7 @@ void GridModel::process_results(bool conv,
                                               static_cast<int>(Vinit.size()));
     } else {
         //powerflow diverge
+        // std::cout << "powerflow diverge" << std::endl;
         reset_results();
         // TODO solver control ??? something to do here ?
     }
@@ -598,11 +620,12 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
 void GridModel::init_slack_bus(const CplxVect & Sbus,
                                const std::vector<int>& id_me_to_solver,
                                const std::vector<int>& id_solver_to_me,
+                               const Eigen::VectorXi & slack_bus_id_me,
                                Eigen::VectorXi & slack_bus_id_solver){
     
     const int nb_bus = static_cast<int>(id_solver_to_me.size());
     // slack_bus_id_solver = Eigen::VectorXi::Zero(slack_bus_id_.size());
-    // slack_bus_id_solver = Eigen::VectorXi::Constant(slack_bus_id_solver.size(), _deactivated_bus_id);
+    slack_bus_id_solver = Eigen::VectorXi::Constant(slack_bus_id_me.size(), _deactivated_bus_id);
 
     size_t i = 0;
     // std::cout << "slack_bus_id_solver 2: ";
@@ -616,7 +639,7 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
     // std::cout << std::endl;
 
     // for(auto el: slack_bus_id_) {
-    for(auto el: slack_bus_id_solver) {
+    for(auto el: slack_bus_id_me) {
         auto tmp = id_me_to_solver[el];
         if(tmp == _deactivated_bus_id){
             std::ostringstream exc_;
@@ -624,7 +647,7 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
             exc_ << " You can check element ";
             exc_ << el;
             exc_ << ": [";
-            for(auto el2 : slack_bus_id_solver) exc_ << el2 << ", ";
+            for(auto el2 : slack_bus_id_me) exc_ << el2 << ", ";
             exc_ << "].";
             throw std::out_of_range(exc_.str());
         }
@@ -772,6 +795,7 @@ void GridModel::compute_results(bool ac){
 }
 
 void GridModel::reset_results(){
+    // std::cout << "reset_results\n";
     powerlines_.reset_results();  // TODO have a function to dispatch that to all type of elements
     shunts_.reset_results();
     trafos_.reset_results();
@@ -812,8 +836,10 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                                     Ybus_dc_,
                                     id_me_to_dc_solver_,
                                     id_dc_solver_to_me_,
+                                    slack_bus_id_dc_me_,
                                     slack_bus_id_dc_solver_,
-                                    is_ac, solver_control_);
+                                    is_ac,
+                                    solver_control_);
     // std::cout << "after pre proces\n";
     // start the solver
     if(solver_control_.need_reset_solver() || 

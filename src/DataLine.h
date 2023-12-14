@@ -189,6 +189,7 @@ class DataLine : public DataGeneric
     virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
 
     void deactivate(int powerline_id, SolverControl & solver_control) {
+        // std::cout << "line: deactivate called\n";
         if(status_[powerline_id]){
             solver_control.tell_recompute_ybus();
             // but sparsity pattern do not change here (possibly one more coeff at 0.)
@@ -199,12 +200,18 @@ class DataLine : public DataGeneric
     void reactivate(int powerline_id, SolverControl & solver_control) {
         if(!status_[powerline_id]){
             solver_control.tell_recompute_ybus();
-            solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+            solver_control.tell_ybus_change_sparsity_pattern();  // sparsity pattern might change: a non zero coeff can pop up
         }
         _reactivate(powerline_id, status_);
     }
-    void change_bus_or(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_or_id_, solver_control, nb_bus);}
-    void change_bus_ex(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(powerline_id, new_bus_id, bus_ex_id_, solver_control, nb_bus);}
+    void change_bus_or(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        // std::cout << "line: change_bus_or called\n";
+        _change_bus(powerline_id, new_bus_id, bus_or_id_, solver_control, nb_bus);
+        }
+    void change_bus_ex(int powerline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        // std::cout << "line: change_bus_or called\n";
+        _change_bus(powerline_id, new_bus_id, bus_ex_id_, solver_control, nb_bus);
+        }
     int get_bus_or(int powerline_id) {return _get_bus(powerline_id, status_, bus_or_id_);}
     int get_bus_ex(int powerline_id) {return _get_bus(powerline_id, status_, bus_ex_id_);}
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
