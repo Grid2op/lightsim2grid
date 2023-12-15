@@ -148,32 +148,35 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     // pq: list of index of pq nodes
     // nb_bus: total number of bus in the grid
     // returns: res: the ids of all the slack buses (by def: not PV and not PQ)
-
-    Eigen::VectorXi res(nb_bus - pv.size() - pq.size());
+    int nb_slacks = nb_bus - pv.size() - pq.size();
+    if(nb_slacks == 0){
+        // TODO DEBUG MODE
+        throw std::runtime_error("BaseSolver::extract_slack_bus_id: All buses are tagged as PV or PQ, there can be no slack.");
+    }
+    Eigen::VectorXi res(nb_slacks);
     Eigen::Index i_res = 0;
-    
+
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
-    for(unsigned int k=0; k < pv.size(); ++k)
-    {
-        tmp[pv[k]] = false;
-    }
-    for(unsigned int k=0; k < pq.size(); ++k)
-    {
-        tmp[pq[k]] = false;
-    }
+    for(auto pv_i : pv) tmp[pv_i] = false;
+    for(auto pq_i : pq) tmp[pq_i] = false;
+
     // run through all buses
     for(unsigned int k=0; k < nb_bus; ++k)
     {
         if(tmp[k])
         {
+            if((i_res >= nb_slacks)){
+                // TODO DEBUG MODE
+                throw std::runtime_error("BaseSolver::extract_slack_bus_id: too many slack found. Maybe a bus is both PV and PQ ?");
+            }
             res[i_res] = k;
             ++i_res;
         }
     }
     if(res.size() != i_res){
         // TODO DEBUG MODE
-        throw std::runtime_error("BaseSolver::extract_slack_bus_id: No slack bus is found in your grid");
+        throw std::runtime_error("BaseSolver::extract_slack_bus_id: Some slacks are not found in your grid.");
     }
     return res;
 }

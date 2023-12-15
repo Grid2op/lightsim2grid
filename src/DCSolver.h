@@ -10,7 +10,7 @@
 #define DCSOLVER_H
 
 #include "BaseSolver.h"
-// TODO make err_ more explicit: use an enum
+
 template<class LinearSolver>
 class BaseDCSolver: public BaseSolver
 {

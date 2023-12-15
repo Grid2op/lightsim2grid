@@ -445,7 +445,7 @@ void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic,
                 add_slackbus(gen_id, p_mw_(gen_id), solver_control);
 
             }else{
-                // gen is now "turned off"
+                // gen is now "turned off" (p_mw=0.)
                 if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, so I need to reset the solver
                 remove_slackbus(gen_id, solver_control);
             }

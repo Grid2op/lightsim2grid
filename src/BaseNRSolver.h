@@ -142,7 +142,8 @@ class BaseNRSolver : public BaseSolver
         void reset_if_needed(){
             if(_solver_control.need_reset_solver() || 
                _solver_control.has_dimension_changed() ||
-               _solver_control.has_ybus_some_coeffs_zero()){
+               _solver_control.has_ybus_some_coeffs_zero() ||
+               _solver_control.has_slack_participate_changed()){
                reset();
             }
         }
