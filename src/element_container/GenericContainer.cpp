@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,14 +6,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataGeneric.h"
+#include "GenericContainer.h"
+
 #include <iostream>
 #include <sstream>
 
-const int DataGeneric::_deactivated_bus_id = -1;
+const int GenericContainer::_deactivated_bus_id = -1;
 
 // TODO all functions bellow are generic ! Make a base class for that
-void DataGeneric::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v){
+void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v){
     const real_type _1_sqrt_3 = 1.0 / std::sqrt(3.);
     RealVect p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
@@ -26,22 +27,22 @@ void DataGeneric::_get_amps(RealVect & a, const RealVect & p, const RealVect & q
     }
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
-void DataGeneric::_reactivate(int el_id, std::vector<bool> & status){
+void GenericContainer::_reactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     status.at(el_id) = true;  //TODO why it's needed to do that again
 }
-void DataGeneric::_deactivate(int el_id, std::vector<bool> & status){
+void GenericContainer::_deactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     status.at(el_id) = false;  //TODO why it's needed to do that again
 }
-void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
+void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
     if(el_id >= el_bus_ids.size())
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
+        exc_ << "GenericContainer::_change_bus: Cannot change the bus of element with id ";
         exc_ << el_id;
         exc_ << " while the grid counts ";
         exc_ << el_bus_ids.size();
@@ -52,7 +53,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGeneric::_change_bus: Cannot change the bus of element with id ";
+        exc_ << "GenericContainer::_change_bus: Cannot change the bus of element with id ";
         exc_ << el_id;
         exc_ << " (id should be >= 0)";
         throw std::out_of_range(exc_.str());
@@ -63,7 +64,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGeneric::_change_bus: Cannot change an element to bus ";
+        exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
         exc_ << new_bus_me_id;
         exc_ << " There are only ";
         exc_ << nb_bus;
@@ -74,7 +75,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGeneric::_change_bus: new bus id should be >=0 and not ";
+        exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
         exc_ << new_bus_me_id;
         throw std::out_of_range(exc_.str());
     }
@@ -92,7 +93,7 @@ void DataGeneric::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el
     bus_me_id = new_bus_me_id;
 }
 
-int DataGeneric::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_)
+int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_)
 {
     int res;
     bool val = status_.at(el_id);  // also check if the el_id is out of bound
@@ -103,7 +104,7 @@ int DataGeneric::_get_bus(int el_id, const std::vector<bool> & status_, const Ei
     return res;
 }
 
-void DataGeneric::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
+void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const RealVect> & Vm,
                                 const std::vector<bool> & status,
                                 int nb_element,
@@ -120,7 +121,7 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
         if(bus_solver_id == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGeneric::v_kv_from_vpu: The element of id ";
+            exc_ << "GenericContainer::v_kv_from_vpu: The element of id ";
             exc_ << bus_solver_id;
             exc_ << " is connected to a disconnected bus";
             throw std::runtime_error(exc_.str());
@@ -131,7 +132,7 @@ void DataGeneric::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
 }
 
 
-void DataGeneric::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
+void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const RealVect> & Vm,
                                 const std::vector<bool> & status,
                                 int nb_element,
@@ -148,7 +149,7 @@ void DataGeneric::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
         if(bus_solver_id == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGeneric::v_deg_from_va: The element of id ";
+            exc_ << "GenericContainer::v_deg_from_va: The element of id ";
             exc_ << bus_solver_id;
             exc_ << " is connected to a disconnected bus";
             throw std::runtime_error(exc_.str());

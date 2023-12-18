@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,17 +6,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATASGEN_H
-#define DATASGEN_H
+#ifndef SGEN_CONTAINER_H
+#define SGEN_CONTAINER_H
 
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "DataGeneric.h"
+#include "Utils.h"
+#include "GenericContainer.h"
 
 /**
 This class is a container for all static generator (PQ generators) on the grid.
@@ -28,7 +28,7 @@ https://pandapower.readthedocs.io/en/latest/elements/sgen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/sgen.html#electric-model
 **/
-class DataSGen: public DataGeneric
+class SGenContainer: public GenericContainer
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
@@ -60,7 +60,7 @@ class DataSGen: public DataGeneric
                 real_type res_v_kv;
                 real_type res_theta_deg;
 
-                SGenInfo(const DataSGen & r_data_sgen, int my_id):
+                SGenInfo(const SGenContainer & r_data_sgen, int my_id):
                 id(-1),
                 name(""),
                 connected(false),
@@ -108,12 +108,12 @@ class DataSGen: public DataGeneric
         typedef SGenInfo DataInfo;
 
     private:
-        typedef DataConstIterator<DataSGen> DataSGenConstIterator;
+        typedef GenericContainerConstIterator<SGenContainer> SGenContainerConstIterator;
 
     public:
-        typedef DataSGenConstIterator const_iterator_type;
-        const_iterator_type begin() const {return DataSGenConstIterator(this, 0); }
-        const_iterator_type end() const {return DataSGenConstIterator(this, nb()); }
+        typedef SGenContainerConstIterator const_iterator_type;
+        const_iterator_type begin() const {return SGenContainerConstIterator(this, 0); }
+        const_iterator_type end() const {return SGenContainerConstIterator(this, nb()); }
         SGenInfo operator[](int id) const
         {
             if(id < 0)
@@ -140,11 +140,11 @@ class DataSGen: public DataGeneric
        std::vector<bool> // status
        >  StateRes;
 
-    DataSGen() {};
+    SGenContainer() {};
 
     // pickle (python)
-    DataSGen::StateRes get_state() const;
-    void set_state(DataSGen::StateRes & my_state );
+    SGenContainer::StateRes get_state() const;
+    void set_state(SGenContainer::StateRes & my_state );
 
 
     void init(const RealVect & sgen_p,
@@ -214,4 +214,4 @@ class DataSGen: public DataGeneric
         RealVect res_theta_;  // in degree
 };
 
-#endif  //DATASGEN_H
+#endif  //SGEN_CONTAINER_H

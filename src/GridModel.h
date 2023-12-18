@@ -27,14 +27,14 @@
 #include "Eigen/SparseLU"
 
 // import data classes
-#include "DataGeneric.h"
-#include "DataLine.h"
-#include "DataShunt.h"
-#include "DataTrafo.h"
-#include "DataLoad.h"
-#include "DataGen.h"
-#include "DataSGen.h"
-#include "DataDCLine.h"
+#include "element_container/GenericContainer.h"
+#include "element_container/LineContainer.h"
+#include "element_container/ShuntContainer.h"
+#include "element_container/TrafoContainer.h"
+#include "element_container/LoadContainer.h"
+#include "element_container/GeneratorContainer.h"
+#include "element_container/SGenContainer.h"
+#include "element_container/DCLineContainer.h"
 
 // import newton raphson solvers using different linear algebra solvers
 #include "ChooseSolver.h"
@@ -42,7 +42,7 @@
 // enum class SolverType;
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
-class GridModel : public DataGeneric
+class GridModel : public GenericContainer
 {
     public:
         typedef std::tuple<
@@ -55,21 +55,21 @@ class GridModel : public DataGeneric
                 std::vector<real_type>,  // bus_vn_kv
                 std::vector<bool>,  // bus_status
                 // powerlines
-                DataLine::StateRes ,
+                LineContainer::StateRes ,
                 // shunts
-                DataShunt::StateRes,
+                ShuntContainer::StateRes,
                 // trafos
-                DataTrafo::StateRes,
+                TrafoContainer::StateRes,
                 // gens
-                DataGen::StateRes,
+                GeneratorContainer::StateRes,
                 // loads
-                DataLoad::StateRes,
+                LoadContainer::StateRes,
                 // static generators
-                DataSGen::StateRes,
+                SGenContainer::StateRes,
                 // storage units
-                DataLoad::StateRes,
+                LoadContainer::StateRes,
                 //dc lines
-                DataDCLine::StateRes
+                DCLineContainer::StateRes
                 >  StateRes;
 
         GridModel():
@@ -101,7 +101,7 @@ class GridModel : public DataGeneric
         const std::vector<int> & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
 
         // retrieve the underlying data (raw class)
-        const DataGen & get_generators_as_data() const {return generators_;}
+        const GeneratorContainer & get_generators_as_data() const {return generators_;}
         void turnedoff_no_pv(){generators_.turnedoff_no_pv();}  // turned off generators are not pv
         void turnedoff_pv(){generators_.turnedoff_pv();}  // turned off generators are pv
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
@@ -109,11 +109,11 @@ class GridModel : public DataGeneric
             generators_.update_slack_weights(could_be_slack, solver_control_);
         }
 
-        const DataSGen & get_static_generators_as_data() const {return sgens_;}
-        const DataLoad & get_loads_as_data() const {return loads_;}
-        const DataLine & get_powerlines_as_data() const {return powerlines_;}
-        const DataTrafo & get_trafos_as_data() const {return trafos_;}
-        const DataDCLine & get_dclines_as_data() const {return dc_lines_;}
+        const SGenContainer & get_static_generators_as_data() const {return sgens_;}
+        const LoadContainer & get_loads_as_data() const {return loads_;}
+        const LineContainer & get_powerlines_as_data() const {return powerlines_;}
+        const TrafoContainer & get_trafos_as_data() const {return trafos_;}
+        const DCLineContainer & get_dclines_as_data() const {return dc_lines_;}
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
         std::tuple<int, int> assign_slack_to_most_connected();
         void consider_only_main_component();
@@ -271,7 +271,7 @@ class GridModel : public DataGeneric
         void tell_recompute_sbus(){solver_control_.tell_recompute_sbus();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
         void tell_solver_need_reset(){solver_control_.tell_solver_need_reset();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
         void tell_ybus_change_sparsity_pattern(){solver_control_.tell_ybus_change_sparsity_pattern();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
-        const SolverControl & get_solver_control() const { return solver_control_;}
+        const SolverControl & get_solver_control() const {return solver_control_;}
 
         // dc powerflow
         CplxVect dc_pf(const CplxVect & Vinit,
@@ -317,14 +317,14 @@ class GridModel : public DataGeneric
         Eigen::Index nb_trafo() const {return trafos_.nb();}
 
         // read only data accessor
-        const DataLine & get_lines() const {return powerlines_;}
-        const DataDCLine & get_dclines() const {return dc_lines_;}
-        const DataTrafo & get_trafos() const {return trafos_;}
-        const DataGen & get_generators() const {return generators_;}
-        const DataLoad & get_loads() const {return loads_;}
-        const DataLoad & get_storages() const {return storages_;}
-        const DataSGen & get_static_generators() const {return sgens_;}
-        const DataShunt & get_shunts() const {return shunts_;}
+        const LineContainer & get_lines() const {return powerlines_;}
+        const DCLineContainer & get_dclines() const {return dc_lines_;}
+        const TrafoContainer & get_trafos() const {return trafos_;}
+        const GeneratorContainer & get_generators() const {return generators_;}
+        const LoadContainer & get_loads() const {return loads_;}
+        const LoadContainer & get_storages() const {return storages_;}
+        const SGenContainer & get_static_generators() const {return sgens_;}
+        const ShuntContainer & get_shunts() const {return shunts_;}
         const std::vector<bool> & get_bus_status() const {return bus_status_;}
         
         void set_line_names(const std::vector<std::string> & names){
@@ -740,7 +740,7 @@ class GridModel : public DataGeneric
                                                  int size);
 
         void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
-        void check_solution_q_values_onegen(CplxVect & res, const DataGen::GenInfo& gen, bool check_q_limits) const;
+        void check_solution_q_values_onegen(CplxVect & res, const GeneratorContainer::GenInfo& gen, bool check_q_limits) const;
 
     protected:
         // memory for the import
@@ -776,35 +776,35 @@ class GridModel : public DataGeneric
         std::vector<int> id_dc_solver_to_me_;
 
         // 2. powerline
-        DataLine powerlines_;
+        LineContainer powerlines_;
 
         // 3. shunt
-        DataShunt shunts_;
+        ShuntContainer shunts_;
 
         // 4. transformers
         // have the r, x, h and ratio
         // ratio is computed from the tap, so maybe store tap num and tap_step_pct
-        DataTrafo trafos_;
+        TrafoContainer trafos_;
 
         // 5. generators
         RealVect total_q_min_per_bus_;
         RealVect total_q_max_per_bus_;
         Eigen::VectorXi total_gen_per_bus_;
-        DataGen generators_;
+        GeneratorContainer generators_;
 
         // 6. loads
-        DataLoad loads_;
+        LoadContainer loads_;
 
-        // 6. static generators (P,Q generators)
-        DataSGen sgens_;
+        // 7. static generators (P,Q generators)
+        SGenContainer sgens_;
 
-        // 7. storage units
-        DataLoad storages_;
+        // 8. storage units
+        LoadContainer storages_;
 
-        // hvdc
-        DataDCLine dc_lines_;
+        // 9. hvdc
+        DCLineContainer dc_lines_;
 
-        // 8. slack bus
+        // 10. slack bus
         // std::vector<int> slack_bus_id_;
         Eigen::VectorXi slack_bus_id_ac_me_;  // slack bus id, gridmodel number
         Eigen::VectorXi slack_bus_id_ac_solver_;  // slack bus id, solver number

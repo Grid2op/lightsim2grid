@@ -6,11 +6,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseSolver.h"
+#include "BaseAlgo.h"
 #include "GridModel.h"  // needs to be included here because of the forward declaration
 
 
-void BaseSolver::reset(){
+void BaseAlgo::reset(){
     // reset timers
     reset_timer();
 
@@ -27,7 +27,7 @@ void BaseSolver::reset(){
 }
 
 
-RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
                                   const CplxVect & Sbus,
                                   const Eigen::VectorXi & pv,
@@ -53,7 +53,7 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     return res;
 }
 
-RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
+RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
                                   const CplxVect & Sbus,
                                   Eigen::Index slack_id,  // id of the ref slack bus
@@ -117,7 +117,7 @@ RealVect BaseSolver::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     
 }
 
-bool BaseSolver::_check_for_convergence(const RealVect & F,
+bool BaseAlgo::_check_for_convergence(const RealVect & F,
                                         real_type tol)
 {
     auto timer = CustTimer();
@@ -128,7 +128,7 @@ bool BaseSolver::_check_for_convergence(const RealVect & F,
     return res;
 }
 
-bool BaseSolver::_check_for_convergence(const RealVect & p,
+bool BaseAlgo::_check_for_convergence(const RealVect & p,
                                         const RealVect & q,
                                         real_type tol)
 {
@@ -140,7 +140,7 @@ bool BaseSolver::_check_for_convergence(const RealVect & p,
     return res;
 }
 
-Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
+Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::VectorXi & pv,
                                                  const Eigen::VectorXi & pq,
                                                  unsigned int nb_bus)
 {
@@ -151,7 +151,7 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     int nb_slacks = nb_bus - pv.size() - pq.size();
     if(nb_slacks == 0){
         // TODO DEBUG MODE
-        throw std::runtime_error("BaseSolver::extract_slack_bus_id: All buses are tagged as PV or PQ, there can be no slack.");
+        throw std::runtime_error("BaseAlgo::extract_slack_bus_id: All buses are tagged as PV or PQ, there can be no slack.");
     }
     Eigen::VectorXi res(nb_slacks);
     Eigen::Index i_res = 0;
@@ -168,7 +168,7 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
         {
             if((i_res >= nb_slacks)){
                 // TODO DEBUG MODE
-                throw std::runtime_error("BaseSolver::extract_slack_bus_id: too many slack found. Maybe a bus is both PV and PQ ?");
+                throw std::runtime_error("BaseAlgo::extract_slack_bus_id: too many slack found. Maybe a bus is both PV and PQ ?");
             }
             res[i_res] = k;
             ++i_res;
@@ -176,18 +176,18 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
     }
     if(res.size() != i_res){
         // TODO DEBUG MODE
-        throw std::runtime_error("BaseSolver::extract_slack_bus_id: Some slacks are not found in your grid.");
+        throw std::runtime_error("BaseAlgo::extract_slack_bus_id: Some slacks are not found in your grid.");
     }
     return res;
 }
 
 
-void BaseSolver::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
+void BaseAlgo::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
     _gridmodel->fillBf_for_PTDF(Bf);
 }
 
-void BaseSolver::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
+void BaseAlgo::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
     _gridmodel->fillBf_for_PTDF(Bf_T, true);
 }

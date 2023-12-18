@@ -6,23 +6,23 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DCSOLVER_H
-#define DCSOLVER_H
+#ifndef BASE_DC_ALGO_H
+#define BASE_DC_ALGO_H
 
-#include "BaseSolver.h"
+#include "BaseAlgo.h"
 
 template<class LinearSolver>
-class BaseDCSolver: public BaseSolver
+class BaseDCAlgo: public BaseAlgo
 {
     public:
-        BaseDCSolver():
-            BaseSolver(false),
+        BaseDCAlgo():
+            BaseAlgo(false),
             _linear_solver(),
             need_factorize_(true),
             sizeYbus_with_slack_(0),
             sizeYbus_without_slack_(0){};
 
-        ~BaseDCSolver(){}
+        ~BaseDCAlgo(){}
 
         virtual void reset();
 
@@ -45,8 +45,8 @@ class BaseDCSolver: public BaseSolver
 
     private:
         // no copy allowed
-        BaseDCSolver( const BaseSolver & ) =delete ;
-        BaseDCSolver & operator=( const BaseSolver & ) =delete;
+        BaseDCAlgo( const BaseDCAlgo & ) =delete ;
+        BaseDCAlgo & operator=( const BaseDCAlgo & ) =delete;
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);
@@ -72,6 +72,6 @@ class BaseDCSolver: public BaseSolver
 
 };
 
-#include "DCSolver.tpp"
+#include "BaseDCAlgo.tpp"
 
-#endif // DCSOLVER_H
+#endif // BASE_DC_ALGO_H

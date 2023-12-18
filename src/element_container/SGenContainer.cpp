@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,8 +6,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataSGen.h"
-void DataSGen::init(const RealVect & sgen_p,
+#include "SGenContainer.h"
+
+void SGenContainer::init(const RealVect & sgen_p,
                     const RealVect & sgen_q,
                     const RealVect & sgen_pmin,
                     const RealVect & sgen_pmax,
@@ -16,13 +17,13 @@ void DataSGen::init(const RealVect & sgen_p,
                     const Eigen::VectorXi & sgen_bus_id)
 {
     int size = static_cast<int>(sgen_p.size());
-    DataGeneric::check_size(sgen_p, size, "sgen_p");
-    DataGeneric::check_size(sgen_q, size, "sgen_q");
-    DataGeneric::check_size(sgen_pmin, size, "sgen_pmin");
-    DataGeneric::check_size(sgen_pmax, size, "sgen_pmax");
-    DataGeneric::check_size(sgen_qmin, size, "sgen_qmin");
-    DataGeneric::check_size(sgen_qmax, size, "sgen_qmax");
-    DataGeneric::check_size(sgen_bus_id, size, "sgen_bus_id");
+    GenericContainer::check_size(sgen_p, size, "sgen_p");
+    GenericContainer::check_size(sgen_q, size, "sgen_q");
+    GenericContainer::check_size(sgen_pmin, size, "sgen_pmin");
+    GenericContainer::check_size(sgen_pmax, size, "sgen_pmax");
+    GenericContainer::check_size(sgen_qmin, size, "sgen_qmin");
+    GenericContainer::check_size(sgen_qmax, size, "sgen_qmax");
+    GenericContainer::check_size(sgen_bus_id, size, "sgen_bus_id");
 
     p_mw_ = sgen_p;
     q_mvar_ = sgen_q;
@@ -34,7 +35,7 @@ void DataSGen::init(const RealVect & sgen_p,
     status_ = std::vector<bool>(sgen_p.size(), true);
 }
 
-DataSGen::StateRes DataSGen::get_state() const
+SGenContainer::StateRes SGenContainer::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
@@ -44,11 +45,11 @@ DataSGen::StateRes DataSGen::get_state() const
      std::vector<real_type> q_max(q_max_mvar_.begin(), q_max_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataSGen::StateRes res(names_, p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
+     SGenContainer::StateRes res(names_, p_mw, q_mvar, p_min, p_max, q_min, q_max, bus_id, status);
      return res;
 }
 
-void DataSGen::set_state(DataSGen::StateRes & my_state )
+void SGenContainer::set_state(SGenContainer::StateRes & my_state )
 {
     reset_results();
     
@@ -62,14 +63,14 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
     std::vector<int> & bus_id = std::get<7>(my_state);
     std::vector<bool> & status = std::get<8>(my_state);
     auto size = p_mw.size();
-    DataGeneric::check_size(p_mw, size, "p_mw");
-    DataGeneric::check_size(q_mvar, size, "q_mvar");
-    DataGeneric::check_size(p_min, size, "p_min");
-    DataGeneric::check_size(p_max, size, "p_max");
-    DataGeneric::check_size(q_min, size, "q_min");
-    DataGeneric::check_size(q_max, size, "q_max");
-    DataGeneric::check_size(bus_id, size, "bus_id");
-    DataGeneric::check_size(status, size, "status");
+    GenericContainer::check_size(p_mw, size, "p_mw");
+    GenericContainer::check_size(q_mvar, size, "q_mvar");
+    GenericContainer::check_size(p_min, size, "p_min");
+    GenericContainer::check_size(p_max, size, "p_max");
+    GenericContainer::check_size(q_min, size, "q_min");
+    GenericContainer::check_size(q_max, size, "q_max");
+    GenericContainer::check_size(bus_id, size, "bus_id");
+    GenericContainer::check_size(status, size, "status");
 
     p_mw_ = RealVect::Map(&p_mw[0], size);
     q_mvar_ = RealVect::Map(&q_mvar[0], size);
@@ -82,7 +83,7 @@ void DataSGen::set_state(DataSGen::StateRes & my_state )
     status_ = status;
 }
 
-void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
+void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     const int nb_sgen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
@@ -94,7 +95,7 @@ void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_sol
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataSGen::fillSbus: Static Generator with id ";
+            exc_ << "SGenContainer::fillSbus: Static Generator with id ";
             exc_ << sgen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -105,7 +106,7 @@ void DataSGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_sol
     }
 }
 
-void DataSGen::compute_results(const Eigen::Ref<const RealVect> & Va,
+void SGenContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const Eigen::Ref<const RealVect> & Vm,
                                const Eigen::Ref<const CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
@@ -121,19 +122,19 @@ void DataSGen::compute_results(const Eigen::Ref<const RealVect> & Va,
     else res_q_ = RealVect::Zero(nb_sgen);
 }
 
-void DataSGen::reset_results(){
+void SGenContainer::reset_results(){
     res_p_ = RealVect();  // in MW
     res_q_ =  RealVect();  // in MVar
     res_v_ = RealVect();  // in kV
 }
 
-void DataSGen::change_p(int sgen_id, real_type new_p, SolverControl & solver_control)
+void SGenContainer::change_p(int sgen_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(sgen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         std::ostringstream exc_;
-        exc_ << "DataSGen::change_p: Impossible to change the active value of a disconnected static generator (check sgen id ";
+        exc_ << "SGenContainer::change_p: Impossible to change the active value of a disconnected static generator (check sgen id ";
         exc_ << sgen_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -142,13 +143,13 @@ void DataSGen::change_p(int sgen_id, real_type new_p, SolverControl & solver_con
     p_mw_(sgen_id) = new_p;
 }
 
-void DataSGen::change_q(int sgen_id, real_type new_q, SolverControl & solver_control)
+void SGenContainer::change_q(int sgen_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(sgen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         std::ostringstream exc_;
-        exc_ << "DataSGen::change_q: Impossible to change the reactive value of a disconnected static generator (check sgen id ";
+        exc_ << "SGenContainer::change_q: Impossible to change the reactive value of a disconnected static generator (check sgen id ";
         exc_ << sgen_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -157,7 +158,7 @@ void DataSGen::change_q(int sgen_id, real_type new_q, SolverControl & solver_con
     q_mvar_(sgen_id) = new_q;
 }
 
-void DataSGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+void SGenContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     const int nb_sgen = nb();
     for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id)
     {
@@ -166,7 +167,7 @@ void DataSGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
         if(my_bus == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataSGen::reconnect_connected_buses: Static Generator with id ";
+            exc_ << "SGenContainer::reconnect_connected_buses: Static Generator with id ";
             exc_ << sgen_id;
             exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_sgen(...)` ?.";
             throw std::runtime_error(exc_.str());
@@ -175,7 +176,7 @@ void DataSGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     }
 }
 
-void DataSGen::gen_p_per_bus(std::vector<real_type> & res) const
+void SGenContainer::gen_p_per_bus(std::vector<real_type> & res) const
 {
     const int nb_gen = nb();
     for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
@@ -186,7 +187,7 @@ void DataSGen::gen_p_per_bus(std::vector<real_type> & res) const
     }
 }
 
-void DataSGen::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+void SGenContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
     const int nb_el = nb();
     SolverControl unused_solver_control;
     for(int el_id = 0; el_id < nb_el; ++el_id)

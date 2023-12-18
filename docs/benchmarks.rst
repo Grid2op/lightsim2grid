@@ -39,7 +39,8 @@ To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-We compare up to 19 different solvers:
+We compare up to 19 different "solvers" (combination of "linear solver used" (*eg* Eigen, KLU, CKTSO, NICSLU)
+and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
 
 - **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
   acceleration). It is our reference solver.
@@ -102,16 +103,24 @@ Computation time
 In this first subsection we compare the computation times:
 
 - **grid2op speed** from a grid2op point of view
-  (this include the time to compute the powerflow, plus the time to modify the powergrid plus the
-  time to read back the data once the powerflow has run plus the time to update the environment and
-  the observations etc.). It is reported in "iteration per second" (`it/s`) and represents the number of grid2op "step"
+  (this include the time to compute the powerflow, plus the time to modify 
+  the powergrid plus the
+  time to read back the data once the powerflow has run plus the time to update 
+  the environment and
+  the observations etc.). It is reported in "iteration per second" (`it/s`) and 
+  represents the number of grid2op "step"
   that can be computed per second.
-- **grid2op 'backend.runpf' time** corresponds to the time the solver take to perform a powerflow
-  as seen from grid2op (counting the resolution time and some time to check the validity of the results but
-  not the time to update the grid nor the grid2op environment), for lightsim2grid it includes the time to read back the data
+- **grid2op 'backend.runpf' time** corresponds to the time the solver take 
+  to perform a powerflow
+  as seen from grid2op (counting the resolution time and some time to check 
+  the validity of the results but
+  not the time to update the grid nor the grid2op environment), for lightsim2grid 
+  it includes the time to read back the data
   from c++ to python. It is reported in milli seconds (ms).
-- **solver powerflow time** corresponds only to the time spent in the solver itself. It does not take into
-  account any of the checking, nor the transfer of the data python side etc. It is reported in milli seconds (ms) as well.
+- **solver powerflow time** corresponds only to the time spent in the solver 
+  itself. It does not take into
+  account any of the checking, nor the transfer of the data python side etc. 
+  It is reported in milli seconds (ms) as well.
 
 There are two major differences between **grid2op 'backend.runpf' time** and **solver powerflow time**. In **grid2op 'backend.runpf' time**
 the time to initialize the solver (usually with the DC approximation) is counted (it is not in **solver powerflow time**). Secondly,

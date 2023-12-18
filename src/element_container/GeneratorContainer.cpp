@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,11 +6,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataGen.h"
+#include "GeneratorContainer.h"
 #include <iostream>
 #include <sstream>
 
-void DataGen::init(const RealVect & generators_p,
+void GeneratorContainer::init(const RealVect & generators_p,
                    const RealVect & generators_v,
                    const RealVect & generators_min_q,
                    const RealVect & generators_max_q,
@@ -24,7 +24,7 @@ void DataGen::init(const RealVect & generators_p,
     if(min_q_.size() != max_q_.size())
     {
         std::ostringstream exc_;
-        exc_ << "DataGen::init: Impossible to initialize generator with generators_min_q of size ";
+        exc_ << "GeneratorContainer::init: Impossible to initialize generator with generators_min_q of size ";
         exc_ << min_q_.size();
         exc_ << " and generators_max_q of size ";
         exc_ << max_q_.size();
@@ -36,7 +36,7 @@ void DataGen::init(const RealVect & generators_p,
         if (min_q_(gen_id) > max_q_(gen_id))
         {
             std::ostringstream exc_;
-            exc_ << "DataGen::init: Impossible to initialize generator min_q being above max_q for generator ";
+            exc_ << "GeneratorContainer::init: Impossible to initialize generator min_q being above max_q for generator ";
             exc_ << gen_id;
             throw std::runtime_error(exc_.str());
         }
@@ -49,7 +49,7 @@ void DataGen::init(const RealVect & generators_p,
     q_mvar_ = RealVect::Zero(generators_p.size());
 }
 
-void DataGen::init_full(const RealVect & generators_p,
+void GeneratorContainer::init_full(const RealVect & generators_p,
                         const RealVect & generators_v,
                         const RealVect & generators_q,
                         const std::vector<bool> & voltage_regulator_on,
@@ -64,7 +64,7 @@ void DataGen::init_full(const RealVect & generators_p,
 }
 
 
-DataGen::StateRes DataGen::get_state() const
+GeneratorContainer::StateRes GeneratorContainer::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> vm_pu(vm_pu_.begin(), vm_pu_.end());
@@ -76,13 +76,13 @@ DataGen::StateRes DataGen::get_state() const
      std::vector<bool> slack_bus = gen_slackbus_;
      std::vector<bool> voltage_regulator_on = voltage_regulator_on_;
      std::vector<real_type> slack_weight = gen_slack_weight_;
-     DataGen::StateRes res(names_, turnedoff_gen_pv_, voltage_regulator_on,
+     GeneratorContainer::StateRes res(names_, turnedoff_gen_pv_, voltage_regulator_on,
                            p_mw, vm_pu, q_mvar,
                            min_q, max_q, bus_id, status, slack_bus, slack_weight);
      return res;
 }
 
-void DataGen::set_state(DataGen::StateRes & my_state)
+void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
     reset_results();
     names_ = std::get<0>(my_state);
@@ -114,7 +114,7 @@ void DataGen::set_state(DataGen::StateRes & my_state)
     gen_slack_weight_ = slack_weight;
 }
 
-RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
+RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     RealVect res = RealVect::Zero(nb_bus_solver);
@@ -126,7 +126,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGen::get_slack_weights: Generator with id ";
+            exc_ << "GeneratorContainer::get_slack_weights: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -139,7 +139,7 @@ RealVect DataGen::get_slack_weights(Eigen::Index nb_bus_solver, const std::vecto
     return res;
 }
 
-void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
+void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
@@ -152,7 +152,7 @@ void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solv
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGen::fillSbus: Generator with id ";
+            exc_ << "GeneratorContainer::fillSbus: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -166,7 +166,7 @@ void DataGen::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solv
     }
 }
 
-void DataGen::fillpv(std::vector<int> & bus_pv,
+void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
                      std::vector<bool> & has_bus_been_added,
                      const Eigen::VectorXi & slack_bus_id_solver,
                      const std::vector<int> & id_grid_to_solver) const
@@ -184,7 +184,7 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGen::fillpv: Generator with id ";
+            exc_ << "GeneratorContainer::fillpv: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -197,7 +197,7 @@ void DataGen::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void DataGen::compute_results(const Eigen::Ref<const RealVect> & Va,
+void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                               const Eigen::Ref<const RealVect> & Vm,
                               const Eigen::Ref<const CplxVect> & V,
                               const std::vector<int> & id_grid_to_solver,
@@ -211,7 +211,7 @@ void DataGen::compute_results(const Eigen::Ref<const RealVect> & Va,
     res_p_ = p_mw_;
 }
 
-void DataGen::reset_results(){
+void GeneratorContainer::reset_results(){
     res_p_ = RealVect();  // in MW
     res_q_ = RealVect();  // in MVar
     res_v_ = RealVect();  // in kV
@@ -219,7 +219,7 @@ void DataGen::reset_results(){
     // bus_slack_weight_ = RealVect();
 }
 
-void DataGen::get_vm_for_dc(RealVect & Vm){
+void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     const int nb_gen = nb();
     int bus_id_me;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
@@ -235,14 +235,14 @@ void DataGen::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void DataGen::change_p(int gen_id, real_type new_p, SolverControl & solver_control)
+void GeneratorContainer::change_p(int gen_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         // TODO DEBUG MODE only this in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGen::change_p: Impossible to change the active value of a disconnected generator (check gen. id ";
+        exc_ << "GeneratorContainer::change_p: Impossible to change the active value of a disconnected generator (check gen. id ";
         exc_ << gen_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -261,14 +261,14 @@ void DataGen::change_p(int gen_id, real_type new_p, SolverControl & solver_contr
     p_mw_(gen_id) = new_p;
 }
 
-void DataGen::change_q(int gen_id, real_type new_q, SolverControl & solver_control)
+void GeneratorContainer::change_q(int gen_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         // TODO DEBUG MODE only this in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGen::change_q: Impossible to change the reactive value of a disconnected generator (check gen. id ";
+        exc_ << "GeneratorContainer::change_q: Impossible to change the reactive value of a disconnected generator (check gen. id ";
         exc_ << gen_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -279,14 +279,14 @@ void DataGen::change_q(int gen_id, real_type new_q, SolverControl & solver_contr
     q_mvar_(gen_id) = new_q;
 }
 
-void DataGen::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
+void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         // TODO DEBUG MODE only this in debug mode
         std::ostringstream exc_;
-        exc_ << "DataGen::change_p: Impossible to change the voltage setpoint of a disconnected generator (check gen. id ";
+        exc_ << "GeneratorContainer::change_p: Impossible to change the voltage setpoint of a disconnected generator (check gen. id ";
         exc_ << gen_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -295,7 +295,7 @@ void DataGen::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_co
     vm_pu_(gen_id) = new_v_pu;
 }
 
-void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const
+void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
@@ -311,7 +311,7 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) c
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGen::set_vm: Generator with id ";
+            exc_ << "GeneratorContainer::set_vm: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -331,7 +331,7 @@ void DataGen::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) c
     }
 }
 
-Eigen::VectorXi DataGen::get_slack_bus_id() const{
+Eigen::VectorXi GeneratorContainer::get_slack_bus_id() const{
     std::vector<int> tmp;
     tmp.reserve(gen_slackbus_.size());
     Eigen::VectorXi res;
@@ -343,17 +343,17 @@ Eigen::VectorXi DataGen::get_slack_bus_id() const{
             if(!is_in_vect(my_bus, tmp)) tmp.push_back(my_bus);
         }
     }
-    if(tmp.empty()) throw std::runtime_error("DataGen::get_slack_bus_id: no generator are tagged slack bus for this grid.");
+    if(tmp.empty()) throw std::runtime_error("GeneratorContainer::get_slack_bus_id: no generator are tagged slack bus for this grid.");
     res = Eigen::VectorXi::Map(tmp.data(), tmp.size());  // force the copy of the data apparently
     return res;
 }
 
-void DataGen::set_p_slack(const RealVect& node_mismatch,
+void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
                           const std::vector<int> & id_grid_to_solver)
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
-        throw std::runtime_error("DataGen::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called DataGen::get_slack_weights first)");
+        throw std::runtime_error("Generator::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called Generator::get_slack_weights first)");
     }
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
@@ -372,7 +372,7 @@ void DataGen::set_p_slack(const RealVect& node_mismatch,
     }
 }
 
-void DataGen::init_q_vector(int nb_bus,
+void GeneratorContainer::init_q_vector(int nb_bus,
                             Eigen::VectorXi & total_gen_per_bus,
                             RealVect & total_q_min_per_bus,
                             RealVect & total_q_max_per_bus) const // delta_q_per_gen_)  // total number of bus on the grid
@@ -392,7 +392,7 @@ void DataGen::init_q_vector(int nb_bus,
     }
 }
 
-void DataGen::set_q(const RealVect & reactive_mismatch,
+void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
                     const std::vector<int> & id_grid_to_solver,
                     bool ac,
                     const Eigen::VectorXi & total_gen_per_bus,
@@ -431,7 +431,7 @@ void DataGen::set_q(const RealVect & reactive_mismatch,
 }
 
 
-void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
                                    SolverControl & solver_control)
 {
     const int nb_gen = nb();
@@ -456,7 +456,7 @@ void DataGen::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic,
     }
 }
 
-void DataGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+void GeneratorContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
@@ -465,7 +465,7 @@ void DataGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
         if(my_bus == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataGen::reconnect_connected_buses: Generator with id ";
+            exc_ << "Generator::reconnect_connected_buses: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_gen(...)` ?.";
             throw std::runtime_error(exc_.str());
@@ -474,7 +474,7 @@ void DataGen::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     }
 }
 
-void DataGen::gen_p_per_bus(std::vector<real_type> & res) const
+void GeneratorContainer::gen_p_per_bus(std::vector<real_type> & res) const
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
@@ -485,7 +485,7 @@ void DataGen::gen_p_per_bus(std::vector<real_type> & res) const
     }
 }
 
-void DataGen::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+void GeneratorContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
     const int nb_gen = nb();
     SolverControl unused_solver_control;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)

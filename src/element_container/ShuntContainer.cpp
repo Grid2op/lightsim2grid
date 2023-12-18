@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,10 +6,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataShunt.h"
+#include "ShuntContainer.h"
+
 #include <iostream>
 
-void DataShunt::init(const RealVect & shunt_p_mw,
+void ShuntContainer::init(const RealVect & shunt_p_mw,
                      const RealVect & shunt_q_mvar,
                      const Eigen::VectorXi & shunt_bus_id)
 {
@@ -19,17 +20,17 @@ void DataShunt::init(const RealVect & shunt_p_mw,
     status_ = std::vector<bool>(p_mw_.size(), true); // by default everything is connected
 }
 
-DataShunt::StateRes DataShunt::get_state() const
+ShuntContainer::StateRes ShuntContainer::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataShunt::StateRes res(names_, p_mw, q_mvar, bus_id, status);
+     ShuntContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
      return res;
 }
 
-void DataShunt::set_state(DataShunt::StateRes & my_state )
+void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 {
     reset_results();
     names_ = std::get<0>(my_state);
@@ -46,7 +47,7 @@ void DataShunt::set_state(DataShunt::StateRes & my_state )
     status_ = status;
 }
 
-void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                          bool ac,
                          const std::vector<int> & id_grid_to_solver,
                          real_type sn_mva) const
@@ -67,7 +68,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataShunt::fillYbus: the shunt with id ";
+            exc_ << "ShuntContainer::fillYbus: the shunt with id ";
             exc_ << shunt_id;
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -77,7 +78,7 @@ void DataShunt::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataShunt::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                            std::vector<Eigen::Triplet<real_type> > & Bpp,
                            const std::vector<int> & id_grid_to_solver,
                            real_type sn_mva,
@@ -94,7 +95,7 @@ void DataShunt::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataShunt::fillBp_Bpp: the shunt with id ";
+            exc_ << "ShuntContainer::fillBp_Bpp: the shunt with id ";
             exc_ << shunt_id;
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -106,7 +107,7 @@ void DataShunt::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     }
 }
 
-void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const  // in DC i need that
+void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const  // in DC i need that
 {
     if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;
@@ -126,11 +127,11 @@ void DataShunt::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_so
     }
 }
 
-void DataShunt::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
-    throw std::runtime_error("DataShunt::fillYbus_spmat: should not be used anymore !");
+void ShuntContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
+    throw std::runtime_error("ShuntContainer::fillYbus_spmat: should not be used anymore !");
 }
 
-void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
+void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const RealVect> & Vm,
                                 const Eigen::Ref<const CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
@@ -148,7 +149,7 @@ void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
         int bus_id_me = bus_id_(shunt_id);
         int bus_solver_id = id_grid_to_solver[bus_id_me];
         if(bus_solver_id == _deactivated_bus_id){
-            throw std::runtime_error("DataShunt::compute_results: A shunt is connected to a disconnected bus.");
+            throw std::runtime_error("ShuntContainer::compute_results: A shunt is connected to a disconnected bus.");
         }
         cplx_type E = V(bus_solver_id);
         cplx_type y = -my_one_ * (p_mw_(shunt_id) + my_i * q_mvar_(shunt_id)) / sn_mva;
@@ -160,13 +161,13 @@ void DataShunt::compute_results(const Eigen::Ref<const RealVect> & Va,
     }
 }
 
-void DataShunt::reset_results(){
+void ShuntContainer::reset_results(){
     res_p_ = RealVect();  // in MW
     res_q_ = RealVect();  // in MVar
     res_v_ = RealVect();  // in kV
 }
 
-void DataShunt::change_p(int shunt_id, real_type new_p, SolverControl & solver_control)
+void ShuntContainer::change_p(int shunt_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected shunt");
@@ -178,7 +179,7 @@ void DataShunt::change_p(int shunt_id, real_type new_p, SolverControl & solver_c
 
 }
 
-void DataShunt::change_q(int shunt_id, real_type new_q, SolverControl & solver_control)
+void ShuntContainer::change_q(int shunt_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
@@ -188,7 +189,7 @@ void DataShunt::change_q(int shunt_id, real_type new_q, SolverControl & solver_c
     q_mvar_(shunt_id) = new_q;
 }
 
-void DataShunt::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+void ShuntContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     const int nb_shunt = nb();
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id)
     {
@@ -197,7 +198,7 @@ void DataShunt::reconnect_connected_buses(std::vector<bool> & bus_status) const 
         if(my_bus == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataShunt::reconnect_connected_buses: Shunt with id ";
+            exc_ << "ShuntContainer::reconnect_connected_buses: Shunt with id ";
             exc_ << shunt_id;
             exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_shunt(...)` ?.";
             throw std::runtime_error(exc_.str());
@@ -206,7 +207,7 @@ void DataShunt::reconnect_connected_buses(std::vector<bool> & bus_status) const 
     }
 }
 
-void DataShunt::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+void ShuntContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
     const int nb_el = nb();
     SolverControl unused_solver_control;
     for(int el_id = 0; el_id < nb_el; ++el_id)

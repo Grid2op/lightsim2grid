@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,10 +6,10 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataLoad.h"
+#include "LoadContainer.h"
 #include <sstream>
 
-void DataLoad::init(const RealVect & loads_p,
+void LoadContainer::init(const RealVect & loads_p,
                     const RealVect & loads_q,
                     const Eigen::VectorXi & loads_bus_id)
 {
@@ -20,16 +20,16 @@ void DataLoad::init(const RealVect & loads_p,
 }
 
 
-DataLoad::StateRes DataLoad::get_state() const
+LoadContainer::StateRes LoadContainer::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
      std::vector<bool> status = status_;
-     DataLoad::StateRes res(names_, p_mw, q_mvar, bus_id, status);
+     LoadContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
      return res;
 }
-void DataLoad::set_state(DataLoad::StateRes & my_state )
+void LoadContainer::set_state(LoadContainer::StateRes & my_state )
 {
     reset_results();
     names_ = std::get<0>(my_state);
@@ -47,7 +47,7 @@ void DataLoad::set_state(DataLoad::StateRes & my_state )
 }
 
 
-void DataLoad::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
+void LoadContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
     int nb_load = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
@@ -59,7 +59,7 @@ void DataLoad::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_sol
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataLoad::fillSbus: the load with id ";
+            exc_ << "LoadContainer::fillSbus: the load with id ";
             exc_ << load_id;
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -70,7 +70,7 @@ void DataLoad::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_sol
     }
 }
 
-void DataLoad::compute_results(const Eigen::Ref<const RealVect> & Va,
+void LoadContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                const Eigen::Ref<const RealVect> & Vm,
                                const Eigen::Ref<const CplxVect> & V,
                                const std::vector<int> & id_grid_to_solver,
@@ -85,19 +85,19 @@ void DataLoad::compute_results(const Eigen::Ref<const RealVect> & Va,
     res_q_ = q_mvar_;
 }
 
-void DataLoad::reset_results(){
+void LoadContainer::reset_results(){
     res_p_ = RealVect();  // in MW
     res_q_ =  RealVect();  // in MVar
     res_v_ = RealVect();  // in kV
 }
 
-void DataLoad::change_p(int load_id, real_type new_p, SolverControl & solver_control)
+void LoadContainer::change_p(int load_id, real_type new_p, SolverControl & solver_control)
 {
     bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         std::ostringstream exc_;
-        exc_ << "DataLoad::change_p: Impossible to change the active value of a disconnected load (check load id ";
+        exc_ << "LoadContainer::change_p: Impossible to change the active value of a disconnected load (check load id ";
         exc_ << load_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -106,13 +106,13 @@ void DataLoad::change_p(int load_id, real_type new_p, SolverControl & solver_con
     p_mw_(load_id) = new_p;
 }
 
-void DataLoad::change_q(int load_id, real_type new_q, SolverControl & solver_control)
+void LoadContainer::change_q(int load_id, real_type new_q, SolverControl & solver_control)
 {
     bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
     if(!my_status)
     {
         std::ostringstream exc_;
-        exc_ << "DataLoad::change_q: Impossible to change the reactive value of a disconnected load (check load id ";
+        exc_ << "LoadContainer::change_q: Impossible to change the reactive value of a disconnected load (check load id ";
         exc_ << load_id;
         exc_ << ")";
         throw std::runtime_error(exc_.str());
@@ -121,7 +121,7 @@ void DataLoad::change_q(int load_id, real_type new_q, SolverControl & solver_con
     q_mvar_(load_id) = new_q;
 }
 
-void DataLoad::reconnect_connected_buses(std::vector<bool> & bus_status) const {
+void LoadContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     const int nb_load = nb();
     for(int load_id = 0; load_id < nb_load; ++load_id)
     {
@@ -130,7 +130,7 @@ void DataLoad::reconnect_connected_buses(std::vector<bool> & bus_status) const {
         if(my_bus == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataLoad::reconnect_connected_buses: Load with id ";
+            exc_ << "LoadContainer::reconnect_connected_buses: Load with id ";
             exc_ << load_id;
             exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_load(...)` ?.";
             throw std::runtime_error(exc_.str());
@@ -139,7 +139,7 @@ void DataLoad::reconnect_connected_buses(std::vector<bool> & bus_status) const {
     }
 }
 
-void DataLoad::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+void LoadContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
     const int nb_el = nb();
     SolverControl unused_solver_control;
     for(int el_id = 0; el_id < nb_el; ++el_id)

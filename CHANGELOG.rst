@@ -39,6 +39,9 @@ Change Log
 - [ADDED] computation of PTPF (Power Transfer Distribution Factor) is now possible
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
+- [IMPROVED] clean ce cpp side by refactoring: making clearer the difference (linear) solver
+  vs powerflow algorithm and move same type of files in the same directory. This change
+  does not really affect python side at the moment (but will in future versions)
 
 [0.7.5] 2023-10-05
 --------------------

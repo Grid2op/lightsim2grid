@@ -9,7 +9,7 @@
 // inspired from pypower https://github.com/rwl/PYPOWER/blob/master/pypower/fdpf.py
 
 template<class LinearSolver, FDPFMethod XB_BX>
-bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                      CplxVect & V,
                                                      const CplxVect & Sbus,
                                                      const Eigen::VectorXi & slack_ids,
@@ -32,14 +32,14 @@ bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<c
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
-        exc_ << "BaseFDPFSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseFDPFAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
         exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
-        exc_ << "BaseFDPFSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseFDPFAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
         exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.rows() << ").";
         throw std::runtime_error(exc_.str());
     }
@@ -149,7 +149,7 @@ bool BaseFDPFSolver<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<c
 }
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFSolver<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
+void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
                                                                const Eigen::SparseMatrix<real_type> & grid_Bpp,
                                                                const std::vector<int> & pvpq_inv,
                                                                const std::vector<int> & pq_inv,
@@ -166,7 +166,7 @@ void BaseFDPFSolver<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::Spar
 }
 
 template<class LinearSolver, FDPFMethod XB_BX>
-void BaseFDPFSolver<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
+void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
                                                                    const std::vector<int> & ind_inv,
                                                                    Eigen::Index mat_dim,
                                                                    Eigen::SparseMatrix<real_type> & res)

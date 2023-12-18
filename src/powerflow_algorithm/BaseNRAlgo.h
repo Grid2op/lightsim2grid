@@ -6,19 +6,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef BASENRSOLVER_H
-#define BASENRSOLVER_H
+#ifndef BASE_NR_ALGO_H
+#define BASE_NR_ALGO_H
 
-#include "BaseSolver.h"
+#include "BaseAlgo.h"
 
 /**
 Base class for Newton Raphson based solver
 **/
 template<class LinearSolver>
-class BaseNRSolver : public BaseSolver
+class BaseNRAlgo : public BaseAlgo
 {
     public:
-        BaseNRSolver():BaseSolver(true), need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
+        BaseNRAlgo():BaseAlgo(true), need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
 
         virtual
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
@@ -56,7 +56,7 @@ class BaseNRSolver : public BaseSolver
 
     protected:
         virtual void reset_timer(){
-            BaseSolver::reset_timer();
+            BaseAlgo::reset_timer();
             timer_dSbus_ = 0.;
             timer_fillJ_ = 0.;
             timer_initialize_ = 0.;
@@ -198,8 +198,8 @@ class BaseNRSolver : public BaseSolver
 
     private:
         // no copy allowed
-        BaseNRSolver( const BaseNRSolver & ) =delete ;
-        BaseNRSolver & operator=( const BaseNRSolver & ) =delete ;
+        BaseNRAlgo( const BaseNRAlgo & ) =delete ;
+        BaseNRAlgo & operator=( const BaseNRAlgo & ) =delete ;
 
         /** helper function to print the max_col left most columns of the J matrix **/
         void print_J(int min_col=-1, int max_col=-1) const{
@@ -235,6 +235,6 @@ class BaseNRSolver : public BaseSolver
         }
 };
 
-#include "BaseNRSolver.tpp"
+#include "BaseNRAlgo.tpp"
 
-#endif // BASENRSOLVER_H
+#endif // BASE_NR_ALGO_H

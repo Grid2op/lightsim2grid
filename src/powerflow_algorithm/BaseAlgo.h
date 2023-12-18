@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef BASESOLVER_H
-#define BASESOLVER_H
+#ifndef BASEALGO_H
+#define BASEALGO_H
 
 #include <iostream>
 #include <vector>
@@ -32,17 +32,17 @@ class GridModel;
 
 
 /**
-This class represents a solver to compute powerflow.
+This class represents a algorithm to compute powerflow.
 
 It can be derived for different usecase, for example for DC powerflow, AC powerflow using Newton Raphson method etc.
 **/
-class BaseSolver : public BaseConstants
+class BaseAlgo : public BaseConstants
 {
     public:
         const bool IS_AC;  // should be static ideally...
 
     public:
-        BaseSolver(bool is_ac=true):
+        BaseAlgo(bool is_ac=true):
             BaseConstants(),
             IS_AC(is_ac),
             n_(-1),
@@ -52,7 +52,7 @@ class BaseSolver : public BaseConstants
             timer_check_(0.),
             timer_total_nr_(0.){};
 
-        virtual ~BaseSolver(){}
+        virtual ~BaseAlgo(){}
 
         void set_gridmodel(const GridModel * gridmodel){
             _gridmodel = gridmodel;
@@ -233,9 +233,9 @@ class BaseSolver : public BaseConstants
 
     private:
         // no copy allowed
-        BaseSolver( const BaseSolver & ) ;
-        BaseSolver & operator=( const BaseSolver & ) ;
+        BaseAlgo( const BaseAlgo & ) ;
+        BaseAlgo & operator=( const BaseAlgo & ) ;
 
 };
 
-#endif // BASESOLVER_H
+#endif // BASEALGO_H

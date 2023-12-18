@@ -10,7 +10,7 @@
 
 // TODO SLACK !!!
 template<class LinearSolver>
-bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                             CplxVect & V,
                                             const CplxVect & Sbus,
                                             const Eigen::VectorXi & slack_ids,
@@ -37,7 +37,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     }
 
     auto timer = CustTimer();
-    BaseSolver::reset_timer();
+    BaseAlgo::reset_timer();
     sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());
 
     #ifdef __COUT_TIMES
@@ -131,7 +131,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 
     // retrieve back the results in the proper shape (add back the slack bus)
     // TODO have a better way for this, for example using `.segment(0,npv)`
-    // see the BaseSolver.cpp: _evaluate_Fx
+    // see the BaseAlgo.cpp: _evaluate_Fx
     RealVect Va_dc = RealVect::Constant(sizeYbus_with_slack_, my_zero_);
     // fill Va from dc approx
     for (int ybus_id=0; ybus_id < sizeYbus_with_slack_; ++ybus_id){
@@ -164,7 +164,7 @@ bool BaseDCSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 }
 
 template<class LinearSolver>
-void BaseDCSolver<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
+void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
     mat_bus_id_ = Eigen::VectorXi::Constant(nb_bus_solver, -1);
     // Eigen::VectorXi me_to_ybus = Eigen::VectorXi::Constant(nb_bus_solver - slack_bus_ids_solver.size(), -1);
     int solver_id = 0;
@@ -177,14 +177,14 @@ void BaseDCSolver<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
 }
 
 template<class LinearSolver>
-void BaseDCSolver<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat){
+void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat){
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     remove_slack_buses(nb_bus_solver, ref_mat, dcYbus_noslack_);
 }
 
 template<class LinearSolver>
 template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
-void BaseDCSolver<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
+void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat){
     res_mat = Eigen::SparseMatrix<real_type>(sizeYbus_without_slack_, sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(ref_mat.nonZeros());
@@ -205,8 +205,8 @@ void BaseDCSolver<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eig
 }
 
 template<class LinearSolver>
-void BaseDCSolver<LinearSolver>::reset(){
-    BaseSolver::reset();
+void BaseDCAlgo<LinearSolver>::reset(){
+    BaseAlgo::reset();
     _linear_solver.reset();
     need_factorize_ = true;
     sizeYbus_with_slack_ = 0;
@@ -219,7 +219,7 @@ void BaseDCSolver<LinearSolver>::reset(){
 }
 
 template<class LinearSolver>
-RealMat BaseDCSolver<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
     Eigen::SparseMatrix<real_type> Bf_T_with_slack;
     RealMat PTDF;
     RealVect rhs = RealVect::Zero(sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
@@ -229,7 +229,7 @@ RealMat BaseDCSolver<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type
 
 
     //extract the Bf matrix
-    BaseSolver::get_Bf_transpose(Bf_T_with_slack);  // Bf_T_with_slack : [bus_id, line_or_trafo_id]
+    BaseAlgo::get_Bf_transpose(Bf_T_with_slack);  // Bf_T_with_slack : [bus_id, line_or_trafo_id]
     const int nb_bus = Bf_T_with_slack.rows();
     const int nb_pow_tr = Bf_T_with_slack.cols();  // cols and not rows because Bf_T_with_slack is transposed
     
@@ -268,14 +268,14 @@ RealMat BaseDCSolver<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type
 }
 
 template<class LinearSolver>
-Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_lodf(){
+Eigen::SparseMatrix<real_type> BaseDCAlgo<LinearSolver>::get_lodf(){
     // TODO
     return dcYbus_noslack_;
 
 }
 
 template<class LinearSolver>
-Eigen::SparseMatrix<real_type> BaseDCSolver<LinearSolver>::get_bsdf(){
+Eigen::SparseMatrix<real_type> BaseDCAlgo<LinearSolver>::get_bsdf(){
     // TODO
     return dcYbus_noslack_;
 

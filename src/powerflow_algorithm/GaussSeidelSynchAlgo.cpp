@@ -6,9 +6,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "GaussSeidelSynchSolver.h"
+#include "GaussSeidelSynchAlgo.h"
 
-void GaussSeidelSynchSolver::one_iter(CplxVect & tmp_Sbus,
+void GaussSeidelSynchAlgo::one_iter(CplxVect & tmp_Sbus,
                                       const Eigen::SparseMatrix<cplx_type> & Ybus,
                                       const Eigen::VectorXi & pv,
                                       const Eigen::VectorXi & pq)

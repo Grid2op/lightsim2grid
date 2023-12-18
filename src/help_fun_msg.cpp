@@ -808,12 +808,12 @@ const std::string DocIterator::has_res = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataGen = R"mydelimiter(
+const std::string DocIterator::GeneratorContainer = R"mydelimiter(
     This class allows to iterate through the generators of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     In lightsim2grid they are modeled as "pv" meanings you give the active production setpoint and voltage magnitude setpoint
-    (see :attr:`lightsim2grid.elements.DataSGen` for more exotic PQ generators).
+    (see :attr:`lightsim2grid.elements.SGenContainer` for more exotic PQ generators).
 
     The active production value setpoint are modified only for the generators participating to the slack buses
     (see :attr:`lightsim2grid.elements.GenInfo.is_slack` and :attr:`lightsim2grid.elements.GenInfo.slack_weight`).
@@ -847,7 +847,8 @@ const std::string DocIterator::DataGen = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::GenInfo = R"mydelimiter(
-    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataGen`
+    This class represents what you get from retrieving some elements from 
+    :class:`lightsim2grid.elements.GeneratorContainer`
 
     It allows to read information from each generator of the powergrid.
 
@@ -932,11 +933,12 @@ const std::string DocIterator::max_p_mw = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataSGen = R"mydelimiter(
+const std::string DocIterator::SGenContainer = R"mydelimiter(
     This class allows to iterate through the static generators of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
-    In lightsim2grid they are two types of generators the more standard PV generators (see :attr:`lightsim2grid.elements.DataGen`). These
+    In lightsim2grid they are two types of generators the more standard PV generators (see 
+    :attr:`lightsim2grid.elements.GeneratorContainer`). These
     are more exotic generators known as PQ, where you give the active production value and reactive production value. It's basically like loads,
     but using the generator convention (if the value is positive, it means power is taken from the grid to the element)
 
@@ -972,7 +974,8 @@ const std::string DocIterator::DataSGen = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::SGenInfo = R"mydelimiter(
-    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataSGen`
+    This class represents what you get from retrieving some elements from 
+    :class:`lightsim2grid.elements.SGenContainer`
 
     It allows to read information from each static generator of the powergrid.
 
@@ -1001,7 +1004,7 @@ const std::string DocIterator::SGenInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataLoad = R"mydelimiter(
+const std::string DocIterator::LoadContainer = R"mydelimiter(
     This class allows to iterate through the loads **and storage units** of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1049,7 +1052,8 @@ const std::string DocIterator::DataLoad = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::LoadInfo = R"mydelimiter(
-    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataLoad`.
+    This class represents what you get from retrieving some elements from 
+    :class:`lightsim2grid.elements.LoadContainer`.
     We remind the reader that storage units are also modeled as load in lightsim2grid.
 
     It allows to read information from each load / storage unit of the powergrid.
@@ -1088,7 +1092,7 @@ const std::string DocIterator::LoadInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataShunt = R"mydelimiter(
+const std::string DocIterator::ShuntContainer = R"mydelimiter(
     This class allows to iterate through the load of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1122,7 +1126,8 @@ const std::string DocIterator::DataShunt = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::ShuntInfo = R"mydelimiter(
-    This class represents what you get from retrieving the shunts from :class:`lightsim2grid.elements.DataShunt`.
+    This class represents what you get from retrieving the shunts from 
+    :class:`lightsim2grid.elements.ShuntContainer`.
 
     It allows to read information from each shunt of the powergrid.
 
@@ -1150,7 +1155,7 @@ const std::string DocIterator::ShuntInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataTrafo = R"mydelimiter(
+const std::string DocIterator::TrafoContainer = R"mydelimiter(
     This class allows to iterate through the transformers of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1184,7 +1189,8 @@ const std::string DocIterator::DataTrafo = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::TrafoInfo = R"mydelimiter(
-    This class represents what you get from retrieving the transformers from :class:`lightsim2grid.elements.DataTrafo`.
+    This class represents what you get from retrieving the transformers from 
+    :class:`lightsim2grid.elements.TrafoContainer`.
 
     It allows to read information from each transformer of the powergrid.
 
@@ -1321,7 +1327,7 @@ const std::string DocIterator::res_a_hv_ka = R"mydelimiter(
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::DataLine = R"mydelimiter(
+const std::string DocIterator::LineContainer = R"mydelimiter(
     This class allows to iterate through the powerlines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1355,7 +1361,8 @@ const std::string DocIterator::DataLine = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::LineInfo = R"mydelimiter(
-    This class represents what you get from retrieving the powerlines from :class:`lightsim2grid.elements.DataLine`.
+    This class represents what you get from retrieving the powerlines from 
+    :class:`lightsim2grid.elements.LineContainer`.
 
     It allows to read information from each powerline of the powergrid.
 
@@ -1475,7 +1482,7 @@ const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
 )mydelimiter" + DocIterator::only_avail_res;
 
 
-const std::string DocIterator::DataDCLine = R"mydelimiter(
+const std::string DocIterator::DCLineContainer = R"mydelimiter(
     This class allows to iterate through the dc lines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1523,7 +1530,8 @@ const std::string DocIterator::DataDCLine = R"mydelimiter(
 
 
 const std::string DocIterator::DCLineInfo = R"mydelimiter(
-    This class represents what you get from retrieving the dc powerlines from :class:`lightsim2grid.elements.DataDCLine`.
+    This class represents what you get from retrieving the dc powerlines from 
+    :class:`lightsim2grid.elements.DCLineContainer`.
 
     It allows to read information from each dc powerline of the powergrid.
 
@@ -1789,7 +1797,8 @@ const std::string DocGridModel::get_dc_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::get_lines = R"mydelimiter(
-    This function allows to retrieve the powerlines (as a :class:`lightsim2grid.elements.DataLine` object,
+    This function allows to retrieve the powerlines (as a 
+    :class:`lightsim2grid.elements.LineContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1807,7 +1816,8 @@ const std::string DocGridModel::get_lines = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_trafos = R"mydelimiter(
-    This function allows to retrieve the transformers (as a :class:`lightsim2grid.elements.DataLine` object,
+    This function allows to retrieve the transformers (as a 
+    :class:`lightsim2grid.elements.LineContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1825,7 +1835,8 @@ const std::string DocGridModel::get_trafos = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_generators = R"mydelimiter(
-    This function allows to retrieve the (standard) generators (as a :class:`lightsim2grid.elements.DataGen` object,
+    This function allows to retrieve the (standard) generators (as a 
+    :class:`lightsim2grid.elements.GeneratorContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1843,7 +1854,8 @@ const std::string DocGridModel::get_generators = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_static_generators = R"mydelimiter(
-    This function allows to retrieve the (more exotic) static generators (as a :class:`lightsim2grid.elements.DataSGen` object,
+    This function allows to retrieve the (more exotic) static generators (as a 
+    :class:`lightsim2grid.elements.SGenContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1861,7 +1873,8 @@ const std::string DocGridModel::get_static_generators = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_shunts = R"mydelimiter(
-    This function allows to retrieve the shunts (as a :class:`lightsim2grid.elements.DataShunt` object,
+    This function allows to retrieve the shunts (as a 
+    :class:`lightsim2grid.elements.ShuntContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1879,12 +1892,13 @@ const std::string DocGridModel::get_shunts = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_storages = R"mydelimiter(
-    This function allows to retrieve the storage units (as a :class:`lightsim2grid.elements.DataLoad` object,
+    This function allows to retrieve the storage units (as a 
+    :class:`lightsim2grid.elements.LoadContainer` object,
     see :ref:`elements-modeled` for more information)
 
     .. note::
         We want to emphize that, as far as lightsim2grid is concerned, the storage units are modeled as loads. This is why
-        this function will return a :class:`lightsim2grid.elements.DataLoad`.
+        this function will return a :class:`lightsim2grid.elements.LoadContainer`.
 
     Examples
     ---------
@@ -1901,7 +1915,7 @@ const std::string DocGridModel::get_storages = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_loads = R"mydelimiter(
-    This function allows to retrieve the loads (as a :class:`lightsim2grid.elements.DataLoad` object,
+    This function allows to retrieve the loads (as a :class:`lightsim2grid.elements.LoadContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1920,7 +1934,8 @@ const std::string DocGridModel::get_loads = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::get_dclines = R"mydelimiter(
-    This function allows to retrieve the dc powerlines (as a :class:`lightsim2grid.elements.DataDCLine` object,
+    This function allows to retrieve the dc powerlines (as a 
+    :class:`lightsim2grid.elements.DCLineContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples

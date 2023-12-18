@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,18 +6,16 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATASHUNT_H
-#define DATASHUNT_H
-
-#include "Utils.h"
+#ifndef SHUNT_CONTAINER_H
+#define SHUNT_CONTAINER_H
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-
-#include "DataGeneric.h"
+#include "Utils.h"
+#include "GenericContainer.h"
 
 /**
 This class is a container for all shunts on the grid.
@@ -28,7 +26,7 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
-class DataShunt : public DataGeneric
+class ShuntContainer : public GenericContainer
 {
     // iterators part
     public:
@@ -50,7 +48,7 @@ class DataShunt : public DataGeneric
                 real_type res_v_kv;
                 real_type res_theta_deg;
 
-                ShuntInfo(const DataShunt & r_data_shunt, int my_id):
+                ShuntInfo(const ShuntContainer & r_data_shunt, int my_id):
                 id(-1),
                 name(""),
                 connected(false),
@@ -89,12 +87,12 @@ class DataShunt : public DataGeneric
         typedef ShuntInfo DataInfo;
 
     private:
-        typedef DataConstIterator<DataShunt> DataShuntConstIterator;
+        typedef GenericContainerConstIterator<ShuntContainer> ShuntContainerConstIterator;
 
     public:
-        typedef DataShuntConstIterator const_iterator_type;
-        const_iterator_type begin() const {return DataShuntConstIterator(this, 0); }
-        const_iterator_type end() const {return DataShuntConstIterator(this, nb()); }
+        typedef ShuntContainerConstIterator const_iterator_type;
+        const_iterator_type begin() const {return ShuntContainerConstIterator(this, 0); }
+        const_iterator_type end() const {return ShuntContainerConstIterator(this, nb()); }
         ShuntInfo operator[](int id) const
         {
             if(id < 0)
@@ -117,7 +115,7 @@ class DataShunt : public DataGeneric
            std::vector<bool> // status
            >  StateRes;
 
-    DataShunt() {};
+    ShuntContainer() {};
 
     void init(const RealVect & shunt_p_mw,
               const RealVect & shunt_q_mvar,
@@ -125,8 +123,8 @@ class DataShunt : public DataGeneric
               );
 
     // pickle (python)
-    DataShunt::StateRes get_state() const;
-    void set_state(DataShunt::StateRes & my_state );
+    ShuntContainer::StateRes get_state() const;
+    void set_state(ShuntContainer::StateRes & my_state );
 
 
     int nb() const { return static_cast<int>(p_mw_.size()); }
@@ -191,4 +189,4 @@ class DataShunt : public DataGeneric
         RealVect res_theta_;  // in kV
 };
 
-#endif  //DATASHUNT_H
+#endif  //SHUNT_CONTAINER_H

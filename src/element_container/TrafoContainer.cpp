@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,11 +6,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataTrafo.h"
+#include "TrafoContainer.h"
+
 #include <iostream>
 #include <sstream>
 
-void DataTrafo::init(const RealVect & trafo_r,
+void TrafoContainer::init(const RealVect & trafo_r,
                            const RealVect & trafo_x,
                            const CplxVect & trafo_b,
                            const RealVect & trafo_tap_step_pct,
@@ -27,15 +28,15 @@ void DataTrafo::init(const RealVect & trafo_r,
     DOES NOT WORK WITH POWERLINES
     **/
     const int size = static_cast<int>(trafo_r.size());
-    DataGeneric::check_size(trafo_r, size, "trafo_r");
-    DataGeneric::check_size(trafo_x, size, "trafo_x");
-    DataGeneric::check_size(trafo_b, size, "trafo_b");
-    DataGeneric::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
-    DataGeneric::check_size(trafo_tap_pos, size, "trafo_tap_pos");
-    DataGeneric::check_size(trafo_shift_degree, size, "trafo_shift_degree");
-    DataGeneric::check_size(trafo_tap_hv, static_cast<std::vector<bool>::size_type>(size), "trafo_tap_hv");
-    DataGeneric::check_size(trafo_hv_id, size, "trafo_hv_id");
-    DataGeneric::check_size(trafo_lv_id, size, "trafo_lv_id");
+    GenericContainer::check_size(trafo_r, size, "trafo_r");
+    GenericContainer::check_size(trafo_x, size, "trafo_x");
+    GenericContainer::check_size(trafo_b, size, "trafo_b");
+    GenericContainer::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
+    GenericContainer::check_size(trafo_tap_pos, size, "trafo_tap_pos");
+    GenericContainer::check_size(trafo_shift_degree, size, "trafo_shift_degree");
+    GenericContainer::check_size(trafo_tap_hv, static_cast<std::vector<bool>::size_type>(size), "trafo_tap_hv");
+    GenericContainer::check_size(trafo_hv_id, size, "trafo_hv_id");
+    GenericContainer::check_size(trafo_lv_id, size, "trafo_lv_id");
 
     //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
 
@@ -55,7 +56,7 @@ void DataTrafo::init(const RealVect & trafo_r,
 }
 
 
-DataTrafo::StateRes DataTrafo::get_state() const
+TrafoContainer::StateRes TrafoContainer::get_state() const
 {
      std::vector<real_type> branch_r(r_.begin(), r_.end());
      std::vector<real_type> branch_x(x_.begin(), x_.end());
@@ -66,12 +67,12 @@ DataTrafo::StateRes DataTrafo::get_state() const
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
      std::vector<real_type> shift(shift_.begin(), shift_.end());
      std::vector<bool> is_tap_hv_side = is_tap_hv_side_;
-     DataTrafo::StateRes res(names_, branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
+     TrafoContainer::StateRes res(names_, branch_r, branch_x, branch_h, bus_hv_id, bus_lv_id, status, ratio, is_tap_hv_side, shift);
      return res;
 }
 
 
-void DataTrafo::set_state(DataTrafo::StateRes & my_state)
+void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
 {
     reset_results();
 
@@ -87,15 +88,15 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
     std::vector<real_type> & shift = std::get<9>(my_state);
 
     auto size = branch_r.size();
-    DataGeneric::check_size(branch_r, size, "branch_r");
-    DataGeneric::check_size(branch_x, size, "branch_x");
-    DataGeneric::check_size(branch_h, size, "branch_h");
-    DataGeneric::check_size(bus_hv_id, size, "bus_hv_id");
-    DataGeneric::check_size(bus_lv_id, size, "bus_lv_id");
-    DataGeneric::check_size(status, size, "status");
-    DataGeneric::check_size(ratio, size, "ratio");
-    DataGeneric::check_size(is_tap_hv_side, size, "is_tap_hv_side");
-    DataGeneric::check_size(shift, size, "shift");
+    GenericContainer::check_size(branch_r, size, "branch_r");
+    GenericContainer::check_size(branch_x, size, "branch_x");
+    GenericContainer::check_size(branch_h, size, "branch_h");
+    GenericContainer::check_size(bus_hv_id, size, "bus_hv_id");
+    GenericContainer::check_size(bus_lv_id, size, "bus_lv_id");
+    GenericContainer::check_size(status, size, "status");
+    GenericContainer::check_size(ratio, size, "ratio");
+    GenericContainer::check_size(is_tap_hv_side, size, "is_tap_hv_side");
+    GenericContainer::check_size(shift, size, "shift");
 
     // now assign the values
     r_ = RealVect::Map(&branch_r[0], size);
@@ -113,7 +114,7 @@ void DataTrafo::set_state(DataTrafo::StateRes & my_state)
 }
 
 
-void DataTrafo::_update_model_coeffs()
+void TrafoContainer::_update_model_coeffs()
 {
     const Eigen::Index my_size = r_.size();
 
@@ -163,12 +164,12 @@ void DataTrafo::_update_model_coeffs()
     }
 }
 
-void DataTrafo::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void TrafoContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
 {
     throw std::runtime_error("You should not use that!");
 }
 
-void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+void TrafoContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                          bool ac,
                          const std::vector<int> & id_grid_to_solver,
                          real_type sn_mva) const
@@ -186,7 +187,7 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
         if(bus_hv_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillYbus: the trafo with id ";
+            exc_ << "TrafoContainer::fillYbus: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -195,7 +196,7 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
         if(bus_lv_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillYbus: the trafo with id ";
+            exc_ << "TrafoContainer::fillYbus: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -221,7 +222,7 @@ void DataTrafo::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
     if(ac) return;
     // return;
     const int nb_trafo = nb();
@@ -235,7 +236,7 @@ void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const s
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
+            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -244,7 +245,7 @@ void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const s
         bus_id_solver_hv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_hv == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
+            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -254,7 +255,7 @@ void DataTrafo::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const s
     }
 }
 
-void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
+void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                 const Eigen::Ref<const RealVect> & Vm,
                                 const Eigen::Ref<const CplxVect> & V,
                                 const std::vector<int> & id_grid_to_solver,
@@ -284,7 +285,7 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
         int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
         if(bus_hv_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::compute_results: the trafo with id ";
+            exc_ << "TrafoContainer::compute_results: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -293,7 +294,7 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
         int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
         if(bus_lv_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::compute_results: the trafo with id ";
+            exc_ << "TrafoContainer::compute_results: the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -346,7 +347,7 @@ void DataTrafo::compute_results(const Eigen::Ref<const RealVect> & Va,
     _get_amps(res_a_lv_, res_p_lv_, res_q_lv_, res_v_lv_);
 }
 
-void DataTrafo::reset_results(){
+void TrafoContainer::reset_results(){
     res_p_hv_ = RealVect();  // in MW
     res_q_hv_ = RealVect();  // in MVar
     res_v_hv_ = RealVect();  // in kV
@@ -358,7 +359,7 @@ void DataTrafo::reset_results(){
 }
 
 
-void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                           std::vector<Eigen::Triplet<real_type> > & Bpp,
                           const std::vector<int> & id_grid_to_solver,
                           real_type sn_mva,
@@ -389,7 +390,7 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
         if(bus_or_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillBp_Bpp: the trafo with id ";
+            exc_ << "TrafoContainer::fillBp_Bpp: the trafo with id ";
             exc_ << tr_id;
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -398,7 +399,7 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
         if(bus_ex_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillBp_Bpp: the trafo with id ";
+            exc_ << "TrafoContainer::fillBp_Bpp: the trafo with id ";
             exc_ << tr_id;
             exc_ << " is connected (lv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -428,7 +429,7 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
             ys_bpp = 1. / (0. + my_i * x_(tr_id));
         }else{
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+            exc_ << "TrafoContainer::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
             exc_ << tr_id;
             throw std::runtime_error(exc_.str());            
         }
@@ -459,7 +460,7 @@ void DataTrafo::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 }
 
 
-void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
                                const std::vector<int> & id_grid_to_solver,
                                real_type sn_mva,
                                int nb_powerline,
@@ -476,7 +477,7 @@ void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
         if(bus_or_solver_id == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "DataTrafo::fillBf_for_PTDF: the line with id ";
+            exc_ << "TrafoContainer::fillBf_for_PTDF: the line with id ";
             exc_ << tr_id;
             exc_ << " is connected (hv side) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -508,7 +509,7 @@ void DataTrafo::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
 }
 
 
-void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const{
 
     const Eigen::Index nb_trafo = nb();
     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
@@ -519,7 +520,7 @@ void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
         if(bus_or_id_me == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataTrafo::reconnect_connected_buses: Trafo with id ";
+            exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
             throw std::runtime_error(exc_.str());
@@ -530,7 +531,7 @@ void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
         if(bus_ex_id_me == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
-            exc_ << "DataTrafo::reconnect_connected_buses: Trafo with id ";
+            exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
             throw std::runtime_error(exc_.str());
@@ -539,7 +540,7 @@ void DataTrafo::reconnect_connected_buses(std::vector<bool> & bus_status) const{
     }
 }
 
-void DataTrafo::nb_line_end(std::vector<int> & res) const{
+void TrafoContainer::nb_line_end(std::vector<int> & res) const{
 
     const Eigen::Index nb_trafo = nb();
     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
@@ -552,7 +553,7 @@ void DataTrafo::nb_line_end(std::vector<int> & res) const{
     }
 }
 
-void DataTrafo::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+void TrafoContainer::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
 {
     const auto my_size = nb();
     for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
@@ -565,7 +566,7 @@ void DataTrafo::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
     }
 }
 
-void DataTrafo::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+void TrafoContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
 {
     const Eigen::Index nb_line = nb();
     SolverControl unused_solver_control;

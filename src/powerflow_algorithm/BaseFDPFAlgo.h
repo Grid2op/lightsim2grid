@@ -6,19 +6,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef BASEFDPFSOLVER_H
-#define BASEFDPFSOLVER_H
+#ifndef BASEFDPFALGO_H
+#define BASEFDPFALGO_H
 
-#include "BaseSolver.h"
+#include "BaseAlgo.h"
 
 /**
 Base class for Fast Decoupled Powerflow based solver
 **/
 template<class LinearSolver, FDPFMethod XB_BX>
-class BaseFDPFSolver : public BaseSolver
+class BaseFDPFAlgo: public BaseAlgo
 {
     public:
-        BaseFDPFSolver():BaseSolver(true), need_factorize_(true) {}
+        BaseFDPFAlgo():BaseAlgo(true), need_factorize_(true) {}
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -47,7 +47,7 @@ class BaseFDPFSolver : public BaseSolver
 
         virtual void reset()
         {   
-            BaseSolver::reset();
+            BaseAlgo::reset();
             // solution of the problem
             Bp_ = Eigen::SparseMatrix<real_type> ();  // the B prime matrix (size n_pvpq)
             Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
@@ -67,7 +67,7 @@ class BaseFDPFSolver : public BaseSolver
 
     protected:
         virtual void reset_timer(){
-            BaseSolver::reset_timer();
+            BaseAlgo::reset_timer();
         }
 
         CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
@@ -213,10 +213,10 @@ class BaseFDPFSolver : public BaseSolver
 
     private:
         // no copy allowed
-        BaseFDPFSolver( const BaseFDPFSolver & ) =delete ;
-        BaseFDPFSolver & operator=( const BaseFDPFSolver & ) =delete ;
+        BaseFDPFAlgo( const BaseFDPFAlgo & ) =delete ;
+        BaseFDPFAlgo & operator=( const BaseFDPFAlgo & ) =delete ;
 };
 
-#include "BaseFDPFSolver.tpp"
+#include "BaseFDPFAlgo.tpp"
 
-#endif // BASEFDPFSOLVER_H
+#endif // BASEFDPFALGO_H

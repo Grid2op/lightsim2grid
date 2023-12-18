@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SecurityAnalysis.h"
+
 #include <queue>
 #include <math.h>       /* isfinite */
 
@@ -89,7 +90,7 @@ void SecurityAnalysis::init_li_coeffs(bool ac_solver_used){
                 }
             }
 
-            if(bus_1_id != DataGeneric::_deactivated_bus_id && bus_2_id != DataGeneric::_deactivated_bus_id)
+            if(bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)
             {
                 // element is connected
                 this_cont_coeffs.push_back({bus_1_id, bus_1_id, y_ff});

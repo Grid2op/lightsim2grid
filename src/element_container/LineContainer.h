@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,31 +6,24 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATALINE_H
-#define DATALINE_H
+#ifndef LINE_CONTAINER_H
+#define LINE_CONTAINER_H
 
 #include <iostream>
-
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "DataGeneric.h"
+#include "Utils.h"
+#include "GenericContainer.h"
 
 /**
 This class is a container for all the powerlines on the grid.
 
-The convention used for the generator is the same as in pandapower:
-https://pandapower.readthedocs.io/en/latest/elements/line.html
-
-and for modeling of the Ybus matrix:
-https://pandapower.readthedocs.io/en/latest/elements/line.html#electric-model
-
 **/
-class DataLine : public DataGeneric
+class LineContainer : public GenericContainer
 {
     public:
         class LineInfo
@@ -60,7 +53,7 @@ class DataLine : public DataGeneric
                 real_type res_a_ex_ka;
                 real_type res_theta_ex_deg;
 
-                LineInfo(const DataLine & r_data_line, int my_id):
+                LineInfo(const LineContainer & r_data_line, int my_id):
                 id(my_id),
                 name(""),
                 connected(false),
@@ -118,7 +111,7 @@ class DataLine : public DataGeneric
         typedef LineInfo DataInfo;
 
     private:
-        typedef DataConstIterator<DataLine> DataLineConstIterator;
+        typedef GenericContainerConstIterator<LineContainer> LineConstIterator;
 
     public:
     typedef std::tuple<
@@ -132,7 +125,7 @@ class DataLine : public DataGeneric
                std::vector<bool> // status_
                >  StateRes;
 
-    DataLine() {};
+    LineContainer() {};
 
     void init(const RealVect & branch_r,
               const RealVect & branch_x,
@@ -150,8 +143,8 @@ class DataLine : public DataGeneric
               );
 
     // pickle
-    DataLine::StateRes get_state() const;
-    void set_state(DataLine::StateRes & my_state );
+    LineContainer::StateRes get_state() const;
+    void set_state(LineContainer::StateRes & my_state );
     template<class T>
     void check_size(const T& my_state)
     {
@@ -159,18 +152,18 @@ class DataLine : public DataGeneric
         unsigned int size_th = 6;
         if (my_state.size() != size_th)
         {
-            std::cout << "LightSim::DataLine state size " << my_state.size() << " instead of "<< size_th << std::endl;
+            std::cout << "LightSim::LineContainer state size " << my_state.size() << " instead of "<< size_th << std::endl;
             // TODO more explicit error message
-            throw std::runtime_error("Invalid state when loading LightSim::DataLine");
+            throw std::runtime_error("Invalid state when loading LightSim::LineContainer");
         }
     }
 
     int nb() const { return static_cast<int>(powerlines_r_.size()); }
 
     // make it iterable
-    typedef DataLineConstIterator const_iterator_type;
-    const_iterator_type begin() const {return DataLineConstIterator(this, 0); }
-    const_iterator_type end() const {return DataLineConstIterator(this, nb()); }
+    typedef LineConstIterator const_iterator_type;
+    const_iterator_type begin() const {return LineConstIterator(this, 0); }
+    const_iterator_type end() const {return LineConstIterator(this, nb()); }
     LineInfo operator[](int id) const
     {
         if(id < 0)
@@ -302,4 +295,4 @@ class DataLine : public DataGeneric
         CplxVect ydc_tt_;
 };
 
-#endif  //DATALINE_H
+#endif  //LINE_CONTAINER_H

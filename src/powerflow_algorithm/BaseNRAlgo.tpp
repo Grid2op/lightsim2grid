@@ -6,13 +6,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-// #include "BaseNRSolver.h"  // now a template class, so this file will be included instead !
+// #include "BaseNRAlgo.h"  // now a template class, so this file will be included instead !
 
 // TODO get rid of the pvpq, pv, pq etc and put the jacobian "in the right order"
 // to ease and make way faster the filling of the sparse matrix J
 
 template<class LinearSolver>
-bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
+bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                             CplxVect & V,
                                             const CplxVect & Sbus,
                                             const Eigen::VectorXi & slack_ids,
@@ -35,14 +35,14 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     if(Sbus.size() != Ybus.rows() || Sbus.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
-        exc_ << "BaseNRSolver::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseNRAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
         exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
-        exc_ << "BaseNRSolver::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
+        exc_ << "BaseNRAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
         exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
@@ -89,12 +89,12 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
     // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
     // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRSolver<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRSolver<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRAlgo<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRAlgo<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
     dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
     dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRSolver<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRSolver<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
+    // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
@@ -161,8 +161,8 @@ bool BaseNRSolver<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type>
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::reset(){
-    BaseSolver::reset();
+void BaseNRAlgo<LinearSolver>::reset(){
+    BaseAlgo::reset();
     // reset specific attributes
     J_ = Eigen::SparseMatrix<real_type>();  // the jacobian matrix
     dS_dVm_ = Eigen::SparseMatrix<cplx_type>();
@@ -175,7 +175,7 @@ void BaseNRSolver<LinearSolver>::reset(){
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
+void BaseNRAlgo<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                                            const Eigen::Ref<const CplxVect > & V){
     // std::cout << "Ybus.nonZeros(): " << Ybus.nonZeros() << std::endl;
     auto timer = CustTimer();
@@ -236,7 +236,7 @@ void BaseNRSolver<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseM
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
+void BaseNRAlgo<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
@@ -263,7 +263,7 @@ void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
+void BaseNRAlgo<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<Eigen::Index> & inner_index,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
@@ -300,7 +300,7 @@ void BaseNRSolver<LinearSolver>::_get_values_J(int & nb_obj_this_col,
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
+void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                       const CplxVect & V,
                                                       Eigen::Index slack_bus_id,
                                                       const RealVect & slack_weights,
@@ -359,7 +359,7 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // 
-        if (BaseNRSolver<LinearSolver>::value_map_.size() == 0) fill_value_map(slack_bus_id, pq, pvpq, true);
+        if (BaseNRAlgo<LinearSolver>::value_map_.size() == 0) fill_value_map(slack_bus_id, pq, pvpq, true);
         fill_jacobian_matrix_kown_sparsity_pattern(slack_bus_id,
                                                    pq, pvpq
                                                    );
@@ -371,7 +371,7 @@ void BaseNRSolver<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
+void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         const Eigen::SparseMatrix<cplx_type> & Ybus,
         const CplxVect & V,
         Eigen::Index slack_bus_id,
@@ -541,7 +541,7 @@ dS_dVa_ and dS_dVm_ to be used to fill J_
 it requires that J_ is initialized, in compressed mode.
 **/
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::fill_value_map(
+void BaseNRAlgo<LinearSolver>::fill_value_map(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq,
@@ -550,7 +550,7 @@ void BaseNRSolver<LinearSolver>::fill_value_map(
 {
     const int n_pvpq = static_cast<int>(pvpq.size());
     value_map_ = std::vector<cplx_type*> ();
-    value_map_.reserve(BaseNRSolver<LinearSolver>::J_.nonZeros());
+    value_map_.reserve(BaseNRAlgo<LinearSolver>::J_.nonZeros());
     // col_map_ = std::vector<int> (J_.nonZeros());
     // row_map_ = std::vector<int> (J_.nonZeros());
 
@@ -620,7 +620,7 @@ void BaseNRSolver<LinearSolver>::fill_value_map(
 }
 
 template<class LinearSolver>
-void BaseNRSolver<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pattern(
+void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pattern(
         Eigen::Index slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq

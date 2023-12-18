@@ -13,9 +13,6 @@
 
 // import newton raphson solvers using different linear algebra solvers
 #include "Solvers.h"
-#include "GaussSeidelSolver.h"
-#include "GaussSeidelSynchSolver.h"
-#include "DCSolver.h"
 
 enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU, 
                        SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack, 
@@ -189,7 +186,7 @@ class ChooseSolver
             return p_solver -> reset();
         }
 
-        // benefit from dynamic stuff and inheritance by having a method that returns a BaseSolver *
+        // benefit from dynamic stuff and inheritance by having a method that returns a BaseAlgo *
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // size (nb_bus, nb_bus)
                         CplxVect & V,  // size nb_bus
                         const CplxVect & Sbus,  // size nb_bus
@@ -388,9 +385,9 @@ class ChooseSolver
         /**
         returns a pointer to the current solver used
         **/
-        const BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) const {
+        const BaseAlgo * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) const {
             if (check_right_solver_) check_right_solver(error_msg);
-            const BaseSolver * res;
+            const BaseAlgo * res;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
@@ -422,9 +419,9 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered (ChooseSolver get_prt_solver const)");
             return res;
         }
-        BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
+        BaseAlgo * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
             if (check_right_solver_) check_right_solver(error_msg);
-            BaseSolver * res;
+            BaseAlgo * res;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
@@ -464,8 +461,8 @@ class ChooseSolver
         // TODO have a way to use Union here https://en.cppreference.com/w/cpp/language/union
         SparseLUSolver _solver_lu;
         SparseLUSolverSingleSlack _solver_lu_single;
-        GaussSeidelSolver _solver_gaussseidel;
-        GaussSeidelSynchSolver _solver_gaussseidelsynch;
+        GaussSeidelAlgo _solver_gaussseidel;
+        GaussSeidelSynchAlgo _solver_gaussseidelsynch;
         DCSolver _solver_dc;
         FDPF_XB_SparseLUSolver _solver_fdpf_xb_lu;
         FDPF_BX_SparseLUSolver _solver_fdpf_bx_lu;

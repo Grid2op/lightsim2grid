@@ -33,8 +33,8 @@ bool BaseMultiplePowerflow::compute_one_powerflow(const Eigen::SparseMatrix<cplx
 
 void BaseMultiplePowerflow::compute_flows_from_Vs(bool amps)
 {
-    // TODO find a way to factorize that with DataTrafo::compute_results
-    // TODO and DataLine::compute_results
+    // TODO find a way to factorize that with TrafoContainer::compute_results
+    // TODO and LineContainer::compute_results
 
     if (_voltages.size() == 0)
     {

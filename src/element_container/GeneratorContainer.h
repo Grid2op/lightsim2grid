@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,20 +6,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATAGEN_H
-#define DATAGEN_H
+#ifndef GENERATORCONTAINER_H
+#define GENERATORCONTAINER_H
 
 #include <iostream>
 #include <vector> 
-
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "DataGeneric.h"
+#include "Utils.h"
+#include "GenericContainer.h"
 
 /**
 This class represents the list of all generators.
@@ -30,7 +29,7 @@ https://pandapower.readthedocs.io/en/latest/elements/gen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model
 **/
-class DataGen: public DataGeneric
+class GeneratorContainer: public GenericContainer
 {
     public:
     class GenInfo
@@ -57,7 +56,7 @@ class DataGen: public DataGeneric
             real_type res_v_kv;
             real_type res_theta_deg;
 
-            GenInfo(const DataGen & r_data_gen, int my_id):
+            GenInfo(const GeneratorContainer & r_data_gen, int my_id):
             id(-1),
             name(""),
             connected(false),
@@ -108,7 +107,7 @@ class DataGen: public DataGeneric
     typedef GenInfo DataInfo;
 
     private:
-    typedef DataConstIterator<DataGen> DataGenConstIterator;
+    typedef GenericContainerConstIterator<GeneratorContainer> GeneratorConstIterator;
 
     public:
     typedef std::tuple<
@@ -126,8 +125,8 @@ class DataGen: public DataGeneric
        std::vector<real_type> // gen_slack_weight_
        >  StateRes;
 
-    DataGen():turnedoff_gen_pv_(true){};
-    DataGen(bool turnedoff_gen_pv):turnedoff_gen_pv_(turnedoff_gen_pv) {};
+    GeneratorContainer():turnedoff_gen_pv_(true){};
+    GeneratorContainer(bool turnedoff_gen_pv):turnedoff_gen_pv_(turnedoff_gen_pv) {};
 
     // TODO add pmin and pmax here !
     void init(const RealVect & generators_p,
@@ -149,9 +148,9 @@ class DataGen: public DataGeneric
     int nb() const { return static_cast<int>(p_mw_.size()); }
 
     // iterator
-    typedef DataGenConstIterator const_iterator_type;
-    const_iterator_type begin() const {return DataGenConstIterator(this, 0); }
-    const_iterator_type end() const {return DataGenConstIterator(this, nb()); }
+    typedef GeneratorConstIterator const_iterator_type;
+    const_iterator_type begin() const {return GeneratorConstIterator(this, 0); }
+    const_iterator_type end() const {return GeneratorConstIterator(this, nb()); }
     GenInfo operator[](int id) const
     {
         if(id < 0)
@@ -166,8 +165,8 @@ class DataGen: public DataGeneric
     }
 
     // pickle
-    DataGen::StateRes get_state() const;
-    void set_state(DataGen::StateRes & my_state );
+    GeneratorContainer::StateRes get_state() const;
+    void set_state(GeneratorContainer::StateRes & my_state );
 
     // slack handling
     /**
@@ -176,7 +175,7 @@ class DataGen: public DataGeneric
     **/
     void add_slackbus(int gen_id, real_type weight, SolverControl & solver_control){
         // TODO DEBUG MODE
-        if(weight <= 0.) throw std::runtime_error("DataGen::add_slackbus Cannot assign a negative weight to the slack bus.");
+        if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative weight to the slack bus.");
         if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
         gen_slackbus_[gen_id] = true;
         if(gen_slack_weight_[gen_id] != weight) solver_control.tell_slack_weight_changed();
@@ -212,7 +211,7 @@ class DataGen: public DataGeneric
             }
         }
         // TODO DEBUG MODE
-        if(res_gen_id == -1) throw std::runtime_error("DataGen::assign_slack_bus No generator connected to the desired buses");
+        if(res_gen_id == -1) throw std::runtime_error("GeneratorContainer::assign_slack_bus No generator connected to the desired buses");
         return res_gen_id;
     }
 
@@ -348,4 +347,4 @@ class DataGen: public DataGeneric
         bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?
 };
 
-#endif  //DATAGEN_H
+#endif  //GENERATORCONTAINER_H

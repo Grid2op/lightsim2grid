@@ -6,21 +6,21 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef BASENRSOLVERSINGLESLACK_H
-#define BASENRSOLVERSINGLESLACK_H
+#ifndef BASE_NR_SINGLESLACK_ALGO_H
+#define BASE_NR_SINGLESLACK_ALGO_H
 
-#include "BaseNRSolver.h"
+#include "BaseNRAlgo.h"
 
 /**
 Base class for Newton Raphson based solver (only interesting for single slack)
 **/
 template<class LinearSolver>
-class BaseNRSolverSingleSlack : public BaseNRSolver<LinearSolver>
+class BaseNRSingleSlackAlgo : public BaseNRAlgo<LinearSolver>
 {
     public:
-        BaseNRSolverSingleSlack():BaseNRSolver<LinearSolver>(){}
+        BaseNRSingleSlackAlgo():BaseNRAlgo<LinearSolver>(){}
 
-        ~BaseNRSolverSingleSlack(){}
+        ~BaseNRSingleSlackAlgo(){}
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -63,6 +63,6 @@ class BaseNRSolverSingleSlack : public BaseNRSolver<LinearSolver>
 
 };
 
-#include "BaseNRSolverSingleSlack.tpp"
+#include "BaseNRSingleSlackAlgo.tpp"
 
-#endif // BASENRSOLVERSINGLESLACK_H
+#endif // BASE_NR_SINGLESLACK_ALGO_H

@@ -6,23 +6,22 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATADCLINE_H
-#define DATADCLINE_H
+#ifndef DCLINECONTAINER_H
+#define DCLINECONTAINER_H
 
 #include <iostream>
-
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "DataGeneric.h"
-#include "DataGen.h"
+#include "Utils.h"
+#include "GenericContainer.h"
+#include "GeneratorContainer.h"
 
 
-class DataDCLine : public DataGeneric
+class DCLineContainer : public GenericContainer
 {
     public:
         class DCLineInfo
@@ -39,8 +38,8 @@ class DataDCLine : public DataGeneric
                 real_type target_vm_ex_pu;
                 real_type loss_pct;
                 real_type loss_mw;
-                DataGen::GenInfo gen_or;
-                DataGen::GenInfo gen_ex;
+                GeneratorContainer::GenInfo gen_or;
+                GeneratorContainer::GenInfo gen_ex;
 
                 bool has_res;
                 real_type res_p_or_mw;
@@ -52,7 +51,7 @@ class DataDCLine : public DataGeneric
                 real_type res_v_ex_kv;
                 real_type res_theta_ex_deg;
 
-                DCLineInfo(const DataDCLine & r_data_dcline, int my_id):
+                DCLineInfo(const DCLineContainer & r_data_dcline, int my_id):
                     id(-1),
                     name(""),
                     connected(false),
@@ -109,13 +108,13 @@ class DataDCLine : public DataGeneric
         typedef DCLineInfo DataInfo;
 
     private:
-        typedef DataConstIterator<DataDCLine> DataDCLineConstIterator;
+        typedef GenericContainerConstIterator<DCLineContainer> DCLineConstIterator;
 
     public:
     typedef std::tuple<
                std::vector<std::string>,
-               DataGen::StateRes,
-               DataGen::StateRes,
+               GeneratorContainer::StateRes,
+               GeneratorContainer::StateRes,
                std::vector<double>, // loss_percent
                std::vector<double>, // vm_to_pu
                std::vector<bool> // loss_mw
@@ -124,9 +123,9 @@ class DataDCLine : public DataGeneric
     int nb() const { return static_cast<int>(from_gen_.nb()); }
 
     // iterator
-    typedef DataDCLineConstIterator const_iterator_type;
-    const_iterator_type begin() const {return DataDCLineConstIterator(this, 0); }
-    const_iterator_type end() const {return DataDCLineConstIterator(this, nb()); }
+    typedef DCLineConstIterator const_iterator_type;
+    const_iterator_type begin() const {return DCLineConstIterator(this, 0); }
+    const_iterator_type end() const {return DCLineConstIterator(this, nb()); }
     DCLineInfo operator[](int id) const
     {
         if(id < 0)
@@ -141,11 +140,11 @@ class DataDCLine : public DataGeneric
     }
 
     // underlying generators are not pv when powerline is off
-    DataDCLine(): from_gen_(false), to_gen_(false) {};
+    DCLineContainer(): from_gen_(false), to_gen_(false) {};
 
     // pickle
-    DataDCLine::StateRes get_state() const;
-    void set_state(DataDCLine::StateRes & my_state);
+    DCLineContainer::StateRes get_state() const;
+    void set_state(DCLineContainer::StateRes & my_state);
 
     // TODO min_p, max_p
     void init(const Eigen::VectorXi & branch_from_id,
@@ -297,12 +296,12 @@ class DataDCLine : public DataGeneric
     protected:
         // it is modeled as 2 generators that are "linked" together
         // see https://pandapower.readthedocs.io/en/v2.0.1/elements/dcline.html#electric-model
-        DataGen from_gen_;
-        DataGen to_gen_;
+        GeneratorContainer from_gen_;
+        GeneratorContainer to_gen_;
         RealVect loss_percent_;
         RealVect loss_mw_;
         std::vector<bool> status_;
 
 };
 
-#endif  //DATADCLINE_H
+#endif  //DCLINECONTAINER_H

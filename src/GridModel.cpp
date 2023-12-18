@@ -146,21 +146,21 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     std::vector<bool> & bus_status = std::get<7>(my_state);
 
     // powerlines
-    DataLine::StateRes & state_lines = std::get<8>(my_state);
+    LineContainer::StateRes & state_lines = std::get<8>(my_state);
     // shunts
-    DataShunt::StateRes & state_shunts = std::get<9>(my_state);
+    ShuntContainer::StateRes & state_shunts = std::get<9>(my_state);
     // trafos
-    DataTrafo::StateRes & state_trafos = std::get<10>(my_state);
+    TrafoContainer::StateRes & state_trafos = std::get<10>(my_state);
     // generators
-    DataGen::StateRes & state_gens = std::get<11>(my_state);
+    GeneratorContainer::StateRes & state_gens = std::get<11>(my_state);
     // loads
-    DataLoad::StateRes & state_loads = std::get<12>(my_state);
+    LoadContainer::StateRes & state_loads = std::get<12>(my_state);
     // static gen
-    DataSGen::StateRes & state_sgens= std::get<13>(my_state);
+    SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
     // storage units
-    DataLoad::StateRes & state_storages = std::get<14>(my_state);
+    LoadContainer::StateRes & state_storages = std::get<14>(my_state);
     // dc lines
-    DataDCLine::StateRes & state_dc_lines = std::get<15>(my_state);
+    DCLineContainer::StateRes & state_dc_lines = std::get<15>(my_state);
 
     // assign it to this instance
 
@@ -338,7 +338,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 };
 
 void GridModel::check_solution_q_values_onegen(CplxVect & res,
-                                               const DataGen::GenInfo& gen,
+                                               const GeneratorContainer::GenInfo& gen,
                                                bool check_q_limits) const{
     if(check_q_limits)
     {
@@ -626,8 +626,6 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
                                const std::vector<int>& id_solver_to_me,
                                const Eigen::VectorXi & slack_bus_id_me,
                                Eigen::VectorXi & slack_bus_id_solver){
-    
-    const int nb_bus = static_cast<int>(id_solver_to_me.size());
     // slack_bus_id_solver = Eigen::VectorXi::Zero(slack_bus_id_.size());
     slack_bus_id_solver = Eigen::VectorXi::Constant(slack_bus_id_me.size(), _deactivated_bus_id);
 

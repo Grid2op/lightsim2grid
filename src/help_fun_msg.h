@@ -90,25 +90,25 @@ struct DocIterator
     static const std::string h_pu;
 
     // specific to generators
-    static const std::string DataGen;
+    static const std::string GeneratorContainer;
     static const std::string GenInfo;
     static const std::string is_slack;
     static const std::string slack_weight;
 
     // specific to sgens
-    static const std::string DataSGen;
+    static const std::string SGenContainer;
     static const std::string SGenInfo;
 
     // specific to loads (and storage units)
-    static const std::string DataLoad;
+    static const std::string LoadContainer;
     static const std::string LoadInfo;
 
     // specific to shunts
-    static const std::string DataShunt;
+    static const std::string ShuntContainer;
     static const std::string ShuntInfo;
 
     // specific to transformers
-    static const std::string DataTrafo;
+    static const std::string TrafoContainer;
     static const std::string TrafoInfo;
     static const std::string bus_hv_id;
     static const std::string bus_lv_id;
@@ -127,7 +127,7 @@ struct DocIterator
     static const std::string res_theta_lv_deg;
 
     // specific to powerlines
-    static const std::string DataLine;
+    static const std::string LineContainer;
     static const std::string LineInfo;
     static const std::string bus_or_id;
     static const std::string bus_ex_id;
@@ -144,7 +144,7 @@ struct DocIterator
 
     // specific to dc lines
     static const std::string dc_line_formula;
-    static const std::string DataDCLine;
+    static const std::string DCLineContainer;
     static const std::string DCLineInfo;
     static const std::string target_p_or_mw;
     static const std::string target_vm_or_pu;

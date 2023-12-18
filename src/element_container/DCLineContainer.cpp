@@ -6,16 +6,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataDCLine.h"
+#include "DCLineContainer.h"
+
 #include <iostream>
 #include <sstream>
 
-DataDCLine::StateRes DataDCLine::get_state() const
+DCLineContainer::StateRes DCLineContainer::get_state() const
 {
     std::vector<real_type> loss_percent(loss_percent_.begin(), loss_percent_.end());
     std::vector<real_type> loss_mw(loss_mw_.begin(), loss_mw_.end());
      std::vector<bool> status = status_;
-    DataDCLine::StateRes res(names_,
+    DCLineContainer::StateRes res(names_,
                              from_gen_.get_state(),
                              to_gen_.get_state(),
                              loss_percent,
@@ -24,7 +25,7 @@ DataDCLine::StateRes DataDCLine::get_state() const
     return res;
 }
 
-void DataDCLine::set_state(DataDCLine::StateRes & my_state){
+void DCLineContainer::set_state(DCLineContainer::StateRes & my_state){
     reset_results();
     names_ = std::get<0>(my_state);
     from_gen_.set_state(std::get<1>(my_state));
@@ -37,7 +38,7 @@ void DataDCLine::set_state(DataDCLine::StateRes & my_state){
     loss_mw_ = RealVect::Map(&loss_mw[0], loss_percent.size());
 }
 
-void DataDCLine::init(const Eigen::VectorXi & branch_from_id,
+void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
                       const Eigen::VectorXi & branch_to_id,
                       const RealVect & p_mw,
                       const RealVect & loss_percent,
@@ -61,7 +62,7 @@ void DataDCLine::init(const Eigen::VectorXi & branch_from_id,
     to_gen_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);
 }
 
-void DataDCLine::nb_line_end(std::vector<int> & res) const
+void DCLineContainer::nb_line_end(std::vector<int> & res) const
 {
     const Eigen::Index nb = from_gen_.nb();
     const auto & bus_or_id = get_bus_id_or();
@@ -76,7 +77,7 @@ void DataDCLine::nb_line_end(std::vector<int> & res) const
 }
 
 // TODO DC LINE: one side might be in the connected comp and not the other !
-void DataDCLine::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+void DCLineContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
 {
     const Eigen::Index nb = from_gen_.nb();
     const auto & bus_or_id = get_bus_id_or();

@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,17 +6,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATALOAD_H
-#define DATALOAD_H
+#ifndef LOAD_CONTAINER_H
+#define LOAD_CONTAINER_H
 
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-#include "DataGeneric.h"
+#include "Utils.h"
+#include "GenericContainer.h"
 
 /**
 This class is a container for all loads on the grid.
@@ -31,7 +31,7 @@ NOTE: this class is also used for the storage units! So storage units are modele
 which entails that negative storage: the unit is discharging, power is injected in the grid,
 positive storage: the unit is charging, power is taken from the grid.
 **/
-class DataLoad : public DataGeneric
+class LoadContainer : public GenericContainer
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
@@ -56,7 +56,7 @@ class DataLoad : public DataGeneric
                 real_type res_v_kv;
                 real_type res_theta_deg;
 
-                LoadInfo(const DataLoad & r_data_load, int my_id):
+                LoadInfo(const LoadContainer & r_data_load, int my_id):
                 id(-1),
                 name(""),
                 connected(false),
@@ -95,12 +95,12 @@ class DataLoad : public DataGeneric
         typedef LoadInfo DataInfo;
 
     private:
-        typedef DataConstIterator<DataLoad> DataLoadConstIterator;
+        typedef GenericContainerConstIterator<LoadContainer> LoadContainerConstIterator;
 
     public:
-        typedef DataLoadConstIterator const_iterator_type;
-        const_iterator_type begin() const {return DataLoadConstIterator(this, 0); }
-        const_iterator_type end() const {return DataLoadConstIterator(this, nb()); }
+        typedef LoadContainerConstIterator const_iterator_type;
+        const_iterator_type begin() const {return LoadContainerConstIterator(this, 0); }
+        const_iterator_type end() const {return LoadContainerConstIterator(this, nb()); }
         LoadInfo operator[](int id) const
         {
             if(id < 0)
@@ -124,11 +124,11 @@ class DataLoad : public DataGeneric
        std::vector<bool> // status
        >  StateRes;
 
-    DataLoad() {};
+    LoadContainer() {};
 
     // pickle (python)
-    DataLoad::StateRes get_state() const;
-    void set_state(DataLoad::StateRes & my_state );
+    LoadContainer::StateRes get_state() const;
+    void set_state(LoadContainer::StateRes & my_state );
 
 
     void init(const RealVect & loads_p,
@@ -189,4 +189,4 @@ class DataLoad : public DataGeneric
         RealVect res_theta_;  // in degree
 };
 
-#endif  //DATALOAD_H
+#endif  //LOAD_CONTAINER_H

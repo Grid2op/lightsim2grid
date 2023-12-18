@@ -6,21 +6,21 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef GAUSSSEIDELSYNCHSOLVER_H
-#define GAUSSSEIDELSYNCHSOLVER_H
+#ifndef GAUSSSEIDELSYNCH_ALGO_H
+#define GAUSSSEIDELSYNCH_ALGO_H
 
-#include "GaussSeidelSolver.h"
+#include "GaussSeidelAlgo.h"
 
 /**
 The gauss seidel method, where all the updates are happening in a synchronous way, instead of
 in a asynchronous way (like for standard gauss seidel)
 **/
-class GaussSeidelSynchSolver : public GaussSeidelSolver
+class GaussSeidelSynchAlgo: public GaussSeidelAlgo
 {
     public:
-        GaussSeidelSynchSolver():GaussSeidelSolver() {};
+        GaussSeidelSynchAlgo():GaussSeidelAlgo() {};
 
-        ~GaussSeidelSynchSolver(){}
+        ~GaussSeidelSynchAlgo(){}
 
     protected:
         void one_iter(CplxVect & tmp_Sbus,
@@ -31,9 +31,9 @@ class GaussSeidelSynchSolver : public GaussSeidelSolver
 
     private:
         // no copy allowed
-        GaussSeidelSynchSolver( const GaussSeidelSynchSolver & ) ;
-        GaussSeidelSynchSolver & operator=( const GaussSeidelSynchSolver & ) ;
+        GaussSeidelSynchAlgo( const GaussSeidelSynchAlgo & ) =delete;
+        GaussSeidelSynchAlgo & operator=( const GaussSeidelSynchAlgo & )=delete ;
 
 };
 
-#endif // GAUSSSEIDELSYNCHSOLVER_H
+#endif // GAUSSSEIDELSYNCH_ALGO_H

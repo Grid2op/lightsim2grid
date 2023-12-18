@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,23 +6,22 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATAGENERIC_H
-#define DATAGENERIC_H
+#ifndef GENERIC_CONTAINER_H
+#define GENERIC_CONTAINER_H
 
 #include <algorithm>  // for std::find
-
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+#include "Utils.h"
 #include "BaseConstants.h"
 
 // iterator type
 template<class DataType>
-class DataConstIterator
+class GenericContainerConstIterator
 {
     protected:
         typedef typename DataType::DataInfo DataInfo;
@@ -34,22 +33,22 @@ class DataConstIterator
         DataInfo my_info;
 
         // functions
-        DataConstIterator(const DataType * const data_, int id):
+        GenericContainerConstIterator(const DataType * const data_, int id):
             _p_data_(data_),
             my_id(id),
             my_info(*data_, id)
             {};
 
         const DataInfo& operator*() const { return my_info; }
-        bool operator==(const DataConstIterator<DataType> & other) const { return (my_id == other.my_id) && (_p_data_ == other._p_data_); }
-        bool operator!=(const DataConstIterator<DataType> & other) const { return !(*this == other); }
-        DataConstIterator<DataType> & operator++()
+        bool operator==(const GenericContainerConstIterator<DataType> & other) const { return (my_id == other.my_id) && (_p_data_ == other._p_data_); }
+        bool operator!=(const GenericContainerConstIterator<DataType> & other) const { return !(*this == other); }
+        GenericContainerConstIterator<DataType> & operator++()
         {
             ++my_id;
             my_info = DataInfo(*_p_data_, my_id);
             return *this;
         }
-        DataConstIterator<DataType> & operator--()
+        GenericContainerConstIterator<DataType> & operator--()
         {
             --my_id;
             my_info = DataInfo(*_p_data_, my_id);
@@ -63,7 +62,7 @@ class DataConstIterator
 /**
 Base class for every object that can be manipulated
 **/
-class DataGeneric : public BaseConstants
+class GenericContainer : public BaseConstants
 {
     public:
 
@@ -109,7 +108,7 @@ class DataGeneric : public BaseConstants
         }
         
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
-        virtual ~DataGeneric() {};
+        virtual ~GenericContainer() {};
     protected:
         std::vector<std::string> names_;
 
@@ -168,5 +167,5 @@ class DataGeneric : public BaseConstants
         bool is_in_vect(int val, const T & cont) const {return std::find(cont.begin(), cont.end(), val) != cont.end();}
 };
 
-#endif // DATAGENERIC_H
+#endif // GENERIC_CONTAINER_H
 

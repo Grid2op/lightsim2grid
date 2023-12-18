@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,18 +6,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef DATATRAFO_H
-#define DATATRAFO_H
+#ifndef TRAFO_CONTAINER_H
+#define TRAFO_CONTAINER_H
 
-#include "Utils.h"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-
-#include "DataGeneric.h"
+#include "Utils.h"
+#include "GenericContainer.h"
 
 /**
 This class is a container for all transformers on the grid.
@@ -30,7 +29,7 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 **/
-class DataTrafo : public DataGeneric
+class TrafoContainer : public GenericContainer
 {
     public:
         class TrafoInfo
@@ -61,7 +60,7 @@ class DataTrafo : public DataGeneric
                 real_type res_a_lv_ka;
                 real_type res_theta_lv_deg;
 
-                TrafoInfo(const DataTrafo & r_data_trafo, int my_id):
+                TrafoInfo(const TrafoContainer & r_data_trafo, int my_id):
                 id(-1),
                 name(""),
                 connected(false),
@@ -121,7 +120,7 @@ class DataTrafo : public DataGeneric
         typedef TrafoInfo DataInfo;
 
     private:
-        typedef DataConstIterator<DataTrafo> DataTrafoConstIterator;
+        typedef GenericContainerConstIterator<TrafoContainer> TrafoContainerConstIterator;
 
     public:
     typedef std::tuple<
@@ -137,7 +136,7 @@ class DataTrafo : public DataGeneric
                std::vector<real_type> // shift_
            >  StateRes;
 
-    DataTrafo() {};
+    TrafoContainer() {};
 
     void init(const RealVect & trafo_r,
                            const RealVect & trafo_x,
@@ -151,15 +150,15 @@ class DataTrafo : public DataGeneric
                            const Eigen::VectorXi & trafo_lv_id
               );
     //pickle
-    DataTrafo::StateRes get_state() const;
-    void set_state(DataTrafo::StateRes & my_state );
+    TrafoContainer::StateRes get_state() const;
+    void set_state(TrafoContainer::StateRes & my_state );
 
     int nb() const { return static_cast<int>(r_.size()); }
 
     // make it iterable
-    typedef DataTrafoConstIterator const_iterator_type;
-    const_iterator_type begin() const {return DataTrafoConstIterator(this, 0); }
-    const_iterator_type end() const {return DataTrafoConstIterator(this, nb()); }
+    typedef TrafoContainerConstIterator const_iterator_type;
+    const_iterator_type begin() const {return TrafoContainerConstIterator(this, 0); }
+    const_iterator_type end() const {return TrafoContainerConstIterator(this, nb()); }
     TrafoInfo operator[](int id) const
     {
         if(id < 0)
@@ -288,4 +287,4 @@ class DataTrafo : public DataGeneric
         RealVect dc_x_tau_shift_;
 };
 
-#endif  //DATATRAFO_H
+#endif  //TRAFO_CONTAINER_H

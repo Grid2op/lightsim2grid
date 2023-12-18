@@ -6,17 +6,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef GAUSSSEIDELSOLVER_H
-#define GAUSSSEIDELSOLVER_H
+#ifndef GAUSSSEIDEL_ALGO_H
+#define GAUSSSEIDEL_ALGO_H
 
-#include "BaseSolver.h"
+#include "BaseAlgo.h"
 
-class GaussSeidelSolver : public BaseSolver
+class GaussSeidelAlgo : public BaseAlgo
 {
     public:
-        GaussSeidelSolver():BaseSolver() {};
+        GaussSeidelAlgo():BaseAlgo(true) {};
 
-        ~GaussSeidelSolver(){}
+        ~GaussSeidelAlgo(){}
 
         // todo  can be factorized
         Eigen::SparseMatrix<real_type> get_J(){
@@ -47,9 +47,9 @@ class GaussSeidelSolver : public BaseSolver
 
     private:
         // no copy allowed
-        GaussSeidelSolver( const GaussSeidelSolver & ) ;
-        GaussSeidelSolver & operator=( const GaussSeidelSolver & ) ;
+        GaussSeidelAlgo( const GaussSeidelAlgo & ) =delete;
+        GaussSeidelAlgo & operator=( const GaussSeidelAlgo & ) =delete;
 
 };
 
-#endif // GAUSSSEIDELSOLVER_H
+#endif // GAUSSSEIDEL_ALGO_H

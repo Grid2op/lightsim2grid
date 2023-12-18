@@ -95,7 +95,7 @@ else:
                   "be available, which is maybe ~30% slower than \"KLU\". If you are using grid2op there "
                   "will still be a huge benefit.")
 
-INCLUDE = INCLUDE_suitesparse
+INCLUDE = ["src"] + INCLUDE_suitesparse
 
 # now add the Eigen library (header only)
 eigen_path = os.path.abspath(".")
@@ -137,31 +137,31 @@ extra_compile_args += [f"-DVERSION_MAJOR={VERSION_MAJOR}",
                        f"-DVERSION_MEDIUM={VERSION_MEDIUM}",
                        f"-DVERSION_MINOR={VERSION_MINOR}"]
 src_files = ['src/main.cpp',
+             "src/powerflow_algorithm/GaussSeidelAlgo.cpp",
+             "src/powerflow_algorithm/GaussSeidelSynchAlgo.cpp",
+             "src/powerflow_algorithm/BaseAlgo.cpp",
+             "src/linear_solvers/SparseLUSolver.cpp",
              "src/help_fun_msg.cpp",
-             "src/SparseLUSolver.cpp",
              "src/BaseConstants.cpp",
              "src/GridModel.cpp",
-             "src/DataConverter.cpp",
-             "src/DataLine.cpp",
-             "src/DataGeneric.cpp",
-             "src/DataShunt.cpp",
-             "src/DataTrafo.cpp",
-             "src/DataLoad.cpp",
-             "src/DataGen.cpp",
-             "src/DataSGen.cpp",
-             "src/DataDCLine.cpp",
              "src/ChooseSolver.cpp",
-             "src/GaussSeidelSolver.cpp",
-             "src/GaussSeidelSynchSolver.cpp",
-             "src/BaseSolver.cpp",
              "src/BaseMultiplePowerflow.cpp",
              "src/Computers.cpp",
              "src/SecurityAnalysis.cpp",
              "src/Solvers.cpp",
-             "src/Utils.cpp"]
+             "src/Utils.cpp",
+             "src/DataConverter.cpp",
+             "src/element_container/LineContainer.cpp",
+             "src/element_container/GenericContainer.cpp",
+             "src/element_container/ShuntContainer.cpp",
+             "src/element_container/TrafoContainer.cpp",
+             "src/element_container/LoadContainer.cpp",
+             "src/element_container/GeneratorContainer.cpp",
+             "src/element_container/SGenContainer.cpp",
+             "src/element_container/DCLineContainer.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
-    src_files.append("src/KLUSolver.cpp")
+    src_files.append("src/linear_solvers/KLUSolver.cpp")
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
     print("INFO: Using KLU package")
 
@@ -208,7 +208,7 @@ if "PATH_NICSLU" in os.environ:
     if include_nicslu and libnicslu_path is not None:
         LIBS.append(os.path.join(path_nicslu, libnicslu_path))
         include_dirs.append(os.path.join(path_nicslu, "include"))
-        src_files.append("src/NICSLUSolver.cpp")
+        src_files.append("src/linear_solvers/NICSLUSolver.cpp")
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
         print("INFO: Using NICSLU package")
 
@@ -255,7 +255,7 @@ if "PATH_CKTSO" in os.environ:
     if include_cktso and libcktso_path is not None:
         LIBS.append(os.path.join(path_cktso, libcktso_path))
         include_dirs.append(os.path.join(path_cktso, "include"))
-        src_files.append("src/CKTSOSolver.cpp")
+        src_files.append("src/linear_solvers/CKTSOSolver.cpp")
         extra_compile_args.append("-DCKTSO_SOLVER_AVAILABLE")
         print("INFO: Using CKTSO package")
         
