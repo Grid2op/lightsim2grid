@@ -30,14 +30,17 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // err_ = ErrorType::NotInitError;
         return false;
     }
+    BaseAlgo::reset_timer();
+    
+    auto timer = CustTimer();
     if(_solver_control.need_reset_solver() || 
        _solver_control.has_dimension_changed() ||
        _solver_control.has_ybus_some_coeffs_zero()){
        reset();
     }
 
-    auto timer = CustTimer();
-    BaseAlgo::reset_timer();
+    if (_solver_control.ybus_change_sparsity_pattern()) need_factorize_ = true;
+    
     sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());
 
     #ifdef __COUT_TIMES
@@ -83,7 +86,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     #endif // __COUT_TIMES
     bool just_factorize = false;
     if(need_factorize_){
-        // std::cout << "\t\t\t\t need_factorize_ \n";
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
