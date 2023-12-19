@@ -592,7 +592,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
         .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
 
-
     py::class_<SolverControl>(m, "SolverControl", "TODO")
         .def(py::init<>())
         .def("has_dimension_changed", &SolverControl::has_dimension_changed, "TODO")
