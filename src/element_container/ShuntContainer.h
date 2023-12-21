@@ -131,13 +131,15 @@ class ShuntContainer : public GenericContainer
 
     void deactivate(int shunt_id, SolverControl & solver_control) {
         if(status_[shunt_id]){
-            solver_control.tell_recompute_sbus();
+            solver_control.tell_recompute_sbus();  // DC
+            solver_control.tell_recompute_ybus();  // AC
         }
         _deactivate(shunt_id, status_);
     }
     void reactivate(int shunt_id, SolverControl & solver_control) {
-        if(status_[shunt_id]){
-            solver_control.tell_recompute_sbus();
+        if(!status_[shunt_id]){
+            solver_control.tell_recompute_sbus();  // DC
+            solver_control.tell_recompute_ybus();  // AC
         }
         _reactivate(shunt_id, status_);
     }

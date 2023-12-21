@@ -33,20 +33,30 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
         // TODO DEBUG MODE
         std::ostringstream exc_;
         exc_ << "BaseFDPFAlgo::compute_pf: Size of the Sbus should be the same as the size of Ybus. Currently: ";
-        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.rows() << ").";
+        exc_ << "Sbus  (" << Sbus.size() << ") and Ybus (" << Ybus.rows() << ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     if(V.size() != Ybus.rows() || V.size() != Ybus.cols() ){
         // TODO DEBUG MODE
         std::ostringstream exc_;
         exc_ << "BaseFDPFAlgo::compute_pf: Size of V (init voltages) should be the same as the size of Ybus. Currently: ";
-        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.rows() << ").";
+        exc_ << "V  (" << V.size() << ") and Ybus (" << Ybus.rows()<< ", " << Ybus.cols() << ").";
         throw std::runtime_error(exc_.str());
     }
     reset_timer();
-    auto timer = CustTimer();
     if(!is_linear_solver_valid()) return false;
+    if(_solver_control.need_reset_solver() || 
+       _solver_control.has_dimension_changed() ||
+       _solver_control.ybus_change_sparsity_pattern() ||
+       _solver_control.has_ybus_some_coeffs_zero() ||
+       _solver_control.has_slack_participate_changed() ||
+       _solver_control.has_pv_changed() ||
+       _solver_control.has_pq_changed()){
+       reset();
+    }
+
     err_ = ErrorType::NoError;  // reset the error if previous error happened
+    auto timer = CustTimer();
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
     real_type slack_absorbed = std::real(Sbus.sum());  // initial guess for slack_absorbed

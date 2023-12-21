@@ -14,9 +14,10 @@
 # - change slack weight X
 # - turnoff_gen_pv X
 # - when it diverges (and then I can make it un converge normally) X
-# - test change bus to -1 and deactivate element has the same impact
+# - test change bus to -1 and deactivate element has the same impact (irrelevant !)
+# - test when set_bus to 2
 
-# TODO and do that for all solver type: NR, NRSingleSlack, GaussSeidel, GaussSeidelSynch, FDPF_XB and FDPFBX
+# TODO and do that for all solver type: NR X, NRSingleSlack, GaussSeidel, GaussSeidelSynch, FDPF_XB and FDPFBX
 # and for all solver check everything that can be check: final tolerance, number of iteration, etc. etc.
 
 import unittest
@@ -43,9 +44,9 @@ class TestSolverControl(unittest.TestCase):
                                     action_class=CompleteAction,
                                     backend=LightSimBackend())
         self.gridmodel = self.env.backend._grid
-        self._aux_setup_grid()
-        self.v_init = 1.0 * self.env.backend.V
         self.iter = 10
+        self._aux_setup_grid()
+        self.v_init = 0.0 * self.env.backend.V + 1.04  # just to have a vector with the right dimension
         self.tol_solver = 1e-8  # solver
         self.tol_equal = 1e-10  #  for comparing with and without the "smarter solver" things, and make sure everything is really equal!
     
@@ -586,6 +587,166 @@ class TestSolverControl(unittest.TestCase):
         """test I can make the grid diverge and converge again using ybus (islanding) in DC"""  
         self.test_divergence_ybus_ac("_run_dc_pf")   
         
+    def _aux_disco_load(self, gridmodel, el_id, el_val):
+        gridmodel.deactivate_load(el_id)
         
+    def _aux_reco_load(self, gridmodel, el_id, el_val):
+        gridmodel.reactivate_load(el_id)
+        
+    def test_disco_reco_load_ac(self, runpf_fun="_run_ac_pf"):
+        """test I can disconnect a load (AC)"""
+        for load in self.gridmodel.get_loads():
+            self.gridmodel.tell_solver_need_reset()
+            expected_diff = 1e-2
+            if load.id == 3:
+                expected_diff = 3e-3
+            self.aux_do_undo_ac(funname_do="_aux_disco_load",
+                                funname_undo="_aux_reco_load",
+                                runpf_fun=runpf_fun,
+                                el_id=load.id,
+                                expected_diff=expected_diff,
+                                el_val=0,
+                                to_add_remove=0,
+                                )
+
+    def test_disco_reco_load_dc(self):   
+        """test I can disconnect a load (DC)"""
+        if not self.need_dc:
+            self.skipTest("Useless to run DC")
+        self.test_disco_reco_load_ac(runpf_fun="_run_dc_pf")
+        
+    def _aux_disco_gen(self, gridmodel, el_id, el_val):
+        gridmodel.deactivate_gen(el_id)
+        
+    def _aux_reco_gen(self, gridmodel, el_id, el_val):
+        gridmodel.reactivate_gen(el_id)
+        
+    def test_disco_reco_gen_ac(self, runpf_fun="_run_ac_pf"):
+        """test I can disconnect a gen (AC)"""
+        for gen in self.gridmodel.get_generators():
+            if gen.is_slack:
+                # by default single slack, so I don't disconnect it
+                continue
+            if gen.target_p_mw == 0.:
+                # will have not impact as by default gen with p==0. are still pv
+                continue
+            self.gridmodel.tell_solver_need_reset()
+            expected_diff = 1e-2
+            if gen.id == 3:
+                expected_diff = 3e-3
+            self.aux_do_undo_ac(funname_do="_aux_disco_gen",
+                                funname_undo="_aux_reco_gen",
+                                runpf_fun=runpf_fun,
+                                el_id=gen.id,
+                                expected_diff=expected_diff,
+                                el_val=0,
+                                to_add_remove=0,
+                                )
+
+    def test_disco_reco_gen_dc(self):   
+        """test I can disconnect a shunt (DC)"""
+        if not self.need_dc:
+            self.skipTest("Useless to run DC")
+        self.test_disco_reco_gen_ac(runpf_fun="_run_dc_pf")
+        
+    def _aux_disco_shunt(self, gridmodel, el_id, el_val):
+        gridmodel.deactivate_shunt(el_id)
+        
+    def _aux_reco_shunt(self, gridmodel, el_id, el_val):
+        gridmodel.reactivate_shunt(el_id)
+        
+    def test_disco_reco_shunt_ac(self, runpf_fun="_run_ac_pf"):
+        """test I can disconnect a shunt (AC)"""
+        for shunt in self.gridmodel.get_shunts():
+            self.gridmodel.tell_solver_need_reset()
+            expected_diff = 1e-2
+            if runpf_fun == "_run_dc_pf":
+                # in dc q is not used, so i skipped if no target_p_mw
+                if shunt.target_p_mw == 0:
+                    continue
+            self.aux_do_undo_ac(funname_do="_aux_disco_shunt",
+                                funname_undo="_aux_reco_shunt",
+                                runpf_fun=runpf_fun,
+                                el_id=shunt.id,
+                                expected_diff=expected_diff,
+                                el_val=0,
+                                to_add_remove=0,
+                                )
+
+    def test_disco_reco_shunt_dc(self):   
+        """test I can disconnect a shunt (DC)"""
+        if not self.need_dc:
+            self.skipTest("Useless to run DC")
+        self.test_disco_reco_shunt_ac(runpf_fun="_run_dc_pf")
+    
+    def _aux_disco_shunt(self, gridmodel, el_id, el_val):
+        gridmodel.deactivate_bus(0)
+        gridmodel.reactivate_bus(15)
+        gridmodel.change_bus_powerline_or(0, 15)
+        gridmodel.change_bus_powerline_or(1, 15)
+        gridmodel.change_bus_gen(5, 15)
+        
+    def _aux_reco_shunt(self, gridmodel, el_id, el_val):
+        gridmodel.reactivate_bus(0)
+        gridmodel.deactivate_bus(15)
+        gridmodel.change_bus_powerline_or(0, 0)
+        gridmodel.change_bus_powerline_or(1, 0)
+        gridmodel.change_bus_gen(5, 0)
+        
+    def test_change_bus2_ac(self, runpf_fun="_run_ac_pf"):
+        """test for bus 2, basic test I don't do it for all kind of objects (AC pf)"""
+        expected_diff = 1e-2
+        self.aux_do_undo_ac(funname_do="_aux_disco_shunt",
+                            funname_undo="_aux_reco_shunt",
+                            runpf_fun=runpf_fun,
+                            el_id=0,
+                            expected_diff=expected_diff,
+                            el_val=0,
+                            to_add_remove=0,
+                            )
+        
+ 
+class TestSolverControlNRSing(TestSolverControl):
+    def _aux_setup_grid(self):
+        self.need_dc = False  # is it worth it to run DC powerflow ?
+        self.can_dist_slack = False
+        self.gridmodel.change_solver(SolverType.SparseLUSingleSlack)
+        self.gridmodel.change_solver(SolverType.DC)
+ 
+ 
+class TestSolverControlFDPF_XB(TestSolverControl):
+    def _aux_setup_grid(self):
+        self.need_dc = False  # is it worth it to run DC powerflow ?
+        self.can_dist_slack = False
+        self.gridmodel.change_solver(SolverType.FDPF_XB_SparseLU)
+        self.gridmodel.change_solver(SolverType.DC)
+        self.iter = 30
+ 
+ 
+class TestSolverControlFDPF_BX(TestSolverControl):
+    def _aux_setup_grid(self):
+        self.need_dc = False  # is it worth it to run DC powerflow ?
+        self.can_dist_slack = False
+        self.gridmodel.change_solver(SolverType.FDPF_BX_SparseLU)
+        self.gridmodel.change_solver(SolverType.DC)
+        self.iter = 30
+               
+ 
+class TestSolverControlGaussSeidel(TestSolverControl):
+    def _aux_setup_grid(self):
+        self.need_dc = False  # is it worth it to run DC powerflow ?
+        self.can_dist_slack = False
+        self.gridmodel.change_solver(SolverType.GaussSeidel)
+        self.iter = 350
+ 
+ 
+class TestSolverControlGaussSeidelSynch(TestSolverControl):
+    def _aux_setup_grid(self):
+        self.need_dc = False  # is it worth it to run DC powerflow ?
+        self.can_dist_slack = False
+        self.gridmodel.change_solver(SolverType.GaussSeidelSynch)
+        self.iter = 1000
+               
+               
 if __name__ == "__main__":
     unittest.main()
