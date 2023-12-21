@@ -102,8 +102,8 @@ class GridModel : public GenericContainer
 
         // retrieve the underlying data (raw class)
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
-        void turnedoff_no_pv(){generators_.turnedoff_no_pv();}  // turned off generators are not pv
-        void turnedoff_pv(){generators_.turnedoff_pv();}  // turned off generators are pv
+        void turnedoff_no_pv(){generators_.turnedoff_no_pv(solver_control_);}  // turned off generators are not pv
+        void turnedoff_pv(){generators_.turnedoff_pv(solver_control_);}  // turned off generators are pv
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
         void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
             generators_.update_slack_weights(could_be_slack, solver_control_);

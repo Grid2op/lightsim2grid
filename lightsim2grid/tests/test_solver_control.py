@@ -10,10 +10,10 @@
 # - change gen X
 # - change shunt X
 # - change storage X
-# - change slack
-# - change slack weight
-# - turnoff_gen_pv
-# - when it diverges (and then I can make it un converge normally)
+# - change slack X
+# - change slack weight X
+# - turnoff_gen_pv X
+# - when it diverges (and then I can make it un converge normally) X
 # - test change bus to -1 and deactivate element has the same impact
 
 # TODO and do that for all solver type: NR, NRSingleSlack, GaussSeidel, GaussSeidelSynch, FDPF_XB and FDPFBX
@@ -422,7 +422,170 @@ class TestSolverControl(unittest.TestCase):
                                 to_add_remove=to_add_remove,
                                 )
 
+    def _change_unique_slack_id(self, gridmodel, el_id, el_val):
+        # el_id : new slack
+        # el_val : old slack
+        gridmodel.remove_gen_slackbus(el_val)  # remove old slack
+        gridmodel.add_gen_slackbus(el_id, 1.0)  # add new slack
 
+    def _unchange_unique_slack_id(self, gridmodel, el_id, el_val):
+        # el_id : new slack
+        # el_val : old slack
+        gridmodel.remove_gen_slackbus(el_id)  # remove new slack
+        gridmodel.add_gen_slackbus(el_val, 1.0)  # add back old slack
+
+    def test_change_gen_slack_unique_ac(self, runpf_fun="_run_ac_pf"):   
+        """test I have the same results if I change the (for this test) unique slack bus
+        This is done in AC"""
+        gen_is_slack = [el.is_slack for el in self.gridmodel.get_generators()]
+        gen_id_slack_init = np.where(gen_is_slack)[0][0]
+        
+        for gen in self.gridmodel.get_generators():
+            if gen_is_slack[gen.id]:
+                # generator was already slack, don't expect any change
+                continue
+            self.gridmodel.tell_solver_need_reset()
+            expected_diff = 1e-5  # change slack impact is low
+            self.aux_do_undo_ac(funname_do="_change_unique_slack_id",
+                                funname_undo="_unchange_unique_slack_id",
+                                runpf_fun=runpf_fun,
+                                el_id=gen.id,  # new slack
+                                expected_diff=expected_diff,
+                                el_val=gen_id_slack_init,  # old slack
+                                to_add_remove=0,
+                                )
+            
+    def test_change_gen_slack_unique_dc(self):   
+        """test I have the same results if I change the (for this test) unique slack bus
+        This is done in DC"""
+        if not self.need_dc:
+            self.skipTest("Useless to run DC")
+        self.test_change_gen_slack_unique_ac(runpf_fun="_run_dc_pf")
+
+    def _change_dist_slack_id(self, gridmodel, el_id, el_val):
+        # el_id : new slack
+        # el_val : old slack
+        gridmodel.add_gen_slackbus(el_val, 0.5)  # set all slack a weight of 0.5
+        gridmodel.add_gen_slackbus(el_id, 0.5)  # add new slack with a weight of 0.5
+
+    def _unchange_dist_slack_id(self, gridmodel, el_id, el_val):
+        # el_id : new slack
+        # el_val : old slack
+        gridmodel.remove_gen_slackbus(el_id)  # remove new slack
+        gridmodel.add_gen_slackbus(el_val, 1.0)  # add back old slack with a weight of 1. (as originally)
+    
+    def test_distslack_weight_ac(self):
+        """test I have the same results if the slack weights (dist mode) are changed
+        
+        NB: not done in DC because as of now DC does not support dist slack
+        """
+        if not self.can_dist_slack :
+            self.skipTest("This solver does not support distributed slack")
+        gen_is_slack = [el.is_slack for el in self.gridmodel.get_generators()]
+        gen_id_slack_init = np.where(gen_is_slack)[0][0]
+        runpf_fun = "_run_ac_pf"
+        for gen in self.gridmodel.get_generators():
+            if gen_is_slack[gen.id]:
+                # generator was already slack, don't expect any change
+                continue
+            self.gridmodel.tell_solver_need_reset()
+            expected_diff = 1e-5  # change slack impact is low
+            self.aux_do_undo_ac(funname_do="_change_dist_slack_id",
+                                funname_undo="_unchange_dist_slack_id",
+                                runpf_fun=runpf_fun,
+                                el_id=gen.id,  # new added slack
+                                expected_diff=expected_diff,
+                                el_val=gen_id_slack_init,  # old slack
+                                to_add_remove=0,
+                                )
+
+    def _change_turnedoff_pv(self, gridmodel, el_id, el_val):
+        gridmodel.turnedoff_no_pv()
+        
+    def _unchange_turnedoff_pv(self, gridmodel, el_id, el_val):
+        gridmodel.turnedoff_pv()
+    
+    def test_turnedoff_pv_ac(self):
+        """test the `turnedoff_pv` functionality
+        """
+        runpf_fun = "_run_ac_pf"
+        self.gridmodel.tell_solver_need_reset()
+        expected_diff = 1e-2  # change slack impact is low
+        self.aux_do_undo_ac(funname_do="_change_turnedoff_pv",
+                            funname_undo="_unchange_turnedoff_pv",
+                            runpf_fun=runpf_fun,
+                            el_id=0,
+                            expected_diff=expected_diff,
+                            el_val=0,
+                            to_add_remove=0,
+                            )
+
+    def _change_for_divergence_sbus(self, gridmodel, el_id, el_val):
+        # el_id=load_p_init,  # initial loads
+        # el_val=load_p_div,  # final loads
+        [gridmodel.change_p_load(l_id, val) for l_id, val in enumerate(el_val)]
+        
+    def _unchange_for_divergence_sbus(self, gridmodel, el_id, el_val):
+        # el_id=load_p_init,  # initial loads
+        # el_val=load_p_div,  # final loads
+        [gridmodel.change_p_load(l_id, val) for l_id, val in enumerate(el_id)]
+            
+    def test_divergence_sbus_ac(self):
+        """test I can make the grid diverge and converge again using sbus (ac mode only)
+        
+        It never diverge in DC because of Sbus"""
+        runpf_fun = "_run_ac_pf"
+        self.gridmodel.tell_solver_need_reset()
+        expected_diff = 1e-2  # change slack impact is low
+        load_p_init = 1.0 * np.array([el.target_p_mw for el in self.gridmodel.get_loads()])
+        load_p_div = 5. * load_p_init
+        
+        # check that this load makes it diverge too
+        tmp_grid = self.gridmodel.copy()
+        [tmp_grid.change_p_load(l_id, val) for l_id, val in enumerate(load_p_div)]
+        V_tmp =  tmp_grid.ac_pf(self.v_init, self.iter, self.tol_solver)
+        assert len(V_tmp) == 0, "should have diverged !"
+        
+        self.aux_do_undo_ac(funname_do="_change_for_divergence_sbus",
+                            funname_undo="_unchange_for_divergence_sbus",
+                            runpf_fun=runpf_fun,
+                            el_id=load_p_init,  # initial loads
+                            expected_diff=expected_diff,
+                            el_val=load_p_div,  # final loads
+                            to_add_remove=0.,
+                            )
+
+    def _change_for_divergence_ybus(self, gridmodel, el_id, el_val):
+        [gridmodel.deactivate_trafo(tr_id) for tr_id in el_id]
+        
+    def _unchange_for_divergence_ybus(self, gridmodel, el_id, el_val):
+        [gridmodel.reactivate_trafo(tr_id) for tr_id in el_id]
+            
+    def test_divergence_ybus_ac(self, runpf_fun="_run_ac_pf"):
+        """test I can make the grid diverge and converge again using ybus (islanding) in AC"""
+        self.gridmodel.tell_solver_need_reset()
+        expected_diff = 1e-2  # change slack impact is low
+        trafo_to_disc = [0, 1, 2]
+        
+        # check that this load makes it diverge too
+        tmp_grid = self.gridmodel.copy()
+        [tmp_grid.deactivate_trafo(tr_id) for tr_id in trafo_to_disc]
+        V_tmp =  tmp_grid.ac_pf(self.v_init, self.iter, self.tol_solver)
+        assert len(V_tmp) == 0, "should have diverged !"
+        
+        self.aux_do_undo_ac(funname_do="_change_for_divergence_ybus",
+                            funname_undo="_unchange_for_divergence_ybus",
+                            runpf_fun=runpf_fun,
+                            el_id=trafo_to_disc,  # trafo to disco
+                            expected_diff=expected_diff,
+                            el_val=0.,
+                            to_add_remove=0.,
+                            )
+
+    def test_divergence_ybus_dc(self):
+        """test I can make the grid diverge and converge again using ybus (islanding) in DC"""  
+        self.test_divergence_ybus_ac("_run_dc_pf")   
+        
+        
 if __name__ == "__main__":
     unittest.main()
-            

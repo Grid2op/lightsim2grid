@@ -224,8 +224,16 @@ class GeneratorContainer: public GenericContainer
     void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
 
     // modification
-    void turnedoff_no_pv(){turnedoff_gen_pv_=false;}  // turned off generators are not pv
-    void turnedoff_pv(){turnedoff_gen_pv_=true;}  // turned off generators are pv
+    void turnedoff_no_pv(SolverControl & solver_control){
+        solver_control.tell_slack_participate_changed();
+        solver_control.tell_slack_weight_changed();
+        turnedoff_gen_pv_=false;  // turned off generators are not pv. This is NOT the default.
+        }  
+    void turnedoff_pv(SolverControl & solver_control){
+        solver_control.tell_slack_participate_changed();
+        solver_control.tell_slack_weight_changed();
+        turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
+        }  
     bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
     void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
                               SolverControl & solver_control);
