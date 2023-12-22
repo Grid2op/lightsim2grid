@@ -15,7 +15,7 @@ import pdb
 import numpy as np
 import grid2op
 from lightsim2grid import LightSimBackend, SolverType
-from lightsim2grid.securityAnalysis import SecurityAnalysis
+from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
 import pdb
 
 
@@ -24,7 +24,7 @@ class TestSADC_14(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
-            self.sa = SecurityAnalysis(self.env)
+            self.sa = ContingencyAnalysis(self.env)
             
     def test_dc(self):
         self.sa.add_all_n1_contingencies()
@@ -39,7 +39,6 @@ class TestSADC_14(unittest.TestCase):
         assert np.any(res_a != res_a_dc), "DC and AC solver leads to same results"
         assert np.any(res_v != res_v_dc), "DC and AC solver leads to same results"
         assert self.sa.computer.get_solver_type() == SolverType.DC
-        return
         
         nb_bus = self.env.n_sub
         nb_powerline = len(self.env.backend._grid.get_lines())
@@ -78,7 +77,7 @@ class TestSADC_36(TestSADC_14):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_neurips_2020_track1", test=True, backend=LightSimBackend())
-            self.sa = SecurityAnalysis(self.env)
+            self.sa = ContingencyAnalysis(self.env)
 
 
 class TestSADC_118(TestSADC_14):
@@ -86,7 +85,7 @@ class TestSADC_118(TestSADC_14):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_wcci_2022", test=True, backend=LightSimBackend())
-            self.sa = SecurityAnalysis(self.env)
+            self.sa = ContingencyAnalysis(self.env)
            
           
 if __name__ == "__main__":

@@ -39,10 +39,10 @@ except ImportError as exc_:
     print(f"TimeSerie import error: {exc_}")
 
 try:
-    from lightsim2grid.securityAnalysis import SecurityAnalysis
-    __all__.append("SecurityAnalysis")
-    __all__.append("securityAnalysis")
+    from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
+    __all__.append("contingencyAnalysis")
+    __all__.append("ContingencyAnalysis")
 except ImportError as exc_:
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    print(f"SecurityAnalysis import error: {exc_}")
+    print(f"ContingencyAnalysis import error: {exc_}")

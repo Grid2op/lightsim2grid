@@ -6,23 +6,23 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "Computers.h"
+#include "TimeSeries.h"
 #include <iostream>
 #include <sstream>
 
-int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
-                          Eigen::Ref<const RealMat> sgen_p,
-                          Eigen::Ref<const RealMat> load_p,
-                          Eigen::Ref<const RealMat> load_q,
-                          const CplxVect & Vinit,
-                          const int max_iter,
-                          const real_type tol)
+int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
+                           Eigen::Ref<const RealMat> sgen_p,
+                           Eigen::Ref<const RealMat> load_p,
+                           Eigen::Ref<const RealMat> load_q,
+                           const CplxVect & Vinit,
+                           const int max_iter,
+                           const real_type tol)
 {
     auto timer = CustTimer();
     const Eigen::Index nb_total_bus = _grid_model.total_bus();
     if(Vinit.size() != nb_total_bus){
         std::ostringstream exc_;
-        exc_ << "Computers::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "TimeSeries::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
         exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_total_bus << " buses.";
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
@@ -72,7 +72,7 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // TODO trafo hack for Sbus !
 
     // init the results matrices
-    _voltages = BaseMultiplePowerflow::CplxMat::Zero(nb_steps, nb_total_bus); 
+    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
     _amps_flows = RealMat::Zero(0, n_total_);
 
     // extract V solver from the given V

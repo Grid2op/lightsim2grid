@@ -30,6 +30,9 @@ from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
 from lightsim2grid.solver import SolverType
 
+# TODO when line connected alone at one end, starts a Security Analysis
+# to see if it works
+
 
 class TestSolverControl(unittest.TestCase):
     def _aux_setup_grid(self):

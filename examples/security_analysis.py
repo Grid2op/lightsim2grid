@@ -14,7 +14,7 @@ from grid2op.Parameters import Parameters
 from grid2op.Action import BaseAction
 from grid2op.Chronics import ChangeNothing
 import warnings
-from lightsim2grid import LightSimBackend, SecurityAnalysis
+from lightsim2grid import LightSimBackend, ContingencyAnalysis
 
 env_name = "l2rpn_neurips_2020_track2_small"
 test = False
@@ -43,7 +43,7 @@ env = multi_mix_env[key_env]
 env_pp = multi_mix_env_pp[key_env]
 
 # Run the environment on a scenario using the TimeSerie module
-security_analysis = SecurityAnalysis(env)
+security_analysis = ContingencyAnalysis(env)
 security_analysis.add_all_n1_contingencies()
 p_or, a_or, voltages = security_analysis.get_flows()
 # the 3 lines above are the only lines you need to do to perform a security analysis !

@@ -9,17 +9,17 @@
 #ifndef COMPUTERS_H
 #define COMPUTERS_H
 
-#include "BaseMultiplePowerflow.h"
+#include "BaseBatchSolverSynch.h"
 
 /**
 Allws the computation of time series, that is, the same grid topology is used along with time
 series of injections (productions and loads) to compute powerflows/
  **/
-class Computers: public BaseMultiplePowerflow
+class TimeSeries: public BaseBatchSolverSynch
 {
     public:
-        Computers(const GridModel & init_grid_model):
-            BaseMultiplePowerflow(init_grid_model),
+        TimeSeries(const GridModel & init_grid_model):
+            BaseBatchSolverSynch(init_grid_model),
             _Sbuses(),
             _status(1), // 1: success, 0: failure
             _compute_flows(true),
@@ -27,7 +27,7 @@ class Computers: public BaseMultiplePowerflow
             _timer_pre_proc(0.)
             {}
 
-        Computers(const Computers&) = delete;
+        TimeSeries(const TimeSeries&) = delete;
 
         // control on whether I compute the flows or not
         void deactivate_flow_computations() {_compute_flows = false;}
@@ -55,7 +55,7 @@ class Computers: public BaseMultiplePowerflow
                        const real_type tol);
                        
         virtual void clear(){
-            BaseMultiplePowerflow::clear();
+            BaseBatchSolverSynch::clear();
             _Sbuses = CplxMat();
             _status = 1;
             _compute_flows = true;

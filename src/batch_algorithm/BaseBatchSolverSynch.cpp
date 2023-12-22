@@ -6,12 +6,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseMultiplePowerflow.h"
+#include "BaseBatchSolverSynch.h"
 
 /**
  V is modified at each call !
 **/
-bool BaseMultiplePowerflow::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
+bool BaseBatchSolverSynch::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                   CplxVect & V,
                                                   const CplxVect & Sbus,
                                                   const Eigen::VectorXi & slack_ids,
@@ -32,7 +32,7 @@ bool BaseMultiplePowerflow::compute_one_powerflow(const Eigen::SparseMatrix<cplx
     return conv;
 }
 
-void BaseMultiplePowerflow::compute_flows_from_Vs(bool amps)
+void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 {
     // TODO find a way to factorize that with TrafoContainer::compute_results
     // TODO and LineContainer::compute_results

@@ -12,16 +12,18 @@
 #include "GridModel.h"
 
 /**
-This is a utility class, used for Computers and SecurityAnalysis that abstract some computations when
+This is a utility class, used for TimeSeries and SecurityAnalysis that abstract some computations when
 the same solver is re used multiple times.
- **/
-class BaseMultiplePowerflow
+
+It allows to perform "batch" powerflow one a time in a synchronous manner
+**/
+class BaseBatchSolverSynch
 {
     public:
         typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
         typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
         
-        BaseMultiplePowerflow(const GridModel & init_grid_model):
+        BaseBatchSolverSynch(const GridModel & init_grid_model):
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -50,7 +52,7 @@ class BaseMultiplePowerflow
                 _solver.tell_solver_control(_solver_control);
             }
 
-        BaseMultiplePowerflow(const BaseMultiplePowerflow&) = delete;
+        BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
     
         // solver "control"
         void change_solver(const SolverType & type){
@@ -242,4 +244,5 @@ class BaseMultiplePowerflow
         SolverControl _solver_control;
 
 };
+
 #endif // BASEMULTIPLEPOWERFLOW_H

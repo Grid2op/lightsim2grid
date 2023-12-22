@@ -13,8 +13,9 @@
 #include "ChooseSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
-#include "Computers.h"
-#include "SecurityAnalysis.h"
+
+#include "batch_algorithm/TimeSeries.h"
+#include "batch_algorithm/ContingencyAnalysis.h"
 
 #include "help_fun_msg.h"
 
@@ -858,78 +859,78 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("debug_get_Bpp_python", &GridModel::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str())
         ;
 
-    py::class_<Computers>(m, "Computers", DocComputers::Computers.c_str())
+    py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const GridModel &>())
 
         // solver control
-        .def("change_solver", &Computers::change_solver, DocGridModel::change_solver.c_str())
-        .def("available_solvers", &Computers::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("get_solver_type", &Computers::get_solver_type, DocGridModel::get_solver_type.c_str())
+        .def("change_solver", &TimeSeries::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &TimeSeries::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("get_solver_type", &TimeSeries::get_solver_type, DocGridModel::get_solver_type.c_str())
 
         // timers
-        .def("total_time", &Computers::total_time, DocComputers::total_time.c_str())
-        .def("solver_time", &Computers::solver_time, DocComputers::solver_time.c_str())
-        .def("preprocessing_time", &Computers::preprocessing_time, DocComputers::preprocessing_time.c_str())
-        .def("amps_computation_time", &Computers::amps_computation_time, DocComputers::amps_computation_time.c_str())
-        .def("nb_solved", &Computers::nb_solved, DocComputers::nb_solved.c_str())
+        .def("total_time", &TimeSeries::total_time, DocComputers::total_time.c_str())
+        .def("solver_time", &TimeSeries::solver_time, DocComputers::solver_time.c_str())
+        .def("preprocessing_time", &TimeSeries::preprocessing_time, DocComputers::preprocessing_time.c_str())
+        .def("amps_computation_time", &TimeSeries::amps_computation_time, DocComputers::amps_computation_time.c_str())
+        .def("nb_solved", &TimeSeries::nb_solved, DocComputers::nb_solved.c_str())
 
         // status
-        .def("get_status", &Computers::get_status, DocComputers::get_status.c_str())
-        .def("clear", &Computers::clear, DocComputers::clear.c_str())
-        .def("close", &Computers::clear, DocComputers::clear.c_str())
+        .def("get_status", &TimeSeries::get_status, DocComputers::get_status.c_str())
+        .def("clear", &TimeSeries::clear, DocComputers::clear.c_str())
+        .def("close", &TimeSeries::clear, DocComputers::clear.c_str())
 
         // perform the computations
-        .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
-        .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
-        .def("compute_power_flows", &Computers::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("compute_Vs", &TimeSeries::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
+        .def("compute_flows", &TimeSeries::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
+        .def("compute_power_flows", &TimeSeries::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
         
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &Computers::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_power_flows", &Computers::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_voltages", &Computers::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
-        .def("get_sbuses", &Computers::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
+        .def("get_flows", &TimeSeries::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_power_flows", &TimeSeries::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &TimeSeries::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
         ;
 
-    py::class_<SecurityAnalysis>(m, "SecurityAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
+    py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
         .def(py::init<const GridModel &>())
         // solver control
-        .def("change_solver", &Computers::change_solver, DocGridModel::change_solver.c_str())
-        .def("available_solvers", &Computers::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("get_solver_type", &Computers::get_solver_type, DocGridModel::get_solver_type.c_str())
+        .def("change_solver", &ContingencyAnalysis::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &ContingencyAnalysis::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("get_solver_type", &ContingencyAnalysis::get_solver_type, DocGridModel::get_solver_type.c_str())
 
         // add some defaults
-        .def("add_all_n1", &SecurityAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
-        .def("add_n1", &SecurityAnalysis::add_n1, DocSecurityAnalysis::add_n1.c_str())
-        .def("add_nk", &SecurityAnalysis::add_nk, DocSecurityAnalysis::add_nk.c_str())
-        .def("add_multiple_n1", &SecurityAnalysis::add_multiple_n1, DocSecurityAnalysis::add_multiple_n1.c_str())
+        .def("add_all_n1", &ContingencyAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
+        .def("add_n1", &ContingencyAnalysis::add_n1, DocSecurityAnalysis::add_n1.c_str())
+        .def("add_nk", &ContingencyAnalysis::add_nk, DocSecurityAnalysis::add_nk.c_str())
+        .def("add_multiple_n1", &ContingencyAnalysis::add_multiple_n1, DocSecurityAnalysis::add_multiple_n1.c_str())
 
         // remove some defaults (TODO)
-        .def("reset", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
-        .def("clear", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
-        .def("close", &SecurityAnalysis::clear, DocComputers::clear.c_str())
-        .def("remove_n1", &SecurityAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
-        .def("remove_nk", &SecurityAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
-        .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())
+        .def("reset", &ContingencyAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("clear", &ContingencyAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("close", &ContingencyAnalysis::clear, DocComputers::clear.c_str())
+        .def("remove_n1", &ContingencyAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
+        .def("remove_nk", &ContingencyAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
+        .def("remove_multiple_n1", &ContingencyAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())
         
         // inspect the class
-        .def("my_defaults", &SecurityAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
+        .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
 
         // perform the computation
-        .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
-        .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
-        .def("compute_power_flows", &SecurityAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
+        .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
+        .def("compute_flows", &ContingencyAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
+        .def("compute_power_flows", &ContingencyAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &SecurityAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
-        .def("get_voltages", &SecurityAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
-        .def("get_power_flows", &SecurityAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
+        .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
+        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
+        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
 
         // timers
-        .def("total_time", &SecurityAnalysis::total_time, DocComputers::total_time.c_str())
-        .def("solver_time", &SecurityAnalysis::solver_time, DocComputers::solver_time.c_str())
-        .def("preprocessing_time", &SecurityAnalysis::preprocessing_time, DocSecurityAnalysis::preprocessing_time.c_str())
-        .def("amps_computation_time", &SecurityAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
-        .def("modif_Ybus_time", &SecurityAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
-        .def("nb_solved", &SecurityAnalysis::nb_solved, DocComputers::nb_solved.c_str())
+        .def("total_time", &ContingencyAnalysis::total_time, DocComputers::total_time.c_str())
+        .def("solver_time", &ContingencyAnalysis::solver_time, DocComputers::solver_time.c_str())
+        .def("preprocessing_time", &ContingencyAnalysis::preprocessing_time, DocSecurityAnalysis::preprocessing_time.c_str())
+        .def("amps_computation_time", &ContingencyAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
+        .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
+        .def("nb_solved", &ContingencyAnalysis::nb_solved, DocComputers::nb_solved.c_str())
         ;
 }

@@ -9,7 +9,7 @@
 #ifndef SECURITYANALYSIS_H
 #define SECURITYANALYSIS_H
 
-#include "BaseMultiplePowerflow.h"
+#include "BaseBatchSolverSynch.h"
 #include <set>
 
 struct Coeff{
@@ -19,20 +19,22 @@ struct Coeff{
 };
 
 /**
-Class to perform a security analysis, which consist of performing some powerflow after some powerlines
+Class to perform a contingency analysis (security analysis), which consist of performing some powerflow after some powerlines
 have been disconnected 
  **/
-class SecurityAnalysis: public BaseMultiplePowerflow
+class ContingencyAnalysis: public BaseBatchSolverSynch
 {
     public:
-        SecurityAnalysis(const GridModel & init_grid_model):
-        BaseMultiplePowerflow(init_grid_model),
-        _li_defaults(),
-        _li_coeffs(),
-        _timer_total(0.),
-        _timer_modif_Ybus(0.),
-        _timer_pre_proc(0.)
-        { }
+        ContingencyAnalysis(const GridModel & init_grid_model):
+                            BaseBatchSolverSynch(init_grid_model),
+                            _li_defaults(),
+                            _li_coeffs(),
+                            _timer_total(0.),
+                            _timer_modif_Ybus(0.),
+                            _timer_pre_proc(0.)
+                            { }
+
+        ContingencyAnalysis(const ContingencyAnalysis&) = delete;
 
         // utilities to add defaults to simulate
         void add_all_n1(){
@@ -65,7 +67,7 @@ class SecurityAnalysis: public BaseMultiplePowerflow
 
         // utilities to remove defaults to simulate (TODO)
         virtual void clear(){
-            BaseMultiplePowerflow::clear();
+            BaseBatchSolverSynch::clear();
             _li_defaults.clear();
             _li_coeffs.clear();
             _timer_total = 0.;

@@ -23,6 +23,10 @@ Change Log
 - [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
   If you previously used `gridmodel.get_Subus()` to retrieve the Sbus used for DC powerflow, please use
   `gridmodel.get_dcSbus()` instead.
+- [DEPRECATED] in the cpp class: the old `SecurityAnalysisCPP` has been renamed `ContingencyAnalysisCPP`
+  (you should not import it, but it you do you can `from lightsim2grid.securityAnalysis import ContingencyAnalysisCPP` now)
+- [DEPRECATED] in the cpp class: the old `Computers` has been renamed `TimeSerieCPP`
+  (you should not import it, but it you do you can `from lightsim2grid.time_serie import TimeSerieCPP` now)
 - [FIXED] now voltage is properly set to 0. when shunts are disconnected
 - [FIXED] now voltage is properly set to 0. when storage units are disconnected
 - [FIXED] a bug where non connected grid were not spotted in DC

@@ -6,12 +6,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "SecurityAnalysis.h"
+#include "ContingencyAnalysis.h"
 
 #include <queue>
 #include <math.h>       /* isfinite */
 
-bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
+bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
     std::vector<bool> visited(Ybus.cols(), false); 
     std::vector<bool> already_added(Ybus.cols(), false);
     std::queue<Eigen::Index> neighborhood;
@@ -44,7 +44,7 @@ bool SecurityAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Y
     return ok;
 }
 
-void SecurityAnalysis::init_li_coeffs(bool ac_solver_used){
+void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
     _li_coeffs.clear();
     _li_coeffs.reserve(_li_defaults.size());
     const auto & powerlines = _grid_model.get_powerlines_as_data();
@@ -104,7 +104,7 @@ void SecurityAnalysis::init_li_coeffs(bool ac_solver_used){
 }
 
 
-bool SecurityAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                         const std::vector<Coeff> & coeffs) const
 {
     for(const auto & coeff_to_remove: coeffs){
@@ -112,7 +112,7 @@ bool SecurityAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
     }
     return check_invertible(Ybus);
 }
-void SecurityAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+void ContingencyAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const std::vector<Coeff> & coeffs) const
 {
     for(const auto & coeff_to_remove: coeffs){
@@ -120,7 +120,7 @@ void SecurityAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
     }
 }
 
-void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type tol)
+void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type tol)
 {
     auto timer = CustTimer();
     auto timer_preproc = CustTimer();
@@ -160,7 +160,7 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     Eigen::Index nb_steps = _li_defaults.size();
 
     // init the results matrices
-    _voltages = BaseMultiplePowerflow::CplxMat::Zero(nb_steps, nb_total_bus); 
+    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
     _amps_flows = RealMat::Zero(0, n_total_);
 
     // reset the solver
@@ -215,7 +215,7 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
     _timer_total = timer.duration();
 }
 
-void SecurityAnalysis::clean_flows(bool is_amps)
+void ContingencyAnalysis::clean_flows(bool is_amps)
 {
     auto timer = CustTimer();
     Eigen::Index cont_id = 0;
