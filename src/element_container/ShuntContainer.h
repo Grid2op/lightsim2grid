@@ -161,6 +161,14 @@ class ShuntContainer : public GenericContainer
                             FDPFMethod xb_or_bx) const;
     virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
+    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+        const int nb_ = nb();
+        for(int el_id = 0; el_id < nb_; ++el_id)
+        {
+            if(!status_[el_id]) continue;
+            bus_status[bus_id_[el_id]] = true;
+        }
+    }    
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,

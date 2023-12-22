@@ -180,6 +180,15 @@ class LineContainer : public GenericContainer
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     virtual void nb_line_end(std::vector<int> & res) const;
     virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
+    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+        const int nb_ = nb();
+        for(int el_id = 0; el_id < nb_; ++el_id)
+        {
+            if(!status_[el_id]) continue;
+            bus_status[bus_or_id_[el_id]] = true;
+            bus_status[bus_ex_id_[el_id]] = true;
+        }
+    }    
 
     void deactivate(int powerline_id, SolverControl & solver_control) {
         // std::cout << "line: deactivate called\n";
@@ -187,6 +196,7 @@ class LineContainer : public GenericContainer
             solver_control.tell_recompute_ybus();
             // but sparsity pattern do not change here (possibly one more coeff at 0.)
             solver_control.tell_ybus_some_coeffs_zero();
+            solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
         }
         _deactivate(powerline_id, status_);
     }
@@ -194,6 +204,7 @@ class LineContainer : public GenericContainer
         if(!status_[powerline_id]){
             solver_control.tell_recompute_ybus();
             solver_control.tell_ybus_change_sparsity_pattern();  // sparsity pattern might change: a non zero coeff can pop up
+            solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
         }
         _reactivate(powerline_id, status_);
     }

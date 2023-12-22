@@ -432,7 +432,7 @@ void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
 
 
 void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-                                   SolverControl & solver_control)
+                                              SolverControl & solver_control)
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)

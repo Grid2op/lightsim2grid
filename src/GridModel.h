@@ -45,6 +45,8 @@
 class GridModel : public GenericContainer
 {
     public:
+        typedef Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> IntVectRowMaj;
+
         typedef std::tuple<
                 int, // version major
                 int, // version medium
@@ -69,14 +71,32 @@ class GridModel : public GenericContainer
                 // storage units
                 LoadContainer::StateRes,
                 //dc lines
-                DCLineContainer::StateRes
+                DCLineContainer::StateRes,
+                // grid2op specific
+                int, // n_sub
+                int, // max_nb_bus_per_sub
+                std::vector<int>,  // load_pos_topo_vect_
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,  
+                std::vector<int>,  // load_to_subid_
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>,
+                std::vector<int>
                 >  StateRes;
 
         GridModel():
           solver_control_(),
           compute_results_(true),
           init_vm_pu_(1.04),
-          sn_mva_(1.0){
+          sn_mva_(1.0),
+          max_nb_bus_per_sub_(2){
             _solver.change_solver(SolverType::SparseLU);
             _dc_solver.change_solver(SolverType::DC);
             _solver.set_gridmodel(this);
@@ -591,6 +611,20 @@ class GridModel : public GenericContainer
         {
             n_sub_ = n_sub;
         }
+        void set_max_nb_bus_per_sub(int max_nb_bus_per_sub)
+        {
+            max_nb_bus_per_sub_ = max_nb_bus_per_sub;
+            if(bus_vn_kv_.size() != n_sub_ * max_nb_bus_per_sub_){
+                std::ostringstream exc_;
+                exc_ << "GridModel::set_max_nb_bus_per_sub: ";
+                exc_ << "your model counts ";
+                exc_ << bus_vn_kv_.size()  << " buses according to `bus_vn_kv_` but ";
+                exc_ << n_sub_ * max_nb_bus_per_sub_ << " according to n_sub_ * max_nb_bus_per_sub_.";
+                exc_ << "Both should match: either reinit it with another call to `init_bus` or set properly the number of ";
+                exc_ << "substations / buses per substations with `set_n_sub` / `set_max_nb_bus_per_sub`";
+                throw std::runtime_error(exc_.str());
+            }
+        }
         
         void fillSbus_other(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver){
             fillSbus_me(res, ac, id_me_to_solver);
@@ -706,27 +740,23 @@ class GridModel : public GenericContainer
         {
             for(int el_id = 0; el_id < vect_pos.rows(); ++el_id)
             {
+
                 int el_pos = vect_pos(el_id);
+                if(! has_changed(el_pos)) continue;
                 int new_bus = new_values(el_pos);
                 if(new_bus > 0){
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
                     int init_bus_me = vect_subid(el_id);
-                    int new_bus_backend = new_bus == 1 ? init_bus_me : init_bus_me + n_sub_ ;
+                    int new_bus_backend = new_bus == 1 ? init_bus_me : init_bus_me + n_sub_ * (max_nb_bus_per_sub_ - 1);
                     bus_status_[new_bus_backend] = true;
-                    if(has_changed(el_pos))
-                    {
-                        (this->*fun_react)(el_id); // eg reactivate_load(load_id);
-                        (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
-                    }
+                    (this->*fun_react)(el_id); // eg reactivate_load(load_id);
+                    (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
                 } else{
-                    if(has_changed(el_pos))
-                    {
-                        // new bus is negative, we deactivate it
-                        (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
-                        // bus_status_ is set to "false" in GridModel.update_topo
-                        // and a bus is activated if (and only if) one element is connected to it.
-                        // I must not set `bus_status_[new_bus_backend] = false;` in this case !
-                    }
+                    // new bus is negative, we deactivate it
+                    (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
+                    // bus_status_ is set to "false" in GridModel.update_topo
+                    // and a bus is activated if (and only if) one element is connected to it.
+                    // I must not set `bus_status_[new_bus_backend] = false;` in this case !
                 }
             }
         }
@@ -824,21 +854,22 @@ class GridModel : public GenericContainer
 
         // specific grid2op
         int n_sub_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> load_pos_topo_vect_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> gen_pos_topo_vect_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_or_pos_topo_vect_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_ex_pos_topo_vect_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_hv_pos_topo_vect_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_lv_pos_topo_vect_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> storage_pos_topo_vect_;
+        int max_nb_bus_per_sub_;
+        IntVectRowMaj load_pos_topo_vect_;
+        IntVectRowMaj gen_pos_topo_vect_;
+        IntVectRowMaj line_or_pos_topo_vect_;
+        IntVectRowMaj line_ex_pos_topo_vect_;
+        IntVectRowMaj trafo_hv_pos_topo_vect_;
+        IntVectRowMaj trafo_lv_pos_topo_vect_;
+        IntVectRowMaj storage_pos_topo_vect_;
 
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> load_to_subid_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> gen_to_subid_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_or_to_subid_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> line_ex_to_subid_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_hv_to_subid_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> trafo_lv_to_subid_;
-        Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> storage_to_subid_;
+        IntVectRowMaj load_to_subid_;
+        IntVectRowMaj gen_to_subid_;
+        IntVectRowMaj line_or_to_subid_;
+        IntVectRowMaj line_ex_to_subid_;
+        IntVectRowMaj trafo_hv_to_subid_;
+        IntVectRowMaj trafo_lv_to_subid_;
+        IntVectRowMaj storage_to_subid_;
 
 };
 

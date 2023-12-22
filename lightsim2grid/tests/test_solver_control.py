@@ -25,6 +25,8 @@ import warnings
 import numpy as np
 import grid2op
 from grid2op.Action import CompleteAction
+from grid2op.Parameters import Parameters
+
 from lightsim2grid import LightSimBackend
 from lightsim2grid.solver import SolverType
 
@@ -50,6 +52,41 @@ class TestSolverControl(unittest.TestCase):
         self.tol_solver = 1e-8  # solver
         self.tol_equal = 1e-10  #  for comparing with and without the "smarter solver" things, and make sure everything is really equal!
     
+    def test_update_topo_ac(self, runpf_fun="_run_ac_pf"):
+        """test when I disconnect a line alone at one end: it changes the size of the ybus / sbus vector AC"""
+        LINE_ID = 2
+        dim_topo = type(self.env).dim_topo
+        mask_changed = np.zeros(dim_topo, dtype=bool)
+        mask_val = np.zeros(dim_topo, dtype=np.int32)
+        mask_changed[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = True
+        mask_val[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = 2
+        self.gridmodel.update_topo(mask_changed, mask_val)
+        V = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        assert len(V), "it should not have diverged here"
+        self.gridmodel.unset_changes()
+        
+        mask_changed = np.zeros(dim_topo, dtype=bool)
+        mask_val = np.zeros(dim_topo, dtype=np.int32)
+        mask_changed[type(self.env).line_or_pos_topo_vect[LINE_ID]] = True
+        mask_val[type(self.env).line_or_pos_topo_vect[LINE_ID]] = -1
+        # mask_changed[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = True
+        # mask_val[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = -1
+        self.gridmodel.update_topo(mask_changed, mask_val)
+        solver = self.gridmodel.get_dc_solver() if runpf_fun == "_run_dc_pf" else self.gridmodel.get_solver() 
+        V1 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        assert len(V1), f"it should not have diverged here. Error : {solver.get_error()}"
+        
+        self.gridmodel.tell_solver_need_reset()
+        V2 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        assert len(V2), f"it should not have diverged here. Error : {solver.get_error()}"
+        assert np.allclose(V1, V2, rtol=self.tol_equal, atol=self.tol_equal)
+    
+    def test_update_topo_dc(self):
+        """test when I disconnect a line alone at one end: it changes the size of the ybus / sbus vector AC"""
+        if not self.need_dc:
+            self.skipTest("Useless to run DC")
+        self.test_update_topo_ac("_run_dc_pf")   
+        
     def test_pf_run_dc(self):
         """test I have the same results if nothing is done with and without restarting from scratch when running dc powerflow"""
         if not self.need_dc:
@@ -138,7 +175,7 @@ class TestSolverControl(unittest.TestCase):
         getattr(self, funname_undo)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val)
         V_reco = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V_reco), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
-        assert np.allclose(V_reco, V_init, rtol=self.tol_equal, atol=self.tol_equal), f"error for el_id={el_id}: do an action and then undo it should not have any impact in {pf_mode}"
+        assert np.allclose(V_reco, V_init, rtol=self.tol_equal, atol=self.tol_equal), f"error for el_id={el_id}: do an action and then undo it should not have any impact in {pf_mode}: max {np.abs(V_init - V_reco).max():.2e}"
         self.gridmodel.unset_changes()
         V_reco1 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V_reco1), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"

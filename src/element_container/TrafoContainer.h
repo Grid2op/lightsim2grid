@@ -167,7 +167,7 @@ class TrafoContainer : public GenericContainer
         }
         if(id >= nb())
         {
-            throw std::range_error("Generator out of bound. Not enough transformers on the grid.");
+            throw std::range_error("Trafo out of bound. Not enough transformers on the grid.");
         }
         return TrafoInfo(*this, id);
     }
@@ -178,6 +178,7 @@ class TrafoContainer : public GenericContainer
             solver_control.tell_recompute_ybus();
             // but sparsity pattern do not change here (possibly one more coeff at 0.)
             solver_control.tell_ybus_some_coeffs_zero();
+            solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
         }
         _deactivate(trafo_id, status_);
     }
@@ -185,6 +186,7 @@ class TrafoContainer : public GenericContainer
         if(!status_[trafo_id]){
             solver_control.tell_recompute_ybus();
             solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+            solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
         }
         _reactivate(trafo_id, status_);
     }
@@ -214,6 +216,15 @@ class TrafoContainer : public GenericContainer
                                  int nb_powerline,
                                  bool transpose) const;
     virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
+    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+        const int nb_ = nb();
+        for(int el_id = 0; el_id < nb_; ++el_id)
+        {
+            if(!status_[el_id]) continue;
+            bus_status[bus_hv_id_[el_id]] = true;
+            bus_status[bus_lv_id_[el_id]] = true;
+        }
+    }    
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,

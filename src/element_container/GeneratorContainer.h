@@ -175,14 +175,15 @@ class GeneratorContainer: public GenericContainer
     **/
     void add_slackbus(int gen_id, real_type weight, SolverControl & solver_control){
         // TODO DEBUG MODE
-        if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative weight to the slack bus.");
+        if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
         if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
         gen_slackbus_[gen_id] = true;
         if(gen_slack_weight_[gen_id] != weight) solver_control.tell_slack_weight_changed();
         gen_slack_weight_[gen_id] = weight;
     }
     void remove_slackbus(int gen_id, SolverControl & solver_control){
-        if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
+        if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
+        if(gen_slack_weight_[gen_id] != 0.) solver_control.tell_slack_weight_changed();
         gen_slackbus_[gen_id] = false;
         gen_slack_weight_[gen_id] = 0.;
     }
@@ -243,7 +244,7 @@ class GeneratorContainer: public GenericContainer
             solver_control.tell_recompute_sbus();
             solver_control.tell_pq_changed();  // bus might now be pq
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-            if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
+            solver_control.tell_pv_changed();
             if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
                 solver_control.tell_slack_participate_changed();
                 solver_control.tell_slack_weight_changed();
@@ -256,7 +257,7 @@ class GeneratorContainer: public GenericContainer
             solver_control.tell_recompute_sbus();
             solver_control.tell_pq_changed();  // bus might now be pv
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-            if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
+            solver_control.tell_pv_changed();
             if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
                 solver_control.tell_slack_participate_changed();
                 solver_control.tell_slack_weight_changed();
@@ -272,7 +273,14 @@ class GeneratorContainer: public GenericContainer
     int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
-    
+    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+        const int nb_gen = nb();
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+        {
+            if(!status_[gen_id]) continue;
+            bus_status[bus_id_[gen_id]] = true;
+        }
+    }    
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
     void change_p(int gen_id, real_type new_p, SolverControl & solver_control);

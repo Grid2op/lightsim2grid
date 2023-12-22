@@ -11,15 +11,15 @@
 // TODO SLACK !!!
 template<class LinearSolver>
 bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                            CplxVect & V,
-                                            const CplxVect & Sbus,
-                                            const Eigen::VectorXi & slack_ids,
-                                            const RealVect & slack_weights,
-                                            const Eigen::VectorXi & pv,
-                                            const Eigen::VectorXi & pq,
-                                            int max_iter,
-                                            real_type tol
-                                            )
+                                          CplxVect & V,
+                                          const CplxVect & Sbus,
+                                          const Eigen::VectorXi & slack_ids,
+                                          const RealVect & slack_weights,
+                                          const Eigen::VectorXi & pv,
+                                          const Eigen::VectorXi & pq,
+                                          int max_iter,
+                                          real_type tol
+                                          )
 {
     // max_iter is ignored
     // tol is ignored
@@ -27,7 +27,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     //   and for the slack bus both the magnitude and the angle are used.
 
     if(!is_linear_solver_valid()) {
-        // err_ = ErrorType::NotInitError;
         return false;
     }
     BaseAlgo::reset_timer();
@@ -35,11 +34,12 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     auto timer = CustTimer();
     if(_solver_control.need_reset_solver() || 
        _solver_control.has_dimension_changed() ||
-       _solver_control.has_ybus_some_coeffs_zero()){
+       _solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
+       _solver_control.ybus_change_sparsity_pattern() ||
+       _solver_control.has_ybus_some_coeffs_zero()
+       ){
        reset();
     }
-
-    if (_solver_control.ybus_change_sparsity_pattern()) need_factorize_ = true;
     
     sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());
 
@@ -47,34 +47,32 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         auto timer_preproc = CustTimer();
     #endif // __COUT_TIMES
 
-    const CplxVect & Sbus_tmp = Sbus;
-
     // TODO SLACK (for now i put all slacks as PV, except the first one)
     // this should be handled in Sbus, because we know the amount of power absorbed by the slack
     // so we can compute it correctly !
-    // std::cout << "\t\t\tretrieve_pv_with_slack \n";
-    // std::cout << "slack_ids: ";
-    // for(auto el: slack_ids) std::cout << el << ", ";
-    // std::cout << std::endl;
-    my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
-    // std::cout << "my_pv_: ";
-    // for(auto el: my_pv_) std::cout << el << ", ";
-    // std::cout << std::endl;
-    // const Eigen::VectorXi & my_pv = pv;
+    if(need_factorize_ || 
+       _solver_control.has_pv_changed()) {
+        my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
+    }
 
-    // find the slack buses
-    // std::cout << "\t\t\textract_slack_bus_id \n";
-    slack_buses_ids_solver_ = extract_slack_bus_id(my_pv_, pq, sizeYbus_with_slack_);
-    sizeYbus_without_slack_ = sizeYbus_with_slack_ - slack_buses_ids_solver_.size();
+    if(need_factorize_ || 
+       _solver_control.has_pv_changed() || 
+       _solver_control.has_pq_changed()) {
+        // find the slack buses
+        slack_buses_ids_solver_ = extract_slack_bus_id(my_pv_, pq, sizeYbus_with_slack_);
+        sizeYbus_without_slack_ = sizeYbus_with_slack_ - slack_buses_ids_solver_.size();
 
-    // corresp bus -> solverbus
-    // std::cout << "\t\t\tfill_mat_bus_id \n";
-    fill_mat_bus_id(sizeYbus_with_slack_);
+        // corresp bus -> solverbus
+        fill_mat_bus_id(sizeYbus_with_slack_);
+    }
 
     // remove the slack bus from Ybus
-    // and extract only real part
-    // std::cout << "\t\t\tfill_dcYbus_noslack \n";
-    fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
+    if(need_factorize_ || 
+       _solver_control.need_recompute_ybus() ||
+       _solver_control.ybus_change_sparsity_pattern() ||
+       _solver_control.has_ybus_some_coeffs_zero()) {
+        fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
+    }
     
     #ifdef __COUT_TIMES
         std::cout << "\t dc: preproc: " << 1000. * timer_preproc.duration() << "ms" << std::endl;
@@ -84,7 +82,14 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     #ifdef __COUT_TIMES
         auto timer_solve = CustTimer();
     #endif // __COUT_TIMES
+
     bool just_factorize = false;
+    if(_solver_control.ybus_change_sparsity_pattern() ||
+       _solver_control.has_ybus_some_coeffs_zero()){
+        need_factorize_ = true;
+    }
+
+    // initialize the solver if needed
     if(need_factorize_){
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
@@ -96,16 +101,16 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     }
 
     // remove the slack bus from Sbus
-    // std::cout << "\t\t\t dcSbus_noslack_ \n";
-    dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
-    for (int k=0; k < sizeYbus_with_slack_; ++k){
-        if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
-        const int col_res = mat_bus_id_(k);
-        dcSbus_noslack_(col_res) = std::real(Sbus_tmp(k));
+    if(need_factorize_ || _solver_control.need_recompute_sbus()){
+        dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
+        for (int k=0; k < sizeYbus_with_slack_; ++k){
+            if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
+            const int col_res = mat_bus_id_(k);
+            dcSbus_noslack_(col_res) = std::real(Sbus(k));
+        }
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
-    // std::cout << "\t\t\t Va_dc_without_slack \n";
     RealVect Va_dc_without_slack = dcSbus_noslack_;
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, just_factorize);
     if(error != ErrorType::NoError){

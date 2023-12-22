@@ -32,11 +32,15 @@ Change Log
   these cases.
 - [FIXED] a bug leading to not propagate correctly the "compute_results" flag when the 
   environment was copied (for example)
+- [FIXED] a bug where copying a lightsim2grid `GridModel` did not fully copy it
+- [FIXED] a bug in the "topo_vect" comprehension cpp side (sometimes some buses 
+  might not be activated / deactivated correctly)
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.
 - [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
 - [ADDED] computation of PTPF (Power Transfer Distribution Factor) is now possible
+- [ADDED] (not tested) support for more than 2 busbars per substation
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
 - [IMPROVED] clean ce cpp side by refactoring: making clearer the difference (linear) solver

@@ -189,7 +189,11 @@ class DCLineContainer : public GenericContainer
     virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const  {};
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     virtual void nb_line_end(std::vector<int> & res) const;
-
+    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+        from_gen_.update_bus_status(bus_status);
+        to_gen_.update_bus_status(bus_status);
+    }
+    
     real_type get_qmin_or(int dcline_id) {return from_gen_.get_qmin(dcline_id);}
     real_type get_qmax_or(int dcline_id) {return  from_gen_.get_qmax(dcline_id);}
     real_type get_qmin_ex(int dcline_id) {return to_gen_.get_qmin(dcline_id);}
