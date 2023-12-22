@@ -300,9 +300,11 @@ class SecurityAnalysis(object):
 
         """
         v_init = self.grid2op_env.backend.V
+        print("self.computer.compute")
         self.computer.compute(v_init,
                               self.grid2op_env.backend.max_it,
                               self.grid2op_env.backend.tol)
+        print("self.computer.get_voltages()")
         self._vs = self.computer.get_voltages()
         self.__computed = True
         return self._vs

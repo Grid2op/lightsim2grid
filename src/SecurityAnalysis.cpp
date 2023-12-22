@@ -165,6 +165,10 @@ void SecurityAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type t
 
     // reset the solver
     _solver.reset();
+    _solver_control.tell_none_changed();
+    _solver_control.tell_recompute_ybus();
+    // _solver_control.tell_ybus_some_coeffs_zero();
+    // ybus does not change sparsity pattern here
 
     // compute the right Vinit to send to the solver
     CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);

@@ -62,7 +62,7 @@ class CKTSOLinearSolver
         // public api
         ErrorType reset();
         ErrorType initialize(Eigen::SparseMatrix<real_type> & J);
-        ErrorType solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized);
+        ErrorType solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor);
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;

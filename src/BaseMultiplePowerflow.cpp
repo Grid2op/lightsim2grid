@@ -22,6 +22,7 @@ bool BaseMultiplePowerflow::compute_one_powerflow(const Eigen::SparseMatrix<cplx
                                                   double tol
                                                   )
 {
+    _solver.tell_solver_control(_solver_control);
     bool conv = _solver.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
     if(conv){
         V = _solver.get_V().array();

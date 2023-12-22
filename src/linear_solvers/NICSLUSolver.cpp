@@ -75,7 +75,7 @@ ErrorType NICSLULinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     return err;
 }
 
-ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
+ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const
@@ -83,7 +83,7 @@ ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect
     bool stop = false;
     RealVect x;
     ErrorType err = ErrorType::NoError;
-    if(!has_just_been_inialized){
+    if(!doesnt_need_refactor){
         ret  = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
         if (ret < 0) {
             // std::cout << "NICSLULinearSolver::solve solver_.FactorizeMatrix error: " << ret << std::endl;

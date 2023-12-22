@@ -30,9 +30,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         return false;
     }
     BaseAlgo::reset_timer();
-    
+    bool doesnt_need_refactor = true;
+
     auto timer = CustTimer();
-    if(_solver_control.need_reset_solver() || 
+    if(need_factorize_ ||
+       _solver_control.need_reset_solver() || 
        _solver_control.has_dimension_changed() ||
        _solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
        _solver_control.ybus_change_sparsity_pattern() ||
@@ -47,17 +49,16 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         auto timer_preproc = CustTimer();
     #endif // __COUT_TIMES
 
-    // TODO SLACK (for now i put all slacks as PV, except the first one)
-    // this should be handled in Sbus, because we know the amount of power absorbed by the slack
-    // so we can compute it correctly !
-    if(need_factorize_ || 
-       _solver_control.has_pv_changed()) {
-        my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
-    }
-
     if(need_factorize_ || 
        _solver_control.has_pv_changed() || 
-       _solver_control.has_pq_changed()) {
+       _solver_control.has_pq_changed()) {    
+
+        // TODO SLACK (for now i put all slacks as PV, except the first one)
+        // this should be handled in Sbus, because we know the amount of power absorbed by the slack
+        // so we can compute it correctly !
+        // std::cout << "\tneed to retrieve slack\n";
+        my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
+
         // find the slack buses
         slack_buses_ids_solver_ = extract_slack_bus_id(my_pv_, pq, sizeYbus_with_slack_);
         sizeYbus_without_slack_ = sizeYbus_with_slack_ - slack_buses_ids_solver_.size();
@@ -71,37 +72,24 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
+        // std::cout << "\tneed to change Ybus\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
+        doesnt_need_refactor = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
+        // no need to refactor if ybus did not change
     }
     
     #ifdef __COUT_TIMES
         std::cout << "\t dc: preproc: " << 1000. * timer_preproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
-
+    
     // initialize the solver (only if needed)
     #ifdef __COUT_TIMES
         auto timer_solve = CustTimer();
     #endif // __COUT_TIMES
 
-    bool just_factorize = false;
-    if(_solver_control.ybus_change_sparsity_pattern() ||
-       _solver_control.has_ybus_some_coeffs_zero()){
-        need_factorize_ = true;
-    }
-
-    // initialize the solver if needed
-    if(need_factorize_){
-        ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
-        if(status_init != ErrorType::NoError){
-            err_ = status_init;
-            return false;
-        }
-        need_factorize_ = false;
-        just_factorize = true;
-    }
-
     // remove the slack bus from Sbus
     if(need_factorize_ || _solver_control.need_recompute_sbus()){
+        // std::cout << "\tneed to compute Sbus\n";
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
@@ -110,9 +98,21 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         }
     }
 
+    // initialize the solver if needed
+    if(need_factorize_){
+        // std::cout << "\tneed to factorize\n";
+        ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
+        if(status_init != ErrorType::NoError){
+            err_ = status_init;
+            return false;
+        }
+        need_factorize_ = false;
+        doesnt_need_refactor = true;
+    }
+
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
     RealVect Va_dc_without_slack = dcSbus_noslack_;
-    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, just_factorize);
+    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, doesnt_need_refactor);
     if(error != ErrorType::NoError){
         err_ = error;
         timer_total_nr_ += timer.duration();
@@ -270,7 +270,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
         rhs.array() = 0.;
         // rhs = RealVect::Zero(sizeYbus_without_slack_);
     }
-    // TODO PTDF: if the solver can solve the  directly, do that instead
+    // TODO PTDF: if the solver can solve the MAT directly, do that instead
     return PTDF;
 }
 

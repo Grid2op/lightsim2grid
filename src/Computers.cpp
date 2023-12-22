@@ -56,6 +56,8 @@ int Computers::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     const Eigen::VectorXi & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids(): _grid_model.get_slack_ids_dc();
     const RealVect & slack_weights = _grid_model.get_slack_weights();
     _solver.reset();
+    _solver_control.tell_none_changed();
+    _solver_control.tell_recompute_sbus();
 
     // now build the Sbus
     _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver);

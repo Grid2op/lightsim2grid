@@ -40,11 +40,14 @@ class BaseMultiplePowerflow
                 CplxVect V = CplxVect::Constant(nb_bus, 1.04);
                 // const auto & Vtmp = init_grid_model.get_V();
                 // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
+                _grid_model.tell_solver_need_reset();
                 _grid_model.dc_pf(V, 10, 1e-5);
                 _grid_model.ac_pf(V, 10, 1e-5);
                 
                 // assign the right solver type
+                _solver_control.tell_none_changed();
                 _solver.change_solver(_grid_model.get_solver_type());
+                _solver.tell_solver_control(_solver_control);
             }
 
         BaseMultiplePowerflow(const BaseMultiplePowerflow&) = delete;
@@ -234,6 +237,9 @@ class BaseMultiplePowerflow
         double _timer_compute_A;
         double _timer_compute_P;
         double _timer_solver;
+
+        // solver control
+        SolverControl _solver_control;
 
 };
 #endif // BASEMULTIPLEPOWERFLOW_H

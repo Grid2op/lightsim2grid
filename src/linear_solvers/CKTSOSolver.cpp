@@ -87,7 +87,7 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     return err;
 }
 
-ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
+ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
     // with standard use of lightsim2grid, the solver should have already been initialized
     // J is const even if it does not compile if said const
@@ -95,7 +95,7 @@ ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect 
     bool stop = false;
     RealVect x;
     ErrorType err = ErrorType::NoError;
-    if(!has_just_been_inialized){
+    if(!doesnt_need_refactor){
         ret  = solver_->Refactorize(J.valuePtr()); 
         if (ret < 0) {
             // std::cout << "CKTSOLinearSolver::solve solver_->Refactorize error: " << ret << std::endl;

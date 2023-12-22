@@ -23,13 +23,13 @@ ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> 
     return res;
 }
 
-ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool has_just_been_inialized){
+ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call sparselu_solver.analyze() before calling that)
     // J is const even if it does not compile if said const
     ErrorType err = ErrorType::NoError;
     bool stop = false;
-    if(!has_just_been_inialized){
+    if(!doesnt_need_refactor){
         // if the call to "klu_factor" has been made this iteration, there is no need
         // to re factor again the matrix
         // i'm in the case where it has not
