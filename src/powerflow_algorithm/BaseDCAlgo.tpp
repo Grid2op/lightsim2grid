@@ -27,6 +27,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     //   and for the slack bus both the magnitude and the angle are used.
 
     if(!is_linear_solver_valid()) {
+        // std::cout << "!is_linear_solver_valid()\n";
         return false;
     }
     BaseAlgo::reset_timer();
@@ -104,6 +105,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
+            // std::cout << "_linear_solver.initialize\n";
             return false;
         }
         need_factorize_ = false;
@@ -116,6 +118,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     if(error != ErrorType::NoError){
         err_ = error;
         timer_total_nr_ += timer.duration();
+            // std::cout << "_linear_solver.solve\n";
         return false;
     }
 
@@ -128,8 +131,10 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         Vm_ = RealVect();
         Va_ = RealVect();
         timer_total_nr_ += timer.duration();
+        // std::cout << "_linear_solver.allFinite" << Va_dc_without_slack.array().allFinite() <<", " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() <<"\n";
         return false;
     }
+    // std::cout << "\t " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << "\n";
 
     #ifdef __COUT_TIMES
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;

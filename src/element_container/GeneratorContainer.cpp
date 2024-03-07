@@ -167,9 +167,9 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_g
 }
 
 void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
-                     std::vector<bool> & has_bus_been_added,
-                     const Eigen::VectorXi & slack_bus_id_solver,
-                     const std::vector<int> & id_grid_to_solver) const
+                                std::vector<bool> & has_bus_been_added,
+                                const Eigen::VectorXi & slack_bus_id_solver,
+                                const std::vector<int> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
@@ -198,12 +198,12 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
 }
 
 void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                              const Eigen::Ref<const RealVect> & Vm,
-                              const Eigen::Ref<const CplxVect> & V,
-                              const std::vector<int> & id_grid_to_solver,
-                              const RealVect & bus_vn_kv,
-                              real_type sn_mva,
-                              bool ac)
+                                         const Eigen::Ref<const RealVect> & Vm,
+                                         const Eigen::Ref<const CplxVect> & V,
+                                         const std::vector<int> & id_grid_to_solver,
+                                         const RealVect & bus_vn_kv,
+                                         real_type sn_mva,
+                                         bool ac)
 {
     const int nb_gen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
@@ -257,8 +257,10 @@ void GeneratorContainer::change_p(int gen_id, real_type new_p, SolverControl & s
             solver_control.tell_pv_changed();
            }
     }
-    if (p_mw_(gen_id) != new_p) solver_control.tell_recompute_sbus();
-    p_mw_(gen_id) = new_p;
+    if (p_mw_(gen_id) != new_p){
+        solver_control.tell_recompute_sbus();
+        p_mw_(gen_id) = new_p;
+    }
 }
 
 void GeneratorContainer::change_q(int gen_id, real_type new_q, SolverControl & solver_control)
@@ -275,8 +277,10 @@ void GeneratorContainer::change_q(int gen_id, real_type new_q, SolverControl & s
     }
     // TODO DEBUG MODE : raise an error if generator is regulating voltage, maybe ? 
     // this would have not effect
-    if (q_mvar_(gen_id) != new_q) solver_control.tell_recompute_sbus();
-    q_mvar_(gen_id) = new_q;
+    if (q_mvar_(gen_id) != new_q){
+        solver_control.tell_recompute_sbus();
+        q_mvar_(gen_id) = new_q;
+    }
 }
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)

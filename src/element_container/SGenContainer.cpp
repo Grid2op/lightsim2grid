@@ -7,14 +7,15 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "SGenContainer.h"
+#include <iostream>
 
 void SGenContainer::init(const RealVect & sgen_p,
-                    const RealVect & sgen_q,
-                    const RealVect & sgen_pmin,
-                    const RealVect & sgen_pmax,
-                    const RealVect & sgen_qmin,
-                    const RealVect & sgen_qmax,
-                    const Eigen::VectorXi & sgen_bus_id)
+                         const RealVect & sgen_q,
+                         const RealVect & sgen_pmin,
+                         const RealVect & sgen_pmax,
+                         const RealVect & sgen_qmin,
+                         const RealVect & sgen_qmax,
+                         const Eigen::VectorXi & sgen_bus_id)
 {
     int size = static_cast<int>(sgen_p.size());
     GenericContainer::check_size(sgen_p, size, "sgen_p");
@@ -100,19 +101,18 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_t
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        tmp = static_cast<cplx_type>(p_mw_(sgen_id));
-        tmp += my_i * q_mvar_(sgen_id);
+        tmp = {p_mw_(sgen_id), q_mvar_(sgen_id)};
         Sbus.coeffRef(bus_id_solver) += tmp;
     }
 }
 
 void SGenContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                               const Eigen::Ref<const RealVect> & Vm,
-                               const Eigen::Ref<const CplxVect> & V,
-                               const std::vector<int> & id_grid_to_solver,
-                               const RealVect & bus_vn_kv,
-                               real_type sn_mva,
-                               bool ac)
+                                    const Eigen::Ref<const RealVect> & Vm,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const std::vector<int> & id_grid_to_solver,
+                                    const RealVect & bus_vn_kv,
+                                    real_type sn_mva,
+                                    bool ac)
 {
     const int nb_sgen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_sgen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
@@ -139,8 +139,10 @@ void SGenContainer::change_p(int sgen_id, real_type new_p, SolverControl & solve
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
-    if (p_mw_(sgen_id) != new_p) solver_control.tell_recompute_sbus();
-    p_mw_(sgen_id) = new_p;
+    if (p_mw_(sgen_id) != new_p){
+        solver_control.tell_recompute_sbus();
+        p_mw_(sgen_id) = new_p;
+    }
 }
 
 void SGenContainer::change_q(int sgen_id, real_type new_q, SolverControl & solver_control)
@@ -154,8 +156,10 @@ void SGenContainer::change_q(int sgen_id, real_type new_q, SolverControl & solve
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
-    if (q_mvar_(sgen_id) != new_q) solver_control.tell_recompute_sbus();
-    q_mvar_(sgen_id) = new_q;
+    if (q_mvar_(sgen_id) != new_q){
+        solver_control.tell_recompute_sbus();
+        q_mvar_(sgen_id) = new_q;
+    }
 }
 
 void SGenContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {

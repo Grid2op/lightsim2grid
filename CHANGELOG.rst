@@ -39,6 +39,7 @@ Change Log
 - [FIXED] a bug where copying a lightsim2grid `GridModel` did not fully copy it
 - [FIXED] a bug in the "topo_vect" comprehension cpp side (sometimes some buses 
   might not be activated / deactivated correctly)
+- [FIXED] read the docs was broken
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.

@@ -48,9 +48,9 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 }
 
 void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                         bool ac,
-                         const std::vector<int> & id_grid_to_solver,
-                         real_type sn_mva) const
+                              bool ac,
+                              const std::vector<int> & id_grid_to_solver,
+                              real_type sn_mva) const
 {
     if(!ac) return; // no shunt in DC
 
@@ -79,10 +79,10 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 }
 
 void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                           std::vector<Eigen::Triplet<real_type> > & Bpp,
-                           const std::vector<int> & id_grid_to_solver,
-                           real_type sn_mva,
-                           FDPFMethod xb_or_bx) const
+                                std::vector<Eigen::Triplet<real_type> > & Bpp,
+                                const std::vector<int> & id_grid_to_solver,
+                                real_type sn_mva,
+                                FDPFMethod xb_or_bx) const
 {
     const Eigen::Index nb_shunt = static_cast<int>(q_mvar_.size());
     real_type tmp;
@@ -174,9 +174,8 @@ void ShuntContainer::change_p(int shunt_id, real_type new_p, SolverControl & sol
     if(p_mw_(shunt_id) != new_p){
         solver_control.tell_recompute_ybus();
         solver_control.tell_recompute_sbus();  // in dc mode sbus is modified
+        p_mw_(shunt_id) = new_p;
     }
-    p_mw_(shunt_id) = new_p;
-
 }
 
 void ShuntContainer::change_q(int shunt_id, real_type new_q, SolverControl & solver_control)
@@ -185,8 +184,8 @@ void ShuntContainer::change_q(int shunt_id, real_type new_q, SolverControl & sol
     if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
     if(q_mvar_(shunt_id) != new_q){
         solver_control.tell_recompute_ybus();
+        q_mvar_(shunt_id) = new_q;
     }
-    q_mvar_(shunt_id) = new_q;
 }
 
 void ShuntContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {

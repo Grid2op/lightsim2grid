@@ -7,12 +7,15 @@
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
 import warnings
+import copy
 import pandapower as pp
-import numpy as np
+import numpy as np        
+import hashlib
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from grid2op import make, Parameters
 from grid2op.Chronics import FromNPY
+from grid2op.Backend import PandaPowerBackend
 from lightsim2grid import LightSimBackend, TimeSerie
 try:
     from lightsim2grid import ContingencyAnalysis
@@ -33,6 +36,8 @@ except ImportError:
     
 VERBOSE = False
 MAKE_PLOT = False
+WITH_PP = False
+DEBUG = False
 
 case_names = [
               "case14.json",
@@ -69,7 +74,28 @@ def make_grid2op_env(pp_case, casse_name, load_p, load_q, gen_p, sgen_p):
                             )
     return env_lightsim
 
-def get_loads_gens(load_p_init, load_q_init, gen_p_init, sgen_p_init):
+
+def make_grid2op_env_pp(pp_case, casse_name, load_p, load_q, gen_p, sgen_p):
+    param = Parameters.Parameters()
+    param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
+        
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        env_pp = make("blank",
+                      param=param, test=True,
+                      backend=PandaPowerBackend(lightsim2grid=False),
+                      chronics_class=FromNPY,
+                      data_feeding_kwargs={"load_p": load_p,
+                                           "load_q": load_q,
+                                           "prod_p": gen_p
+                                          },
+                      grid_path=case_name,
+                      _add_to_name=f"{case_name}",
+                     )
+    return env_pp
+
+
+def get_loads_gens(load_p_init, load_q_init, gen_p_init, sgen_p_init, prng):
     # scale loads
 
     # use some French time series data for loads
@@ -137,28 +163,31 @@ def get_loads_gens(load_p_init, load_q_init, gen_p_init, sgen_p_init):
     vals = np.array(vals) * coeffs["month"]["oct"] * coeffs["day"]["mon"]
     x_interp = 12 * np.arange(len(vals))
     coeffs = interp1d(x=x_interp, y=vals, kind="cubic")
-    all_vals = coeffs(x_final)
+    all_vals = coeffs(x_final).reshape(-1, 1)
+    if DEBUG:
+        all_vals[:] = 1
     
     # compute the "smooth" loads matrix
-    load_p_smooth = all_vals.reshape(-1, 1) * load_p_init.reshape(1, -1)
-    load_q_smooth = all_vals.reshape(-1, 1) * load_q_init.reshape(1, -1)
+    load_p_smooth = all_vals * load_p_init.reshape(1, -1)
+    load_q_smooth = all_vals * load_q_init.reshape(1, -1)
 
     # add a bit of noise to it to get the "final" loads matrix
-    load_p = load_p_smooth * np.random.lognormal(mean=0., sigma=0.003, size=load_p_smooth.shape)
-    load_q = load_q_smooth * np.random.lognormal(mean=0., sigma=0.003, size=load_q_smooth.shape)
-
+    load_p = load_p_smooth * prng.lognormal(mean=0., sigma=0.003, size=load_p_smooth.shape)
+    load_q = load_q_smooth * prng.lognormal(mean=0., sigma=0.003, size=load_q_smooth.shape)
+    if DEBUG:
+        load_p[:] = load_p_smooth
+        load_q[:] = load_q_smooth
+    
     # scale generators accordingly
     gen_p = load_p.sum(axis=1).reshape(-1, 1) / load_p_init.sum() * gen_p_init.reshape(1, -1)
     sgen_p = load_p.sum(axis=1).reshape(-1, 1) / load_p_init.sum() * sgen_p_init.reshape(1, -1)
-
     return load_p, load_q, gen_p, sgen_p
 
 
 if __name__ == "__main__":
-    np.random.seed(42)
-    
+    prng = np.random.default_rng(42)
     case_names_displayed = [get_env_name_displayed(el) for el in case_names]
-    g2op_times = []
+    solver_preproc_solver_time = []
     g2op_speeds = []
     g2op_sizes = []
     g2op_step_time = []
@@ -197,8 +226,14 @@ if __name__ == "__main__":
             res_unit = "ms"
 
         # simulate the data
-        load_p, load_q, gen_p, sgen_p = get_loads_gens(load_p_init, load_q_init, gen_p_init, sgen_p_init)
-        
+        load_p, load_q, gen_p, sgen_p = get_loads_gens(load_p_init, load_q_init, gen_p_init, sgen_p_init, prng)
+        if DEBUG:
+            hash_fun = hashlib.blake2b(digest_size=16)
+            hash_fun.update(load_p.tobytes())
+            hash_fun.update(load_q.tobytes())
+            hash_fun.update(gen_p.tobytes())
+            hash_fun.update(sgen_p.tobytes())
+            print(hash_fun.hexdigest())        
         # create the grid2op env
         nb_ts = gen_p.shape[0]
         # add slack !
@@ -206,15 +241,33 @@ if __name__ == "__main__":
         if "res_ext_grid" in case:
             slack_gens += np.tile(case.res_ext_grid["p_mw"].values.reshape(1,-1), (nb_ts, 1))
         gen_p_g2op = np.concatenate((gen_p, slack_gens), axis=1)  
-        # get the env
+        # get the env        
+        if WITH_PP:
+            env_pp = make_grid2op_env_pp(case,
+                                         case_name,
+                                         load_p,
+                                         load_q,
+                                         gen_p_g2op,
+                                         sgen_p)
+            _ = env_pp.reset()
+            done = False
+            nb_step_pp = 0
+            changed_sgen = case.sgen["in_service"].values
+            while not done:
+                # hack for static gen...
+                env_pp.backend._grid.sgen["p_mw"] = sgen_p[nb_step_pp, :]
+                obs, reward, done, info = env_pp.step(env_pp.action_space())
+                nb_step_pp += 1
+            if nb_step_pp != nb_ts:
+                warnings.warn("Divergence even with pandapower !")
+            print("Pandapower stops, lightsim starts")
+            
         env_lightsim = make_grid2op_env(case,
                                         case_name,
                                         load_p,
                                         load_q,
                                         gen_p_g2op,
                                         sgen_p)
-        
-        
         # Perform the computation using grid2op
         _ = env_lightsim.reset()
         done = False
@@ -222,16 +275,20 @@ if __name__ == "__main__":
         changed_sgen = case.sgen["in_service"].values
         while not done:
             # hack for static gen...
-            env_lightsim.backend._grid.update_sgens_p(changed_sgen,
-                                                      sgen_p[nb_step, changed_sgen].astype(np.float32))
+            changed_sgen = copy.deepcopy(case.sgen["in_service"].values)
+            this_sgen = sgen_p[nb_step, :].astype(np.float32)
+            # this_sgen = sgen_p_init[changed_sgen].astype(np.float32)
+            env_lightsim.backend._grid.update_sgens_p(changed_sgen, this_sgen)
             obs, reward, done, info = env_lightsim.step(env_lightsim.action_space())
             nb_step += 1
         # NB lightsim2grid does not handle "static gen" because I cannot set "p" in gen in grid2op
         # so results will vary between TimeSeries and grid2op !
-            
+        # env_lightsim.backend._grid.tell_solver_need_reset()
+        # env_lightsim.backend._grid.dc_pf(env_lightsim.backend.V, 1, 1e-7)
+        # env_lightsim.backend._grid.get_bus_status()
         if nb_step != nb_ts:
             warnings.warn(f"only able to make {nb_step} (out of {nb_ts}) for {case_name} in grid2op. Results will not be availabe for grid2op step")
-            g2op_times.append(None)
+            solver_preproc_solver_time.append(None)
             g2op_speeds.append(None)
             g2op_step_time.append(None)
             ls_solver_time.append(None)
@@ -239,8 +296,8 @@ if __name__ == "__main__":
             g2op_sizes.append(env_lightsim.n_sub)
         else:
             total_time = env_lightsim.backend._timer_preproc + env_lightsim.backend._timer_solver # + env_lightsim.backend._timer_postproc
-            total_time = env_lightsim._time_step
-            g2op_times.append(total_time)
+            # total_time = env_lightsim._time_step
+            solver_preproc_solver_time.append(total_time)
             g2op_speeds.append(1.0 * nb_step / total_time)
             g2op_step_time.append(1.0 * env_lightsim._time_step / nb_step)
             ls_solver_time.append(env_lightsim.backend.comp_time)
@@ -262,7 +319,7 @@ if __name__ == "__main__":
                                      env_lightsim.backend.tol)
         time_serie._TimeSerie__computed = True
         a_or = time_serie.compute_A()
-        assert status, f"some powerflow diverge for {case_name}: {computer.nb_solved()} "
+        assert status, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
 
         if VERBOSE:
             # print detailed results if needed
@@ -311,9 +368,9 @@ if __name__ == "__main__":
     for i, nm_ in enumerate(case_names_displayed):
         tab_g2op.append((nm_,
                          ts_sizes[i],
+                         1000. * g2op_step_time[i] if g2op_step_time[i] else None,
                          1000. / g2op_speeds[i] if g2op_speeds[i] else None,
                          g2op_speeds[i],
-                         1000. * g2op_step_time[i] if g2op_step_time[i] else None,
                          1000. * ls_gridmodel_time[i] / nb_step if ls_gridmodel_time[i] else None,
                          1000. * ls_solver_time[i] / nb_step if ls_solver_time[i] else None,
                          ))
@@ -321,9 +378,9 @@ if __name__ == "__main__":
         res_use_with_grid2op_2 = tabulate(tab_g2op,
                                           headers=["grid",
                                                    "size (nb bus)",
-                                                   "step time (ms / pf)",
-                                                   "speed (pf / s)",
                                                    "avg step duration (ms)",
+                                                   "time [DC + AC] (ms / pf)",
+                                                   "speed (pf / s)",
                                                    "time in 'gridmodel' (ms / pf)",
                                                    "time in 'pf algo' (ms / pf)",
                                                    ], 
@@ -362,7 +419,7 @@ if __name__ == "__main__":
         
     if MAKE_PLOT:
         # make the plot summarizing all results
-        plt.plot(g2op_sizes, g2op_times, linestyle='solid', marker='+', markersize=8)
+        plt.plot(g2op_sizes, solver_preproc_solver_time, linestyle='solid', marker='+', markersize=8)
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Time taken (s)")
         plt.title(f"Time to compute {g2op_sizes[0]} powerflows using Grid2Op.step (dc pf [init] + ac pf)")

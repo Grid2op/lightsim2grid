@@ -415,6 +415,7 @@ class LightSimBackend(Backend):
             self._load_grid_pypowsybl(path, filename)
         else:
             raise BackendError(f"Impossible to initialize the backend with '{self._loader_method}'")
+        self._grid.tell_solver_need_reset()
     
     def _should_not_have_to_do_this(self, path=None, filename=None):
         # included in grid2op now !
@@ -1230,3 +1231,4 @@ class LightSimBackend(Backend):
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
+        self._grid.tell_solver_need_reset()

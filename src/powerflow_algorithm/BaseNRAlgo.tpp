@@ -88,13 +88,27 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
     // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
-    value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRAlgo<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRAlgo<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-    dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
-    dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
+    if(need_factorize_ ||
+       _solver_control.need_reset_solver() || 
+       _solver_control.has_dimension_changed() ||
+       _solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
+       _solver_control.ybus_change_sparsity_pattern() ||
+       _solver_control.has_ybus_some_coeffs_zero() ||
+       _solver_control.need_recompute_ybus() ||
+       _solver_control.has_slack_participate_changed() ||
+       _solver_control.has_pv_changed() ||
+       _solver_control.has_pq_changed()
+       )
+       {
+        value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+        dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+        dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
+
+       }
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);

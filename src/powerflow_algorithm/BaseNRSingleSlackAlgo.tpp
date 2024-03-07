@@ -11,15 +11,15 @@
 
 template<class LinearSolver>
 bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                       CplxVect & V,
-                                                       const CplxVect & Sbus,
-                                                       const Eigen::VectorXi & slack_ids,
-                                                       const RealVect & slack_weights,  // unused here
-                                                       const Eigen::VectorXi & pv,
-                                                       const Eigen::VectorXi & pq,
-                                                       int max_iter,
-                                                       real_type tol
-                                                       )
+                                                     CplxVect & V,
+                                                     const CplxVect & Sbus,
+                                                     const Eigen::VectorXi & slack_ids,
+                                                     const RealVect & slack_weights,  // unused here
+                                                     const Eigen::VectorXi & pv,
+                                                     const Eigen::VectorXi & pq,
+                                                     int max_iter,
+                                                     real_type tol
+                                                     )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -75,12 +75,27 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
 
     const cplx_type m_i = BaseNRAlgo<LinearSolver>::my_i;  // otherwise it does not compile
-    BaseNRAlgo<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed
-    BaseNRAlgo<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed
-    BaseNRAlgo<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed
-    // BaseNRAlgo<LinearSolver>::J_.setZero();  // TODO smarter solver: only needed if ybus has changed or pq changed or pv changed or ybus_some_coeffs_zero_
-    // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
-    // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
+    if(BaseNRAlgo<LinearSolver>::need_factorize_ ||
+       BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() || 
+       BaseNRAlgo<LinearSolver>::_solver_control.has_dimension_changed() ||
+       BaseNRAlgo<LinearSolver>::_solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
+       BaseNRAlgo<LinearSolver>::_solver_control.ybus_change_sparsity_pattern() ||
+       BaseNRAlgo<LinearSolver>::_solver_control.has_ybus_some_coeffs_zero() ||
+       BaseNRAlgo<LinearSolver>::_solver_control.need_recompute_ybus() ||
+    // BaseNRAlgo<LinearSolver>::   _solver_control.has_slack_participate_changed() ||
+       BaseNRAlgo<LinearSolver>::_solver_control.has_pv_changed() ||
+       BaseNRAlgo<LinearSolver>::_solver_control.has_pq_changed()
+       )
+       {
+        BaseNRAlgo<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
+        BaseNRAlgo<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+        BaseNRAlgo<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
+        // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
+
+       }
     while ((!converged) & (BaseNRAlgo<LinearSolver>::nr_iter_ < max_iter)){
         BaseNRAlgo<LinearSolver>::nr_iter_++;
         // std::cout << "\tnr_iter_ " << BaseNRAlgo<LinearSolver>::nr_iter_ << std::endl;

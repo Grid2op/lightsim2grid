@@ -67,22 +67,35 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
     const auto n_pq = pq.size();
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq;  // pvpq = r_[pv, pq]
+    const auto n_pvpq = pvpq.size();
 
     // fill the sparse matrix Bp and Bpp (depends on the method: BX or XB)
-    //TODO     if(need_factorize_) ???
-    Eigen::SparseMatrix<real_type> grid_Bp;
-    Eigen::SparseMatrix<real_type> grid_Bpp;
-    fillBp_Bpp(grid_Bp, grid_Bpp);
-    
-    // fill the solver matrices Bp and Bpp : 
-    // Bp_ = Bp[array([pvpq]).T, pvpq].tocsc() # splu requires a CSC matrix
-    // Bpp_ = Bpp[array([pq]).T, pq].tocsc()
-    const auto n_pvpq = pvpq.size();
-    std::vector<int> pvpq_inv(V.size(), -1);
-    for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
-    std::vector<int> pq_inv(V.size(), -1);
-    for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
-    fill_sparse_matrices(grid_Bp, grid_Bpp, pvpq_inv, pq_inv, n_pvpq, n_pq);
+    if(need_factorize_ ||
+       _solver_control.need_reset_solver() || 
+       _solver_control.has_dimension_changed() ||
+       _solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
+       _solver_control.ybus_change_sparsity_pattern() ||
+       _solver_control.has_ybus_some_coeffs_zero() ||
+       _solver_control.need_recompute_ybus() ||
+       _solver_control.has_slack_participate_changed() ||
+       _solver_control.has_pv_changed() ||
+       _solver_control.has_pq_changed()
+       )
+       {
+            // extract Bp and Bpp for the whole grid
+            Eigen::SparseMatrix<real_type> grid_Bp;
+            Eigen::SparseMatrix<real_type> grid_Bpp;
+            fillBp_Bpp(grid_Bp, grid_Bpp);
+            
+            // fill the solver matrices Bp_ and Bpp_
+            // Bp_ = Bp[array([pvpq]).T, pvpq].tocsc()
+            // Bpp_ = Bpp[array([pq]).T, pq].tocsc()
+            std::vector<int> pvpq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
+            std::vector<int> pq_inv(V.size(), -1);
+            for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
+            fill_sparse_matrices(grid_Bp, grid_Bpp, pvpq_inv, pq_inv, n_pvpq, n_pq);
+       }
 
     V_ = V;  // V = V0
     Vm_ = V_.array().abs();   // Vm = abs(V)
@@ -160,11 +173,11 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
 
 template<class LinearSolver, FDPFMethod XB_BX>
 void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp,
-                                                               const Eigen::SparseMatrix<real_type> & grid_Bpp,
-                                                               const std::vector<int> & pvpq_inv,
-                                                               const std::vector<int> & pq_inv,
-                                                               Eigen::Index n_pvpq,
-                                                               Eigen::Index n_pq)
+                                                             const Eigen::SparseMatrix<real_type> & grid_Bpp,
+                                                             const std::vector<int> & pvpq_inv,
+                                                             const std::vector<int> & pq_inv,
+                                                             Eigen::Index n_pvpq,
+                                                             Eigen::Index n_pq)
 {
   /**
    Init Bp_ and Bpp_ such that:
