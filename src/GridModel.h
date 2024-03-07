@@ -92,6 +92,8 @@ class GridModel : public GenericContainer
                 >  StateRes;
 
         GridModel():
+          timer_last_ac_pf_(0.),
+          timer_last_dc_pf_(0.),
           solver_control_(),
           compute_results_(true),
           init_vm_pu_(1.04),
@@ -113,6 +115,8 @@ class GridModel : public GenericContainer
         void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
         const IntVect & get_ls_to_orig(void) const {return _ls_to_orig;}
         const IntVect & get_orig_to_ls(void) const {return _orig_to_ls;}
+        double timer_last_ac_pf() const {return timer_last_ac_pf_;}
+        double timer_last_dc_pf() const {return timer_last_dc_pf_;}
 
         Eigen::Index total_bus() const {return bus_vn_kv_.size();}
         const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
@@ -613,8 +617,7 @@ class GridModel : public GenericContainer
         }
         void set_max_nb_bus_per_sub(int max_nb_bus_per_sub)
         {
-            max_nb_bus_per_sub_ = max_nb_bus_per_sub;
-            if(bus_vn_kv_.size() != n_sub_ * max_nb_bus_per_sub_){
+            if(bus_vn_kv_.size() != n_sub_ * max_nb_bus_per_sub){
                 std::ostringstream exc_;
                 exc_ << "GridModel::set_max_nb_bus_per_sub: ";
                 exc_ << "your model counts ";
@@ -624,7 +627,9 @@ class GridModel : public GenericContainer
                 exc_ << "substations / buses per substations with `set_n_sub` / `set_max_nb_bus_per_sub`";
                 throw std::runtime_error(exc_.str());
             }
+            max_nb_bus_per_sub_ = max_nb_bus_per_sub;
         }
+        int get_max_nb_bus_per_sub() const { return max_nb_bus_per_sub_;}
         
         void fillSbus_other(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver){
             fillSbus_me(res, ac, id_me_to_solver);
@@ -746,8 +751,8 @@ class GridModel : public GenericContainer
                 int new_bus = new_values(el_pos);
                 if(new_bus > 0){
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
-                    int init_bus_me = vect_subid(el_id);
-                    int new_bus_backend = new_bus == 1 ? init_bus_me : init_bus_me + n_sub_ * (max_nb_bus_per_sub_ - 1);
+                    int sub_id = vect_subid(el_id);
+                    int new_bus_backend = sub_id + (new_bus - 1) * n_sub_;
                     bus_status_[new_bus_backend] = true;
                     (this->*fun_react)(el_id); // eg reactivate_load(load_id);
                     (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
@@ -774,7 +779,8 @@ class GridModel : public GenericContainer
         IntVect _orig_to_ls;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
 
         // member of the grid
-        // static const int _deactivated_bus_id;
+        double timer_last_ac_pf_;
+        double timer_last_dc_pf_;
 
         // bool need_reset_solver_;  // some matrices change size, needs to be computed
         // bool need_recompute_sbus_;  // some coeff of sbus changed, need to recompute it

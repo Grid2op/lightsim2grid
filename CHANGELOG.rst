@@ -21,7 +21,7 @@ Change Log
 [0.7.6] 2023-xx-yy
 --------------------
 - [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
-  If you previously used `gridmodel.get_Subus()` to retrieve the Sbus used for DC powerflow, please use
+  If you previously used `gridmodel.get_Sbus()` to retrieve the Sbus used for DC powerflow, please use
   `gridmodel.get_dcSbus()` instead.
 - [DEPRECATED] in the cpp class: the old `SecurityAnalysisCPP` has been renamed `ContingencyAnalysisCPP`
   (you should not import it, but it you do you can `from lightsim2grid.securityAnalysis import ContingencyAnalysisCPP` now)
@@ -45,6 +45,9 @@ Change Log
 - [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
 - [ADDED] computation of PTPF (Power Transfer Distribution Factor) is now possible
 - [ADDED] (not tested) support for more than 2 busbars per substation
+- [ADDED] a timer to get the time spent in the gridmodel for the powerflow (env.backend.timer_gridmodel_xx_pf)
+  which also include the time 
+- [ADDED] support for more than 2 busbars per substation (requires grid2op >= 1.10.0)
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
 - [IMPROVED] clean ce cpp side by refactoring: making clearer the difference (linear) solver

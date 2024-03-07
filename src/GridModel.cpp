@@ -330,6 +330,9 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
         Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();
     }
 
+    timer_last_ac_pf_= 0.;
+    timer_last_dc_pf_ = 0.;
+
     acSbus_ = CplxVect();
     dcSbus_ = CplxVect();
     bus_pv_ = Eigen::VectorXi();
@@ -356,6 +359,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                           int max_iter,
                           real_type tol)
 {
+    auto timer = CustTimer();
     const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
@@ -399,6 +403,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     // std::cout << "\tbefore process_results" << std::endl;
     process_results(conv, res, Vinit, true, id_me_to_ac_solver_);
 
+    timer_last_ac_pf_ = timer.duration();
     // return the vector of complex voltage at each bus
     return res;
 };
@@ -882,6 +887,8 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     // the idea is to "mess" with the Sbus beforehand to split the "losses"
     // ie fake the action of generators to adjust Sbus such that sum(Sbus) = 0
     // and the slack contribution factors are met.
+    auto timer = CustTimer();
+
     const int nb_bus = static_cast<int>(bus_vn_kv_.size());
     if(Vinit.size() != nb_bus){
         //TODO DEBUG MODE: 
@@ -929,7 +936,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     // std::cout << "\tprocess_results (dc) \n";
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, is_ac, id_me_to_dc_solver_);
-    // std::cout << "\tafter compute_pf\n";
+    timer_last_dc_pf_ = timer.duration();
     return res;
 }
 

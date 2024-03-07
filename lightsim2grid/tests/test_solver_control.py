@@ -25,7 +25,6 @@ import warnings
 import numpy as np
 import grid2op
 from grid2op.Action import CompleteAction
-from grid2op.Parameters import Parameters
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.solver import SolverType

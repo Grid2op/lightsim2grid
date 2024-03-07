@@ -13,7 +13,12 @@ from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from grid2op import make, Parameters
 from grid2op.Chronics import FromNPY
-from lightsim2grid import LightSimBackend, TimeSerie, SecurityAnalysis
+from lightsim2grid import LightSimBackend, TimeSerie
+try:
+    from lightsim2grid import ContingencyAnalysis
+except ImportError:
+    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
+    
 from tqdm import tqdm
 import os
 from utils_benchmark import print_configuration, get_env_name_displayed
@@ -157,6 +162,8 @@ if __name__ == "__main__":
     g2op_speeds = []
     g2op_sizes = []
     g2op_step_time = []
+    ls_solver_time = []
+    ls_gridmodel_time = []
     
     ts_times = []
     ts_speeds = []
@@ -227,13 +234,18 @@ if __name__ == "__main__":
             g2op_times.append(None)
             g2op_speeds.append(None)
             g2op_step_time.append(None)
+            ls_solver_time.append(None)
+            ls_gridmodel_time.append(None)
             g2op_sizes.append(env_lightsim.n_sub)
         else:
             total_time = env_lightsim.backend._timer_preproc + env_lightsim.backend._timer_solver # + env_lightsim.backend._timer_postproc
+            total_time = env_lightsim._time_step
             g2op_times.append(total_time)
             g2op_speeds.append(1.0 * nb_step / total_time)
             g2op_step_time.append(1.0 * env_lightsim._time_step / nb_step)
-            g2op_sizes.append(env_lightsim.n_sub)
+            ls_solver_time.append(env_lightsim.backend.comp_time)
+            ls_gridmodel_time.append(env_lightsim.backend.timer_gridmodel_xx_pf)
+        g2op_sizes.append(env_lightsim.n_sub)
         
         # Perform the computation using TimeSerie
         env_lightsim.reset()
@@ -274,7 +286,7 @@ if __name__ == "__main__":
 
         # Perform a securtiy analysis (up to 1000 contingencies)
         env_lightsim.reset()
-        sa = SecurityAnalysis(env_lightsim)
+        sa = ContingencyAnalysis(env_lightsim)
         for i in range(env_lightsim.n_line):
             sa.add_single_contingency(i)
             if i >= 1000:
@@ -297,11 +309,24 @@ if __name__ == "__main__":
     print("Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf')")
     tab_g2op = []
     for i, nm_ in enumerate(case_names_displayed):
-        tab_g2op.append((nm_, ts_sizes[i], 1000. / g2op_speeds[i] if g2op_speeds[i] else None, g2op_speeds[i],
-                         1000. * g2op_step_time[i] if g2op_step_time[i] else None))
+        tab_g2op.append((nm_,
+                         ts_sizes[i],
+                         1000. / g2op_speeds[i] if g2op_speeds[i] else None,
+                         g2op_speeds[i],
+                         1000. * g2op_step_time[i] if g2op_step_time[i] else None,
+                         1000. * ls_gridmodel_time[i] / nb_step if ls_gridmodel_time[i] else None,
+                         1000. * ls_solver_time[i] / nb_step if ls_solver_time[i] else None,
+                         ))
     if TABULATE_AVAIL:
         res_use_with_grid2op_2 = tabulate(tab_g2op,
-                                          headers=["grid", "size (nb bus)", "time (ms / pf)", "speed (pf / s)", "avg step duration (ms)"], 
+                                          headers=["grid",
+                                                   "size (nb bus)",
+                                                   "step time (ms / pf)",
+                                                   "speed (pf / s)",
+                                                   "avg step duration (ms)",
+                                                   "time in 'gridmodel' (ms / pf)",
+                                                   "time in 'pf algo' (ms / pf)",
+                                                   ], 
                                           tablefmt="rst")
         print(res_use_with_grid2op_2)
     else:
@@ -347,6 +372,20 @@ if __name__ == "__main__":
         plt.xlabel("Size (number of substation)")
         plt.ylabel("Speed (pf / s)")
         plt.title(f"Computation speed using Grid2Op.step (dc pf [init] + ac pf)")
+        plt.yscale("log")
+        plt.show()
+
+        plt.plot(g2op_sizes, ls_solver_time, linestyle='solid', marker='+', markersize=8)
+        plt.xlabel("Size (number of substation)")
+        plt.ylabel("Speed (solver time)")
+        plt.title(f"Computation speed for solving the powerflow only")
+        plt.yscale("log")
+        plt.show()
+
+        plt.plot(g2op_sizes, ls_gridmodel_time, linestyle='solid', marker='+', markersize=8)
+        plt.xlabel("Size (number of substation)")
+        plt.ylabel("Speed (solver time)")
+        plt.title(f"Computation speed for solving the powerflow only")
         plt.yscale("log")
         plt.show()
         

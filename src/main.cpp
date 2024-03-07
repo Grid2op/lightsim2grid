@@ -613,6 +613,12 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("copy", &GridModel::copy)
         .def_property("_ls_to_orig", &GridModel::get_ls_to_orig, &GridModel::set_ls_to_orig, "remember the conversion from bus index in lightsim2grid to bus index in original file format (*eg* pandapower of pypowsybl).")
         .def_property("_orig_to_ls", &GridModel::get_orig_to_ls, &GridModel::set_orig_to_ls, "remember the conversion from bus index in original file format (*eg* pandapower of pypowsybl) to bus index in lightsim2grid.")
+        .def_property("_max_nb_bus_per_sub",
+                      &GridModel::get_max_nb_bus_per_sub,
+                      &GridModel::set_max_nb_bus_per_sub,
+                      "do not modify it after loading !")
+        .def_property_readonly("timer_last_ac_pf", &GridModel::timer_last_ac_pf, "TODO")
+        .def_property_readonly("timer_last_dc_pf", &GridModel::timer_last_dc_pf, "TODO")
 
         // pickle
         .def(py::pickle(
