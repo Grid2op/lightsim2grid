@@ -190,10 +190,10 @@ class AuxInitFromPyPowSyBl:
                                   transformer_voltage_control_on=False,
                                 #   no_generator_reactive_limits=True,  # documented in the doc but apparently fails
                                   phase_shifter_regulation_on=False,
-                                  simul_shunt=False,
+                                #   simul_shunt=False,  # documented in the doc but apparently fails
                                   distributed_slack=False,
                                   provider_parameters={"slackBusSelectionMode": "NAME",
-                                                      "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
+                                                       "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
                                   ) 
             
         res_pypow = lf.run_ac(self.network_ref, parameters=param)
