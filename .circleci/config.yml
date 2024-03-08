@@ -318,8 +318,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full git -y
-            - run: python3 -m pip install virtualenv
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
@@ -368,7 +367,7 @@ jobs:
             size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
-            - run: choco install python --version=3.10
+            - run: choco install python --version=3.10  --force
             - run: py --version 
             - run: py -m pip install --upgrade pip setuptools wheel
             - run: py -m pip install virtualenv

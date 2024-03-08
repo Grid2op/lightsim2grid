@@ -42,6 +42,8 @@ Change Log
 - [FIXED] a bug when reading a grid initialize from pypowsybl (trafo names where put in place 
   of shunt names)
 - [FIXED] read the docs was broken
+- [FIXED] a bug when reading a grid from pandapower for multiple slacks when slack 
+  are given by the "ext_grid" information.
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.

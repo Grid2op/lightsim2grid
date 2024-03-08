@@ -462,8 +462,12 @@ class LightSimBackend(Backend):
             orig_to_ls = np.array(self._grid._orig_to_ls)
             bus_doubled = np.concatenate([bus_init for _ in range(self.n_busbar_per_sub)])
             self._grid.init_bus(bus_doubled, 0, 0)
-            for i in range(self.__nb_bus_before):
-                self._grid.deactivate_bus(i + self.__nb_bus_before)
+            if hasattr(type(self), "can_handle_more_than_2_busbar"):
+                for i in range(self.__nb_bus_before * (self.n_busbar_per_sub - 1)):
+                    self._grid.deactivate_bus(i + self.__nb_bus_before)
+            else:
+                for i in range(self.__nb_bus_before):
+                    self._grid.deactivate_bus(i + self.__nb_bus_before)
             new_orig_to_ls = np.concatenate([orig_to_ls + i * self.__nb_bus_before 
                                              for i in range(self.n_busbar_per_sub)]
                                             )
@@ -622,7 +626,14 @@ class LightSimBackend(Backend):
 
         self._grid = init(self.init_pp_backend._grid)    
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
-        self._aux_setup_right_after_grid_init()
+        self._aux_setup_right_after_grid_init()        
+        
+        # deactive the buses that have been added
+        for bus_id, bus_status in enumerate(self.init_pp_backend._grid.bus["in_service"].values):
+            if bus_status:
+                self._grid.reactivate_bus(bus_id)
+            else:
+                self._grid.deactivate_bus(bus_id)
 
         self.n_line = self.init_pp_backend.n_line
         self.n_gen = self.init_pp_backend.n_gen
@@ -669,11 +680,6 @@ class LightSimBackend(Backend):
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
         self.thermal_limit_a = copy.deepcopy(self.init_pp_backend.thermal_limit_a)
-
-        # deactive the buses that have been added
-        nb_bus_init = self.init_pp_backend._grid.bus.shape[0] // 2
-        for i in range(nb_bus_init):
-            self._grid.deactivate_bus(i + nb_bus_init)
 
         self.__nb_powerline = self.init_pp_backend._grid.line.shape[0]
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()
