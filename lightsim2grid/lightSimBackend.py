@@ -568,7 +568,8 @@ class LightSimBackend(Backend):
             self._grid._max_nb_bus_per_sub = self.n_busbar_per_sub
             
     def _load_grid_pandapower(self, path=None, filename=None):
-        type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
+        if hasattr(type(self), "can_handle_more_than_2_busbar"):
+            type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
         self.init_pp_backend.load_grid(path, filename)
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
 
@@ -1091,11 +1092,12 @@ class LightSimBackend(Backend):
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
                            "_my_kwargs", "supported_grid_format", 
                            "_turned_off_pv", "_dist_slack_non_renew",
-                           "_loader_method", "_loader_kwargs"
+                           "_loader_method", "_loader_kwargs",
+                           "_missing_two_busbars_support_info", "n_busbar_per_sub"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
-                # this test is needed for backward compatibility with other grid2op version
+                # this test is needed for backward compatibility with older grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
 
         # copy the numpy array
@@ -1114,7 +1116,7 @@ class LightSimBackend(Backend):
                        ]
         for attr_nm in li_attr_npy:
             if hasattr(self, attr_nm):
-                # this test is needed for backward compatibility with other grid2op version
+                # this test is needed for backward compatibility with older grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
 
         # copy class attribute for older grid2op version (did not use the class attribute)
