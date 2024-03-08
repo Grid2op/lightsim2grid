@@ -11,9 +11,14 @@
 #include <iostream>
 
 void ShuntContainer::init(const RealVect & shunt_p_mw,
-                     const RealVect & shunt_q_mvar,
-                     const Eigen::VectorXi & shunt_bus_id)
+                          const RealVect & shunt_q_mvar,
+                          const Eigen::VectorXi & shunt_bus_id)
 {
+    int size = static_cast<int>(shunt_p_mw.size());
+    GenericContainer::check_size(shunt_p_mw, size, "shunt_p_mw");
+    GenericContainer::check_size(shunt_q_mvar, size, "shunt_q_mvar");
+    GenericContainer::check_size(shunt_bus_id, size, "shunt_bus_id");
+
     p_mw_ = shunt_p_mw;
     q_mvar_ = shunt_q_mvar;
     bus_id_ = shunt_bus_id;
@@ -132,12 +137,12 @@ void ShuntContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool a
 }
 
 void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                const Eigen::Ref<const RealVect> & Vm,
-                                const Eigen::Ref<const CplxVect> & V,
-                                const std::vector<int> & id_grid_to_solver,
-                                const RealVect & bus_vn_kv,
-                                real_type sn_mva,
-                                bool ac)
+                                     const Eigen::Ref<const RealVect> & Vm,
+                                     const Eigen::Ref<const CplxVect> & V,
+                                     const std::vector<int> & id_grid_to_solver,
+                                     const RealVect & bus_vn_kv,
+                                     real_type sn_mva,
+                                     bool ac)
 {
     const int nb_shunt = static_cast<int>(p_mw_.size());
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);

@@ -27,14 +27,17 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     }
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
+
 void GenericContainer::_reactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     status.at(el_id) = true;  //TODO why it's needed to do that again
 }
+
 void GenericContainer::_deactivate(int el_id, std::vector<bool> & status){
     bool val = status.at(el_id);
     status.at(el_id) = false;  //TODO why it's needed to do that again
 }
+
 void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
@@ -105,13 +108,14 @@ int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, con
 }
 
 void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
-                                const Eigen::Ref<const RealVect> & Vm,
-                                const std::vector<bool> & status,
-                                int nb_element,
-                                const Eigen::VectorXi & bus_me_id,
-                                const std::vector<int> & id_grid_to_solver,
-                                const RealVect & bus_vn_kv,
-                                RealVect & v){
+                                     const Eigen::Ref<const RealVect> & Vm,
+                                     const std::vector<bool> & status,
+                                     int nb_element,
+                                     const Eigen::VectorXi & bus_me_id,
+                                     const std::vector<int> & id_grid_to_solver,
+                                     const RealVect & bus_vn_kv,
+                                     RealVect & v)
+{
     v = RealVect::Constant(nb_element, -1.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
@@ -133,13 +137,13 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
 
 
 void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
-                                const Eigen::Ref<const RealVect> & Vm,
-                                const std::vector<bool> & status,
-                                int nb_element,
-                                const Eigen::VectorXi & bus_me_id,
-                                const std::vector<int> & id_grid_to_solver,
-                                const RealVect & bus_vn_kv,
-                                RealVect & theta){
+                                     const Eigen::Ref<const RealVect> & Vm,
+                                     const std::vector<bool> & status,
+                                     int nb_element,
+                                     const Eigen::VectorXi & bus_me_id,
+                                     const std::vector<int> & id_grid_to_solver,
+                                     const RealVect & bus_vn_kv,
+                                     RealVect & theta){
     theta = RealVect::Constant(nb_element, 0.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that

@@ -11,11 +11,11 @@
 #include <sstream>
 
 void LineContainer::init(const RealVect & branch_r,
-                    const RealVect & branch_x,
-                    const CplxVect & branch_h,
-                    const Eigen::VectorXi & branch_from_id,
-                    const Eigen::VectorXi & branch_to_id
-                    )
+                         const RealVect & branch_x,
+                         const CplxVect & branch_h,
+                         const Eigen::VectorXi & branch_from_id,
+                         const Eigen::VectorXi & branch_to_id
+                         )
 {
     /**
     This method initialize the Ybus matrix from the branch matrix.
@@ -28,6 +28,13 @@ void LineContainer::init(const RealVect & branch_r,
 
     //TODO consistency with trafo: have a converter methods to convert this value into pu, and store the pu
     // in this method
+
+    int size = static_cast<int>(branch_r.size());
+    GenericContainer::check_size(branch_r, size, "branch_r");
+    GenericContainer::check_size(branch_x, size, "branch_x");
+    GenericContainer::check_size(branch_h, size, "branch_h");
+    GenericContainer::check_size(branch_from_id, size, "branch_from_id");
+    GenericContainer::check_size(branch_to_id, size, "branch_to_id");
 
     bus_or_id_ = branch_from_id;
     bus_ex_id_ = branch_to_id;
@@ -40,12 +47,12 @@ void LineContainer::init(const RealVect & branch_r,
 }
 
 void LineContainer::init(const RealVect & branch_r,
-                    const RealVect & branch_x,
-                    const CplxVect & branch_h_or,
-                    const CplxVect & branch_h_ex,
-                    const Eigen::VectorXi & branch_from_id,
-                    const Eigen::VectorXi & branch_to_id
-                    )
+                         const RealVect & branch_x,
+                         const CplxVect & branch_h_or,
+                         const CplxVect & branch_h_ex,
+                         const Eigen::VectorXi & branch_from_id,
+                         const Eigen::VectorXi & branch_to_id
+                         )
 {
     /**
     This method initialize the Ybus matrix from the branch matrix.
@@ -58,6 +65,14 @@ void LineContainer::init(const RealVect & branch_r,
 
     //TODO consistency with trafo: have a converter methods to convert this value into pu, and store the pu
     // in this method
+
+    int size = static_cast<int>(branch_r.size());
+    GenericContainer::check_size(branch_r, size, "branch_r");
+    GenericContainer::check_size(branch_x, size, "branch_x");
+    GenericContainer::check_size(branch_h_or, size, "branch_h_or");
+    GenericContainer::check_size(branch_h_ex, size, "branch_h_ex");
+    GenericContainer::check_size(branch_from_id, size, "branch_from_id");
+    GenericContainer::check_size(branch_to_id, size, "branch_to_id");
 
     bus_or_id_ = branch_from_id;
     bus_ex_id_ = branch_to_id;
@@ -150,9 +165,9 @@ void LineContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac
 }
 
 void LineContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                        bool ac,
-                        const std::vector<int> & id_grid_to_solver,
-                        real_type sn_mva) const
+                             bool ac,
+                             const std::vector<int> & id_grid_to_solver,
+                             real_type sn_mva) const
 {
     // fill the matrix
     //TODO template here instead of "if" for ac / dc
@@ -206,10 +221,10 @@ void LineContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 }
 
 void LineContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                          std::vector<Eigen::Triplet<real_type> > & Bpp,
-                          const std::vector<int> & id_grid_to_solver,
-                          real_type sn_mva,
-                          FDPFMethod xb_or_bx) const
+                               std::vector<Eigen::Triplet<real_type> > & Bpp,
+                               const std::vector<int> & id_grid_to_solver,
+                               real_type sn_mva,
+                               FDPFMethod xb_or_bx) const
 {
 
     // For Bp
@@ -291,10 +306,10 @@ void LineContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 
 
 void LineContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                               const std::vector<int> & id_grid_to_solver,
-                               real_type sn_mva,
-                               int nb_powerline,
-                               bool transpose) const
+                                    const std::vector<int> & id_grid_to_solver,
+                                    real_type sn_mva,
+                                    int nb_powerline,
+                                    bool transpose) const
 {
     const Eigen::Index nb_line = powerlines_r_.size();
 
@@ -351,12 +366,12 @@ void LineContainer::reset_results()
 }
 
 void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                               const Eigen::Ref<const RealVect> & Vm,
-                               const Eigen::Ref<const CplxVect> & V,
-                               const std::vector<int> & id_grid_to_solver,
-                               const RealVect & bus_vn_kv,
-                               real_type sn_mva,
-                               bool ac)
+                                    const Eigen::Ref<const RealVect> & Vm,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const std::vector<int> & id_grid_to_solver,
+                                    const RealVect & bus_vn_kv,
+                                    real_type sn_mva,
+                                    bool ac)
 {
     // it needs to be initialized at 0.
     Eigen::Index nb_element = nb();

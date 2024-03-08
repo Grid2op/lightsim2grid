@@ -12,16 +12,16 @@
 #include <sstream>
 
 void TrafoContainer::init(const RealVect & trafo_r,
-                           const RealVect & trafo_x,
-                           const CplxVect & trafo_b,
-                           const RealVect & trafo_tap_step_pct,
-            //                        const RealVect & trafo_tap_step_degree,
-                           const RealVect & trafo_tap_pos,
-                           const RealVect & trafo_shift_degree,
-                           const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                           const Eigen::VectorXi & trafo_hv_id,
-                           const Eigen::VectorXi & trafo_lv_id
-                           )
+                          const RealVect & trafo_x,
+                          const CplxVect & trafo_b,
+                          const RealVect & trafo_tap_step_pct,
+            //                       const RealVect & trafo_tap_step_degree,
+                          const RealVect & trafo_tap_pos,
+                          const RealVect & trafo_shift_degree,
+                          const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                          const Eigen::VectorXi & trafo_hv_id,
+                          const Eigen::VectorXi & trafo_lv_id
+                          )
 {
     /**
     INPUT DATA ARE ALREADY PAIR UNIT !!
@@ -164,15 +164,17 @@ void TrafoContainer::_update_model_coeffs()
     }
 }
 
-void TrafoContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver)
+void TrafoContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res,
+                                    bool ac,
+                                    const std::vector<int> & id_grid_to_solver)
 {
     throw std::runtime_error("You should not use that!");
 }
 
 void TrafoContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                         bool ac,
-                         const std::vector<int> & id_grid_to_solver,
-                         real_type sn_mva) const
+                              bool ac,
+                              const std::vector<int> & id_grid_to_solver,
+                              real_type sn_mva) const
 {
     //TODO merge that with fillYbusBranch!
     //TODO template here instead of "if" for ac / dc
@@ -222,7 +224,10 @@ void TrafoContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
     }
 }
 
-void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver){
+void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
+                                                    bool ac,
+                                                    const std::vector<int> & id_grid_to_solver)
+{
     if(ac) return;
     // return;
     const int nb_trafo = nb();
@@ -256,13 +261,13 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, co
 }
 
 void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                const Eigen::Ref<const RealVect> & Vm,
-                                const Eigen::Ref<const CplxVect> & V,
-                                const std::vector<int> & id_grid_to_solver,
-                                const RealVect & bus_vn_kv,
-                                real_type sn_mva,
-                                bool ac
-                                )
+                                     const Eigen::Ref<const RealVect> & Vm,
+                                     const Eigen::Ref<const CplxVect> & V,
+                                     const std::vector<int> & id_grid_to_solver,
+                                     const RealVect & bus_vn_kv,
+                                     real_type sn_mva,
+                                     bool ac
+                                     )
 {
     // it needs to be initialized at 0.
     const int nb_element = nb();
@@ -360,10 +365,10 @@ void TrafoContainer::reset_results(){
 
 
 void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                          std::vector<Eigen::Triplet<real_type> > & Bpp,
-                          const std::vector<int> & id_grid_to_solver,
-                          real_type sn_mva,
-                          FDPFMethod xb_or_bx) const
+                                std::vector<Eigen::Triplet<real_type> > & Bpp,
+                                const std::vector<int> & id_grid_to_solver,
+                                real_type sn_mva,
+                                FDPFMethod xb_or_bx) const
 {
 
     // For Bp
@@ -461,10 +466,10 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 
 
 void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                               const std::vector<int> & id_grid_to_solver,
-                               real_type sn_mva,
-                               int nb_powerline,
-                               bool transpose) const
+                                     const std::vector<int> & id_grid_to_solver,
+                                     real_type sn_mva,
+                                     int nb_powerline,
+                                     bool transpose) const
 {
     const Eigen::Index nb_trafo = r_.size();
 

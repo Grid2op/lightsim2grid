@@ -39,6 +39,8 @@ Change Log
 - [FIXED] a bug where copying a lightsim2grid `GridModel` did not fully copy it
 - [FIXED] a bug in the "topo_vect" comprehension cpp side (sometimes some buses 
   might not be activated / deactivated correctly)
+- [FIXED] a bug when reading a grid initialize from pypowsybl (trafo names where put in place 
+  of shunt names)
 - [FIXED] read the docs was broken
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
@@ -49,11 +51,17 @@ Change Log
 - [ADDED] a timer to get the time spent in the gridmodel for the powerflow (env.backend.timer_gridmodel_xx_pf)
   which also include the time 
 - [ADDED] support for more than 2 busbars per substation (requires grid2op >= 1.10.0)
+- [ADDED] possibility to retrieve the bus id of the original iidm when initializing from pypowsybl 
+  (`return_sub_id` kwargs). This is a "beta" feature and will be adressed in a better way
+  in a near future.
+- [ADDED] possibility to continue the grid2op 'step' when the solver converges but a load or a 
+  generator is disconnected from the grid.
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
 - [IMPROVED] clean ce cpp side by refactoring: making clearer the difference (linear) solver
   vs powerflow algorithm and move same type of files in the same directory. This change
   does not really affect python side at the moment (but will in future versions)
+- [IMPROVED] CI to test on gcc 13 and clang 18 (latest versions to date)
 
 [0.7.5] 2023-10-05
 --------------------

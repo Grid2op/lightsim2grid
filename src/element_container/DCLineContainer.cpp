@@ -15,13 +15,13 @@ DCLineContainer::StateRes DCLineContainer::get_state() const
 {
     std::vector<real_type> loss_percent(loss_percent_.begin(), loss_percent_.end());
     std::vector<real_type> loss_mw(loss_mw_.begin(), loss_mw_.end());
-     std::vector<bool> status = status_;
+    std::vector<bool> status = status_;
     DCLineContainer::StateRes res(names_,
-                             from_gen_.get_state(),
-                             to_gen_.get_state(),
-                             loss_percent,
-                             loss_mw,
-                             status);
+                                  from_gen_.get_state(),
+                                  to_gen_.get_state(),
+                                  loss_percent,
+                                  loss_mw,
+                                  status);
     return res;
 }
 
@@ -39,16 +39,16 @@ void DCLineContainer::set_state(DCLineContainer::StateRes & my_state){
 }
 
 void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
-                      const Eigen::VectorXi & branch_to_id,
-                      const RealVect & p_mw,
-                      const RealVect & loss_percent,
-                      const RealVect & loss_mw,
-                      const RealVect & vm_or_pu,
-                      const RealVect & vm_ex_pu,
-                      const RealVect & min_q_or,
-                      const RealVect & max_q_or,
-                      const RealVect & min_q_ex,
-                      const RealVect & max_q_ex){
+                           const Eigen::VectorXi & branch_to_id,
+                           const RealVect & p_mw,
+                           const RealVect & loss_percent,
+                           const RealVect & loss_mw,
+                           const RealVect & vm_or_pu,
+                           const RealVect & vm_ex_pu,
+                           const RealVect & min_q_or,
+                           const RealVect & max_q_or,
+                           const RealVect & min_q_ex,
+                           const RealVect & max_q_ex){
     loss_percent_ = loss_percent;
     loss_mw_ = loss_mw;
     status_ = std::vector<bool>(branch_from_id.size(), true);

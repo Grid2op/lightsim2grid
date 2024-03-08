@@ -186,7 +186,7 @@ class DCLineContainer : public GenericContainer
     }
     // for buses only connected through dc line, i don't add them
     // they are not in the same "connected component"
-    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const  {};
+    virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     virtual void nb_line_end(std::vector<int> & res) const;
     virtual void update_bus_status(std::vector<bool> & bus_status) const {

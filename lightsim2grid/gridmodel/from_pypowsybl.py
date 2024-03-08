@@ -1,4 +1,4 @@
-# Copyright (c) 2023, RTE (https://www.rte-france.com)
+# Copyright (c) 2023-2024, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,7 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import warnings
 import numpy as np
+import pandas as pd
 import pypowsybl as pypo
 
 from lightsim2grid_cpp import GridModel
@@ -39,7 +41,8 @@ def init(net : pypo.network,
          sn_mva = 100.,
          sort_index=True,
          f_hz = 50.,  # unused
-         only_main_component=True):
+         only_main_component=True,
+         return_sub_id=False):
     model = GridModel()
     # model.set_f_hz(f_hz)
     
@@ -66,7 +69,7 @@ def init(net : pypo.network,
                    0, 0  # unused
                    )
     model._orig_to_ls = 1 * bus_df_orig["bus_id"].values
-        
+    
     # do the generators
     if sort_index:
         df_gen = net.get_generators().sort_index()
@@ -148,7 +151,7 @@ def init(net : pypo.network,
     for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_powerline(line_id)
-    model.set_line_names(df_line.index)
+    model.set_line_names(df_line.index)   
             
     # for trafo
     if sort_index:
@@ -201,19 +204,23 @@ def init(net : pypo.network,
     for shunt_id, disco in enumerate(sh_disco):
         if disco:
            model.deactivate_shunt(shunt_id) 
-    model.set_shunt_names(df_trafo.index)
+    model.set_shunt_names(df_shunt.index)
            
     # for hvdc (TODO not tested yet)
-    df_dc = net.get_hvdc_lines().sort_index()
-    df_sations = net.get_vsc_converter_stations().sort_index()
+    if sort_index:
+        df_dc = net.get_hvdc_lines().sort_index()
+        df_sations = net.get_vsc_converter_stations().sort_index()
+    else:
+        df_dc = net.get_hvdc_lines()
+        df_sations = net.get_vsc_converter_stations()
     # bus_from_id = df_sations.loc[df_dc["converter_station1_id"].values]["bus_id"].values
     # bus_to_id = df_sations.loc[df_dc["converter_station2_id"].values]["bus_id"].values
-    bus_from_id, hvdc_from_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
-    bus_to_id, hvdc_to_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
+    hvdc_bus_from_id, hvdc_from_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
+    hvdc_bus_to_id, hvdc_to_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
     loss_percent = np.zeros(df_dc.shape[0])  # TODO 
     loss_mw = np.zeros(df_dc.shape[0])  # TODO
-    model.init_dclines(bus_from_id,
-                       bus_to_id,
+    model.init_dclines(hvdc_bus_from_id,
+                       hvdc_bus_to_id,
                        df_dc["target_p"].values,
                        loss_percent,
                        loss_mw,
@@ -270,10 +277,34 @@ def init(net : pypo.network,
     # TODO checks
     # no 3windings trafo and other exotic stuff
     if net.get_phase_tap_changers().shape[0] > 0:
-        pass
-        # raise RuntimeError("Impossible currently to init a grid with tap changers at the moment.")
+        warnings.warn("There are tap changers in the iidm grid which are not taken "
+                      "into account in the lightsim2grid at the moment. "
+                      "NB: lightsim2grid gridmodel can handle tap changer, it is just not "
+                      "handled by the 'from_pypowsybl` function at the moment.")
         
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
         model.consider_only_main_component()
-    return model
+    if not return_sub_id:
+        # for backward compatibility
+        return model
+    else:
+        # voltage_level_id is kind of what I call "substation" in grid2op
+        vl_unique = bus_df["voltage_level_id"].unique()
+        sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
+        buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_id", "sub_id"]]
+        gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+        load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+        lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+        lex_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+        tor_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+        tex_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+        batt_sub = pd.merge(left=df_batt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+        sh_sub = pd.merge(left=df_shunt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+        hvdc_vl_info = pd.DataFrame(index=df_dc.index,
+                                    data={"voltage_level1_id": df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values,
+                                          "voltage_level2_id": df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values
+                                          })
+        hvdc_sub_from_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+        hvdc_sub_to_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+        return model, (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id)

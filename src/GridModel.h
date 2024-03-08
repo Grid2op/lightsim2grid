@@ -352,27 +352,35 @@ class GridModel : public GenericContainer
         const std::vector<bool> & get_bus_status() const {return bus_status_;}
         
         void set_line_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, powerlines_.nb(), "set_line_names");
             powerlines_.set_names(names);
         }
         void set_dcline_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, dc_lines_.nb(), "set_dcline_names");
             dc_lines_.set_names(names);
         }
         void set_trafo_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, trafos_.nb(), "set_trafo_names");
             trafos_.set_names(names);
         }
         void set_gen_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, generators_.nb(), "set_gen_names");
             generators_.set_names(names);
         }
         void set_load_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, loads_.nb(), "set_load_names");
             loads_.set_names(names);
         }
         void set_storage_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, storages_.nb(), "set_storage_names");
             storages_.set_names(names);
         }
         void set_sgen_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, sgens_.nb(), "set_sgen_names");
             sgens_.set_names(names);
         }
         void set_shunt_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, shunts_.nb(), "set_shunt_names");
             shunts_.set_names(names);
         }
 

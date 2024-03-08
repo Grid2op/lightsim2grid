@@ -10,9 +10,14 @@
 #include <sstream>
 
 void LoadContainer::init(const RealVect & loads_p,
-                    const RealVect & loads_q,
-                    const Eigen::VectorXi & loads_bus_id)
+                         const RealVect & loads_q,
+                         const Eigen::VectorXi & loads_bus_id)
 {
+    int size = static_cast<int>(loads_p.size());
+    GenericContainer::check_size(loads_p, size, "loads_p");
+    GenericContainer::check_size(loads_q, size, "loads_q");
+    GenericContainer::check_size(loads_bus_id, size, "loads_bus_id");
+
     p_mw_ = loads_p;
     q_mvar_ = loads_q;
     bus_id_ = loads_bus_id;
@@ -29,6 +34,7 @@ LoadContainer::StateRes LoadContainer::get_state() const
      LoadContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
      return res;
 }
+
 void LoadContainer::set_state(LoadContainer::StateRes & my_state )
 {
     reset_results();
@@ -47,7 +53,10 @@ void LoadContainer::set_state(LoadContainer::StateRes & my_state )
 }
 
 
-void LoadContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
+void LoadContainer::fillSbus(CplxVect & Sbus,
+                             const std::vector<int> & id_grid_to_solver,
+                             bool ac) const
+{
     int nb_load = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;

@@ -11,11 +11,18 @@
 #include <sstream>
 
 void GeneratorContainer::init(const RealVect & generators_p,
-                   const RealVect & generators_v,
-                   const RealVect & generators_min_q,
-                   const RealVect & generators_max_q,
-                   const Eigen::VectorXi & generators_bus_id)
+                              const RealVect & generators_v,
+                              const RealVect & generators_min_q,
+                              const RealVect & generators_max_q,
+                              const Eigen::VectorXi & generators_bus_id)
 {
+    int size = static_cast<int>(generators_p.size());
+    GenericContainer::check_size(generators_p, size, "generators_p");
+    GenericContainer::check_size(generators_v, size, "generators_v");
+    GenericContainer::check_size(generators_min_q, size, "generators_min_q");
+    GenericContainer::check_size(generators_max_q, size, "generators_max_q");
+    GenericContainer::check_size(generators_bus_id, size, "generators_bus_id");
+
     p_mw_ = generators_p;
     vm_pu_ = generators_v;
     bus_id_ = generators_bus_id;
@@ -50,15 +57,18 @@ void GeneratorContainer::init(const RealVect & generators_p,
 }
 
 void GeneratorContainer::init_full(const RealVect & generators_p,
-                        const RealVect & generators_v,
-                        const RealVect & generators_q,
-                        const std::vector<bool> & voltage_regulator_on,
-                        const RealVect & generators_min_q,
-                        const RealVect & generators_max_q,
-                        const Eigen::VectorXi & generators_bus_id
-                        )
+                                   const RealVect & generators_v,
+                                   const RealVect & generators_q,
+                                   const std::vector<bool> & voltage_regulator_on,
+                                   const RealVect & generators_min_q,
+                                   const RealVect & generators_max_q,
+                                   const Eigen::VectorXi & generators_bus_id
+                                   )
 {
     init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
+    int size = static_cast<int>(generators_p.size());
+    GenericContainer::check_size(generators_q, size, "generators_q");
+    GenericContainer::check_size(voltage_regulator_on, size, "voltage_regulator_on");
     voltage_regulator_on_ = voltage_regulator_on;
     q_mvar_ = generators_q;
 }
@@ -353,7 +363,7 @@ Eigen::VectorXi GeneratorContainer::get_slack_bus_id() const{
 }
 
 void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
-                          const std::vector<int> & id_grid_to_solver)
+                                     const std::vector<int> & id_grid_to_solver)
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
@@ -377,9 +387,9 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
 }
 
 void GeneratorContainer::init_q_vector(int nb_bus,
-                            Eigen::VectorXi & total_gen_per_bus,
-                            RealVect & total_q_min_per_bus,
-                            RealVect & total_q_max_per_bus) const // delta_q_per_gen_)  // total number of bus on the grid
+                                       Eigen::VectorXi & total_gen_per_bus,
+                                       RealVect & total_q_min_per_bus,
+                                       RealVect & total_q_max_per_bus) const
 {
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
@@ -397,11 +407,11 @@ void GeneratorContainer::init_q_vector(int nb_bus,
 }
 
 void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
-                    const std::vector<int> & id_grid_to_solver,
-                    bool ac,
-                    const Eigen::VectorXi & total_gen_per_bus,
-                    const RealVect & total_q_min_per_bus,
-                    const RealVect & total_q_max_per_bus)
+                               const std::vector<int> & id_grid_to_solver,
+                               bool ac,
+                               const Eigen::VectorXi & total_gen_per_bus,
+                               const RealVect & total_q_min_per_bus,
+                               const RealVect & total_q_max_per_bus)
 {
     const int nb_gen = nb();
     res_q_ = RealVect::Constant(nb_gen, 0.);
