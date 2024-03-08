@@ -60,7 +60,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full -y
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             - run: python3 -m virtualenv venv_test
             - run:
                   command: |
@@ -84,6 +84,7 @@ jobs:
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel distribute
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -102,6 +103,7 @@ jobs:
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel distribute
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -120,6 +122,7 @@ jobs:
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel distribute
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -138,6 +141,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -150,7 +154,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full -y
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             # - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
@@ -187,6 +191,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U pybind11
                     git submodule init
                     git submodule update
@@ -209,6 +214,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U pybind11
                     CC=clang python setup.py build
                     python -m pip install .
@@ -223,6 +229,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -241,6 +248,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -259,6 +267,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -277,6 +286,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -295,6 +305,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -313,6 +324,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -325,11 +337,12 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full git -y
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -342,12 +355,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full git -y
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel distribute
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
@@ -372,7 +386,9 @@ jobs:
             size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
-            - run: py -m pip install --upgrade pip setuptools wheel distribute
+            - run: choco install python --version=3.10
+            - run: py --version 
+            - run: py -m pip install --upgrade pip setuptools wheel
             - run: py -m pip install virtualenv
             - run: py -m virtualenv venv_test
             - run:
