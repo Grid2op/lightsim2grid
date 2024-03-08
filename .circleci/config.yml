@@ -61,11 +61,11 @@ jobs:
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip python3-full -y
-            - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -132,7 +132,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full -y
+            - run: apt-get update && apt-get install python3-pip -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
@@ -157,6 +157,7 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
@@ -325,7 +326,6 @@ jobs:
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip python3-full git -y
-            - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
@@ -343,7 +343,6 @@ jobs:
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip python3-full git -y
-            - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
@@ -373,7 +372,7 @@ jobs:
             size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
-            - run: py -m pip install --upgrade pip setuptools
+            - run: py -m pip install --upgrade pip setuptools wheel distribute
             - run: py -m pip install virtualenv
             - run: py -m virtualenv venv_test
             - run:
