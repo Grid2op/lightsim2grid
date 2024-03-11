@@ -177,20 +177,20 @@ class AuxInitFromPyPowSyBl:
         
         try:
             param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-                                transformer_voltage_control_on=False,
-                                no_generator_reactive_limits=True,
-                                phase_shifter_regulation_on=False,
-                                simul_shunt=False,
-                                distributed_slack=False,
-                                provider_parameters={"slackBusSelectionMode": "NAME",
-                                                    "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
-                                ) 
+                                  transformer_voltage_control_on=False,
+                                  use_reactive_limits=False,
+                                  shunt_compensator_voltage_control_on=False,
+                                  phase_shifter_regulation_on=False,
+                                  distributed_slack=False,
+                                  provider_parameters={"slackBusSelectionMode": "NAME",
+                                                      "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
+                                  ) 
         except TypeError:
             param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
                                   transformer_voltage_control_on=False,
-                                #   no_generator_reactive_limits=True,  # documented in the doc but apparently fails
+                                  no_generator_reactive_limits=True,  # documented in the doc but apparently fails
                                   phase_shifter_regulation_on=False,
-                                #   simul_shunt=False,  # documented in the doc but apparently fails
+                                  simul_shunt=False,  # documented in the doc but apparently fails
                                   distributed_slack=False,
                                   provider_parameters={"slackBusSelectionMode": "NAME",
                                                        "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
