@@ -495,7 +495,7 @@ void GeneratorContainer::gen_p_per_bus(std::vector<real_type> & res) const
     {
         if(!status_[gen_id]) continue;
         const auto my_bus = bus_id_(gen_id);
-        res[my_bus] += p_mw_(gen_id);
+        if (p_mw_(gen_id) > 0.) res[my_bus] += p_mw_(gen_id);
     }
 }
 

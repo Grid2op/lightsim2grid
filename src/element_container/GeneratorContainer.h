@@ -196,7 +196,9 @@ class GeneratorContainer: public GenericContainer
         }
     }
     // returns only the gen_id with the highest p that is connected to this bus !
-    int assign_slack_bus(int slack_bus_id, const std::vector<real_type> & gen_p_per_bus, SolverControl & solver_control){
+    int assign_slack_bus(int slack_bus_id,
+                         const std::vector<real_type> & gen_p_per_bus,
+                         SolverControl & solver_control){
         const int nb_gen = nb();
         int res_gen_id = -1;
         real_type max_p = -1.;
@@ -205,7 +207,7 @@ class GeneratorContainer: public GenericContainer
             if(!status_[gen_id]) continue;
             if(bus_id_(gen_id) != slack_bus_id) continue;
             const real_type p_mw = p_mw_(gen_id);
-            add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id], solver_control);
+            if (p_mw > 0.) add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id], solver_control);
             if((p_mw > max_p) || (res_gen_id == -1) ){
                 res_gen_id = gen_id;
                 max_p = p_mw;

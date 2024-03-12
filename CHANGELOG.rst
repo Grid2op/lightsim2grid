@@ -44,6 +44,8 @@ Change Log
 - [FIXED] read the docs was broken
 - [FIXED] a bug when reading a grid from pandapower for multiple slacks when slack 
   are given by the "ext_grid" information.
+- [FIXED] a bug in "gridmodel.assign_slack_to_most_connected()" that could throw an error if a 
+  generator with "target_p" == 0. was connected to the most connected bus on the grid
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.

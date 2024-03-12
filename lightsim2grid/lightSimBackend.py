@@ -567,6 +567,18 @@ class LightSimBackend(Backend):
             self.name_storage = np.array(batt_sub.index)
             self.name_shunt = np.array(sh_sub.index)
         
+        if "reconnect_disco_gen" in loader_kwargs and loader_kwargs["reconnect_disco_gen"]:
+            for el in self._grid.get_generators():
+                if not el.connected:
+                    self._grid.reactivate_gen(el.id)
+                    self._grid.change_bus_gen(el.id, self.gen_to_subid[el.id])
+                    
+        if "reconnect_disco_load" in loader_kwargs and loader_kwargs["reconnect_disco_load"]:
+            for el in self._grid.get_loads():
+                if not el.connected:
+                    self._grid.reactivate_load(el.id)
+                    self._grid.change_bus_load(el.id, self.load_to_subid[el.id])
+                    
         # complete the other vectors
         self._compute_pos_big_topo()
         
