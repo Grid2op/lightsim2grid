@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2024, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -40,22 +40,29 @@ class LightSimBackend(Backend):
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
                  ):
-        try:
-            # for grid2Op >= 1.7.1
-            Backend.__init__(self,
-                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
-                             can_be_copied=can_be_copied,
-                             solver_type=solver_type,
-                             max_iter=max_iter,
-                             tol=tol,
-                             turned_off_pv=turned_off_pv,
-                             dist_slack_non_renew=dist_slack_non_renew,
-                             use_static_gen=use_static_gen)
-        except TypeError as exc_:
-            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
-                          "you cannot set max_iter, tol nor solver_type arguments.")
-            Backend.__init__(self,
-                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        self.max_it = max_iter
+        self.tol = tol  # tolerance for the solver
+        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+        self.__current_solver_type = solver_type
+        
+        # does the "turned off" generators (including when p=0)
+        # are pv buses
+        self._turned_off_pv = turned_off_pv
+        
+        # distributed slack, on non renewable gen with P > 0
+        self._dist_slack_non_renew = dist_slack_non_renew
+        
+        # add the static gen to the list of controlable gen in grid2Op
+        self._use_static_gen = use_static_gen  # TODO implement it
+                        
+        self._aux_init_super(detailed_infos_for_cascading_failures,
+                             can_be_copied,
+                             solver_type,
+                             max_iter,
+                             tol,
+                             turned_off_pv,
+                             dist_slack_non_renew,
+                             use_static_gen)
 
         # lazy loading because it crashes...
         from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
@@ -64,7 +71,9 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
-
+            
+        self.shunts_data_available = True  # needs to be self and not type(self) here
+        
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
         self.__nb_powerline = None
@@ -92,8 +101,6 @@ class LightSimBackend(Backend):
             self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
         self.V = None
-        self.max_it = max_iter
-        self.tol = tol  # tolerance for the solver
 
         self.prod_pu_to_kv = None
         self.load_pu_to_kv = None
@@ -145,12 +152,20 @@ class LightSimBackend(Backend):
 
         # available solver in lightsim
         self.available_solvers = []
-        self.comp_time = 0.  # computation time of just the powerflow
+        
+        # computation time of just the powerflow (when the grid is formatted 
+        # by the gridmodel already)
+        # it takes only into account the time spend in the powerflow algorithm
+        self.comp_time = 0.  
+
+        # computation time of the powerflow
+        # it takes into account everything in the gridmodel, including the mapping 
+        # to the solver, building of Ybus and Sbus AND the time to solve the powerflow
+        self.timer_gridmodel_xx_pf = 0.
+        
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
-        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
-        self.__current_solver_type = solver_type
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -162,33 +177,34 @@ class LightSimBackend(Backend):
         # TODO and should rather be handled in pandapower backend
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
-        
-        # does the "turned off" generators (including when p=0)
-        # are pv buses
-        self._turned_off_pv = turned_off_pv
-        
-        # distributed slack, on non renewable gen with P > 0
-        self._dist_slack_non_renew = dist_slack_non_renew
-        
-        # add the static gen to the list of controlable gen in grid2Op
-        self._use_static_gen = use_static_gen  # TODO implement it
-        
-        # storage data for this object (otherwise it's in the class)
-        self.n_storage = None
-        self.storage_to_subid = None
-        self.storage_pu_to_kv = None
-        self.name_storage = None
-        self.storage_to_sub_pos = None
-        self.storage_type = None
-        self.storage_Emin = None
-        self.storage_Emax = None
-        self.storage_max_p_prod = None
-        self.storage_max_p_absorb = None
-        self.storage_marginal_cost = None
-        self.storage_loss = None
-        self.storage_discharging_efficiency = None
-        self.storage_charging_efficiency = None
 
+    def _aux_init_super(self, 
+                        detailed_infos_for_cascading_failures,
+                        can_be_copied,
+                        solver_type,
+                        max_iter,
+                        tol,
+                        turned_off_pv,
+                        dist_slack_non_renew,
+                        use_static_gen):
+        try:
+            # for grid2Op >= 1.7.1
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
+                             can_be_copied=can_be_copied,
+                             solver_type=solver_type,
+                             max_iter=max_iter,
+                             tol=tol,
+                             turned_off_pv=turned_off_pv,
+                             dist_slack_non_renew=dist_slack_non_renew,
+                             use_static_gen=use_static_gen
+                             )
+        except TypeError as exc_:
+            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
+                          "you cannot set max_iter, tol nor solver_type arguments.")
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+                    
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
         self._grid.turnedoff_no_pv()
@@ -909,25 +925,37 @@ class LightSimBackend(Backend):
         ####################
         # res = copy.deepcopy(self)  # super slow
         res = type(self).__new__(type(self))
+        # make sure to init the "base class"
+        # in particular with "new" attributes in future grid2op Backend
+        res._aux_init_super(self.detailed_infos_for_cascading_failures,
+                            self._can_be_copied,
+                            self.__current_solver_type,
+                            self.max_it,
+                            self.tol,
+                            self._turned_off_pv,
+                            self._dist_slack_non_renew,
+                            self._use_static_gen)
+        res.comp_time = self.comp_time
+        res.timer_gridmodel_xx_pf = self.timer_gridmodel_xx_pf
 
         # copy the regular attribute
         res.__has_storage = self.__has_storage
-        res.__current_solver_type = self.__current_solver_type
+        res.__current_solver_type = self.__current_solver_type  # forced here because of special `__`
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
-        res._can_be_copied = self._can_be_copied
         res.cst_1 = dt_float(1.0)
-        li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
+        li_regular_attr = ["comp_time", "can_output_theta", "_is_loaded",
                            "nb_bus_total", "initdc",
-                           "_big_topo_to_obj", "max_it", "tol", "dim_topo",
+                           "_big_topo_to_obj", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
-                           "_my_kwargs",
-                           "_turned_off_pv", "_dist_slack_non_renew"
+                           "supported_grid_format", 
+                           "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
+                           "_use_static_gen"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
-                # this test is needed for backward compatibility with other grid2op version
+                # this test is needed for backward compatibility with older grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
 
         # copy the numpy array
