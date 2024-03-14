@@ -19,6 +19,11 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+[0.7.5.post1] 2024-03-14
+-------------------------
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
+  
 [0.7.5] 2023-10-05
 --------------------
 - [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when

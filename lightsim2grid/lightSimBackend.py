@@ -998,7 +998,7 @@ class LightSimBackend(Backend):
                     ] + type(self)._li_attr_disp
 
         for attr_nm in cls_attr:
-            if hasattr(self, attr_nm):
+            if hasattr(self, attr_nm) and not hasattr(type(self), attr_nm):
                 # this test is needed for backward compatibility with other grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
         ###############

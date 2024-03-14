@@ -170,15 +170,26 @@ class AuxInitFromPyPowSyBl:
             v_ls_ref = self.ref_samecase.ac_pf(1.0 * self.V_init_ac, 10, self.tol)   
             assert np.abs(v_ls - v_ls_ref).max() <= self.tol_eq, "error for vresults for ac"
         
-        param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-                              transformer_voltage_control_on=False,
-                              no_generator_reactive_limits=True,
-                              phase_shifter_regulation_on=False,
-                              simul_shunt=False,
-                              distributed_slack=False,
-                              provider_parameters={"slackBusSelectionMode": "NAME",
-                                                   "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
-                              ) 
+        try:
+            param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
+                                  transformer_voltage_control_on=False,
+                                  use_reactive_limits=False,
+                                  shunt_compensator_voltage_control_on=False,
+                                  phase_shifter_regulation_on=False,
+                                  distributed_slack=False,
+                                  provider_parameters={"slackBusSelectionMode": "NAME",
+                                                      "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
+                                  ) 
+        except TypeError:
+            param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
+                                  transformer_voltage_control_on=False,
+                                  no_generator_reactive_limits=True,  # documented in the doc but apparently fails
+                                  phase_shifter_regulation_on=False,
+                                  simul_shunt=False,  # documented in the doc but apparently fails
+                                  distributed_slack=False,
+                                  provider_parameters={"slackBusSelectionMode": "NAME",
+                                                       "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
+                                  )
         res_pypow = lf.run_ac(self.network_ref, parameters=param)
         if self.compare_pp():
             pdp.runpp(self.pp_samecase, init="flat")

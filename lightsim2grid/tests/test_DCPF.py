@@ -127,7 +127,8 @@ class TestDCPF(unittest.TestCase):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
                 backend.load_grid(case_name)
-
+                backend.assert_grid_correct()
+                
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
         # first i deactivate all slack bus in pp that are connected but not handled in ls
