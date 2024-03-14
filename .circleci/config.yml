@@ -117,8 +117,8 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
-            - run: python3 -m pip install virtualenv
+            - run: apt-get update && apt-get install python3-pip python3-virtualenv -y
+            # - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
@@ -269,15 +269,15 @@ jobs:
         steps:
             - checkout
             - run: choco install python --version=3.10  --force -y
-            - run: C:\Python310\python --version
+            - run: C:\Python310\python --version 
             - run: C:\Python310\python -m pip install --upgrade pip setuptools wheel
             - run: C:\Python310\python -m pip install virtualenv
             - run: C:\Python310\python -m virtualenv venv_test
-            - run:
+            - run: 
                 name: "Chekc python  / pip version in venv"
                 command: |
                     .\venv_test\Scripts\activate
-                    python --version
+                    python --version 
                     pip --version
             - run:
                 name: "Install grid2op from source"
