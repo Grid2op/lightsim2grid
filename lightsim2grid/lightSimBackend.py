@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2024, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -1172,6 +1172,8 @@ class LightSimBackend(Backend):
         ####################
         # res = copy.deepcopy(self)  # super slow
         res = type(self).__new__(type(self))
+        # make sure to init the "base class"
+        # in particular with "new" attributes in future grid2op Backend
         res._aux_init_super(self.detailed_infos_for_cascading_failures,
                             self._can_be_copied,
                             self.__current_solver_type,
@@ -1192,19 +1194,7 @@ class LightSimBackend(Backend):
         res.__current_solver_type = self.__current_solver_type  # forced here because of special `__`
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
-        # res._can_be_copied = self._can_be_copied
         res.cst_1 = dt_float(1.0)
-        # li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
-        #                    "nb_bus_total", "initdc",
-        #                    "_big_topo_to_obj", "max_it", "tol", "dim_topo",
-        #                    "_idx_hack_storage",
-        #                    "_timer_preproc", "_timer_postproc", "_timer_solver",
-        #                    "_my_kwargs", "supported_grid_format", 
-        #                    "_turned_off_pv", "_dist_slack_non_renew",
-        #                    "_loader_method", "_loader_kwargs",
-        #                    "_missing_two_busbars_support_info", "n_busbar_per_sub",
-        #                    "_use_static_gen", "_stop_if_load_disco", "_stop_if_gen_disco"
-        #                    ]
         li_regular_attr = ["comp_time", "can_output_theta", "_is_loaded",
                            "nb_bus_total", "initdc",
                            "_big_topo_to_obj", "dim_topo",
