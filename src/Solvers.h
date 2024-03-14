@@ -6,6 +6,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#ifndef SOLVERS_H
+#define SOLVERS_H
+
 #include "BaseNRSolver.h"
 #include "BaseNRSolverSingleSlack.h"
 #include "DCSolver.h"
@@ -94,3 +97,5 @@ typedef BaseFDPFSolver<SparseLULinearSolver, FDPFMethod::BX> FDPF_BX_SparseLUSol
     class FDPF_XB_CKTSOSolver : public FDPF_XB_SparseLUSolver {};
     class FDPF_BX_CKTSOSolver : public FDPF_BX_SparseLUSolver {};
 #endif  // CKTSO_SOLVER_AVAILABLE
+
+#endif // SOLVERS_H
