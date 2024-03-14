@@ -53,27 +53,19 @@ class LightSimBackend(Backend):
                  stop_if_load_disco : Optional[bool] = True,
                  stop_if_gen_disco : Optional[bool] = True,
                  ):
-        try:
-            # for grid2Op >= 1.7.1
-            Backend.__init__(self,
-                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
-                             can_be_copied=can_be_copied,
-                             solver_type=solver_type,
-                             max_iter=max_iter,
-                             tol=tol,
-                             turned_off_pv=turned_off_pv,
-                             dist_slack_non_renew=dist_slack_non_renew,
-                             use_static_gen=use_static_gen,
-                             loader_method=loader_method,
-                             loader_kwargs=loader_kwargs,
-                             stop_if_load_disco=stop_if_load_disco,
-                             stop_if_gen_disco=stop_if_gen_disco,
-                             )
-        except TypeError as exc_:
-            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
-                          "you cannot set max_iter, tol nor solver_type arguments.")
-            Backend.__init__(self,
-                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        
+        self._aux_init_super(detailed_infos_for_cascading_failures,
+                             can_be_copied,
+                             solver_type,
+                             max_iter,
+                             tol,
+                             turned_off_pv,
+                             dist_slack_non_renew,
+                             use_static_gen,
+                             loader_method,
+                             loader_kwargs,
+                             stop_if_load_disco,
+                             stop_if_gen_disco)
 
         # lazy loading because it crashes...
         from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
@@ -222,6 +214,41 @@ class LightSimBackend(Backend):
         # add the static gen to the list of controlable gen in grid2Op
         self._use_static_gen = use_static_gen  # TODO implement it
 
+    def _aux_init_super(self, 
+                        detailed_infos_for_cascading_failures,
+                        can_be_copied,
+                        solver_type,
+                        max_iter,
+                        tol,
+                        turned_off_pv,
+                        dist_slack_non_renew,
+                        use_static_gen,
+                        loader_method,
+                        loader_kwargs,
+                        stop_if_load_disco,
+                        stop_if_gen_disco):
+        try:
+            # for grid2Op >= 1.7.1
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
+                             can_be_copied=can_be_copied,
+                             solver_type=solver_type,
+                             max_iter=max_iter,
+                             tol=tol,
+                             turned_off_pv=turned_off_pv,
+                             dist_slack_non_renew=dist_slack_non_renew,
+                             use_static_gen=use_static_gen,
+                             loader_method=loader_method,
+                             loader_kwargs=loader_kwargs,
+                             stop_if_load_disco=stop_if_load_disco,
+                             stop_if_gen_disco=stop_if_gen_disco,
+                             )
+        except TypeError as exc_:
+            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
+                          "you cannot set max_iter, tol nor solver_type arguments.")
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
         self._grid.turnedoff_no_pv()
@@ -1140,26 +1167,45 @@ class LightSimBackend(Backend):
         ####################
         # res = copy.deepcopy(self)  # super slow
         res = type(self).__new__(type(self))
+        res._aux_init_super(self.detailed_infos_for_cascading_failures,
+                            self._can_be_copied,
+                            self.__current_solver_type,
+                            self.max_it,
+                            self.tol,
+                            self._turned_off_pv,
+                            self._dist_slack_non_renew,
+                            self._use_static_gen,
+                            self._loader_method,
+                            self._loader_kwargs,
+                            self._stop_if_load_disco,
+                            self._stop_if_gen_disco)
         res.comp_time = self.comp_time
         res.timer_gridmodel_xx_pf = self.timer_gridmodel_xx_pf
 
         # copy the regular attribute
         res.__has_storage = self.__has_storage
-        res.__current_solver_type = self.__current_solver_type
+        # res.__current_solver_type = self.__current_solver_type
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
-        res._can_be_copied = self._can_be_copied
+        # res._can_be_copied = self._can_be_copied
         res.cst_1 = dt_float(1.0)
-        li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
+        # li_regular_attr = ["detailed_infos_for_cascading_failures", "comp_time", "can_output_theta", "_is_loaded",
+        #                    "nb_bus_total", "initdc",
+        #                    "_big_topo_to_obj", "max_it", "tol", "dim_topo",
+        #                    "_idx_hack_storage",
+        #                    "_timer_preproc", "_timer_postproc", "_timer_solver",
+        #                    "_my_kwargs", "supported_grid_format", 
+        #                    "_turned_off_pv", "_dist_slack_non_renew",
+        #                    "_loader_method", "_loader_kwargs",
+        #                    "_missing_two_busbars_support_info", "n_busbar_per_sub",
+        #                    "_use_static_gen", "_stop_if_load_disco", "_stop_if_gen_disco"
+        #                    ]
+        li_regular_attr = ["comp_time", "can_output_theta", "_is_loaded",
                            "nb_bus_total", "initdc",
-                           "_big_topo_to_obj", "max_it", "tol", "dim_topo",
+                           "_big_topo_to_obj", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
-                           "_my_kwargs", "supported_grid_format", 
-                           "_turned_off_pv", "_dist_slack_non_renew",
-                           "_loader_method", "_loader_kwargs",
-                           "_missing_two_busbars_support_info", "n_busbar_per_sub",
-                           "_use_static_gen", "_stop_if_load_disco", "_stop_if_gen_disco"
+                           "supported_grid_format", 
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
