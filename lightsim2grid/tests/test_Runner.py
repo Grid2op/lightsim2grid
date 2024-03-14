@@ -80,4 +80,3 @@ class TestRunnerFast(TestRunnerFast_glop):
 
 if __name__ == "__main__":
     unittest.main()
-    

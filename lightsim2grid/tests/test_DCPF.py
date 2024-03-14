@@ -128,6 +128,7 @@ class TestDCPF(unittest.TestCase):
                 warnings.filterwarnings("ignore")
                 backend.load_grid(case_name)
                 backend.assert_grid_correct()
+                # backend.init_pp_backend.assert_grid_correct()
                 
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
