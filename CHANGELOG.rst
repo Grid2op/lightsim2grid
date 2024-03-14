@@ -19,6 +19,11 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
+[0.7.3.post1] 2024-03-14
+--------------------------
+- [FIXED] 'forward' compatibility with grid2op 1.10.0 by making the `copy()` 
+  implementation of lightsim2grid more generic
+
 [0.7.3] 2023-07-xx
 --------------------
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed

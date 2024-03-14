@@ -9,7 +9,7 @@
 import faulthandler
 faulthandler.enable()
 
-__version__ = "0.7.3"
+__version__ = "0.7.3.post1"
 
 __all__ = ["newtonpf", "SolverType", "ErrorType", "solver"]
 
