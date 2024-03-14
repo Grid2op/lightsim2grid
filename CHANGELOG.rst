@@ -19,6 +19,11 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
+[0.7.2.post1] 2024-03-14
+--------------------------
+- [FIXED] 'forward' compatibility with grid2op 1.10.0 by making the `copy()` 
+  implementation of lightsim2grid more generic
+
 [0.7.2] 2023-06-06
 --------------------
 - [FIXED] a bug in the `init` function that caused issue when importing a grid with multiple slack
