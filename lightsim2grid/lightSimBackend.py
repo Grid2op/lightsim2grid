@@ -54,6 +54,34 @@ class LightSimBackend(Backend):
                  stop_if_gen_disco : Optional[bool] = True,
                  ):
         
+        self.max_it = max_iter
+        self.tol = tol  # tolerance for the solver
+        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+        self.__current_solver_type = solver_type
+        
+        # does the "turned off" generators (including when p=0)
+        # are pv buses
+        self._turned_off_pv = turned_off_pv
+        
+        # distributed slack, on non renewable gen with P > 0
+        self._dist_slack_non_renew = dist_slack_non_renew
+        
+        # add the static gen to the list of controlable gen in grid2Op
+        self._use_static_gen = use_static_gen  # TODO implement it
+        
+        self._loader_method = loader_method
+        self._loader_kwargs = loader_kwargs
+        
+        #: .. versionadded:: 0.7.6
+        #: if set to `True` (default) then the backend will raise a 
+        #: BackendError in case of disconnected load
+        self._stop_if_load_disco = stop_if_load_disco
+        
+        #: .. versionadded:: 0.7.6
+        #: if set to `True` (default) then the backend will raise a 
+        #: BackendError in case of disconnected generator
+        self._stop_if_gen_disco = stop_if_gen_disco
+                        
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
                              solver_type,
@@ -74,18 +102,7 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
-        self._loader_method = loader_method
-        self._loader_kwargs = loader_kwargs
         
-        #: .. versionadded:: 0.7.6
-        #: if set to `True` (default) then the backend will raise a 
-        #: BackendError in case of disconnected load
-        self._stop_if_load_disco = stop_if_load_disco
-        
-        #: .. versionadded:: 0.7.6
-        #: if set to `True` (default) then the backend will raise a 
-        #: BackendError in case of disconnected generator
-        self._stop_if_gen_disco = stop_if_gen_disco
         
         if loader_method == "pandapower":
             self.supported_grid_format = ("json", )  # new in 1.9.6
@@ -123,8 +140,6 @@ class LightSimBackend(Backend):
             self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
         self.V = None
-        self.max_it = max_iter
-        self.tol = tol  # tolerance for the solver
 
         self.prod_pu_to_kv = None
         self.load_pu_to_kv = None
@@ -190,8 +205,6 @@ class LightSimBackend(Backend):
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
-        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
-        self.__current_solver_type = solver_type
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -204,15 +217,7 @@ class LightSimBackend(Backend):
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
         
-        # does the "turned off" generators (including when p=0)
-        # are pv buses
-        self._turned_off_pv = turned_off_pv
-        
-        # distributed slack, on non renewable gen with P > 0
-        self._dist_slack_non_renew = dist_slack_non_renew
-        
-        # add the static gen to the list of controlable gen in grid2Op
-        self._use_static_gen = use_static_gen  # TODO implement it
+
 
     def _aux_init_super(self, 
                         detailed_infos_for_cascading_failures,
@@ -1184,7 +1189,7 @@ class LightSimBackend(Backend):
 
         # copy the regular attribute
         res.__has_storage = self.__has_storage
-        # res.__current_solver_type = self.__current_solver_type
+        res.__current_solver_type = self.__current_solver_type  # forced here because of special `__`
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         # res._can_be_copied = self._can_be_copied
@@ -1206,6 +1211,9 @@ class LightSimBackend(Backend):
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
                            "supported_grid_format", 
+                           "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
+                           "_use_static_gen", "_loader_method", "_loader_kwargs",
+                           "_stop_if_load_disco", "_stop_if_gen_disco"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
