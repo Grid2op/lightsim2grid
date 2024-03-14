@@ -41,6 +41,11 @@ jobs:
             abi: cp311,
             version: '3.11',
           }
+          - {
+            name: cp312,
+            abi: cp312,
+            version: '3.12',
+          }
 
     steps:
 
@@ -73,8 +78,11 @@ jobs:
       - name: Install wheel
         run: pip3 install wheelhouse/*.whl --user
 
-      - name: Install GDB
-        run: yum install -y gdb
+      - name: Fix urllib3 (python 3.7)
+        if: matrix.python.name == 'cp37'
+        run:
+          pip install urllib3==1.26.6
+          # otherwise urllib3 v2.0 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'OpenSSL 1.0.2k-fips  26 Jan 2017'
 
       - name: Check package can be imported
         run: |
@@ -83,11 +91,18 @@ jobs:
           # python3 -c "from lightsim2grid.newtonpf import newtonpf"
           gdb -batch -ex r --args python3 -c "from lightsim2grid import *" -ex backtrace
 
-      - name: Check LightSimBackend can be imported
+      - name: Check LightSimBackend can be imported (install grid2op)
         run: |
           python3 -m pip install grid2op
-          python3 -c "from lightsim2grid import LightSimBackend"
-          python3 -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
+          python3 -m pip freeze
+          
+      - name: Check LightSimBackend can be imported 1
+        run:
+          python3 -v -c "from lightsim2grid import LightSimBackend"
+
+      - name: Check LightSimBackend can be imported 2
+        run:
+          python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v3
@@ -129,6 +144,11 @@ jobs:
             name: cp311,
             version: '3.11',
           }
+          - {
+            name: cp312,
+            version: '3.12',
+          }
+          
     env:
       RUNNER_OS: windows-2019
       PYTHON_VERSION: ${{ matrix.python.version }}
