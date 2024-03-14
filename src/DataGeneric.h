@@ -132,7 +132,7 @@ class DataGeneric : public BaseConstants
         template<class T, class intType>
         void check_size(const T & container, intType size, const std::string & container_name)
         {
-            if(container.size() != size) throw std::runtime_error(container_name + " do not have the proper size");
+            if(static_cast<intType>(container.size()) != size) throw std::runtime_error(container_name + " do not have the proper size");
         }
 
         /**
