@@ -145,7 +145,6 @@ Eigen::VectorXi BaseSolver::extract_slack_bus_id(const Eigen::VectorXi & pv,
 
     Eigen::VectorXi res(nb_bus - pv.size() - pq.size());
     Eigen::Index i_res = 0;
-    bool found=false;
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
     for(unsigned int k=0; k < pv.size(); ++k)

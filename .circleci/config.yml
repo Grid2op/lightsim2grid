@@ -268,11 +268,17 @@ jobs:
             size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
-            # - run:
-            #     name: "Install Python"
-            #     command: choco install python --version=3.9  # use python 3.9 for windows test
-            - run: py -m pip install virtualenv
-            - run: py -m virtualenv venv_test
+            - run: choco install python --version=3.10  --force -y
+            - run: C:\Python310\python --version 
+            - run: C:\Python310\python -m pip install --upgrade pip setuptools wheel
+            - run: C:\Python310\python -m pip install virtualenv
+            - run: C:\Python310\python -m virtualenv venv_test
+            - run: 
+                name: "Chekc python  / pip version in venv"
+                command: |
+                    .\venv_test\Scripts\activate
+                    python --version 
+                    pip --version
             - run:
                 name: "Install grid2op from source"
                 command: |
@@ -286,14 +292,15 @@ jobs:
                     pip install -U pybind11
                     git submodule init
                     git submodule update
-                    py setup.py build
-                    py -m pip install -e .[test]
+                    python setup.py build
+                    python -m pip install -e .[test]
             - run:
                 name: "make tests"
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
                     python -m unittest discover -v
+
 
 workflows:
     version: 2.1
