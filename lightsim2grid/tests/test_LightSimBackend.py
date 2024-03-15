@@ -12,20 +12,58 @@ import unittest
 import warnings
 import grid2op
 import numpy as np
+from packaging import version
 
 from grid2op.tests.helper_path_test import PATH_DATA_TEST_PP, PATH_DATA_TEST
 
 from grid2op.Space import GridObjects  # lazy import
 __has_storage = hasattr(GridObjects, "n_storage")
 
-from grid2op.tests.helper_path_test import HelperTests
-from grid2op.tests.BaseBackendTest import BaseTestNames, BaseTestLoadingCase, BaseTestLoadingBackendFunc
-from grid2op.tests.BaseBackendTest import BaseTestTopoAction, BaseTestEnvPerformsCorrectCascadingFailures
-from grid2op.tests.BaseBackendTest import BaseTestChangeBusAffectRightBus, BaseTestShuntAction
-from grid2op.tests.BaseBackendTest import BaseTestResetEqualsLoadGrid, BaseTestVoltageOWhenDisco, BaseTestChangeBusSlack
-from grid2op.tests.BaseBackendTest import BaseIssuesTest, BaseStatusActions
-from grid2op.tests.test_Environment import TestLoadingBackendPandaPower, TestResetOk
-from grid2op.tests.test_Environment import TestResetAfterCascadingFailure, TestCascadingFailure
+try:
+    # new way of doing, does not need to inherit from HelperTests but from unittest.TestCase
+    from grid2op._create_test_suite import create_test_suite
+    from grid2op.tests.helper_path_test import HelperTests as DEPRECATEDHelper
+    
+    class _Garbage:
+        def setUp(self):
+            pass
+        
+    class _SuperGarbage(DEPRECATEDHelper, _Garbage):
+        pass
+    
+    _garbage = _SuperGarbage()
+    _garbage.setUp()
+    
+    class HelperTests(unittest.TestCase):
+        def setUp(self) -> None:
+            self.tol_one = _garbage.tol_one
+            self.tolvect = _garbage.tolvect
+            return super().setUp()
+        
+        def tearDown(self) -> None:
+            return super().tearDown()
+    
+except ImportError as exc_:
+    # old way of doing, need to inherit from that
+    from grid2op.tests.helper_path_test import HelperTests
+    
+from grid2op.tests.BaseBackendTest import (BaseTestNames,
+                                           BaseTestLoadingCase,
+                                           BaseTestLoadingBackendFunc, 
+                                           BaseTestTopoAction,
+                                           BaseTestEnvPerformsCorrectCascadingFailures,
+                                           BaseTestChangeBusAffectRightBus,
+                                           BaseTestShuntAction,
+                                           BaseTestResetEqualsLoadGrid,
+                                           BaseTestVoltageOWhenDisco,
+                                           BaseTestChangeBusSlack,
+                                           BaseIssuesTest,
+                                           BaseStatusActions)
+
+from grid2op.tests.test_Environment import (BaseTestLoadingBackendPandaPower,
+                                            BaseTestResetOk,
+                                            BaseTestResetAfterCascadingFailure,
+                                            BaseTestCascadingFailure)
 
 if __has_storage:
     from grid2op.tests.BaseBackendTest import BaseTestStorageAction
@@ -36,32 +74,24 @@ from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
 from grid2op.Runner import Runner
 
-class TestNames(HelperTests, BaseTestNames):
+
+class TestNames(BaseTestNames, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         return bk
 
-    def get_path(self):
-        return PATH_DATA_TEST_INIT
 
-
-class TestLoadingCase(HelperTests, BaseTestLoadingCase):
+class TestLoadingCase(BaseTestLoadingCase, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         return bk
 
-    def get_path(self):
-        return PATH_DATA_TEST
 
-    def get_casefile(self):
-        return "test_case14.json"
-
-
-class TestLoadingBackendFunc(HelperTests, BaseTestLoadingBackendFunc):
+class TestLoadingBackendFunc(BaseTestLoadingBackendFunc, unittest.TestCase):
     def setUp(self):
         # TODO find something more elegant
         BaseTestLoadingBackendFunc.setUp(self)
@@ -83,14 +113,8 @@ class TestLoadingBackendFunc(HelperTests, BaseTestLoadingBackendFunc):
             bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         return bk
 
-    def get_path(self):
-        return PATH_DATA_TEST
 
-    def get_casefile(self):
-        return "test_case14.json"
-
-
-class TestTopoAction(HelperTests, BaseTestTopoAction):
+class TestTopoAction(BaseTestTopoAction, unittest.TestCase):
     def setUp(self):
         BaseTestTopoAction.setUp(self)
 
@@ -104,14 +128,8 @@ class TestTopoAction(HelperTests, BaseTestTopoAction):
             bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         return bk
 
-    def get_path(self):
-        return PATH_DATA_TEST
 
-    def get_casefile(self):
-        return "test_case14.json"
-
-
-class TestEnvPerformsCorrectCascadingFailures(HelperTests, BaseTestEnvPerformsCorrectCascadingFailures):
+class TestEnvPerformsCorrectCascadingFailures(BaseTestEnvPerformsCorrectCascadingFailures, unittest.TestCase):
     def setUp(self):
         BaseTestEnvPerformsCorrectCascadingFailures.setUp(self)
 
@@ -124,15 +142,9 @@ class TestEnvPerformsCorrectCascadingFailures(HelperTests, BaseTestEnvPerformsCo
             warnings.filterwarnings("ignore")
             bk = LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
         return bk
+    
 
-    def get_casefile(self):
-        return "test_case14.json"
-
-    def get_path(self):
-        return PATH_DATA_TEST
-
-
-class TestChangeBusAffectRightBus(HelperTests, BaseTestChangeBusAffectRightBus):
+class TestChangeBusAffectRightBus(BaseTestChangeBusAffectRightBus, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -140,7 +152,7 @@ class TestChangeBusAffectRightBus(HelperTests, BaseTestChangeBusAffectRightBus):
         return bk
 
 
-class TestShuntAction(HelperTests, BaseTestShuntAction):
+class TestShuntAction(BaseTestShuntAction, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -148,7 +160,7 @@ class TestShuntAction(HelperTests, BaseTestShuntAction):
         return bk
 
 
-class TestResetEqualsLoadGrid(HelperTests, BaseTestResetEqualsLoadGrid):
+class TestResetEqualsLoadGrid(BaseTestResetEqualsLoadGrid, unittest.TestCase):
     def setUp(self):
         BaseTestResetEqualsLoadGrid.setUp(self)
 
@@ -159,7 +171,7 @@ class TestResetEqualsLoadGrid(HelperTests, BaseTestResetEqualsLoadGrid):
         return bk
 
 
-class TestVoltageOWhenDisco(HelperTests, BaseTestVoltageOWhenDisco):
+class TestVoltageOWhenDisco(BaseTestVoltageOWhenDisco, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -167,7 +179,7 @@ class TestVoltageOWhenDisco(HelperTests, BaseTestVoltageOWhenDisco):
         return bk
 
 
-class TestChangeBusSlack(HelperTests, BaseTestChangeBusSlack):
+class TestChangeBusSlack(BaseTestChangeBusSlack, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -175,7 +187,8 @@ class TestChangeBusSlack(HelperTests, BaseTestChangeBusSlack):
         return bk
 
 
-class TestIssuesTest(HelperTests, BaseIssuesTest):
+class TestIssuesTest(BaseIssuesTest, unittest.TestCase):
+    tests_skipped = ["test_issue_125"]  if version.parse(grid2op.__version__) < version.parse("1.9.2") else []
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -183,7 +196,7 @@ class TestIssuesTest(HelperTests, BaseIssuesTest):
         return bk
 
 
-class TestStatusAction(HelperTests, BaseStatusActions):
+class TestStatusAction(BaseStatusActions, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -192,8 +205,9 @@ class TestStatusAction(HelperTests, BaseStatusActions):
 
 
 if __has_storage:
-    class TestStorageAction(HelperTests, BaseTestStorageAction):
+    class TestStorageAction(BaseTestStorageAction, unittest.TestCase):
         def setUp(self):
+            super().setUp()
             self.tests_skipped = ["test_storage_action_topo"]  # TODO this test is super weird ! It's like we impose
             # TODO a behaviour from pandapower (weird one) to all backends...
 
@@ -204,22 +218,22 @@ if __has_storage:
             return bk
 
 
-class TestLoadingBackendLightSim(TestLoadingBackendPandaPower):
-    def get_backend(self):
-        return LightSimBackend()
+class TestLoadingBackendLightSim(BaseTestLoadingBackendPandaPower, unittest.TestCase):
+    def get_backend(self, detailed_infos_for_cascading_failures=True):
+        return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
 
-class TestResetOkLS(TestResetOk):
+class TestResetOkLS(BaseTestResetOk, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
 
-class TestResetAfterCascadingFailureLS(TestResetAfterCascadingFailure):
+class TestResetAfterCascadingFailureLS(BaseTestResetAfterCascadingFailure, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 
 
-class TestCascadingFailureLS(TestCascadingFailure):
+class TestCascadingFailureLS(BaseTestCascadingFailure, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         return LightSimBackend(detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
 

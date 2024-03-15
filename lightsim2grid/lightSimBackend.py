@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2024, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -33,20 +33,17 @@ class LightSimBackend(Backend):
                  max_iter: int=10,
                  tol: float=1e-8,
                  solver_type: Optional[SolverType] =None):
-        try:
-            # for grid2Op >= 1.7.1
-            Backend.__init__(self,
-                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
-                             can_be_copied=can_be_copied,
-                             solver_type=solver_type,
-                             max_iter=max_iter,
-                             tol=tol)
-        except TypeError as exc_:
-            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
-                          "you cannot set max_iter, tol nor solver_type arguments.")
-            Backend.__init__(self,
-                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+        self.max_it = max_iter
+        self.tol = tol  # tolerance for the solver
+        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
+        self.__current_solver_type = solver_type
 
+        self._aux_init_super(detailed_infos_for_cascading_failures,
+                             can_be_copied,
+                             solver_type,
+                             max_iter,
+                             tol)
+        
         # lazy loading because it crashes...
         from grid2op.Backend import PandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
@@ -54,6 +51,8 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
+
+        self.shunts_data_available = True  # needs to be self and not type(self) here
 
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
@@ -78,8 +77,6 @@ class LightSimBackend(Backend):
         self.init_pp_backend = PandaPowerBackend()
 
         self.V = None
-        self.max_it = max_iter
-        self.tol = tol  # tolerance for the solver
 
         self.prod_pu_to_kv = None
         self.load_pu_to_kv = None
@@ -131,12 +128,20 @@ class LightSimBackend(Backend):
 
         # available solver in lightsim
         self.available_solvers = []
-        self.comp_time = 0.  # computation time of just the powerflow
+
+        # computation time of just the powerflow (when the grid is formatted
+        # by the gridmodel already)
+        # it takes only into account the time spend in the powerflow algorithm
+        self.comp_time = 0.
+
+        # computation time of the powerflow
+        # it takes into account everything in the gridmodel, including the mapping
+        # to the solver, building of Ybus and Sbus AND the time to solve the powerflow
+        self.timer_gridmodel_xx_pf = 0.
+
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
-        self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
-        self.__current_solver_type = solver_type
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -149,6 +154,26 @@ class LightSimBackend(Backend):
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
 
+    def _aux_init_super(self,
+                        detailed_infos_for_cascading_failures,
+                        can_be_copied,
+                        solver_type,
+                        max_iter,
+                        tol):
+        try:
+            # for grid2Op >= 1.7.1
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures,
+                             can_be_copied=can_be_copied,
+                             solver_type=solver_type,
+                             max_iter=max_iter
+                             )
+        except TypeError as exc_:
+            warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
+                          "you cannot set max_iter, tol nor solver_type arguments.")
+            Backend.__init__(self,
+                             detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
+ 
     def _fill_theta(self):
         # line_or_theta = np.empty(self.n_line)
         self.line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
@@ -816,7 +841,16 @@ class LightSimBackend(Backend):
         ####################
         # res = copy.deepcopy(self)  # super slow
         res = type(self).__new__(type(self))
-
+        # make sure to init the "base class"
+        # in particular with "new" attributes in future grid2op Backend
+        res._aux_init_super(self.detailed_infos_for_cascading_failures,
+                            self._can_be_copied,
+                            self.__current_solver_type,
+                            self.max_it,
+                            self.tol)
+        res.comp_time = self.comp_time
+        res.timer_gridmodel_xx_pf = self.timer_gridmodel_xx_pf
+        
         # copy the regular attribute
         res.__has_storage = self.__has_storage
         res.__current_solver_type = self.__current_solver_type
@@ -876,7 +910,7 @@ class LightSimBackend(Backend):
                     ] + type(self)._li_attr_disp
 
         for attr_nm in cls_attr:
-            if hasattr(self, attr_nm):
+            if hasattr(self, attr_nm) and not hasattr(type(self), attr_nm):
                 # this test is needed for backward compatibility with other grid2op version
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
         ###############

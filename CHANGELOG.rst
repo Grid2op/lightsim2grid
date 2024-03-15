@@ -15,6 +15,11 @@ Change Log
 - easier building (get rid of the "make" part)
 - code NR with dense matrices
 
+[0.7.1.post1] 2024-03-14
+--------------------------
+- [FIXED] 'forward' compatibility with grid2op 1.10.0 by making the `copy()` 
+  implementation of lightsim2grid more generic
+
 [0.7.1] 2023-01-11
 ---------------------
 - [BREAKING] drop support for numpy version < 1.20 (to be consistent with grid2op)

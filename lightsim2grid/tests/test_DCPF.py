@@ -124,9 +124,13 @@ class TestDCPF(unittest.TestCase):
 
             real_init_file = pp.from_json(case_name)
             backend = LightSimBackend()
+            type(backend)._clear_grid_dependant_class_attributes()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
+                type(backend).env_name = pn_net
                 backend.load_grid(case_name)
+                backend.assert_grid_correct()
+                # backend.init_pp_backend.assert_grid_correct()
 
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
