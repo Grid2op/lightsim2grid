@@ -71,18 +71,6 @@ class LightSimBackend(Backend):
         self._loader_method = loader_method
         
         self._loader_kwargs = loader_kwargs
-        
-        #: .. versionadded:: 0.8.0
-        #: Which type of grid format can be read by your backend.
-        #: It is "json" if loaded from pandapower or
-        #: "xiidm" if loaded from pypowsybl.
-        self.supported_grid_format = None
-        if loader_method == "pandapower":
-            self.supported_grid_format = ("json", )  # new in 0.8.0
-        elif loader_method == "pypowsybl":
-            self.supported_grid_format = ("xiidm", )  # new in 0.8.0
-        else:
-            raise BackendError(f"Uknown loader_metho : '{loader_method}'")
 
         #: .. versionadded:: 0.8.0
         #: if set to `True` (default) then the backend will raise a 
@@ -107,6 +95,18 @@ class LightSimBackend(Backend):
                              stop_if_load_disco,
                              stop_if_gen_disco)
 
+        #: .. versionadded:: 0.8.0
+        #: Which type of grid format can be read by your backend.
+        #: It is "json" if loaded from pandapower or
+        #: "xiidm" if loaded from pypowsybl.
+        self.supported_grid_format = None
+        if loader_method == "pandapower":
+            self.supported_grid_format = ("json", )  # new in 0.8.0
+        elif loader_method == "pypowsybl":
+            self.supported_grid_format = ("xiidm", )  # new in 0.8.0
+        else:
+            raise BackendError(f"Uknown loader_metho : '{loader_method}'")
+        
         # lazy loading because it crashes...
         from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
