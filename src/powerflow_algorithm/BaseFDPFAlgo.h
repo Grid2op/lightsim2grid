@@ -51,6 +51,8 @@ class BaseFDPFAlgo: public BaseAlgo
             // solution of the problem
             Bp_ = Eigen::SparseMatrix<real_type> ();  // the B prime matrix (size n_pvpq)
             Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
+            grid_Bp_ = Eigen::SparseMatrix<real_type> ();  // the B prime matrix (size n_pvpq)
+            grid_Bpp_ = Eigen::SparseMatrix<real_type>();  // the B double prime matrix  (size n_pq)
             p_ = RealVect();
             q_ = RealVect();
             need_factorize_ = true;
@@ -200,6 +202,8 @@ class BaseFDPFAlgo: public BaseAlgo
         LinearSolver _linear_solver_Bpp;
 
         // solution of the problem
+        Eigen::SparseMatrix<real_type> grid_Bp_;
+        Eigen::SparseMatrix<real_type> grid_Bpp_;
         Eigen::SparseMatrix<real_type> Bp_;  // the B prime matrix (size n_pvpq)
         Eigen::SparseMatrix<real_type> Bpp_;  // the B double prime matrix  (size n_pq)
         RealVect p_;  // (size n_pvpq)
