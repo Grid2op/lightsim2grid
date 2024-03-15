@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2024, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -11,7 +11,7 @@ import warnings
 import grid2op
 from grid2op.tests.test_Runner import TestRunner as TestRunner_glop
 from grid2op.tests.test_RunnerFast import TestRunner as TestRunnerFast_glop
-from grid2op.tests.test_Runner import HelperTests, L2RPNReward
+from grid2op.tests.test_Runner import L2RPNReward
 from grid2op.Runner import Runner
 
 from lightsim2grid.lightSimBackend import LightSimBackend

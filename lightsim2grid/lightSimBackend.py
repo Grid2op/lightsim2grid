@@ -53,7 +53,6 @@ class LightSimBackend(Backend):
                  stop_if_load_disco : Optional[bool] = True,
                  stop_if_gen_disco : Optional[bool] = True,
                  ):
-        
         self.max_it = max_iter
         self.tol = tol  # tolerance for the solver
         self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
@@ -68,19 +67,6 @@ class LightSimBackend(Backend):
         
         # add the static gen to the list of controlable gen in grid2Op
         self._use_static_gen = use_static_gen  # TODO implement it
-        
-        self._loader_method = loader_method
-        self._loader_kwargs = loader_kwargs
-        
-        #: .. versionadded:: 0.7.6
-        #: if set to `True` (default) then the backend will raise a 
-        #: BackendError in case of disconnected load
-        self._stop_if_load_disco = stop_if_load_disco
-        
-        #: .. versionadded:: 0.7.6
-        #: if set to `True` (default) then the backend will raise a 
-        #: BackendError in case of disconnected generator
-        self._stop_if_gen_disco = stop_if_gen_disco
                         
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
@@ -102,7 +88,6 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
-        
         
         if loader_method == "pandapower":
             self.supported_grid_format = ("json", )  # new in 1.9.6
@@ -217,8 +202,6 @@ class LightSimBackend(Backend):
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
         
-
-
     def _aux_init_super(self, 
                         detailed_infos_for_cascading_failures,
                         can_be_copied,
@@ -253,7 +236,7 @@ class LightSimBackend(Backend):
                           "you cannot set max_iter, tol nor solver_type arguments.")
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
-        
+                 
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
         self._grid.turnedoff_no_pv()

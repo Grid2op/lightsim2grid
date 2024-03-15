@@ -183,7 +183,7 @@ class AuxInitFromPyPowSyBl:
                                   phase_shifter_regulation_on=False,
                                   distributed_slack=False,
                                   provider_parameters={"slackBusSelectionMode": "NAME",
-                                                      "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
+                                                       "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
                                   ) 
         except TypeError:
             param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
@@ -195,7 +195,7 @@ class AuxInitFromPyPowSyBl:
                                   provider_parameters={"slackBusSelectionMode": "NAME",
                                                        "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
                                   ) 
-            
+
         res_pypow = lf.run_ac(self.network_ref, parameters=param)
         bus_ref_kv = self.network_ref.get_voltage_levels().loc[self.network_ref.get_buses()["voltage_level_id"].values]["nominal_v"].values
         v_mag_pypo = self.network_ref.get_buses()["v_mag"].values / bus_ref_kv

@@ -155,7 +155,6 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::VectorXi & pv,
     }
     Eigen::VectorXi res(nb_slacks);
     Eigen::Index i_res = 0;
-
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
     for(auto pv_i : pv) tmp[pv_i] = false;

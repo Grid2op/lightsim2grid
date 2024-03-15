@@ -18,7 +18,7 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.7.6] 2023-xx-yy
+[0.8.0] 2023-03-15
 --------------------
 - [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
   If you previously used `gridmodel.get_Sbus()` to retrieve the Sbus used for DC powerflow, please use
@@ -46,6 +46,8 @@ Change Log
   are given by the "ext_grid" information.
 - [FIXED] a bug in "gridmodel.assign_slack_to_most_connected()" that could throw an error if a 
   generator with "target_p" == 0. was connected to the most connected bus on the grid
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.
@@ -66,7 +68,16 @@ Change Log
   vs powerflow algorithm and move same type of files in the same directory. This change
   does not really affect python side at the moment (but will in future versions)
 - [IMPROVED] CI to test on gcc 13 and clang 18 (latest versions to date)
+- [IMPROVED] computation speed: grid is not read another time in some cases.
+  For example, if load and generators do not change, then Sbus is not
+  recomputed. Likewise, if the topology does not change, then the Ybus 
+  is not recomputed either see https://github.com/BDonnot/lightsim2grid/issues/72
 
+[0.7.5.post1] 2024-03-14
+-------------------------
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
+  
 [0.7.5] 2023-10-05
 --------------------
 - [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
