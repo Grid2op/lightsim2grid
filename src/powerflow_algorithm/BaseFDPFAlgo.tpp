@@ -10,15 +10,15 @@
 
 template<class LinearSolver, FDPFMethod XB_BX>
 bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                     CplxVect & V,
-                                                     const CplxVect & Sbus,
-                                                     const Eigen::VectorXi & slack_ids,
-                                                     const RealVect & slack_weights,
-                                                     const Eigen::VectorXi & pv,
-                                                     const Eigen::VectorXi & pq,
-                                                     int max_iter,
-                                                     real_type tol
-                                                     )
+                                                   CplxVect & V,
+                                                   const CplxVect & Sbus,
+                                                   const Eigen::VectorXi & slack_ids,
+                                                   const RealVect & slack_weights,
+                                                   const Eigen::VectorXi & pv,
+                                                   const Eigen::VectorXi & pq,
+                                                   int max_iter,
+                                                   real_type tol
+                                                   )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -75,7 +75,7 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
        _solver_control.has_dimension_changed() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero() ||
-       _solver_control.need_recompute_ybus() ||
+       _solver_control.need_recompute_ybus()
        ){
         // need to extract Bp and Bpp for the whole grid
         grid_Bp_ = Eigen::SparseMatrix<real_type> ();
