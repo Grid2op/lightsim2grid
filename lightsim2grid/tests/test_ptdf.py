@@ -36,7 +36,8 @@ class TestCase14SLU(unittest.TestCase):
         if solver_type not in self.gridmodel.available_solvers():
             self.skipTest("Solver type not supported on this platform")
         self.gridmodel.change_solver(solver_type)
-        self.gridmodel.dc_pf(self.V_init, 1, 1e-8)
+        V = self.gridmodel.dc_pf(self.V_init, 1, 1e-8)
+        assert len(V), f"dc pf has diverged with error {self.gridmodel.get_dc_solver().get_error()}"
         self.dcYbus = 1.0 * self.gridmodel.get_dcYbus()
         self.dcSbus = 1.0 * self.gridmodel.get_dcSbus().real
         self.Bbus = 1.0 * self.dcYbus.real

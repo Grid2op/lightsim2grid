@@ -278,3 +278,5 @@ lightsim2grid/tests/_grid2op_for_test/
 bug_sparselu
 bug_sparselu_eigen.cpp
 test_segfault.sh
+nohup.out
+test_rte/

@@ -13,9 +13,6 @@
 
 // import newton raphson solvers using different linear algebra solvers
 #include "Solvers.h"
-#include "GaussSeidelSolver.h"
-#include "GaussSeidelSynchSolver.h"
-#include "DCSolver.h"
 
 enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU, 
                        SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack, 
@@ -27,6 +24,8 @@ enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
                        FDPF_XB_CKTSO,  FDPF_BX_CKTSO  // from 0.7.5
                        };
 
+
+std::ostream& operator<<(std::ostream& out, const SolverType& solver_type);
 // TODO define a template class instead of these weird stuff !!!
 // TODO export all methods from base class !
 
@@ -173,10 +172,12 @@ class ChooseSolver
             #endif
 
             // now switch the union (see https://en.cppreference.com/w/cpp/language/union)
+            // reset the old solver
             reset();
-
             // and assign the right solver
             _solver_type = type;
+            // and now reset the new one
+            reset();
         }
 
         void reset()
@@ -185,7 +186,7 @@ class ChooseSolver
             return p_solver -> reset();
         }
 
-        // benefit from dynamic stuff and inheritance by having a method that returns a BaseSolver *
+        // benefit from dynamic stuff and inheritance by having a method that returns a BaseAlgo *
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // size (nb_bus, nb_bus)
                         CplxVect & V,  // size nb_bus
                         const CplxVect & Sbus,  // size nb_bus
@@ -275,6 +276,11 @@ class ChooseSolver
             return res;
         }
 
+        void tell_solver_control(const SolverControl & solver_control){
+            auto p_solver = get_prt_solver("tell_solver_control", false);
+            p_solver -> tell_solver_control(solver_control);
+        }
+
         /** apparently i cannot pass a const ref for a sparse matrix in python**/
         Eigen::SparseMatrix<real_type> get_J_python() const{
             Eigen::SparseMatrix<real_type> res = get_J();
@@ -305,7 +311,17 @@ class ChooseSolver
     private:
         void check_right_solver(const std::string & error_msg) const
         {
-            if(_solver_type != _type_used_for_nr) throw std::runtime_error("ChooseSolver: Solver mismatch when calling '"+error_msg+"': current solver is not the last solver used to perform a powerflow");
+            if(_solver_type != _type_used_for_nr){
+                std::ostringstream exc_;
+                exc_ << "ChooseSolver: Solver mismatch when calling '";
+                exc_ << error_msg;
+                exc_ << ": current solver (";
+                exc_ << _solver_type;
+                exc_ << ") is not the one used to perform a powerflow (";
+                exc_ << _type_used_for_nr;
+                exc_ << ").";
+                throw std::runtime_error(exc_.str());
+            }
             
             #ifndef KLU_SOLVER_AVAILABLE
                 if(_solver_type == SolverType::KLU){
@@ -369,9 +385,9 @@ class ChooseSolver
         /**
         returns a pointer to the current solver used
         **/
-        const BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) const {
+        const BaseAlgo * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) const {
             if (check_right_solver_) check_right_solver(error_msg);
-            const BaseSolver * res;
+            const BaseAlgo * res;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
@@ -403,9 +419,9 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered (ChooseSolver get_prt_solver const)");
             return res;
         }
-        BaseSolver * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
+        BaseAlgo * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
             if (check_right_solver_) check_right_solver(error_msg);
-            BaseSolver * res;
+            BaseAlgo * res;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
@@ -445,8 +461,8 @@ class ChooseSolver
         // TODO have a way to use Union here https://en.cppreference.com/w/cpp/language/union
         SparseLUSolver _solver_lu;
         SparseLUSolverSingleSlack _solver_lu_single;
-        GaussSeidelSolver _solver_gaussseidel;
-        GaussSeidelSynchSolver _solver_gaussseidelsynch;
+        GaussSeidelAlgo _solver_gaussseidel;
+        GaussSeidelSynchAlgo _solver_gaussseidelsynch;
         DCSolver _solver_dc;
         FDPF_XB_SparseLUSolver _solver_fdpf_xb_lu;
         FDPF_BX_SparseLUSolver _solver_fdpf_bx_lu;

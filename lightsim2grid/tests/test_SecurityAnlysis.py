@@ -11,7 +11,7 @@ from grid2op import Backend
 import numpy as np
 import grid2op
 
-from lightsim2grid import SecurityAnalysis
+from lightsim2grid import ContingencyAnalysis
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb
@@ -28,10 +28,10 @@ class TestSecurityAnalysis(unittest.TestCase):
         return super().tearDown()
 
     def test_can_create(self):
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
     
     def test_clear(self):
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
 
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
@@ -46,7 +46,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert len(sa._contingency_order) == 0
 
     def test_add_single_contingency(self):
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         with self.assertRaises(RuntimeError):
             sa.add_single_contingency("toto")
         with self.assertRaises(RuntimeError):
@@ -64,7 +64,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert len(sa._contingency_order) == 4
 
     def test_add_multiple_contingencies(self):
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
         all_conts = sa.computer.my_defaults()
@@ -91,7 +91,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert len(sa._contingency_order) == 4
 
     def test_add_all_n1_contingencies(self):
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_all_n1_contingencies()
         all_conts = sa.computer.my_defaults()
         assert len(all_conts) == self.env.n_line
@@ -100,7 +100,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_simple(self):
         """test the get_flows method in the most simplest way: ask for all contingencies,
         contingencies are given in the right order"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -111,7 +111,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_1(self):
         """test the get_flows method: ask for all contingencies , 
         contingencies are NOT given in the right order"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -122,7 +122,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_2(self):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are given in the right order"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -132,7 +132,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_3(self):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are given in the right order"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -142,7 +142,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_4(self):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are NOT given in the right order"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -152,7 +152,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_5(self):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are NOT given in the right order"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -161,7 +161,7 @@ class TestSecurityAnalysis(unittest.TestCase):
 
     def test_get_flows_multiple(self):
         """test the get_flows function when multiple contingencies"""
-        sa = SecurityAnalysis(self.env)
+        sa = ContingencyAnalysis(self.env)
         sa.add_multiple_contingencies(0, [0, 4], [5, 7], 4)
 
         # everything
@@ -197,11 +197,11 @@ class TestSecurityAnalysis(unittest.TestCase):
 
     def test_change_injection(self):
         """test the capacity of the things to handle different steps"""
-        sa1 = SecurityAnalysis(self.env)
+        sa1 = ContingencyAnalysis(self.env)
         conts = [0, [0, 4], [5, 7], 4]
         sa1.add_multiple_contingencies(*conts)
         self.env.reset()
-        sa2 = SecurityAnalysis(self.env)
+        sa2 = ContingencyAnalysis(self.env)
         sa2.add_multiple_contingencies(*conts)
 
         res_p1, res_a1, res_v1 = sa1.get_flows()

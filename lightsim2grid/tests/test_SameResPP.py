@@ -131,7 +131,7 @@ class MyTestCase(unittest.TestCase):
 
         V = backend._grid.ac_pf(v_tmp, 10, 1e-5)
         assert V.shape[0], "? lightsim diverge when initialized with pp final voltage ?"
-        backend._grid.tell_topo_changed()
+        backend._grid.tell_solver_need_reset()
 
         Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
         Sbus = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
@@ -218,7 +218,7 @@ class MyTestCase(unittest.TestCase):
         backend._grid.deactivate_result_computation()
         Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
         backend._grid.reactivate_result_computation()
-        backend._grid.tell_topo_changed()
+        backend._grid.tell_solver_need_reset()
         Ydc_me = copy.deepcopy(backend._grid.get_dcYbus())
         Sdc_me = copy.deepcopy(backend._grid.get_dcSbus())
         assert np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) <= 100.*self.tol,\

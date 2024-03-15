@@ -103,7 +103,8 @@ class BaseTests:
         return V0
 
     def run_me_pf(self, V0):
-        return self.model.compute_newton(V0, self.max_it, self.tol)
+        res = self.model.ac_pf(V0, self.max_it, self.tol)
+        return res
 
     def run_ref_pf(self, net):
         with warnings.catch_warnings():
@@ -111,7 +112,7 @@ class BaseTests:
             pp.runpp(net,
                      init="flat",
                      lightsim2grid=False,
-                     numba=True, 
+                     numba=False, 
                      distributed_slack=False)
 
     def do_i_skip(self, func_name):

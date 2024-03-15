@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 # ADVANCED USAGE
-# This files explains how to use the Computers cpp class, for easier use
+# This files explains how to use the TimeSeriesCPP cpp class, for easier use
 # please consult the documentation of TimeSeries or the
 # time_serie.py file !
 
@@ -22,7 +22,7 @@ import asyncio  # asyncio
 import grid2op
 from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
-from lightsim2grid.timeSerie import Computers
+from lightsim2grid.timeSerie import TimeSeriesCPP
 
 NB_THREAD = 4
 ENV_NAME = "l2rpn_neurips_2020_track2_small"
@@ -51,7 +51,7 @@ def get_injs(env):
 
 def get_flows(grid, Vinit, prod_p, load_p, load_q, max_it=10, tol=1e-8):
     # now perform the computation
-    computer = Computers(grid)
+    computer = TimeSeriesCPP(grid)
     # print("start the computation")
     status = computer.compute_Vs(prod_p,
                                  np.zeros((prod_p.shape[0], 0)),  # no static generators for now !

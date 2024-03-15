@@ -18,11 +18,15 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.7.6] 2023-xx-yy
+[0.8.0] 2023-03-15
 --------------------
 - [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
-  If you previously used `gridmodel.get_Subus()` to retrieve the Sbus used for DC powerflow, please use
+  If you previously used `gridmodel.get_Sbus()` to retrieve the Sbus used for DC powerflow, please use
   `gridmodel.get_dcSbus()` instead.
+- [DEPRECATED] in the cpp class: the old `SecurityAnalysisCPP` has been renamed `ContingencyAnalysisCPP`
+  (you should not import it, but it you do you can `from lightsim2grid.securityAnalysis import ContingencyAnalysisCPP` now)
+- [DEPRECATED] in the cpp class: the old `Computers` has been renamed `TimeSerieCPP`
+  (you should not import it, but it you do you can `from lightsim2grid.time_serie import TimeSerieCPP` now)
 - [FIXED] now voltage is properly set to 0. when shunts are disconnected
 - [FIXED] now voltage is properly set to 0. when storage units are disconnected
 - [FIXED] a bug where non connected grid were not spotted in DC
@@ -30,14 +34,50 @@ Change Log
 - [FIXED] a bug in init from pypowsybl when some object were disconnected. It raises
   an error (because they are not connected to a bus): now this function properly handles
   these cases.
+- [FIXED] a bug leading to not propagate correctly the "compute_results" flag when the 
+  environment was copied (for example)
+- [FIXED] a bug where copying a lightsim2grid `GridModel` did not fully copy it
+- [FIXED] a bug in the "topo_vect" comprehension cpp side (sometimes some buses 
+  might not be activated / deactivated correctly)
+- [FIXED] a bug when reading a grid initialize from pypowsybl (trafo names where put in place 
+  of shunt names)
+- [FIXED] read the docs was broken
+- [FIXED] a bug when reading a grid from pandapower for multiple slacks when slack 
+  are given by the "ext_grid" information.
+- [FIXED] a bug in "gridmodel.assign_slack_to_most_connected()" that could throw an error if a 
+  generator with "target_p" == 0. was connected to the most connected bus on the grid
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
 - [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
   one.
 - [ADDED] possibility to set / retrieve the names of each elements of the grid.
 - [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
 - [ADDED] computation of PTPF (Power Transfer Distribution Factor) is now possible
+- [ADDED] (not tested) support for more than 2 busbars per substation
+- [ADDED] a timer to get the time spent in the gridmodel for the powerflow (env.backend.timer_gridmodel_xx_pf)
+  which also include the time 
+- [ADDED] support for more than 2 busbars per substation (requires grid2op >= 1.10.0)
+- [ADDED] possibility to retrieve the bus id of the original iidm when initializing from pypowsybl 
+  (`return_sub_id` kwargs). This is a "beta" feature and will be adressed in a better way
+  in a near future.
+- [ADDED] possibility to continue the grid2op 'step' when the solver converges but a load or a 
+  generator is disconnected from the grid.
 - [IMPROVED] now performing the new grid2op `create_test_suite` 
 - [IMPROVED] now lightsim2grid properly throw `BackendError`
+- [IMPROVED] clean ce cpp side by refactoring: making clearer the difference (linear) solver
+  vs powerflow algorithm and move same type of files in the same directory. This change
+  does not really affect python side at the moment (but will in future versions)
+- [IMPROVED] CI to test on gcc 13 and clang 18 (latest versions to date)
+- [IMPROVED] computation speed: grid is not read another time in some cases.
+  For example, if load and generators do not change, then Sbus is not
+  recomputed. Likewise, if the topology does not change, then the Ybus 
+  is not recomputed either see https://github.com/BDonnot/lightsim2grid/issues/72
 
+[0.7.5.post1] 2024-03-14
+-------------------------
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
+  
 [0.7.5] 2023-10-05
 --------------------
 - [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when

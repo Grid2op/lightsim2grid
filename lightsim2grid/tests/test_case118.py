@@ -131,7 +131,7 @@ class TestMultipleL2RPN(unittest.TestCase):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
                 ls_grid = init(self.pp_net)
-            ls_grid.tell_topo_changed()
+            ls_grid.tell_solver_need_reset()
             V = np.ones(2 * self.nb_bus_total, dtype=np.complex_)
             V = ls_grid.ac_pf(V, self.max_it, self.tol)
             self.check_results(V[:self.nb_bus_total], ls_grid, self.pp_net)

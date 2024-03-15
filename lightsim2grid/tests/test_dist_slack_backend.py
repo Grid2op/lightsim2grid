@@ -44,28 +44,36 @@ class TestDistSlackBackend(unittest.TestCase):
         env.set_id(0)
     
     def _run_env(self, env):
+        # print("Run env starts")
         obs = env.reset()
         done = False
         ts = 0
         aor = np.zeros((self.max_iter_real, env.n_line))
         gen_p = np.zeros((self.max_iter_real, env.n_gen))
+        info = None
+        # print("While starts")
         while not done:
+            # print("\tbefore step")
             obs, reward, done, info = env.step(env.action_space())
             aor[ts,:] = obs.a_or
             gen_p[ts,:] = obs.gen_p
             ts += 1
             if ts >= self.max_iter_real:
                 break
-        return ts, done, aor, gen_p
+        # print("Run env stops")
+        return ts, done, aor, gen_p, info
         
     def test_different(self):
         self._aux_test_different(self.env_ss, self.env_ds)
         
     def _aux_test_different(self, env_ss, env_ds):
-        ts_ss, done_ss, aor_ss, gen_p_ss = self._run_env(env_ss)
-        ts_ds, done_ds, aor_ds, gen_p_ds = self._run_env(env_ds)
+        # print("before single slack")
+        ts_ss, done_ss, aor_ss, gen_p_ss, info_ss = self._run_env(env_ss)
+        # print("before dist slack")
+        ts_ds, done_ds, aor_ds, gen_p_ds, info_ds = self._run_env(env_ds)
+        # print("after dist slack")
         
-        assert ts_ss == ts_ds
+        assert ts_ss == ts_ds, f"ts_ss={ts_ss} != {ts_ds}=ts_ds: info_ds={info_ds['exception']}, info_ss={info_ss['exception']}"
         assert done_ss == done_ds
         
         # non redispatchable gen are not affected

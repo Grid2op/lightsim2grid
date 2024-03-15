@@ -13,8 +13,9 @@
 #include "ChooseSolver.h"
 #include "DataConverter.h"
 #include "GridModel.h"
-#include "Computers.h"
-#include "SecurityAnalysis.h"
+
+#include "batch_algorithm/TimeSeries.h"
+#include "batch_algorithm/ContingencyAnalysis.h"
 
 #include "help_fun_msg.h"
 
@@ -349,31 +350,31 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     
     #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
-    py::class_<GaussSeidelSolver>(m, "GaussSeidelSolver", DocSolver::GaussSeidelSolver.c_str())
+    py::class_<GaussSeidelAlgo>(m, "GaussSeidelSolver", DocSolver::GaussSeidelSolver.c_str())
         .def(py::init<>())
-        .def("get_Va", &GaussSeidelSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
-        .def("get_Vm", &GaussSeidelSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
-        .def("get_V", &GaussSeidelSolver::get_V, DocSolver::get_V.c_str()) 
-        .def("get_error", &GaussSeidelSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
-        .def("get_nb_iter", &GaussSeidelSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
-        .def("reset", &GaussSeidelSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
-        .def("converged", &GaussSeidelSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
-        .def("compute_pf", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
-        .def("get_timers", &GaussSeidelSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &GaussSeidelSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        .def("get_Va", &GaussSeidelAlgo::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &GaussSeidelAlgo::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+        .def("get_V", &GaussSeidelAlgo::get_V, DocSolver::get_V.c_str()) 
+        .def("get_error", &GaussSeidelAlgo::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &GaussSeidelAlgo::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+        .def("reset", &GaussSeidelAlgo::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+        .def("converged", &GaussSeidelAlgo::converged, DocSolver::converged.c_str())  // whether the solver has converged
+        .def("compute_pf", &GaussSeidelAlgo::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+        .def("get_timers", &GaussSeidelAlgo::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &GaussSeidelAlgo::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
 
-    py::class_<GaussSeidelSynchSolver>(m, "GaussSeidelSynchSolver", DocSolver::GaussSeidelSynchSolver.c_str())
+    py::class_<GaussSeidelSynchAlgo>(m, "GaussSeidelSynchSolver", DocSolver::GaussSeidelSynchSolver.c_str())
         .def(py::init<>())
-        .def("get_Va", &GaussSeidelSynchSolver::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
-        .def("get_Vm", &GaussSeidelSynchSolver::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
-        .def("get_V", &GaussSeidelSynchSolver::get_V, DocSolver::get_V.c_str()) 
-        .def("get_error", &GaussSeidelSynchSolver::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
-        .def("get_nb_iter", &GaussSeidelSynchSolver::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
-        .def("reset", &GaussSeidelSynchSolver::reset, DocSolver::reset.c_str())  // reset the solver to its original state
-        .def("converged", &GaussSeidelSynchSolver::converged, DocSolver::converged.c_str())  // whether the solver has converged
-        .def("compute_pf", &GaussSeidelSynchSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
-        .def("get_timers", &GaussSeidelSynchSolver::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
-        .def("solve", &GaussSeidelSynchSolver::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
+        .def("get_Va", &GaussSeidelSynchAlgo::get_Va, DocSolver::get_Va.c_str())  // get the voltage angle vector (vector of double)
+        .def("get_Vm", &GaussSeidelSynchAlgo::get_Vm, DocSolver::get_Vm.c_str())  // get the voltage magnitude vector (vector of double)
+        .def("get_V", &GaussSeidelSynchAlgo::get_V, DocSolver::get_V.c_str()) 
+        .def("get_error", &GaussSeidelSynchAlgo::get_error, DocSolver::get_error.c_str())  // get the error message, see the definition of "err_" for more information
+        .def("get_nb_iter", &GaussSeidelSynchAlgo::get_nb_iter, DocSolver::get_nb_iter.c_str())  // return the number of iteration performed at the last optimization
+        .def("reset", &GaussSeidelSynchAlgo::reset, DocSolver::reset.c_str())  // reset the solver to its original state
+        .def("converged", &GaussSeidelSynchAlgo::converged, DocSolver::converged.c_str())  // whether the solver has converged
+        .def("compute_pf", &GaussSeidelSynchAlgo::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())  // compute the powerflow
+        .def("get_timers", &GaussSeidelSynchAlgo::get_timers, DocSolver::get_timers.c_str())  // returns the timers corresponding to times the solver spent in different part
+        .def("solve", &GaussSeidelSynchAlgo::compute_pf, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str());  // perform the newton raphson optimization
 
     // Only "const" method are exported
     // it is so that i cannot modify the internal solver of a gridmodel python side
@@ -396,192 +397,192 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 
     // iterator for generators
-    py::class_<DataGen>(m, "DataGen", DocIterator::DataGen.c_str())
-        .def("__len__", [](const DataGen & data) { return data.nb(); })
-        .def("__getitem__", [](const DataGen & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataGen & data) {
+    py::class_<GeneratorContainer>(m, "GeneratorContainer", DocIterator::GeneratorContainer.c_str())
+        .def("__len__", [](const GeneratorContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const GeneratorContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const GeneratorContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataGen::GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
-        .def_readonly("id", &DataGen::GenInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataGen::GenInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataGen::GenInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_id", &DataGen::GenInfo::bus_id, DocIterator::bus_id.c_str())
-        .def_readonly("is_slack", &DataGen::GenInfo::is_slack, DocIterator::is_slack.c_str())
-        .def_readonly("slack_weight", &DataGen::GenInfo::slack_weight, DocIterator::slack_weight.c_str())
-        .def_readonly("voltage_regulator_on", &DataGen::GenInfo::voltage_regulator_on, "TODO")
-        .def_readonly("target_p_mw", &DataGen::GenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
-        .def_readonly("target_vm_pu", &DataGen::GenInfo::target_vm_pu, DocIterator::target_vm_pu.c_str())
-        .def_readonly("target_q_mvar", &DataGen::GenInfo::target_q_mvar, "TODO")
-        .def_readonly("min_q_mvar", &DataGen::GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
-        .def_readonly("max_q_mvar", &DataGen::GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
-        .def_readonly("has_res", &DataGen::GenInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_mw", &DataGen::GenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
-        .def_readonly("res_q_mvar", &DataGen::GenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
-        .def_readonly("res_theta_deg", &DataGen::GenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &DataGen::GenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+    py::class_<GeneratorContainer::GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
+        .def_readonly("id", &GeneratorContainer::GenInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &GeneratorContainer::GenInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &GeneratorContainer::GenInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &GeneratorContainer::GenInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("is_slack", &GeneratorContainer::GenInfo::is_slack, DocIterator::is_slack.c_str())
+        .def_readonly("slack_weight", &GeneratorContainer::GenInfo::slack_weight, DocIterator::slack_weight.c_str())
+        .def_readonly("voltage_regulator_on", &GeneratorContainer::GenInfo::voltage_regulator_on, "TODO")
+        .def_readonly("target_p_mw", &GeneratorContainer::GenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_vm_pu", &GeneratorContainer::GenInfo::target_vm_pu, DocIterator::target_vm_pu.c_str())
+        .def_readonly("target_q_mvar", &GeneratorContainer::GenInfo::target_q_mvar, "TODO")
+        .def_readonly("min_q_mvar", &GeneratorContainer::GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
+        .def_readonly("max_q_mvar", &GeneratorContainer::GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("has_res", &GeneratorContainer::GenInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &GeneratorContainer::GenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &GeneratorContainer::GenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &GeneratorContainer::GenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &GeneratorContainer::GenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for sgens
-    py::class_<DataSGen>(m, "DataSGen", DocIterator::DataSGen.c_str())
-        .def("__len__", [](const DataSGen & data) { return data.nb(); })
-        .def("__getitem__", [](const DataSGen & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataSGen & data) {
+    py::class_<SGenContainer>(m, "SGenContainer", DocIterator::SGenContainer.c_str())
+        .def("__len__", [](const SGenContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const SGenContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const SGenContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataSGen::SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
-        .def_readonly("id", &DataSGen::SGenInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataSGen::SGenInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataSGen::SGenInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_id", &DataSGen::SGenInfo::bus_id, DocIterator::bus_id.c_str())
-        .def_readonly("min_q_mvar", &DataSGen::SGenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
-        .def_readonly("max_q_mvar", &DataSGen::SGenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
-        .def_readonly("min_p_mw", &DataSGen::SGenInfo::min_p_mw, DocIterator::min_p_mw.c_str())
-        .def_readonly("max_p_mw", &DataSGen::SGenInfo::max_p_mw, DocIterator::max_p_mw.c_str())
-        .def_readonly("target_p_mw", &DataSGen::SGenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
-        .def_readonly("target_q_mvar", &DataSGen::SGenInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
-        .def_readonly("has_res", &DataSGen::SGenInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_mw", &DataSGen::SGenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
-        .def_readonly("res_q_mvar", &DataSGen::SGenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
-        .def_readonly("res_theta_deg", &DataSGen::SGenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &DataSGen::SGenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+    py::class_<SGenContainer::SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
+        .def_readonly("id", &SGenContainer::SGenInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &SGenContainer::SGenInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &SGenContainer::SGenInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &SGenContainer::SGenInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("min_q_mvar", &SGenContainer::SGenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
+        .def_readonly("max_q_mvar", &SGenContainer::SGenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("min_p_mw", &SGenContainer::SGenInfo::min_p_mw, DocIterator::min_p_mw.c_str())
+        .def_readonly("max_p_mw", &SGenContainer::SGenInfo::max_p_mw, DocIterator::max_p_mw.c_str())
+        .def_readonly("target_p_mw", &SGenContainer::SGenInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &SGenContainer::SGenInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &SGenContainer::SGenInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &SGenContainer::SGenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &SGenContainer::SGenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &SGenContainer::SGenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &SGenContainer::SGenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for loads (and storage units)
-    py::class_<DataLoad>(m, "DataLoad", DocIterator::DataLoad.c_str())
-        .def("__len__", [](const DataLoad & data) { return data.nb(); })
-        .def("__getitem__", [](const DataLoad & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataLoad & data) {
+    py::class_<LoadContainer>(m, "LoadContainer", DocIterator::LoadContainer.c_str())
+        .def("__len__", [](const LoadContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const LoadContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const LoadContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataLoad::LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
-        .def_readonly("id", &DataLoad::LoadInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataLoad::LoadInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataLoad::LoadInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_id", &DataLoad::LoadInfo::bus_id, DocIterator::bus_id.c_str())
-        .def_readonly("target_p_mw", &DataLoad::LoadInfo::target_p_mw, DocIterator::target_p_mw.c_str())
-        .def_readonly("target_q_mvar", &DataLoad::LoadInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
-        .def_readonly("has_res", &DataLoad::LoadInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_mw", &DataLoad::LoadInfo::res_p_mw, DocIterator::res_p_mw.c_str())
-        .def_readonly("res_q_mvar", &DataLoad::LoadInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
-        .def_readonly("res_theta_deg", &DataLoad::LoadInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &DataLoad::LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+    py::class_<LoadContainer::LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
+        .def_readonly("id", &LoadContainer::LoadInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &LoadContainer::LoadInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &LoadContainer::LoadInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &LoadContainer::LoadInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("target_p_mw", &LoadContainer::LoadInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &LoadContainer::LoadInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &LoadContainer::LoadInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &LoadContainer::LoadInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &LoadContainer::LoadInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &LoadContainer::LoadInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &LoadContainer::LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for shunts
-    py::class_<DataShunt>(m, "DataShunt", DocIterator::DataShunt.c_str())
-        .def("__len__", [](const DataShunt & data) { return data.nb(); })
-        .def("__getitem__", [](const DataShunt & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataShunt & data) {
+    py::class_<ShuntContainer>(m, "ShuntContainer", DocIterator::ShuntContainer.c_str())
+        .def("__len__", [](const ShuntContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const ShuntContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const ShuntContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataShunt::ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
-        .def_readonly("id", &DataShunt::ShuntInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataShunt::ShuntInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataShunt::ShuntInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_id", &DataShunt::ShuntInfo::bus_id, DocIterator::bus_id.c_str())
-        .def_readonly("target_p_mw", &DataShunt::ShuntInfo::target_p_mw, DocIterator::target_p_mw.c_str())
-        .def_readonly("target_q_mvar", &DataShunt::ShuntInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
-        .def_readonly("has_res", &DataShunt::ShuntInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_mw", &DataShunt::ShuntInfo::res_p_mw, DocIterator::res_p_mw.c_str())
-        .def_readonly("res_q_mvar", &DataShunt::ShuntInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
-        .def_readonly("res_theta_deg", &DataShunt::ShuntInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &DataShunt::ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+    py::class_<ShuntContainer::ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
+        .def_readonly("id", &ShuntContainer::ShuntInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &ShuntContainer::ShuntInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &ShuntContainer::ShuntInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &ShuntContainer::ShuntInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("target_p_mw", &ShuntContainer::ShuntInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &ShuntContainer::ShuntInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &ShuntContainer::ShuntInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &ShuntContainer::ShuntInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &ShuntContainer::ShuntInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &ShuntContainer::ShuntInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &ShuntContainer::ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str());
 
     // iterator for trafos
-    py::class_<DataTrafo>(m, "DataTrafo", DocIterator::DataTrafo.c_str())
-        .def("__len__", [](const DataTrafo & data) { return data.nb(); })
-        .def("__getitem__", [](const DataTrafo & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataTrafo & data) {
+    py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
+        .def("__len__", [](const TrafoContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const TrafoContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const TrafoContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataTrafo::TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
-        .def_readonly("id", &DataTrafo::TrafoInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataTrafo::TrafoInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataTrafo::TrafoInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_hv_id", &DataTrafo::TrafoInfo::bus_hv_id, DocIterator::bus_hv_id.c_str())
-        .def_readonly("bus_lv_id", &DataTrafo::TrafoInfo::bus_lv_id, DocIterator::bus_lv_id.c_str())
-        .def_readonly("r_pu", &DataTrafo::TrafoInfo::r_pu, DocIterator::r_pu.c_str())
-        .def_readonly("x_pu", &DataTrafo::TrafoInfo::x_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_pu", &DataTrafo::TrafoInfo::h_pu, DocIterator::h_pu.c_str())
-        .def_readonly("is_tap_hv_side", &DataTrafo::TrafoInfo::is_tap_hv_side, DocIterator::is_tap_hv_side.c_str())
-        .def_readonly("ratio", &DataTrafo::TrafoInfo::ratio, DocIterator::ratio.c_str())
-        .def_readonly("shift_rad", &DataTrafo::TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
-        .def_readonly("has_res", &DataTrafo::TrafoInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_hv_mw", &DataTrafo::TrafoInfo::res_p_hv_mw, DocIterator::res_p_hv_mw.c_str())
-        .def_readonly("res_q_hv_mvar", &DataTrafo::TrafoInfo::res_q_hv_mvar, DocIterator::res_q_hv_mvar.c_str())
-        .def_readonly("res_v_hv_kv", &DataTrafo::TrafoInfo::res_v_hv_kv, DocIterator::res_v_hv_kv.c_str())
-        .def_readonly("res_a_hv_ka", &DataTrafo::TrafoInfo::res_a_hv_ka, DocIterator::res_a_hv_ka.c_str())
-        .def_readonly("res_p_lv_mw", &DataTrafo::TrafoInfo::res_p_lv_mw, DocIterator::res_p_lv_mw.c_str())
-        .def_readonly("res_q_lv_mvar", &DataTrafo::TrafoInfo::res_q_lv_mvar, DocIterator::res_q_lv_mvar.c_str())
-        .def_readonly("res_v_lv_kv", &DataTrafo::TrafoInfo::res_v_lv_kv, DocIterator::res_v_lv_kv.c_str())
-        .def_readonly("res_a_lv_ka", &DataTrafo::TrafoInfo::res_a_lv_ka, DocIterator::res_a_lv_ka.c_str())
-        .def_readonly("res_theta_hv_deg", &DataTrafo::TrafoInfo::res_theta_hv_deg, DocIterator::res_theta_hv_deg.c_str())
-        .def_readonly("res_theta_lv_deg", &DataTrafo::TrafoInfo::res_theta_lv_deg, DocIterator::res_theta_lv_deg.c_str());
+    py::class_<TrafoContainer::TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
+        .def_readonly("id", &TrafoContainer::TrafoInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &TrafoContainer::TrafoInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &TrafoContainer::TrafoInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_hv_id", &TrafoContainer::TrafoInfo::bus_hv_id, DocIterator::bus_hv_id.c_str())
+        .def_readonly("bus_lv_id", &TrafoContainer::TrafoInfo::bus_lv_id, DocIterator::bus_lv_id.c_str())
+        .def_readonly("r_pu", &TrafoContainer::TrafoInfo::r_pu, DocIterator::r_pu.c_str())
+        .def_readonly("x_pu", &TrafoContainer::TrafoInfo::x_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_pu", &TrafoContainer::TrafoInfo::h_pu, DocIterator::h_pu.c_str())
+        .def_readonly("is_tap_hv_side", &TrafoContainer::TrafoInfo::is_tap_hv_side, DocIterator::is_tap_hv_side.c_str())
+        .def_readonly("ratio", &TrafoContainer::TrafoInfo::ratio, DocIterator::ratio.c_str())
+        .def_readonly("shift_rad", &TrafoContainer::TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
+        .def_readonly("has_res", &TrafoContainer::TrafoInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_hv_mw", &TrafoContainer::TrafoInfo::res_p_hv_mw, DocIterator::res_p_hv_mw.c_str())
+        .def_readonly("res_q_hv_mvar", &TrafoContainer::TrafoInfo::res_q_hv_mvar, DocIterator::res_q_hv_mvar.c_str())
+        .def_readonly("res_v_hv_kv", &TrafoContainer::TrafoInfo::res_v_hv_kv, DocIterator::res_v_hv_kv.c_str())
+        .def_readonly("res_a_hv_ka", &TrafoContainer::TrafoInfo::res_a_hv_ka, DocIterator::res_a_hv_ka.c_str())
+        .def_readonly("res_p_lv_mw", &TrafoContainer::TrafoInfo::res_p_lv_mw, DocIterator::res_p_lv_mw.c_str())
+        .def_readonly("res_q_lv_mvar", &TrafoContainer::TrafoInfo::res_q_lv_mvar, DocIterator::res_q_lv_mvar.c_str())
+        .def_readonly("res_v_lv_kv", &TrafoContainer::TrafoInfo::res_v_lv_kv, DocIterator::res_v_lv_kv.c_str())
+        .def_readonly("res_a_lv_ka", &TrafoContainer::TrafoInfo::res_a_lv_ka, DocIterator::res_a_lv_ka.c_str())
+        .def_readonly("res_theta_hv_deg", &TrafoContainer::TrafoInfo::res_theta_hv_deg, DocIterator::res_theta_hv_deg.c_str())
+        .def_readonly("res_theta_lv_deg", &TrafoContainer::TrafoInfo::res_theta_lv_deg, DocIterator::res_theta_lv_deg.c_str());
 
     // iterator for trafos
-    py::class_<DataLine>(m, "DataLine", DocIterator::DataLine.c_str())
-        .def("__len__", [](const DataLine & data) { return data.nb(); })
-        .def("__getitem__", [](const DataLine & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataLine & data) {
+    py::class_<LineContainer>(m, "LineContainer", DocIterator::LineContainer.c_str())
+        .def("__len__", [](const LineContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const LineContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const LineContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataLine::LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
-        .def_readonly("id", &DataLine::LineInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataLine::LineInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataLine::LineInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_or_id", &DataLine::LineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
-        .def_readonly("bus_ex_id", &DataLine::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
-        .def_readonly("r_pu", &DataLine::LineInfo::r_pu, DocIterator::r_pu.c_str())
-        .def_readonly("x_pu", &DataLine::LineInfo::x_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_pu", &DataLine::LineInfo::h_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_or_pu", &DataLine::LineInfo::h_or_pu, DocIterator::h_pu.c_str())
-        .def_readonly("h_ex_pu", &DataLine::LineInfo::h_ex_pu, DocIterator::h_pu.c_str())
-        .def_readonly("has_res", &DataLine::LineInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_or_mw", &DataLine::LineInfo::res_p_or_mw, DocIterator::res_p_or_mw.c_str())
-        .def_readonly("res_q_or_mvar", &DataLine::LineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar.c_str())
-        .def_readonly("res_v_or_kv", &DataLine::LineInfo::res_v_or_kv, DocIterator::res_v_or_kv.c_str())
-        .def_readonly("res_a_or_ka", &DataLine::LineInfo::res_a_or_ka, DocIterator::res_a_or_ka.c_str())
-        .def_readonly("res_p_ex_mw", &DataLine::LineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw.c_str())
-        .def_readonly("res_q_ex_mvar", &DataLine::LineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar.c_str())
-        .def_readonly("res_v_ex_kv", &DataLine::LineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv.c_str())
-        .def_readonly("res_a_ex_ka", &DataLine::LineInfo::res_a_ex_ka, DocIterator::res_a_ex_ka.c_str())
-        .def_readonly("res_theta_or_deg", &DataLine::LineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg.c_str())
-        .def_readonly("res_theta_ex_deg", &DataLine::LineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg.c_str());
+    py::class_<LineContainer::LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
+        .def_readonly("id", &LineContainer::LineInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &LineContainer::LineInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &LineContainer::LineInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_or_id", &LineContainer::LineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus_ex_id", &LineContainer::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("r_pu", &LineContainer::LineInfo::r_pu, DocIterator::r_pu.c_str())
+        .def_readonly("x_pu", &LineContainer::LineInfo::x_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_pu", &LineContainer::LineInfo::h_pu, DocIterator::x_pu.c_str())
+        .def_readonly("h_or_pu", &LineContainer::LineInfo::h_or_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h_ex_pu", &LineContainer::LineInfo::h_ex_pu, DocIterator::h_pu.c_str())
+        .def_readonly("has_res", &LineContainer::LineInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_or_mw", &LineContainer::LineInfo::res_p_or_mw, DocIterator::res_p_or_mw.c_str())
+        .def_readonly("res_q_or_mvar", &LineContainer::LineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar.c_str())
+        .def_readonly("res_v_or_kv", &LineContainer::LineInfo::res_v_or_kv, DocIterator::res_v_or_kv.c_str())
+        .def_readonly("res_a_or_ka", &LineContainer::LineInfo::res_a_or_ka, DocIterator::res_a_or_ka.c_str())
+        .def_readonly("res_p_ex_mw", &LineContainer::LineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw.c_str())
+        .def_readonly("res_q_ex_mvar", &LineContainer::LineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar.c_str())
+        .def_readonly("res_v_ex_kv", &LineContainer::LineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv.c_str())
+        .def_readonly("res_a_ex_ka", &LineContainer::LineInfo::res_a_ex_ka, DocIterator::res_a_ex_ka.c_str())
+        .def_readonly("res_theta_or_deg", &LineContainer::LineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg.c_str())
+        .def_readonly("res_theta_ex_deg", &LineContainer::LineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg.c_str());
 
     // iterator for dc lines
-    py::class_<DataDCLine>(m, "DataDCLine", DocIterator::DataDCLine.c_str())
-        .def("__len__", [](const DataDCLine & data) { return data.nb(); })
-        .def("__getitem__", [](const DataDCLine & data, int k){return data[k]; } )
-        .def("__iter__", [](const DataDCLine & data) {
+    py::class_<DCLineContainer>(m, "DCLineContainer", DocIterator::DCLineContainer.c_str())
+        .def("__len__", [](const DCLineContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const DCLineContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const DCLineContainer & data) {
        return py::make_iterator(data.begin(), data.end());
     }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-    py::class_<DataDCLine::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
-        .def_readonly("id", &DataDCLine::DCLineInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DataDCLine::DCLineInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &DataDCLine::DCLineInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_or_id", &DataDCLine::DCLineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
-        .def_readonly("bus_ex_id", &DataDCLine::DCLineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
-        .def_readonly("target_p_or_mw", &DataDCLine::DCLineInfo::target_p_or_mw, DocIterator::target_p_or_mw.c_str())
-        .def_readonly("target_vm_or_pu", &DataDCLine::DCLineInfo::target_vm_or_pu, DocIterator::target_vm_or_pu.c_str())
-        .def_readonly("target_vm_ex_pu", &DataDCLine::DCLineInfo::target_vm_ex_pu, DocIterator::target_vm_ex_pu.c_str())
-        .def_readonly("loss_pct", &DataDCLine::DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
-        .def_readonly("loss_mw", &DataDCLine::DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
-        .def_readonly("gen_or", &DataDCLine::DCLineInfo::gen_or, DocIterator::gen_or.c_str())
-        .def_readonly("gen_ex", &DataDCLine::DCLineInfo::gen_ex, DocIterator::gen_ex.c_str())
-        .def_readonly("has_res", &DataDCLine::DCLineInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_or_mw", &DataDCLine::DCLineInfo::res_p_or_mw, DocIterator::res_p_or_mw_dcline.c_str())
-        .def_readonly("res_p_ex_mw", &DataDCLine::DCLineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw_dcline.c_str())
-        .def_readonly("res_q_or_mvar", &DataDCLine::DCLineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar_dcline.c_str())
-        .def_readonly("res_q_ex_mvar", &DataDCLine::DCLineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar_dcline.c_str())
-        .def_readonly("res_v_or_kv", &DataDCLine::DCLineInfo::res_v_or_kv, DocIterator::res_v_or_kv_dcline.c_str())
-        .def_readonly("res_v_ex_kv", &DataDCLine::DCLineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv_dcline.c_str())
-        .def_readonly("res_theta_or_deg", &DataDCLine::DCLineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg_dcline.c_str())
-        .def_readonly("res_theta_ex_deg", &DataDCLine::DCLineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
+    py::class_<DCLineContainer::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
+        .def_readonly("id", &DCLineContainer::DCLineInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &DCLineContainer::DCLineInfo::name, DocIterator::name.c_str())
+        .def_readonly("connected", &DCLineContainer::DCLineInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_or_id", &DCLineContainer::DCLineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus_ex_id", &DCLineContainer::DCLineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("target_p_or_mw", &DCLineContainer::DCLineInfo::target_p_or_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("target_vm_or_pu", &DCLineContainer::DCLineInfo::target_vm_or_pu, DocIterator::target_vm_or_pu.c_str())
+        .def_readonly("target_vm_ex_pu", &DCLineContainer::DCLineInfo::target_vm_ex_pu, DocIterator::target_vm_ex_pu.c_str())
+        .def_readonly("loss_pct", &DCLineContainer::DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
+        .def_readonly("loss_mw", &DCLineContainer::DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
+        .def_readonly("gen_or", &DCLineContainer::DCLineInfo::gen_or, DocIterator::gen_or.c_str())
+        .def_readonly("gen_ex", &DCLineContainer::DCLineInfo::gen_ex, DocIterator::gen_ex.c_str())
+        .def_readonly("has_res", &DCLineContainer::DCLineInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_or_mw", &DCLineContainer::DCLineInfo::res_p_or_mw, DocIterator::res_p_or_mw_dcline.c_str())
+        .def_readonly("res_p_ex_mw", &DCLineContainer::DCLineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw_dcline.c_str())
+        .def_readonly("res_q_or_mvar", &DCLineContainer::DCLineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar_dcline.c_str())
+        .def_readonly("res_q_ex_mvar", &DCLineContainer::DCLineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar_dcline.c_str())
+        .def_readonly("res_v_or_kv", &DCLineContainer::DCLineInfo::res_v_or_kv, DocIterator::res_v_or_kv_dcline.c_str())
+        .def_readonly("res_v_ex_kv", &DCLineContainer::DCLineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv_dcline.c_str())
+        .def_readonly("res_theta_or_deg", &DCLineContainer::DCLineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg_dcline.c_str())
+        .def_readonly("res_theta_ex_deg", &DCLineContainer::DCLineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
         ;
 
     // converters
@@ -592,11 +593,32 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
         .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
 
+    py::class_<SolverControl>(m, "SolverControl", "TODO")
+        .def(py::init<>())
+        .def("has_dimension_changed", &SolverControl::has_dimension_changed, "TODO")
+        .def("has_pv_changed", &SolverControl::has_pv_changed, "TODO")
+        .def("has_pq_changed", &SolverControl::has_pq_changed, "TODO")
+        .def("has_slack_participate_changed", &SolverControl::has_slack_participate_changed, "TODO")
+        .def("need_reset_solver", &SolverControl::need_reset_solver, "TODO")
+        .def("need_recompute_sbus", &SolverControl::need_recompute_sbus, "TODO")
+        .def("need_recompute_ybus", &SolverControl::need_recompute_ybus, "TODO")
+        .def("ybus_change_sparsity_pattern", &SolverControl::ybus_change_sparsity_pattern, "TODO")
+        .def("has_slack_weight_changed", &SolverControl::has_slack_weight_changed, "TODO")
+        .def("has_v_changed", &SolverControl::has_v_changed, "TODO")
+        .def("has_ybus_some_coeffs_zero", &SolverControl::has_ybus_some_coeffs_zero, "TODO")
+        ;
+
     py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy)
         .def_property("_ls_to_orig", &GridModel::get_ls_to_orig, &GridModel::set_ls_to_orig, "remember the conversion from bus index in lightsim2grid to bus index in original file format (*eg* pandapower of pypowsybl).")
         .def_property("_orig_to_ls", &GridModel::get_orig_to_ls, &GridModel::set_orig_to_ls, "remember the conversion from bus index in original file format (*eg* pandapower of pypowsybl) to bus index in lightsim2grid.")
+        .def_property("_max_nb_bus_per_sub",
+                      &GridModel::get_max_nb_bus_per_sub,
+                      &GridModel::set_max_nb_bus_per_sub,
+                      "do not modify it after loading !")
+        .def_property_readonly("timer_last_ac_pf", &GridModel::timer_last_ac_pf, "TODO")
+        .def_property_readonly("timer_last_dc_pf", &GridModel::timer_last_dc_pf, "TODO")
 
         // pickle
         .def(py::pickle(
@@ -799,8 +821,12 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("reactivate_result_computation", &GridModel::reactivate_result_computation, DocGridModel::reactivate_result_computation.c_str())
         .def("dc_pf", &GridModel::dc_pf, DocGridModel::dc_pf.c_str())
         .def("ac_pf", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
-        .def("unset_topo_changed", &GridModel::unset_topo_changed, DocGridModel::_internal_do_not_use.c_str())
-        .def("tell_topo_changed", &GridModel::tell_topo_changed, DocGridModel::_internal_do_not_use.c_str())
+        .def("unset_changes", &GridModel::unset_changes, DocGridModel::_internal_do_not_use.c_str())
+        .def("tell_recompute_ybus", &GridModel::tell_recompute_ybus, DocGridModel::_internal_do_not_use.c_str())
+        .def("tell_recompute_sbus", &GridModel::tell_recompute_sbus, DocGridModel::_internal_do_not_use.c_str())
+        .def("tell_solver_need_reset", &GridModel::tell_solver_need_reset, DocGridModel::_internal_do_not_use.c_str())
+        .def("tell_ybus_change_sparsity_pattern", &GridModel::tell_ybus_change_sparsity_pattern, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
         .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
         .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
@@ -818,6 +844,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // auxiliary functions
         .def("set_n_sub", &GridModel::set_n_sub, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_max_nb_bus_per_sub", &GridModel::set_max_nb_bus_per_sub, DocGridModel::_internal_do_not_use.c_str())
         .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_gen_pos_topo_vect", &GridModel::set_gen_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_line_or_pos_topo_vect", &GridModel::set_line_or_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
@@ -838,78 +865,78 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("debug_get_Bpp_python", &GridModel::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str())
         ;
 
-    py::class_<Computers>(m, "Computers", DocComputers::Computers.c_str())
+    py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const GridModel &>())
 
         // solver control
-        .def("change_solver", &Computers::change_solver, DocGridModel::change_solver.c_str())
-        .def("available_solvers", &Computers::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("get_solver_type", &Computers::get_solver_type, DocGridModel::get_solver_type.c_str())
+        .def("change_solver", &TimeSeries::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &TimeSeries::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("get_solver_type", &TimeSeries::get_solver_type, DocGridModel::get_solver_type.c_str())
 
         // timers
-        .def("total_time", &Computers::total_time, DocComputers::total_time.c_str())
-        .def("solver_time", &Computers::solver_time, DocComputers::solver_time.c_str())
-        .def("preprocessing_time", &Computers::preprocessing_time, DocComputers::preprocessing_time.c_str())
-        .def("amps_computation_time", &Computers::amps_computation_time, DocComputers::amps_computation_time.c_str())
-        .def("nb_solved", &Computers::nb_solved, DocComputers::nb_solved.c_str())
+        .def("total_time", &TimeSeries::total_time, DocComputers::total_time.c_str())
+        .def("solver_time", &TimeSeries::solver_time, DocComputers::solver_time.c_str())
+        .def("preprocessing_time", &TimeSeries::preprocessing_time, DocComputers::preprocessing_time.c_str())
+        .def("amps_computation_time", &TimeSeries::amps_computation_time, DocComputers::amps_computation_time.c_str())
+        .def("nb_solved", &TimeSeries::nb_solved, DocComputers::nb_solved.c_str())
 
         // status
-        .def("get_status", &Computers::get_status, DocComputers::get_status.c_str())
-        .def("clear", &Computers::clear, DocComputers::clear.c_str())
-        .def("close", &Computers::clear, DocComputers::clear.c_str())
+        .def("get_status", &TimeSeries::get_status, DocComputers::get_status.c_str())
+        .def("clear", &TimeSeries::clear, DocComputers::clear.c_str())
+        .def("close", &TimeSeries::clear, DocComputers::clear.c_str())
 
         // perform the computations
-        .def("compute_Vs", &Computers::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
-        .def("compute_flows", &Computers::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
-        .def("compute_power_flows", &Computers::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("compute_Vs", &TimeSeries::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
+        .def("compute_flows", &TimeSeries::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
+        .def("compute_power_flows", &TimeSeries::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
         
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &Computers::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_power_flows", &Computers::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_voltages", &Computers::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
-        .def("get_sbuses", &Computers::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
+        .def("get_flows", &TimeSeries::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_power_flows", &TimeSeries::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &TimeSeries::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
         ;
 
-    py::class_<SecurityAnalysis>(m, "SecurityAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
+    py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
         .def(py::init<const GridModel &>())
         // solver control
-        .def("change_solver", &Computers::change_solver, DocGridModel::change_solver.c_str())
-        .def("available_solvers", &Computers::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("get_solver_type", &Computers::get_solver_type, DocGridModel::get_solver_type.c_str())
+        .def("change_solver", &ContingencyAnalysis::change_solver, DocGridModel::change_solver.c_str())
+        .def("available_solvers", &ContingencyAnalysis::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("get_solver_type", &ContingencyAnalysis::get_solver_type, DocGridModel::get_solver_type.c_str())
 
         // add some defaults
-        .def("add_all_n1", &SecurityAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
-        .def("add_n1", &SecurityAnalysis::add_n1, DocSecurityAnalysis::add_n1.c_str())
-        .def("add_nk", &SecurityAnalysis::add_nk, DocSecurityAnalysis::add_nk.c_str())
-        .def("add_multiple_n1", &SecurityAnalysis::add_multiple_n1, DocSecurityAnalysis::add_multiple_n1.c_str())
+        .def("add_all_n1", &ContingencyAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
+        .def("add_n1", &ContingencyAnalysis::add_n1, DocSecurityAnalysis::add_n1.c_str())
+        .def("add_nk", &ContingencyAnalysis::add_nk, DocSecurityAnalysis::add_nk.c_str())
+        .def("add_multiple_n1", &ContingencyAnalysis::add_multiple_n1, DocSecurityAnalysis::add_multiple_n1.c_str())
 
         // remove some defaults (TODO)
-        .def("reset", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
-        .def("clear", &SecurityAnalysis::clear, DocSecurityAnalysis::clear.c_str())
-        .def("close", &SecurityAnalysis::clear, DocComputers::clear.c_str())
-        .def("remove_n1", &SecurityAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
-        .def("remove_nk", &SecurityAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
-        .def("remove_multiple_n1", &SecurityAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())
+        .def("reset", &ContingencyAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("clear", &ContingencyAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("close", &ContingencyAnalysis::clear, DocComputers::clear.c_str())
+        .def("remove_n1", &ContingencyAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
+        .def("remove_nk", &ContingencyAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())
+        .def("remove_multiple_n1", &ContingencyAnalysis::remove_multiple_n1, DocSecurityAnalysis::remove_multiple_n1.c_str())
         
         // inspect the class
-        .def("my_defaults", &SecurityAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
+        .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
 
         // perform the computation
-        .def("compute", &SecurityAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
-        .def("compute_flows", &SecurityAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
-        .def("compute_power_flows", &SecurityAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
+        .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
+        .def("compute_flows", &ContingencyAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
+        .def("compute_power_flows", &ContingencyAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &SecurityAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
-        .def("get_voltages", &SecurityAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
-        .def("get_power_flows", &SecurityAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
+        .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
+        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
+        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
 
         // timers
-        .def("total_time", &SecurityAnalysis::total_time, DocComputers::total_time.c_str())
-        .def("solver_time", &SecurityAnalysis::solver_time, DocComputers::solver_time.c_str())
-        .def("preprocessing_time", &SecurityAnalysis::preprocessing_time, DocSecurityAnalysis::preprocessing_time.c_str())
-        .def("amps_computation_time", &SecurityAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
-        .def("modif_Ybus_time", &SecurityAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
-        .def("nb_solved", &SecurityAnalysis::nb_solved, DocComputers::nb_solved.c_str())
+        .def("total_time", &ContingencyAnalysis::total_time, DocComputers::total_time.c_str())
+        .def("solver_time", &ContingencyAnalysis::solver_time, DocComputers::solver_time.c_str())
+        .def("preprocessing_time", &ContingencyAnalysis::preprocessing_time, DocSecurityAnalysis::preprocessing_time.c_str())
+        .def("amps_computation_time", &ContingencyAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
+        .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
+        .def("nb_solved", &ContingencyAnalysis::nb_solved, DocComputers::nb_solved.c_str())
         ;
 }

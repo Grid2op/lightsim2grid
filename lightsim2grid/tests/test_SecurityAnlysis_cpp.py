@@ -10,7 +10,7 @@ import unittest
 import numpy as np
 import grid2op
 
-from lightsim2grid_cpp import SecurityAnalysisCPP
+from lightsim2grid_cpp import ContingencyAnalysisCPP
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb
@@ -29,11 +29,11 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         return super().tearDown()
 
     def test_can_create(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         assert len(SA.my_defaults()) == 0
 
     def test_add_n1(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_n1(0)
         all_def = SA.my_defaults()
         assert len(all_def) == 1
@@ -64,7 +64,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
             SA.add_n1(20)
 
     def test_add_multiple_n1(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_multiple_n1([0])
         all_def = SA.my_defaults()
         assert len(all_def) == 1
@@ -99,7 +99,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
             SA.add_multiple_n1([20])
 
     def test_add_nk(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_nk([0])
         all_def = SA.my_defaults()
         assert len(all_def) == 1
@@ -132,13 +132,13 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
             SA.add_nk([20])
 
     def test_add_all_n1(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_all_n1()
         all_def = SA.my_defaults()
         assert len(all_def) == self.env.n_line
 
     def test_remove_n1(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_all_n1()
         assert SA.remove_n1(0)  # this should remove it and return true (because the removing is a success)
         all_def = SA.my_defaults()
@@ -148,7 +148,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         assert len(all_def) == self.env.n_line - 1 
 
     def test_clear(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_all_n1()
         all_def = SA.my_defaults()
         assert len(all_def) == self.env.n_line
@@ -157,7 +157,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         assert len(all_def) == 0
 
     def test_remove_multiple_n1(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_all_n1()
         nb_removed = SA.remove_multiple_n1([0, 1, 2])
         assert nb_removed == 3
@@ -169,7 +169,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         assert len(all_def) == self.env.n_line - 5
 
     def test_remove_nk(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         SA.add_nk([0, 1])
         SA.add_nk([0, 2])
         SA.add_nk([0, 3])
@@ -188,7 +188,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         assert len(all_def) == 2
 
     def test_compute(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         lid_cont = [0, 1, 2, 3]
         nb_sub = self.env.n_sub
         SA.add_multiple_n1(lid_cont)
@@ -207,7 +207,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
             assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
     
     def test_compute_nonconnected_graph(self):
-        SA = SecurityAnalysisCPP(self.env.backend._grid)
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
         lid_cont = [17, 18, 19]  # 17 is ok, 18 lead to divergence, i need to check then that 19 is correct (no divergence)
         nb_sub = self.env.n_sub
         SA.add_multiple_n1(lid_cont)
