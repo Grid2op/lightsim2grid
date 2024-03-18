@@ -11,6 +11,7 @@ import re
 import numpy as np
 from tqdm import tqdm
 import argparse
+import datetime
 from grid2op.Environment import MultiMixEnvironment
 import pdb
 
@@ -127,6 +128,7 @@ def str2bool(v):
 
 
 def print_configuration():
+    print(f"{datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}")
     try:
         import platform
         print(f"- system: {platform.system()} {platform.release()}")

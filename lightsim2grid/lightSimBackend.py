@@ -1111,6 +1111,7 @@ class LightSimBackend(Backend):
             if is_dc:
                 # set back the solver to its previous state
                 self._grid.change_solver(self.__current_solver_type)
+            self._grid.tell_solver_need_reset()
 
         # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
         if self.__has_storage:

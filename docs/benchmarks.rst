@@ -1,6 +1,6 @@
 
-Benchmarks
-============
+Benchmarks (solvers)
+======================
 
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
 The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
