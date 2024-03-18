@@ -60,8 +60,8 @@ Importantly, this method is around **13x** faster than simulating "do nothing" (
 
 .. _ts_benchmarks:
 
-Benchmarks
------------------
+Benchmarks (Time Series)
+-------------------------
 
 Here are some benchmarks made with:
 

@@ -255,8 +255,23 @@ When using Newton Raphson solvers, the difference in absolute values when using 
 with using PandaPowerBackend is neglectible: less than 1e-06 in all cases (and 0.00 when comparing the
 flows on the powerline for both environments).
 
-Other benchmarks
-----------------------------
+Other benchmark
+----------------
+
+We have at our disposal different computers with different software / hardware.
+
+From time to time, we benchmark grid2op and lightsim2grid. 
+The results can be found in:
+
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a i7 of 2015 wth a frequency of 2.70 GHz
+
+  benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
+  benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.9.8
+
+Benchmarks of other lightsim2grid functions
+--------------------------------------------
 
 With lightsim2grid 0.5.5 some new feature has been introduced, which are the "security analysis" and the "comptuation 
 of time series". 
