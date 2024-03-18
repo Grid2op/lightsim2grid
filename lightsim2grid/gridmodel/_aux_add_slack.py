@@ -103,8 +103,8 @@ def _aux_add_slack(model, pp_net, pp_to_ls):
             gen_p = np.concatenate((pp_net.gen["p_mw"].values, slack_contrib))
             gen_v = np.concatenate((pp_net.gen["vm_pu"].values, vm_pu))
             gen_bus = np.concatenate((pp_bus_to_ls(pp_net.gen["bus"].values, pp_to_ls), slack_bus_ids))
-            gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].values, [-999999.]))
-            gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].values, [+99999.]))
+            gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].values, [-999999. for _ in range(nb_slack)]))
+            gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].values, [+99999. for _ in range(nb_slack)]))
             model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
 
     # handle the possible distributed slack bus

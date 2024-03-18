@@ -100,8 +100,8 @@ class TestTurnedOffNoPv(unittest.TestCase):
         """test I can use the runner"""
         runner_pv = Runner(**self.env_pv.get_params_for_runner())
         runner_npv = Runner(**self.env_npv.get_params_for_runner())
-        res_pv = runner_pv.run(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True)
-        res_npv = runner_npv.run(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True)
+        res_pv = runner_pv.run(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True, env_seeds=[0])
+        res_npv = runner_npv.run(nb_episode=1, max_iter=self.max_iter_real, add_detailed_output=True, env_seeds=[0])
         assert res_pv[0][3] == res_npv[0][3]  # same number of steps survived
         assert res_pv[0][2] != res_npv[0][2]  # not the same reward
         ep_pv = res_pv[0][-1]

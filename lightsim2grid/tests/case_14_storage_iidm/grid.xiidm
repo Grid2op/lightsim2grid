@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<iidm:network xmlns:iidm="http://www.powsybl.org/schema/iidm/1_10" id="Default" caseDate="2023-10-18T14:38:56.037+02:00" forecastDistance="0" sourceFormat="" minimumValidationLevel="STEADY_STATE_HYPOTHESIS">
+    <iidm:substation id="sub_0" name="sub_0">
+        <iidm:voltageLevel id="vl_00" name="vl_0" nominalV="138.0" lowVoltageLimit="124.2" highVoltageLimit="151.8" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_00"/>
+            </iidm:busBreakerTopology>
+            <iidm:generator id="gen_5" energySource="OTHER" minP="0.0" maxP="9999999.0" voltageRegulatorOn="true" targetP="81.80000305175781" targetV="142.1000039577484" bus="bus_00" connectableBus="bus_00">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:generator>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_1" name="sub_1">
+        <iidm:voltageLevel id="vl_01" name="vl_1" nominalV="138.0" lowVoltageLimit="124.2" highVoltageLimit="151.8" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_01"/>
+            </iidm:busBreakerTopology>
+            <iidm:generator id="gen_0" energySource="OTHER" minP="0.0" maxP="9999999.0" voltageRegulatorOn="true" targetP="83.4000015258789" targetV="142.1000039577484" bus="bus_01" connectableBus="bus_01">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:generator>
+            <iidm:load id="load_00" name="load_1_0" loadType="UNDEFINED" p0="22.0" q0="15.199999809265137" bus="bus_01" connectableBus="bus_01"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_2" name="sub_2">
+        <iidm:voltageLevel id="vl_02" name="vl_2" nominalV="138.0" lowVoltageLimit="124.2" highVoltageLimit="151.8" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_02"/>
+            </iidm:busBreakerTopology>
+            <iidm:generator id="gen_1" energySource="OTHER" minP="0.0" maxP="9999999.0" voltageRegulatorOn="true" targetP="81.9000015258789" targetV="142.1000039577484" bus="bus_02" connectableBus="bus_02">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:generator>
+            <iidm:load id="load_01" name="load_2_1" loadType="UNDEFINED" p0="90.5999984741211" q0="65.4000015258789" bus="bus_02" connectableBus="bus_02"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_3" name="sub_3">
+        <iidm:voltageLevel id="vl_03" name="vl_3" nominalV="138.0" lowVoltageLimit="124.2" highVoltageLimit="151.8" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_03"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_02" name="load_3_2" loadType="UNDEFINED" p0="50.70000076293945" q0="35.099998474121094" bus="bus_03" connectableBus="bus_03"/>
+        </iidm:voltageLevel>
+        <iidm:voltageLevel id="vl_06" name="vl_6" nominalV="14.0" lowVoltageLimit="12.6" highVoltageLimit="15.400000000000002" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_06"/>
+            </iidm:busBreakerTopology>
+        </iidm:voltageLevel>
+        <iidm:voltageLevel id="vl_07" name="vl_7" nominalV="12.0" lowVoltageLimit="10.8" highVoltageLimit="13.200000000000001" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_07"/>
+            </iidm:busBreakerTopology>
+            <iidm:generator id="gen_4" energySource="OTHER" minP="0.0" maxP="9999999.0" voltageRegulatorOn="true" targetP="0.0" targetV="13.200000286102295" bus="bus_07" connectableBus="bus_07">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:generator>
+            <iidm:battery id="storage_1" name="storage_7_1" targetP="0.0" targetQ="0.0" minP="-9999999.0" maxP="9999999.0" bus="bus_07" connectableBus="bus_07">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:battery>
+        </iidm:voltageLevel>
+        <iidm:voltageLevel id="vl_08" name="vl_8" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_08"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_05" name="load_8_5" loadType="UNDEFINED" p0="31.700000762939453" q0="21.799999237060547" bus="bus_08" connectableBus="bus_08"/>
+            <iidm:shunt id="shunt_0" name="shunt_8_0" sectionCount="1" voltageRegulatorOn="false" bus="bus_08" connectableBus="bus_08">
+                <iidm:shuntLinearModel bPerSection="0.0475" gPerSection="-0.0" maximumSectionCount="1"/>
+            </iidm:shunt>
+        </iidm:voltageLevel>
+        <iidm:twoWindingsTransformer id="trafo_0" name="3_6_0" r="0.0" x="0.4098752" g="0.0" b="0.0" ratedU1="134.964" ratedU2="14.0" bus1="bus_03" connectableBus1="bus_03" voltageLevelId1="vl_03" bus2="bus_06" connectableBus2="bus_06" voltageLevelId2="vl_06"/>
+        <iidm:twoWindingsTransformer id="trafo_1" name="3_8_1" r="0.0" x="2.22472" g="0.0" b="0.0" ratedU1="133.722" ratedU2="20.0" bus1="bus_03" connectableBus1="bus_03" voltageLevelId1="vl_03" bus2="bus_08" connectableBus2="bus_08" voltageLevelId2="vl_08"/>
+        <iidm:twoWindingsTransformer id="trafo_3" name="6_7_3" r="0.0" x="0.253656" g="0.0" b="0.0" ratedU1="14.0" ratedU2="12.0" bus1="bus_06" connectableBus1="bus_06" voltageLevelId1="vl_06" bus2="bus_07" connectableBus2="bus_07" voltageLevelId2="vl_07"/>
+        <iidm:twoWindingsTransformer id="trafo_4" name="8_6_4" r="0.0" x="0.2156196" g="0.0" b="0.0" ratedU1="20.0" ratedU2="14.0" bus1="bus_08" connectableBus1="bus_08" voltageLevelId1="vl_08" bus2="bus_06" connectableBus2="bus_06" voltageLevelId2="vl_06"/>
+    </iidm:substation>
+    <iidm:substation id="sub_4" name="sub_4">
+        <iidm:voltageLevel id="vl_04" name="vl_4" nominalV="138.0" lowVoltageLimit="124.2" highVoltageLimit="151.8" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_04"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_03" name="load_4_3" loadType="UNDEFINED" p0="7.599999904632568" q0="5.300000190734863" bus="bus_04" connectableBus="bus_04"/>
+        </iidm:voltageLevel>
+        <iidm:voltageLevel id="vl_05" name="vl_5" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_05"/>
+            </iidm:busBreakerTopology>
+            <iidm:generator id="gen_2" energySource="OTHER" minP="0.0" maxP="9999999.0" voltageRegulatorOn="true" targetP="17.299999237060547" targetV="22.000000476837158" bus="bus_05" connectableBus="bus_05">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:generator>
+            <iidm:generator id="gen_3" energySource="OTHER" minP="0.0" maxP="9999999.0" voltageRegulatorOn="true" targetP="0.0" targetV="22.000000476837158" bus="bus_05" connectableBus="bus_05">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:generator>
+            <iidm:battery id="storage_0" name="storage_5_0" targetP="0.0" targetQ="0.0" minP="-9999999.0" maxP="9999999.0" bus="bus_05" connectableBus="bus_05">
+                <iidm:minMaxReactiveLimits minQ="-1.7976931348623157E308" maxQ="1.7976931348623157E308"/>
+            </iidm:battery>
+            <iidm:load id="load_04" name="load_5_4" loadType="UNDEFINED" p0="11.399999618530273" q0="8.100000381469727" bus="bus_05" connectableBus="bus_05"/>
+        </iidm:voltageLevel>
+        <iidm:twoWindingsTransformer id="trafo_2" name="4_5_2" r="0.0" x="1.00808" g="0.0" b="0.0" ratedU1="128.616" ratedU2="20.0" bus1="bus_04" connectableBus1="bus_04" voltageLevelId1="vl_04" bus2="bus_05" connectableBus2="bus_05" voltageLevelId2="vl_05"/>
+    </iidm:substation>
+    <iidm:substation id="sub_5" name="sub_5"></iidm:substation>
+    <iidm:substation id="sub_6" name="sub_6"></iidm:substation>
+    <iidm:substation id="sub_7" name="sub_7"></iidm:substation>
+    <iidm:substation id="sub_8" name="sub_8"></iidm:substation>
+    <iidm:substation id="sub_9" name="sub_9">
+        <iidm:voltageLevel id="vl_09" name="vl_9" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_09"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_06" name="load_9_6" loadType="UNDEFINED" p0="8.600000381469727" q0="6.0" bus="bus_09" connectableBus="bus_09"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_10" name="sub_10">
+        <iidm:voltageLevel id="vl_10" name="vl_10" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_10"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_07" name="load_10_7" loadType="UNDEFINED" p0="3.4000000953674316" q0="2.299999952316284" bus="bus_10" connectableBus="bus_10"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_11" name="sub_11">
+        <iidm:voltageLevel id="vl_11" name="vl_11" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_11"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_08" name="load_11_8" loadType="UNDEFINED" p0="6.300000190734863" q0="4.400000095367432" bus="bus_11" connectableBus="bus_11"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_12" name="sub_12">
+        <iidm:voltageLevel id="vl_12" name="vl_12" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_12"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_09" name="load_12_9" loadType="UNDEFINED" p0="13.899999618530273" q0="9.399999618530273" bus="bus_12" connectableBus="bus_12"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:substation id="sub_13" name="sub_13">
+        <iidm:voltageLevel id="vl_13" name="vl_13" nominalV="20.0" lowVoltageLimit="18.0" highVoltageLimit="22.0" topologyKind="BUS_BREAKER">
+            <iidm:busBreakerTopology>
+                <iidm:bus id="bus_13"/>
+            </iidm:busBreakerTopology>
+            <iidm:load id="load_10" name="load_13_10" loadType="UNDEFINED" p0="13.600000381469727" q0="9.800000190734863" bus="bus_13" connectableBus="bus_13"/>
+        </iidm:voltageLevel>
+    </iidm:substation>
+    <iidm:line id="line_00" name="0_1_0" r="3.6907272" x="11.2683348" g1="0.0" b1="1.3862633900441084E-4" g2="0.0" b2="1.3862633900441084E-4" bus1="bus_00" connectableBus1="bus_00" voltageLevelId1="vl_00" bus2="bus_01" connectableBus2="bus_01" voltageLevelId2="vl_01"/>
+    <iidm:line id="line_01" name="0_4_1" r="10.2894732" x="42.475737599999995" g1="0.0" b1="1.2917454316320101E-4" g2="0.0" b2="1.2917454316320101E-4" bus1="bus_00" connectableBus1="bus_00" voltageLevelId1="vl_00" bus2="bus_04" connectableBus2="bus_04" voltageLevelId2="vl_04"/>
+    <iidm:line id="line_02" name="1_2_2" r="8.9487756" x="37.7014068" g1="0.0" b1="1.1499684940138626E-4" g2="0.0" b2="1.1499684940138626E-4" bus1="bus_01" connectableBus1="bus_01" voltageLevelId1="vl_01" bus2="bus_02" connectableBus2="bus_02" voltageLevelId2="vl_02"/>
+    <iidm:line id="line_03" name="1_3_3" r="11.0664684" x="33.5783808" g1="0.0" b1="8.92669607225373E-5" g2="0.0" b2="8.92669607225373E-5" bus1="bus_01" connectableBus1="bus_01" voltageLevelId1="vl_01" bus2="bus_03" connectableBus2="bus_03" voltageLevelId2="vl_03"/>
+    <iidm:line id="line_04" name="1_4_4" r="10.845558" x="33.1137072" g1="0.0" b1="9.084226002940558E-5" g2="0.0" b2="9.084226002940558E-5" bus1="bus_01" connectableBus1="bus_01" voltageLevelId1="vl_01" bus2="bus_04" connectableBus2="bus_04" voltageLevelId2="vl_04"/>
+    <iidm:line id="line_05" name="2_3_5" r="12.7613844" x="32.5709532" g1="0.0" b1="3.360638521319052E-5" g2="0.0" b2="3.360638521319052E-5" bus1="bus_02" connectableBus1="bus_02" voltageLevelId1="vl_02" bus2="bus_03" connectableBus2="bus_03" voltageLevelId2="vl_03"/>
+    <iidm:line id="line_06" name="3_4_6" r="2.542374" x="8.0194284" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_03" connectableBus1="bus_03" voltageLevelId1="vl_03" bus2="bus_04" connectableBus2="bus_04" voltageLevelId2="vl_04"/>
+    <iidm:line id="line_07" name="5_10_7" r="0.37992" x="0.7956" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_05" connectableBus1="bus_05" voltageLevelId1="vl_05" bus2="bus_10" connectableBus2="bus_10" voltageLevelId2="vl_10"/>
+    <iidm:line id="line_08" name="5_11_8" r="0.49164" x="1.02324" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_05" connectableBus1="bus_05" voltageLevelId1="vl_05" bus2="bus_11" connectableBus2="bus_11" voltageLevelId2="vl_11"/>
+    <iidm:line id="line_09" name="5_12_9" r="0.2646" x="0.52108" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_05" connectableBus1="bus_05" voltageLevelId1="vl_05" bus2="bus_12" connectableBus2="bus_12" voltageLevelId2="vl_12"/>
+    <iidm:line id="line_10" name="8_9_10" r="0.12724" x="0.338" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_08" connectableBus1="bus_08" voltageLevelId1="vl_08" bus2="bus_09" connectableBus2="bus_09" voltageLevelId2="vl_09"/>
+    <iidm:line id="line_11" name="8_13_11" r="0.50844" x="1.08152" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_08" connectableBus1="bus_08" voltageLevelId1="vl_08" bus2="bus_13" connectableBus2="bus_13" voltageLevelId2="vl_13"/>
+    <iidm:line id="line_12" name="9_10_12" r="0.3282" x="0.76828" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_09" connectableBus1="bus_09" voltageLevelId1="vl_09" bus2="bus_10" connectableBus2="bus_10" voltageLevelId2="vl_10"/>
+    <iidm:line id="line_13" name="11_12_13" r="0.88368" x="0.79952" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_11" connectableBus1="bus_11" voltageLevelId1="vl_11" bus2="bus_12" connectableBus2="bus_12" voltageLevelId2="vl_12"/>
+    <iidm:line id="line_14" name="12_13_14" r="0.68372" x="1.39208" g1="0.0" b1="0.0" g2="0.0" b2="0.0" bus1="bus_12" connectableBus1="bus_12" voltageLevelId1="vl_12" bus2="bus_13" connectableBus2="bus_13" voltageLevelId2="vl_13"/>
+</iidm:network>

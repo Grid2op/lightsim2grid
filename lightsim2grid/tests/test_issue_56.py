@@ -15,7 +15,7 @@ import pdb
 import numpy as np
 import grid2op
 from lightsim2grid import LightSimBackend, SolverType
-from lightsim2grid.securityAnalysis import SecurityAnalysis
+from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
 import pdb
 
 
@@ -24,7 +24,7 @@ class TestSADC_14(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
-            self.sa = SecurityAnalysis(self.env)
+            self.sa = ContingencyAnalysis(self.env)
             
     def test_dc(self):
         self.sa.add_all_n1_contingencies()
@@ -35,27 +35,27 @@ class TestSADC_14(unittest.TestCase):
         self.sa.add_all_n1_contingencies()
         res_p_dc, res_a_dc, res_v_dc  = self.sa.get_flows()
         
-        assert np.any(res_p != res_p_dc)
-        assert np.any(res_a != res_a_dc)
-        assert np.any(res_v != res_v_dc)
+        assert np.any(res_p != res_p_dc), "DC and AC solver leads to same results"
+        assert np.any(res_a != res_a_dc), "DC and AC solver leads to same results"
+        assert np.any(res_v != res_v_dc), "DC and AC solver leads to same results"
         assert self.sa.computer.get_solver_type() == SolverType.DC
         
         nb_bus = self.env.n_sub
         nb_powerline = len(self.env.backend._grid.get_lines())
         # now check with the DC computation
-        for l_id in range(self.env.n_line):
+        for l_id in range(type(self.env).n_line):
             grid_model = self.env.backend._grid.copy()
             if l_id < nb_powerline:
                 grid_model.deactivate_powerline(l_id)
             else:
                 grid_model.deactivate_trafo(l_id - nb_powerline)
-            grid_model.tell_topo_changed()
+            grid_model.tell_solver_need_reset()
             V = 1.0 * self.env.backend.V  # np.ones(2 * self.env.n_sub, dtype=np.complex_)
             res = grid_model.dc_pf(V, 10, 1e-8)
             if len(res):
                 # model has converged, I check the results are the same
                 # check voltages
-                assert np.allclose(res_v_dc[l_id, :nb_bus], res[:nb_bus]), f"error for contingency {l_id}"
+                assert np.allclose(res_v_dc[l_id, :nb_bus], res[:nb_bus]), f"error for contingency {l_id}: {np.abs(res_v_dc[l_id, :nb_bus]-res[:nb_bus]).max():.2e}"
                 # now check the flows
                 pl_dc, ql_dc, vl_dc, al_dc = grid_model.get_lineor_res()
                 pt_dc, qt_dc, vt_dc, at_dc = grid_model.get_trafohv_res()
@@ -77,7 +77,7 @@ class TestSADC_36(TestSADC_14):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_neurips_2020_track1", test=True, backend=LightSimBackend())
-            self.sa = SecurityAnalysis(self.env)
+            self.sa = ContingencyAnalysis(self.env)
 
 
 class TestSADC_118(TestSADC_14):
@@ -85,7 +85,7 @@ class TestSADC_118(TestSADC_14):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_wcci_2022", test=True, backend=LightSimBackend())
-            self.sa = SecurityAnalysis(self.env)
+            self.sa = ContingencyAnalysis(self.env)
            
           
 if __name__ == "__main__":

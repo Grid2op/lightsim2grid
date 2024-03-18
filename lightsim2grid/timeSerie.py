@@ -6,7 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["Computers", "TimeSerie"]
+__all__ = ["TimeSerieCPP", "TimeSerie",
+           # deprecated
+           "Computers"]
 
 import numpy as np
 import warnings
@@ -15,7 +17,10 @@ from grid2op.Chronics import Multifolder, GridStateFromFile
 
 from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
-from lightsim2grid_cpp import Computers
+from lightsim2grid_cpp import TimeSeriesCPP
+
+# deprecated
+Computers = TimeSeriesCPP
 
 
 class TimeSerie:
@@ -79,7 +84,7 @@ class TimeSerie:
             raise RuntimeError("Please an environment of class \"Environment\", "
                                "and not \"MultimixEnv\" or \"BaseMultiProcessEnv\"")
         self.grid2op_env = grid2op_env.copy()
-        self.computer = Computers(self.grid2op_env.backend._grid)
+        self.computer = TimeSeriesCPP(self.grid2op_env.backend._grid)
         self.prod_p = None
         self.load_p = None
         self.load_q = None
