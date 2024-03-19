@@ -393,6 +393,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &ChooseSolver::get_nb_iter, DocSolver::get_nb_iter.c_str()) 
         .def("converged", &ChooseSolver::converged, DocSolver::converged.c_str()) 
         .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str())
+        .def("get_timers", &ChooseSolver::get_timers, "TODO")
+        .def("get_timers_jacobian", &ChooseSolver::get_timers_jacobian, "TODO")
         .def("get_fdpf_xb_lu", &ChooseSolver::get_fdpf_xb_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())  // TODO this for all solver !
         .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 

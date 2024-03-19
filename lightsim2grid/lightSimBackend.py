@@ -130,6 +130,7 @@ class LightSimBackend(Backend):
         self._timer_preproc = 0.
         self._timer_postproc = 0.
         self._timer_solver = 0.
+        self._timer_read_data_back = 0.
 
         self.next_prod_p = None  # this vector is updated with the action that will modify the environment
         # it is done to keep track of the redispatching
@@ -209,6 +210,7 @@ class LightSimBackend(Backend):
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
+        self._timer_read_data_back = 0.
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -265,6 +267,7 @@ class LightSimBackend(Backend):
         self._grid.turnedoff_pv()
         
     def _fill_theta(self):
+        tick = time.perf_counter()
         # line_or_theta = np.empty(self.n_line)
         self.line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
         self.line_or_theta[self.__nb_powerline:] = self._grid.get_trafohv_theta()
@@ -280,6 +283,7 @@ class LightSimBackend(Backend):
 
         if self.__has_storage:
             self.storage_theta[:] = self._grid.get_storage_theta()
+        self._timer_read_data_back += time.perf_counter() - tick
 
     def get_theta(self):
         """
@@ -1043,7 +1047,8 @@ class LightSimBackend(Backend):
                 
                 self.timer_gridmodel_xx_pf += self._grid.timer_last_ac_pf
                 # timer_gridmodel_xx_pf takes all the time within the gridmodel "ac_pf"
-                   
+            
+            beg_readback = time.perf_counter()
             self.V[:] = V
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
@@ -1075,6 +1080,7 @@ class LightSimBackend(Backend):
             if self.__has_storage:
                 self.storage_p[:], self.storage_q[:], self.storage_v[:] = self._grid.get_storages_res()
             self.storage_v[self.storage_v == -1.] = 0.  # voltage is 0. for disconnected elements in grid2op
+            self._timer_read_data_back +=  time.perf_counter() - beg_readback
             
             self.next_prod_p[:] = self.prod_p
 
@@ -1203,6 +1209,7 @@ class LightSimBackend(Backend):
                            "_big_topo_to_obj", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
+                           "_timer_read_data_back",
                            "supported_grid_format", 
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
@@ -1315,14 +1322,24 @@ class LightSimBackend(Backend):
         return self.cst_1 * self.sh_p, self.cst_1 * self.sh_q, self.cst_1 * self.sh_v, self.sh_bus
 
     def _set_shunt_info(self):
+        tick = time.perf_counter()
         self.sh_p[:], self.sh_q[:], self.sh_v[:]  = self._grid.get_shunts_res()
         shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(type(self).n_shunt)], dtype=dt_int)
-        res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)  # by default all shunts are on bus one
-        res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
-        res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
-        self.sh_bus[:] = res_bus
+        cls = type(self)
+        if hasattr(cls, "global_bus_to_local"):
+            self.sh_bus[:] = cls.global_bus_to_local(shunt_bus, cls.shunt_to_subid)
+        else:
+            res = (1 * shunt_bus).astype(dt_int)  # make a copy
+            for i in range(cls.n_busbar_per_sub):
+                res[(i * cls.n_sub <= shunt_bus) & (shunt_bus < (i+1) * cls.n_sub)] = i + 1
+            res[shunt_bus == -1] = -1
+        # res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)  # by default all shunts are on bus one
+        # res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
+        # res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
+        # self.sh_bus[:] = res_bus
         self.sh_v[self.sh_v == -1.] = 0.  # in grid2op disco element have voltage of 0. and -1.
-
+        self._timer_read_data_back += time.perf_counter() - tick
+        
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1
         self.topo_vect[self.line_or_pos_topo_vect[id_]] = -1
@@ -1346,4 +1363,5 @@ class LightSimBackend(Backend):
         self._timer_postproc = 0.
         self._timer_preproc = 0.
         self._timer_solver = 0.
+        self._timer_read_data_back = 0.
         self._grid.tell_solver_need_reset()

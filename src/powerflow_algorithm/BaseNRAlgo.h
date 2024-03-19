@@ -18,7 +18,14 @@ template<class LinearSolver>
 class BaseNRAlgo : public BaseAlgo
 {
     public:
-        BaseNRAlgo():BaseAlgo(true), need_factorize_(true), timer_initialize_(0.), timer_dSbus_(0.), timer_fillJ_(0.) {}
+        BaseNRAlgo():
+            BaseAlgo(true),
+            need_factorize_(true),
+            timer_initialize_(0.),
+            timer_dSbus_(0.),
+            timer_fillJ_(0.),
+            timer_Va_Vm_(0.),
+            timer_pre_proc_(0.){}
 
         virtual
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
@@ -32,11 +39,18 @@ class BaseNRAlgo : public BaseAlgo
         }
 
         virtual
-        std::tuple<double, double, double, double, double, double, double> get_timers_jacobian()
+        TimerJacType get_timers_jacobian() const
         {
             // TODO refacto that, and change the order
-            auto res = std::tuple<double, double, double, double, double, double, double>(
-              timer_Fx_, timer_solve_, timer_initialize_, timer_check_, timer_dSbus_, timer_fillJ_, timer_total_nr_);
+            auto res = TimerJacType(timer_Fx_,
+                                    timer_solve_,
+                                    timer_initialize_,
+                                    timer_check_,
+                                    timer_dSbus_,
+                                    timer_fillJ_,
+                                    timer_Va_Vm_,
+                                    timer_pre_proc_,
+                                    timer_total_nr_);
             return res;
         }
 
@@ -59,6 +73,8 @@ class BaseNRAlgo : public BaseAlgo
             BaseAlgo::reset_timer();
             timer_dSbus_ = 0.;
             timer_fillJ_ = 0.;
+            timer_Va_Vm_ = 0.;
+            timer_pre_proc_ = 0.;
             timer_initialize_ = 0.;
         }
         virtual
@@ -171,6 +187,8 @@ class BaseNRAlgo : public BaseAlgo
         double timer_initialize_;
         double timer_dSbus_;
         double timer_fillJ_;
+        double timer_Va_Vm_;
+        double timer_pre_proc_;
 
 
     Eigen::SparseMatrix<real_type>

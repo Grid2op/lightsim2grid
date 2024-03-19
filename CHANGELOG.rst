@@ -18,7 +18,12 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.8.0] 2023-03-18
+[0.8.1] 2024-xx-yy
+--------------------
+- [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
+- [IMPROVED] time measurments in python and c++
+
+[0.8.0] 2024-03-18
 --------------------
 - [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
   If you previously used `gridmodel.get_Sbus()` to retrieve the Sbus used for DC powerflow, please use

@@ -13,15 +13,15 @@
 
 template<class LinearSolver>
 bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                            CplxVect & V,
-                                            const CplxVect & Sbus,
-                                            const Eigen::VectorXi & slack_ids,
-                                            const RealVect & slack_weights,
-                                            const Eigen::VectorXi & pv,
-                                            const Eigen::VectorXi & pq,
-                                            int max_iter,
-                                            real_type tol
-                                            )
+                                          CplxVect & V,
+                                          const CplxVect & Sbus,
+                                          const Eigen::VectorXi & slack_ids,
+                                          const RealVect & slack_weights,
+                                          const Eigen::VectorXi & pv,
+                                          const Eigen::VectorXi & pq,
+                                          int max_iter,
+                                          real_type tol
+                                          )
 {
     /**
     This method uses the newton raphson algorithm to compute voltage angles and magnitudes at each bus
@@ -54,6 +54,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     reset_if_needed();
     err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();
+    auto timer_pre_proc = CustTimer();
 
     Eigen::VectorXi my_pv = retrieve_pv_with_slack(slack_ids, pv);  // retrieve_pv_with_slack (not all), add_slack_to_pv (all)
     real_type slack_absorbed = std::real(Sbus.sum());  // initial guess for slack_absorbed
@@ -77,6 +78,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case
     Va_ = V_.array().arg();  // we "wrapped around" with a negative Vm
+    timer_pre_proc_ += timer_pre_proc.duration();
 
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
@@ -132,20 +134,29 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         }
         // const auto dx = -F;  // removed for speed optimization (-= used below)
 
+        auto timer_va_vm = CustTimer();
+        slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the first component
         // update voltage (this should be done consistently with "_evaluate_Fx")
         if (n_pv > 0) Va_(my_pv) -= F.segment(1, n_pv);
         if (n_pq > 0){
             Va_(pq) -= F.segment(n_pv + 1, n_pq);
             Vm_(pq) -= F.segment(n_pv + n_pq + 1, n_pq);
         }
-        slack_absorbed -= F(0); // by convention in fill_jacobian_matrix the slack bus is the first component
+        
 
         // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
         // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );
-        Vm_ = V_.array().abs();  // update Vm and Va again in case
-        Va_ = V_.array().arg();  // we wrapped around with a negative Vm TODO more efficient way maybe ?
+        // V_ = Vm_.array() *  (my_i * Va_.array().template cast<cplx_type>()).exp() ;
+        if(Vm_.minCoeff() < 0.)
+        {
+            // update Vm and Va again in case
+            // we wrapped around with a negative Vm TODO more efficient way maybe ?
+            Vm_ = V_.array().abs();  
+            Va_ = V_.array().arg();  
+        }
+        timer_Va_Vm_ += timer_va_vm.duration();
 
         F = _evaluate_Fx(Ybus, V_, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
         bool tmp = F.allFinite();
@@ -345,10 +356,9 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cp
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
     the remaining pq components are all 0.
     **/
-
-    auto timer = CustTimer();
     _dSbus_dV(Ybus, V);
 
+    auto timer = CustTimer();
     const auto n_pvpq = pvpq.size();
     const auto n_pq = pq.size();
     const auto size_j = n_pvpq + n_pq + 1;   // +1 because i add the slack bus
