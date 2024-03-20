@@ -173,7 +173,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     timer_total_nr_ += timer.duration();
     #ifdef __COUT_TIMES
         std::cout << "Computation time: " << "\n\t timer_initialize_: " << timer_initialize_
-                  << "\n\t timer_dSbus_ (called in _fillJ_): " << timer_dSbus_
+                  << "\n\t timer_dSbus_: " << timer_dSbus_
                   << "\n\t timer_fillJ_: " << timer_fillJ_
                   << "\n\t timer_Fx_: " << timer_Fx_
                   << "\n\t timer_check_: " << timer_check_
@@ -181,6 +181,8 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
                   << "\n\t timer_total_nr_: " << timer_total_nr_
                   << "\n\n";
     #endif // __COUT_TIMES
+    Vm_ = V_.array().abs();  
+    Va_ = V_.array().arg();  
     _solver_control.tell_none_changed();
     return res;
 }

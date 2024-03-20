@@ -174,6 +174,10 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
                   << "\n\t timer_total_nr_: " << BaseNRAlgo<LinearSolver>::timer_total_nr_
                   << "\n\n";
     #endif // __COUT_TIMES
+    // update Vm and Va again in case
+    // we wrapped around with a negative Vm TODO more efficient way maybe ?
+    BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  
+    BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  
     BaseNRAlgo<LinearSolver>::_solver_control.tell_none_changed();
     return res;
 }

@@ -23,6 +23,12 @@ except ImportError as exc_:
     from grid2op.Action._BackendAction import _BackendAction
 
 try:
+    from grid2op.Space import DEFAULT_N_BUSBAR_PER_SUB
+except ImportError:
+    # for backward compatibility with grid2op <= 1.9.8
+    DEFAULT_N_BUSBAR_PER_SUB = 2
+    
+try:
     from typing import Literal
 except ImportError:
     from typing_extensions import Literal
@@ -94,6 +100,10 @@ class LightSimBackend(Backend):
                              loader_kwargs,
                              stop_if_load_disco,
                              stop_if_gen_disco)
+        
+        # backward compat: need to define it if not done by grid2op
+        if not hasattr(self, "_can_be_copied"):
+            self._can_be_copied = can_be_copied
 
         #: .. versionadded:: 0.8.0
         #: Which type of grid format can be read by your backend.
@@ -1195,6 +1205,11 @@ class LightSimBackend(Backend):
                             self._loader_kwargs,
                             self._stop_if_load_disco,
                             self._stop_if_gen_disco)
+        
+        # for backward compat (attribute was not necessarily present in early grid2op)
+        if not hasattr(res, "_can_be_copied"):
+            res._can_be_copied = self._can_be_copied
+            
         res.comp_time = self.comp_time
         res.timer_gridmodel_xx_pf = self.timer_gridmodel_xx_pf
 
@@ -1330,13 +1345,14 @@ class LightSimBackend(Backend):
             self.sh_bus[:] = cls.global_bus_to_local(shunt_bus, cls.shunt_to_subid)
         else:
             res = (1 * shunt_bus).astype(dt_int)  # make a copy
-            for i in range(cls.n_busbar_per_sub):
+            if hasattr(cls, "n_busbar_per_sub"):
+                n_busbar_per_sub = cls.n_busbar_per_sub
+            else:
+                # backward compat when this was not defined:
+                n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
+            for i in range(n_busbar_per_sub):
                 res[(i * cls.n_sub <= shunt_bus) & (shunt_bus < (i+1) * cls.n_sub)] = i + 1
             res[shunt_bus == -1] = -1
-        # res_bus = np.ones(shunt_bus.shape[0], dtype=dt_int)  # by default all shunts are on bus one
-        # res_bus[shunt_bus >= self.__nb_bus_before] = 2  # except the one that are connected to bus 2
-        # res_bus[shunt_bus == -1] = -1  # or the one that are disconnected
-        # self.sh_bus[:] = res_bus
         self.sh_v[self.sh_v == -1.] = 0.  # in grid2op disco element have voltage of 0. and -1.
         self._timer_read_data_back += time.perf_counter() - tick
         

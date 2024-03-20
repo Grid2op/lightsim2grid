@@ -22,6 +22,7 @@ Change Log
 --------------------
 - [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
 - [IMPROVED] time measurments in python and c++
+- [IMPROVED] now test lightsim2grid with oldest grid2op version
 
 [0.8.0] 2024-03-18
 --------------------
