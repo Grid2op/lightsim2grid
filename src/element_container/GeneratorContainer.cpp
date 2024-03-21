@@ -54,6 +54,7 @@ void GeneratorContainer::init(const RealVect & generators_p,
     turnedoff_gen_pv_ = true;
     voltage_regulator_on_ = std::vector<bool>(generators_p.size(), true);
     q_mvar_ = RealVect::Zero(generators_p.size());
+    reset_results();
 }
 
 void GeneratorContainer::init_full(const RealVect & generators_p,
@@ -222,10 +223,10 @@ void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
 }
 
 void GeneratorContainer::reset_results(){
-    res_p_ = RealVect();  // in MW
-    res_q_ = RealVect();  // in MVar
-    res_v_ = RealVect();  // in kV
-    res_theta_ = RealVect();  // in deg
+    res_p_ = RealVect(nb());  // in MW
+    res_q_ = RealVect(nb());  // in MVar
+    res_v_ = RealVect(nb());  // in kV
+    res_theta_ = RealVect(nb());  // in deg
     // bus_slack_weight_ = RealVect();
 }
 
@@ -414,13 +415,23 @@ void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
                                const RealVect & total_q_max_per_bus)
 {
     const int nb_gen = nb();
-    res_q_ = RealVect::Constant(nb_gen, 0.);
-    if(!ac) return;  // do not consider Q values in dc mode
+    // res_q_ = RealVect::Constant(nb_gen, 0.);
+    if(!ac)  
+    {
+        // do not consider Q values in dc mode
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id) res_q_(gen_id) = 0.;
+        return;
+    }
+    
     real_type eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
         real_type real_q = 0.;
-        if(!status_[gen_id]) continue;  // set at 0 for disconnected generators
+        if(!status_[gen_id]){
+            // set at 0 for disconnected generators
+            res_q_(gen_id) = 0.;
+            continue;  
+        }
 
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv

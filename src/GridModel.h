@@ -494,6 +494,8 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_or();}
         Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_ex();}
 
+        Eigen::Ref<const IntVect> get_all_shunt_buses() const {return shunts_.get_buses();}
+
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
         Eigen::SparseMatrix<cplx_type> get_Ybus(){

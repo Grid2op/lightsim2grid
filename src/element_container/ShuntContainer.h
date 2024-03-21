@@ -146,7 +146,9 @@ class ShuntContainer : public GenericContainer
     void change_bus(int shunt_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     void change_p(int shunt_id, real_type new_p, SolverControl & solver_control);
     void change_q(int shunt_id, real_type new_q, SolverControl & solver_control);
-    int get_bus(int shunt_id) {return _get_bus(shunt_id, status_, bus_id_);}
+    int get_bus(int shunt_id) const {return _get_bus(shunt_id, status_, bus_id_);}
+    Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
+
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     

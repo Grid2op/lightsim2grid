@@ -52,6 +52,7 @@ void TrafoContainer::init(const RealVect & trafo_r,
     is_tap_hv_side_ = trafo_tap_hv;
     status_ = std::vector<bool>(trafo_r.size(), true);
     _update_model_coeffs();
+    reset_results();
 
 }
 
@@ -74,8 +75,6 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
 
 void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
 {
-    reset_results();
-
     names_ = std::get<0>(my_state);
     std::vector<real_type> & branch_r = std::get<1>(my_state);
     std::vector<real_type> & branch_x = std::get<2>(my_state);
@@ -111,6 +110,7 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     shift_  = RealVect::Map(&shift[0], size);
     is_tap_hv_side_ = is_tap_hv_side;
     _update_model_coeffs();
+    reset_results();
 }
 
 
@@ -271,19 +271,21 @@ void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
 {
     // it needs to be initialized at 0.
     const int nb_element = nb();
-    res_p_hv_ = RealVect::Constant(nb_element, 0.0);  // in MW
-    res_q_hv_ = RealVect::Constant(nb_element, 0.0);  // in MVar
-    res_v_hv_ = RealVect::Constant(nb_element, 0.0);  // in kV
-    res_a_hv_ = RealVect::Constant(nb_element, 0.0);  // in kA
-    res_p_lv_ = RealVect::Constant(nb_element, 0.0);  // in MW
-    res_q_lv_ = RealVect::Constant(nb_element, 0.0);  // in MVar
-    res_v_lv_ = RealVect::Constant(nb_element, 0.0);  // in kV
-    res_a_lv_ = RealVect::Constant(nb_element, 0.0);  // in kA
-    res_theta_hv_ = RealVect::Constant(nb_element, 0.0);  // in degree
-    res_theta_lv_ = RealVect::Constant(nb_element, 0.0);  // in degree
     for(int trafo_id = 0; trafo_id < nb_element; ++trafo_id){
         // don't do anything if the element is disconnected
-        if(!status_[trafo_id]) continue;
+        if(!status_[trafo_id]) {
+            res_p_hv_(trafo_id) = 0.0;  // in MW
+            res_q_hv_(trafo_id) = 0.0;  // in MVar
+            res_v_hv_(trafo_id) = 0.0;  // in kV
+            res_a_hv_(trafo_id) = 0.0;  // in kA
+            res_p_lv_(trafo_id) = 0.0;  // in MW
+            res_q_lv_(trafo_id) = 0.0;  // in MVar
+            res_v_lv_(trafo_id) = 0.0;  // in kV
+            res_a_lv_(trafo_id) = 0.0;  // in kA
+            res_theta_hv_(trafo_id) = 0.0;  // in degree
+            res_theta_lv_(trafo_id) = 0.0;  // in degree            
+            continue;
+        }
 
         // connectivity
         int bus_hv_id_me = bus_hv_id_(trafo_id);
@@ -341,7 +343,10 @@ void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
             // result of the dc powerflow
             res_p_hv_(trafo_id) = (std::real(ydc_ff_(trafo_id)) * Va(bus_hv_solver_id) + std::real(ydc_ft_(trafo_id)) * Va(bus_lv_solver_id) - dc_x_tau_shift_(trafo_id) ) * sn_mva;
             res_p_lv_(trafo_id) = (std::real(ydc_tt_(trafo_id)) * Va(bus_lv_solver_id) + std::real(ydc_tf_(trafo_id)) * Va(bus_hv_solver_id) + dc_x_tau_shift_(trafo_id) ) * sn_mva; 
-
+           
+            res_q_hv_(trafo_id) = 0.;
+            res_q_lv_(trafo_id) = 0.;
+            
             // for voltages, because vm = 1. pu by hypothesis
             // res_v_hv_(trafo_id) = bus_vn_kv_hv;
             // res_v_lv_(trafo_id) = bus_vn_kv_lv;
@@ -353,14 +358,16 @@ void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
 }
 
 void TrafoContainer::reset_results(){
-    res_p_hv_ = RealVect();  // in MW
-    res_q_hv_ = RealVect();  // in MVar
-    res_v_hv_ = RealVect();  // in kV
-    res_a_hv_ = RealVect();  // in kA
-    res_p_lv_ = RealVect();  // in MW
-    res_q_lv_ = RealVect();  // in MVar
-    res_v_lv_ = RealVect();  // in kV
-    res_a_lv_ = RealVect();  // in kA
+    res_p_hv_ = RealVect(nb());  // in MW
+    res_q_hv_ = RealVect(nb());  // in MVar
+    res_v_hv_ = RealVect(nb());  // in kV
+    res_a_hv_ = RealVect(nb());  // in kA
+    res_p_lv_ = RealVect(nb());  // in MW
+    res_q_lv_ = RealVect(nb());  // in MVar
+    res_v_lv_ = RealVect(nb());  // in kV
+    res_a_lv_ = RealVect(nb());  // in kA
+    res_theta_hv_ = RealVect(nb());
+    res_theta_lv_ = RealVect(nb());
 }
 
 

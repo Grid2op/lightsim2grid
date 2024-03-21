@@ -8,6 +8,7 @@
 
 #include "LoadContainer.h"
 #include <sstream>
+#include <iostream>
 
 void LoadContainer::init(const RealVect & loads_p,
                          const RealVect & loads_q,
@@ -22,6 +23,7 @@ void LoadContainer::init(const RealVect & loads_p,
     q_mvar_ = loads_q;
     bus_id_ = loads_bus_id;
     status_ = std::vector<bool>(loads_p.size(), true);
+    reset_results();
 }
 
 
@@ -37,7 +39,6 @@ LoadContainer::StateRes LoadContainer::get_state() const
 
 void LoadContainer::set_state(LoadContainer::StateRes & my_state )
 {
-    reset_results();
     names_ = std::get<0>(my_state);
     std::vector<real_type> & p_mw = std::get<1>(my_state);
     std::vector<real_type> & q_mvar = std::get<2>(my_state);
@@ -50,6 +51,7 @@ void LoadContainer::set_state(LoadContainer::StateRes & my_state )
     q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
     status_ = status;
+    reset_results();
 }
 
 
@@ -87,17 +89,23 @@ void LoadContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                     real_type sn_mva,
                                     bool ac)
 {
-    int nb_load = nb();
+    const int nb_load = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_load, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     v_deg_from_va(Va, Vm, status_, nb_load, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = p_mw_;
-    res_q_ = q_mvar_;
+    if(ac) res_q_ = q_mvar_;
+    else{
+        // no q in DC mode
+        for(int load_id = 0; load_id < nb_load; ++load_id) res_q_(load_id) = 0.;
+    }
 }
 
 void LoadContainer::reset_results(){
-    res_p_ = RealVect();  // in MW
-    res_q_ =  RealVect();  // in MVar
-    res_v_ = RealVect();  // in kV
+    // std::cout << "Loads reset_results \n";
+    res_p_ = RealVect(nb());  // in MW
+    res_q_ =  RealVect(nb());  // in MVar
+    res_v_ = RealVect(nb());  // in kV
+    res_theta_ = RealVect(nb());  // in deg
 }
 
 void LoadContainer::change_p(int load_id, real_type new_p, SolverControl & solver_control)

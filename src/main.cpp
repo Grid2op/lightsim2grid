@@ -817,6 +817,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_trafohv_theta", &GridModel::get_trafohv_theta, DocGridModel::_internal_do_not_use.c_str())
         .def("get_trafolv_theta", &GridModel::get_trafolv_theta, DocGridModel::_internal_do_not_use.c_str())
 
+        .def("get_all_shunt_buses", &GridModel::get_all_shunt_buses, DocGridModel::_internal_do_not_use.c_str())
+
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("deactivate_result_computation", &GridModel::deactivate_result_computation, DocGridModel::deactivate_result_computation.c_str())

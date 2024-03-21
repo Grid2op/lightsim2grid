@@ -21,8 +21,12 @@ Change Log
 [0.8.1] 2024-xx-yy
 --------------------
 - [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
+- [FIXED] some bugs preventing backward compatibility
 - [IMPROVED] time measurments in python and c++
 - [IMPROVED] now test lightsim2grid with oldest grid2op version
+- [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
+  pointers are re used)
+- [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
 
 [0.8.0] 2024-03-18
 --------------------

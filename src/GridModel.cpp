@@ -371,7 +371,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     bool conv = false;
     CplxVect res = CplxVect();
 
-    reset_results();  // reset the results
+    // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
@@ -901,7 +901,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     bool conv = false;
     CplxVect res = CplxVect();
 
-    reset_results();  // reset the results
+    // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = false;
