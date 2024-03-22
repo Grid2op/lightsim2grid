@@ -426,8 +426,8 @@ void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         res_powerline_vex_(line_id) = v_ex * bus_vn_kv_ex;
 
         // retrieve the voltage angle in degree (instead of radian)
-        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * 180. / my_pi;
-        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * 180. / my_pi;
+        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * my_180_pi_;
+        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * my_180_pi_;
 
         // results of the powerflow
         cplx_type Eor = V(bus_or_solver_id);

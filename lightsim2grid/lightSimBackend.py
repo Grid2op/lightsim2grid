@@ -141,7 +141,8 @@ class LightSimBackend(Backend):
         self._timer_postproc = 0.
         self._timer_solver = 0.
         self._timer_read_data_back = 0.
-        self._timer_test_read = 0.
+        self._timer_fetch_data_cpp = 0.
+        self._timer_apply_act = 0.
 
         self.next_prod_p = None  # this vector is updated with the action that will modify the environment
         # it is done to keep track of the redispatching
@@ -187,6 +188,7 @@ class LightSimBackend(Backend):
         self.sh_p = None
         self.sh_q = None
         self.sh_v = None
+        self.sh_theta = None
         self.sh_bus = None
 
         # voltage angle
@@ -222,7 +224,8 @@ class LightSimBackend(Backend):
         self._timer_preproc = 0.
         self._timer_solver = 0.
         self._timer_read_data_back = 0.
-        self._timer_test_read = 0.
+        self._timer_fetch_data_cpp = 0.
+        self._timer_apply_act = 0.
 
         # hack for the storage unit:
         # in grid2op, for simplicity, I suppose that if a storage is alone on a busbar, and
@@ -291,25 +294,6 @@ class LightSimBackend(Backend):
     def turnedoff_pv(self):
         self._turned_off_pv = True
         self._grid.turnedoff_pv()
-        
-    def _fill_theta(self):
-        tick = time.perf_counter()
-        # line_or_theta = np.empty(self.n_line)
-        self.line_or_theta[:self.__nb_powerline] = self._grid.get_lineor_theta()
-        self.line_or_theta[self.__nb_powerline:] = self._grid.get_trafohv_theta()
-
-        # line_ex_theta = np.empty(self.n_line)
-        self.line_ex_theta[:self.__nb_powerline] = self._grid.get_lineex_theta()
-        self.line_ex_theta[self.__nb_powerline:] = self._grid.get_trafolv_theta()
-
-        # line_or_theta = np.concatenate((self._grid.get_lineor_theta(), self._grid.get_trafohv_theta()))
-        # line_ex_theta = np.concatenate((self._grid.get_lineex_theta(), self._grid.get_trafolv_theta()))
-        self.load_theta[:] = self._grid.get_load_theta()
-        self.gen_theta[:] = self._grid.get_gen_theta()
-
-        if self.__has_storage:
-            self.storage_theta[:] = self._grid.get_storage_theta()
-        self._timer_read_data_back += time.perf_counter() - tick
 
     def get_theta(self):
         """
@@ -852,6 +836,7 @@ class LightSimBackend(Backend):
             self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
             self.sh_q = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
             self.sh_v = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.sh_theta = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
             self.sh_bus = np.full(cls.n_shunt, dtype=dt_int, fill_value=-1).reshape(-1)
 
         self.p_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
@@ -966,6 +951,7 @@ class LightSimBackend(Backend):
         """
         Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
         """
+        tick = time.perf_counter()
         active_bus, *_, topo__, shunts__ = backendAction()
 
         # change the overall topology
@@ -1017,7 +1003,8 @@ class LightSimBackend(Backend):
                 self._grid.change_q_shunt(sh_id, new_q)
         
         self._handle_dist_slack()
-    
+        self._timer_apply_act += time.perf_counter() - tick
+        
     def _handle_dist_slack(self):
         if self._dist_slack_non_renew:
             self._grid.update_slack_weights(type(self).gen_redispatchable)
@@ -1025,22 +1012,22 @@ class LightSimBackend(Backend):
     def _fetch_grid_data(self):
         beg_test = time.perf_counter()
         if self._lineor_res is None:
-            self._lineor_res = self._grid.get_lineor_res()
+            self._lineor_res = self._grid.get_lineor_res_full()
         if self._lineex_res is None:
-            self._lineex_res = self._grid.get_lineex_res()
+            self._lineex_res = self._grid.get_lineex_res_full()
         if self._load_res is None:
-            self._load_res = self._grid.get_loads_res()
+            self._load_res = self._grid.get_loads_res_full()
         if self._gen_res is None:
-            self._gen_res = self._grid.get_gen_res()
+            self._gen_res = self._grid.get_gen_res_full()
         if self._trafo_hv_res is None:
-            self._trafo_hv_res = self._grid.get_trafohv_res()
+            self._trafo_hv_res = self._grid.get_trafohv_res_full()
         if self._trafo_lv_res is None:
-            self._trafo_lv_res = self._grid.get_trafolv_res()
+            self._trafo_lv_res = self._grid.get_trafolv_res_full()
         if self._storage_res is None:
-            self._storage_res = self._grid.get_storages_res()
+            self._storage_res = self._grid.get_storages_res_full()
         if self._shunt_res is None:
-            self._shunt_res = self._grid.get_shunts_res()
-        self._timer_test_read += time.perf_counter() - beg_test
+            self._shunt_res = self._grid.get_shunts_res_full()
+        self._timer_fetch_data_cpp += time.perf_counter() - beg_test
             
     def runpf(self, is_dc=False):
         my_exc_ = None
@@ -1103,19 +1090,23 @@ class LightSimBackend(Backend):
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
              self.v_or[:self.__nb_powerline],
-             self.a_or[:self.__nb_powerline]) = self._lineor_res
+             self.a_or[:self.__nb_powerline],
+             self.line_or_theta[:self.__nb_powerline]) = self._lineor_res
             (self.p_or[self.__nb_powerline:],
              self.q_or[self.__nb_powerline:],
              self.v_or[self.__nb_powerline:],
-             self.a_or[self.__nb_powerline:]) = self._trafo_hv_res
+             self.a_or[self.__nb_powerline:],
+             self.line_or_theta[self.__nb_powerline:]) = self._trafo_hv_res
             (self.p_ex[:self.__nb_powerline],
              self.q_ex[:self.__nb_powerline],
              self.v_ex[:self.__nb_powerline],
-             self.a_ex[:self.__nb_powerline]) = self._lineex_res
+             self.a_ex[:self.__nb_powerline],
+             self.line_ex_theta[:self.__nb_powerline]) = self._lineex_res
             (self.p_ex[self.__nb_powerline:],
              self.q_ex[self.__nb_powerline:],
              self.v_ex[self.__nb_powerline:],
-             self.a_ex[self.__nb_powerline:]) = self._trafo_lv_res
+             self.a_ex[self.__nb_powerline:],
+             self.line_ex_theta[self.__nb_powerline:]) = self._trafo_lv_res
 
             self.a_or *= 1000.  # kA in lightsim, A expected in grid2op
             self.a_ex *= 1000.  # kA in lightsim, A expected in grid2op
@@ -1125,10 +1116,10 @@ class LightSimBackend(Backend):
             self.a_ex[~np.isfinite(self.a_ex)] = 0.
             self.v_ex[~np.isfinite(self.v_ex)] = 0.
 
-            self.load_p[:], self.load_q[:], self.load_v[:] = self._load_res
-            self.prod_p[:], self.prod_q[:], self.prod_v[:] = self._gen_res
+            self.load_p[:], self.load_q[:], self.load_v[:], self.load_theta[:] = self._load_res
+            self.prod_p[:], self.prod_q[:], self.prod_v[:], self.gen_theta[:] = self._gen_res
             if self.__has_storage:
-                self.storage_p[:], self.storage_q[:], self.storage_v[:] = self._storage_res
+                self.storage_p[:], self.storage_q[:], self.storage_v[:], self.storage_theta[:] = self._storage_res
             self.storage_v[self.storage_v == -1.] = 0.  # voltage is 0. for disconnected elements in grid2op
             self._timer_read_data_back +=  time.perf_counter() - beg_readback
             
@@ -1148,8 +1139,6 @@ class LightSimBackend(Backend):
 
             if type(self).shunts_data_available:
                 self._set_shunt_info()
-            
-            self._fill_theta()
 
             if (self.line_or_theta >= 1e6).any() or (self.line_ex_theta >= 1e6).any():
                 raise BackendError(f"Some theta are above 1e6 which should not be happening !")
@@ -1200,6 +1189,7 @@ class LightSimBackend(Backend):
             self.sh_p[:] = np.NaN
             self.sh_q[:] = np.NaN
             self.sh_v[:] = np.NaN
+            self.sh_theta[:] = np.NaN
             self.sh_bus[:] = -1
 
         if self.__has_storage:
@@ -1275,12 +1265,12 @@ class LightSimBackend(Backend):
                            "_big_topo_to_obj", "dim_topo",
                            "_idx_hack_storage",
                            "_timer_preproc", "_timer_postproc", "_timer_solver",
-                           "_timer_read_data_back",
+                           "_timer_read_data_back", "_timer_apply_act",
                            "supported_grid_format", 
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco",
-                           "_timer_test_read"
+                           "_timer_fetch_data_cpp"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -1298,7 +1288,7 @@ class LightSimBackend(Backend):
                        "load_p", "load_q", "load_v",
                        "prod_p", "prod_q", "prod_v",
                        "storage_p", "storage_q", "storage_v",
-                       "sh_p", "sh_q", "sh_v", "sh_bus",
+                       "sh_p", "sh_q", "sh_v", "sh_bus", "sh_theta",
                        "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",                   
                        ]
         for attr_nm in li_attr_npy:
@@ -1409,26 +1399,10 @@ class LightSimBackend(Backend):
         
     def _set_shunt_info(self):
         tick = time.perf_counter()
-        self.sh_p[:], self.sh_q[:], self.sh_v[:]  = self._shunt_res
-        # cls = type(self)
-        # shunt_bus = np.array([self._grid.get_bus_shunt(i) for i in range(cls.n_shunt)], dtype=dt_int)
-        # shunt_bus = self._grid.get_all_shunt_buses()
-        # if hasattr(cls, "global_bus_to_local"):
-        #     self.sh_bus[:] = cls.global_bus_to_local(shunt_bus, cls.shunt_to_subid)
-        # else:
-        #     res = (1 * shunt_bus).astype(dt_int)  # make a copy
-        #     if hasattr(cls, "n_busbar_per_sub"):
-        #         n_busbar_per_sub = cls.n_busbar_per_sub
-        #     else:
-        #         # backward compat when this was not defined:
-        #         n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
-        #     for i in range(n_busbar_per_sub):
-        #         res[(i * cls.n_sub <= shunt_bus) & (shunt_bus < (i+1) * cls.n_sub)] = i + 1
-        #     res[shunt_bus == -1] = -1
-        #     self.sh_bus[:] = res
+        self.sh_p[:], self.sh_q[:], self.sh_v[:], self.sh_theta[:]  = self._shunt_res
         self.sh_v[self.sh_v == -1.] = 0.  # in grid2op disco element have voltage of 0. and -1.
         self._timer_read_data_back += time.perf_counter() - tick
-        # self._timer_test_read += time.perf_counter() - tick
+        # self._timer_fetch_data_cpp += time.perf_counter() - tick
         
     def _disconnect_line(self, id_):
         self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1
@@ -1453,7 +1427,8 @@ class LightSimBackend(Backend):
         self._timer_preproc = 0.
         self._timer_solver = 0.
         self._timer_read_data_back = 0.
-        self._timer_test_read = 0.
+        self._timer_fetch_data_cpp = 0.
+        self._timer_apply_act = 0.
         self._grid.tell_solver_need_reset()
         self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
         self.topo_vect[:] = self.__init_topo_vect  # TODO

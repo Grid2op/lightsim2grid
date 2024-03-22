@@ -294,6 +294,9 @@ class DCLineContainer : public GenericContainer
     
     tuple3d get_or_res() const {return from_gen_.get_res();}
     tuple3d get_ex_res() const {return to_gen_.get_res();}
+    tuple4d get_res_or_full() const {return from_gen_.get_res_full();}
+    tuple4d get_res_ex_full() const {return to_gen_.get_res_full();}
+    
     Eigen::Ref<const RealVect> get_theta_or() const {return from_gen_.get_theta();}
     Eigen::Ref<const RealVect> get_theta_ex() const {return to_gen_.get_theta();}
 

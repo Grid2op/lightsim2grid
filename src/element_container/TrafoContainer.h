@@ -237,6 +237,8 @@ class TrafoContainer : public GenericContainer
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
+    tuple5d get_res_hv_full() const {return tuple5d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_, res_theta_hv_);}
+    tuple5d get_res_lv_full() const {return tuple5d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_, res_theta_lv_);}
     Eigen::Ref<const RealVect> get_theta_hv() const {return res_theta_hv_;}
     Eigen::Ref<const RealVect> get_theta_lv() const {return res_theta_lv_;}
     Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return bus_hv_id_;}

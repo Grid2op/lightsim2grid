@@ -324,6 +324,7 @@ class GeneratorContainer: public GenericContainer
     virtual void gen_p_per_bus(std::vector<real_type> & res) const;
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
 
     const std::vector<bool>& get_status() const {return status_;}

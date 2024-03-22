@@ -162,6 +162,6 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
             exc_ << " is connected to a disconnected bus";
             throw std::runtime_error(exc_.str());
         }
-        theta(el_id) = Va(bus_solver_id) * 180. / my_pi;
+        theta(el_id) = Va(bus_solver_id) * my_180_pi_;
     }
 }

@@ -152,9 +152,11 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         if(Vm_.minCoeff() < 0.)
         {
             // update Vm and Va again in case
-            // we wrapped around with a negative Vm TODO more efficient way maybe ?
+            // we wrapped around with a negative Vm 
+            // TODO more efficient way maybe ?
             Vm_ = V_.array().abs();  
             Va_ = V_.array().arg();  
+            // TODO do I need to change V here ???
         }
         timer_Va_Vm_ += timer_va_vm.duration();
 

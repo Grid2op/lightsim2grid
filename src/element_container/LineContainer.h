@@ -247,7 +247,8 @@ class LineContainer : public GenericContainer
 
     tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
     tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
-
+    tuple5d get_res_or_full() const {return tuple5d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_, res_powerline_thetaor_);}
+    tuple5d get_res_ex_full() const {return tuple5d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_, res_powerline_thetaex_);}
     Eigen::Ref<const RealVect> get_theta_or() const {return res_powerline_thetaor_;}
     Eigen::Ref<const RealVect> get_theta_ex() const {return res_powerline_thetaex_;}
     const std::vector<bool>& get_status() const {return status_;}

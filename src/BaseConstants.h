@@ -24,6 +24,7 @@ class BaseConstants
         static const real_type my_one_;
         static const real_type my_two_;
         static const real_type my_zero_;
+        static const real_type my_180_pi_;
 };
 
 enum class FDPFMethod {XB, BX};  // Different type of FDPF powerflow

@@ -26,7 +26,6 @@ void LoadContainer::init(const RealVect & loads_p,
     reset_results();
 }
 
-
 LoadContainer::StateRes LoadContainer::get_state() const
 {
      std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
@@ -53,7 +52,6 @@ void LoadContainer::set_state(LoadContainer::StateRes & my_state )
     status_ = status;
     reset_results();
 }
-
 
 void LoadContainer::fillSbus(CplxVect & Sbus,
                              const std::vector<int> & id_grid_to_solver,

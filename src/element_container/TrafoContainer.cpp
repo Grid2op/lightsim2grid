@@ -46,7 +46,7 @@ void TrafoContainer::init(const RealVect & trafo_r,
     x_ = trafo_x;
     h_ = trafo_b;
     ratio_ = ratio;
-    shift_ = trafo_shift_degree / 180. * my_pi;  // do not forget conversion degree / rad here !
+    shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
     bus_hv_id_ = trafo_hv_id;
     bus_lv_id_ = trafo_lv_id;
     is_tap_hv_side_ = trafo_tap_hv;
@@ -317,8 +317,8 @@ void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         res_v_hv_(trafo_id) = v_hv * bus_vn_kv_hv;
         res_v_lv_(trafo_id) = v_lv * bus_vn_kv_lv;
 
-        res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * 180. / my_pi;
-        res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * 180. / my_pi;
+        res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * my_180_pi_;
+        res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * my_180_pi_;
 
         if(ac){
             // results of the ac powerflow

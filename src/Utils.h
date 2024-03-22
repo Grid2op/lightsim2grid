@@ -22,6 +22,10 @@ typedef double real_type;  // type for real numbers: can be changed if installed
 typedef std::complex<real_type> cplx_type;  // type for complex number
 
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> EigenPythonNumType;  // Eigen::VectorXd
+typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
+typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
+typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
+
 typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType> > tuple3d;
@@ -29,9 +33,11 @@ typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType> > tuple4d;
-typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
-typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
-typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
+typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType> > tuple5d;
 
 typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic> RealMat;
 typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> CplxMat;

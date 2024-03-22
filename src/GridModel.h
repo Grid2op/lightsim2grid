@@ -496,6 +496,19 @@ class GridModel : public GenericContainer
 
         Eigen::Ref<const IntVect> get_all_shunt_buses() const {return shunts_.get_buses();}
 
+        // complete results (with theta)
+        tuple4d get_loads_res_full() const {return loads_.get_res_full();}
+        tuple4d get_shunts_res_full() const {return shunts_.get_res_full();}
+        tuple4d get_gen_res_full() const {return generators_.get_res_full();}
+        tuple5d get_lineor_res_full() const {return powerlines_.get_res_or_full();}
+        tuple5d get_lineex_res_full() const {return powerlines_.get_res_ex_full();}
+        tuple5d get_trafohv_res_full() const {return trafos_.get_res_hv_full();}
+        tuple5d get_trafolv_res_full() const {return trafos_.get_res_lv_full();}
+        tuple4d get_storages_res_full() const {return storages_.get_res_full();}
+        tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
+        tuple4d get_dclineor_res_full() const {return dc_lines_.get_res_or_full();}
+        tuple4d get_dclineex_res_full() const {return dc_lines_.get_res_ex_full();}
+
         // get some internal information, be cerafull the ID of the buses might not be the same
         // TODO convert it back to this ID, that will make copies, but who really cares ?
         Eigen::SparseMatrix<cplx_type> get_Ybus(){
