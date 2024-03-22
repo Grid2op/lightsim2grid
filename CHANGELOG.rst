@@ -27,6 +27,7 @@ Change Log
 - [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
   pointers are re used)
 - [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
+- [ADDED] some information of compilation directly in the cpp module
 
 [0.8.0] 2024-03-18
 --------------------

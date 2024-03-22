@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2024, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -19,11 +19,62 @@
 
 #include "help_fun_msg.h"
 
+#ifndef KLU_SOLVER_AVAILABLE
+#define this_KLU_SOLVER_AVAILABLE 0
+#else 
+#define this_KLU_SOLVER_AVAILABLE 1
+#endif
+#ifndef NICSLU_SOLVER_AVAILABLE
+#define this_NICSLU_SOLVER_AVAILABLE 0
+#else 
+#define this_NICSLU_SOLVER_AVAILABLE 1
+#endif
+#ifndef CKTSO_SOLVER_AVAILABLE
+#define this_CKTSO_SOLVER_AVAILABLE 0
+#else 
+#define this_CKTSO_SOLVER_AVAILABLE 1
+#endif
+#ifndef __COMPILE_MARCHNATIVE
+#define this__COMPILE_MARCHNATIVE 0
+#else 
+#define this__COMPILE_MARCHNATIVE 1
+#endif
+#ifndef __O3_OPTIM
+#define this__O3_OPTIM 0
+#else 
+#define this__O3_OPTIM 1
+#endif
+#ifndef VERSION
+#define this_VERSION "unknown"
+#else 
+#define this_VERSION VERSION
+#endif
+#ifdef NICSLU_PATH
+#define this_NICSLU_PATH NICSLU_PATH
+#endif
+#ifdef CKTSO_PATH
+#define this_CKTSO_PATH CKTSO_PATH
+#endif
+
 namespace py = pybind11;
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
 
+    // constant and compilation information
+    m.attr("klu_solver_available") = py::bool_(this_KLU_SOLVER_AVAILABLE);
+    m.attr("nicslu_solver_available") = py::bool_(this_NICSLU_SOLVER_AVAILABLE);
+    m.attr("cktso_solver_available") = py::bool_(this_CKTSO_SOLVER_AVAILABLE);
+    m.attr("compiled_march_native") = py::bool_(this__COMPILE_MARCHNATIVE);
+    m.attr("compiled_o3_optim") = py::bool_(this__O3_OPTIM);
+    m.attr("version") = py::str(this_VERSION);
+    #ifdef NICSLU_PATH
+    m.attr("nicslu_lib") = py::str(this_NICSLU_PATH);
+    #endif
+    #ifdef CKTSO_PATH
+    m.attr("cktso_lib") = py::str(this_CKTSO_PATH);
+    #endif
+    
     // solver method for FDPF
     py::enum_<FDPFMethod>(m, "FDPFMethod", "This enum controls the type of method you can use for Fast Decoupled Powerflow (XB or BX)")
         .value("XB", FDPFMethod::XB, "denotes the XB method")
