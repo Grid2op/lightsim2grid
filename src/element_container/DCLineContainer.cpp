@@ -36,6 +36,7 @@ void DCLineContainer::set_state(DCLineContainer::StateRes & my_state){
     status_ = status;
     loss_percent_ = RealVect::Map(&loss_percent[0], loss_percent.size());
     loss_mw_ = RealVect::Map(&loss_mw[0], loss_percent.size());
+    reset_results();
 }
 
 void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,

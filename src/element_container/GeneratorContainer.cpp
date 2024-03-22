@@ -95,7 +95,6 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const
 
 void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
-    reset_results();
     names_ = std::get<0>(my_state);
     turnedoff_gen_pv_ = std::get<1>(my_state);
 
@@ -123,6 +122,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     status_ = status;
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
+    reset_results();
 }
 
 RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
