@@ -71,9 +71,9 @@ class BaseBatchSolverSynch
             _active_power_flows = RealMat();
             _voltages = CplxMat();
             _nb_solved = 0;
-            _timer_compute_A = 0;
-            _timer_compute_P = 0;
-            _timer_solver = 0;
+            _timer_compute_A = 0.;
+            _timer_compute_P = 0.;
+            _timer_solver = 0.;
         }
 
         // results

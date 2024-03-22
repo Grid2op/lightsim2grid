@@ -215,9 +215,9 @@ class LightSimBackend(Backend):
         # it takes only into account the time spend in the powerflow algorithm
         self.comp_time = 0.  
 
-        # computation time of the powerflow
-        # it takes into account everything in the gridmodel, including the mapping 
-        # to the solver, building of Ybus and Sbus AND the time to solve the powerflow
+        #: computation time of the powerflow
+        #: it takes into account everything in the gridmodel, including the mapping 
+        #: to the solver, building of Ybus and Sbus AND the time to solve the powerflow
         self.timer_gridmodel_xx_pf = 0.
         
         self._timer_postproc = 0.
@@ -247,6 +247,7 @@ class LightSimBackend(Backend):
         self._trafo_hv_res = None
         self._trafo_lv_res = None
         self._storage_res = None
+        self._reset_res_pointers()
         
     def _aux_init_super(self, 
                         detailed_infos_for_cascading_failures,
@@ -615,6 +616,7 @@ class LightSimBackend(Backend):
             self.name_line = np.concatenate((lor_sub.index, tor_sub.index))
             self.name_storage = np.array(batt_sub.index)
             self.name_shunt = np.array(sh_sub.index)
+            self.name_sub = np.array(buses_sub_id.index)
         
         if "reconnect_disco_gen" in loader_kwargs and loader_kwargs["reconnect_disco_gen"]:
             for el in self._grid.get_generators():
@@ -1346,19 +1348,9 @@ class LightSimBackend(Backend):
 
     def get_line_flow(self):
         return self.a_or
-
-    def _grid2op_bus_from_klu_bus(self, klu_bus):
-        res = 0
-        if klu_bus != 0:
-            # object is connected
-            res = 1 if klu_bus < self.__nb_bus_before else 2
-        return res
-
-    def _klu_bus_from_grid2op_bus(self, grid2op_bus, grid2op_bus_init):
-        return grid2op_bus_init[grid2op_bus - 1]
-
+    
     def get_topo_vect(self):
-        return self.topo_vect
+        return 1 * self.topo_vect
 
     def generators_info(self):
         return self.cst_1 * self.prod_p, self.cst_1 * self.prod_q, self.cst_1 * self.prod_v
@@ -1430,5 +1422,6 @@ class LightSimBackend(Backend):
         self._timer_fetch_data_cpp = 0.
         self._timer_apply_act = 0.
         self._grid.tell_solver_need_reset()
+        self._reset_res_pointers()
         self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
         self.topo_vect[:] = self.__init_topo_vect  # TODO

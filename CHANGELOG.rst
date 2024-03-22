@@ -22,12 +22,21 @@ Change Log
 --------------------
 - [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
 - [FIXED] some bugs preventing backward compatibility
+- [FIXED] an issue in the computation of gen_q when intialized with pypowsybl
+  (some overflow cpp side leading to infinite number in gen_q)
+- [ADDED] some information of compilation directly in the cpp module
+- [ADDED] some information of compilation available in the python `compilation_options`
+  module python side
+- [ADDED] some convenient methods for `ContingencyAnalysis` python side (most 
+  notably the possibility to initialize it from a `LightSimBackend` and to
+  change the topology of the grid)
+- [ADDED] a "reward" module in lightsim2grid with custom reward
+  based on lightsim2grid.
 - [IMPROVED] time measurments in python and c++
 - [IMPROVED] now test lightsim2grid with oldest grid2op version
 - [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
   pointers are re used)
 - [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
-- [ADDED] some information of compilation directly in the cpp module
 
 [0.8.0] 2024-03-18
 --------------------
