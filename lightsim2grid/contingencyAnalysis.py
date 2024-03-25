@@ -6,21 +6,26 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["ContingencyAnalysisCPP", "ContingencyAnalysis",
-           # deprecated
-           "SecurityAnalysisCPP", "SecurityAnalysis",
-           ]
+__all__ = ["ContingencyAnalysisCPP"]
 
 import copy
 import numpy as np
 from collections.abc import Iterable
 
-from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import ContingencyAnalysisCPP
 
+try:
+    from lightsim2grid.lightSimBackend import LightSimBackend
+    __all__.append("ContingencyAnalysis")
+    __all__.append("SecurityAnalysis")
+    GRID2OP_INSTALLED = True
+except ImportError as exc_:
+    # grid2op is not installed
+    GRID2OP_INSTALLED = False
 
-class ContingencyAnalysis(object):
+
+class __ContingencyAnalysis(object):
     """
     This class allows to perform a "security analysis" from a given grid state.
 
@@ -76,6 +81,12 @@ class ContingencyAnalysis(object):
     STR_TYPES = (str, np.str_)  # np.str deprecated in numpy 1.20 and earlier versions not supported anyway
         
     def __init__(self, grid2op_env):
+        if not GRID2OP_INSTALLED:
+            raise RuntimeError("Impossible to use the python wrapper `ContingencyAnalysis` "
+                               "when grid2op is not installed. Please fall back to the "
+                               "c++ version (available in python) with:\n"
+                               "\tfrom lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP\n"
+                               "and refer to the appropriate documentation.")
         from grid2op.Environment import Environment
         if isinstance(grid2op_env, Environment):    
             if not isinstance(grid2op_env.backend, LightSimBackend):
@@ -368,3 +379,7 @@ class ContingencyAnalysis(object):
         self._ls_backend.close()
         self.clear()
         self.computer.close()
+        
+        
+if GRID2OP_INSTALLED:
+    ContingencyAnalysis = __ContingencyAnalysis

@@ -321,7 +321,8 @@ req_pkgs = [
         "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
         "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
-
+if sys.version_info < (3, 11):
+    req_pkgs.append("typing_extensions")
 if sys.version_info.major == 3 and sys.version_info.minor <= 7:
     # typing "Literal" not available on python 3.7
     req_pkgs.append("typing_extensions")

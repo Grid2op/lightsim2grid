@@ -76,16 +76,22 @@ jobs:
         run: python setup.py sdist
 
       - name: Install wheel
-        run: pip3 install wheelhouse/*.whl --user
+        run: |
+          pip3 install wheelhouse/*.whl --user
+          pip freeze
 
       # - name: Install GDB
       #   run: yum install -y gdb
 
-      - name: Check package can be imported
+      - name: Check package can be imported (bare install)
         run: |
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import init, GridModel"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -98,11 +104,15 @@ jobs:
           python3 -m pip install grid2op
           python3 -m pip freeze
 
-      - name: Check LightSimBackend can be imported 1
+      - name: Check extra can be imported can be imported (with grid2op)
         run:
           python3 -v -c "from lightsim2grid import LightSimBackend"
-
-      - name: Check LightSimBackend can be imported 2
+          python3 -c "from lightsim2grid.timeSerie import TimeSerie"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
+          python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+      
+      - name: Check LightSimBackend can be used to create env
         run:
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 

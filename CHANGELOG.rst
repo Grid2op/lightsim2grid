@@ -29,6 +29,8 @@ Change Log
   time series or contingency analysis.
 - [FIXED] another bug in ContingencyAnalysis (cpp side) leading to wrong computation
   when a powerline was disconnected
+- [FIXED] some broken imports when grid2op was not installed
+- [FIXED] missing "typing_extension" as required when installation
 - [ADDED] some information of compilation directly in the cpp module
 - [ADDED] some information of compilation available in the python `compilation_options`
   module python side

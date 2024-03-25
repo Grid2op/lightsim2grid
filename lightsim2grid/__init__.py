@@ -48,8 +48,9 @@ except ImportError as exc_:
     print(f"ContingencyAnalysis import error: {exc_}")
     
 try:
+    from lightsim2grid.rewards import *
     __all__.append("rewards")
 except ImportError as exc_:
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    print(f"ContingencyAnalysis import error: {exc_}")
+    print(f"rewards import error: {exc_}")
