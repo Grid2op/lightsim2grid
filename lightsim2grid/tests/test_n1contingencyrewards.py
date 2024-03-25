@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 import unittest
 import warnings
+import copy
 import numpy as np
 
 import grid2op
@@ -54,7 +55,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return 1.
     
     def l_ids(self):
-        # return [0]
+        return [0]
         return None
     
     def setUp(self) -> None:
@@ -76,6 +77,10 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         params.NB_TIMESTEP_COOLDOWN_LINE = 0
         params.NB_TIMESTEP_COOLDOWN_SUB = 0
         self.env.change_parameters(params)
+        if self.is_dc():
+            params = copy.deepcopy(params)
+            params.ENV_DC = True
+            params.FORECAST_DC = True
         self.env.change_forecast_parameters(params)
         assert (self.env.get_thermal_limit() == TH_LIM_A_REF).all()
         self.my_ids = self.l_ids()
@@ -90,11 +95,33 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
     
     def _aux_test_reward(self, obs, reward):
         unsafe_cont = 0
+        if self.is_dc():
+            th_lim = obs._thermal_limit
+            # A = sqrt(p**2 + q**2) / (sqrt3) * v)
+            # A**2 = (p**2 + q**2) / (3. v**2)
+            # p**2 = A**2 * 3. * v**2 - q**2
+            # and now the units...
+            # W**2 = A * 3. * V**2 - VAr**2
+            # MW**2 = 1e12 * A**2 * 3. * v**2 - 1e12 * VAr**2
+            # MW**2 = 1e6*A**2 * 3. * 1e6*(V)**2 *  - MVAr**2
+            # MW**2 = kA**2 * 3. * kV**2 - MVAr**2
+            p_square = 3. * (1e-3*th_lim)**2 * (obs.v_or)**2 - (obs.q_or)**2
+            p_square[p_square <= 0.] = 0.
+            th_lim_p = np.sqrt(p_square)
+            
+        # print("test:")
         for l_id in self.my_ids:
             sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
                                                         time_step=0)
-            if np.any(sim_obs.a_or > obs._thermal_limit) or sim_d:
-                unsafe_cont += 1       
+            if not self.is_dc():
+                if np.any(sim_obs.a_or > obs._thermal_limit) or sim_d:
+                    unsafe_cont += 1       
+            else:
+                # print(sim_obs.p_or)
+                # print(th_lim_p)
+                if np.any(np.abs(sim_obs.p_or) > th_lim_p) or sim_d:
+                    unsafe_cont += 1       
+                
         assert reward == (len(self.my_ids) - unsafe_cont), f"{reward} vs {(len(self.my_ids) - unsafe_cont)}"
         
     def test_do_nothing(self):
@@ -154,6 +181,10 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         assert reward != reward_cpy
 
 
+class TestN1ContingencyReward_DC(TestN1ContingencyReward_Base):
+    def is_dc(self):
+        return True
+    
 # TODO test with only a subset of powerlines
 # TODO test with the "margin"
 # TODO test with pandapower and lightsim as base backend

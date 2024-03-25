@@ -133,6 +133,7 @@ class N1ContingencyReward(BaseReward):
         # synch the contingency analyzer
         # self._contingecy_analyzer.update_grid(self._backend_action)
         contingecy_analyzer = ContingencyAnalysis(self._backend)
+        contingecy_analyzer.computer.change_solver(self._solver_type)
         contingecy_analyzer.add_multiple_contingencies(*self._l_ids)
         now_ = time.perf_counter()
         self._timer_pre_proc += now_ - beg
@@ -142,16 +143,18 @@ class N1ContingencyReward(BaseReward):
         self._timer_compute += now_2 - now_
         if self._dc:
             # In DC is study p, but take into account q in the limits
-            res = tmp[0]  # this is Por
+            res = np.abs(tmp[0])  # this is Por
             # now transform the limits in A in MW
-            por, qor, aor, vor = env.backend.lines_or_info()
-            p_sq = (th_lim_a * np.sqrt(3.) * vor) - qor
+            por, qor, vor, aor = env.backend.lines_or_info()
+            p_sq = (1e-3*th_lim_a)**2 * 3. * vor**2 - qor**2
             p_sq[p_sq <= 0.] = 0.
             limits = np.sqrt(p_sq)
         else:
             res = tmp[1]
             limits = th_lim_a
-
+        # print("Reward:")
+        # print(res)
+        # print(self._threshold_margin * limits)
         res = ((res > self._threshold_margin * limits) | (~np.isfinite(res))).any(axis=1)  # whether one powerline is above its limit, per cont
         # print(res.nonzero())
         # import pdb
