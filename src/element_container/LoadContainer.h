@@ -60,7 +60,7 @@ class LoadContainer : public GenericContainer
                 id(-1),
                 name(""),
                 connected(false),
-                bus_id(-1),
+                bus_id(_deactivated_bus_id),
                 target_p_mw(0.),
                 target_q_mvar(0.),
                 has_res(false),
@@ -76,7 +76,7 @@ class LoadContainer : public GenericContainer
                             name = r_data_load.names_[my_id];
                         }
                         connected = r_data_load.status_[my_id];
-                        bus_id = r_data_load.bus_id_[my_id];
+                        if(connected) bus_id = r_data_load.bus_id_[my_id];
 
                         target_p_mw = r_data_load.p_mw_.coeff(my_id);
                         target_q_mvar = r_data_load.q_mvar_.coeff(my_id);

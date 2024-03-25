@@ -24,6 +24,11 @@ Change Log
 - [FIXED] some bugs preventing backward compatibility
 - [FIXED] an issue in the computation of gen_q when intialized with pypowsybl
   (some overflow cpp side leading to infinite number in gen_q)
+- [FIXED] a bug in the "containers" cpp side (wrong bus was assigned)
+  when elements was disconnected, which lead to wrong computations for 
+  time series or contingency analysis.
+- [FIXED] another bug in ContingencyAnalysis (cpp side) leading to wrong computation
+  when a powerline was disconnected
 - [ADDED] some information of compilation directly in the cpp module
 - [ADDED] some information of compilation available in the python `compilation_options`
   module python side
@@ -37,6 +42,8 @@ Change Log
 - [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
   pointers are re used)
 - [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
+- [IMPROVED] type hinting in `LightSimBackend` for all 'public' methods (most 
+  notably the one used by grid2op)
 
 [0.8.0] 2024-03-18
 --------------------

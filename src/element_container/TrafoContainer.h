@@ -64,8 +64,8 @@ class TrafoContainer : public GenericContainer
                 id(-1),
                 name(""),
                 connected(false),
-                bus_hv_id(-1),
-                bus_lv_id(-1),
+                bus_hv_id(_deactivated_bus_id),
+                bus_lv_id(_deactivated_bus_id),
                 r_pu(-1.0),
                 x_pu(-1.0),
                 h_pu(0., 0.),
@@ -91,8 +91,8 @@ class TrafoContainer : public GenericContainer
                             name = r_data_trafo.names_[my_id];
                         }
                         connected = r_data_trafo.status_[my_id];
-                        bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
-                        bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
+                        if(connected)  bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
+                        if(connected)  bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
                         r_pu = r_data_trafo.r_.coeff(my_id);
                         x_pu = r_data_trafo.x_.coeff(my_id);
                         h_pu = r_data_trafo.h_.coeff(my_id);

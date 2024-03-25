@@ -64,7 +64,7 @@ class SGenContainer: public GenericContainer
                 id(-1),
                 name(""),
                 connected(false),
-                bus_id(-1),
+                bus_id(_deactivated_bus_id),
                 min_q_mvar(0.),
                 max_q_mvar(0.),
                 min_p_mw(0.),
@@ -84,7 +84,7 @@ class SGenContainer: public GenericContainer
                             name = r_data_sgen.names_[my_id];
                         }
                         connected = r_data_sgen.status_[my_id];
-                        bus_id = r_data_sgen.bus_id_[my_id];
+                        if(connected)  bus_id = r_data_sgen.bus_id_[my_id];
 
                         min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
                         max_q_mvar = r_data_sgen.q_max_mvar_(my_id);

@@ -61,6 +61,16 @@ class BaseBatchSolverSynch
         std::vector<SolverType> available_solvers() const {return _solver.available_solvers(); }
         SolverType get_solver_type() const {return _solver.get_type(); }
 
+        // TODO
+        // void change_gridmodel(const GridModel & new_grid_model){
+        //     if(_grid_model.total_bus() != new_grid_model.total_bus()){
+        //         throw std::runtime_error("BaseBatchSolverSynch: impossible to change the gridmodel. It appears it's not the same grid (not the same number of buses).");
+        //     }
+        //     CplxVect V = CplxVect::Constant(new_grid_model.total_bus(), 1.04);
+        //     _grid_model = new_grid_model.copy(); // not implemented !!!
+
+        // }
+
         // utlities informations
         double amps_computation_time() const {return _timer_compute_A;}
         double solver_time() const {return _timer_solver;}

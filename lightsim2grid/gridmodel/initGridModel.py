@@ -15,6 +15,9 @@ __all__ = ["init", "GridModel"]
 import numpy as np
 from numbers import Number
 import warnings
+
+import pandapower
+import lightsim2grid
 from lightsim2grid_cpp import GridModel, PandaPowerConverter
 from lightsim2grid.gridmodel._aux_add_sgen import _aux_add_sgen
 from lightsim2grid.gridmodel._aux_add_load import _aux_add_load
@@ -28,7 +31,7 @@ from lightsim2grid.gridmodel._aux_add_storage import _aux_add_storage
 from lightsim2grid.gridmodel._aux_add_dc_line import _aux_add_dc_line
 
 
-def init(pp_net):
+def init(pp_net: "pandapower.auxiliary.pandapowerNet") -> GridModel:
     """
     Convert a pandapower network as input into a GridModel.
 
@@ -53,7 +56,7 @@ def init(pp_net):
 
     Parameters
     ----------
-    pp_net: :class:`pandapower.grid`
+    pp_net: :class:`pandapower.auxiliary.pandapowerNet`
         The initial pandapower network you want to convert
 
     Returns

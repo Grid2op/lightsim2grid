@@ -6,13 +6,21 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import os
 import copy
-from typing import Optional, Union
+from typing import Tuple, Optional, Any, Dict, Union
+try:
+    from typing import Self
+except ImportError:
+    # python version is probably bellow 3.11
+    from typing_extensions import Self
+    
 import warnings
 import numpy as np
 import pandas as pd
 import time
 
+import grid2op
 from grid2op.Action import CompleteAction
 from grid2op.Backend import Backend
 from grid2op.Exceptions import BackendError
@@ -296,7 +304,7 @@ class LightSimBackend(Backend):
         self._turned_off_pv = True
         self._grid.turnedoff_pv()
 
-    def get_theta(self):
+    def get_theta(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
 
         Returns
@@ -344,7 +352,7 @@ class LightSimBackend(Backend):
         """
         return self._grid.get_solver_type(), self._grid.get_dc_solver_type()
         
-    def set_solver_type(self, solver_type: SolverType):
+    def set_solver_type(self, solver_type: SolverType) -> None:
         """
         Change the type of solver you want to use.
 
@@ -386,7 +394,7 @@ class LightSimBackend(Backend):
             raise BackendError(f"The solver type provided \"{solver_type}\" is not available on your system. Available"
                                f"solvers are {self.available_solvers}")
             
-    def set_solver_max_iter(self, max_iter):
+    def set_solver_max_iter(self, max_iter: int) -> None:
         """
         Set the maximum number of iteration the solver is allowed to perform.
 
@@ -419,7 +427,7 @@ class LightSimBackend(Backend):
             raise BackendError("max_iter should be a strictly positive integer (integer >= 1)")
         self.max_it = max_iter
 
-    def set_tol(self, new_tol):
+    def set_tol(self, new_tol: float) -> None:
         """
         Set the tolerance of the powerflow. This means that the powerflow will stop when the Kirchhoff's Circuit Laws
         are met up to a tolerance of "new_tol".
@@ -469,7 +477,9 @@ class LightSimBackend(Backend):
             else:
                 self._grid.change_solver(SolverType.SparseLU)
                 
-    def load_grid(self, path=None, filename=None):    
+    def load_grid(self,
+                  path : Union[os.PathLike, str],
+                  filename : Optional[Union[os.PathLike, str]]=None) -> None: 
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
             # grid2op version >= 1.10.0 then we use this
             self.can_handle_more_than_2_busbar()
@@ -832,7 +842,7 @@ class LightSimBackend(Backend):
 
         self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int).reshape(-1)
         
-        if type(self).shunts_data_available:
+        if cls.shunts_data_available:
             self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
             self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
@@ -877,7 +887,7 @@ class LightSimBackend(Backend):
         self.__init_topo_vect[:] = self.topo_vect
         self.sh_bus[:] = 1
         
-    def assert_grid_correct_after_powerflow(self):
+    def assert_grid_correct_after_powerflow(self) -> None:
         """
         This method is called by the environment. It ensure that the backend remains consistent even after a powerflow
         has be run with :func:`Backend.runpf` method.
@@ -945,11 +955,11 @@ class LightSimBackend(Backend):
             arr_ = self.shunt_to_subid[is_connected] + self.__nb_bus_before * (arr_[is_connected] - 1)
             self.nb_obj_per_bus[arr_] += 1
 
-    def close(self):
+    def close(self) -> None:
         self.init_pp_backend.close()
         self._grid = None
 
-    def apply_action(self, backendAction):
+    def apply_action(self, backendAction: Union["grid2op.Action._backendAction._BackendAction", None]) -> None:
         """
         Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
         """
@@ -1031,7 +1041,7 @@ class LightSimBackend(Backend):
             self._shunt_res = self._grid.get_shunts_res_full()
         self._timer_fetch_data_cpp += time.perf_counter() - beg_test
             
-    def runpf(self, is_dc=False):
+    def runpf(self, is_dc : bool=False) -> Tuple[bool, Union[Exception, None]]:
         my_exc_ = None
         res = False
         try:
@@ -1217,7 +1227,7 @@ class LightSimBackend(Backend):
         memo[id(self)] = result
         return result
 
-    def copy(self):
+    def copy(self) -> Self:
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
         __me_at_init = self.__me_at_init
@@ -1341,36 +1351,36 @@ class LightSimBackend(Backend):
         self.__me_at_init = __me_at_init
         return res
 
-    def get_line_status(self):
+    def get_line_status(self) -> np.ndarray:
         l_s = self._grid.get_lines_status()
         t_s = self._grid.get_trafo_status()
         return np.concatenate((l_s, t_s)).astype(dt_bool)
 
-    def get_line_flow(self):
+    def get_line_flow(self) -> np.ndarray:
         return self.a_or
     
-    def get_topo_vect(self):
+    def get_topo_vect(self) -> np.ndarray:
         return 1 * self.topo_vect
 
-    def generators_info(self):
+    def generators_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.cst_1 * self.prod_p, self.cst_1 * self.prod_q, self.cst_1 * self.prod_v
 
-    def loads_info(self):
+    def loads_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.cst_1 * self.load_p, self.cst_1 * self.load_q, self.cst_1 * self.load_v
 
-    def lines_or_info(self):
+    def lines_or_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         return self.cst_1 * self.p_or, self.cst_1 * self.q_or, self.cst_1 * self.v_or, self.cst_1 * self.a_or
 
-    def lines_ex_info(self):
+    def lines_ex_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         return self.cst_1 * self.p_ex, self.cst_1 * self.q_ex, self.cst_1 * self.v_ex, self.cst_1 * self.a_ex
 
-    def storages_info(self):
+    def storages_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not self.__has_storage:
             raise RuntimeError("Storage units are not supported with your grid2op version. Please upgrade to "
                                "grid2op >1.5")
         return self.cst_1 * self.storage_p, self.cst_1 * self.storage_q, self.cst_1 * self.storage_v
 
-    def shunt_info(self):
+    def shunt_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         return self.cst_1 * self.sh_p, self.cst_1 * self.sh_q, self.cst_1 * self.sh_v, self.sh_bus
 
     def _compute_shunt_bus_with_compat(self, shunt_bus):
@@ -1404,10 +1414,12 @@ class LightSimBackend(Backend):
         else:
             self._grid.deactivate_trafo(id_ - self.__nb_powerline)
 
-    def get_current_solver_type(self):
+    def get_current_solver_type(self) -> SolverType:
         return self.__current_solver_type
 
-    def reset(self, grid_path, grid_filename=None):
+    def reset(self,
+              path : Union[os.PathLike, str],
+              grid_filename : Optional[Union[os.PathLike, str]]=None) -> None:
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
         self._grid.unset_changes()

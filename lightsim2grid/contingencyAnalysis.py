@@ -110,10 +110,15 @@ class ContingencyAnalysis(object):
         raise RuntimeError("Impossible to add new topologies like this. Please use `add_single_contingency` "
                            "or `add_multiple_contingencies`.")
 
-    def update_grid(self, backend_act):
+    # TODO implement that !
+    def __update_grid(self, backend_act):
         self.clear(with_contlist=False)
         self._ls_backend.apply_action(backend_act)
-        self.computer = ContingencyAnalysisCPP(self._ls_backend._grid)
+        # run the powerflow
+        self._ls_backend.runpf()
+        # update the computer
+        # self.computer = ContingencyAnalysisCPP(self._ls_backend._grid)
+        # self.computer.update_grid(...)  # not implemented
         
     def clear(self, with_contlist=True):
         """
@@ -320,7 +325,7 @@ class ContingencyAnalysis(object):
             been entered. Please use `get_flows()` method for easier reading back of the results
 
         """
-        v_init = self._ls_backend.V
+        v_init = 1. * self._ls_backend.V
         self.computer.compute(v_init,
                               self._ls_backend.max_it,
                               self._ls_backend.tol)

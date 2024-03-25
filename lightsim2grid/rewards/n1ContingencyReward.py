@@ -6,6 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import time
+import numpy as np
+
 from grid2op.Reward import BaseReward
 from grid2op.Environment import Environment
 from grid2op.Backend import PandaPowerBackend
@@ -45,7 +48,9 @@ class N1ContingencyReward(BaseReward):
                  threshold_margin=1.,
                  dc=False,
                  normalize=False,
-                 logger=None,):
+                 logger=None,
+                 tol=1e-8,
+                 nb_iter=10):
         BaseReward.__init__(self, logger=logger)
         self._backend = None
         self._backend_action = None
@@ -65,6 +70,13 @@ class N1ContingencyReward(BaseReward):
                 self._solver_type = SolverType.DC
             else:
                 self._solver_type = SolverType.SparseLU
+        self._backend_ls = False
+        self._tol = tol
+        self._nb_iter = nb_iter
+        self._timer_call = 0.
+        self._timer_pre_proc = 0.
+        self._timer_compute = 0.
+        self._timer_post_proc = 0.
             
     def initialize(self, env: Environment):
         if not isinstance(env.backend, (PandaPowerBackend, LightSimBackend)):
@@ -73,51 +85,93 @@ class N1ContingencyReward(BaseReward):
                                "``PandaPowerBackend` nor `LightSimBackend`."
                                )
         if isinstance(env.backend, LightSimBackend):
-            self._backend = env.backend.copy()
+            self._backend : LightSimBackend = env.backend.copy()
+            self._backend_ls :bool  = True
         elif isinstance(env.backend, PandaPowerBackend):
             from lightsim2grid.gridmodel import init
-            self._backend = init(env.backend)
+            gridmodel = init(env.backend._grid)
+            self._backend = LightSimBackend.init_grid(type(env.backend))()
+            self._backend._grid = gridmodel
         else:
             raise NotImplementedError()
         
-        bk_act_cls = _BackendAction.init_grid(env.backend)
+        self._backend.set_solver_type(self._solver_type)
+        conv, exc_ = self._backend.runpf()
+        if not conv:
+            raise RuntimeError(f"The reward N1ContingencyReward diverge with error {exc_}")
+        bk_act_cls = _BackendAction.init_grid(type(env.backend))
         self._backend_action = bk_act_cls()
         if self._l_ids is None:
             self._l_ids = list(range(type(env).n_line))
-            
+        
+        if len(self._l_ids) == 0:
+            raise RuntimeError("Impossible to use the N1ContingencyReward "
+                               "without any contingencies !")
         self.reward_min = 0.
-        self.reward_max = type(env).n_line if not self._normalize else 1.
-        self._contingecy_analyzer = ContingencyAnalysis(self._backend)
-        self._contingecy_analyzer.add_multiple_contingencies(self._l_ids)
+        self.reward_max = len(self._l_ids) if not self._normalize else 1.
+        # self._contingecy_analyzer = ContingencyAnalysis(self._backend)
+        # self._contingecy_analyzer.add_multiple_contingencies(self._l_ids)
 
     def __call__(self, action, env, has_error, is_done, is_illegal, is_ambiguous):
         if is_done:
             return self.reward_min
+        beg = time.perf_counter()
+        # retrieve the state of the grid
         self._backend_action.reset()
         act = env.backend.get_action_to_set()
-        th_lim = env.get_thermal_limit()
-        th_lim[th_lim <= 1] = 1  # assign 1 for the thermal limit
-        this_n1 = copy.deepcopy(act)
-        self._backend_action += this_n1
-            
+        th_lim_a = env.get_thermal_limit()
+        th_lim_a[th_lim_a <= 1] = 1  # assign 1 for the thermal limit
+        
+        # apply it to the backend
+        self._backend_action += act
         self._backend.apply_action(self._backend_action)
-        self._backend._disconnect_line(self.l_id)
-        div_exc_ = None
-        try:
-            # TODO there is a bug in lightsimbackend that make it crash instead of diverging
-            conv, div_exc_ = self._backend.runpf()
-        except Exception as exc_:
-            conv = False
-            div_exc_ = exc_
-
-        if conv:
-            flow = self._backend.get_line_flow()
-            res = (flow / th_lim).max()
+        conv, exc_ = self._backend.runpf()
+        if not conv:
+            self.logger.warn("Cannot set the backend of the `N1ContingencyReward` => divergence")
+            return self.reward_min
+        
+        # synch the contingency analyzer
+        # self._contingecy_analyzer.update_grid(self._backend_action)
+        contingecy_analyzer = ContingencyAnalysis(self._backend)
+        contingecy_analyzer.add_multiple_contingencies(*self._l_ids)
+        now_ = time.perf_counter()
+        self._timer_pre_proc += now_ - beg
+        tmp = contingecy_analyzer.get_flows()
+        self.logger.info(f"{contingecy_analyzer.computer.nb_solved()} converging contingencies")
+        now_2 = time.perf_counter()
+        self._timer_compute += now_2 - now_
+        if self._dc:
+            # In DC is study p, but take into account q in the limits
+            res = tmp[0]  # this is Por
+            # now transform the limits in A in MW
+            por, qor, aor, vor = env.backend.lines_or_info()
+            p_sq = (th_lim_a * np.sqrt(3.) * vor) - qor
+            p_sq[p_sq <= 0.] = 0.
+            limits = np.sqrt(p_sq)
         else:
-            self.logger.info(f"Divergence of the backend at step {env.nb_time_step} for N1Reward with error `{div_exc_}`")
-            res = self.reward_min
+            res = tmp[1]
+            limits = th_lim_a
+
+        res = ((res > self._threshold_margin * limits) | (~np.isfinite(res))).any(axis=1)  # whether one powerline is above its limit, per cont
+        # print(res.nonzero())
+        # import pdb
+        # pdb.set_trace()
+        res = res.sum()  # count total of n-1 unsafe 
+        res = len(self._l_ids) - res  # reward = things to maximise
+        if self._normalize:
+            res /= len(self._l_ids)
+        now_3 = time.perf_counter()
+        self._timer_post_proc += now_3 - now_2
+        self._timer_call += time.perf_counter() - beg
         return res
 
+    def reset(self, env: "grid2op.Environment.BaseEnv") -> None:
+        self._timer_call = 0.
+        self._timer_pre_proc = 0.
+        self._timer_compute = 0.
+        self._timer_post_proc = 0.
+        return super().reset(env)
+    
     def close(self):
         self._backend.close()
         del self._backend
