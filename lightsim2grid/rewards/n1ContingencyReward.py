@@ -78,11 +78,11 @@ class N1ContingencyReward(BaseReward):
         self._timer_post_proc = 0.
             
     def initialize(self, env: "grid2op.Environment.Environment"):
-        from grid2op.Environment import Environment
+        from grid2op.Environment import BaseEnv
         from grid2op.Backend import PandaPowerBackend  # lazy import because grid2op -> pandapower-> lightsim2grid -> grid2op
-        if not isinstance(env, Environment):
+        if not isinstance(env, BaseEnv):
             raise RuntimeError("You can only initialize this reward with a "
-                               "proper grid2op environment")
+                               "proper grid2op environment (`BaseEnv`)")
              
         if not isinstance(env.backend, (PandaPowerBackend, LightSimBackend)):
             raise RuntimeError("Impossible to use the `N1ContingencyReward` with "
@@ -179,6 +179,7 @@ class N1ContingencyReward(BaseReward):
         return super().reset(env)
     
     def close(self):
-        self._backend.close()
+        if self._backend is not None:
+            self._backend.close()
         del self._backend
         self._backend = None
