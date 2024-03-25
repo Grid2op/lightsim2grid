@@ -690,11 +690,45 @@ class LightSimBackend(Backend):
             self._grid._max_nb_bus_per_sub = self.n_busbar_per_sub
             
         self._grid.tell_solver_need_reset()
-            
+    
+    def init_from_loaded_pandapower(self, pp_net):
+        if hasattr(type(self), "can_handle_more_than_2_busbar"):
+            type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
+        self.init_pp_backend = pp_net.copy()
+        self._aux_init_pandapower()
+        
+        # handles redispatching
+        if type(pp_net).redispatching_unit_commitment_availble:
+            self.redispatching_unit_commitment_availble = True
+            for attr_nm in ["gen_type", "gen_pmin", "gen_pmax",
+                            "gen_redispatchable", "gen_max_ramp_up",
+                            "gen_max_ramp_down", "gen_min_uptime",
+                            "gen_min_downtime", "gen_cost_per_MW",
+                            "gen_startup_cost", "gen_shutdown_cost",
+                            "gen_renewable"
+                            ]:
+                setattr(self, attr_nm, copy.deepcopy(getattr( type(pp_net), attr_nm)))
+        
+        # handles storages
+        for attr_nm in ["storage_type",
+                        "storage_Emax",
+                        "storage_Emin",
+                        "storage_max_p_prod" ,
+                        "storage_max_p_absorb",
+                        "storage_marginal_cost",
+                        "storage_loss",
+                        "storage_charging_efficiency",
+                        "storage_discharging_efficiency",
+                        ]:
+            setattr(self, attr_nm, copy.deepcopy(getattr( type(pp_net), attr_nm)))
+        
     def _load_grid_pandapower(self, path=None, filename=None):
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
             type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
         self.init_pp_backend.load_grid(path, filename)
+        self._aux_init_pandapower()
+    
+    def _aux_init_pandapower(self):
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
 
         self._grid = init(self.init_pp_backend._grid)    

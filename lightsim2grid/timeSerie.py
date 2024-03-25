@@ -84,7 +84,7 @@ class ___TimeSerie:
 
     """
     def __init__(self, grid2op_env):
-        if not GRID2OP_INSTALL:
+        if not GRID2OP_INSTALLED:
             raise RuntimeError("Impossible to use the python wrapper `TimeSerie` "
                                "when grid2op is not installed. Please fall back to the "
                                "c++ version (available in python) with:\n"

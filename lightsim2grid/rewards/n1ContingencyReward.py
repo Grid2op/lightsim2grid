@@ -9,9 +9,8 @@
 import time
 import numpy as np
 
+import grid2op
 from grid2op.Reward import BaseReward
-from grid2op.Environment import Environment
-from grid2op.Backend import PandaPowerBackend
 from grid2op.Action._backendAction import _BackendAction
 
 from lightsim2grid import LightSimBackend, ContingencyAnalysis
@@ -52,14 +51,14 @@ class N1ContingencyReward(BaseReward):
                  tol=1e-8,
                  nb_iter=10):
         BaseReward.__init__(self, logger=logger)
-        self._backend = None
+        self._backend : LightSimBackend = None
         self._backend_action = None
         self._l_ids = None
-        self._dc = dc
-        self._normalize = normalize
+        self._dc : bool = dc
+        self._normalize : bool = normalize
         if l_ids is not None:
             self._l_ids = [int(el) for el in l_ids]
-        self._threshold_margin = float(threshold_margin)
+        self._threshold_margin :float = float(threshold_margin)
         if klu_solver_available:
             if self._dc:
                 self._solver_type = SolverType.KLUDC
@@ -78,7 +77,13 @@ class N1ContingencyReward(BaseReward):
         self._timer_compute = 0.
         self._timer_post_proc = 0.
             
-    def initialize(self, env: Environment):
+    def initialize(self, env: "grid2op.Environment.Environment"):
+        from grid2op.Environment import Environment
+        from grid2op.Backend import PandaPowerBackend  # lazy import because grid2op -> pandapower-> lightsim2grid -> grid2op
+        if not isinstance(env, Environment):
+            raise RuntimeError("You can only initialize this reward with a "
+                               "proper grid2op environment")
+             
         if not isinstance(env.backend, (PandaPowerBackend, LightSimBackend)):
             raise RuntimeError("Impossible to use the `N1ContingencyReward` with "
                                "a environment with a backend that is not "
@@ -88,10 +93,9 @@ class N1ContingencyReward(BaseReward):
             self._backend : LightSimBackend = env.backend.copy()
             self._backend_ls :bool  = True
         elif isinstance(env.backend, PandaPowerBackend):
-            from lightsim2grid.gridmodel import init
-            gridmodel = init(env.backend._grid)
             self._backend = LightSimBackend.init_grid(type(env.backend))()
-            self._backend._grid = gridmodel
+            self._backend.init_from_loaded_pandapower(env.backend)
+            self._backend.is_loaded = True
         else:
             raise NotImplementedError()
         
@@ -143,22 +147,21 @@ class N1ContingencyReward(BaseReward):
         self._timer_compute += now_2 - now_
         if self._dc:
             # In DC is study p, but take into account q in the limits
-            res = np.abs(tmp[0])  # this is Por
+            tmp_res = np.abs(tmp[0])  # this is Por
             # now transform the limits in A in MW
             por, qor, vor, aor = env.backend.lines_or_info()
             p_sq = (1e-3*th_lim_a)**2 * 3. * vor**2 - qor**2
             p_sq[p_sq <= 0.] = 0.
             limits = np.sqrt(p_sq)
         else:
-            res = tmp[1]
+            tmp_res = tmp[1]
             limits = th_lim_a
         # print("Reward:")
-        # print(res)
+        # print(tmp_res)        
         # print(self._threshold_margin * limits)
-        res = ((res > self._threshold_margin * limits) | (~np.isfinite(res))).any(axis=1)  # whether one powerline is above its limit, per cont
+        res = ((tmp_res > self._threshold_margin * limits) | (~np.isfinite(tmp_res))).any(axis=1)  # whether one powerline is above its limit, per cont
+        res |=  (np.abs(tmp_res) <= self._tol).all(axis=1)  # other type of divergence: all 0.
         # print(res.nonzero())
-        # import pdb
-        # pdb.set_trace()
         res = res.sum()  # count total of n-1 unsafe 
         res = len(self._l_ids) - res  # reward = things to maximise
         if self._normalize:

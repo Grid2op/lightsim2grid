@@ -39,6 +39,8 @@ Change Log
   change the topology of the grid)
 - [ADDED] a "reward" module in lightsim2grid with custom reward
   based on lightsim2grid.
+- [ADDED] a class `N1ContingencyReward` that can leverage lightsim2grid to 
+  assess the number of safe / unsafe N-1.
 - [IMPROVED] time measurments in python and c++
 - [IMPROVED] now test lightsim2grid with oldest grid2op version
 - [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
@@ -46,6 +48,7 @@ Change Log
 - [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
 - [IMPROVED] type hinting in `LightSimBackend` for all 'public' methods (most 
   notably the one used by grid2op)
+- [IMPROVED] now the benchmarks are more verbose (detailing some compilation options)
 
 [0.8.0] 2024-03-18
 --------------------

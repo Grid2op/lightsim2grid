@@ -11,11 +11,13 @@ import copy
 import numpy as np
 
 import grid2op
+from grid2op.Backend import PandaPowerBackend
 from grid2op.Action import CompleteAction
 from grid2op.Reward import EpisodeDurationReward
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.rewards import N1ContingencyReward
+
 
 TH_LIM_A_REF = np.array([
         541.0,
@@ -55,7 +57,6 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return 1.
     
     def l_ids(self):
-        return [0]
         return None
     
     def setUp(self) -> None:
@@ -107,20 +108,18 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
             # MW**2 = kA**2 * 3. * kV**2 - MVAr**2
             p_square = 3. * (1e-3*th_lim)**2 * (obs.v_or)**2 - (obs.q_or)**2
             p_square[p_square <= 0.] = 0.
-            th_lim_p = np.sqrt(p_square)
+            th_lim_p = np.sqrt(p_square) * self.threshold_margin()
             
         # print("test:")
         for l_id in self.my_ids:
             sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
                                                         time_step=0)
             if not self.is_dc():
-                if np.any(sim_obs.a_or > obs._thermal_limit) or sim_d:
+                if np.any(sim_obs.a_or > obs._thermal_limit * self.threshold_margin()) or sim_d:
                     unsafe_cont += 1       
             else:
-                # print(sim_obs.p_or)
-                # print(th_lim_p)
                 if np.any(np.abs(sim_obs.p_or) > th_lim_p) or sim_d:
-                    unsafe_cont += 1       
+                    unsafe_cont += 1    
                 
         assert reward == (len(self.my_ids) - unsafe_cont), f"{reward} vs {(len(self.my_ids) - unsafe_cont)}"
         
@@ -184,8 +183,20 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
 class TestN1ContingencyReward_DC(TestN1ContingencyReward_Base):
     def is_dc(self):
         return True
+    # def l_ids(self):
+    #     return [18]
     
-# TODO test with only a subset of powerlines
-# TODO test with the "margin"
-# TODO test with pandapower and lightsim as base backend
-# TODO test AC and DC
+    
+class TestN1ContingencyReward_LIDS(TestN1ContingencyReward_Base):
+    def l_ids(self):
+        return [0, 1, 2, 18, 16]
+    
+    
+class TestN1ContingencyReward_Margins(TestN1ContingencyReward_Base):
+    def threshold_margin(self):
+        return 0.9
+    
+    
+class TestN1ContingencyReward_PP(TestN1ContingencyReward_Base):
+    def init_backend(self):
+        return PandaPowerBackend(with_numba=False, lightsim2grid=False)
