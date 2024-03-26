@@ -44,6 +44,7 @@ void LineContainer::init(const RealVect & branch_r,
     powerlines_x_ = branch_x;
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
     _update_model_coeffs();
+    reset_results();
 }
 
 void LineContainer::init(const RealVect & branch_r,
@@ -82,6 +83,7 @@ void LineContainer::init(const RealVect & branch_r,
     powerlines_x_ = branch_x;
     status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
     _update_model_coeffs();
+    reset_results();
 }
 
 LineContainer::StateRes LineContainer::get_state() const
@@ -98,7 +100,6 @@ LineContainer::StateRes LineContainer::get_state() const
 }
 void LineContainer::set_state(LineContainer::StateRes & my_state)
 {
-    reset_results();
     names_ = std::get<0>(my_state);
     std::vector<real_type> & branch_r = std::get<1>(my_state);
     std::vector<real_type> & branch_x = std::get<2>(my_state);
@@ -121,6 +122,7 @@ void LineContainer::set_state(LineContainer::StateRes & my_state)
     status_ = status;
 
     _update_model_coeffs();
+    reset_results();
 }
 
 void LineContainer::_update_model_coeffs()
@@ -355,14 +357,16 @@ void LineContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf
 
 void LineContainer::reset_results()
 {
-    res_powerline_por_ = RealVect();  // in MW
-    res_powerline_qor_ = RealVect();  // in MVar
-    res_powerline_vor_ = RealVect();  // in kV
-    res_powerline_aor_ = RealVect();  // in kA
-    res_powerline_pex_ = RealVect();  // in MW
-    res_powerline_qex_ = RealVect();  // in MVar
-    res_powerline_vex_ = RealVect();  // in kV
-    res_powerline_aex_ = RealVect();  // in kA
+    res_powerline_por_ = RealVect(nb());  // in MW
+    res_powerline_qor_ = RealVect(nb());  // in MVar
+    res_powerline_vor_ = RealVect(nb());  // in kV
+    res_powerline_aor_ = RealVect(nb());  // in kA
+    res_powerline_pex_ = RealVect(nb());  // in MW
+    res_powerline_qex_ = RealVect(nb());  // in MVar
+    res_powerline_vex_ = RealVect(nb());  // in kV
+    res_powerline_aex_ = RealVect(nb());  // in kA
+    res_powerline_thetaor_ = RealVect(nb());
+    res_powerline_thetaex_ = RealVect(nb());
 }
 
 void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -375,19 +379,21 @@ void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
 {
     // it needs to be initialized at 0.
     Eigen::Index nb_element = nb();
-    res_powerline_por_ = RealVect::Constant(nb_element, my_zero_);  // in MW
-    res_powerline_qor_ = RealVect::Constant(nb_element, my_zero_);  // in MVar
-    res_powerline_vor_ = RealVect::Constant(nb_element, my_zero_);  // in kV
-    res_powerline_aor_ = RealVect::Constant(nb_element, my_zero_);  // in kA
-    res_powerline_pex_ = RealVect::Constant(nb_element, my_zero_);  // in MW
-    res_powerline_qex_ = RealVect::Constant(nb_element, my_zero_);  // in MVar
-    res_powerline_vex_ = RealVect::Constant(nb_element, my_zero_);  // in kV
-    res_powerline_aex_ = RealVect::Constant(nb_element, my_zero_);  // in kA
-    res_powerline_thetaor_ = RealVect::Constant(nb_element, my_zero_);  // in kV
-    res_powerline_thetaex_ = RealVect::Constant(nb_element, my_zero_);  // in kV
     for(Eigen::Index line_id = 0; line_id < nb_element; ++line_id){
         // don't do anything if the element is disconnected
-        if(!status_[line_id]) continue;
+        if(!status_[line_id]) {
+            res_powerline_por_(line_id) = 0.0;  // in MW
+            res_powerline_qor_(line_id) = 0.0;  // in MVar
+            res_powerline_vor_(line_id) = 0.0;  // in kV
+            res_powerline_aor_(line_id) = 0.0;  // in kA
+            res_powerline_pex_(line_id) = 0.0;  // in MW
+            res_powerline_qex_(line_id) = 0.0;  // in MVar
+            res_powerline_vex_(line_id) = 0.0;  // in kV
+            res_powerline_aex_(line_id) = 0.0;  // in kA
+            res_powerline_thetaor_(line_id) = 0.0;  // in kV
+            res_powerline_thetaex_(line_id) = 0.0;  // in kV
+            continue;
+        }
 
         // connectivity
         int bus_or_id_me = bus_or_id_(line_id);
@@ -420,8 +426,8 @@ void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         res_powerline_vex_(line_id) = v_ex * bus_vn_kv_ex;
 
         // retrieve the voltage angle in degree (instead of radian)
-        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * 180. / my_pi;
-        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * 180. / my_pi;
+        res_powerline_thetaor_(line_id) = Va(bus_or_solver_id) * my_180_pi_;
+        res_powerline_thetaex_(line_id) = Va(bus_ex_solver_id) * my_180_pi_;
 
         // results of the powerflow
         cplx_type Eor = V(bus_or_solver_id);
@@ -447,6 +453,8 @@ void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
             res_powerline_por_(line_id) = (std::real(ydc_ff_(line_id)) * Va(bus_or_solver_id) + std::real(ydc_ft_(line_id)) * Va(bus_ex_solver_id)) * sn_mva;
             res_powerline_pex_(line_id) = (std::real(ydc_tt_(line_id)) * Va(bus_ex_solver_id) + std::real(ydc_tf_(line_id)) * Va(bus_or_solver_id)) * sn_mva;   
 
+            res_powerline_qor_(line_id) = 0.;
+            res_powerline_qex_(line_id) = 0.;
             // for the voltage (by hypothesis vm = 1)
             // res_powerline_vor_(line_id) = bus_vn_kv_or;
             // res_powerline_vex_(line_id) = bus_vn_kv_ex;        

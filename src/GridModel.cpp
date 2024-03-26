@@ -371,7 +371,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     bool conv = false;
     CplxVect res = CplxVect();
 
-    reset_results();  // reset the results
+    // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
@@ -387,20 +387,17 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                     solver_control_);
 
     // start the solver
-    // std::cout << "\tbefore get_slack_weights (ac)" << std::endl;
     if(solver_control_.need_reset_solver() || 
        solver_control_.has_dimension_changed() ||
        solver_control_.has_slack_participate_changed() || 
        solver_control_.has_pv_changed() || 
        solver_control_.has_slack_weight_changed()){
-        // std::cout << "get_slack_weights" << std::endl;
         slack_weights_ = generators_.get_slack_weights(Ybus_ac_.rows(), id_me_to_ac_solver_); 
     }
     // std::cout << "\tbefore compute_pf" << std::endl;
     conv = _solver.compute_pf(Ybus_ac_, V, acSbus_, slack_bus_id_ac_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
 
     // store results (in ac mode) 
-    // std::cout << "\tbefore process_results" << std::endl;
     process_results(conv, res, Vinit, true, id_me_to_ac_solver_);
 
     timer_last_ac_pf_ = timer.duration();
@@ -535,47 +532,33 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (solver_control.need_reset_solver() || 
         solver_control.has_dimension_changed() ||
         solver_control.has_slack_participate_changed()){
-            // std::cout << "\t\tslack_bus_id_solver\n";
             slack_bus_id_me = generators_.get_slack_bus_id();
             // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
             // conversion to solver ordering is done in init_slack_bus
-
-            // std::cout << "slack_bus_id_solver 1: ";
-            // for(auto el: slack_bus_id_solver) std::cout << el << ", ";
-            // std::cout << std::endl;
         }
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed()){
-            // std::cout << "\t\tinit_Ybus;" << std::endl;
             init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
-            // std::cout << "init_Ybus;" << std::endl;
         }
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed() || 
         solver_control.need_recompute_ybus()){
-            // std::cout << "\t\tfillYbus;" << std::endl;
             fillYbus(Ybus, is_ac, id_me_to_solver);
-            // std::cout << "fillYbus;" << std::endl;
         }
     if (solver_control.need_reset_solver() || 
         solver_control.has_dimension_changed()) {
             // init Sbus
-            // std::cout << "\t\tinit_Sbus;" << std::endl;
             Sbus = CplxVect::Constant(id_solver_to_me.size(), 0.);
-            // std::cout << "init_Sbus;" << std::endl;
         }
     if (solver_control.need_reset_solver() || 
         solver_control.has_dimension_changed() ||
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pv_changed() || 
         solver_control.has_pq_changed()) {
-            // std::cout << "\t\tinit_slack_bus;" << std::endl;
             init_slack_bus(Sbus, id_me_to_solver, id_solver_to_me, slack_bus_id_me, slack_bus_id_solver);
-            // std::cout << "\t\tfillpv_pq;" << std::endl;
             fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
-            // std::cout << "fillpv_pq;" << std::endl;
         }
     
     if (is_ac && (solver_control.need_reset_solver() || 
@@ -583,14 +566,12 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                   solver_control.need_recompute_sbus() ||  // TODO do we need it ?
                   solver_control.has_pq_changed())  // TODO do we need it ?
         ){
-        // std::cout << "\t\tq vector" << std::endl;
         int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
         total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
         generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
         dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-        // std::cout << "total_gen_per_bus_;" << std::endl;
     }
 
     if (solver_control.need_reset_solver() || 
@@ -598,11 +579,8 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pq_changed() ||
         solver_control.need_recompute_sbus()) {
-            // std::cout << "\t\tfillSbus_me;" << std::endl;
             fillSbus_me(Sbus, is_ac, id_me_to_solver);
-            // std::cout << "fillSbus_me;" << std::endl;
         }
-    // std::cout << "\t\tstatic_cast<int>(id_solver_to_me.size());" << std::endl;
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
@@ -612,11 +590,6 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     }
     generators_.set_vm(V, id_me_to_solver);
     dc_lines_.set_vm(V, id_me_to_solver);
-    // std::cout << "pre_process_solver: V result: "<<std::endl;
-    // for(auto el: V) std::cout << el << ", ";
-    // std::cout << std::endl;
-    // std::cout << "nb_bus_solver " << nb_bus_solver << std::endl;
-    // std::cout << "\t\tend pre_process_solver" << std::endl;
     return V;
 }
 
@@ -901,7 +874,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     bool conv = false;
     CplxVect res = CplxVect();
 
-    reset_results();  // reset the results
+    // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = false;

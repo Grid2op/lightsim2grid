@@ -60,7 +60,7 @@ class LoadContainer : public GenericContainer
                 id(-1),
                 name(""),
                 connected(false),
-                bus_id(-1),
+                bus_id(_deactivated_bus_id),
                 target_p_mw(0.),
                 target_q_mvar(0.),
                 has_res(false),
@@ -76,7 +76,7 @@ class LoadContainer : public GenericContainer
                             name = r_data_load.names_[my_id];
                         }
                         connected = r_data_load.status_[my_id];
-                        bus_id = r_data_load.bus_id_[my_id];
+                        if(connected) bus_id = r_data_load.bus_id_[my_id];
 
                         target_p_mw = r_data_load.p_mw_.coeff(my_id);
                         target_q_mvar = r_data_load.q_mvar_.coeff(my_id);
@@ -177,6 +177,8 @@ class LoadContainer : public GenericContainer
     void reset_results();
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
+    
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
     const Eigen::VectorXi & get_bus_id() const {return bus_id_;}

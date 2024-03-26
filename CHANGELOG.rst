@@ -18,7 +18,39 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.8.0] 2023-03-18
+[0.8.1] 2024-03-26
+--------------------
+- [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
+- [FIXED] some bugs preventing backward compatibility
+- [FIXED] an issue in the computation of gen_q when intialized with pypowsybl
+  (some overflow cpp side leading to infinite number in gen_q)
+- [FIXED] a bug in the "containers" cpp side (wrong bus was assigned)
+  when elements was disconnected, which lead to wrong computations for 
+  time series or contingency analysis.
+- [FIXED] another bug in ContingencyAnalysis (cpp side) leading to wrong computation
+  when a powerline was disconnected
+- [FIXED] some broken imports when grid2op was not installed
+- [FIXED] missing "typing_extension" as required when installation
+- [ADDED] some information of compilation directly in the cpp module
+- [ADDED] some information of compilation available in the python `compilation_options`
+  module python side
+- [ADDED] some convenient methods for `ContingencyAnalysis` python side (most 
+  notably the possibility to initialize it from a `LightSimBackend` and to
+  change the topology of the grid)
+- [ADDED] a "reward" module in lightsim2grid with custom reward
+  based on lightsim2grid.
+- [ADDED] a class `N1ContingencyReward` that can leverage lightsim2grid to 
+  assess the number of safe / unsafe N-1.
+- [IMPROVED] time measurments in python and c++
+- [IMPROVED] now test lightsim2grid with oldest grid2op version
+- [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
+  pointers are re used)
+- [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
+- [IMPROVED] type hinting in `LightSimBackend` for all 'public' methods (most 
+  notably the one used by grid2op)
+- [IMPROVED] now the benchmarks are more verbose (detailing some compilation options)
+
+[0.8.0] 2024-03-18
 --------------------
 - [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
   If you previously used `gridmodel.get_Sbus()` to retrieve the Sbus used for DC powerflow, please use

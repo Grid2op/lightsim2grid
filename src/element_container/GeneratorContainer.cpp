@@ -54,6 +54,7 @@ void GeneratorContainer::init(const RealVect & generators_p,
     turnedoff_gen_pv_ = true;
     voltage_regulator_on_ = std::vector<bool>(generators_p.size(), true);
     q_mvar_ = RealVect::Zero(generators_p.size());
+    reset_results();
 }
 
 void GeneratorContainer::init_full(const RealVect & generators_p,
@@ -94,7 +95,6 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const
 
 void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
-    reset_results();
     names_ = std::get<0>(my_state);
     turnedoff_gen_pv_ = std::get<1>(my_state);
 
@@ -122,6 +122,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     status_ = status;
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
+    reset_results();
 }
 
 RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
@@ -218,15 +219,20 @@ void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
     const int nb_gen = nb();
     v_kv_from_vpu(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     v_deg_from_va(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
-    res_p_ = p_mw_;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!status_[gen_id]){
+            res_p_(gen_id) = 0.;
+            continue;
+        }
+        res_p_(gen_id) = p_mw_(gen_id);
+    }
 }
 
 void GeneratorContainer::reset_results(){
-    res_p_ = RealVect();  // in MW
-    res_q_ = RealVect();  // in MVar
-    res_v_ = RealVect();  // in kV
-    res_theta_ = RealVect();  // in deg
-    // bus_slack_weight_ = RealVect();
+    res_p_ = RealVect(nb());  // in MW
+    res_q_ = RealVect(nb());  // in MVar
+    res_v_ = RealVect(nb());  // in kV
+    res_theta_ = RealVect(nb());  // in deg
 }
 
 void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
@@ -380,8 +386,6 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
         // TODO DEBUG MODE: check bus_slack_weight_[bus_id_solver] > 0
         const auto total_contrib_slack = bus_slack_weight_(bus_id_solver);
         const auto my_contrib_slack = gen_slack_weight_[gen_id];
-        // now take "my part"
-        // std::cout << "gen_id " << gen_id << " my_contrib_slack " << my_contrib_slack << ", " << total_contrib_slack << " node_mismatch " << node_mismatch(bus_id_solver) << std::endl;
         res_p_(gen_id) += node_mismatch(bus_id_solver) * my_contrib_slack / total_contrib_slack;
     }
 }
@@ -414,16 +418,31 @@ void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
                                const RealVect & total_q_max_per_bus)
 {
     const int nb_gen = nb();
-    res_q_ = RealVect::Constant(nb_gen, 0.);
-    if(!ac) return;  // do not consider Q values in dc mode
+    if(!ac){
+        // do not consider Q values in dc mode
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id) res_q_(gen_id) = 0.;
+        return;
+    }
+    
     real_type eps_q = 1e-8;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
+        if(!status_[gen_id]){
+            // set at 0 for disconnected generators
+            res_q_(gen_id) = 0.;
+            continue;  
+        }
         real_type real_q = 0.;
-        if(!status_[gen_id]) continue;  // set at 0 for disconnected generators
-
-        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+        if (!voltage_regulator_on_[gen_id]){
+            // gen is purposedly not pv
+            res_q_(gen_id) = 0.;
+            continue;
+        } 
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) {
+            // in this case turned off generators are not pv
+            res_q_(gen_id) = 0.;
+            continue;
+        }  
 
         int bus_id = bus_id_(gen_id);
         const auto bus_solver = id_grid_to_solver[bus_id];
@@ -443,7 +462,6 @@ void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
         res_q_(gen_id) = real_q;
     }
 }
-
 
 void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
                                               SolverControl & solver_control)

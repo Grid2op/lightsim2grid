@@ -222,7 +222,7 @@ For example: `export PATH_NICSLU=/home/user/Documents/cktso`
 
 #### Enable 03 optimization
 By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
-to specify the `__COMPLILE_O3` environment variable: `set __COMPLILE_O3=1` before the compilation (so before
+to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` before the compilation (so before
 `python3 setup.py build` or `python -m pip install -e .`)
 
 This compilation argument will increase the compilation time, but will make the package faster.

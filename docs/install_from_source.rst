@@ -195,5 +195,3 @@ Now you simply need to install the lightsim2grid package this way, like any pyth
     pip install -U .
 
 And you are done :-)
-
-

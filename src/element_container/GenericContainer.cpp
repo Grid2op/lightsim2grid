@@ -14,7 +14,7 @@
 const int GenericContainer::_deactivated_bus_id = -1;
 
 // TODO all functions bellow are generic ! Make a base class for that
-void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v){
+void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const {
     const real_type _1_sqrt_3 = 1.0 / std::sqrt(3.);
     RealVect p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
@@ -96,7 +96,7 @@ void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi
     bus_me_id = new_bus_me_id;
 }
 
-int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_)
+int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const
 {
     int res;
     bool val = status_.at(el_id);  // also check if the el_id is out of bound
@@ -114,12 +114,14 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
                                      const Eigen::VectorXi & bus_me_id,
                                      const std::vector<int> & id_grid_to_solver,
                                      const RealVect & bus_vn_kv,
-                                     RealVect & v)
+                                     RealVect & v) const
 {
-    v = RealVect::Constant(nb_element, -1.0);
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
-        if(!status[el_id]) continue;
+        if(!status[el_id]) {
+            v(el_id) = -1;
+            continue;
+        }
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
@@ -135,7 +137,6 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
     }
 }
 
-
 void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
                                      const Eigen::Ref<const RealVect> & Vm,
                                      const std::vector<bool> & status,
@@ -143,11 +144,14 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
                                      const Eigen::VectorXi & bus_me_id,
                                      const std::vector<int> & id_grid_to_solver,
                                      const RealVect & bus_vn_kv,
-                                     RealVect & theta){
-    theta = RealVect::Constant(nb_element, 0.0);
+                                     RealVect & theta) const
+{
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
-        if(!status[el_id]) continue;
+        if(!status[el_id]) {
+            theta(el_id) = -1;
+            continue;
+        }
         int el_bus_me_id = bus_me_id(el_id);
         int bus_solver_id = id_grid_to_solver[el_bus_me_id];
         if(bus_solver_id == _deactivated_bus_id){
@@ -158,6 +162,6 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
             exc_ << " is connected to a disconnected bus";
             throw std::runtime_error(exc_.str());
         }
-        theta(el_id) = Va(bus_solver_id) * 180. / my_pi;
+        theta(el_id) = Va(bus_solver_id) * my_180_pi_;
     }
 }

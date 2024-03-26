@@ -1,4 +1,4 @@
-Security Analysis (doc in progress)
+Contingency Analysis (doc in progress)
 =======================================
 
 The documentation of this section is in progress. It is rather incomplete for the moment, and only expose the most
@@ -52,8 +52,8 @@ to / from other data sources.
 
 .. _sa_benchmarks:
 
-Benchmarks
------------------
+Benchmarks (Contingency Analysis)
+----------------------------------
 
 Here are some benchmarks made with:
 

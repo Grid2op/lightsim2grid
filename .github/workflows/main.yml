@@ -50,7 +50,7 @@ jobs:
     steps:
 
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3 # v4 not working...
         with:
           submodules: true
 
@@ -76,16 +76,22 @@ jobs:
         run: python setup.py sdist
 
       - name: Install wheel
-        run: pip3 install wheelhouse/*.whl --user
+        run: |
+          pip3 install wheelhouse/*.whl --user
+          pip freeze
 
       # - name: Install GDB
       #   run: yum install -y gdb
 
-      - name: Check package can be imported
+      - name: Check package can be imported (bare install)
         run: |
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import init, GridModel"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -98,22 +104,26 @@ jobs:
           python3 -m pip install grid2op
           python3 -m pip freeze
 
-      - name: Check LightSimBackend can be imported 1
+      - name: Check extra can be imported can be imported (with grid2op)
         run:
           python3 -v -c "from lightsim2grid import LightSimBackend"
-
-      - name: Check LightSimBackend can be imported 2
+          python3 -c "from lightsim2grid.timeSerie import TimeSerie"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
+          python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+      
+      - name: Check LightSimBackend can be used to create env
         run:
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3  # v4 broken
         with:
           name: lightsim2grid-wheel-linux-${{ matrix.python.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3  # v4 broken
         if: matrix.python.name == 'cp311'
         with:
           name: lightsim2grid-sources
@@ -157,12 +167,12 @@ jobs:
     steps:
 
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python.version }}
 
@@ -210,7 +220,7 @@ jobs:
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheel-${{ matrix.config.name }}-${{ matrix.python.name }}
           path: dist/*.whl
@@ -228,12 +238,12 @@ jobs:
           }
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python.version }}
 
@@ -272,7 +282,7 @@ jobs:
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
         
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
           path: dist/*.whl
@@ -311,12 +321,12 @@ jobs:
     steps:
 
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python.version }}
 
@@ -346,7 +356,7 @@ jobs:
             python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels-darwin-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
@@ -363,7 +373,7 @@ jobs:
           path: download
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheels
           path: |

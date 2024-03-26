@@ -14,6 +14,7 @@ from grid2op.Action import CompleteAction
 
 from lightsim2grid import LightSimBackend
  
+ 
 class TestLightSimBackend_3busbars(unittest.TestCase):
     def get_nb_bus(self):
         return 3
@@ -147,7 +148,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             self.env.backend.apply_action(bk_act)
             global_bus = sub_id + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
-                assert self.env.backend._grid.get_generators()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_loads()[el_id].bus_id} vs {global_bus}"
+                assert self.env.backend._grid.get_generators()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_generators()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
                 else:
@@ -179,7 +180,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             self.env.backend.apply_action(bk_act)
             global_bus = sub_id + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
-                assert self.env.backend._grid.get_storages()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_loads()[el_id].bus_id} vs {global_bus}"
+                assert self.env.backend._grid.get_storages()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_sotrages()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
                 else:
@@ -243,9 +244,12 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             bk_act = self.env._backend_action_class()
             bk_act += act
             self.env.backend.apply_action(bk_act)
+            self.env.backend._set_shunt_info()
+            sh_p, sh_q, sh_v, sh_bus = self.env.backend.shunt_info()
+            assert sh_bus[el_id] == new_bus
             global_bus = sub_id + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
-                assert self.env.backend._grid.get_shunts()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_loads()[el_id].bus_id} vs {global_bus}"
+                assert self.env.backend._grid.get_shunts()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_shunts()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
                 else:

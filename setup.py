@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -136,6 +136,7 @@ extra_compile_args = extra_compile_args_tmp
 extra_compile_args += [f"-DVERSION_MAJOR={VERSION_MAJOR}",
                        f"-DVERSION_MEDIUM={VERSION_MEDIUM}",
                        f"-DVERSION_MINOR={VERSION_MINOR}"]
+extra_compile_args += [f"-DVERSION=\"{__version__}\""]
 src_files = ['src/main.cpp',
              "src/powerflow_algorithm/GaussSeidelAlgo.cpp",
              "src/powerflow_algorithm/GaussSeidelSynchAlgo.cpp",
@@ -210,6 +211,7 @@ if "PATH_NICSLU" in os.environ:
         include_dirs.append(os.path.join(path_nicslu, "include"))
         src_files.append("src/linear_solvers/NICSLUSolver.cpp")
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
+        extra_compile_args += [f"-DNICSLU_PATH=\"{os.path.join(path_nicslu, libnicslu_path)}\""]
         print("INFO: Using NICSLU package")
 
 # Try to locate the CKTSO sparse linear solver
@@ -257,6 +259,7 @@ if "PATH_CKTSO" in os.environ:
         include_dirs.append(os.path.join(path_cktso, "include"))
         src_files.append("src/linear_solvers/CKTSOSolver.cpp")
         extra_compile_args.append("-DCKTSO_SOLVER_AVAILABLE")
+        extra_compile_args += [f"-DCKTSO_PATH=\"{os.path.join(path_cktso, libcktso_path)}\""]
         print("INFO: Using CKTSO package")
         
         
@@ -269,6 +272,7 @@ if "__COUT_TIMES" in os.environ:
 if "__COMPILE_MARCHNATIVE" in os.environ:
     if os.environ["__COMPILE_MARCHNATIVE"] == "1":
         extra_compile_args.append("-march=native")
+        extra_compile_args.append("-D__COMPILE_MARCHNATIVE")
         print("INFO: Using \"-march=native\" compiler flag")
 
 # $Env:_READ_THE_DOCS = "1" in powershell
@@ -299,6 +303,7 @@ if "__O3_OPTIM" in os.environ:
             print("INFO: Using \"-O3\" compiler flag")
         elif IS_WINDOWS:
             extra_compile_args.append("/O2")
+        extra_compile_args.append("-D__O3_OPTIM")
 
 ext_modules = [
     Pybind11Extension(
@@ -316,7 +321,8 @@ req_pkgs = [
         "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
         "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
-
+if sys.version_info < (3, 11):
+    req_pkgs.append("typing_extensions")
 if sys.version_info.major == 3 and sys.version_info.minor <= 7:
     # typing "Literal" not available on python 3.7
     req_pkgs.append("typing_extensions")

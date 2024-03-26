@@ -52,7 +52,7 @@ class ShuntContainer : public GenericContainer
                 id(-1),
                 name(""),
                 connected(false),
-                bus_id(-1),
+                bus_id(_deactivated_bus_id),
                 target_p_mw(0.),
                 target_q_mvar(0.),
                 has_res(false),
@@ -68,7 +68,7 @@ class ShuntContainer : public GenericContainer
                             name = r_data_shunt.names_[my_id];
                         }
                         connected = r_data_shunt.status_[my_id];
-                        bus_id = r_data_shunt.bus_id_[my_id];
+                        if(connected)  bus_id = r_data_shunt.bus_id_[my_id];
 
                         target_p_mw = r_data_shunt.p_mw_.coeff(my_id);
                         target_q_mvar = r_data_shunt.q_mvar_.coeff(my_id);
@@ -146,7 +146,9 @@ class ShuntContainer : public GenericContainer
     void change_bus(int shunt_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     void change_p(int shunt_id, real_type new_p, SolverControl & solver_control);
     void change_q(int shunt_id, real_type new_q, SolverControl & solver_control);
-    int get_bus(int shunt_id) {return _get_bus(shunt_id, status_, bus_id_);}
+    int get_bus(int shunt_id) const {return _get_bus(shunt_id, status_, bus_id_);}
+    Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
+
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     
@@ -180,6 +182,8 @@ class ShuntContainer : public GenericContainer
     void reset_results();
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
+    
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
 

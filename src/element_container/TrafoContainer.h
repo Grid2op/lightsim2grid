@@ -64,8 +64,8 @@ class TrafoContainer : public GenericContainer
                 id(-1),
                 name(""),
                 connected(false),
-                bus_hv_id(-1),
-                bus_lv_id(-1),
+                bus_hv_id(_deactivated_bus_id),
+                bus_lv_id(_deactivated_bus_id),
                 r_pu(-1.0),
                 x_pu(-1.0),
                 h_pu(0., 0.),
@@ -91,8 +91,8 @@ class TrafoContainer : public GenericContainer
                             name = r_data_trafo.names_[my_id];
                         }
                         connected = r_data_trafo.status_[my_id];
-                        bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
-                        bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
+                        if(connected)  bus_hv_id = r_data_trafo.bus_hv_id_.coeff(my_id);
+                        if(connected)  bus_lv_id = r_data_trafo.bus_lv_id_.coeff(my_id);
                         r_pu = r_data_trafo.r_.coeff(my_id);
                         x_pu = r_data_trafo.x_.coeff(my_id);
                         h_pu = r_data_trafo.h_.coeff(my_id);
@@ -237,6 +237,8 @@ class TrafoContainer : public GenericContainer
 
     tuple4d get_res_hv() const {return tuple4d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_);}
     tuple4d get_res_lv() const {return tuple4d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_);}
+    tuple5d get_res_hv_full() const {return tuple5d(res_p_hv_, res_q_hv_, res_v_hv_, res_a_hv_, res_theta_hv_);}
+    tuple5d get_res_lv_full() const {return tuple5d(res_p_lv_, res_q_lv_, res_v_lv_, res_a_lv_, res_theta_lv_);}
     Eigen::Ref<const RealVect> get_theta_hv() const {return res_theta_hv_;}
     Eigen::Ref<const RealVect> get_theta_lv() const {return res_theta_lv_;}
     Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return bus_hv_id_;}

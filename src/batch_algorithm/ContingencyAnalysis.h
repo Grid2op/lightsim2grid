@@ -74,6 +74,12 @@ class ContingencyAnalysis: public BaseBatchSolverSynch
             _timer_modif_Ybus = 0.;
             _timer_pre_proc = 0.;
         }
+        void clear_results_only(){
+            BaseBatchSolverSynch::clear();
+            _timer_total = 0.;
+            _timer_modif_Ybus = 0.;
+            _timer_pre_proc = 0.;
+        }
         
         bool remove_n1(int line_id){
             check_ok_el(line_id);

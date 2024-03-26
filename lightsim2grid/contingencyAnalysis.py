@@ -6,21 +6,25 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["ContingencyAnalysisCPP", "ContingencyAnalysis",
-           # deprecated
-           "SecurityAnalysisCPP", "SecurityAnalysis",
-           ]
+__all__ = ["ContingencyAnalysisCPP"]
 
 import copy
 import numpy as np
 from collections.abc import Iterable
 
-from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import ContingencyAnalysisCPP
 
+try:
+    from lightsim2grid.lightSimBackend import LightSimBackend
+    __all__.append("ContingencyAnalysis")
+    GRID2OP_INSTALLED = True
+except ImportError as exc_:
+    # grid2op is not installed
+    GRID2OP_INSTALLED = False
 
-class ContingencyAnalysis(object):
+
+class __ContingencyAnalysis(object):
     """
     This class allows to perform a "security analysis" from a given grid state.
 
@@ -76,10 +80,26 @@ class ContingencyAnalysis(object):
     STR_TYPES = (str, np.str_)  # np.str deprecated in numpy 1.20 and earlier versions not supported anyway
         
     def __init__(self, grid2op_env):
-        if not isinstance(grid2op_env.backend, LightSimBackend):
-            raise RuntimeError("This class only works with LightSimBackend")
-        self.grid2op_env = grid2op_env.copy()
-        self.computer = ContingencyAnalysisCPP(self.grid2op_env.backend._grid)
+        if not GRID2OP_INSTALLED:
+            raise RuntimeError("Impossible to use the python wrapper `ContingencyAnalysis` "
+                               "when grid2op is not installed. Please fall back to the "
+                               "c++ version (available in python) with:\n"
+                               "\tfrom lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP\n"
+                               "and refer to the appropriate documentation.")
+        from grid2op.Environment import Environment
+        if isinstance(grid2op_env, Environment):    
+            if not isinstance(grid2op_env.backend, LightSimBackend):
+                raise RuntimeError("This class only works with LightSimBackend")
+            self._ls_backend = grid2op_env.backend.copy()
+        elif isinstance(grid2op_env, LightSimBackend):
+            if hasattr(grid2op_env, "_is_loaded") and not grid2op_env._is_loaded:
+                raise RuntimeError("Impossible to init a `ContingencyAnalysis` "
+                                   "with a backend that has not been initialized.")
+            self._ls_backend = grid2op_env.copy()
+        else:
+            raise RuntimeError("`ContingencyAnalysis` can only be created "
+                               "with a grid2op `Environment` or a `LightSimBackend`")
+        self.computer = ContingencyAnalysisCPP(self._ls_backend._grid)
         self._contingency_order = {}  # key: contingency (as tuple), value: order in which it is entered
         self._all_contingencies = []
         self.__computed = False
@@ -100,16 +120,29 @@ class ContingencyAnalysis(object):
         raise RuntimeError("Impossible to add new topologies like this. Please use `add_single_contingency` "
                            "or `add_multiple_contingencies`.")
 
-    def clear(self):
+    # TODO implement that !
+    def __update_grid(self, backend_act):
+        self.clear(with_contlist=False)
+        self._ls_backend.apply_action(backend_act)
+        # run the powerflow
+        self._ls_backend.runpf()
+        # update the computer
+        # self.computer = ContingencyAnalysisCPP(self._ls_backend._grid)
+        # self.computer.update_grid(...)  # not implemented
+        
+    def clear(self, with_contlist=True):
         """
         Clear the list of contingencies to simulate
         """
-        self.computer.clear()
-        self._contingency_order = {}
         self.__computed = False
         self._vs = None
         self._ampss = None
-        self._all_contingencies = []
+        if with_contlist:
+            self.computer.clear()
+            self._contingency_order = {}
+            self._all_contingencies = []
+        else:
+            self.computer.clear_results_only()
 
     def _single_cont_to_li_int(self, single_cont):
         li_disc = []
@@ -118,7 +151,7 @@ class ContingencyAnalysis(object):
 
         for stuff in single_cont:
             if isinstance(stuff, type(self).STR_TYPES):
-                stuff = np.where(self.grid2op_env.name_line == stuff)
+                stuff = np.where(type(self._ls_backend).name_line == stuff)
                 stuff = stuff[0]
                 if stuff.size == 0:
                     # name is not found
@@ -233,7 +266,7 @@ class ContingencyAnalysis(object):
             for single_cont_id in range(env.n_line):
                 self.add_single_contingency(single_cont_id)
         """
-        for single_cont_id in range(self.grid2op_env.n_line):
+        for single_cont_id in range(type(self._ls_backend).n_line):
             self.add_single_contingency(single_cont_id)
 
     def get_flows(self, *args):
@@ -302,10 +335,10 @@ class ContingencyAnalysis(object):
             been entered. Please use `get_flows()` method for easier reading back of the results
 
         """
-        v_init = self.grid2op_env.backend.V
+        v_init = 1. * self._ls_backend.V
         self.computer.compute(v_init,
-                              self.grid2op_env.backend.max_it,
-                              self.grid2op_env.backend.tol)
+                              self._ls_backend.max_it,
+                              self._ls_backend.tol)
         self._vs = self.computer.get_voltages()
         self.__computed = True
         return self._vs
@@ -342,6 +375,10 @@ class ContingencyAnalysis(object):
 
     def close(self):
         """permanently close the object"""
-        self.grid2op_env.close()
+        self._ls_backend.close()
         self.clear()
         self.computer.close()
+        
+        
+if GRID2OP_INSTALLED:
+    ContingencyAnalysis = __ContingencyAnalysis

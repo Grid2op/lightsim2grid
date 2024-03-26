@@ -48,6 +48,7 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     BaseNRAlgo<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     
     auto timer = CustTimer();
+    auto timer_pre_proc = CustTimer();
     // initialize once and for all the "inverse" of these vectors
     // Eigen::VectorXi my_pv = BaseNRAlgo<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
     Eigen::VectorXi my_pv = pv;
@@ -66,6 +67,7 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     BaseNRAlgo<LinearSolver>::V_ = V;
     BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  // update Vm and Va again in case
     BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  // we wrapped around with a negative Vm
+    BaseNRAlgo<LinearSolver>::timer_pre_proc_ += timer_pre_proc.duration();
 
     // first check, if the problem is already solved, i stop there
     RealVect F = BaseNRAlgo<LinearSolver>::_evaluate_Fx(Ybus, V, Sbus, my_pv, pq);
@@ -124,7 +126,7 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
             break;
         }
         // auto dx = -F;
-
+        auto timer_va_vm = CustTimer();
         BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  // update Vm and Va again in case
         BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  // we wrapped around with a negative Vm
 
@@ -139,6 +141,14 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
         const RealVect & Vm = BaseNRAlgo<LinearSolver>::Vm_;  // I am forced to redefine the type for it to compile properly
         const RealVect & Va = BaseNRAlgo<LinearSolver>::Va_;
         BaseNRAlgo<LinearSolver>::V_ = Vm.array() * (Va.array().cos().cast<cplx_type>() + m_i * Va.array().sin().cast<cplx_type>() );
+        if(BaseNRAlgo<LinearSolver>::Vm_.minCoeff() < 0.)
+        {
+            // update Vm and Va again in case
+            // we wrapped around with a negative Vm TODO more efficient way maybe ?
+            BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  
+            BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  
+        }
+        BaseNRAlgo<LinearSolver>::timer_Va_Vm_ += timer_va_vm.duration();
 
         F = BaseNRAlgo<LinearSolver>::_evaluate_Fx(Ybus, BaseNRAlgo<LinearSolver>::V_, Sbus, my_pv, pq);
         bool tmp = F.allFinite();
@@ -164,6 +174,10 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
                   << "\n\t timer_total_nr_: " << BaseNRAlgo<LinearSolver>::timer_total_nr_
                   << "\n\n";
     #endif // __COUT_TIMES
+    // update Vm and Va again in case
+    // we wrapped around with a negative Vm TODO more efficient way maybe ?
+    BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  
+    BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  
     BaseNRAlgo<LinearSolver>::_solver_control.tell_none_changed();
     return res;
 }
@@ -189,9 +203,9 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix(const Eigen::Spar
     J22 = dS_dVm[array([pq]).T, pq].imag
     **/
 
-    auto timer = CustTimer();
     BaseNRAlgo<LinearSolver>::_dSbus_dV(Ybus, V);
 
+    auto timer = CustTimer();
     const int n_pvpq = static_cast<int>(pvpq.size());
     const int n_pq = static_cast<int>(pq.size());
     const int size_j = n_pvpq + n_pq;

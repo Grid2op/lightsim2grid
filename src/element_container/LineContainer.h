@@ -57,8 +57,8 @@ class LineContainer : public GenericContainer
                 id(my_id),
                 name(""),
                 connected(false),
-                bus_or_id(-1),
-                bus_ex_id(-1),
+                bus_or_id(_deactivated_bus_id),
+                bus_ex_id(_deactivated_bus_id),
                 r_pu(-1.0),
                 x_pu(-1.0),
                 h_pu(0., 0.),
@@ -83,8 +83,8 @@ class LineContainer : public GenericContainer
                             name = r_data_line.names_[my_id];
                         }
                         connected = r_data_line.status_[my_id];
-                        bus_or_id = r_data_line.bus_or_id_.coeff(my_id);
-                        bus_ex_id = r_data_line.bus_ex_id_.coeff(my_id);
+                        if(connected)  bus_or_id = r_data_line.bus_or_id_.coeff(my_id);
+                        if(connected)  bus_ex_id = r_data_line.bus_ex_id_.coeff(my_id);
                         r_pu = r_data_line.powerlines_r_.coeff(my_id);
                         x_pu = r_data_line.powerlines_x_.coeff(my_id);
                         h_or_pu = r_data_line.powerlines_h_or_.coeff(my_id);
@@ -247,7 +247,8 @@ class LineContainer : public GenericContainer
 
     tuple4d get_lineor_res() const {return tuple4d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_);}
     tuple4d get_lineex_res() const {return tuple4d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_);}
-
+    tuple5d get_res_or_full() const {return tuple5d(res_powerline_por_, res_powerline_qor_, res_powerline_vor_, res_powerline_aor_, res_powerline_thetaor_);}
+    tuple5d get_res_ex_full() const {return tuple5d(res_powerline_pex_, res_powerline_qex_, res_powerline_vex_, res_powerline_aex_, res_powerline_thetaex_);}
     Eigen::Ref<const RealVect> get_theta_or() const {return res_powerline_thetaor_;}
     Eigen::Ref<const RealVect> get_theta_ex() const {return res_powerline_thetaex_;}
     const std::vector<bool>& get_status() const {return status_;}

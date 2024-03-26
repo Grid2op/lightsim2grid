@@ -52,6 +52,7 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver(): _grid_model.id_me_to_dc_solver();
     Eigen::Index bus_1_id, bus_2_id;
     cplx_type y_ff, y_ft, y_tf, y_tt;
+    bool status;
     for(const auto & this_cont_id: _li_defaults){
         std::vector<Coeff> this_cont_coeffs;
         this_cont_coeffs.reserve(this_cont_id.size() * 4);  // usually there are 4 coeffs per powerlines / trafos
@@ -61,6 +62,7 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
                 // this is a powerline
                 bus_1_id = id_me_to_solver[powerlines.get_bus_from()[line_id]];
                 bus_2_id = id_me_to_solver[powerlines.get_bus_to()[line_id]];
+                status = powerlines.get_status()[line_id];
                 if(ac_solver_used){
                     y_ff = powerlines.yac_ff()[line_id];
                     y_ft = powerlines.yac_ft()[line_id];
@@ -75,6 +77,7 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
             }else{
                 // this is a trafo
                 const auto trafo_id = line_id - n_line_;
+                status = trafos.get_status()[trafo_id];
                 bus_1_id = id_me_to_solver[trafos.get_bus_from()[trafo_id]];
                 bus_2_id = id_me_to_solver[trafos.get_bus_to()[trafo_id]];
                 if(ac_solver_used){
@@ -90,7 +93,7 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
                 }
             }
 
-            if(bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)
+            if(status && bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)
             {
                 // element is connected
                 this_cont_coeffs.push_back({bus_1_id, bus_1_id, y_ff});
@@ -103,15 +106,15 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
     }
 }
 
-
 bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                                        const std::vector<Coeff> & coeffs) const
+                                           const std::vector<Coeff> & coeffs) const
 {
     for(const auto & coeff_to_remove: coeffs){
         Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
     }
     return check_invertible(Ybus);
 }
+
 void ContingencyAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const std::vector<Coeff> & coeffs) const
 {
@@ -180,17 +183,11 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     Eigen::Index cont_id = 0;
     bool conv;
     CplxVect V;
-    // int contingency = 0;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
         bool invertible = remove_from_Ybus(Ybus, coeffs_modif);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
         conv = false;
-
-        // I have absolutely no idea why, but if i add this "if"
-        // which reduces the computation time, it somehow increase it by A LOT !
-        // 5.2ms without it vs 81.9ms with it (for the iee 118)
-        // So better make the computation, even if it's not used...
 
         if(invertible)
         {

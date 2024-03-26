@@ -60,7 +60,7 @@ class GeneratorContainer: public GenericContainer
             id(-1),
             name(""),
             connected(false),
-            bus_id(-1),
+            bus_id(_deactivated_bus_id),
             is_slack(false),
             slack_weight(-1.0),
             voltage_regulator_on(false),
@@ -82,7 +82,7 @@ class GeneratorContainer: public GenericContainer
                         name = r_data_gen.names_[my_id];
                     }
                     connected = r_data_gen.status_[my_id];
-                    bus_id = r_data_gen.bus_id_[my_id];
+                    if(connected) bus_id = r_data_gen.bus_id_[my_id];
                     is_slack = r_data_gen.gen_slackbus_[my_id];
                     slack_weight = r_data_gen.gen_slack_weight_[my_id];
 
@@ -324,6 +324,7 @@ class GeneratorContainer: public GenericContainer
     virtual void gen_p_per_bus(std::vector<real_type> & res) const;
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
 
     const std::vector<bool>& get_status() const {return status_;}

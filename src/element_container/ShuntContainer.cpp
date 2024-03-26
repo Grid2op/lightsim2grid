@@ -23,6 +23,7 @@ void ShuntContainer::init(const RealVect & shunt_p_mw,
     q_mvar_ = shunt_q_mvar;
     bus_id_ = shunt_bus_id;
     status_ = std::vector<bool>(p_mw_.size(), true); // by default everything is connected
+    reset_results();
 }
 
 ShuntContainer::StateRes ShuntContainer::get_state() const
@@ -37,7 +38,6 @@ ShuntContainer::StateRes ShuntContainer::get_state() const
 
 void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 {
-    reset_results();
     names_ = std::get<0>(my_state);
     std::vector<real_type> & p_mw = std::get<1>(my_state);
     std::vector<real_type> & q_mvar = std::get<2>(my_state);
@@ -50,6 +50,7 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
     q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
     status_ = status;
+    reset_results();
 }
 
 void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
@@ -147,10 +148,14 @@ void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
     const int nb_shunt = static_cast<int>(p_mw_.size());
     v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
     v_deg_from_va(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
-    res_p_ = RealVect::Constant(nb_shunt, my_zero_);
-    res_q_ = RealVect::Constant(nb_shunt, my_zero_);
+    // res_p_ = RealVect::Constant(nb_shunt, my_zero_);
+    // res_q_ = RealVect::Constant(nb_shunt, my_zero_);
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
-        if(!status_[shunt_id]) continue;
+        if(!status_[shunt_id]) {
+            res_p_(shunt_id) = my_zero_;
+            res_q_(shunt_id) = my_zero_;
+            continue;
+        }
         int bus_id_me = bus_id_(shunt_id);
         int bus_solver_id = id_grid_to_solver[bus_id_me];
         if(bus_solver_id == _deactivated_bus_id){
@@ -163,13 +168,15 @@ void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         cplx_type s = E * I;
         res_p_(shunt_id) = std::real(s) * sn_mva;
         if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
+        else res_q_(shunt_id) = my_zero_;
     }
 }
 
 void ShuntContainer::reset_results(){
-    res_p_ = RealVect();  // in MW
-    res_q_ = RealVect();  // in MVar
-    res_v_ = RealVect();  // in kV
+    res_p_ = RealVect(nb());  // in MW
+    res_q_ = RealVect(nb());  // in MVar
+    res_v_ = RealVect(nb());  // in kV
+    res_theta_ = RealVect(nb());  // in deg
 }
 
 void ShuntContainer::change_p(int shunt_id, real_type new_p, SolverControl & solver_control)

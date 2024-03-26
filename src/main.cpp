@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2024, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -19,11 +19,62 @@
 
 #include "help_fun_msg.h"
 
+#ifndef KLU_SOLVER_AVAILABLE
+#define this_KLU_SOLVER_AVAILABLE 0
+#else 
+#define this_KLU_SOLVER_AVAILABLE 1
+#endif
+#ifndef NICSLU_SOLVER_AVAILABLE
+#define this_NICSLU_SOLVER_AVAILABLE 0
+#else 
+#define this_NICSLU_SOLVER_AVAILABLE 1
+#endif
+#ifndef CKTSO_SOLVER_AVAILABLE
+#define this_CKTSO_SOLVER_AVAILABLE 0
+#else 
+#define this_CKTSO_SOLVER_AVAILABLE 1
+#endif
+#ifndef __COMPILE_MARCHNATIVE
+#define this__COMPILE_MARCHNATIVE 0
+#else 
+#define this__COMPILE_MARCHNATIVE 1
+#endif
+#ifndef __O3_OPTIM
+#define this__O3_OPTIM 0
+#else 
+#define this__O3_OPTIM 1
+#endif
+#ifndef VERSION
+#define this_VERSION "unknown"
+#else 
+#define this_VERSION VERSION
+#endif
+#ifdef NICSLU_PATH
+#define this_NICSLU_PATH NICSLU_PATH
+#endif
+#ifdef CKTSO_PATH
+#define this_CKTSO_PATH CKTSO_PATH
+#endif
+
 namespace py = pybind11;
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
 
+    // constant and compilation information
+    m.attr("klu_solver_available") = py::bool_(this_KLU_SOLVER_AVAILABLE);
+    m.attr("nicslu_solver_available") = py::bool_(this_NICSLU_SOLVER_AVAILABLE);
+    m.attr("cktso_solver_available") = py::bool_(this_CKTSO_SOLVER_AVAILABLE);
+    m.attr("compiled_march_native") = py::bool_(this__COMPILE_MARCHNATIVE);
+    m.attr("compiled_o3_optim") = py::bool_(this__O3_OPTIM);
+    m.attr("version") = py::str(this_VERSION);
+    #ifdef NICSLU_PATH
+    m.attr("nicslu_lib") = py::str(this_NICSLU_PATH);
+    #endif
+    #ifdef CKTSO_PATH
+    m.attr("cktso_lib") = py::str(this_CKTSO_PATH);
+    #endif
+    
     // solver method for FDPF
     py::enum_<FDPFMethod>(m, "FDPFMethod", "This enum controls the type of method you can use for Fast Decoupled Powerflow (XB or BX)")
         .value("XB", FDPFMethod::XB, "denotes the XB method")
@@ -393,6 +444,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_nb_iter", &ChooseSolver::get_nb_iter, DocSolver::get_nb_iter.c_str()) 
         .def("converged", &ChooseSolver::converged, DocSolver::converged.c_str()) 
         .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str())
+        .def("get_timers", &ChooseSolver::get_timers, "TODO")
+        .def("get_timers_jacobian", &ChooseSolver::get_timers_jacobian, "TODO")
         .def("get_fdpf_xb_lu", &ChooseSolver::get_fdpf_xb_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())  // TODO this for all solver !
         .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 
@@ -815,6 +868,19 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_trafohv_theta", &GridModel::get_trafohv_theta, DocGridModel::_internal_do_not_use.c_str())
         .def("get_trafolv_theta", &GridModel::get_trafolv_theta, DocGridModel::_internal_do_not_use.c_str())
 
+        .def("get_all_shunt_buses", &GridModel::get_all_shunt_buses, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_loads_res_full", &GridModel::get_loads_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_shunts_res_full", &GridModel::get_shunts_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_gen_res_full", &GridModel::get_gen_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_lineor_res_full", &GridModel::get_lineor_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_lineex_res_full", &GridModel::get_lineex_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_trafohv_res_full", &GridModel::get_trafohv_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_trafolv_res_full", &GridModel::get_trafolv_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_storages_res_full", &GridModel::get_storages_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_sgens_res_full", &GridModel::get_sgens_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_dclineor_res_full", &GridModel::get_dclineor_res_full, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_dclineex_res_full", &GridModel::get_dclineex_res_full, DocGridModel::_internal_do_not_use.c_str())
+        
         // do something with the grid
         // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("deactivate_result_computation", &GridModel::deactivate_result_computation, DocGridModel::deactivate_result_computation.c_str())
@@ -913,6 +979,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         // remove some defaults (TODO)
         .def("reset", &ContingencyAnalysis::clear, DocSecurityAnalysis::clear.c_str())
         .def("clear", &ContingencyAnalysis::clear, DocSecurityAnalysis::clear.c_str())
+        .def("clear_results_only", &ContingencyAnalysis::clear_results_only, DocSecurityAnalysis::clear.c_str())
         .def("close", &ContingencyAnalysis::clear, DocComputers::clear.c_str())
         .def("remove_n1", &ContingencyAnalysis::remove_n1, DocSecurityAnalysis::remove_n1.c_str())
         .def("remove_nk", &ContingencyAnalysis::remove_nk, DocSecurityAnalysis::remove_nk.c_str())

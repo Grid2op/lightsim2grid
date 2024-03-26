@@ -6,8 +6,26 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP, ContingencyAnalysis
-
+import warnings
 # Deprecated now, will be removed
+warnings.warn("You are using old names. Please upgrade to SecurityAnalysisCPP > ContingencyAnalysisCPP"
+              " and SecurityAnalysis > ContingencyAnalysis instead.",
+              category=DeprecationWarning)
+__all__ = ["SecurityAnalysisCPP"]
+
+
+from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
+
+try:
+    from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
+    GRID2OP_INSTALLED = True
+except ImportError as exc_:
+    GRID2OP_INSTALLED = False
+
+
 SecurityAnalysisCPP = ContingencyAnalysisCPP
-SecurityAnalysis = ContingencyAnalysis
+
+
+if GRID2OP_INSTALLED:
+    SecurityAnalysis = ContingencyAnalysis
+    __all__.append("SecurityAnalysis")

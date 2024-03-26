@@ -286,11 +286,24 @@ class ChooseSolver
             Eigen::SparseMatrix<real_type> res = get_J();
             return res;
         }
+
         double get_computation_time() const
         {
             auto p_solver = get_prt_solver("get_computation_time", true);
             const auto & res =  p_solver -> get_timers();
             return std::get<3>(res);
+        }
+
+        std::tuple<double, double, double, double> get_timers() const
+        {
+            auto p_solver = get_prt_solver("get_timers", true);
+            return p_solver -> get_timers();
+        }
+
+        TimerJacType get_timers_jacobian() const
+        {
+            const BaseAlgo * p_solver = get_prt_solver("get_timers_jacobian", true);
+            return p_solver -> get_timers_jacobian();
         }
 
         ErrorType get_error() const{

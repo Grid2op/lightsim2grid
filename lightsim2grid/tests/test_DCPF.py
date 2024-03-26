@@ -196,8 +196,9 @@ class TestDCPF(unittest.TestCase):
         load_p, load_q, load_v = backend.loads_info()
         max_mis = np.max(np.abs(load_p - load_p_pp))
         assert max_mis <= self.tol, f"Error: load_p do not match, maximum absolute error is {max_mis:.5f} MW"
-        max_mis = np.max(np.abs(load_q - load_q_pp))
-        assert max_mis <= self.tol, f"Error: load_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
+        # PP does not set "load_q" to 0. in DC
+        # max_mis = np.max(np.abs(load_q - load_q_pp))
+        # assert max_mis <= self.tol, f"Error: load_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
         max_mis = np.max(np.abs(load_v - load_v_pp))
         assert max_mis <= self.tol, f"Error: load_v do not match, maximum absolute error is {max_mis:.5f} kV"
 

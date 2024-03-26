@@ -1,6 +1,6 @@
 
-Benchmarks
-============
+Benchmarks (solvers)
+======================
 
 In this paragraph we will expose some brief benchmarks about the use of lightsim2grid in the grid2op settings.
 The code to run these benchmarks are given with this package int the [benchmark](./benchmarks) folder.
@@ -16,15 +16,23 @@ compared with pandapower when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- system: Linux 5.11.0-40-generic
+- date: 2024-03-25 17:53  CET
+- system: Linux 5.15.0-56-generic
 - OS: ubuntu 20.04
-- processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
-- python version: 3.8.10.final.0 (64 bit)
-- numpy version: 1.18.5
-- pandas version: 1.1.4
-- pandapower version: 2.7.0
-- lightsim2grid version: 0.6.0
-- grid2op version: 1.6.4
+- processor: Intel(R) Core(TM) i7-6820HQ CPU @ 2.70GHz
+- python version: 3.10.13.final.0 (64 bit)
+- numpy version: 1.23.5
+- pandas version: 2.2.1
+- pandapower version: 2.13.1
+- grid2op version: 1.10.1
+- lightsim2grid version: 0.8.1
+- lightsim2grid extra information: 
+
+	- klu_solver_available: True 
+	- nicslu_solver_available: True 
+	- cktso_solver_available: True 
+	- compiled_march_native: True 
+	- compiled_o3_optim: True 
 
 
 To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
@@ -130,19 +138,29 @@ stricly greater, for all benchmarks, than **solver powerflow time** (the closer 
 
 First on an environment based on the IEEE case 14 grid:
 
-==================  ======================  ===================================  ============================
-case14_sandbox        grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
-==================  ======================  ===================================  ============================
-PP                                    70.5                               11                            4.27
-LS+GS                                881                                  0.447                        0.327
-LS+GS S                              877                                  0.446                        0.327
-LS+SLU (single)                     1110                                  0.191                        0.0655
-LS+SLU                              1120                                  0.195                        0.0683
-LS+KLU (single)                     1200                                  0.138                        0.0176
-LS+KLU                              1180                                  0.141                        0.0188
-LS+NICSLU (single)                  1200                                  0.139                        0.0179
-LS+NICSLU                           1200                                  0.139                        0.0184
-==================  ======================  ===================================  ============================
+====================  ======================  ===================================  ============================
+case14_sandbox          grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
+====================  ======================  ===================================  ============================
+PP                                      46.3                               18.4                          6.57
+GS                                     757                                  0.474                        0.378
+GS synch                               769                                  0.445                        0.348
+NR single (SLU)                        960                                  0.184                        0.0831
+NR (SLU)                               952                                  0.189                        0.0819
+NR single (KLU)                       1030                                  0.12                         0.0221
+NR (KLU)                              1030                                  0.118                        0.0202
+NR single (NICSLU *)                  1020                                  0.121                        0.022
+NR (NICSLU *)                         1020                                  0.119                        0.02
+NR single (CKTSO *)                   1020                                  0.119                        0.0211
+NR (CKTSO *)                           989                                  0.121                        0.0192
+FDPF XB (SLU)                         1010                                  0.13                         0.032
+FDPF BX (SLU)                         1010                                  0.143                        0.0451
+FDPF XB (KLU)                         1020                                  0.124                        0.0263
+FDPF BX (KLU)                         1010                                  0.134                        0.0377
+FDPF XB (NICSLU *)                    1010                                  0.126                        0.0267
+FDPF BX (NICSLU *)                    1020                                  0.134                        0.0383
+FDPF XB (CKTSO *)                     1010                                  0.125                        0.0268
+FDPF BX (CKTSO *)                     1000                                  0.136                        0.0381
+====================  ======================  ===================================  ============================
 
 From a grid2op perspective, lightsim2grid allows to compute up to ~1200 steps each second on the case 14 and
 "only" 70 for the default PandaPower Backend, leading to a speed up of **~17** in this case
@@ -155,15 +173,25 @@ Then on an environment based on the IEEE case 118:
 =====================  ======================  ===================================  ============================
 neurips_2020_track2      grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
 =====================  ======================  ===================================  ============================
-PP                                       39.6                               13.3                           5.58
-LS+GS                                     5.3                              188                           188
-LS+GS S                                  36.5                               26.6                          26.4
-LS+SLU (single)                         642                                  0.775                         0.607
-LS+SLU                                  588                                  0.932                         0.769
-LS+KLU (single)                         945                                  0.277                         0.116
-LS+KLU                                  918                                  0.306                         0.144
-LS+NICSLU (single)                      947                                  0.274                         0.11
-LS+NICSLU                               929                                  0.298                         0.134
+PP                                      41.5                                20.7                           8.6
+GS                                       3.74                              266                           266
+GS synch                                35.8                                26.9                          26.8
+NR single (SLU)                        536                                   0.897                         0.767
+NR (SLU)                               505                                   0.959                         0.818
+NR single (KLU)                        811                                   0.268                         0.144
+NR (KLU)                               820                                   0.256                         0.131
+NR single (NICSLU *)                   813                                   0.259                         0.134
+NR (NICSLU *)                          827                                   0.243                         0.118
+NR single (CKTSO *)                    814                                   0.257                         0.131
+NR (CKTSO *)                           829                                   0.24                          0.116
+FDPF XB (SLU)                          762                                   0.352                         0.232
+FDPF BX (SLU)                          749                                   0.373                         0.252
+FDPF XB (KLU)                          786                                   0.307                         0.188
+FDPF BX (KLU)                          776                                   0.327                         0.206
+FDPF XB (NICSLU *)                     786                                   0.308                         0.188
+FDPF BX (NICSLU *)                     771                                   0.324                         0.204
+FDPF XB (CKTSO *)                      784                                   0.309                         0.19
+FDPF BX (CKTSO *)                      773                                   0.329                         0.209
 =====================  ======================  ===================================  ============================
 
 For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~24** time faster than
@@ -215,14 +243,24 @@ Here are the results for the IEEE case 14 (max over 1000 powerflows):
 case14_sandbox (1000 iter)      Δ aor (amps)    Δ gen_p (MW)    Δ gen_q (MVAr)
 ============================  ==============  ==============  ================
 PP (ref)                            0               0                 0
-LS+GS                               0.000122        7.63e-06          7.63e-06
-LS+GS S                             0.000122        7.63e-06          7.63e-06
-LS+SLU (single)                     0.000122        7.63e-06          7.63e-06
-LS+SLU                              0.000122        7.63e-06          7.63e-06
-LS+KLU (single)                     0.000122        7.63e-06          7.63e-06
-LS+KLU                              0.000122        7.63e-06          7.63e-06
-LS+NICSLU (single)                  0.000122        7.63e-06          7.63e-06
-LS+NICSLU                           0.000122        7.63e-06          7.63e-06
+GS                                  0.000122        7.63e-06          7.63e-06
+GS synch                            0.000122        7.63e-06          7.63e-06
+NR single (SLU)                     0.000122        7.63e-06          7.63e-06
+NR (SLU)                            0.000122        7.63e-06          7.63e-06
+NR single (KLU)                     0.000122        7.63e-06          7.63e-06
+NR (KLU)                            0.000122        7.63e-06          7.63e-06
+NR single (NICSLU *)                0.000122        7.63e-06          7.63e-06
+NR (NICSLU *)                       0.000122        7.63e-06          7.63e-06
+NR single (CKTSO *)                 0.000122        7.63e-06          7.63e-06
+NR (CKTSO *)                        0.000122        7.63e-06          7.63e-06
+FDPF XB (SLU)                       0.000122        7.63e-06          7.63e-06
+FDPF BX (SLU)                       0.000122        7.63e-06          7.63e-06
+FDPF XB (KLU)                       0.000122        7.63e-06          7.63e-06
+FDPF BX (KLU)                       0.000122        7.63e-06          7.63e-06
+FDPF XB (NICSLU *)                  0.000122        7.63e-06          7.63e-06
+FDPF BX (NICSLU *)                  0.000122        7.63e-06          7.63e-06
+FDPF XB (CKTSO *)                   0.000122        7.63e-06          7.63e-06
+FDPF BX (CKTSO *)                   0.000122        7.63e-06          7.63e-06
 ============================  ==============  ==============  ================
 
 .. note::
@@ -237,14 +275,24 @@ Here are the results for the IEEE case 118 (max over 1000 powerflows):
 neurips_2020_track2 (1000 iter)      Δ aor (amps)    Δ gen_p (MW)    Δ gen_q (MVAr)
 =================================  ==============  ==============  ================
 PP (ref)                                  0              0                 0
-LS+GS                                     6.1e-05        3.81e-06          1.53e-05
-LS+GS S                                   6.1e-05        3.81e-06          1.53e-05
-LS+SLU (single)                           6.1e-05        0                 9.54e-07
-LS+SLU                                    6.1e-05        0                 9.54e-07
-LS+KLU (single)                           6.1e-05        0                 9.54e-07
-LS+KLU                                    6.1e-05        0                 9.54e-07
-LS+NICSLU (single)                        6.1e-05        0                 9.54e-07
-LS+NICSLU                                 6.1e-05        0                 9.54e-07
+GS                                        6.1e-05        3.81e-06          1.53e-05
+GS synch                                  6.1e-05        3.81e-06          1.53e-05
+NR single (SLU)                           6.1e-05        0                 9.54e-07
+NR (SLU)                                  6.1e-05        0                 9.54e-07
+NR single (KLU)                           6.1e-05        0                 9.54e-07
+NR (KLU)                                  6.1e-05        0                 9.54e-07
+NR single (NICSLU *)                      6.1e-05        0                 9.54e-07
+NR (NICSLU *)                             6.1e-05        0                 9.54e-07
+NR single (CKTSO *)                       6.1e-05        0                 9.54e-07
+NR (CKTSO *)                              6.1e-05        0                 9.54e-07
+FDPF XB (SLU)                             6.1e-05        1.91e-06          1.53e-05
+FDPF BX (SLU)                             6.1e-05        1.91e-06          7.63e-06
+FDPF XB (KLU)                             6.1e-05        1.91e-06          1.53e-05
+FDPF BX (KLU)                             6.1e-05        1.91e-06          7.63e-06
+FDPF XB (NICSLU *)                        6.1e-05        1.91e-06          1.53e-05
+FDPF BX (NICSLU *)                        6.1e-05        1.91e-06          7.63e-06
+FDPF XB (CKTSO *)                         6.1e-05        1.91e-06          1.53e-05
+FDPF BX (CKTSO *)                         6.1e-05        1.91e-06          7.63e-06
 =================================  ==============  ==============  ================
 
 As we can see on all the tables above, the difference when using lightsim and pandapower is rather
@@ -255,8 +303,24 @@ When using Newton Raphson solvers, the difference in absolute values when using 
 with using PandaPowerBackend is neglectible: less than 1e-06 in all cases (and 0.00 when comparing the
 flows on the powerline for both environments).
 
-Other benchmarks
-----------------------------
+Other benchmark
+----------------
+
+We have at our disposal different computers with different software / hardware.
+
+From time to time, we benchmark grid2op and lightsim2grid. 
+The results can be found in:
+
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a i7 of 2015 wth a frequency of 2.70 GHz
+
+  benchmark_solver/ubuntu_2004_dell/ls0.8.1_glop1.10.0
+  benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
+  benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.9.8
+
+Benchmarks of other lightsim2grid functions
+--------------------------------------------
 
 With lightsim2grid 0.5.5 some new feature has been introduced, which are the "security analysis" and the "comptuation 
 of time series". 

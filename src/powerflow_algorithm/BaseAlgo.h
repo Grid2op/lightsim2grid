@@ -30,6 +30,9 @@
 
 class GridModel;
 
+typedef std::tuple<double, double, double, double, 
+                   double, double, double, double, 
+                   double> TimerJacType;
 
 /**
 This class represents a algorithm to compute powerflow.
@@ -83,6 +86,22 @@ class BaseAlgo : public BaseConstants
             // TODO change the order of the timers here!
             auto res = std::tuple<double, double, double, double>(
               timer_Fx_, timer_solve_, timer_check_, timer_total_nr_);
+            return res;
+        }
+        
+        virtual TimerJacType  get_timers_jacobian() const
+        {
+            TimerJacType res = {
+                timer_Fx_,
+                timer_solve_,
+                -1.,  // not available for non NR solver, so I put -1
+                timer_check_,
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+                timer_total_nr_
+            };
             return res;
         }
 

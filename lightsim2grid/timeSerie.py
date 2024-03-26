@@ -6,16 +6,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["TimeSerieCPP", "TimeSerie",
+__all__ = ["TimeSeriesCPP", 
            # deprecated
            "Computers"]
 
 import numpy as np
 import warnings
 
-from grid2op.Chronics import Multifolder, GridStateFromFile
 
-from lightsim2grid.lightSimBackend import LightSimBackend
+try:
+    from grid2op.Chronics import Multifolder, GridStateFromFile
+    from lightsim2grid.lightSimBackend import LightSimBackend
+    __all__.append("TimeSerie")
+    GRID2OP_INSTALLED = True
+except ImportError as exc_:
+    # grid2Op is not installed
+    GRID2OP_INSTALLED = False
+
 from lightsim2grid.solver import SolverType
 from lightsim2grid_cpp import TimeSeriesCPP
 
@@ -23,7 +30,7 @@ from lightsim2grid_cpp import TimeSeriesCPP
 Computers = TimeSeriesCPP
 
 
-class TimeSerie:
+class ___TimeSerie:
     """
     This helper class, that only works with grid2op when using a LightSimBackend allows to compute
     the flows (at the origin side of the powerline / transformers). It is roughly equivalent to the
@@ -77,6 +84,13 @@ class TimeSerie:
 
     """
     def __init__(self, grid2op_env):
+        if not GRID2OP_INSTALLED:
+            raise RuntimeError("Impossible to use the python wrapper `TimeSerie` "
+                               "when grid2op is not installed. Please fall back to the "
+                               "c++ version (available in python) with:\n"
+                               "\tfrom lightsim2grid.timeSerie import TimeSerieCPP\n"
+                               "and refer to the appropriate documentation.")
+            
         from grid2op.Environment import Environment  # otherwise i got issues...
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
@@ -263,3 +277,8 @@ class TimeSerie:
         self.load_p = 1.0 * data_loader.load_p
         self.load_q = 1.0 * data_loader.load_q
         return self.prod_p, self.load_p, self.load_q
+
+
+if GRID2OP_INSTALLED:
+    TimeSerie = ___TimeSerie
+    

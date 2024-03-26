@@ -34,6 +34,7 @@ void SGenContainer::init(const RealVect & sgen_p,
     q_max_mvar_ = sgen_qmax;
     bus_id_ = sgen_bus_id;
     status_ = std::vector<bool>(sgen_p.size(), true);
+    reset_results();
 }
 
 SGenContainer::StateRes SGenContainer::get_state() const
@@ -51,9 +52,7 @@ SGenContainer::StateRes SGenContainer::get_state() const
 }
 
 void SGenContainer::set_state(SGenContainer::StateRes & my_state )
-{
-    reset_results();
-    
+{    
     names_ = std::get<0>(my_state);
     std::vector<real_type> & p_mw = std::get<1>(my_state);
     std::vector<real_type> & q_mvar = std::get<2>(my_state);
@@ -82,6 +81,7 @@ void SGenContainer::set_state(SGenContainer::StateRes & my_state )
     q_max_mvar_ = RealVect::Map(&q_max[0], size);
     bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
     status_ = status;
+    reset_results();
 }
 
 void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
@@ -119,13 +119,17 @@ void SGenContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
     v_deg_from_va(Va, Vm, status_, nb_sgen, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
     res_p_ = p_mw_;
     if(ac) res_q_ = q_mvar_;
-    else res_q_ = RealVect::Zero(nb_sgen);
+    else{
+        // no q in DC mode
+        for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id) res_q_(sgen_id) = 0.;
+    }
 }
 
 void SGenContainer::reset_results(){
-    res_p_ = RealVect();  // in MW
-    res_q_ =  RealVect();  // in MVar
-    res_v_ = RealVect();  // in kV
+    res_p_ = RealVect(nb());  // in MW
+    res_q_ =  RealVect(nb());  // in MVar
+    res_v_ = RealVect(nb());  // in kV
+    res_theta_ = RealVect(nb());  // in deg
 }
 
 void SGenContainer::change_p(int sgen_id, real_type new_p, SolverControl & solver_control)

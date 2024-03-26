@@ -46,7 +46,7 @@ case_names = [
               "case300.json",
               "case1354pegase.json",
               "case1888rte.json",
-              "GBnetwork.json",  # 2224 buses
+            #   "GBnetwork.json",  # 2224 buses
               "case2848rte.json",
               "case2869pegase.json",
               "case3120sp.json",

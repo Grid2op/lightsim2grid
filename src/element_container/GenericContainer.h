@@ -83,7 +83,9 @@ class GenericContainer : public BaseConstants
                                      int nb_line,
                                      bool transpose) const {};
 
-        virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) {};
+        // no more used !
+        virtual void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver) const {};
+
         virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
@@ -120,12 +122,12 @@ class GenericContainer : public BaseConstants
         void _reactivate(int el_id, std::vector<bool> & status);
         void _deactivate(int el_id, std::vector<bool> & status);
         void _change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus);
-        int _get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_);
+        int _get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const;
 
         /**
         compute the amps from the p, the q and the v (v should NOT be pair unit)
         **/
-        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v);
+        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const;
 
         /**
         convert v from pu to v in kv (and assign it to the right element...)
@@ -137,7 +139,7 @@ class GenericContainer : public BaseConstants
                            const Eigen::VectorXi & bus_me_id,
                            const std::vector<int> & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
-                           RealVect & v);
+                           RealVect & v) const;
 
 
         /**
@@ -150,13 +152,13 @@ class GenericContainer : public BaseConstants
                            const Eigen::VectorXi & bus_me_id,
                            const std::vector<int> & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
-                           RealVect & v);
+                           RealVect & v) const;
 
         /**
         check the size of the elements
         **/
         template<class T, class intType>
-        void check_size(const T & container, intType size, const std::string & container_name)
+        void check_size(const T & container, intType size, const std::string & container_name) const
         {
             if(static_cast<intType>(container.size()) != size) throw std::runtime_error(container_name + " do not have the proper size");
         }
