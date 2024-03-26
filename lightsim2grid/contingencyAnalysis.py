@@ -18,7 +18,6 @@ from lightsim2grid_cpp import ContingencyAnalysisCPP
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
     __all__.append("ContingencyAnalysis")
-    __all__.append("SecurityAnalysis")
     GRID2OP_INSTALLED = True
 except ImportError as exc_:
     # grid2op is not installed

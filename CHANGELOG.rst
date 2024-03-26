@@ -18,7 +18,7 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.8.1] 2024-xx-yy
+[0.8.1] 2024-03-26
 --------------------
 - [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
 - [FIXED] some bugs preventing backward compatibility
