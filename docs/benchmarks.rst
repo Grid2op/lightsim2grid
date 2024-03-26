@@ -319,6 +319,12 @@ The results can be found in:
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.9.8
 
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a i7 of 2014 wth a frequency of 3.0 GHz
+
+  benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.0
+
 Benchmarks of other lightsim2grid functions
 --------------------------------------------
 
