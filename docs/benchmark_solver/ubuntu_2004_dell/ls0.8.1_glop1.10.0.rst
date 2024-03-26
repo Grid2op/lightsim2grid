@@ -1,4 +1,4 @@
-Lightsim2grid 0.8.0 and grid2op 1.10.0
+Lightsim2grid 0.8.1 and grid2op 1.10.0
 ======================================
 
 l2rpn_case14_sandbox

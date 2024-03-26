@@ -220,9 +220,9 @@ jobs:
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-${{ matrix.config.name }}-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-win-${{ matrix.config.name }}-${{ matrix.python.name }}
           path: dist/*.whl
 
   macos_build_37:
@@ -282,7 +282,7 @@ jobs:
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
         
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
           path: dist/*.whl
@@ -356,9 +356,9 @@ jobs:
             python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: wheels-darwin-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
 
   package:
@@ -373,7 +373,7 @@ jobs:
           path: download
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: lightsim2grid-wheels
           path: |
