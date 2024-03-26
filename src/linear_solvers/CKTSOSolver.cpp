@@ -40,7 +40,9 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
         if (ret_ == -99){
             // fail to initialize because of a license issue
             std::string msg = "Fail to initilize the CKTSO solver because we cannot find the cktso.lic file. ";
-            msg += "Please copy this file at the location you want to use the CKTSO solver.";
+            msg += "Please copy this file at the location you want to use the CKTSO solver (the place where the lib is located). ";
+            msg += "See `import lightsim2grid; print(lightsim2grid.compilation_options.cktso_lib)` and then copy paste ";
+            msg += "the cktso/license/cktso.lib there. ";
             std::cout << msg << std::endl;
         }
         return ErrorType::LicenseError;

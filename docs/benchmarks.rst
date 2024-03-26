@@ -324,6 +324,7 @@ The results can be found in:
   :caption: For a laptop with a i7 of 2014 wth a frequency of 3.0 GHz
 
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.0
+  benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.0_py311
 
 Benchmarks of other lightsim2grid functions
 --------------------------------------------
