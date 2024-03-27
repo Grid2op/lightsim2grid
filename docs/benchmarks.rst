@@ -326,6 +326,12 @@ The results can be found in:
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.0
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.0_py311
 
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
+
+  benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.5_py38
+
 Benchmarks of other lightsim2grid functions
 --------------------------------------------
 
