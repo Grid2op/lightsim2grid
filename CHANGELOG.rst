@@ -22,6 +22,7 @@ Change Log
 --------------------
 - [FIXED] CI was broken after migration to artifact v4, set it back to v3 
   (and make the names of the folder clearer)
+- [FIXED] CI when using latest pandapower version (2.14)
 - [IMPROVED] remove some compilation warnings for clang
 
 [0.8.1] 2024-03-26

@@ -24,7 +24,7 @@ class TestIssueJacobian(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
             self.net = pp.from_json("./dist_slack_test.json")
-            pp.runpp(self.net, lightsim2grid=False, numba=True, distributed_slack=True)
+            pp.runpp(self.net, lightsim2grid=False, numba=True, distributed_slack=True, init="flat")
     
     def test_jacobian_dist_slack(self):    
         """that's the grid described in the issue 
@@ -52,7 +52,7 @@ class TestIssueJacobian(unittest.TestCase):
         """that's the grid described in the issue 
         https://github.com/e2nIEE/pandapower/pull/1455
         """
-        pp.runpp(self.net, lightsim2grid=False, numba=True, distributed_slack=False)
+        pp.runpp(self.net, lightsim2grid=False, numba=True, distributed_slack=False, init="flat")
         options = {"max_iteration": 10, "tolerance_mva": 1e-8, "distributed_slack": False}
         V, converged, iterations, J, Vm_it, Va_it = newtonpf_new(self.net._ppc["internal"]["Ybus"], 
                                                                  self.net._ppc["internal"]["Sbus"],
