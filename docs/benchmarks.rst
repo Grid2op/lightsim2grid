@@ -334,6 +334,12 @@ The results can be found in:
 
   Thanks !
 
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
+
+  benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.5_py38
+
 Benchmarks of other lightsim2grid functions
 --------------------------------------------
 
