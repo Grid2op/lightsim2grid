@@ -18,10 +18,11 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.8.1] 2024-xx-yy
+[0.8.2] 2024-xx-yy
 --------------------
 - [FIXED] CI was broken after migration to artifact v4, set it back to v3 
   (and make the names of the folder clearer)
+- [IMPROVED] remove some compilation warnings for clang
 
 [0.8.1] 2024-03-26
 --------------------

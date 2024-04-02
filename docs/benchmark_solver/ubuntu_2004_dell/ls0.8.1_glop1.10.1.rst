@@ -1,4 +1,4 @@
-Lightsim2grid 0.8.1 and grid2op 1.10.0
+Lightsim2grid 0.8.1 and grid2op 1.10.1
 ======================================
 
 l2rpn_case14_sandbox
@@ -6,10 +6,10 @@ l2rpn_case14_sandbox
 
 Configuration:
 
-- date: 2024-03-26 10:52  CET
-- system: Linux 5.4.0-153-generic
+- date: 2024-03-25 17:53  CET
+- system: Linux 5.15.0-56-generic
 - OS: ubuntu 20.04
-- processor: Intel(R) Core(TM) i7-5960X CPU @ 3.00GHz
+- processor: Intel(R) Core(TM) i7-6820HQ CPU @ 2.70GHz
 - python version: 3.10.13.final.0 (64 bit)
 - numpy version: 1.23.5
 - pandas version: 2.2.1
@@ -27,27 +27,26 @@ Configuration:
 ====================  ======================  ===================================  ============================
 case14_sandbox          grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
 ====================  ======================  ===================================  ============================
-PP                                      41.9                               20.5                          7.14
-GS                                     678                                  0.507                        0.395
-GS synch                               677                                  0.506                        0.393
-NR single (SLU)                        858                                  0.198                        0.0823
-NR (SLU)                               832                                  0.208                        0.0856
-NR single (KLU)                        910                                  0.136                        0.0232
-NR (KLU)                               909                                  0.134                        0.0213
-NR single (NICSLU *)                   898                                  0.138                        0.023
-NR (NICSLU *)                          898                                  0.135                        0.0212
-NR single (CKTSO *)                    895                                  0.137                        0.0221
-NR (CKTSO *)                           903                                  0.134                        0.0198
-FDPF XB (SLU)                          894                                  0.148                        0.0351
-FDPF BX (SLU)                          890                                  0.16                         0.0489
-FDPF XB (KLU)                          885                                  0.143                        0.0294
-FDPF BX (KLU)                          891                                  0.151                        0.0412
-FDPF XB (NICSLU *)                     891                                  0.143                        0.0299
-FDPF BX (NICSLU *)                     881                                  0.156                        0.0425
-FDPF XB (CKTSO *)                      890                                  0.142                        0.0295
-FDPF BX (CKTSO *)                      892                                  0.152                        0.0414
+PP                                      46.3                               18.4                          6.57
+GS                                     757                                  0.474                        0.378
+GS synch                               769                                  0.445                        0.348
+NR single (SLU)                        960                                  0.184                        0.0831
+NR (SLU)                               952                                  0.189                        0.0819
+NR single (KLU)                       1030                                  0.12                         0.0221
+NR (KLU)                              1030                                  0.118                        0.0202
+NR single (NICSLU *)                  1020                                  0.121                        0.022
+NR (NICSLU *)                         1020                                  0.119                        0.02
+NR single (CKTSO *)                   1020                                  0.119                        0.0211
+NR (CKTSO *)                           989                                  0.121                        0.0192
+FDPF XB (SLU)                         1010                                  0.13                         0.032
+FDPF BX (SLU)                         1010                                  0.143                        0.0451
+FDPF XB (KLU)                         1020                                  0.124                        0.0263
+FDPF BX (KLU)                         1010                                  0.134                        0.0377
+FDPF XB (NICSLU *)                    1010                                  0.126                        0.0267
+FDPF BX (NICSLU *)                    1020                                  0.134                        0.0383
+FDPF XB (CKTSO *)                     1010                                  0.125                        0.0268
+FDPF BX (CKTSO *)                     1000                                  0.136                        0.0381
 ====================  ======================  ===================================  ============================
-
 
 Differences:
 
@@ -76,16 +75,15 @@ FDPF BX (CKTSO *)                   0.000122        7.63e-06          7.63e-06
 ============================  ==============  ==============  ================
 
 
-
 l2rpn_neurips_2020_track2_small
 ---------------------------------
 
-Configuration:
+Configuration: 
 
-- date: 2024-03-26 10:59  CET
-- system: Linux 5.4.0-153-generic
+- date: 2024-03-25 17:59  CET
+- system: Linux 5.15.0-56-generic
 - OS: ubuntu 20.04
-- processor: Intel(R) Core(TM) i7-5960X CPU @ 3.00GHz
+- processor: Intel(R) Core(TM) i7-6820HQ CPU @ 2.70GHz
 - python version: 3.10.13.final.0 (64 bit)
 - numpy version: 1.23.5
 - pandas version: 2.2.1
@@ -103,27 +101,26 @@ Configuration:
 =====================  ======================  ===================================  ============================
 neurips_2020_track2      grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    solver powerflow time (ms)
 =====================  ======================  ===================================  ============================
-PP                                      38.3                                22.5                           9.18
-GS                                       3.81                              261                           261
-GS synch                                29.2                                33.2                          33
-NR single (SLU)                        494                                   0.912                         0.76
-NR (SLU)                               484                                   0.935                         0.777
-NR single (KLU)                        709                                   0.302                         0.155
-NR (KLU)                               714                                   0.29                          0.143
-NR single (NICSLU *)                   706                                   0.295                         0.146
-NR (NICSLU *)                          717                                   0.28                          0.132
-NR single (CKTSO *)                    712                                   0.286                         0.138
-NR (CKTSO *)                           722                                   0.272                         0.126
-FDPF XB (SLU)                          658                                   0.414                         0.271
-FDPF BX (SLU)                          645                                   0.436                         0.292
-FDPF XB (KLU)                          680                                   0.366                         0.225
-FDPF BX (KLU)                          667                                   0.388                         0.244
-FDPF XB (NICSLU *)                     674                                   0.364                         0.22
-FDPF BX (NICSLU *)                     665                                   0.384                         0.239
-FDPF XB (CKTSO *)                      677                                   0.362                         0.22
-FDPF BX (CKTSO *)                      665                                   0.383                         0.24
+PP                                      41.5                                20.7                           8.6
+GS                                       3.74                              266                           266
+GS synch                                35.8                                26.9                          26.8
+NR single (SLU)                        536                                   0.897                         0.767
+NR (SLU)                               505                                   0.959                         0.818
+NR single (KLU)                        811                                   0.268                         0.144
+NR (KLU)                               820                                   0.256                         0.131
+NR single (NICSLU *)                   813                                   0.259                         0.134
+NR (NICSLU *)                          827                                   0.243                         0.118
+NR single (CKTSO *)                    814                                   0.257                         0.131
+NR (CKTSO *)                           829                                   0.24                          0.116
+FDPF XB (SLU)                          762                                   0.352                         0.232
+FDPF BX (SLU)                          749                                   0.373                         0.252
+FDPF XB (KLU)                          786                                   0.307                         0.188
+FDPF BX (KLU)                          776                                   0.327                         0.206
+FDPF XB (NICSLU *)                     786                                   0.308                         0.188
+FDPF BX (NICSLU *)                     771                                   0.324                         0.204
+FDPF XB (CKTSO *)                      784                                   0.309                         0.19
+FDPF BX (CKTSO *)                      773                                   0.329                         0.209
 =====================  ======================  ===================================  ============================
-
 
 Differences:
 
@@ -150,4 +147,3 @@ FDPF BX (NICSLU *)                        6.1e-05        1.91e-06          7.63e
 FDPF XB (CKTSO *)                         6.1e-05        1.91e-06          1.53e-05
 FDPF BX (CKTSO *)                         6.1e-05        1.91e-06          7.63e-06
 =================================  ==============  ==============  ================
-

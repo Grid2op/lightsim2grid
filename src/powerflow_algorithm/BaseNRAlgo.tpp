@@ -583,7 +583,7 @@ void BaseNRAlgo<LinearSolver>::fill_value_map(
     // row_map_ = std::vector<int> (J_.nonZeros());
 
     const auto n_row = J_.cols();
-    unsigned int pos_el = 0;
+    // unsigned int pos_el = 0;
     for (Eigen::Index col_=1; col_ < n_row; ++col_){  // last column is never updated (slack equation)
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col_); it; ++it)
         {
@@ -640,7 +640,7 @@ void BaseNRAlgo<LinearSolver>::fill_value_map(
                 }
             }
             // go to the next element
-            ++pos_el;
+            // ++pos_el;
         }
     }
     dS_dVa_.makeCompressed();

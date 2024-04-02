@@ -222,7 +222,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-win-${{ matrix.config.name }}-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-win-${{ matrix.python.name }}
           path: dist/*.whl
 
   macos_build_37:
