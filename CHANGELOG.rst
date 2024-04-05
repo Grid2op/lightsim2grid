@@ -22,8 +22,10 @@ Change Log
 --------------------
 - [FIXED] CI was broken after migration to artifact v4, set it back to v3 
   (and make the names of the folder clearer)
-- [FIXED] CI when using latest pandapower version (2.14)
+- [FIXED] CI when using latest pandapower version (2.14) which broke some previous tests
 - [IMPROVED] remove some compilation warnings for clang
+- [IMPROVED] possibility to specify generator used as slack by its name when initializing
+  from `pypowsybl`.
 
 [0.8.1] 2024-03-26
 --------------------

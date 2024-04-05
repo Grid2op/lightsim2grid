@@ -556,7 +556,7 @@ class LightSimBackend(Backend):
         grid_tmp = pypow_net.load(full_path)
         gen_slack_id = None
         if "gen_slack_id" in loader_kwargs:
-            gen_slack_id = int(loader_kwargs["gen_slack_id"])
+            gen_slack_id = loader_kwargs["gen_slack_id"]
         self._grid, subs_id = init_pypow(grid_tmp, gen_slack_id=gen_slack_id, sort_index=True, return_sub_id=True)
         (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
         self.__nb_bus_before = len(self._grid.get_bus_vn_kv())

@@ -10,6 +10,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import pypowsybl as pypo
+from typing import Union
 
 from lightsim2grid_cpp import GridModel
 
@@ -36,7 +37,7 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
 
 
 def init(net : pypo.network,
-         gen_slack_id: int = None,
+         gen_slack_id: Union[int, str] = None,
          slack_bus_id: int = None,
          sn_mva = 100.,
          sort_index=True,
@@ -260,7 +261,17 @@ def init(net : pypo.network,
     elif gen_slack_id is not None:
         if slack_bus_id is not None:
             raise RuntimeError(f"You provided both gen_slack_id and slack_bus_id which is not possible.")
-        model.add_gen_slackbus(gen_slack_id, 1.)
+        
+        if isinstance(gen_slack_id, str):
+            gen_slack_id_int = int((df_gen.index == gen_slack_id).nonzero()[0][0])
+        else:
+            try:
+                gen_slack_id_int = int(gen_slack_id)
+            except Exception:
+                raise RuntimeError("'slack_bus_id' should be either an int or a generator names")
+            if gen_slack_id_int != gen_slack_id:
+                raise RuntimeError("'slack_bus_id' should be either an int or a generator names")
+        model.add_gen_slackbus(gen_slack_id_int, 1.)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
         gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
