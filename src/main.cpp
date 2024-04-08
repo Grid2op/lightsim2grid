@@ -895,6 +895,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
         .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_lodf", &GridModel::get_lodf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
         .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
 
          // apply action faster (optimized for grid2op representation)

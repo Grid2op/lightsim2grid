@@ -276,6 +276,20 @@ class ChooseSolver
             return res;
         }
 
+        RealMat get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
+                         const IntVect & from_bus,
+                         const IntVect & to_bus){
+                if(_solver_type != SolverType::DC && 
+                   _solver_type != SolverType::KLUDC && 
+                   _solver_type != SolverType::NICSLUDC &&
+                   _solver_type != SolverType::CKTSODC){
+                throw std::runtime_error("ChooseSolver::get_lodf: cannot get ptdf for a solver that is not DC.");
+                }
+            auto p_solver = get_prt_solver("get_lodf", true);
+            const auto & res =  p_solver -> get_lodf(dcYbus, from_bus, to_bus);
+            return res;
+        }
+
         void tell_solver_control(const SolverControl & solver_control){
             auto p_solver = get_prt_solver("tell_solver_control", false);
             p_solver -> tell_solver_control(solver_control);

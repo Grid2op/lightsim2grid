@@ -39,9 +39,11 @@ class BaseDCAlgo: public BaseAlgo
                         real_type tol
                         );
 
-        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus);  // TODO PTDF
-        virtual Eigen::SparseMatrix<real_type> get_lodf();  // TODO PTDF
-        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO PTDF
+        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus);
+        virtual RealMat get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
+                                 const IntVect & from_bus,
+                                 const IntVect & to_bus);  // TODO LODF
+        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO BSDF
 
     private:
         // no copy allowed

@@ -920,6 +920,17 @@ RealMat GridModel::get_ptdf(){
     return _dc_solver.get_ptdf(Ybus_dc_);
 }
 
+RealMat GridModel::get_lodf(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
+    }
+    IntVect from_bus(powerlines_.nb() + trafos_.nb());
+    IntVect to_bus(powerlines_.nb() + trafos_.nb());
+    from_bus << powerlines_.get_bus_from(), trafos_.get_bus_from();
+    to_bus << powerlines_.get_bus_to(), trafos_.get_bus_to();
+    return _dc_solver.get_lodf(Ybus_dc_, from_bus, to_bus);
+}
+
 Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");

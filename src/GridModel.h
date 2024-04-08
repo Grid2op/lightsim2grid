@@ -303,6 +303,8 @@ class GridModel : public GenericContainer
                        real_type tol  // not used for DC
                        );
         RealMat get_ptdf();
+        RealMat get_lodf();
+        
         Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow

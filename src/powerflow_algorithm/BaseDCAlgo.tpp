@@ -256,9 +256,9 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
 
     // solve iteratively the linear systems (one per powerline)
     PTDF = RealMat::Zero(Bf_T_with_slack.cols(), Bf_T_with_slack.rows());  // rows and cols are "inverted" because the matrix Bf is transposed
-    for (int line_id=0; line_id < nb_pow_tr; ++line_id){
+    for (int row_id=0; row_id < nb_pow_tr; ++row_id){
         // build the rhs vector
-        for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, line_id); it; ++it)
+        for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, row_id); it; ++it)
         {
             const auto bus_id = it.row();
             if(mat_bus_id_(bus_id) == -1) continue;  // I don't add anything if it's the slack
@@ -269,7 +269,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
         _linear_solver.solve(dcYbus_noslack_, rhs, true);  // I don't need to refactorize the matrix (hence the `true`)
 
         // assign results to the PTDF matrix
-        PTDF(line_id, ind_no_slack) = rhs;
+        PTDF(row_id, ind_no_slack) = rhs;
 
         // reset the rhs vector to 0.
         rhs.array() = 0.;
@@ -280,10 +280,12 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
 }
 
 template<class LinearSolver>
-Eigen::SparseMatrix<real_type> BaseDCAlgo<LinearSolver>::get_lodf(){
-    // TODO
-    return dcYbus_noslack_;
-
+RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
+                                                                  const IntVect & from_bus,
+                                                                  const IntVect & to_bus){
+    auto PTDF = get_ptdf(dcYbus);  // size n_bus x n_bus
+    RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
+    return LODF;
 }
 
 template<class LinearSolver>

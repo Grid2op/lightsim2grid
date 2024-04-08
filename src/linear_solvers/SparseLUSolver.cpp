@@ -26,7 +26,6 @@ ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> 
 ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call sparselu_solver.analyze() before calling that)
-    // J is const even if it does not compile if said const
     ErrorType err = ErrorType::NoError;
     bool stop = false;
     if(!doesnt_need_refactor){

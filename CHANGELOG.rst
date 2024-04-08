@@ -26,6 +26,8 @@ Change Log
 - [IMPROVED] remove some compilation warnings for clang
 - [IMPROVED] possibility to specify generator used as slack by its name when initializing
   from `pypowsybl`.
+- [IMPROVED] removing some warnings when grid2op is not installed
+  (it should not raise any warning as lightsim2grid does not require grid2op)
 
 [0.8.1] 2024-03-26
 --------------------
