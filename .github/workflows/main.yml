@@ -45,14 +45,11 @@ jobs:
             abi: cp312,
             version: '3.12',
           }
+
         cont:
           - {
             name: manylinux2014_x86_64, 
             val: quay.io/pypa/manylinux2014_x86_64
-          }
-          - {
-            name: manylinux2014_aarch64, 
-            val: quay.io/pypa/manylinux2014_aarch64
           }
 
     container: 
