@@ -138,7 +138,7 @@ jobs:
 
   windows_build:
     # build wheels for windows
-    name: Build windows ${{ matrix.python.name }} wheel
+    name: Build windows ${{ matrix.python.name }} wheel for ${{ matrix.win_arch.msvc}}
     runs-on: windows-2019
     strategy:
       matrix:
@@ -192,8 +192,7 @@ jobs:
         with:
           python-version: ${{ matrix.python.version }}
 
-      - name: Setup MSVC (64-bit)
-        if: matrix.cibw_arch == 'AMD64'
+      - name: Setup MSVC ${{ matrix.win_arch.msvc}}
         uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d # v1
         with:
           architecture: ${{ matrix.win_arch.msvc}}
