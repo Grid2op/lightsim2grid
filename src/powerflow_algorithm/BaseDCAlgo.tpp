@@ -234,6 +234,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
 
 template<class LinearSolver>
 RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+    auto timer = CustTimer();
     Eigen::SparseMatrix<real_type> Bf_T_with_slack;
     RealMat PTDF;
     RealVect rhs = RealVect::Zero(sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
@@ -277,6 +278,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
         rhs.array() = 0.;
         // rhs = RealVect::Zero(sizeYbus_without_slack_);
     }
+    timer_ptdf_ = timer.duration();
     // TODO PTDF: if the solver can solve the MAT directly, do that instead
     return PTDF;
 }
@@ -285,6 +287,7 @@ template<class LinearSolver>
 RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
                                            const IntVect & from_bus,
                                            const IntVect & to_bus){
+    auto timer = CustTimer();
     const RealMat PTDF = get_ptdf(dcYbus);  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
     for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
@@ -297,6 +300,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> 
             LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
         }
     }
+    timer_lodf_ = timer.duration();
     return LODF;
 }
 

@@ -19,12 +19,29 @@ class BaseDCAlgo: public BaseAlgo
             BaseAlgo(false),
             _linear_solver(),
             need_factorize_(true),
+            timer_ptdf_(0.),
+            timer_lodf_(0.),
             sizeYbus_with_slack_(0),
             sizeYbus_without_slack_(0){};
 
         ~BaseDCAlgo(){}
 
         virtual void reset();
+        virtual void reset_timer(){
+            BaseAlgo::reset_timer();
+            timer_ptdf_ = 0.;
+            timer_lodf_ = 0.;
+        }
+
+        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const
+        {
+            TimerPTDFLODFType res = {
+                timer_ptdf_,  
+                timer_lodf_ - timer_ptdf_,
+                -1.,  // not available yet so I put -1
+            };
+            return res;
+        }
 
         // TODO SLACK : this should be handled in Sbus by the gridmodel maybe ?
         virtual
@@ -61,6 +78,9 @@ class BaseDCAlgo: public BaseAlgo
     protected:
         LinearSolver  _linear_solver;
         bool need_factorize_;
+
+        double timer_ptdf_;
+        double timer_lodf_;
 
         // save this not to recompute them when not needed
         int sizeYbus_with_slack_;

@@ -320,6 +320,12 @@ class ChooseSolver
             return p_solver -> get_timers_jacobian();
         }
 
+        TimerPTDFLODFType get_timers_ptdf_lodf() const
+        {
+            const BaseAlgo * p_solver = get_prt_solver("get_timers_ptdf_lodf", true);
+            return p_solver -> get_timers_ptdf_lodf();
+        }
+
         ErrorType get_error() const{
             auto p_solver = get_prt_solver("get_error", true);
             return p_solver -> get_error();

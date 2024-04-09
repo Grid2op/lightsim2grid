@@ -33,6 +33,7 @@ class GridModel;
 typedef std::tuple<double, double, double, double, 
                    double, double, double, double, 
                    double> TimerJacType;
+typedef std::tuple<double, double, double> TimerPTDFLODFType;
 
 /**
 This class represents a algorithm to compute powerflow.
@@ -101,6 +102,16 @@ class BaseAlgo : public BaseConstants
                 -1.,  // not available for non NR solver, so I put -1
                 -1.,  // not available for non NR solver, so I put -1
                 timer_total_nr_
+            };
+            return res;
+        }
+        
+        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const
+        {
+            TimerPTDFLODFType res = {
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
             };
             return res;
         }

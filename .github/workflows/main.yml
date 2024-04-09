@@ -12,7 +12,7 @@ jobs:
     # build wheels for some linux
     name: Build linux ${{ matrix.python.name }} wheel
     runs-on: ubuntu-latest
-    container: quay.io/pypa/manylinux2014_x86_64
+    container:  ${{ matrix.cont.val }}
     strategy:
       matrix:
         python:
@@ -45,6 +45,19 @@ jobs:
             name: cp312,
             abi: cp312,
             version: '3.12',
+          }
+        cont:
+          - {
+            name: manylinux2014_x86_64, 
+            val: quay.io/pypa/manylinux2014_x86_64
+          }
+          - {
+            name: manylinux2014_aarch64, 
+            val: quay.io/pypa/manylinux2014_aarch64
+          }
+          - {
+            name: musllinux_1_1_i686, 
+            val: quay.io/pypa/musllinux_1_1_i686
           }
 
     steps:
@@ -80,11 +93,10 @@ jobs:
           pip3 install wheelhouse/*.whl --user
           pip freeze
 
-      # - name: Install GDB
-      #   run: yum install -y gdb
-
       - name: Check package can be imported (bare install)
         run: |
+          mkdir tmp_for_import_checking
+          cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"
           python3 -c "from lightsim2grid.newtonpf import newtonpf"
@@ -106,6 +118,7 @@ jobs:
 
       - name: Check extra can be imported can be imported (with grid2op)
         run:
+          cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend"
           python3 -c "from lightsim2grid.timeSerie import TimeSerie"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
@@ -114,12 +127,13 @@ jobs:
       
       - name: Check LightSimBackend can be used to create env
         run:
+          cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v3  # v4 broken
         with:
-          name: lightsim2grid-wheel-linux-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
