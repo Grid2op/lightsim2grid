@@ -10,7 +10,7 @@ on:
 jobs:
   manylinux_build:
     # build wheels for some linux
-    name: Build linux ${{ matrix.python.name }} wheel
+    name: Build linux ${{ matrix.python.name }} wheel on ${{ matrix.cont.name}}
     runs-on: ubuntu-latest
     container:  ${{ matrix.cont.val }}
     strategy:
@@ -54,10 +54,6 @@ jobs:
           - {
             name: manylinux2014_aarch64, 
             val: quay.io/pypa/manylinux2014_aarch64
-          }
-          - {
-            name: musllinux_1_1_i686, 
-            val: quay.io/pypa/musllinux_1_1_i686
           }
 
     steps:
