@@ -66,8 +66,8 @@ void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
 void DCLineContainer::nb_line_end(std::vector<int> & res) const
 {
     const Eigen::Index nb = from_gen_.nb();
-    const auto & bus_or_id = get_bus_id_or();
-    const auto & bus_ex_id = get_bus_id_ex();
+    const auto & bus_or_id = get_bus_from();
+    const auto & bus_ex_id = get_bus_to();
     for(Eigen::Index i = 0; i < nb; ++i){
         if(!status_[i]) continue;
         auto bus_or = bus_or_id(i);
@@ -81,8 +81,8 @@ void DCLineContainer::nb_line_end(std::vector<int> & res) const
 void DCLineContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
 {
     const Eigen::Index nb = from_gen_.nb();
-    const auto & bus_or_id = get_bus_id_or();
-    const auto & bus_ex_id = get_bus_id_ex(); 
+    const auto & bus_or_id = get_bus_from();
+    const auto & bus_ex_id = get_bus_to(); 
     SolverControl unused_solver_control;
     for(Eigen::Index i = 0; i < nb; ++i){
         if(!status_[i]) continue;

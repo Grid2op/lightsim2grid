@@ -7,6 +7,8 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 // #include "DCSolver.h"
+#include <limits>  // for nans
+#include <cmath>  // for nans
 
 // TODO SLACK !!!
 template<class LinearSolver>
@@ -281,10 +283,20 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
 
 template<class LinearSolver>
 RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
-                                                                  const IntVect & from_bus,
-                                                                  const IntVect & to_bus){
-    auto PTDF = get_ptdf(dcYbus);  // size n_bus x n_bus
+                                           const IntVect & from_bus,
+                                           const IntVect & to_bus){
+    const RealMat PTDF = get_ptdf(dcYbus);  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
+    for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
+        LODF.col(line_id).array() = PTDF.col(from_bus(line_id)).array() - PTDF.col(to_bus(line_id)).array();
+        const real_type diag_coeff = LODF(line_id, line_id);
+        if (diag_coeff != 1.){
+            LODF.col(line_id).array() /= (1. - diag_coeff);
+            LODF(line_id, line_id) = -1.;
+        }else{
+            LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
+        }
+    }
     return LODF;
 }
 

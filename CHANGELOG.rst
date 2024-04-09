@@ -23,6 +23,11 @@ Change Log
 - [FIXED] CI was broken after migration to artifact v4, set it back to v3 
   (and make the names of the folder clearer)
 - [FIXED] CI when using latest pandapower version (2.14) which broke some previous tests
+- [ADDED] the computation of the LODF (line outage distribution factor) in 
+  lightsim2grid
+- [ADDED] some convenience functions to retrieve in a vectorized way the 
+  buses to which each elements of a given container is connected 
+  (*eg* `gridmodel.get_lines().get_bus_from()`)
 - [IMPROVED] remove some compilation warnings for clang
 - [IMPROVED] possibility to specify generator used as slack by its name when initializing
   from `pypowsybl`.
