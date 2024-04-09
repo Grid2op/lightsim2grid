@@ -187,10 +187,11 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup Python
+      - name: Setup Python ${{ matrix.python.version }} ${{ matrix.win_arch.msvc}}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python.version }}
+          architecture: ${{ matrix.win_arch.msvc}}
 
       - name: Setup MSVC ${{ matrix.win_arch.msvc}}
         uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d # v1
