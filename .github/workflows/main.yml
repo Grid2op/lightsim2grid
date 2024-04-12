@@ -361,8 +361,11 @@ jobs:
             arch: arm64
           }
         exclude:
-          - python.name: cp38
-            runner.arch: arm64
+          - python: 
+              name: cp38
+            runner:
+              arch: arm64
+
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
