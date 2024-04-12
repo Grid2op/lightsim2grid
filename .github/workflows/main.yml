@@ -398,19 +398,22 @@ jobs:
 
   exotic_build:
     # build wheel using emulation for "exotic"things
-    name: Build darwin ${{ matrix.python.name }} wheel
+    name: Build ${{ matrix.runner.name }} ${{ matrix.python.name }} wheel with cibuildwheel
     runs-on: ${{ matrix.runner.name }}
     strategy:
       matrix:
         runner:
           - {
-            name: macos-14  # amd64
+            name: macos-14,  # amd64
+            cibuildwheel: macos
           }
           - {
-            name: windows-2019
+            name: windows-2019,
+            cibuildwheel: windows
           }
           - {
-            name: ubuntu-latest
+            name: ubuntu-latest,
+            cibuildwheel: linux
           }
         python:
           - {
@@ -461,6 +464,7 @@ jobs:
       - name: Compile with cibuildwheel
         uses: pypa/cibuildwheel@v2.16.2
         env:
+          CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
           CIBW_BUILD: "${{ matrix.python.name }}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
           CIBW_ARCHS_LINUX: aarch64 i686  # arm64 and 32 bits
           CIBW_ARCHS_MACOS: arm64  
