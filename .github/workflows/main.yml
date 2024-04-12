@@ -404,7 +404,7 @@ jobs:
       matrix:
         runner:
           - {
-            name: macos-14  # arm64
+            name: macos-13  # amd64 (but with right python !)
           }
           - {
             name: windows-2019
