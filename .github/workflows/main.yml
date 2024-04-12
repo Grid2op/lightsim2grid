@@ -51,10 +51,21 @@ jobs:
             name: manylinux2014_x86_64, 
             val: quay.io/pypa/manylinux2014_x86_64
           }
+          - {
+            name: manylinux2014_aarch64, 
+            val: quay.io/pypa/manylinux2014_aarch64
+          }
 
     container: 
       image: ${{matrix.cont.val}}
+
     steps:
+      - name: Set up QEMU
+        if: matrix.cont == 'manylinux2014_aarch64'
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm64
+          
       - name: Checkout sources
         uses: actions/checkout@v3 # v4 not working...
         with:
@@ -172,10 +183,10 @@ jobs:
             name: "AMD64",
             msvc: x64
           }
-          - {
-            name: "x86",
-            msvc: x86
-          }
+          # - {
+          #   name: "x86",
+          #   msvc: x86
+          # }
     env:
       RUNNER_OS: windows-2019
       PYTHON_VERSION: ${{ matrix.python.version }}
