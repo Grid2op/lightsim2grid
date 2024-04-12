@@ -78,9 +78,9 @@ jobs:
         run: echo "/opt/python/${{ matrix.python.name }}-${{ matrix.python.abi }}/bin/" >> $GITHUB_PATH
 
       - name: Install Python dependencies
-          run: |
-            python -m pip install --upgrade pip
-            python -m pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
       - name: Compile SuiteSparse
         run: 
