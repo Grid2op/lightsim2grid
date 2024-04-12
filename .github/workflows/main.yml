@@ -326,7 +326,7 @@ jobs:
 
   macos_build_38_:
     # build wheel for python 3.8 and above for macos
-    name: Build darwin ${{ matrix.python.name }} wheel
+    name: Build darwin ${{ matrix.python.name }} wheel on ${{ matrix.runner.arch}}
     runs-on: ${{ matrix.runner.name }}
     strategy:
       matrix:
@@ -393,10 +393,6 @@ jobs:
       - name: Install wheel
         shell: bash
         run: python -m pip install dist/*.whl --user
-
-      - name: Install wheel
-        run: |
-          pip3 install wheelhouse/*.whl --user
           pip freeze
 
       - name: Check package can be imported (bare install)
@@ -477,11 +473,11 @@ jobs:
       #       python -c "from lightsim2grid import LightSimBackend" &&
       #       python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
-      # - name: Upload wheel
-      #   uses: actions/upload-artifact@v3
-      #   with:
-      #     name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
-      #     path: ./wheelhouse/*.whl
+      - name: Upload wheel
+        uses: actions/upload-artifact@v3
+        with:
+          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
+          path: dist/*.whl
 
   package:
     name: Package wheels
