@@ -451,7 +451,7 @@ jobs:
             runner:
               name: macos-14
     env:
-      RUNNER_OS: macos-latest
+      RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
 
     steps:
@@ -461,11 +461,15 @@ jobs:
         with:
           submodules: true
 
+      - name: Set Additional Envs
+        run: |
+          echo "PYTHON_SUBVERSION=$(echo $PYTHON_VERSION | cut -c 3-)" >> $GITHUB_ENV
+
       - name: Compile with cibuildwheel
-        uses: pypa/cibuildwheel@v2.16.2
+        uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
-          CIBW_BUILD: "${{ matrix.python.name }}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
+          CIBW_BUILD: "cp3${{env.PYTHON_SUBVERSION}}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
           CIBW_ARCHS_LINUX: aarch64 i686  # arm64 and 32 bits
           CIBW_ARCHS_MACOS: arm64  
           CIBW_ARCHS_WINDOWS: x86  # 32 bits
