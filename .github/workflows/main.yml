@@ -398,6 +398,7 @@ jobs:
 
   exotic_build:
     # build wheel using emulation for "exotic"things
+    # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
     name: Build ${{ matrix.runner.name }} ${{ matrix.python.name }} wheel with cibuildwheel
     runs-on: ${{ matrix.runner.name }}
     strategy:
@@ -455,7 +456,6 @@ jobs:
       PYTHON_VERSION: ${{ matrix.python.version }}
 
     steps:
-
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -471,10 +471,10 @@ jobs:
         uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
-          CIBW_BUILD: "${{ env.python.name}}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
-          CIBW_ARCHS_LINUX: aarch64 # arm64 and 32 bits
+          CIBW_BUILD: "${{ env.python.name}}-*"
+          CIBW_ARCHS_LINUX: aarch64
           CIBW_ARCHS_MACOS: arm64  
-          CIBW_ARCHS_WINDOWS: arm64 # 32 bits and arm64
+          CIBW_ARCHS_WINDOWS: arm64
           CIBW_ENVIRONMENT: __O3_OPTIM=1
           CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11 pip
           CIBW_BEFORE_BUILD_MACOS: make clean && make CC=clang CXX=clang++
@@ -488,7 +488,7 @@ jobs:
             cmake --build . --config Release &&
             cmake --install . --prefix ..\built
           CIBW_TEST_REQUIRES: grid2op pandapower
-          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64" "*-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
+          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" &&
             python -c "from lightsim2grid import *" &&
