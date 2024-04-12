@@ -360,12 +360,15 @@ jobs:
             name: macos-14,
             arch: arm64
           }
-
+        exclude:
+          - python.name: cp38
+            runner.arch: arm64
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
 
     steps:
+
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
