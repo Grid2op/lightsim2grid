@@ -61,11 +61,11 @@ jobs:
 
     steps:
       - name: Set up QEMU
-        if: matrix.cont == 'manylinux2014_aarch64'
+        if: matrix.cont.name == 'manylinux2014_aarch64'
         uses: docker/setup-qemu-action@v2
         with:
           platforms: arm64
-          
+
       - name: Checkout sources
         uses: actions/checkout@v3 # v4 not working...
         with:
