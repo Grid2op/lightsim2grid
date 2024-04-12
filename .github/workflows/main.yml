@@ -362,7 +362,7 @@ jobs:
           }
 
     env:
-      RUNNER_OS: macos-latest
+      RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
 
     steps:
@@ -385,7 +385,7 @@ jobs:
         run: |
           make
           export __O3_OPTIM=1
-          python3 setup.py build
+          python setup.py build
 
       - name: Build wheel
         run: python setup.py bdist_wheel
@@ -399,13 +399,13 @@ jobs:
         run: |
           mkdir tmp_for_import_checking
           cd tmp_for_import_checking
-          python3 -c "import lightsim2grid"
-          python3 -c "from lightsim2grid import *"
-          python3 -c "from lightsim2grid.newtonpf import newtonpf"
-          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
-          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
-          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import init, GridModel"
+          python -c "import lightsim2grid"
+          python -c "from lightsim2grid import *"
+          python -c "from lightsim2grid.newtonpf import newtonpf"
+          python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python -c "from lightsim2grid.gridmodel import init, GridModel"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -415,27 +415,27 @@ jobs:
 
       - name: Install grid2op
         run: | 
-          python3 -m pip install grid2op
-          python3 -m pip freeze
+          python -m pip install grid2op
+          python -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
         run:
           cd tmp_for_import_checking
-          python3 -v -c "from lightsim2grid import LightSimBackend"
-          python3 -c "from lightsim2grid.timeSerie import TimeSerie"
-          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
-          python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
-          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+          python -v -c "from lightsim2grid import LightSimBackend"
+          python -c "from lightsim2grid.timeSerie import TimeSerie"
+          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
+          python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
+          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
       
       - name: Check LightSimBackend can be used to create env
         run:
           cd tmp_for_import_checking
-          python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
+          python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
           path: dist/*.whl
 
       # - name: Checkout sources
@@ -473,11 +473,11 @@ jobs:
       #       python -c "from lightsim2grid import LightSimBackend" &&
       #       python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v3
-        with:
-          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
-          path: dist/*.whl
+      # - name: Upload wheel
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
+      #     path: ./wheelhouse/*.whl
 
   package:
     name: Package wheels
