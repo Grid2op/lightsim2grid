@@ -365,6 +365,10 @@ jobs:
               name: cp38
             runner:
               arch: arm64
+          - python: 
+              name: cp39
+            runner:
+              arch: arm64
 
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
