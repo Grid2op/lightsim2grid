@@ -404,7 +404,7 @@ jobs:
       matrix:
         runner:
           - {
-            name: macos-13  # amd64 (but with right python !)
+            name: macos-14  # amd64
           }
           - {
             name: windows-2019
@@ -434,6 +434,7 @@ jobs:
             version: '3.12',
           }
         exclude:
+          # because already done natively above
           - python: 
               name: cp10
             runner:
@@ -457,26 +458,15 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python.version }}
-
-      - name: Set Additional Envs
-        shell: bash
-        run: |
-          echo "PYTHON_SUBVERSION=$(echo $PYTHON_VERSION | cut -c 3-)" >> $GITHUB_ENV
-          echo "DEPLOY=$( [[ $GITHUB_EVENT_NAME == 'push' && $GITHUB_REF == 'refs/tags'* ]] && echo 'True' || echo 'False' )" >> $GITHUB_ENV
-
       - name: Compile with cibuildwheel
         uses: pypa/cibuildwheel@v2.16.2
         env:
-          CIBW_BUILD: "cp3${{env.PYTHON_SUBVERSION}}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
+          CIBW_BUILD: "${{ matrix.python.name }}-*"  # see https://github.com/cvxpy/cvxpy/blob/master/.github/workflows/build.yml
           CIBW_ARCHS_LINUX: aarch64 i686  # arm64 and 32 bits
           CIBW_ARCHS_MACOS: arm64  
           CIBW_ARCHS_WINDOWS: x86  # 32 bits
           CIBW_ENVIRONMENT: __O3_OPTIM=1
-          CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11
+          CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11 pip
           CIBW_BEFORE_BUILD_MACOS: make clean && make CC=clang CXX=clang++
           CIBW_BEFORE_BUILD_LINUX: make clean && make
           CIBW_BEFORE_BUILD_WINDOWS: > 
@@ -486,11 +476,7 @@ jobs:
             cd build  &&
             cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release .. &&
             cmake --build . --config Release &&
-            cmake --install . --prefix ..\built  &&
-            cd .. &&
-            cd .. && 
-            set __O3_OPTIM=1 &&
-            python setup.py build
+            cmake --install . --prefix ..\built
           CIBW_TEST_REQUIRES: grid2op pandapower
           CIBW_TEST_SKIP: "cp312-* *-macosx_arm64"  # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
@@ -510,7 +496,8 @@ jobs:
   package:
     name: Package wheels
     runs-on: ubuntu-latest
-    needs: [manylinux_build, windows_build, macos_build_37_]
+    # needs: [manylinux_build, windows_build, macos_build_37_]
+    needs: [exotic_build, macos_build_37_]
 
     steps:
       - name: Download wheels
