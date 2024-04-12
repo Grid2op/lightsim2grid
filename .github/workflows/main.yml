@@ -392,8 +392,9 @@ jobs:
 
       - name: Install wheel
         shell: bash
-        run: python -m pip install dist/*.whl --user
-          pip freeze
+        run: |
+          python -m pip install dist/*.whl --user
+          python -m pip freeze
 
       - name: Check package can be imported (bare install)
         run: |
@@ -419,7 +420,7 @@ jobs:
           python -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
-        run:
+        run: |
           cd tmp_for_import_checking
           python -v -c "from lightsim2grid import LightSimBackend"
           python -c "from lightsim2grid.timeSerie import TimeSerie"
@@ -428,7 +429,7 @@ jobs:
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
       
       - name: Check LightSimBackend can be used to create env
-        run:
+        run: |
           cd tmp_for_import_checking
           python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
