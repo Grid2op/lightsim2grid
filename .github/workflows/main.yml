@@ -471,7 +471,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
-          CIBW_BUILD: "${{ env.python.name}}-*"
+          CIBW_BUILD: "${{ matrix.python.name}}-*"
           CIBW_ARCHS_LINUX: aarch64
           CIBW_ARCHS_MACOS: arm64  
           CIBW_ARCHS_WINDOWS: arm64
