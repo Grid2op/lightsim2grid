@@ -7,6 +7,8 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 // #include "DCSolver.h"
+#include <limits>  // for nans
+#include <cmath>  // for nans
 
 // TODO SLACK !!!
 template<class LinearSolver>
@@ -232,6 +234,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
 
 template<class LinearSolver>
 RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+    auto timer = CustTimer();
     Eigen::SparseMatrix<real_type> Bf_T_with_slack;
     RealMat PTDF;
     RealVect rhs = RealVect::Zero(sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
@@ -256,9 +259,9 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
 
     // solve iteratively the linear systems (one per powerline)
     PTDF = RealMat::Zero(Bf_T_with_slack.cols(), Bf_T_with_slack.rows());  // rows and cols are "inverted" because the matrix Bf is transposed
-    for (int line_id=0; line_id < nb_pow_tr; ++line_id){
+    for (int row_id=0; row_id < nb_pow_tr; ++row_id){
         // build the rhs vector
-        for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, line_id); it; ++it)
+        for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, row_id); it; ++it)
         {
             const auto bus_id = it.row();
             if(mat_bus_id_(bus_id) == -1) continue;  // I don't add anything if it's the slack
@@ -269,21 +272,36 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
         _linear_solver.solve(dcYbus_noslack_, rhs, true);  // I don't need to refactorize the matrix (hence the `true`)
 
         // assign results to the PTDF matrix
-        PTDF(line_id, ind_no_slack) = rhs;
+        PTDF(row_id, ind_no_slack) = rhs;
 
         // reset the rhs vector to 0.
         rhs.array() = 0.;
         // rhs = RealVect::Zero(sizeYbus_without_slack_);
     }
+    timer_ptdf_ = timer.duration();
     // TODO PTDF: if the solver can solve the MAT directly, do that instead
     return PTDF;
 }
 
 template<class LinearSolver>
-Eigen::SparseMatrix<real_type> BaseDCAlgo<LinearSolver>::get_lodf(){
-    // TODO
-    return dcYbus_noslack_;
-
+RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
+                                           const IntVect & from_bus,
+                                           const IntVect & to_bus){
+    auto timer = CustTimer();
+    const RealMat PTDF = get_ptdf(dcYbus);  // size n_line x n_bus
+    RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
+    for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
+        LODF.col(line_id).array() = PTDF.col(from_bus(line_id)).array() - PTDF.col(to_bus(line_id)).array();
+        const real_type diag_coeff = LODF(line_id, line_id);
+        if (diag_coeff != 1.){
+            LODF.col(line_id).array() /= (1. - diag_coeff);
+            LODF(line_id, line_id) = -1.;
+        }else{
+            LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
+        }
+    }
+    timer_lodf_ = timer.duration();
+    return LODF;
 }
 
 template<class LinearSolver>

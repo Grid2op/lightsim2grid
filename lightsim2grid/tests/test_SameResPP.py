@@ -246,9 +246,13 @@ class MyTestCase(unittest.TestCase):
         try:
             baseMVA, bus, gen, branch, ref, pv, pq, on, gbus, _, refgen = _get_pf_variables_from_ppci(ppci)
         except ValueError:
-            # change in pandapower 2.12
-            baseMVA, bus, gen, branch, svc, tcsc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
-            
+            try:
+                # change in pandapower 2.12
+                baseMVA, bus, gen, branch, svc, tcsc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+            except ValueError:
+                # change in pandapower 2.14
+                baseMVA, bus, gen, branch, svc, tcsc, ssc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+        
         Va0 = bus[:, VA] * (np.pi / 180.)
         try:
             B, Bf, Pbusinj, Pfinj = makeBdc(bus, branch)

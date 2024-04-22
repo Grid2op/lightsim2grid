@@ -33,14 +33,16 @@ ErrorType CKTSOLinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
+ErrorType CKTSOLinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
     const long long *oparm = oparm_;
     int ret_ = CKTSO_CreateSolver(&solver_, &iparm_, &oparm);
     if (ret_ < 0){   // fail
         if (ret_ == -99){
             // fail to initialize because of a license issue
             std::string msg = "Fail to initilize the CKTSO solver because we cannot find the cktso.lic file. ";
-            msg += "Please copy this file at the location you want to use the CKTSO solver.";
+            msg += "Please copy this file at the location you want to use the CKTSO solver (the place where the lib is located). ";
+            msg += "See `import lightsim2grid; print(lightsim2grid.compilation_options.cktso_lib)` and then copy paste ";
+            msg += "the cktso/license/cktso.lib there. ";
             std::cout << msg << std::endl;
         }
         return ErrorType::LicenseError;
@@ -87,10 +89,9 @@ ErrorType CKTSOLinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     return err;
 }
 
-ErrorType CKTSOLinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
+ErrorType CKTSOLinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
     // with standard use of lightsim2grid, the solver should have already been initialized
-    // J is const even if it does not compile if said const
     int ret;
     bool stop = false;
     RealVect x;

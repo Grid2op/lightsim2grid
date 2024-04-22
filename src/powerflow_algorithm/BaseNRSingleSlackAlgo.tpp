@@ -393,7 +393,7 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_value_map(
     BaseNRAlgo<LinearSolver>::value_map_.reserve(BaseNRAlgo<LinearSolver>::J_.nonZeros());
 
     const int n_col = static_cast<int>(BaseNRAlgo<LinearSolver>::J_.cols());
-    unsigned int pos_el = 0;
+    // unsigned int pos_el = 0;
     for (int col_=0; col_ < n_col; ++col_){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(BaseNRAlgo<LinearSolver>::J_, col_); it; ++it)
         {
@@ -437,7 +437,7 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_value_map(
             }
 
             // go to the next element
-            ++pos_el;
+            // ++pos_el;
         }
     }
     // BaseNRAlgo<LinearSolver>::dS_dVa_.makeCompressed();

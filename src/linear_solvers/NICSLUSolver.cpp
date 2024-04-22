@@ -35,7 +35,7 @@ ErrorType NICSLULinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
     // default Eigen representation: column major, which is good for klu !
     const auto n = J.cols(); // should be equal to J_.nrows()
     int ret;
@@ -75,10 +75,9 @@ ErrorType NICSLULinearSolver::initialize(Eigen::SparseMatrix<real_type> & J){
     return err;
 }
 
-ErrorType NICSLULinearSolver::solve(Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
+ErrorType NICSLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
     // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
-    // J is const even if it does not compile if said const
     int ret;
     bool stop = false;
     RealVect x;

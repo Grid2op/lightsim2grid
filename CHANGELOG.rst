@@ -18,6 +18,23 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+[0.8.2] 2024-04-22
+--------------------
+- [FIXED] CI was broken after migration to artifact v4, set it back to v3 
+  (and make the names of the folder clearer)
+- [FIXED] CI when using latest pandapower version (2.14) which broke some previous tests
+- [ADDED] the computation of the LODF (line outage distribution factor) in 
+  lightsim2grid
+- [ADDED] some convenience functions to retrieve in a vectorized way the 
+  buses to which each elements of a given container is connected 
+  (*eg* `gridmodel.get_lines().get_bus_from()`)
+- [ADDED] more binaries (windows `arm64` and macos `arm64`)
+- [IMPROVED] remove some compilation warnings for clang
+- [IMPROVED] possibility to specify generator used as slack by its name when initializing
+  from `pypowsybl`.
+- [IMPROVED] removing some warnings when grid2op is not installed
+  (it should not raise any warning as lightsim2grid does not require grid2op)
+
 [0.8.1] 2024-03-26
 --------------------
 - [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2

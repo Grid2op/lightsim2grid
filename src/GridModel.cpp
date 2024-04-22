@@ -920,6 +920,17 @@ RealMat GridModel::get_ptdf(){
     return _dc_solver.get_ptdf(Ybus_dc_);
 }
 
+RealMat GridModel::get_lodf(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
+    }
+    IntVect from_bus(powerlines_.nb() + trafos_.nb());
+    IntVect to_bus(powerlines_.nb() + trafos_.nb());
+    from_bus << powerlines_.get_bus_from(), trafos_.get_bus_from();
+    to_bus << powerlines_.get_bus_to(), trafos_.get_bus_to();
+    return _dc_solver.get_lodf(Ybus_dc_, from_bus, to_bus);
+}
+
 Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
@@ -986,23 +997,23 @@ void GridModel::remove_gen_slackbus(int gen_id){
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
-void GridModel::update_bus_status(int nb_bus_before,
-                                  Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus)
-{
-    for(int bus_id = 0; bus_id < active_bus.rows(); ++bus_id)
-    {
-        if(active_bus(bus_id, 0)){
-            reactivate_bus(bus_id);
-        }else{
-            deactivate_bus(bus_id);
-        }
-        if(active_bus(bus_id, 1)){
-            reactivate_bus(bus_id + nb_bus_before);
-        }else{
-            deactivate_bus(bus_id + nb_bus_before);
-        }
-    }
-}
+// void GridModel::update_bus_status(int nb_bus_before,
+//                                   Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus)
+// {
+//     for(int bus_id = 0; bus_id < active_bus.rows(); ++bus_id)
+//     {
+//         if(active_bus(bus_id, 0)){
+//             reactivate_bus(bus_id);
+//         }else{
+//             deactivate_bus(bus_id);
+//         }
+//         if(active_bus(bus_id, 1)){
+//             reactivate_bus(bus_id + nb_bus_before);
+//         }else{
+//             deactivate_bus(bus_id + nb_bus_before);
+//         }
+//     }
+// }
 
 void GridModel::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)

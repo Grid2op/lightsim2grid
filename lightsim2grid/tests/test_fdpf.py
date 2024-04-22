@@ -30,8 +30,8 @@ class BaseFDPFTester:
         return FDPFMethod.XB
     
     def get_algo_pp(self):
-        # return "fdxb" if self.fdpf_meth == FDPFMethod.XB else "fdbx"  # in theory
-        return "fdbx" if self.fdpf_meth == FDPFMethod.XB else "fdxb"  # but.... https://github.com/e2nIEE/pandapower/issues/2142
+        return "fdxb" if self.fdpf_meth == FDPFMethod.XB else "fdbx"  # in theory
+        # return "fdbx" if self.fdpf_meth == FDPFMethod.XB else "fdxb"  # but.... https://github.com/e2nIEE/pandapower/issues/2142
     
     def get_network(self):
         return pn.case14()
@@ -82,7 +82,7 @@ class BaseFDPFTester:
         # convert pandapower net to ppc
         ppc, ppci = _pd2ppc(self.net)
         self.net["_ppc"] = ppc
-        baseMVA, bus, gen, branch, svc, tcsc, ref, pv, pq, *_, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+        baseMVA, bus, gen, branch, svc, tcsc, ssc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
         pp_Bp, pp_Bpp = makeB(baseMVA, bus, np.real(branch), self.alg)
         return pp_Bp, pp_Bpp, pv, pq, V0
         
@@ -113,6 +113,8 @@ class BaseFDPFTester:
         pp_Bpp = grid_Bpp[np.array([pq]).T, pq].tocsc()
         
         # check they match
+        # NB: if pandapower change signature of `_get_pf_variables_from_ppci`
+        # you might get weird error here
         assert np.abs(pp_Bp - ls_Bp).max() <= self.tol, f"error in Bp: max {np.abs(pp_Bp - ls_Bp).max():.2f}"
         assert np.abs(pp_Bpp - ls_Bpp).max() <= self.tol, f"error in Bpp: max {np.abs(pp_Bpp - ls_Bpp).max():.2f}"
         

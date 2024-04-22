@@ -74,12 +74,13 @@ Since version 0.5.3, lightsim2grid is can be installed like most python packages
 `python -m pip install lightsim2grid`
 
 It includes faster grid2op backend and the `SuiteSparse` faster `KLU` solver, even on windows. This is definitely the 
-easiest method to install lightsim2grid on your system and have it running without too much issues.
+easiest method to install lightsim2grid on your system and have it running.
 
 Note though that these packages have been compiled on a different platform that the one you are using. You might still
-get some benefit (in terms of performances) to install it from your on your machine.
+get some benefit (in terms of performances) to install it from your on your machine with the proper compilations flags (
+see section [6.1 Customization of the compilation](#Customization-of-the-compilation) for more information)
 
-Pypi packages are available for linux, windows and macos with python versions: 
+Pypi packages are available for linux (`x86_64` cpu architecture), windows (`x86_64` cpu architecture) and macos (`x86_64` cpu architecture) with python versions: 
 
 - 3.7
 - 3.8
@@ -88,8 +89,17 @@ Pypi packages are available for linux, windows and macos with python versions:
 - 3.11 (lightsim2grid >= 0.7.1)
 - 3.12 (lightsim2grid >= 0.7.5)
 
+
+As from version 0.8.2, we also distribute windows `arm64` and macos `arm64` binaries of lightsim2grid that can be installed
+directly with pip too (requires python >= 3.8 for macos and python >= 3.9 for windows). We do not currently produce `arm64` (`aarch64`) linux binaries because it takes too long to build. If you really want them, let us know and we'll see what we can do.
+
+
 **NB** on some version of MacOs (thanks Apple !), especially the one using M1 or M2 chip, lightsim2grid is only available
-on pypi starting from version 0.7.3
+on pypi starting from version 0.7.3 We attempted to deliver arm64 lightsim2grid version but we could not test them. So if you 
+want a reliable working and tested version of lightsim2grid on newest version of macos (with M1 or M2 chips for example) please
+use lightsim2grid >= 0.8.2
+
+**NB** we do not currently build any 32 bits lightsim2grid libraries.
 
 ## Installation (from source, for more advanced user)
 
@@ -222,7 +232,7 @@ For example: `export PATH_NICSLU=/home/user/Documents/cktso`
 
 #### Enable 03 optimization
 By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
-to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` before the compilation (so before
+to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` (or `$Env:__O3_OPTIM=1` in powershell) before the compilation (so before
 `python3 setup.py build` or `python -m pip install -e .`)
 
 This compilation argument will increase the compilation time, but will make the package faster.

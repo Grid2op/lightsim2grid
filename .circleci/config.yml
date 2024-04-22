@@ -200,6 +200,11 @@ jobs:
                     CC=gcc python setup.py build
                     python -m pip install .[test]
             - run:
+                name: "Show package versions"
+                command: |
+                    source venv_test/bin/activate
+                    pip freeze
+            - run:
                 name: "make tests"
                 command: |
                     source venv_test/bin/activate
@@ -381,6 +386,11 @@ jobs:
                     CC=clang python setup.py build
                     CC=clang python -m pip install -e .[test]
             - run:
+                name: "Show package versions"
+                command: |
+                    source venv_test/bin/activate
+                    pip freeze
+            - run:
                 name: "make tests"
                 command: |
                     source venv_test/bin/activate
@@ -418,6 +428,7 @@ jobs:
                     git submodule update
                     python setup.py build
                     python -m pip install -e .[test]
+                    pip freeze
             - run:
                 name: "make tests"
                 command: |

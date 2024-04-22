@@ -289,8 +289,6 @@ class DCLineContainer : public GenericContainer
     }
 
     const std::vector<bool>& get_status() const {return status_;}
-    const Eigen::VectorXi & get_bus_id_or() const {return from_gen_.get_bus_id();}
-    const Eigen::VectorXi & get_bus_id_ex() const {return to_gen_.get_bus_id();}
     
     tuple3d get_or_res() const {return from_gen_.get_res();}
     tuple3d get_ex_res() const {return to_gen_.get_res();}
@@ -299,6 +297,8 @@ class DCLineContainer : public GenericContainer
     
     Eigen::Ref<const RealVect> get_theta_or() const {return from_gen_.get_theta();}
     Eigen::Ref<const RealVect> get_theta_ex() const {return to_gen_.get_theta();}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return from_gen_.get_bus_id();}
+    Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return to_gen_.get_bus_id();}
 
     protected:
         // it is modeled as 2 generators that are "linked" together

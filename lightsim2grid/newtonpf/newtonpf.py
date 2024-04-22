@@ -39,7 +39,7 @@ def _get_valid_solver(options, Ybus):
     else:
         solver = KLUSolverSingleSlack() if KLU_solver_available else SparseLUSolverSingleSlack()
 
-    if ~sparse.isspmatrix_csc(Ybus):
+    if not sparse.isspmatrix_csc(Ybus):
         Ybus = sparse.csc_matrix(Ybus)
 
     if not Ybus.has_canonical_format:

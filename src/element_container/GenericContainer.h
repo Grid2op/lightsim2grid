@@ -116,6 +116,34 @@ class GenericContainer : public BaseConstants
         std::vector<std::string> names_;
 
     protected:
+        template<typename Cont, typename FunName, typename IntType>
+        // todo automatically "unwrap" IntType to be either cont::size_type for stl container and
+        // Eigen::Index for Eigen containers
+        void _check_in_range(IntType el_id, const Cont& cont, FunName fun_name="") const
+        {
+            // TODO debug mode: only in debug mode
+            if(el_id >= cont.size())
+            {
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::"<<fun_name<<": Cannot access element with id";
+                exc_ << el_id;
+                exc_ << " while the grid counts ";
+                exc_ << cont.size();
+                exc_ << " such elements (id too high)";
+                throw std::out_of_range(exc_.str());
+            }
+            if(el_id < 0)
+            {
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::"<< fun_name <<" Cannot change the bus of element with id ";
+                exc_ << el_id;
+                exc_ << " (id should be >= 0)";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+
         /**
         activation / deactivation of elements
         **/

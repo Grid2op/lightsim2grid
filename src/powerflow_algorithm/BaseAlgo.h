@@ -33,6 +33,7 @@ class GridModel;
 typedef std::tuple<double, double, double, double, 
                    double, double, double, double, 
                    double> TimerJacType;
+typedef std::tuple<double, double, double> TimerPTDFLODFType;
 
 /**
 This class represents a algorithm to compute powerflow.
@@ -104,6 +105,16 @@ class BaseAlgo : public BaseConstants
             };
             return res;
         }
+        
+        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const
+        {
+            TimerPTDFLODFType res = {
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+            };
+            return res;
+        }
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -124,7 +135,9 @@ class BaseAlgo : public BaseConstants
         virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
             throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
         }
-        virtual Eigen::SparseMatrix<real_type> get_lodf(){  // TODO interface is likely to change
+        virtual RealMat get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
+                                 const IntVect & from_bus,
+                                 const IntVect & to_bus){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the LODF matrix with this solver type.");
         }
         virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change

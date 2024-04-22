@@ -315,9 +315,32 @@ The results can be found in:
   :maxdepth: 1
   :caption: For a laptop with a i7 of 2015 wth a frequency of 2.70 GHz
 
-  benchmark_solver/ubuntu_2004_dell/ls0.8.1_glop1.10.0
+  benchmark_solver/ubuntu_2004_dell/ls0.8.1_glop1.10.1
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.10.0
   benchmark_solver/ubuntu_2004_dell/ls0.8.0_glop1.9.8
+
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a i7 of 2014 wth a frequency of 3.0 GHz
+
+  benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1
+  benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py311
+  benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py312
+
+.. note::
+  Any contribution here is more than welcomed. You can write a github discussion here 
+  https://github.com/BDonnot/lightsim2grid/discussions/new?category=show-and-tell 
+  and describe rapidly your setup and we'll make sure to include your benchmark in future release.
+
+  Thanks !
+
+.. toctree::
+  :maxdepth: 1
+  :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
+
+  benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.7_py38
+  benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.6_py38
+  benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.5_py38
 
 Benchmarks of other lightsim2grid functions
 --------------------------------------------

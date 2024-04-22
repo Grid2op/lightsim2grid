@@ -53,6 +53,7 @@ class BaseBatchSolverSynch
             }
 
         BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
+        virtual ~BaseBatchSolverSynch() = default;  // to avoid warning about overload virtual
     
         // solver "control"
         void change_solver(const SolverType & type){

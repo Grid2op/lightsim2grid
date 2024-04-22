@@ -75,7 +75,6 @@ class TestCase14SLU(unittest.TestCase):
             assert solve_error <= self.tol, f"error for line {line_id}: {solve_error:.2e}MW"
         # test powerflow are correct
         res_ptdf2 = np.dot(PTDF2, self.dcSbus * self.gridmodel.get_sn_mva())
-        np.where(np.abs(res_ptdf2 - self.res_powerflow) >= 1e3)
         assert np.abs(res_ptdf2 - self.res_powerflow).max() <= self.tol, f"max error for powerflow: {np.abs(res_ptdf2 - self.res_powerflow).max():.2e}MW"
 
 

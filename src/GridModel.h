@@ -303,6 +303,8 @@ class GridModel : public GenericContainer
                        real_type tol  // not used for DC
                        );
         RealMat get_ptdf();
+        RealMat get_lodf();
+        
         Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow
@@ -558,10 +560,13 @@ class GridModel : public GenericContainer
         real_type get_computation_time() const{ return _solver.get_computation_time();}
         real_type get_dc_computation_time() const{ return _dc_solver.get_computation_time();}
 
+    // private:
+    //     using GenericContainer::update_bus_status;  // to silence clang warnings (overload-virtual)
+    // public:
+    //     void update_bus_status(int nb_bus_before,
+    //                            Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
-        void update_bus_status(int nb_bus_before,
-                               Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
         void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                            Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         void update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
@@ -659,10 +664,16 @@ class GridModel : public GenericContainer
         }
 
         //for FDPF
+    private:
+        using GenericContainer::fillBp_Bpp;  // silence clang warning overload-virtual
+    public:
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                         Eigen::SparseMatrix<real_type> & Bpp, 
                         FDPFMethod xb_or_bx) const;
 
+    private:
+        using GenericContainer::fillBf_for_PTDF;  // silence clang warning overload-virtual
+    public:
         void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose=false) const;
 
         Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
@@ -714,6 +725,9 @@ class GridModel : public GenericContainer
                             const Eigen::VectorXi & slack_bus_id_me,
                             Eigen::VectorXi & slack_bus_id_solver
                         );
+    private:
+        using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
+    protected:
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
         void fillpv_pq(const std::vector<int>& id_me_to_solver,

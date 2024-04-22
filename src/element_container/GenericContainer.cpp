@@ -29,38 +29,25 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
 }
 
 void GenericContainer::_reactivate(int el_id, std::vector<bool> & status){
-    bool val = status.at(el_id);
-    status.at(el_id) = true;  //TODO why it's needed to do that again
+    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+                    status,
+                    "_reactivate");
+    status[el_id] = true;  //TODO why it's needed to do that again
 }
 
 void GenericContainer::_deactivate(int el_id, std::vector<bool> & status){
-    bool val = status.at(el_id);
-    status.at(el_id) = false;  //TODO why it's needed to do that again
+    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+                    status,
+                    "_deactivate");
+    status[el_id] = false;
 }
 
 void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
-    if(el_id >= el_bus_ids.size())
-    {
-        // TODO DEBUG MODE: only check in debug mode
-        std::ostringstream exc_;
-        exc_ << "GenericContainer::_change_bus: Cannot change the bus of element with id ";
-        exc_ << el_id;
-        exc_ << " while the grid counts ";
-        exc_ << el_bus_ids.size();
-        exc_ << " such elements (id too high)";
-        throw std::out_of_range(exc_.str());
-    }
-    if(el_id < 0)
-    {
-        // TODO DEBUG MODE: only check in debug mode
-        std::ostringstream exc_;
-        exc_ << "GenericContainer::_change_bus: Cannot change the bus of element with id ";
-        exc_ << el_id;
-        exc_ << " (id should be >= 0)";
-        throw std::out_of_range(exc_.str());
-    }
+    _check_in_range(static_cast<Eigen::Index>(el_id),
+                    el_bus_ids,
+                    "_change_bus");
 
     // throw error: bus id does not exist
     if(new_bus_me_id >= nb_bus)
@@ -98,8 +85,11 @@ void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi
 
 int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const
 {
+    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+                    status_,
+                    "_get_bus");
     int res;
-    bool val = status_.at(el_id);  // also check if the el_id is out of bound
+    bool val = status_[el_id];  // also check if the el_id is out of bound
     if(!val) res = _deactivated_bus_id;
     else{
         res = bus_id_(el_id);

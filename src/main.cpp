@@ -446,6 +446,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str())
         .def("get_timers", &ChooseSolver::get_timers, "TODO")
         .def("get_timers_jacobian", &ChooseSolver::get_timers_jacobian, "TODO")
+        .def("get_timers_ptdf_lodf", &ChooseSolver::get_timers_ptdf_lodf, "TODO")
         .def("get_fdpf_xb_lu", &ChooseSolver::get_fdpf_xb_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())  // TODO this for all solver !
         .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 
@@ -453,9 +454,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<GeneratorContainer>(m, "GeneratorContainer", DocIterator::GeneratorContainer.c_str())
         .def("__len__", [](const GeneratorContainer & data) { return data.nb(); })
         .def("__getitem__", [](const GeneratorContainer & data, int k){return data[k]; } )
-        .def("__iter__", [](const GeneratorContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+        .def("__iter__", [](const GeneratorContainer & data)  {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_id", &GeneratorContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        ; 
 
     py::class_<GeneratorContainer::GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
         .def_readonly("id", &GeneratorContainer::GenInfo::id, DocIterator::id.c_str())
@@ -481,8 +484,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__len__", [](const SGenContainer & data) { return data.nb(); })
         .def("__getitem__", [](const SGenContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const SGenContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_id", &SGenContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        ; 
 
     py::class_<SGenContainer::SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
         .def_readonly("id", &SGenContainer::SGenInfo::id, DocIterator::id.c_str())
@@ -506,8 +511,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__len__", [](const LoadContainer & data) { return data.nb(); })
         .def("__getitem__", [](const LoadContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const LoadContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_id", &LoadContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        ; 
 
     py::class_<LoadContainer::LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
         .def_readonly("id", &LoadContainer::LoadInfo::id, DocIterator::id.c_str())
@@ -527,8 +534,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__len__", [](const ShuntContainer & data) { return data.nb(); })
         .def("__getitem__", [](const ShuntContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const ShuntContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_id", &ShuntContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        ; 
 
     py::class_<ShuntContainer::ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
         .def_readonly("id", &ShuntContainer::ShuntInfo::id, DocIterator::id.c_str())
@@ -548,8 +557,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__len__", [](const TrafoContainer & data) { return data.nb(); })
         .def("__getitem__", [](const TrafoContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const TrafoContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_from", &TrafoContainer::get_bus_from, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_to", &TrafoContainer::get_bus_to, "TODO doc", py::keep_alive<0, 1>())
+        ; 
 
     py::class_<TrafoContainer::TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
         .def_readonly("id", &TrafoContainer::TrafoInfo::id, DocIterator::id.c_str())
@@ -580,8 +592,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__len__", [](const LineContainer & data) { return data.nb(); })
         .def("__getitem__", [](const LineContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const LineContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_from", &LineContainer::get_bus_from, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_to", &LineContainer::get_bus_to, "TODO doc", py::keep_alive<0, 1>());
 
     py::class_<LineContainer::LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineContainer::LineInfo::id, DocIterator::id.c_str())
@@ -611,8 +625,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__len__", [](const DCLineContainer & data) { return data.nb(); })
         .def("__getitem__", [](const DCLineContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const DCLineContainer & data) {
-       return py::make_iterator(data.begin(), data.end());
-    }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def("get_bus_from", &DCLineContainer::get_bus_from)
+        .def("get_bus_to", &DCLineContainer::get_bus_to);
 
     py::class_<DCLineContainer::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DCLineContainer::DCLineInfo::id, DocIterator::id.c_str())
@@ -895,11 +911,12 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
         .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_lodf", &GridModel::get_lodf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
         .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
 
          // apply action faster (optimized for grid2op representation)
          // it is not recommended to use it outside of grid2Op.
-        .def("update_bus_status", &GridModel::update_bus_status, DocGridModel::_internal_do_not_use.c_str())
+        // .def("update_bus_status", &GridModel::update_bus_status, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_p", &GridModel::update_gens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_sgens_p", &GridModel::update_sgens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_v", &GridModel::update_gens_v, DocGridModel::_internal_do_not_use.c_str())
