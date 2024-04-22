@@ -28,6 +28,7 @@ Change Log
 - [ADDED] some convenience functions to retrieve in a vectorized way the 
   buses to which each elements of a given container is connected 
   (*eg* `gridmodel.get_lines().get_bus_from()`)
+- [ADDED] more binaries (windows `arm64` and macos `arm64`)
 - [IMPROVED] remove some compilation warnings for clang
 - [IMPROVED] possibility to specify generator used as slack by its name when initializing
   from `pypowsybl`.

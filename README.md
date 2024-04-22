@@ -91,7 +91,7 @@ Pypi packages are available for linux (`x86_64` cpu architecture), windows (`x86
 
 
 As from version 0.8.2, we also distribute windows `arm64` and macos `arm64` binaries of lightsim2grid that can be installed
-directly with pip too (requires python >= 3.8). We do not currently produce `arm64` (`aarch64`) linux binaries because it takes too long to build. If you really want them, let us know and we'll see what we can do.
+directly with pip too (requires python >= 3.8 for macos and python >= 3.9 for windows). We do not currently produce `arm64` (`aarch64`) linux binaries because it takes too long to build. If you really want them, let us know and we'll see what we can do.
 
 
 **NB** on some version of MacOs (thanks Apple !), especially the one using M1 or M2 chip, lightsim2grid is only available
