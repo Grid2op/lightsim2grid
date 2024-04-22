@@ -35,7 +35,7 @@ except ImportError:
 
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
-
+DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
 solver_names = {lightsim2grid.SolverType.GaussSeidel: "GS",
@@ -95,7 +95,8 @@ def main(max_ts,
          test=True,
          no_gs=False,
          no_gs_synch=False,
-         no_pp=False):
+         no_pp=False,
+         save_results=DONT_SAVE):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
 
@@ -183,6 +184,9 @@ def main(max_ts,
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
         print(res_use_with_grid2op_1)
+        if save_results != DONT_SAVE:
+            with open(save_results, "w", encoding="utf-8") as f:
+                f.write(res_use_with_grid2op_1)
     else:
         print(tab)
     print()
@@ -237,14 +241,26 @@ if __name__ == "__main__":
     parser.add_argument('--no_pp', type=str2bool, nargs='?',
                         const=True, default=False,
                         help='Do not benchmark pandapower method (default: evaluate it)')
+<<<<<<< HEAD
+    parser.add_argument("--save_results", default=DONT_SAVE, type=str,
+                        help='Name of the file in which you want to save the result table')
+=======
+>>>>>>> master
     args = parser.parse_args()
 
     max_ts = int(args.number)
     env_name = str(args.env_name)
     test_env = not args.no_test
+<<<<<<< HEAD
+    main(max_ts, name, test_env,
+         no_gs=args.no_gs, no_gs_synch=args.no_gs_synch,
+         no_pp=args.no_pp,
+         save_results=args.save_results)
+=======
     main(max_ts,
          env_name,
          test_env,
          no_gs=args.no_gs,
          no_gs_synch=args.no_gs_synch,
          no_pp=args.no_pp)
+>>>>>>> master
