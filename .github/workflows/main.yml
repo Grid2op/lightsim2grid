@@ -414,11 +414,11 @@ jobs:
             whl_nm: windows_arm64,
             cibuildwheel: windows
           }
-          # - {
-          #   name: ubuntu-latest,
-          #   whl_nm: linux_arm64,
-          #   cibuildwheel: linux
-          # }
+          - {
+            name: ubuntu-latest,
+            whl_nm: linux_arm64,
+            cibuildwheel: linux
+          }
         python:
           - {
             name: cp38,
@@ -441,19 +441,22 @@ jobs:
             version: '3.12',
           }
         exclude:
-          # because already done natively above
           - python: 
-              name: cp10
+              name: cp310  # because already done natively above
             runner:
               name: macos-14
           - python: 
-              name: cp11
+              name: cp311  # because already done natively above
             runner:
               name: macos-14
           - python: 
-              name: cp12
+              name: cp312  # because already done natively above
             runner:
               name: macos-14
+          - python: 
+              name: cp38  # does not work
+            runner:
+              name: windows-2019
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
