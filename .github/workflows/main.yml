@@ -406,21 +406,24 @@ jobs:
         runner:
           # - {
           #   name: macos-14,  # amd64
+          #   whl_nm: macos_arm64,
           #   cibuildwheel: macos
           # }
           - {
             name: windows-2019,
+            whl_nm: windows_arm64,
             cibuildwheel: windows
           }
           # - {
           #   name: ubuntu-latest,
+          #   whl_nm: linux_arm64,
           #   cibuildwheel: linux
           # }
         python:
-          # - {
-          #   name: cp38,
-          #   version: '3.8',
-          # }
+          - {
+            name: cp38,
+            version: '3.8',
+          }
           - {
             name: cp39,
             version: '3.9',
@@ -500,7 +503,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-${{ matrix.runner.arch}}-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
 
   package:
