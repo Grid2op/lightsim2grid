@@ -264,137 +264,137 @@ jobs:
 
   # macos_build_37_:
     # build wheel for python 3.7 and above for macos (only >= 3.10 for arm64 )
-    name: Build darwin ${{ matrix.python.name }} wheel on ${{ matrix.runner.arch}}
-    runs-on: ${{ matrix.runner.name }}
-    strategy:
-      matrix:
-        python:
-          - {
-            name: cp37,
-            version: '3.7',
-          }
-          - {
-            name: cp38,
-            version: '3.8',
-          }
-          - {
-            name: cp39,
-            version: '3.9',
-          }
-          - {
-            name: cp310,
-            version: '3.10',
-          }
-          - {
-            name: cp311,
-            version: '3.11',
-          }
-          - {
-            name: cp312,
-            version: '3.12',
-          }
-        runner:
-          - {
-            name: macos-13,
-            arch: x86_64
-          }
-          - {
-            name: macos-14,
-            arch: arm64
-          }
-        exclude:
-          - python: 
-              name: cp37
-            runner:
-              arch: arm64
-          - python: 
-              name: cp38
-            runner:
-              arch: arm64
-          - python: 
-              name: cp39
-            runner:
-              arch: arm64
+    # name: Build darwin ${{ matrix.python.name }} wheel on ${{ matrix.runner.arch}}
+    # runs-on: ${{ matrix.runner.name }}
+    # strategy:
+    #   matrix:
+    #     python:
+    #       - {
+    #         name: cp37,
+    #         version: '3.7',
+    #       }
+    #       - {
+    #         name: cp38,
+    #         version: '3.8',
+    #       }
+    #       - {
+    #         name: cp39,
+    #         version: '3.9',
+    #       }
+    #       - {
+    #         name: cp310,
+    #         version: '3.10',
+    #       }
+    #       - {
+    #         name: cp311,
+    #         version: '3.11',
+    #       }
+    #       - {
+    #         name: cp312,
+    #         version: '3.12',
+    #       }
+    #     runner:
+    #       - {
+    #         name: macos-13,
+    #         arch: x86_64
+    #       }
+    #       - {
+    #         name: macos-14,
+    #         arch: arm64
+    #       }
+    #     exclude:
+    #       - python: 
+    #           name: cp37
+    #         runner:
+    #           arch: arm64
+    #       - python: 
+    #           name: cp38
+    #         runner:
+    #           arch: arm64
+    #       - python: 
+    #           name: cp39
+    #         runner:
+    #           arch: arm64
 
-    env:
-      RUNNER_OS: ${{ matrix.runner.name }}
-      PYTHON_VERSION: ${{ matrix.python.version }}
+    # env:
+    #   RUNNER_OS: ${{ matrix.runner.name }}
+    #   PYTHON_VERSION: ${{ matrix.python.version }}
 
-    steps:
+    # steps:
 
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          submodules: true
+    #   - name: Checkout sources
+    #     uses: actions/checkout@v4
+    #     with:
+    #       submodules: true
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python.version }}
+    #   - name: Setup Python
+    #     uses: actions/setup-python@v5
+    #     with:
+    #       python-version: ${{ matrix.python.version }}
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools  # for python >= 3.12
-          python -m pip install -r requirements.txt
+    #   - name: Install Python dependencies
+    #     run: |
+    #       python -m pip install --upgrade pip
+    #       python -m pip install --upgrade setuptools  # for python >= 3.12
+    #       python -m pip install -r requirements.txt
 
-      - name: Compile SuiteSparse make
-        run: |
-          make
-          export __O3_OPTIM=1
-          python setup.py build
+    #   - name: Compile SuiteSparse make
+    #     run: |
+    #       make
+    #       export __O3_OPTIM=1
+    #       python setup.py build
 
-      - name: Build wheel
-        run: python setup.py bdist_wheel
+    #   - name: Build wheel
+    #     run: python setup.py bdist_wheel
 
-      - name: Install wheel
-        shell: bash
-        run: |
-          python -m pip install dist/*.whl --user
-          python -m pip freeze
+    #   - name: Install wheel
+    #     shell: bash
+    #     run: |
+    #       python -m pip install dist/*.whl --user
+    #       python -m pip freeze
 
-      - name: Check package can be imported (bare install)
-        run: |
-          mkdir tmp_for_import_checking
-          cd tmp_for_import_checking
-          python -c "import lightsim2grid"
-          python -c "from lightsim2grid import *"
-          python -c "from lightsim2grid.newtonpf import newtonpf"
-          python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
-          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
-          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python -c "from lightsim2grid.gridmodel import init, GridModel"
+    #   - name: Check package can be imported (bare install)
+    #     run: |
+    #       mkdir tmp_for_import_checking
+    #       cd tmp_for_import_checking
+    #       python -c "import lightsim2grid"
+    #       python -c "from lightsim2grid import *"
+    #       python -c "from lightsim2grid.newtonpf import newtonpf"
+    #       python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+    #       python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+    #       python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+    #       python -c "from lightsim2grid.gridmodel import init, GridModel"
       
-      - name: Fix urllib3 (python 3.7)
-        if: matrix.python.name == 'cp37'
-        run:
-          pip install urllib3==1.26.6
-          # otherwise urllib3 v2.0 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'OpenSSL 1.0.2k-fips  26 Jan 2017'
+    #   - name: Fix urllib3 (python 3.7)
+    #     if: matrix.python.name == 'cp37'
+    #     run:
+    #       pip install urllib3==1.26.6
+    #       # otherwise urllib3 v2.0 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'OpenSSL 1.0.2k-fips  26 Jan 2017'
 
-      - name: Install grid2op
-        run: | 
-          python -m pip install grid2op
-          python -m pip freeze
+    #   - name: Install grid2op
+    #     run: | 
+    #       python -m pip install grid2op
+    #       python -m pip freeze
 
-      - name: Check extra can be imported can be imported (with grid2op)
-        run: |
-          cd tmp_for_import_checking
-          python -v -c "from lightsim2grid import LightSimBackend"
-          python -c "from lightsim2grid.timeSerie import TimeSerie"
-          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
-          python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
-          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+    #   - name: Check extra can be imported can be imported (with grid2op)
+    #     run: |
+    #       cd tmp_for_import_checking
+    #       python -v -c "from lightsim2grid import LightSimBackend"
+    #       python -c "from lightsim2grid.timeSerie import TimeSerie"
+    #       python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
+    #       python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
+    #       python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
       
-      - name: Check LightSimBackend can be used to create env
-        run: |
-          cd tmp_for_import_checking
-          python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
+    #   - name: Check LightSimBackend can be used to create env
+    #     run: |
+    #       cd tmp_for_import_checking
+    #       python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
-      - name: Upload wheel
-        uses: actions/upload-artifact@v3
-        with:
-          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
-          path: dist/*.whl
+    #   - name: Upload wheel
+    #     uses: actions/upload-artifact@v3
+    #     with:
+    #       name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
+    #       path: dist/*.whl
 
   exotic_build:
     # build wheel using emulation for "exotic"things
