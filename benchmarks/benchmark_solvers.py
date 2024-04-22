@@ -241,26 +241,17 @@ if __name__ == "__main__":
     parser.add_argument('--no_pp', type=str2bool, nargs='?',
                         const=True, default=False,
                         help='Do not benchmark pandapower method (default: evaluate it)')
-<<<<<<< HEAD
     parser.add_argument("--save_results", default=DONT_SAVE, type=str,
                         help='Name of the file in which you want to save the result table')
-=======
->>>>>>> master
     args = parser.parse_args()
 
     max_ts = int(args.number)
     env_name = str(args.env_name)
     test_env = not args.no_test
-<<<<<<< HEAD
-    main(max_ts, name, test_env,
-         no_gs=args.no_gs, no_gs_synch=args.no_gs_synch,
-         no_pp=args.no_pp,
-         save_results=args.save_results)
-=======
     main(max_ts,
          env_name,
          test_env,
          no_gs=args.no_gs,
          no_gs_synch=args.no_gs_synch,
-         no_pp=args.no_pp)
->>>>>>> master
+         no_pp=args.no_pp,
+         save_results=args.save_results)

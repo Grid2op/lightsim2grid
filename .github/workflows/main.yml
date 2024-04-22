@@ -263,7 +263,7 @@ jobs:
           path: dist/*.whl
 
   macos_build_37_:
-    build wheel for python 3.7 and above for macos (only >= 3.10 for arm64 )
+    ## build wheel for python 3.7 and above for macos (only >= 3.10 for arm64 )
     name: Build darwin ${{ matrix.python.name }} wheel on ${{ matrix.runner.arch}}
     runs-on: ${{ matrix.runner.name }}
     strategy:
@@ -303,15 +303,15 @@ jobs:
             arch: arm64
           }
         exclude:
-          - python: 
-              name: cp37
+          - python:  # does not work
+              name: cp37  
             runner:
               arch: arm64
-          - python: 
-              name: cp38
-            runner:
+          - python:  # does not work
+              name: cp38  
+            runner: 
               arch: arm64
-          - python: 
+          - python:  # does not work
               name: cp39
             runner:
               arch: arm64
