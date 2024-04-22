@@ -38,21 +38,34 @@ ENV_NAME = "rte_case14_realistic"
 DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
-solver_names = {lightsim2grid.SolverType.GaussSeidel: "LS+GS",
-                lightsim2grid.SolverType.GaussSeidelSynch: "LS+GS S",
-                lightsim2grid.SolverType.SparseLU: "LS+SLU ",
-                lightsim2grid.SolverType.KLU: "LS+KLU",
-                lightsim2grid.SolverType.NICSLU: "LS+NICSLU",
-                lightsim2grid.SolverType.SparseLUSingleSlack: "LS+SLU (single)",
-                lightsim2grid.SolverType.KLUSingleSlack: "LS+KLU (single)",
-                lightsim2grid.SolverType.NICSLUSingleSlack: "LS+NICSLU (single)",
-                lightsim2grid.SolverType.CKTSO: "LS+CKTSO",
-                lightsim2grid.SolverType.CKTSOSingleSlack: "LS+CKTSO (single)",
+solver_names = {lightsim2grid.SolverType.GaussSeidel: "GS",
+                lightsim2grid.SolverType.GaussSeidelSynch: "GS synch",
+                lightsim2grid.SolverType.SparseLU: "NR (SLU)",
+                lightsim2grid.SolverType.KLU: "NR (KLU)",
+                lightsim2grid.SolverType.NICSLU: "NR (NICSLU *)",
+                lightsim2grid.SolverType.CKTSO: "NR (CKTSO *)",
+                lightsim2grid.SolverType.SparseLUSingleSlack: "NR single (SLU)",
+                lightsim2grid.SolverType.KLUSingleSlack: "NR single (KLU)",
+                lightsim2grid.SolverType.NICSLUSingleSlack: "NR single (NICSLU *)",
+                lightsim2grid.SolverType.CKTSOSingleSlack: "NR single (CKTSO *)",
+                lightsim2grid.SolverType.FDPF_XB_SparseLU: "FDPF XB (SLU)",
+                lightsim2grid.SolverType.FDPF_BX_SparseLU: "FDPF BX (SLU)",
+                lightsim2grid.SolverType.FDPF_XB_KLU: "FDPF XB (KLU)",
+                lightsim2grid.SolverType.FDPF_BX_KLU: "FDPF BX (KLU)",
+                lightsim2grid.SolverType.FDPF_XB_NICSLU: "FDPF XB (NICSLU *)",
+                lightsim2grid.SolverType.FDPF_BX_NICSLU: "FDPF BX (NICSLU *)",
+                lightsim2grid.SolverType.FDPF_XB_CKTSO: "FDPF XB (CKTSO *)",
+                lightsim2grid.SolverType.FDPF_BX_CKTSO: "FDPF BX (CKTSO *)",
                 # lightsim2grid.SolverType.DC: "LS+DC",
                 # lightsim2grid.SolverType.KLUDC: "LS+SLU",
                 # lightsim2grid.SolverType.NICSLUDC: "LS+SLU"
                 }
 solver_gs = {lightsim2grid.SolverType.GaussSeidelSynch, lightsim2grid.SolverType.GaussSeidel}
+solver_fdpf = {lightsim2grid.SolverType.FDPF_XB_SparseLU, lightsim2grid.SolverType.FDPF_BX_SparseLU,
+               lightsim2grid.SolverType.FDPF_XB_KLU, lightsim2grid.SolverType.FDPF_BX_KLU,
+               lightsim2grid.SolverType.FDPF_XB_NICSLU, lightsim2grid.SolverType.FDPF_BX_NICSLU,
+               lightsim2grid.SolverType.FDPF_XB_CKTSO, lightsim2grid.SolverType.FDPF_BX_CKTSO,
+               }
 res_times = {}
 
 order_solver_print = [
@@ -66,10 +79,20 @@ order_solver_print = [
     lightsim2grid.SolverType.NICSLU,
     lightsim2grid.SolverType.CKTSOSingleSlack,
     lightsim2grid.SolverType.CKTSO,
+    lightsim2grid.SolverType.FDPF_XB_SparseLU,
+    lightsim2grid.SolverType.FDPF_BX_SparseLU,
+    lightsim2grid.SolverType.FDPF_XB_KLU,
+    lightsim2grid.SolverType.FDPF_BX_KLU,
+    lightsim2grid.SolverType.FDPF_XB_NICSLU,
+    lightsim2grid.SolverType.FDPF_BX_NICSLU,
+    lightsim2grid.SolverType.FDPF_XB_CKTSO,
+    lightsim2grid.SolverType.FDPF_BX_CKTSO,
 ]
 
 
-def main(max_ts, env_name_input, test=True,
+def main(max_ts,
+         env_name_input,
+         test=True,
          no_gs=False,
          no_gs_synch=False,
          no_pp=False,
@@ -121,6 +144,9 @@ def main(max_ts, env_name_input, test=True,
             elif lightsim2grid.SolverType.GaussSeidelSynch  == solver_type and no_gs_synch:
                 # I don't study the gauss seidel synch solver
                 continue
+        elif solver_type in solver_fdpf:
+            # gauss seidel sovler => more iterations
+            env_lightsim.backend.set_solver_max_iter(30)
         else:
             # NR based solver => less iterations
             env_lightsim.backend.set_solver_max_iter(10)
@@ -190,7 +216,6 @@ def main(max_ts, env_name_input, test=True,
         print(res_use_with_grid2op_2)
     else:
         print(tab)
-
     print()
 
 
@@ -199,7 +224,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Benchmark of lightsim with a "do nothing" agent '
                                                  '(compare multiple lightsim solvers with default grid2op backend '
                                                  'PandaPower)')
-    parser.add_argument('--name', default=ENV_NAME, type=str,
+    parser.add_argument('--env_name', default=ENV_NAME, type=str,
                         help='Environment name to be used for the benchmark.')
     parser.add_argument('--number', type=int, default=MAX_TS,
                         help='Maximum number of time steps for which the benchmark will be run.')
@@ -216,14 +241,26 @@ if __name__ == "__main__":
     parser.add_argument('--no_pp', type=str2bool, nargs='?',
                         const=True, default=False,
                         help='Do not benchmark pandapower method (default: evaluate it)')
+<<<<<<< HEAD
     parser.add_argument("--save_results", default=DONT_SAVE, type=str,
                         help='Name of the file in which you want to save the result table')
+=======
+>>>>>>> master
     args = parser.parse_args()
 
     max_ts = int(args.number)
-    name = str(args.name)
+    env_name = str(args.env_name)
     test_env = not args.no_test
+<<<<<<< HEAD
     main(max_ts, name, test_env,
          no_gs=args.no_gs, no_gs_synch=args.no_gs_synch,
          no_pp=args.no_pp,
          save_results=args.save_results)
+=======
+    main(max_ts,
+         env_name,
+         test_env,
+         no_gs=args.no_gs,
+         no_gs_synch=args.no_gs_synch,
+         no_pp=args.no_pp)
+>>>>>>> master

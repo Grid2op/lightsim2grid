@@ -129,7 +129,7 @@ std::tuple<RealVect,
            PandaPowerConverter::get_line_param(const RealVect & branch_r,
                                                const RealVect & branch_x,
                                                const RealVect & branch_c,
-                                               const RealVect & branch_g,
+                                               const RealVect & branch_g,  // TODO
                                                const RealVect & branch_from_kv,
                                                const RealVect & branch_to_kv)
 {

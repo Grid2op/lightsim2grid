@@ -65,3 +65,7 @@ class TestEnvDN(unittest.TestCase):
     
     def test_ac(self):
         self._aux_test_do_nothing(is_dc=False)
+
+
+if __name__ == "__main__":
+    unittest.main()

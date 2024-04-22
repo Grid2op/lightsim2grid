@@ -12,8 +12,10 @@
 ###################################
 default: all
 
-CC = gcc
-CXX = g++
+# CC = gcc
+# CXX = g++
+CC := $(if $(CC),$(CC),gcc)
+CXX := $(if $(CXX),$(CXX),g++)
 
 LIBPATH_REL = ./SuiteSparse
 LIBPATH = $(realpath $(LIBPATH_REL))
@@ -54,12 +56,12 @@ distclean: purge
 all: prelude
 
 prelude:
-	(cd $(LIBPATH)/SuiteSparse_config/ && CC=gcc make)
-	(cd $(LIBPATH)/CXSparse/Lib/ && CC=gcc make )
-	(cd $(LIBPATH)/AMD/Lib/ && Cc=gcc make)
-	(cd $(LIBPATH)/BTF/Lib/ && CC=gcc make)
-	(cd $(LIBPATH)/COLAMD/Lib/ && CC=gcc make)
-	(cd $(LIBPATH)/KLU/Lib/ && CC=gcc make)
+	(cd $(LIBPATH)/SuiteSparse_config/ && CC=$(CC) make)
+	(cd $(LIBPATH)/CXSparse/Lib/ && CC=$(CC) make )
+	(cd $(LIBPATH)/AMD/Lib/ && CC=$(CC) make)
+	(cd $(LIBPATH)/BTF/Lib/ && CC=$(CC) make)
+	(cd $(LIBPATH)/COLAMD/Lib/ && CC=$(CC) make)
+	(cd $(LIBPATH)/KLU/Lib/ && CC=$(CC) make)
 
 ##################################
 # this is the documentation

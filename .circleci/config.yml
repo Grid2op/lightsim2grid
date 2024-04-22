@@ -5,6 +5,9 @@ orbs:
 
 
 executors:
+    gcc_13:
+        docker:
+            - image: gcc:13
     gcc_12:
         docker:
             - image: gcc:12
@@ -20,6 +23,18 @@ executors:
     gcc_8:
         docker:
             - image: gcc:8
+    # clang18:
+    #     docker:
+    #         - image: silkeh/clang:18
+    clang17:
+        docker:
+            - image: silkeh/clang:17
+    clang16:
+        docker:
+            - image: silkeh/clang:16
+    clang15:
+        docker:
+            - image: silkeh/clang:15
     clang14:
         docker:
             - image: silkeh/clang:14
@@ -40,17 +55,61 @@ executors:
             - image: silkeh/clang:9  # no c++ 11, does not work
 
 jobs:
+    test_legacy_grid2op:
+        executor: gcc_13
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  name: "Set up virtual environment"
+                  command: |
+                      source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel gym "numpy<1.22" grid2op==1.6.4
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
+                      pip freeze
+            - run:
+                name: legacy test
+                command: |
+                      source venv_test/bin/activate
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+
+    compile_gcc12:
+        executor: gcc_12
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
     compile_gcc11:
         executor: gcc_11
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip python3-full -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -63,12 +122,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip python3-full -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -81,12 +141,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip python3-full -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                   command: |
                       source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel
                       pip install -U grid2op
                       pip install -U pybind11
                       git submodule init
@@ -105,6 +166,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -112,18 +174,19 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
-    compile_gcc12:
-        executor: gcc_12
+    compile_gcc13:
+        executor: gcc_13
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-virtualenv -y
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             # - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
@@ -147,12 +210,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     pip install -U pybind11
                     git submodule init
                     git submodule update
@@ -164,7 +228,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip git -y
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
             - run: 
                 command: |
                     git submodule init
@@ -175,6 +239,7 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     pip install -U pybind11
                     CC=clang python setup.py build
                     python -m pip install .
@@ -183,12 +248,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip git -y
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -201,12 +267,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip git -y
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -219,12 +286,13 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip git -y
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     pip install -U grid2op
                     pip install -U pybind11
                     git submodule init
@@ -237,13 +305,69 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip git -y
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
             - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_clang15:
+        executor: clang15
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-pip python3-full git -y
+            - run: python3 -m pip install virtualenv
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_clang16:
+        executor: clang16
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_clang17:
+        executor: clang17
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
             - run: python3 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
                 command: |
                     source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
@@ -268,11 +392,17 @@ jobs:
             size: medium  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
-            # - run:
-            #     name: "Install Python"
-            #     command: choco install python --version=3.9  # use python 3.9 for windows test
-            - run: py -m pip install virtualenv
-            - run: py -m virtualenv venv_test
+            - run: choco install python --version=3.10  --force -y
+            - run: C:\Python310\python --version 
+            - run: C:\Python310\python -m pip install --upgrade pip setuptools wheel
+            - run: C:\Python310\python -m pip install virtualenv
+            - run: C:\Python310\python -m virtualenv venv_test
+            - run: 
+                name: "Chekc python  / pip version in venv"
+                command: |
+                    .\venv_test\Scripts\activate
+                    python --version 
+                    pip --version
             - run:
                 name: "Install grid2op from source"
                 command: |
@@ -286,8 +416,8 @@ jobs:
                     pip install -U pybind11
                     git submodule init
                     git submodule update
-                    py setup.py build
-                    py -m pip install -e .[test]
+                    python setup.py build
+                    python -m pip install -e .[test]
             - run:
                 name: "make tests"
                 command: |
@@ -300,11 +430,15 @@ workflows:
     compile:
         jobs:
           - compile_gcc8
-          - compile_gcc10
-          - compile_gcc11
+        #   - compile_gcc10
+        #   - compile_gcc11
           - compile_gcc12
+          - compile_gcc13
           # - compile_clang10  # does not work I don't know why, too lazy to check
           - compile_clang11
-          - compile_clang13
-          - compile_clang14
+        #   - compile_clang13
+        #   - compile_clang14
+        #   - compile_clang15
+          - compile_clang16
+          - compile_clang17
           - compile_windows

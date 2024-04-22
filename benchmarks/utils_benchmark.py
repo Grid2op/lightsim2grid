@@ -11,6 +11,7 @@ import re
 import numpy as np
 from tqdm import tqdm
 import argparse
+import datetime
 from grid2op.Environment import MultiMixEnvironment
 import pdb
 
@@ -127,6 +128,8 @@ def str2bool(v):
 
 
 def print_configuration():
+    print()
+    print(f"- date: {datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}")
     try:
         import platform
         print(f"- system: {platform.system()} {platform.release()}")
@@ -156,6 +159,14 @@ def print_configuration():
     print(f"- numpy version: {np.__version__}")
     print(f"- pandas version: {pd.__version__}")
     print(f"- pandapower version: {pp.__version__}")
-    print(f"- lightsim2grid version: {lightsim2grid.__version__}")
     print(f"- grid2op version: {grid2op.__version__}")
+    print(f"- lightsim2grid version: {lightsim2grid.__version__}")
+    if hasattr(lightsim2grid, "compilation_options"):
+        print(f"- lightsim2grid extra information: ")
+        print()
+        print(f"\t- klu_solver_available: {lightsim2grid.compilation_options.klu_solver_available} ")
+        print(f"\t- nicslu_solver_available: {lightsim2grid.compilation_options.nicslu_solver_available} ")
+        print(f"\t- cktso_solver_available: {lightsim2grid.compilation_options.cktso_solver_available} ")
+        print(f"\t- compiled_march_native: {lightsim2grid.compilation_options.compiled_march_native} ")
+        print(f"\t- compiled_o3_optim: {lightsim2grid.compilation_options.compiled_o3_optim} ")
     print()

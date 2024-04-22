@@ -34,7 +34,7 @@ this way:
     from grid2op.Agent import RandomAgent
 
     # create an environment
-    env_name = "rte_case14_realistic"  # for example, other environments might be usable
+    env_name = "l2rpn_case14_sandbox"  # for example, other environments might be usable
     env = grid2op.make(env_name,
                        backend=LightSimBackend()  # this is the only change you have to make!
                        )

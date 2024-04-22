@@ -86,6 +86,7 @@ Pypi packages are available for linux, windows and macos with python versions:
 - 3.9
 - 3.10 (lightsim2grid >= 0.6.1)
 - 3.11 (lightsim2grid >= 0.7.1)
+- 3.12 (lightsim2grid >= 0.7.5)
 
 **NB** on some version of MacOs (thanks Apple !), especially the one using M1 or M2 chip, lightsim2grid is only available
 on pypi starting from version 0.7.3
@@ -96,35 +97,12 @@ See the official documentation at [Install from source](https://lightsim2grid.re
 
 ## Benchmarks
 
-Lightsim2grid is significantly faster than pandapower when used with grid2op for all kind of environment size.
+Lightsim2grid is significantly faster than pandapower when used with grid2op for all kind of environment size (sometimes 
+more than 30x faster - making 30 steps while pandapower makes one).
 
-First on an environment based on the IEEE case14 grid:
 
-| case14_sandbox     |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
-|--------------------|------------------------|-------------------------------------|------------------------------|
-| PP                 |                   70.5 |                              11     |                       4.27   |
-| LS+GS              |                  881   |                               0.447 |                       0.327  |
-| LS+GS S            |                  877   |                               0.446 |                       0.327  |
-| LS+SLU (single)    |                 1110   |                               0.191 |                       0.0655 |
-| LS+SLU             |                 1120   |                               0.195 |                       0.0683 |
-| LS+KLU (single)    |                 1200   |                               0.138 |                       0.0176 |
-| LS+KLU             |                 1180   |                               0.141 |                       0.0188 |
-| LS+NICSLU (single) |                 1200   |                               0.139 |                       0.0179 |
-| LS+NICSLU          |                 1200   |                               0.139 |                       0.0184 |
-
-Then on an environment based on the IEEE case 118:
-
-| neurips_2020_track2   |   grid2op speed (it/s) |   grid2op 'backend.runpf' time (ms) |   solver powerflow time (ms) |
-|-----------------------|------------------------|-------------------------------------|------------------------------|
-| PP                    |                   39.6 |                              13.3   |                        5.58  |
-| LS+GS                 |                    5.3 |                             188     |                      188     |
-| LS+GS S               |                   36.5 |                              26.6   |                       26.4   |
-| LS+SLU (single)       |                  642   |                               0.775 |                        0.607 |
-| LS+SLU                |                  588   |                               0.932 |                        0.769 |
-| LS+KLU (single)       |                  945   |                               0.277 |                        0.116 |
-| LS+KLU                |                  918   |                               0.306 |                        0.144 |
-| LS+NICSLU (single)    |                  947   |                               0.274 |                        0.11  |
-| LS+NICSLU             |                  929   |                               0.298 |                        0.134 |
+If you prefer to use the dedicated lightsim2grid `SecurityAnalysis` or `TimeSerie` classes you can even expect another 10-20x
+speed ups compared to grid2op with lightsim2grid (sometimes more than 300x faster than grid2op with pandapower). 
 
 For more information (including the exact way to reproduce these results, as well as the computer used), you can consult the dedicated [Benchmarks](https://lightsim2grid.readthedocs.io/en/latest/benchmarks.html) page on the documentation.
 
@@ -244,7 +222,7 @@ For example: `export PATH_NICSLU=/home/user/Documents/cktso`
 
 #### Enable 03 optimization
 By default, at least on ubuntu, only the "-O2" compiler flags is used. To use the O3 optimization flag, you need
-to specify the `__COMPLILE_O3` environment variable: `set __COMPLILE_O3=1` before the compilation (so before
+to specify the `__O3_OPTIM` environment variable: `set __O3_OPTIM=1` before the compilation (so before
 `python3 setup.py build` or `python -m pip install -e .`)
 
 This compilation argument will increase the compilation time, but will make the package faster.
@@ -290,9 +268,10 @@ cd ..
 
 Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
 
-These tests include, for now, compilation on gcc (version 8, 10, 11 and 12) and clang (version 11, 13 and 14).
+These tests include, for now, compilation on gcc (version 8, 12 and 13) and clang (version 11, 16 and 17).
 
-**NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. We suppose that if it works on *eg* clang 10 and clang 14 then it compiles also on all intermediate versions.
+**NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. 
+We suppose that if it works on *eg* clang 10 and clang 14 then it compiles also on all intermediate versions.
 
 **NB** Package might work (we never tested it) on earlier version of these compilers. 
 The only "real" requirement for lightsim2grid is to have a compiler supporting c++11

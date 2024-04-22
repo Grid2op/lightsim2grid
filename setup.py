@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.7.4"
+__version__ = "0.8.1"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -95,7 +95,7 @@ else:
                   "be available, which is maybe ~30% slower than \"KLU\". If you are using grid2op there "
                   "will still be a huge benefit.")
 
-INCLUDE = INCLUDE_suitesparse
+INCLUDE = ["src"] + INCLUDE_suitesparse
 
 # now add the Eigen library (header only)
 eigen_path = os.path.abspath(".")
@@ -136,30 +136,33 @@ extra_compile_args = extra_compile_args_tmp
 extra_compile_args += [f"-DVERSION_MAJOR={VERSION_MAJOR}",
                        f"-DVERSION_MEDIUM={VERSION_MEDIUM}",
                        f"-DVERSION_MINOR={VERSION_MINOR}"]
+extra_compile_args += [f"-DVERSION=\"{__version__}\""]
 src_files = ['src/main.cpp',
+             "src/powerflow_algorithm/GaussSeidelAlgo.cpp",
+             "src/powerflow_algorithm/GaussSeidelSynchAlgo.cpp",
+             "src/powerflow_algorithm/BaseAlgo.cpp",
+             "src/linear_solvers/SparseLUSolver.cpp",
              "src/help_fun_msg.cpp",
-             "src/SparseLUSolver.cpp",
              "src/BaseConstants.cpp",
              "src/GridModel.cpp",
-             "src/DataConverter.cpp",
-             "src/DataLine.cpp",
-             "src/DataGeneric.cpp",
-             "src/DataShunt.cpp",
-             "src/DataTrafo.cpp",
-             "src/DataLoad.cpp",
-             "src/DataGen.cpp",
-             "src/DataSGen.cpp",
-             "src/DataDCLine.cpp",
              "src/ChooseSolver.cpp",
-             "src/GaussSeidelSolver.cpp",
-             "src/GaussSeidelSynchSolver.cpp",
-             "src/BaseSolver.cpp",
-             "src/BaseMultiplePowerflow.cpp",
-             "src/Computers.cpp",
-             "src/SecurityAnalysis.cpp"]
+             "src/Solvers.cpp",
+             "src/Utils.cpp",
+             "src/DataConverter.cpp",
+             "src/batch_algorithm/BaseBatchSolverSynch.cpp",
+             "src/batch_algorithm/TimeSeries.cpp",
+             "src/batch_algorithm/ContingencyAnalysis.cpp",
+             "src/element_container/LineContainer.cpp",
+             "src/element_container/GenericContainer.cpp",
+             "src/element_container/ShuntContainer.cpp",
+             "src/element_container/TrafoContainer.cpp",
+             "src/element_container/LoadContainer.cpp",
+             "src/element_container/GeneratorContainer.cpp",
+             "src/element_container/SGenContainer.cpp",
+             "src/element_container/DCLineContainer.cpp"]
 
 if KLU_SOLVER_AVAILABLE:
-    src_files.append("src/KLUSolver.cpp")
+    src_files.append("src/linear_solvers/KLUSolver.cpp")
     extra_compile_args_tmp.append("-DKLU_SOLVER_AVAILABLE")
     print("INFO: Using KLU package")
 
@@ -206,8 +209,9 @@ if "PATH_NICSLU" in os.environ:
     if include_nicslu and libnicslu_path is not None:
         LIBS.append(os.path.join(path_nicslu, libnicslu_path))
         include_dirs.append(os.path.join(path_nicslu, "include"))
-        src_files.append("src/NICSLUSolver.cpp")
+        src_files.append("src/linear_solvers/NICSLUSolver.cpp")
         extra_compile_args.append("-DNICSLU_SOLVER_AVAILABLE")
+        extra_compile_args += [f"-DNICSLU_PATH=\"{os.path.join(path_nicslu, libnicslu_path)}\""]
         print("INFO: Using NICSLU package")
 
 # Try to locate the CKTSO sparse linear solver
@@ -253,8 +257,9 @@ if "PATH_CKTSO" in os.environ:
     if include_cktso and libcktso_path is not None:
         LIBS.append(os.path.join(path_cktso, libcktso_path))
         include_dirs.append(os.path.join(path_cktso, "include"))
-        src_files.append("src/CKTSOSolver.cpp")
+        src_files.append("src/linear_solvers/CKTSOSolver.cpp")
         extra_compile_args.append("-DCKTSO_SOLVER_AVAILABLE")
+        extra_compile_args += [f"-DCKTSO_PATH=\"{os.path.join(path_cktso, libcktso_path)}\""]
         print("INFO: Using CKTSO package")
         
         
@@ -267,6 +272,7 @@ if "__COUT_TIMES" in os.environ:
 if "__COMPILE_MARCHNATIVE" in os.environ:
     if os.environ["__COMPILE_MARCHNATIVE"] == "1":
         extra_compile_args.append("-march=native")
+        extra_compile_args.append("-D__COMPILE_MARCHNATIVE")
         print("INFO: Using \"-march=native\" compiler flag")
 
 # $Env:_READ_THE_DOCS = "1" in powershell
@@ -297,6 +303,7 @@ if "__O3_OPTIM" in os.environ:
             print("INFO: Using \"-O3\" compiler flag")
         elif IS_WINDOWS:
             extra_compile_args.append("/O2")
+        extra_compile_args.append("-D__O3_OPTIM")
 
 ext_modules = [
     Pybind11Extension(
@@ -314,7 +321,8 @@ req_pkgs = [
         "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
         "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
-
+if sys.version_info < (3, 11):
+    req_pkgs.append("typing_extensions")
 if sys.version_info.major == 3 and sys.version_info.minor <= 7:
     # typing "Literal" not available on python 3.7
     req_pkgs.append("typing_extensions")
@@ -333,6 +341,7 @@ pkgs = {
             "autodocsumm>=0.1.13",
             "grid2op>=1.6.4",
             "recommonmark",
+            "pypowsybl"
         ],
         "benchmark": [
             "tabulate",
@@ -349,7 +358,8 @@ pkgs = {
             "grid2op>=1.6.4",
             "numba",
             "pandapower>=2.8.0",
-            "packaging"
+            "packaging", 
+            "pypowsybl"
         ]
     }
 }
@@ -383,6 +393,7 @@ setup(name='LightSim2Grid',
             'Programming Language :: Python :: 3.9',
             'Programming Language :: Python :: 3.10',
             'Programming Language :: Python :: 3.11',
+            'Programming Language :: Python :: 3.12',
             "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
             "Intended Audience :: Developers",
             "Intended Audience :: Education",

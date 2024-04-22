@@ -1,10 +1,11 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 import warnings
 import numpy as np
 
@@ -47,10 +48,10 @@ def _aux_check_legit(pp_net):
     #                        "in pandapower network")
 
     # bus indexes should start at 0 and be contiguous
-    if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
-        raise RuntimeError("In order to work, pandapower bus indexes should start at 0 and be contiguous. "
-                           "Make sure that `pp_net.bus.index` have this property. You can write a github "
-                           "issue if you want improvment on this regard.")
+    # if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
+    #     raise RuntimeError("In order to work, pandapower bus indexes should start at 0 and be contiguous. "
+    #                        "Make sure that `pp_net.bus.index` have this property. You can write a github "
+    #                        "issue if you want improvment on this regard.")
     
     if "_options" in pp_net and \
        "trafo_model" in pp_net["_options"] and \

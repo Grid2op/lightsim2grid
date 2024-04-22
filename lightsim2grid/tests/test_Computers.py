@@ -11,13 +11,11 @@ import grid2op
 from grid2op.Parameters import Parameters
 import warnings
 import numpy as np
-from numpy.core.shape_base import stack
-import lightsim2grid
-import lightsim2grid_cpp
 from lightsim2grid import LightSimBackend
-from lightsim2grid_cpp import Computers
+from lightsim2grid_cpp import TimeSeriesCPP
 
-class TestComputers(unittest.TestCase):
+
+class TestTimeSeriesCPP(unittest.TestCase):
     def test_basic(self):
         # print(f"{lightsim2grid_cpp.__file__}")
         env_name = "l2rpn_case14_sandbox"
@@ -37,7 +35,7 @@ class TestComputers(unittest.TestCase):
         load_q = 1.0 * env.chronics_handler.real_data.data.load_q
 
         # now perform the computation
-        computer = Computers(grid)
+        computer = TimeSeriesCPP(grid)
         # print("start the computation")
         status = computer.compute_Vs(prod_p,
                                     np.zeros((prod_p.shape[0], 0)),  # no static generators for now !
@@ -83,7 +81,7 @@ class TestComputers(unittest.TestCase):
         load_q = 1.0 * env.chronics_handler.real_data.data.load_q
 
         # now perform the computation
-        computer = Computers(grid)
+        computer = TimeSeriesCPP(grid)
         # print("start the computation")
         status = computer.compute_Vs(prod_p,
                                     np.zeros((prod_p.shape[0], 0)),  # no static generators for now !

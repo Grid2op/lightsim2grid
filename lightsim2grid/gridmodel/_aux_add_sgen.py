@@ -1,17 +1,19 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
 import warnings
 import numpy as np
+from ._pp_bus_to_ls_bus import pp_bus_to_ls
 
 SOME_KIND_OF_INF_FOR_PMIN_PMAX = 99999.
 
 
-def _aux_add_sgen(model, pp_net):
+def _aux_add_sgen(model, pp_net, pp_to_ls):
     """
     Add the static generators  (=PQ generators) of the pp_net into the lightsim2grid "model"
 
@@ -64,13 +66,18 @@ def _aux_add_sgen(model, pp_net):
         warnings.warn("There were some Nan in the pp_net.sgen[\"max_q_mvar\"], they have been replaced by 0")
     max_q_mvar[~np.isfinite(max_q_mvar)] = 0.
 
-    model.init_sgens(pp_net.sgen["p_mw"].values,
-                     pp_net.sgen["q_mvar"].values,
+    ratio = 1.0
+    if "scaling" in pp_net.sgen:
+        ratio = pp_net.sgen["scaling"].values
+        ratio[~np.isfinite(ratio)] = 1.0
+        
+    model.init_sgens(pp_net.sgen["p_mw"].values * ratio,
+                     pp_net.sgen["q_mvar"].values * ratio,
                      min_p_mw,
                      max_p_mw,
                      min_q_mvar,
                      max_q_mvar,
-                     pp_net.sgen["bus"].values
+                     pp_bus_to_ls(pp_net.sgen["bus"].values, pp_to_ls)
                      )
     for sgen_id, is_connected in enumerate(pp_net.sgen["in_service"].values):
         if not is_connected:

@@ -3,23 +3,133 @@ Change Log
 
 [TODO]
 --------
-- make an `init` function from pypowsybl
-- support DC powerline (as modeled in pandapower)
+- [refacto] have a structure in cpp for the buses
+- [refacto] have the id_grid_to_solver and id_solver_to_grid etc. directly in the solver and NOT in the gridmodel.
+- [refacto] put some method in the DataGeneric as well as some attribute (_status for example)
 - support 3w trafo (as modeled in pandapower)
 - improve speed by not performing internal checks 
   (keep check for boundaries and all for python API instead) [see `TODO DEBUG MODE` in c++ code]
 - improve speed
 - code parrallelism directly in the `Computer` and `SecurityAnalysisCPP` classes
+- a mode to do both `Computer` and `SecurityAnalysisCPP`
 - use the "multi slack hack" (see issue #50) for SecurityAnalysis or Computer for example
 - code `helm` powerflow method
-- possibility to read CGMES files
-- possibility to read XIIDM files
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
-- code NR with dense matrices
 
-[0.7.3] 2023-08-24
+[0.8.1] 2024-03-26
+--------------------
+- [FIXED] a bug with shunts when `nb_busbar_per_sub` >= 2
+- [FIXED] some bugs preventing backward compatibility
+- [FIXED] an issue in the computation of gen_q when intialized with pypowsybl
+  (some overflow cpp side leading to infinite number in gen_q)
+- [FIXED] a bug in the "containers" cpp side (wrong bus was assigned)
+  when elements was disconnected, which lead to wrong computations for 
+  time series or contingency analysis.
+- [FIXED] another bug in ContingencyAnalysis (cpp side) leading to wrong computation
+  when a powerline was disconnected
+- [FIXED] some broken imports when grid2op was not installed
+- [FIXED] missing "typing_extension" as required when installation
+- [ADDED] some information of compilation directly in the cpp module
+- [ADDED] some information of compilation available in the python `compilation_options`
+  module python side
+- [ADDED] some convenient methods for `ContingencyAnalysis` python side (most 
+  notably the possibility to initialize it from a `LightSimBackend` and to
+  change the topology of the grid)
+- [ADDED] a "reward" module in lightsim2grid with custom reward
+  based on lightsim2grid.
+- [ADDED] a class `N1ContingencyReward` that can leverage lightsim2grid to 
+  assess the number of safe / unsafe N-1.
+- [IMPROVED] time measurments in python and c++
+- [IMPROVED] now test lightsim2grid with oldest grid2op version
+- [IMPROVED] speed, by accelerating the reading back of the data (now read only once and then
+  pointers are re used)
+- [IMPROVED] c++ side avoid allocating memory (which allow to gain speed python side too)
+- [IMPROVED] type hinting in `LightSimBackend` for all 'public' methods (most 
+  notably the one used by grid2op)
+- [IMPROVED] now the benchmarks are more verbose (detailing some compilation options)
+
+[0.8.0] 2024-03-18
+--------------------
+- [BREAKING] now able to retrieve `dcSbus` with a dedicated method (and not with the old `get_Sbus`).
+  If you previously used `gridmodel.get_Sbus()` to retrieve the Sbus used for DC powerflow, please use
+  `gridmodel.get_dcSbus()` instead.
+- [DEPRECATED] in the cpp class: the old `SecurityAnalysisCPP` has been renamed `ContingencyAnalysisCPP`
+  (you should not import it, but it you do you can `from lightsim2grid.securityAnalysis import ContingencyAnalysisCPP` now)
+- [DEPRECATED] in the cpp class: the old `Computers` has been renamed `TimeSerieCPP`
+  (you should not import it, but it you do you can `from lightsim2grid.time_serie import TimeSerieCPP` now)
+- [FIXED] now voltage is properly set to 0. when shunts are disconnected
+- [FIXED] now voltage is properly set to 0. when storage units are disconnected
+- [FIXED] a bug where non connected grid were not spotted in DC
+- [FIXED] a bug when trying to set the slack for a non existing genererator
+- [FIXED] a bug in init from pypowsybl when some object were disconnected. It raises
+  an error (because they are not connected to a bus): now this function properly handles
+  these cases.
+- [FIXED] a bug leading to not propagate correctly the "compute_results" flag when the 
+  environment was copied (for example)
+- [FIXED] a bug where copying a lightsim2grid `GridModel` did not fully copy it
+- [FIXED] a bug in the "topo_vect" comprehension cpp side (sometimes some buses 
+  might not be activated / deactivated correctly)
+- [FIXED] a bug when reading a grid initialize from pypowsybl (trafo names where put in place 
+  of shunt names)
+- [FIXED] read the docs was broken
+- [FIXED] a bug when reading a grid from pandapower for multiple slacks when slack 
+  are given by the "ext_grid" information.
+- [FIXED] a bug in "gridmodel.assign_slack_to_most_connected()" that could throw an error if a 
+  generator with "target_p" == 0. was connected to the most connected bus on the grid
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
+- [ADDED] sets of methods to extract the main component of a grid and perform powerflow only on this
+  one.
+- [ADDED] possibility to set / retrieve the names of each elements of the grid.
+- [ADDED] embed in the generator models the "non pv" behaviour. (TODO need to be able to change Q from python side)
+- [ADDED] computation of PTPF (Power Transfer Distribution Factor) is now possible
+- [ADDED] (not tested) support for more than 2 busbars per substation
+- [ADDED] a timer to get the time spent in the gridmodel for the powerflow (env.backend.timer_gridmodel_xx_pf)
+  which also include the time 
+- [ADDED] support for more than 2 busbars per substation (requires grid2op >= 1.10.0)
+- [ADDED] possibility to retrieve the bus id of the original iidm when initializing from pypowsybl 
+  (`return_sub_id` kwargs). This is a "beta" feature and will be adressed in a better way
+  in a near future.
+- [ADDED] possibility to continue the grid2op 'step' when the solver converges but a load or a 
+  generator is disconnected from the grid.
+- [IMPROVED] now performing the new grid2op `create_test_suite` 
+- [IMPROVED] now lightsim2grid properly throw `BackendError`
+- [IMPROVED] clean ce cpp side by refactoring: making clearer the difference (linear) solver
+  vs powerflow algorithm and move same type of files in the same directory. This change
+  does not really affect python side at the moment (but will in future versions)
+- [IMPROVED] CI to test on gcc 13 and clang 18 (latest versions to date)
+- [IMPROVED] computation speed: grid is not read another time in some cases.
+  For example, if load and generators do not change, then Sbus is not
+  recomputed. Likewise, if the topology does not change, then the Ybus 
+  is not recomputed either see https://github.com/BDonnot/lightsim2grid/issues/72
+
+[0.7.5.post1] 2024-03-14
+-------------------------
+- [FIXED] backward compat with "future" grid2op version with a 
+  better way to copy `LightSimBackend`
+  
+[0.7.5] 2023-10-05
+--------------------
+- [FIXED] a bug in DC powerflow when asking for computation time: it was not reset to 0. when
+  multiple powerflows used the same solver
+- [FIXED] a bug in AC and DC powerflow when shunts had active values
+- [ADDED] possibility to initialize a powergrid based on pypowsybl 
+  see https://github.com/BDonnot/lightsim2grid/issues/53
+- [ADDED] some more algorithm to perform powerflow: Fast Decoupled Powerflow (in BX and XB variant)
+  see https://github.com/BDonnot/lightsim2grid/issues/63
+- [ADDED] build lightsim2grid for python 3.12
+- [ADDED] support for non distributed slack but multiple slack buses
+  see https://github.com/BDonnot/lightsim2grid/issues/50 (ONLY FOR AC powerflow)
+- [IMPROVED] now shipping `src` and `eigen` directory in the source of 
+  lightsim2grid to allow their installation if wheels are not provided.
+- [IMPROVED] in the underlying cpp GridModel powerlines can now have 2
+  different values for the `h` parameters (`h_or` and `h_ex`).
+- [IMPROVED] now lightsim2grid is able to load a pandapower network with non
+  contiguous non starting at 0 bus index
+
+[0.7.3/4] 2023-08-24
 --------------------
 - [FIXED] a bug where, when you disconnect a load (or gen), the next action cannot be performed
   if it modifies the load (or gen), because you "cannot change the value of a disconnected load (or gen)"

@@ -166,6 +166,40 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::FDPF_XB_SparseLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_SparseLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_SparseLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_SparseLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
+
+)mydelimiter";
+
 const std::string DocSolver::KLUSolver = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster KLU solver available in the SuiteSparse library
     for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`.
@@ -229,6 +263,40 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::FDPF_XB_KLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdbx"  in pypower / pandapower), it uses the fast KLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_KLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_KLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdxb"  in pypower / pandapower), it uses the fast KLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_KLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
+
+)mydelimiter";
+
 const std::string DocSolver::NICSLUSolver = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster NICSLU solver available in the NICSLU library
     for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`. (requires a build from source)
@@ -243,6 +311,10 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
         
         - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLU)` at creation time
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
 
     .. note::
 
@@ -264,7 +336,11 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
         
         - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLUSingleSlack)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUSingleSlack)` at creation time    
-    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
     .. note::
 
         NICSLU is available at https://github.com/chenxm1986/nicslu
@@ -292,10 +368,64 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
 
         Otherwise, it is used internally to find good starting point to intialize the real AC solver.
 
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
     .. note::
 
         NICSLU is available at https://github.com/chenxm1986/nicslu
  
+)mydelimiter";
+
+const std::string DocSolver::FDPF_XB_NICSLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast NICSLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_NICSLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_NICSLUSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast NICSLU library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_NICSLU` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for nicslu.
+
+    .. note::
+
+        NICSLU is available at https://github.com/chenxm1986/nicslu
+
 )mydelimiter";
 
 const std::string DocSolver::CKTSOSolver = R"mydelimiter(
@@ -360,6 +490,56 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
         it when you create the grid2op environment, for example with "param.ENV_DC=True".
 
         Otherwise, it is used internally to find good starting point to intialize the real AC solver.
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_XB_CKTSOSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast CKTSO library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_CKTSO` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for cktso.
+
+    .. note::
+
+        CKTSO is available at https://github.com/chenxm1986/cktso
+
+)mydelimiter";
+
+const std::string DocSolver::FDPF_BX_CKTSOSolver =  R"mydelimiter(
+    Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast CKTSO library for 
+    its underlying sparse matrix manipulation.
+
+    See :ref:`available-powerflow-solvers` for more information on how to use it.
+
+    .. note::
+
+        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_CKTSO` 
+        
+        You can use it with:
+        
+        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
+
+    .. warning::
+        
+        Use this solver requires a compilation of lightsim2grid from source (see readme) AND an appropriate license for cktso.
 
     .. note::
 
@@ -453,7 +633,7 @@ const std::string DocSolver::get_computation_time = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::id = R"mydelimiter(
-    Get the ideas of the element. Ids are integer from 0 to n-1 (if `n` denotes the number of such elements on the grid.)
+    Get the id of the element. Ids are integer from 0 to n-1 (if `n` denotes the number of such elements on the grid.)
 
     Examples
     --------
@@ -474,6 +654,34 @@ const std::string DocIterator::id = R"mydelimiter(
 
         first_gen = grid_model.get_generators()[0]  # or get_loads for loads, etc.
         first_gen.id  # should be 0
+
+)mydelimiter";
+
+const std::string DocIterator::name = R"mydelimiter(
+    Get the name of the element. Names are string that should be unique. But if you really want things unique, use the `id`
+
+    .. warning::
+        Names are optional and might not be set when reading the grid. 
+
+    Examples
+    --------
+    We give the example only for generators, but it works similarly for every other types of objects
+    in a :class:`lightsim2grid.gridmodel.GridModel`.
+    
+    This gives something like:
+
+    .. code-block:: python
+
+        import grid2op
+        from lightsim2grid import LightSimBackend
+
+        env_name = ... # eg. "l2rpn_case14_test"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+
+        grid_model = env.backend._grid
+
+        first_gen = grid_model.get_generators()[0]  # or get_loads for loads, etc.
+        first_gen.name 
 
 )mydelimiter";
 
@@ -600,12 +808,12 @@ const std::string DocIterator::has_res = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataGen = R"mydelimiter(
+const std::string DocIterator::GeneratorContainer = R"mydelimiter(
     This class allows to iterate through the generators of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
     In lightsim2grid they are modeled as "pv" meanings you give the active production setpoint and voltage magnitude setpoint
-    (see :attr:`lightsim2grid.elements.DataSGen` for more exotic PQ generators).
+    (see :attr:`lightsim2grid.elements.SGenContainer` for more exotic PQ generators).
 
     The active production value setpoint are modified only for the generators participating to the slack buses
     (see :attr:`lightsim2grid.elements.GenInfo.is_slack` and :attr:`lightsim2grid.elements.GenInfo.slack_weight`).
@@ -639,7 +847,8 @@ const std::string DocIterator::DataGen = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::GenInfo = R"mydelimiter(
-    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataGen`
+    This class represents what you get from retrieving some elements from 
+    :class:`lightsim2grid.elements.GeneratorContainer`
 
     It allows to read information from each generator of the powergrid.
 
@@ -724,11 +933,12 @@ const std::string DocIterator::max_p_mw = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataSGen = R"mydelimiter(
+const std::string DocIterator::SGenContainer = R"mydelimiter(
     This class allows to iterate through the static generators of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
-    In lightsim2grid they are two types of generators the more standard PV generators (see :attr:`lightsim2grid.elements.DataGen`). These
+    In lightsim2grid they are two types of generators the more standard PV generators (see 
+    :attr:`lightsim2grid.elements.GeneratorContainer`). These
     are more exotic generators known as PQ, where you give the active production value and reactive production value. It's basically like loads,
     but using the generator convention (if the value is positive, it means power is taken from the grid to the element)
 
@@ -764,7 +974,8 @@ const std::string DocIterator::DataSGen = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::SGenInfo = R"mydelimiter(
-    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataSGen`
+    This class represents what you get from retrieving some elements from 
+    :class:`lightsim2grid.elements.SGenContainer`
 
     It allows to read information from each static generator of the powergrid.
 
@@ -793,7 +1004,7 @@ const std::string DocIterator::SGenInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataLoad = R"mydelimiter(
+const std::string DocIterator::LoadContainer = R"mydelimiter(
     This class allows to iterate through the loads **and storage units** of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -841,7 +1052,8 @@ const std::string DocIterator::DataLoad = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::LoadInfo = R"mydelimiter(
-    This class represents what you get from retrieving some elements from :class:`lightsim2grid.elements.DataLoad`.
+    This class represents what you get from retrieving some elements from 
+    :class:`lightsim2grid.elements.LoadContainer`.
     We remind the reader that storage units are also modeled as load in lightsim2grid.
 
     It allows to read information from each load / storage unit of the powergrid.
@@ -880,7 +1092,7 @@ const std::string DocIterator::LoadInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataShunt = R"mydelimiter(
+const std::string DocIterator::ShuntContainer = R"mydelimiter(
     This class allows to iterate through the load of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -914,7 +1126,8 @@ const std::string DocIterator::DataShunt = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::ShuntInfo = R"mydelimiter(
-    This class represents what you get from retrieving the shunts from :class:`lightsim2grid.elements.DataShunt`.
+    This class represents what you get from retrieving the shunts from 
+    :class:`lightsim2grid.elements.ShuntContainer`.
 
     It allows to read information from each shunt of the powergrid.
 
@@ -942,7 +1155,7 @@ const std::string DocIterator::ShuntInfo = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocIterator::DataTrafo = R"mydelimiter(
+const std::string DocIterator::TrafoContainer = R"mydelimiter(
     This class allows to iterate through the transformers of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -976,7 +1189,8 @@ const std::string DocIterator::DataTrafo = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::TrafoInfo = R"mydelimiter(
-    This class represents what you get from retrieving the transformers from :class:`lightsim2grid.elements.DataTrafo`.
+    This class represents what you get from retrieving the transformers from 
+    :class:`lightsim2grid.elements.TrafoContainer`.
 
     It allows to read information from each transformer of the powergrid.
 
@@ -1113,7 +1327,7 @@ const std::string DocIterator::res_a_hv_ka = R"mydelimiter(
 
 )mydelimiter" + DocIterator::only_avail_res;
 
-const std::string DocIterator::DataLine = R"mydelimiter(
+const std::string DocIterator::LineContainer = R"mydelimiter(
     This class allows to iterate through the powerlines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1147,7 +1361,8 @@ const std::string DocIterator::DataLine = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::LineInfo = R"mydelimiter(
-    This class represents what you get from retrieving the powerlines from :class:`lightsim2grid.elements.DataLine`.
+    This class represents what you get from retrieving the powerlines from 
+    :class:`lightsim2grid.elements.LineContainer`.
 
     It allows to read information from each powerline of the powergrid.
 
@@ -1267,7 +1482,7 @@ const std::string DocIterator::res_a_ex_ka = R"mydelimiter(
 )mydelimiter" + DocIterator::only_avail_res;
 
 
-const std::string DocIterator::DataDCLine = R"mydelimiter(
+const std::string DocIterator::DCLineContainer = R"mydelimiter(
     This class allows to iterate through the dc lines of the :class:`lightsim2grid.gridmodel.GridModel` easily, as if they were
     in a python list.
 
@@ -1315,7 +1530,8 @@ const std::string DocIterator::DataDCLine = R"mydelimiter(
 
 
 const std::string DocIterator::DCLineInfo = R"mydelimiter(
-    This class represents what you get from retrieving the dc powerlines from :class:`lightsim2grid.elements.DataDCLine`.
+    This class represents what you get from retrieving the dc powerlines from 
+    :class:`lightsim2grid.elements.DCLineContainer`.
 
     It allows to read information from each dc powerline of the powergrid.
 
@@ -1581,7 +1797,8 @@ const std::string DocGridModel::get_dc_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::get_lines = R"mydelimiter(
-    This function allows to retrieve the powerlines (as a :class:`lightsim2grid.elements.DataLine` object,
+    This function allows to retrieve the powerlines (as a 
+    :class:`lightsim2grid.elements.LineContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1599,7 +1816,8 @@ const std::string DocGridModel::get_lines = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_trafos = R"mydelimiter(
-    This function allows to retrieve the transformers (as a :class:`lightsim2grid.elements.DataLine` object,
+    This function allows to retrieve the transformers (as a 
+    :class:`lightsim2grid.elements.LineContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1617,7 +1835,8 @@ const std::string DocGridModel::get_trafos = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_generators = R"mydelimiter(
-    This function allows to retrieve the (standard) generators (as a :class:`lightsim2grid.elements.DataGen` object,
+    This function allows to retrieve the (standard) generators (as a 
+    :class:`lightsim2grid.elements.GeneratorContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1635,7 +1854,8 @@ const std::string DocGridModel::get_generators = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_static_generators = R"mydelimiter(
-    This function allows to retrieve the (more exotic) static generators (as a :class:`lightsim2grid.elements.DataSGen` object,
+    This function allows to retrieve the (more exotic) static generators (as a 
+    :class:`lightsim2grid.elements.SGenContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1653,7 +1873,8 @@ const std::string DocGridModel::get_static_generators = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_shunts = R"mydelimiter(
-    This function allows to retrieve the shunts (as a :class:`lightsim2grid.elements.DataShunt` object,
+    This function allows to retrieve the shunts (as a 
+    :class:`lightsim2grid.elements.ShuntContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1671,12 +1892,13 @@ const std::string DocGridModel::get_shunts = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_storages = R"mydelimiter(
-    This function allows to retrieve the storage units (as a :class:`lightsim2grid.elements.DataLoad` object,
+    This function allows to retrieve the storage units (as a 
+    :class:`lightsim2grid.elements.LoadContainer` object,
     see :ref:`elements-modeled` for more information)
 
     .. note::
         We want to emphize that, as far as lightsim2grid is concerned, the storage units are modeled as loads. This is why
-        this function will return a :class:`lightsim2grid.elements.DataLoad`.
+        this function will return a :class:`lightsim2grid.elements.LoadContainer`.
 
     Examples
     ---------
@@ -1693,7 +1915,7 @@ const std::string DocGridModel::get_storages = R"mydelimiter(
 
 )mydelimiter";
 const std::string DocGridModel::get_loads = R"mydelimiter(
-    This function allows to retrieve the loads (as a :class:`lightsim2grid.elements.DataLoad` object,
+    This function allows to retrieve the loads (as a :class:`lightsim2grid.elements.LoadContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples
@@ -1712,7 +1934,8 @@ const std::string DocGridModel::get_loads = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::get_dclines = R"mydelimiter(
-    This function allows to retrieve the dc powerlines (as a :class:`lightsim2grid.elements.DataDCLine` object,
+    This function allows to retrieve the dc powerlines (as a 
+    :class:`lightsim2grid.elements.DCLineContainer` object,
     see :ref:`elements-modeled` for more information)
 
     Examples

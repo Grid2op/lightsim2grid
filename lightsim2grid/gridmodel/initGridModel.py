@@ -15,6 +15,9 @@ __all__ = ["init", "GridModel"]
 import numpy as np
 from numbers import Number
 import warnings
+
+import pandapower
+import lightsim2grid
 from lightsim2grid_cpp import GridModel, PandaPowerConverter
 from lightsim2grid.gridmodel._aux_add_sgen import _aux_add_sgen
 from lightsim2grid.gridmodel._aux_add_load import _aux_add_load
@@ -28,7 +31,7 @@ from lightsim2grid.gridmodel._aux_add_storage import _aux_add_storage
 from lightsim2grid.gridmodel._aux_add_dc_line import _aux_add_dc_line
 
 
-def init(pp_net):
+def init(pp_net: "pandapower.auxiliary.pandapowerNet") -> GridModel:
     """
     Convert a pandapower network as input into a GridModel.
 
@@ -53,7 +56,7 @@ def init(pp_net):
 
     Parameters
     ----------
-    pp_net: :class:`pandapower.grid`
+    pp_net: :class:`pandapower.auxiliary.pandapowerNet`
         The initial pandapower network you want to convert
 
     Returns
@@ -83,37 +86,45 @@ def init(pp_net):
     model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
                    pp_net.line.shape[0],
                    pp_net.trafo.shape[0])
-
+    if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
+        model._ls_to_orig = 1 * pp_net.bus.index.values.astype(int)
+        pp_to_ls = {pp_bus: ls_bus for pp_bus, ls_bus in zip(pp_net.bus.index, tmp_bus_ind)}
+    else:
+        pp_to_ls = None
     # deactivate in lightsim the deactivated bus in pandapower
     for bus_id in range(pp_net.bus.shape[0]):
         if not pp_net.bus["in_service"].values[bus_id]:
-            model.deactivate_bus(bus_id)
+            if pp_to_ls is None:
+                pp_bus_id = bus_id
+            else:
+                pp_bus_id = pp_to_ls[bus_id]
+            model.deactivate_bus(pp_bus_id)
 
     # init the powerlines
-    _aux_add_line(converter, model, pp_net)
+    _aux_add_line(converter, model, pp_net, pp_to_ls)
 
     # init the shunts
-    _aux_add_shunt(model, pp_net)
+    _aux_add_shunt(model, pp_net, pp_to_ls)
 
     # handle the trafos
-    _aux_add_trafo(converter, model, pp_net)
+    _aux_add_trafo(converter, model, pp_net, pp_to_ls)
 
     # handle loads
-    _aux_add_load(model, pp_net)
+    _aux_add_load(model, pp_net, pp_to_ls)
 
     # handle static generators (PQ generator)
-    _aux_add_sgen(model, pp_net)
+    _aux_add_sgen(model, pp_net, pp_to_ls)
 
     # handle generators
-    _aux_add_gen(model, pp_net)
+    _aux_add_gen(model, pp_net, pp_to_ls)
 
     # handle storage units
-    _aux_add_storage(model, pp_net)
+    _aux_add_storage(model, pp_net, pp_to_ls)
 
     # handle dc line
-    _aux_add_dc_line(model, pp_net)
+    _aux_add_dc_line(model, pp_net, pp_to_ls)
 
     # deal with slack bus
-    _aux_add_slack(model, pp_net)
+    _aux_add_slack(model, pp_net, pp_to_ls)
 
     return model

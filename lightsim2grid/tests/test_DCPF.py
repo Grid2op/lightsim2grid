@@ -124,10 +124,14 @@ class TestDCPF(unittest.TestCase):
 
             real_init_file = pp.from_json(case_name)
             backend = LightSimBackend()
+            type(backend)._clear_grid_dependant_class_attributes()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
+                type(backend).env_name = pn_net
                 backend.load_grid(case_name)
-
+                backend.assert_grid_correct()
+                # backend.init_pp_backend.assert_grid_correct()
+                
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
         # first i deactivate all slack bus in pp that are connected but not handled in ls
@@ -192,8 +196,9 @@ class TestDCPF(unittest.TestCase):
         load_p, load_q, load_v = backend.loads_info()
         max_mis = np.max(np.abs(load_p - load_p_pp))
         assert max_mis <= self.tol, f"Error: load_p do not match, maximum absolute error is {max_mis:.5f} MW"
-        max_mis = np.max(np.abs(load_q - load_q_pp))
-        assert max_mis <= self.tol, f"Error: load_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
+        # PP does not set "load_q" to 0. in DC
+        # max_mis = np.max(np.abs(load_q - load_q_pp))
+        # assert max_mis <= self.tol, f"Error: load_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
         max_mis = np.max(np.abs(load_v - load_v_pp))
         assert max_mis <= self.tol, f"Error: load_v do not match, maximum absolute error is {max_mis:.5f} kV"
 
