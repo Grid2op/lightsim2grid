@@ -421,22 +421,22 @@ jobs:
           #   name: cp38,
           #   version: '3.8',
           # }
-          # - {
-          #   name: cp39,
-          #   version: '3.9',
-          # }
+          - {
+            name: cp39,
+            version: '3.9',
+          }
           - {
             name: cp310,
             version: '3.10',
           }
-          # - {
-          #   name: cp311,
-          #   version: '3.11',
-          # }
-          # - {
-          #   name: cp312,
-          #   version: '3.12',
-          # }
+          - {
+            name: cp311,
+            version: '3.11',
+          }
+          - {
+            name: cp312,
+            version: '3.12',
+          }
         exclude:
           # because already done natively above
           - python: 
