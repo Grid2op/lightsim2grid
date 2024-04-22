@@ -405,17 +405,17 @@ jobs:
       matrix:
         runner:
           - {
-            name: macos-14,  # amd64
+            name: macos-14,  # host on arm64
             whl_nm: macos_arm64,
             cibuildwheel: macos
           }
           # - {
-          #   name: windows-2019,
+          #   name: windows-2019,  # host on x86_64
           #   whl_nm: windows_arm64,
           #   cibuildwheel: windows
           # }
           # - {
-          #   name: ubuntu-latest,  # takes forever, like 20 mins x 2 at least
+          #   name: ubuntu-latest,  # host on x86_64  # takes forever, like 20 mins x 2 at least
           #   whl_nm: linux_arm64,
           #   cibuildwheel: linux
           # }
@@ -424,22 +424,22 @@ jobs:
             name: cp38,
             version: '3.8',
           }
-          # - {
-          #   name: cp39,
-          #   version: '3.9',
-          # }
-          # - {
-          #   name: cp310,
-          #   version: '3.10',
-          # }
-          # - {
-          #   name: cp311,
-          #   version: '3.11',
-          # }
-          # - {
-          #   name: cp312,
-          #   version: '3.12',
-          # }
+          - {
+            name: cp39,
+            version: '3.9',
+          }
+          - {
+            name: cp310,
+            version: '3.10',
+          }
+          - {
+            name: cp311,
+            version: '3.11',
+          }
+          - {
+            name: cp312,
+            version: '3.12',
+          }
         exclude:
           - python: 
               name: cp310  # because already done natively above
@@ -483,14 +483,7 @@ jobs:
           CIBW_ARCHS_WINDOWS: ARM64 
           CIBW_ENVIRONMENT: __O3_OPTIM=1
           CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11 pip
-          CIBW_BEFORE_BUILD_MACOS: >
-            cd build_cmake &&
-            python generate_c_files.py &&
-            mkdir build &&
-            cd build  &&
-            cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release -DCMAKE_GENERATOR_PLATFORM=arm64 .. &&
-            cmake --build . --config Release &&
-            cmake --install . --prefix ..\built
+          CIBW_BEFORE_BUILD_MACOS: make clean && make CC=clang CXX=clang++
           CIBW_BEFORE_BUILD_LINUX: make clean && make
           CIBW_BEFORE_BUILD_WINDOWS: > 
             cd build_cmake &&
