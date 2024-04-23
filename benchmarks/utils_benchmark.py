@@ -191,7 +191,8 @@ def print_configuration():
     tmp = (f"- lightsim2grid version: {lightsim2grid.__version__}")
     res.append(tmp)
     print(tmp)
-    if hasattr(lightsim2grid, "compilation_options"):
+    try:
+        from lightsim2grid import compilation_options
         tmp = (f"- lightsim2grid extra information: ")
         res.append(tmp)
         print(tmp)
@@ -211,5 +212,8 @@ def print_configuration():
         tmp = (f"\t- compiled_o3_optim: {lightsim2grid.compilation_options.compiled_o3_optim} ")
         res.append(tmp)
         print(tmp)
+    except ImportError:
+        # before it was introduced
+        pass
     print()
     return '\n'.join(res)

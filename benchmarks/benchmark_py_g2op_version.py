@@ -24,7 +24,7 @@ g2op_ver = "1.10.1"
 
 for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
     
-    # create the venv (one for each python / lightsim2grid version)
+    # create the venv (one for each python / lightsim2grid version, but reaused for grid2op)
     venv_nm = f"venv_py{py_ver}"
     # print(f"Creation of the virtual env for python {py_ver}")
     subprocess.run([f"python{py_ver}", "-m", "venv", venv_nm])
@@ -62,7 +62,8 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
     res = subprocess.run([py_exec, "-c", "import lightsim2grid; print(lightsim2grid.__version__)"],
                           env=my_env,
                           capture_output=True)
-    ls_ver = res.stdout.decode("utf-8").lstrip().rstrip()
+    ls_ver = "0.8.2"
+    # ls_ver = res.stdout.decode("utf-8").lstrip().rstrip()
     
     for g2op_ver in tqdm(["1.7.0",
                           "1.7.1",
@@ -115,7 +116,9 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
         df_res_118 = pd.read_csv(f"py{py_ver}_gop{g2op_ver}_ls{ls_ver}_case118"+"speed.csv", sep=";")
         df_diff_118 = pd.read_csv(f"py{py_ver}_gop{g2op_ver}_ls{ls_ver}_case118"+"diff.csv", sep=";")
         with open(f"py{py_ver}_gop{g2op_ver}_ls{ls_ver}_case14"+"config_info.txt", "r", encoding="utf-8") as f:
-            header = f.readlines()
+            header_14 = f.readlines()
+        with open(f"py{py_ver}_gop{g2op_ver}_ls{ls_ver}_case118"+"config_info.txt", "r", encoding="utf-8") as f:
+            header_118 = f.readlines()
         # shape them into a proper md file
         bench_file = [f"Lightsim2grid {ls_ver} and grid2op {g2op_ver} (python {py_ver})",
                       "=================================================================",
@@ -126,7 +129,7 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
                       "Configuration:",
                       "",
                       ]
-        bench_file += [el.lstrip() for el in header]
+        bench_file += [el.rstrip() for el in header_14]
         bench_file += []
         res_14 = tabulate(df_res_14,
                           headers=df_res_14.columns, 
@@ -134,7 +137,7 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
                           showindex="never")
         bench_file += [res_14] + [""]
         diff_14 = tabulate(df_diff_14,
-                           headers=df_res_14.columns, 
+                           headers=df_diff_14.columns, 
                            tablefmt="rst",
                            showindex="never")
         bench_file += [diff_14] + [""]
@@ -145,15 +148,15 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
                        "Configuration:",
                        "",
                        ]
-        bench_file += [el.lstrip() for el in header]
+        bench_file += [el.rstrip() for el in header_118]
         bench_file += []
         res_118 = tabulate(df_res_118,
-                           headers=df_res_14.columns, 
+                           headers=df_res_118.columns, 
                            tablefmt="rst",
                            showindex="never")
         bench_file += [res_118] + [""]
         diff_118 = tabulate(df_diff_118,
-                            headers=df_res_14.columns, 
+                            headers=df_diff_118.columns, 
                             tablefmt="rst",
                             showindex="never")
         bench_file += [diff_118]
