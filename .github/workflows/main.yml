@@ -344,8 +344,13 @@ jobs:
           export __O3_OPTIM=1
           python setup.py build
 
-      - name: Build wheel
-        run: python setup.py bdist_wheel
+      - name: Build wheel (x86_64)
+        if: matrix.runner.arch == 'x86_64'
+        run: python setup.py bdist_wheel --plat-name=macosx_10_9_x86_64
+
+      - name: Build wheel (arm64)
+        if: matrix.runner.arch == 'arm64'
+        run: python setup.py bdist_wheel --plat-name=macosx_11_0_arm64
 
       - name: Install wheel
         shell: bash
