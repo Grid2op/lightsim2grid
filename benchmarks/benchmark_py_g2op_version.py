@@ -130,7 +130,7 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
                       "",
                       ]
         bench_file += [el.rstrip() for el in header_14]
-        bench_file += []
+        bench_file += [""]
         res_14 = tabulate(df_res_14,
                           headers=df_res_14.columns, 
                           tablefmt="rst",
@@ -149,7 +149,7 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
                        "",
                        ]
         bench_file += [el.rstrip() for el in header_118]
-        bench_file += []
+        bench_file += [""]
         res_118 = tabulate(df_res_118,
                            headers=df_res_118.columns, 
                            tablefmt="rst",
