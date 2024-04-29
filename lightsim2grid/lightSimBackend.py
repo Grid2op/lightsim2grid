@@ -725,6 +725,9 @@ class LightSimBackend(Backend):
     def _load_grid_pandapower(self, path=None, filename=None):
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
             type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
+        type(self.init_pp_backend).set_env_name(type(self).env_name)
+        if type(self).glop_version is not None:
+            type(self.init_pp_backend).glop_version = type(self).glop_version
         self.init_pp_backend.load_grid(path, filename)
         self._aux_init_pandapower()
     
@@ -932,6 +935,8 @@ class LightSimBackend(Backend):
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
         self.init_pp_backend.__class__ = type(self.init_pp_backend).init_grid(type(self))
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend  # lazy import
+        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
         self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:

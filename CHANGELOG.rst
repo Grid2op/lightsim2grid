@@ -18,6 +18,11 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+[0.8.2.post1] 2024-04-xx
+--------------------------
+- [FIXED] a "forward compatibility" issue with grid2op 1.10.2
+  (due to wrong usage of some internal classes when loading a pandapower grid)
+
 [0.8.2] 2024-04-22
 --------------------
 - [FIXED] CI was broken after migration to artifact v4, set it back to v3 
