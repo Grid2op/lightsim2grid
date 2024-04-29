@@ -327,13 +327,6 @@ The results can be found in:
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py311
   benchmark_solver/ubuntu_2004_server/ls0.8.1_glop1.10.1_py312
 
-.. note::
-  Any contribution here is more than welcomed. You can write a github discussion here 
-  https://github.com/BDonnot/lightsim2grid/discussions/new?category=show-and-tell 
-  and describe rapidly your setup and we'll make sure to include your benchmark in future release.
-
-  Thanks !
-
 .. toctree::
   :maxdepth: 1
   :caption: For a laptop with a ryzen 7 of 2020 wth a frequency of 4.2 GHz
@@ -341,6 +334,42 @@ The results can be found in:
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.7_py38
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.6_py38
   benchmark_solver/windows_10_portable/ls0.8.1_glop1.9.5_py38
+  
+.. toctree::
+  :maxdepth: 1
+  :caption: For a desktop with a i7 of 2014 with a frequency of 4.00GHz
+
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.10.0_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.10.0_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.10.1_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.10.1_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.0_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.0_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.1_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.1_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.2_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.2_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.3_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.3_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.4_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.4_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.5_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.5_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.6_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.6_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.7_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.7_py3.9
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.8_py3.8
+  benchmark_solver/ubuntu_2004_desktop/ls0.8.2_glop1.9.8_py3.9
+
+
+.. note::
+  Any contribution here is more than welcomed. You can write a github discussion here 
+  https://github.com/BDonnot/lightsim2grid/discussions/new?category=show-and-tell 
+  and describe rapidly your setup and we'll make sure to include your benchmark in future release.
+
+  Thanks !
+
 
 Benchmarks of other lightsim2grid functions
 --------------------------------------------

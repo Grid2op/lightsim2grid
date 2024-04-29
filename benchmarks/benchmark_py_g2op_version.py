@@ -22,7 +22,8 @@ pp_ver = '2.14.6'  # latest on Apr. 22nd 2024 for all tested python
 py_ver = "3.9"
 g2op_ver = "1.10.1"
 
-for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
+for py_ver in tqdm([# "3.8" , "3.9", 
+                    "3.10", "3.11", "3.12"]):
     
     # create the venv (one for each python / lightsim2grid version, but reaused for grid2op)
     venv_nm = f"venv_py{py_ver}"
@@ -65,11 +66,11 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
     ls_ver = "0.8.2"
     # ls_ver = res.stdout.decode("utf-8").lstrip().rstrip()
     
-    for g2op_ver in tqdm(["1.7.0",
-                          "1.7.1",
-                          "1.7.2", 
-                          "1.8.0",
-                          "1.8.1",
+    for g2op_ver in tqdm([# "1.7.0",
+                          # "1.7.1",
+                          # "1.7.2", 
+                          # "1.8.0",
+                          # "1.8.1",
                           "1.9.0", 
                           "1.9.1", 
                           "1.9.2",
@@ -94,7 +95,7 @@ for py_ver in tqdm(["3.8" , "3.9", "3.10", "3.11", "3.12"]):
         # fix the "dtype" in grid2op issue
         shutil.copyfile("../../grid2op/grid2op/dtypes.py",
                         f"{venv_nm}/lib/python{py_ver}/site-packages/grid2op/dtypes.py")
-        
+            
         # run the benchmarks
         res = subprocess.run([py_exec, "benchmark_solvers.py",
                               "--env_name", "l2rpn_case14_sandbox", 
