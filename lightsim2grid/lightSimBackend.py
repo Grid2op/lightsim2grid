@@ -569,7 +569,10 @@ class LightSimBackend(Backend):
         self.n_gen = len(self._grid.get_generators())
         self.n_load = len(self._grid.get_loads())
         self.n_storage = len(self._grid.get_storages())
-        self.n_shunt = len(self._grid.get_shunts())
+        if type(self).shunts_data_available:
+            self.n_shunt = len(self._grid.get_shunts())
+        else:
+            self.n_shunt = None
         
         df = grid_tmp.get_substations()
         from_sub = True
@@ -825,10 +828,13 @@ class LightSimBackend(Backend):
         self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         
-        self.n_shunt = pp_cls.n_shunt
-        self.shunt_to_subid = pp_cls.shunt_to_subid
-        self.name_shunt = pp_cls.name_shunt
-        
+        if type(self).shunts_data_available:
+            self.n_shunt = pp_cls.n_shunt
+            self.shunt_to_subid = pp_cls.shunt_to_subid
+            self.name_shunt = pp_cls.name_shunt
+        else:
+            self.n_shunt = None
+            
         self._compute_pos_big_topo()
         if hasattr(self.init_pp_backend, "_sh_vnkv"):
             # attribute has been added in grid2op ~1.3 or 1.4
@@ -1479,5 +1485,6 @@ class LightSimBackend(Backend):
         self._timer_apply_act = 0.
         self._grid.tell_solver_need_reset()
         self._reset_res_pointers()
-        self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
+        if type(self).shunts_data_available:
+            self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
         self.topo_vect[:] = self.__init_topo_vect  # TODO

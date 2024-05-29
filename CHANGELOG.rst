@@ -22,7 +22,7 @@ Change Log
 --------------------------
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
-  to `False` (not unit tested yet)
+  to `False`
 - TODO HVDC in Jacobian (see pandapower)
 
 [0.8.2.post1] 2024-04-xx
