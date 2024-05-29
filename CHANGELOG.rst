@@ -18,6 +18,13 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+[0.8.3] 
+--------------------------
+- [ADDED] it is now possible to deactivate the support for shunts by 
+  subclassing the LightSimBackend class and setting the `shunts_data_available`
+  to `False` (not unit tested yet)
+- TODO HVDC in Jacobian (see pandapower)
+
 [0.8.2.post1] 2024-04-xx
 --------------------------
 - [FIXED] a "forward compatibility" issue with grid2op 1.10.2
