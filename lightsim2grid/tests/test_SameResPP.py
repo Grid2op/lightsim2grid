@@ -85,15 +85,20 @@ class MyTestCase(unittest.TestCase):
         self._aux_test(case)
 
     def _aux_test(self, pn_net):
+        n_busbar = 2
         with tempfile.TemporaryDirectory() as path:
             case_name = os.path.join(path, "this_case.json")
             pp.to_json(pn_net, case_name)
 
             real_init_file = pp.from_json(case_name)
+            LightSimBackend._clear_grid_dependant_class_attributes()
+            LightSimBackend.set_env_name(type(self).__name__ + case_name)
+            LightSimBackend.set_n_busbar_per_sub(n_busbar)
             backend = LightSimBackend()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
                 backend.load_grid(case_name)
+            backend.assert_grid_correct()
 
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid

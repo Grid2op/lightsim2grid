@@ -268,7 +268,7 @@ class TestTheta(unittest.TestCase):
 
 class TestBackendArgument(unittest.TestCase):
     def setUp(self) -> None:
-        if grid2op.__version__ < "1.7.1":
+        if version.parse(grid2op.__version__) < version.parse("1.7.1"):
             self.skipTest(f"grid2op version too old for the feature. Expecting "
                           f"grid2op >= 1.7.1 found {grid2op.__version__}")
             

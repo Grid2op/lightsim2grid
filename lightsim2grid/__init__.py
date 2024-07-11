@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "0.8.3.dev1"
+__version__ = "0.8.3.dev2"
 
 __all__ = ["newtonpf", "SolverType", "ErrorType", "solver", "compilation_options"]
 
@@ -20,7 +20,6 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the Backend will not be available
     pass
-    # print(f"LightSimBackend import error: {exc_}")
 
 try:
     from lightsim2grid.physical_law_checker import PhysicalLawChecker
@@ -28,7 +27,6 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the PhysicalLawChecker will not be available
     pass
-    # print(f"PhysicalLawChecker import error: {exc_}")
 
 try:
     from lightsim2grid.timeSerie import TimeSerie
@@ -37,7 +35,6 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the TimeSeries module will not be available
     pass
-    # print(f"TimeSerie import error: {exc_}")
 
 try:
     from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
@@ -46,7 +43,6 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    # print(f"ContingencyAnalysis import error: {exc_}")
     
 try:
     from lightsim2grid.rewards import *
@@ -54,4 +50,3 @@ try:
 except ImportError as exc_:
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
-    # print(f"rewards import error: {exc_}")
