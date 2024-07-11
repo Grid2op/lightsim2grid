@@ -829,9 +829,17 @@ class LightSimBackend(Backend):
         self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         
         if type(self).shunts_data_available:
-            self.n_shunt = pp_cls.n_shunt
-            self.shunt_to_subid = pp_cls.shunt_to_subid
-            self.name_shunt = pp_cls.name_shunt
+            if pp_cls.n_shunt is not None:
+                # modern grid2op version
+                self.n_shunt = pp_cls.n_shunt
+                self.shunt_to_subid = pp_cls.shunt_to_subid
+                self.name_shunt = pp_cls.name_shunt
+            else:
+                # legacy grid2op version...
+                warnings.warn("You are using a legacy grid2op version, please upgrade grid2op.")
+                self.n_shunt = self.init_pp_backend.n_shunt
+                self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
+                self.name_shunt = self.init_pp_backend.name_shunt
         else:
             self.n_shunt = None
             

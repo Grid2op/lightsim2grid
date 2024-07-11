@@ -27,6 +27,7 @@ TODO HVDC in Jacobian (see pandapower)
 - [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
   More specifically the solver type used might not be correct if changed which could 
   lead to wrong Ybus being passed to the solver.
+- [FIXED] some compatibility mode with python 3.7
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`
