@@ -24,6 +24,9 @@ TODO HVDC in Jacobian (see pandapower)
 
 [0.8.3] 2024-07-xx
 --------------------------
+- TODO : add basic tests for legacy grid2op
+- TODO : numpy 2. compat (includes a mode without pandapower)
+
 - [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
   More specifically the solver type used might not be correct if changed which could 
   lead to wrong Ybus being passed to the solver.
