@@ -785,6 +785,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
     bus_pv_ = Eigen::VectorXi::Map(&bus_pv[0], bus_pv.size());
     bus_pq_ = Eigen::VectorXi::Map(&bus_pq[0], bus_pq.size());
 }
+
 void GridModel::compute_results(bool ac){
     // retrieve results from powerflow
     const auto & Va = ac ? _solver.get_Va() : _dc_solver.get_Va();

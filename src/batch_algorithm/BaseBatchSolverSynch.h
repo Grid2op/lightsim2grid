@@ -29,9 +29,9 @@ class BaseBatchSolverSynch
             n_trafos_(init_grid_model.nb_trafo()),
             n_total_(n_line_ + n_trafos_),
             _solver(),
+            _voltages(),
             _amps_flows(),
             _active_power_flows(),
-            _voltages(),
             _nb_solved(0),
             _timer_compute_A(0.),
             _timer_compute_P(0.),
@@ -56,8 +56,9 @@ class BaseBatchSolverSynch
         virtual ~BaseBatchSolverSynch() = default;  // to avoid warning about overload virtual
     
         // solver "control"
-        void change_solver(const SolverType & type){
+        virtual void change_solver(const SolverType & type){
             _solver.change_solver(type);
+            clear();
         }
         std::vector<SolverType> available_solvers() const {return _solver.available_solvers(); }
         SolverType get_solver_type() const {return _solver.get_type(); }
@@ -87,10 +88,12 @@ class BaseBatchSolverSynch
             _timer_solver = 0.;
         }
 
-        // results
-        Eigen::Ref<const RealMat > get_flows() const {return _amps_flows;}
-        Eigen::Ref<const RealMat > get_power_flows() const {return _active_power_flows;}
-        Eigen::Ref<const CplxMat > get_voltages() const {return _voltages;}
+        // results 
+        // this should not be const, see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#pass-by-reference
+        // tl;dr: const can make copies ! OR NOT I AM LOST
+        const RealMat & get_flows() const {return _amps_flows;}
+        const RealMat & get_power_flows() const {return _active_power_flows;}
+        const CplxMat & get_voltages() const {return _voltages;}
         
     protected:
         template<class T>
@@ -158,7 +161,7 @@ class BaseBatchSolverSynch
             const auto & el_status = structure_data.get_status();
             const auto & bus_from = structure_data.get_bus_from();
             const auto & bus_to = structure_data.get_bus_to();
-            bool is_ac = _solver.ac_solver_used();
+            const bool is_ac = _solver.ac_solver_used();
 
             Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_ff() : structure_data.ydc_ff();
             Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_ft() : structure_data.ydc_ft();
@@ -241,9 +244,9 @@ class BaseBatchSolverSynch
         ChooseSolver _solver;
 
         // outputs
+        CplxMat _voltages;
         RealMat _amps_flows;
         RealMat _active_power_flows;
-        CplxMat _voltages;
         
         // timers
         int _nb_solved;

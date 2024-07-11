@@ -970,14 +970,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // perform the computations
         .def("compute_Vs", &TimeSeries::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
-        .def("compute_flows", &TimeSeries::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
+        .def("compute_flows", &TimeSeries::compute_flows, DocComputers::compute_flows.c_str())
         .def("compute_power_flows", &TimeSeries::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
         
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &TimeSeries::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_power_flows", &TimeSeries::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_voltages", &TimeSeries::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
-        .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
+        // see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#returning-values-to-python
+        .def("get_flows", &TimeSeries::get_flows, DocComputers::get_flows.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_power_flows", &TimeSeries::get_power_flows, DocComputers::get_power_flows.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &TimeSeries::get_voltages, DocComputers::get_voltages.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs" 
         ;
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
@@ -1007,13 +1008,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // perform the computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
-        .def("compute_flows", &ContingencyAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
+        .def("compute_flows", &ContingencyAnalysis::compute_flows, DocSecurityAnalysis::compute_flows.c_str())
         .def("compute_power_flows", &ContingencyAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
-        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
-        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
+        // see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#returning-values-to-python
+        .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str(), py::return_value_policy::reference_internal)
+        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str(), py::return_value_policy::reference_internal)
 
         // timers
         .def("total_time", &ContingencyAnalysis::total_time, DocComputers::total_time.c_str())

@@ -231,3 +231,7 @@ class TestDCPF(unittest.TestCase):
         # max_mis = np.max(np.abs(sh_v - sh_v_pp))
         # assert max_mis <= self.tol, f"Error: sh_v do not match, maximum absolute error is {max_mis:.5f} kV"
         # again, pandapower put nan for the voltages...
+
+
+if __name__ == "__main__":
+    unittest.main()

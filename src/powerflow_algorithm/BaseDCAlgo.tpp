@@ -33,7 +33,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         return false;
     }
     BaseAlgo::reset_timer();
-    bool doesnt_need_refactor = true;
+    bool has_just_been_factorized = false;
 
     auto timer = CustTimer();
     if(need_factorize_ ||
@@ -75,9 +75,8 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
-        // std::cout << "\tneed to change Ybus\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
-        doesnt_need_refactor = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
+        has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
     }
     
@@ -92,7 +91,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // remove the slack bus from Sbus
     if(need_factorize_ || _solver_control.need_recompute_sbus()){
-        // std::cout << "\tneed to compute Sbus\n";
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
@@ -111,19 +109,18 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
             return false;
         }
         need_factorize_ = false;
-        doesnt_need_refactor = true;
+        has_just_been_factorized = true;
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
     RealVect Va_dc_without_slack = dcSbus_noslack_;
-    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, doesnt_need_refactor);
+    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
         err_ = error;
         timer_total_nr_ += timer.duration();
-            // std::cout << "_linear_solver.solve\n";
         return false;
     }
-
+    
     if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
@@ -142,7 +139,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;
         auto timer_postproc = CustTimer();
     #endif // __COUT_TIMES
-
+    
     // retrieve back the results in the proper shape (add back the slack bus)
     // TODO have a better way for this, for example using `.segment(0,npv)`
     // see the BaseAlgo.cpp: _evaluate_Fx
@@ -207,10 +204,11 @@ void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen
         for (typename Eigen::SparseMatrix<ref_mat_type>::InnerIterator it(ref_mat, k); it; ++it)
         {
             int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
-            if(mat_bus_id_(row_res) == -1) continue;
             row_res = mat_bus_id_(row_res);
             int col_res = static_cast<int>(it.col());  // should be k   // TODO Eigen::Index here ?
             col_res = mat_bus_id_(col_res);
+            if(row_res == -1) continue;
+            if(col_res == -1) continue;
             tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }
     }

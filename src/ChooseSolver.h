@@ -290,6 +290,17 @@ class ChooseSolver
             return res;
         }
 
+        void update_internal_Ybus(const Coeff & new_coeffs, bool add){
+                if(_solver_type != SolverType::DC && 
+                   _solver_type != SolverType::KLUDC && 
+                   _solver_type != SolverType::NICSLUDC &&
+                   _solver_type != SolverType::CKTSODC){
+                throw std::runtime_error("ChooseSolver::update_internal_Ybus: cannot get ptdf for a solver that is not DC.");
+                }
+            auto p_solver = get_prt_solver("update_internal_Ybus", true);
+            p_solver -> update_internal_Ybus(new_coeffs, add);
+        }
+
         void tell_solver_control(const SolverControl & solver_control){
             auto p_solver = get_prt_solver("tell_solver_control", false);
             p_solver -> tell_solver_control(solver_control);

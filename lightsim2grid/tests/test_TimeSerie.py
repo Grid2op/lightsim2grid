@@ -35,3 +35,7 @@ class TimeSerieTester(unittest.TestCase):
                 raise RuntimeError(f"error at it {it_num} for A")
             if np.max(np.abs(Ps[1 + it_num] - obs.p_or))  > 1e-3:
                 raise RuntimeError(f"error at it {it_num} for P")
+
+
+if __name__ == "__main__":
+    unittest.main()

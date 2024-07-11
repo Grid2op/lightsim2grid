@@ -200,3 +200,7 @@ class TestN1ContingencyReward_Margins(TestN1ContingencyReward_Base):
 class TestN1ContingencyReward_PP(TestN1ContingencyReward_Base):
     def init_backend(self):
         return PandaPowerBackend(with_numba=False, lightsim2grid=False)
+
+
+if __name__ == "__main__":
+    unittest.main()

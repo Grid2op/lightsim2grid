@@ -143,6 +143,10 @@ class BaseAlgo : public BaseConstants
         virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the BSDF matrix with this solver type.");
         }
+
+        virtual void update_internal_Ybus(const Coeff & new_coeffs, bool add){
+            throw std::runtime_error("Function update_internal_Ybus not implemented in general.");
+        }
         
     protected:
         virtual void reset_timer(){

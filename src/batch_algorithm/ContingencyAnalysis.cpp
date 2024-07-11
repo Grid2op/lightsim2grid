@@ -145,6 +145,21 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
+
+    // redo a powerflow in case the solver has changed
+    if(ac_solver_used){
+        if(_grid_model.get_solver().get_type() != _solver.get_type())
+        {
+            _grid_model.change_solver(_solver.get_type());
+            _grid_model.ac_pf(Vinit, max_iter, tol);
+        }
+    }else{
+        if(_grid_model.get_dc_solver().get_type() != _solver.get_type())
+        {
+            _grid_model.change_solver(_solver.get_type());
+            _grid_model.dc_pf(Vinit, max_iter, tol);
+        }
+    }
     Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus() : _grid_model.get_dcYbus();
     const Eigen::Index nb_buses_solver = Ybus.cols();
     const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
@@ -168,35 +183,57 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     // reset the solver
     _solver.reset();
-    _solver_control.tell_none_changed();
-    _solver_control.tell_recompute_ybus();
-    // _solver_control.tell_ybus_some_coeffs_zero();
+    _solver_control.tell_ybus_some_coeffs_zero();
     // ybus does not change sparsity pattern here
 
     // compute the right Vinit to send to the solver
     CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
 
+    // perform the initial powerflow
+    _solver_control.tell_all_changed();
+    _solver.tell_solver_control(_solver_control);
+    bool conv = _solver.compute_pf(Ybus, Vinit_solver, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
+
     // end of pre processing
     _timer_pre_proc = timer_preproc.duration();
+    if(!conv) return;
+    _solver_control.tell_none_changed();
 
     // now perform the security analysis
     Eigen::Index cont_id = 0;
-    bool conv;
     CplxVect V;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
-        bool invertible = remove_from_Ybus(Ybus, coeffs_modif);
+        bool invertible = true;
+        // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
+        if (ac_solver_used) invertible = remove_from_Ybus(Ybus, coeffs_modif);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
         conv = false;
 
         if(invertible)
         {
+            if(!ac_solver_used)
+            {
+                // DC solver stores the ybus internally, I update it
+                // instead of building it over and over
+                for(const Coeff& coeff : coeffs_modif){
+                    _solver.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
+                }
+            }
             V = Vinit_solver; // Vinit is reused for each contingencies
             conv = compute_one_powerflow(Ybus, V, Sbus,
                                          slack_ids, slack_weights,
                                          bus_pv, bus_pq,
                                          max_iter,
                                          tol / sn_mva);
+            if(!ac_solver_used)
+            {
+                // DC solver stores the ybus internally, I update it
+                // instead of building it over and over
+                for(const Coeff& coeff : coeffs_modif){
+                    _solver.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
+                }
+            }
         }
         // std::string conv_str =  conv ? "has converged" : "has diverged";
         // std::cout << "contingency " << contingency << ": " << conv_str << std::endl;
@@ -204,7 +241,8 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         // ++contingency;
 
         timer_modif_Ybus = CustTimer();
-        readd_to_Ybus(Ybus, coeffs_modif);
+        // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
+        if (ac_solver_used) readd_to_Ybus(Ybus, coeffs_modif); 
         _timer_modif_Ybus += timer_modif_Ybus.duration();
         if (conv && invertible) _voltages.row(cont_id)(id_solver_to_me) = V.array();
         ++cont_id;
@@ -212,6 +250,8 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     _timer_total = timer.duration();
 }
 
+// by default the flows are not 0 when the powerline is connected in the original topology
+// this function sorts this out
 void ContingencyAnalysis::clean_flows(bool is_amps)
 {
     auto timer = CustTimer();

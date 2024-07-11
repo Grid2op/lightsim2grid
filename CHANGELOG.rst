@@ -18,12 +18,20 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
-[0.8.3] 
+TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm ?
+TODO HVDC in Jacobian (see pandapower)
+
+
+[0.8.3] 2024-07-xx
 --------------------------
+- [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
+  More specifically the solver type used might not be correct if changed which could 
+  lead to wrong Ybus being passed to the solver.
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`
-- TODO HVDC in Jacobian (see pandapower)
+- [IMPROVED] in the `ContingencyAnalysis` class, the underlying cpp model will now
+  perform an initial powerflow.
 
 [0.8.2.post1] 2024-04-xx
 --------------------------

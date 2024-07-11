@@ -29,6 +29,7 @@ if CAN_PERFORM_THESE:
 else:
     print("Have you installed grid2op in dev / editable mode ? We cannot make the `create_test_suite` :-(")
     
+    
 # and run it with `python -m unittest gridcal_backend_tests.py`
 if __name__ == "__main__":
     unittest.main()

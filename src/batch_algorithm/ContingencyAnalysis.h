@@ -12,12 +12,6 @@
 #include "BaseBatchSolverSynch.h"
 #include <set>
 
-struct Coeff{
-    Eigen::Index row_id;
-    Eigen::Index col_id;
-    cplx_type value;
-};
-
 /**
 Class to perform a contingency analysis (security analysis), which consist of performing some powerflow after some powerlines
 have been disconnected 
@@ -110,13 +104,13 @@ class ContingencyAnalysis: public BaseBatchSolverSynch
         // make the computation
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
         
-        Eigen::Ref<const RealMat > compute_flows() {
+        Eigen::Ref<RealMat > compute_flows() {
             compute_flows_from_Vs();
             clean_flows();
             return _amps_flows;
         }
 
-        Eigen::Ref<const RealMat > compute_power_flows() {
+        Eigen::Ref<RealMat > compute_power_flows() {
             compute_flows_from_Vs(false);
             clean_flows(false);
             return _active_power_flows;
@@ -139,6 +133,11 @@ class ContingencyAnalysis: public BaseBatchSolverSynch
         double total_time() const {return _timer_total;}
         double preprocessing_time() const {return _timer_pre_proc;}
         double modif_Ybus_time() const {return _timer_modif_Ybus;}
+
+        virtual void change_solver(const SolverType & type){
+            BaseBatchSolverSynch::change_solver(type);
+            init_li_coeffs(_solver.ac_solver_used());
+        }
 
     protected:
         // prevent the insertion of "out of range" elements

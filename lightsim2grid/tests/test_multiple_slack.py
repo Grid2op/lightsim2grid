@@ -331,5 +331,6 @@ class TestMultipleSlack14(unittest.TestCase):
         assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= 1e-6)
 
+
 if __name__ == "__main__":
     unittest.main()

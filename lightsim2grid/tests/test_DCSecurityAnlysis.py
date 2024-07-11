@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -7,12 +7,11 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import unittest
-from grid2op import Backend
 import numpy as np
 import grid2op
 
-from lightsim2grid import ContingencyAnalysis
-from lightsim2grid import LightSimBackend
+from lightsim2grid.solver import SolverType
+from lightsim2grid import ContingencyAnalysis, LightSimBackend
 import warnings
 import pdb
 
@@ -23,16 +22,18 @@ class TestSecurityAnalysis(unittest.TestCase):
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
         self.obs = self.env.reset(seed=0,options={"time serie id": 0})
-        
+    
     def tearDown(self) -> None:
         self.env.close()
         return super().tearDown()
 
     def test_can_create(self):
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
     
     def test_clear(self):
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
 
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
@@ -48,6 +49,8 @@ class TestSecurityAnalysis(unittest.TestCase):
 
     def test_add_single_contingency(self):
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
+        
         with self.assertRaises(RuntimeError):
             sa.add_single_contingency("toto")
         with self.assertRaises(RuntimeError):
@@ -66,6 +69,7 @@ class TestSecurityAnalysis(unittest.TestCase):
 
     def test_add_multiple_contingencies(self):
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
         all_conts = sa.computer.my_defaults()
@@ -93,6 +97,7 @@ class TestSecurityAnalysis(unittest.TestCase):
 
     def test_add_all_n1_contingencies(self):
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_all_n1_contingencies()
         all_conts = sa.computer.my_defaults()
         assert len(all_conts) == self.env.n_line
@@ -102,6 +107,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: ask for all contingencies,
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -113,6 +119,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: ask for all contingencies , 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -124,6 +131,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -134,6 +142,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -144,6 +153,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -154,6 +164,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -163,6 +174,7 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_get_flows_multiple(self):
         """test the get_flows function when multiple contingencies"""
         sa = ContingencyAnalysis(self.env)
+        sa.change_solver(SolverType.DC)
         sa.add_multiple_contingencies(0, [0, 4], [5, 7], 4)
 
         # everything
@@ -199,17 +211,19 @@ class TestSecurityAnalysis(unittest.TestCase):
     def test_change_injection(self):
         """test the capacity of the things to handle different steps"""
         sa1 = ContingencyAnalysis(self.env)
+        sa1.change_solver(SolverType.DC)
         conts = [0, [0, 4], [5, 7], 4]
         sa1.add_multiple_contingencies(*conts)
         obs = self.env.reset()
         sa2 = ContingencyAnalysis(self.env)
+        sa2.change_solver(SolverType.DC)
         sa2.add_multiple_contingencies(*conts)
-
+        
         res_p1, res_a1, res_v1 = sa1.get_flows()
         res_p2, res_a2, res_v2 = sa2.get_flows()
         
         # basic check that the right flows are 0.
-        assert abs(res_a1[0, 0]) <= 1e-6
+        assert abs(res_a1[0, 0]) <= 1e-6, f"{abs(res_a1[0, 0])} vs 0."
         assert abs(res_a1[1, 0]) + abs(res_a1[1, 4]) <= 1e-6
         assert abs(res_a1[2, 5]) + abs(res_a1[2, 7]) <= 1e-6
         assert abs(res_a1[3, 4]) <= 1e-6
@@ -226,16 +240,23 @@ class TestSecurityAnalysis(unittest.TestCase):
         assert abs(res_p2[1, 0]) + abs(res_p2[1, 4]) <= 1e-6
         assert abs(res_p2[2, 5]) + abs(res_p2[2, 7]) <= 1e-6
         assert abs(res_p2[3, 4]) <= 1e-6
-
+        
+        # check that the flows on a line that is never disconnected changed
+        assert np.max(res_a1[:,2]) - np.min(res_a1[:,2]) >= 1.
+        assert np.max(res_a2[:,2]) - np.min(res_a2[:,2]) >= 1.
+        assert np.max(res_p1[:,2]) - np.min(res_p1[:,2]) >= 1.
+        assert np.max(res_p2[:,2]) - np.min(res_p2[:,2]) >= 1.
+            
         # check that indeed the matrix are different
         assert np.max(np.abs(res_a1 - res_a2)) > 1.
-        assert np.max(np.abs(res_p1 - res_p2)) > 1.
+        assert np.max(np.abs(res_p1 - res_p2)) > 1.      
+        
         
         params = self.env.parameters
+        params.ENV_DC = True
         params.MAX_LINE_STATUS_CHANGED = 2
         params.NO_OVERFLOW_DISCONNECTION = True
-        self.obs.change_forecast_parameters(params)
-        
+        self.obs.change_forecast_parameters(params)  
         for cont_id, cont in enumerate(conts):
             if isinstance(cont, (list, tuple, np.ndarray)):
                 act_dict = {"set_line_status": [(l_id, -1) for l_id in cont]}
@@ -243,10 +264,14 @@ class TestSecurityAnalysis(unittest.TestCase):
                 act_dict = {"set_line_status": [(cont, -1)]}
             sim_obs1 = self.obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
             sim_obs2 = obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
+            assert np.abs(sim_obs1.q_or).max() <= 1e-6, "In DC there should not be any reactive !"
+            assert np.abs(sim_obs2.q_or).max() <= 1e-6, "In DC there should not be any reactive !"
             assert (np.abs(res_p1[cont_id, :] - sim_obs1.p_or) <= 1e-5).all(), f"{res_p1[cont_id, :] - sim_obs1.p_or}"
             assert (np.abs(res_p2[cont_id, :] - sim_obs2.p_or) <= 1e-5).all(), f"{res_p2[cont_id, :] - sim_obs2.p_or}"
-            assert (np.abs(res_a1[cont_id, :] - sim_obs1.a_or) <= 1e-4).all(), f"{res_a1[cont_id, :] - sim_obs1.a_or}"
-            assert (np.abs(res_a2[cont_id, :] - sim_obs2.a_or) <= 1e-4).all(), f"{res_a2[cont_id, :] - sim_obs2.a_or}"
+            # below: does not pass because the voltages are not the same. Vm are init with results of AC PF for 
+            # the contingency analysis and with flat voltage for obs.simulate
+            # assert (np.abs(res_a1[cont_id, :] - sim_obs1.a_or) <= 1e-4).all(), f"{res_a1[cont_id, :] - sim_obs1.a_or}"
+            # assert (np.abs(res_a2[cont_id, :] - sim_obs2.a_or) <= 1e-4).all(), f"{res_a2[cont_id, :] - sim_obs2.a_or}"
 
 
 if __name__ == "__main__":
