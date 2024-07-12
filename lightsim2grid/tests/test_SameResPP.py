@@ -105,10 +105,11 @@ class MyTestCase(unittest.TestCase):
         # first i deactivate all slack bus in pp that are connected but not handled in ls
         pp_net.ext_grid["in_service"].loc[:] = False
         pp_net.ext_grid["in_service"].iloc[0] = True
-        conv, exc_ = backend.runpf()
         conv_pp, exc_pp = backend.init_pp_backend.runpf()
-        # import pdb
-        # pdb.set_trace()
+        conv, exc_ = backend.runpf()
+        # backend._debug_Vdc
+        # backend.init_pp_backend._grid._ppc["internal"]["Va_it"][0]
+        # np.abs(backend._grid.check_solution(backend.init_pp_backend._grid["_ppc"]["internal"]["V"], False)).max()
         assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
         assert conv, "Error: lightsim do not converge"
 

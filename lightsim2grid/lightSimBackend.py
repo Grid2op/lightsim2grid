@@ -256,6 +256,7 @@ class LightSimBackend(Backend):
         self._trafo_lv_res = None
         self._storage_res = None
         self._reset_res_pointers()
+        self._debug_Vdc = None   # use only for debug !
         
     def _aux_init_super(self, 
                         detailed_infos_for_cascading_failures,
@@ -1122,12 +1123,14 @@ class LightSimBackend(Backend):
                 if self.initdc:
                     self._grid.deactivate_result_computation()
                     # if I init with dc values, it should depends on previous state
-                    self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
-                    Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
+                    self.V[:] = 1.  # self._grid.get_init_vm_pu()  # see issue 30
+                    # apparently pandapower run a  "real" dc powerflow with vm_pu = 1
+                    # when it initialize the AC powerflow, 
+                    self._debug_Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
-                    if Vdc.shape[0] == 0:
+                    if self._debug_Vdc.shape[0] == 0:
                         raise BackendError(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
-                    V_init = Vdc
+                    V_init = 1. * self._debug_Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
@@ -1340,7 +1343,7 @@ class LightSimBackend(Backend):
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco",
-                           "_timer_fetch_data_cpp"
+                           "_timer_fetch_data_cpp", "_debug_Vdc",
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -1495,4 +1498,4 @@ class LightSimBackend(Backend):
         self._reset_res_pointers()
         if type(self).shunts_data_available:
             self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
-        self.topo_vect[:] = self.__init_topo_vect  # TODO
+        self.topo_vect[:] = self.__init_topo_vect  # TODO#

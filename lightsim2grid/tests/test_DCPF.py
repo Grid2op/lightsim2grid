@@ -139,7 +139,6 @@ class TestDCPF(unittest.TestCase):
         pp_net.ext_grid["in_service"].iloc[0] = True
         conv, exc_ = backend.runpf(is_dc=True)
         conv_pp, exc_pp = backend.init_pp_backend.runpf(is_dc=True)
-
         assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
         assert conv, f"Error: lightsim do not converge with error: {exc_}"
 

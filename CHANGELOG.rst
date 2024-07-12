@@ -31,6 +31,11 @@ TODO HVDC in Jacobian (see pandapower)
   More specifically the solver type used might not be correct if changed which could 
   lead to wrong Ybus being passed to the solver.
 - [FIXED] some compatibility mode with python 3.7
+- [FIXED] a bug when "turned off" generator were not PV (slack was 
+  "turned off" when its target P was 0. But still the slack...)
+- [FIXED] (consistency with pandapower) when an intial powerflow is run
+  to initialized an AC powerflow, the initial voltages are 1 pu (and 
+  not grid.get_init_vm_pu() as previously).
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`

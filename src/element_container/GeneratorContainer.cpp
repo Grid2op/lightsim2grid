@@ -187,8 +187,14 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
-        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+
+        // gen is purposedly not pv
+        if (!voltage_regulator_on_[gen_id]) continue;  
+
+        // in this case turned off generators are not pv
+        // except the slack that can have a target of 0MW but is still "on"
+        // no matter what
+        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0. && !(gen_slack_weight_[gen_id] == 0.)) continue;  
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];

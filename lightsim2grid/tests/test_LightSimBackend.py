@@ -96,12 +96,6 @@ class TestLoadingBackendFunc(BaseTestLoadingBackendFunc, unittest.TestCase):
         BaseTestLoadingBackendFunc.setUp(self)
         self.tests_skipped = set()
 
-        # lightsim does not support DC powerflow at the moment
-        # self.tests_skipped.add("test_pf_ac_dc")
-        # self.tests_skipped.add("test_apply_action_active_value")
-        # self.tests_skipped.add("test_runpf_dc")
-        # Now (version >= 0.5.5) it does
-
     def tearDown(self):
         # TODO find something more elegant
         BaseTestLoadingBackendFunc.tearDown(self)

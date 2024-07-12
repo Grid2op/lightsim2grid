@@ -118,7 +118,7 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 }
 
 bool BaseAlgo::_check_for_convergence(const RealVect & F,
-                                        real_type tol)
+                                      real_type tol)
 {
     auto timer = CustTimer();
     const auto norm_inf = F.lpNorm<Eigen::Infinity>();
@@ -129,8 +129,8 @@ bool BaseAlgo::_check_for_convergence(const RealVect & F,
 }
 
 bool BaseAlgo::_check_for_convergence(const RealVect & p,
-                                        const RealVect & q,
-                                        real_type tol)
+                                      const RealVect & q,
+                                      real_type tol)
 {
     auto timer = CustTimer();
     const auto norm_inf_p = p.lpNorm<Eigen::Infinity>();

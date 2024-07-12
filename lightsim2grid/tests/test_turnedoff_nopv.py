@@ -52,9 +52,9 @@ class TestTurnedOffNoPv(unittest.TestCase):
         gen_p = np.zeros((self.max_iter_real, env.n_gen))
         while not done:
             obs, reward, done, info = env.step(env.action_space())
-            aor[ts,:] = obs.a_or
-            gen_v[ts,:] = obs.gen_v
-            gen_p[ts,:] = obs.gen_p
+            aor[ts,:] = 1. * obs.a_or
+            gen_v[ts,:] = 1. * obs.gen_v
+            gen_p[ts,:] = 1. * obs.gen_p
             ts += 1
             if ts >= self.max_iter_real:
                 break
@@ -66,13 +66,14 @@ class TestTurnedOffNoPv(unittest.TestCase):
     def _aux_test_different(self, env_pv, env_npv):
         ts_pv, done_pv, aor_pv, gen_v_pv, gen_p_pv = self._run_env(env_pv)
         ts_npv, done_npv, aor_npv, gen_v_npv, gen_p_npv = self._run_env(env_npv)
-        
         assert ts_pv == ts_npv
         assert done_pv == done_npv
-        
         # redispatchable gen are affected
         for ts in range(self.max_iter_real):
-            are_zero = gen_p_pv[ts,:] == 0.
+            are_zero = gen_p_pv[ts,:] == 0.            
+            # if ts == 1:
+            #     import pdb
+            #     pdb.set_trace()
             # non zero should not be modified
             assert np.all(gen_v_pv[ts, ~are_zero] == gen_v_npv[ts, ~are_zero]), f"error at iteration {ts}"
             # at least one p=0 should be modified...
