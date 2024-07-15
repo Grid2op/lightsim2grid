@@ -70,10 +70,7 @@ class TestTurnedOffNoPv(unittest.TestCase):
         assert done_pv == done_npv
         # redispatchable gen are affected
         for ts in range(self.max_iter_real):
-            are_zero = gen_p_pv[ts,:] == 0.            
-            # if ts == 1:
-            #     import pdb
-            #     pdb.set_trace()
+            are_zero = gen_p_pv[ts,:] == 0.         
             # non zero should not be modified
             assert np.all(gen_v_pv[ts, ~are_zero] == gen_v_npv[ts, ~are_zero]), f"error at iteration {ts}"
             # at least one p=0 should be modified...
