@@ -194,8 +194,9 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
         // in this case turned off generators are not pv
         // except the slack that can have a target of 0MW but is still "on"
         // no matter what
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0. && !(gen_slack_weight_[gen_id] == 0.)) continue;  
-
+        bool gen_pseudo_off = p_mw_(gen_id) == 0.;
+        // if (gen_slack_weight_[gen_id] != 0.) gen_pseudo_off = false;  // useless: slack is not PV anyway
+        if ((!turnedoff_gen_pv_) && gen_pseudo_off) continue;  
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
@@ -330,7 +331,10 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_t
         if(!status_[gen_id]) continue;
         
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+        bool pseudo_off = p_mw_(gen_id) == 0.;
+        // though "pseudo off" a slack is still "PV"
+        if(gen_slack_weight_[gen_id] != 0.) pseudo_off = false;  
+        if ((!turnedoff_gen_pv_) && pseudo_off) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
