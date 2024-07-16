@@ -1322,22 +1322,3 @@ void GridModel::consider_only_main_component(){
     // and finally deal with the buses
     init_bus_status();
 }
-
-
-Eigen::SparseMatrix<cplx_type> GridModel::_relabel_Ybus(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                        const std::vector<int> & id_solver_to_me) const {
-    Eigen::SparseMatrix<cplx_type> res(total_bus(), total_bus());
-    res.reserve(Ybus.nonZeros());
-    std::vector<Eigen::Triplet<cplx_type> > tripletList;
-    tripletList.reserve(Ybus.nonZeros());
-    const auto n_col = Ybus.rows();
-    for (Eigen::Index col_=0; col_ < n_col; ++col_){
-        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_); it; ++it)
-        {
-            tripletList.push_back({id_solver_to_me[it.col()], id_solver_to_me[it.row()], it.value()});
-        }
-    }
-    res.setFromTriplets(tripletList.begin(), tripletList.end());
-    res.makeCompressed();
-    return res;
-}

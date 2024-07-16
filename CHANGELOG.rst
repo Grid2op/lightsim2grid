@@ -51,6 +51,10 @@ gridmodel.get_pq()                  gridmodel.get_pq_solver()
 gridmodel.get_slack_ids()           gridmodel.get_slack_ids_solver()
 gridmodel.get_slack_ids_dc()        gridmodel.get_slack_ids_dc_solver()
 gridmodel.get_slack_weights()       gridmodel.get_slack_weights_solver()
+gridmodel.get_V()                   gridmodel.get_V_solver()
+gridmodel.get_Va()                  gridmodel.get_Va_solver()
+gridmodel.get_Vm()                  gridmodel.get_Vm_solver()
+gridmodel.get_J()                   gridmodel.get_J_solver()
 ===============================    ==================================================
 
 - [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.

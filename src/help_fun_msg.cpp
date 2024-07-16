@@ -12,18 +12,63 @@
 
 const std::string DocSolver::get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
+
+    The "jacobian" matrix is only available for some powerflow (the one based on the Newton Raphson algorithm)
+    and we provide it only for the last computed iteration.
+
+    .. info::
+        It is using the "solver" labelling, as this is accessed from the solvers.
+
+    .. seealso::
+        :func:`lightsim2grid.gridmodel.GridModel.get_J` for the same things, but rather using 
+        the "gridmodel" labelling.
+
+    .. seealso::
+        This function should be equal to :func:`lightsim2grid.gridmodel.GridModel.get_J_solver`
+
 )mydelimiter";
 
 const std::string DocSolver::get_Va = R"mydelimiter(
     Returns the voltage angles for each buses as a numpy vector of real number.
+
+    .. info::
+        It is using the "solver" labelling, as this is accessed from the solvers.
+
+    .. seealso::
+        :func:`lightsim2grid.gridmodel.GridModel.get_Va` for the same things, but rather using 
+        the "gridmodel" labelling.
+
+    .. seealso::
+        This function should be equal to :func:`lightsim2grid.gridmodel.GridModel.get_Va_solver`
+
 )mydelimiter";
 
 const std::string DocSolver::get_Vm = R"mydelimiter(
     Returns the voltage magnitude for each buses as a numpy vector of real number.
+
+    .. info::
+        It is using the "solver" labelling, as this is accessed from the solvers.
+
+    .. seealso::
+        :func:`lightsim2grid.gridmodel.GridModel.get_Vm` for the same things, but rather using 
+        the "gridmodel" labelling.
+
+    .. seealso::
+        This function should be equal to :func:`lightsim2grid.gridmodel.GridModel.get_Vm_solver`
 )mydelimiter";
 
 const std::string DocSolver::get_V = R"mydelimiter(
-    Returns the complex voltage for each buses as a numpy vector of complex number.
+    Returns the complex voltage for each buses as a numpy vector of complex number.    
+    
+    .. info::
+        It is using the "solver" labelling, as this is accessed from the solvers.
+
+    .. seealso::
+        :func:`lightsim2grid.gridmodel.GridModel.get_V` for the same things, but rather using 
+        the "gridmodel" labelling.
+
+    .. seealso::
+        This function should be equal to :func:`lightsim2grid.gridmodel.GridModel.get_V_solver`
 )mydelimiter";
 
 const std::string DocSolver::get_error = R"mydelimiter(
@@ -1993,30 +2038,171 @@ const std::string DocGridModel::J_description = R"mydelimiter(
 const std::string DocGridModel::get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
 
+    The "jacobian" matrix is only available for some powerflow algorithms
+    (the one based on the Newton Raphson algorithm) and we provide it only for the last computed iteration.
+
+    .. versionchanged:: 0.9.0
+        They are labelled with the `grimodel` labelling. To retrieve the
+        previous behaviour (solver labelling) you can use the current
+        :func:`lightsim2grid.gridmodel.GridModel.get_J_solver`
+
+    .. danger:: 
+        Some breaking change have been introduced in lighsim2grid 0.9.0.
+        You can :func:`lightsim2grid.gridmodel.GridModel.get_J_solver` to get the previous 
+        (before 0.9.0) behaviour.
+
+    .. info::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
+        (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
+
     .. note::
         Some powerflows (*eg* DC or Gauss Seidel) do not rely on jacobian matrix, in this case, calling this function will return an exception. 
 )mydelimiter" + DocGridModel::J_description;
 
 const std::string DocGridModel::get_Va = R"mydelimiter(
-    Returns the voltage angles for each buses as a numpy vector of real number. This vector have the size of the total number of active buses on the system.
+    Returns the voltage angles for each buses as a numpy vector of real number.
+    This vector have the size of the total number buses on the system, including the 
+    disconnected bus. It adopts the "gridmodel" labelling.
 
-    You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
-    (on the grid) they corresponds.
+    .. versionchanged:: 0.9.0
+        They are labelled with the `grimodel` labelling. To retrieve the
+        previous behaviour (solver labelling) you can use the current
+        :func:`lightsim2grid.gridmodel.GridModel.get_Va_solver` (before version 0.9.0)
+
+    .. danger:: 
+        Some breaking change have been introduced in lighsim2grid 0.9.0.
+        You can :func:`lightsim2grid.gridmodel.GridModel.get_Va_solver` to get the
+        previous (before 0.9.0) behaviour.
+
+    .. info::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
+        (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
 
 )mydelimiter";
 
 const std::string DocGridModel::get_Vm = R"mydelimiter(
-    Returns the voltage magnitude for each buses as a numpy vector of real number. This vector have the size of the total number of active buses on the system.
+    Returns the voltage magnitude for each buses as a numpy vector of real number. 
+    This vector have the size of the total number buses on the system, including the 
+    disconnected bus. It adopts the "gridmodel" labelling.
 
-    You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
-    (on the grid) they corresponds.
+    .. versionchanged:: 0.9.0
+        They are labelled with the `grimodel` labelling. To retrieve the
+        previous behaviour (solver labelling) you can use the current
+        :func:`lightsim2grid.gridmodel.GridModel.get_Vm_solver` (before version 0.9.0)
+
+    .. danger:: 
+        Some breaking change have been introduced in lighsim2grid 0.9.0.
+        You can :func:`lightsim2grid.gridmodel.GridModel.get_Vm_solver` to get the previous 
+        (before 0.9.0) behaviour.
+
+    .. info::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
+        (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
 )mydelimiter";
 
 const std::string DocGridModel::get_V = R"mydelimiter(
-    Returns the complex voltage for each buses as a numpy vector of complex number. This vector have the size of the total number of active buses on the system.
+    Returns the complex voltage for each buses as a numpy vector of complex number. 
+    This vector have the size of the total number buses on the system, including the 
+    disconnected bus. It adopts the "gridmodel" labelling.
 
-    You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
-    (on the grid) they corresponds.
+    .. versionchanged:: 0.9.0
+        They are labelled with the `grimodel` labelling. To retrieve the
+        previous behaviour (solver labelling) you can use the current
+        :func:`lightsim2grid.gridmodel.GridModel.get_V_solver` (before version 0.9.0)
+
+    .. danger:: 
+        Some breaking change have been introduced in lighsim2grid 0.9.0.
+        You can :func:`lightsim2grid.gridmodel.GridModel.get_V_solver` to get the previous 
+        (before 0.9.0) behaviour.
+
+    .. note::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
+)mydelimiter";
+
+const std::string DocGridModel::get_J_python_solver = R"mydelimiter(
+    Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
+
+    The "jacobian" matrix is only available for some powerflow algorithms
+    (the one based on the Newton Raphson algorithm) and we provide it only for the last computed iteration.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_J` (before version 0.9.0)
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_J` of earlier
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_J`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
+    .. note::
+        Some powerflows (*eg* DC or Gauss Seidel) do not rely on jacobian matrix, in this case, 
+        calling this function will return an exception. 
+
+)mydelimiter" + DocGridModel::J_description;
+
+const std::string DocGridModel::get_Va_solver = R"mydelimiter(
+    Returns the voltage angles for each buses as a numpy vector of real number. 
+    This vector have the size of the number of active buses on the system and
+    adopts the "solver" labelling.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_Va` (before version 0.9.0)
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_Va` of earlier
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_Va`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
+    .. info::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
+        (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_Vm_solver = R"mydelimiter(
+    Returns the voltage magnitude for each buses as a numpy vector of real number. 
+    This vector have the size of the number of active buses on the system and
+    adopts the "solver" labelling.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_Vm` (before version 0.9.0)
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_Vm` of earlier
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_Vm`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
+    .. info::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_V_solver = R"mydelimiter(
+    Returns the complex voltage for each buses as a numpy vector of complex number. 
+    This vector have the size of the number of active buses on the system and
+    adopts the "solver" labelling.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_V` (before version 0.9.0)
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_V` of earlier
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_V`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
+    .. info::
+        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
+        (on the grid) they corresponds.
+
 )mydelimiter";
 
 
@@ -2266,7 +2452,7 @@ const std::string DocGridModel::get_pv_solver = R"mydelimiter(
 
     .. versionadded:: 0.9.0
         This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_pv` of earlier
-        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_pv`
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_pv`
         now returns the id labelled with the gridmodel convention (for consistency).
 
     .. warning:: 
@@ -2288,7 +2474,7 @@ const std::string DocGridModel::get_pq_solver = R"mydelimiter(
 
     .. versionadded:: 0.9.0
         This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_pq` of earlier
-        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_pq`
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_pq`
         now returns the id labelled with the gridmodel convention (for consistency).
 
     .. warning:: 
@@ -2310,7 +2496,7 @@ const std::string DocGridModel::get_slack_ids_solver = R"mydelimiter(
 
     .. versionadded:: 0.9.0
         This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids` of earlier
-        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids`
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids`
         now returns the id labelled with the gridmodel convention (for consistency).
 
     .. warning:: 
@@ -2357,7 +2543,7 @@ const std::string DocGridModel::get_slack_weights_solver = R"mydelimiter(
 
     .. versionadded:: 0.9.0
         This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver` of earlier
-        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver`
+        lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver`
         now returns the id labelled with the gridmodel convention (for consistency).
 
     .. warning:: 

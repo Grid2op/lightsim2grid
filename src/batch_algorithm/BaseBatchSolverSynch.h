@@ -40,7 +40,7 @@ class BaseBatchSolverSynch
                 // make sure that my "grid_model" is ready to be used (for ac and dc)
                 Eigen::Index nb_bus = init_grid_model.total_bus();
                 CplxVect V = CplxVect::Constant(nb_bus, 1.04);
-                // const auto & Vtmp = init_grid_model.get_V();
+                // const auto & Vtmp = init_grid_model.get_V_solver();
                 // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
                 _grid_model.tell_solver_need_reset();
                 _grid_model.dc_pf(V, 10, 1e-5);

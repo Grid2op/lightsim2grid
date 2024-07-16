@@ -841,6 +841,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_Va", &GridModel::get_Va, DocGridModel::get_Va.c_str())
         .def("get_Vm", &GridModel::get_Vm, DocGridModel::get_Vm.c_str())
         .def("get_J", &GridModel::get_J_python, DocGridModel::get_J_python.c_str())
+        .def("get_V_solver", &GridModel::get_V_solver, DocGridModel::get_V_solver.c_str())
+        .def("get_Va_solver", &GridModel::get_Va_solver, DocGridModel::get_Va_solver.c_str())
+        .def("get_Vm_solver", &GridModel::get_Vm_solver, DocGridModel::get_Vm_solver.c_str())
+        .def("get_J_solver", &GridModel::get_J_python_solver, DocGridModel::get_J_python_solver.c_str())
 
         .def("id_me_to_ac_solver", &GridModel::id_me_to_ac_solver, DocGridModel::id_me_to_ac_solver.c_str())
         .def("id_ac_solver_to_me", &GridModel::id_ac_solver_to_me, DocGridModel::id_ac_solver_to_me.c_str())
@@ -913,7 +917,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_dclineex_res_full", &GridModel::get_dclineex_res_full, DocGridModel::_internal_do_not_use.c_str())
         
         // do something with the grid
-        // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("deactivate_result_computation", &GridModel::deactivate_result_computation, DocGridModel::deactivate_result_computation.c_str())
         .def("reactivate_result_computation", &GridModel::reactivate_result_computation, DocGridModel::reactivate_result_computation.c_str())
         .def("dc_pf", &GridModel::dc_pf, DocGridModel::dc_pf.c_str())
@@ -932,7 +935,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
          // apply action faster (optimized for grid2op representation)
          // it is not recommended to use it outside of grid2Op.
-        // .def("update_bus_status", &GridModel::update_bus_status, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_p", &GridModel::update_gens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_sgens_p", &GridModel::update_sgens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_v", &GridModel::update_gens_v, DocGridModel::_internal_do_not_use.c_str())

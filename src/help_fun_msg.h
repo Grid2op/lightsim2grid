@@ -195,6 +195,10 @@ struct DocGridModel
     static const std::string get_Va;
     static const std::string get_Vm;
     static const std::string get_V;
+    static const std::string get_J_python_solver;
+    static const std::string get_Va_solver;
+    static const std::string get_Vm_solver;
+    static const std::string get_V_solver;
     static const std::string id_me_to_ac_solver;
     static const std::string id_ac_solver_to_me;
     static const std::string id_me_to_dc_solver;

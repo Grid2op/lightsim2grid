@@ -629,30 +629,77 @@ class GridModel : public GenericContainer
         }
 
         /**
-         * @brief Get the Ybus gridmodel object
+         * @brief Get the Ybus gridmodel object (AC powerflow)
          * 
          * This function allows to retrieve the Ybus as seen by the gridmodel.
          * 
          * It may contain empty rows / columns for disconnected buses.
          * 
-         * It has the "solver bus id" labelling, which is different from the 
+         * It has the "gridmodel bus id" labelling, which is different from the 
          * "gridmodel" bus labelling.
          * 
-         * It has the size (nb_bus, nb_bus) (number of active buses)
+         * It has the size (total_bus, total_bus) (number of active buses)
          * 
-         * (new in lightsim2grid 0.9.0, used to be called `get_dcSbus` before that)
+         * (change in lightsim2grid 0.9.0, same as old function is now `get_Ybus_solver` before that)
          * 
          * @return Eigen::Ref<const CplxVect>
          */
         const Eigen::SparseMatrix<cplx_type> get_Ybus() const {
-            return _relabel_Ybus(Ybus_ac_, id_ac_solver_to_me_);
+            return _relabel_matrix(Ybus_ac_, id_ac_solver_to_me_);
         }
+
+        /**
+         * @brief Get the Ybus gridmodel object (DC powerflow)
+         * 
+         * This function allows to retrieve the Ybus (DC) as seen by the gridmodel.
+         * 
+         * It may contain empty rows / columns for disconnected buses.
+         * 
+         * It has the "grimodel bus id" labelling, which is different from the 
+         * "gridmodel" bus labelling.
+         * 
+         * It has the size (total_bus, total_bus) (number of active buses)
+         * 
+         * (change in lightsim2grid 0.9.0, same as old function is now `get_dcYbus_solver` before that)
+         * 
+         * @return Eigen::Ref<const CplxVect>
+         */
         const Eigen::SparseMatrix<cplx_type> get_dcYbus() const {
-            return _relabel_Ybus(Ybus_dc_, id_dc_solver_to_me_);
+            return _relabel_matrix(Ybus_dc_, id_dc_solver_to_me_);
         }
+
+        /**
+         * @brief Get the Sbus solver object (AC)
+         * 
+         * This function allows to retrieve the Sbus as represented by the "gridmodel"
+         * 
+         * It has the "gridmodel bus id" labelling, which is different from the 
+         * "solver" bus labelling.
+         * 
+         * It has the size (total_bus, total_bus) (number of total buses)
+         * 
+         * (change in lightsim2grid 0.9.0, same as old function is now `get_Sbus_solver` before that)
+         * 
+         * @return Eigen::Ref<const CplxVect>
+         */
         const CplxVect get_Sbus() const {
             return _relabel_vector(acSbus_, id_ac_solver_to_me_);
         }
+
+        /**
+         * @brief Get the Sbus solver object (DC)
+         * 
+         * This function allows to retrieve the Sbus as represented by the "gridmodel"
+         * 
+         * It has the "gridmodel bus id" labelling, which is different from the 
+         * "solver" bus labelling.
+         * 
+         * It has the size (total_bus, total_bus) (number of total buses)
+         * 
+         * (change in lightsim2grid 0.9.0, same as old function is now `get_Sbus_solver` before that)
+         * 
+         * @return Eigen::Ref<const CplxVect>
+         */
         const CplxVect get_dcSbus() const {
             return _relabel_vector(dcSbus_, id_dc_solver_to_me_);
         }
@@ -760,25 +807,81 @@ class GridModel : public GenericContainer
         }
 
 
-        // TODO _solver
-        Eigen::Ref<const CplxVect> get_V() const{
+        /**
+         * @brief Get the (complex) voltage angles for each buses (solver labelling)
+         * 
+         * @return Eigen::Ref<const CplxVect> 
+         */
+        Eigen::Ref<const CplxVect> get_V_solver() const{
             return _solver.get_V();
         }
-        // TODO _solver
-        Eigen::Ref<const RealVect> get_Va() const{
+
+        /**
+         * @brief Get the (complex) voltage angles for each buses (grimodel labelling)
+         * 
+         * @return CplxVect
+         */
+        const CplxVect get_V() const{
+            return _relabel_vector(_solver.get_V(), id_ac_solver_to_me_);
+        }
+
+        /**
+         * @brief Get the (real) voltage angle for each buses of the grid (solver labelling)
+         * 
+         * @return Eigen::Ref<const RealVect> 
+         */
+        Eigen::Ref<const RealVect> get_Va_solver() const{
             return _solver.get_Va();
         }
-        // TODO _solver
-        Eigen::Ref<const RealVect> get_Vm() const{
+
+        /**
+         * @brief Get the (real) voltage angle for each buses of the grid (grimodel labelling)
+         * 
+         * @return const RealVect
+         */
+        const RealVect get_Va() const{
+            return _relabel_vector(_solver.get_Va(), id_ac_solver_to_me_);
+        }
+
+
+        /**
+         * @brief Get the (real) voltage magnitude for each buses of the grid (solver labelling)
+         * 
+         * @return Eigen::Ref<const RealVect> 
+         */
+        Eigen::Ref<const RealVect> get_Vm_solver() const{
             return _solver.get_Vm();
         }
-        // TODO _solver
-        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const{
+
+        /**
+         * @brief Get the (real) voltage magnitude for each buses of the grid (grimodel labelling)
+         * 
+         * @return const RealVect
+         */
+        const RealVect get_Vm() const{
+            return _relabel_vector(_solver.get_Vm(), id_ac_solver_to_me_);
+        }
+
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J_solver() const{
             return _solver.get_J();
         }
-        // TODO _solver
-        Eigen::SparseMatrix<real_type> get_J_python() const{
+
+        /**
+         * @brief Returns the last computed jacobian matrix (solver labelling)
+         * 
+         * @return Eigen::SparseMatrix<real_type> 
+         */
+        Eigen::SparseMatrix<real_type> get_J_python_solver() const{
             return _solver.get_J_python();  // This is copied to python
+        }
+
+        /**
+         * @brief Returns the last computed jacobian matrix (gridmodel labelling)
+         * 
+         * @return Eigen::SparseMatrix<real_type> 
+         */
+        Eigen::SparseMatrix<real_type> get_J_python() const{
+            return _relabel_matrix(_solver.get_J_python(), id_ac_solver_to_me_); // This is copied to python
         }
         
         real_type get_computation_time() const{ return _solver.get_computation_time();}
@@ -951,27 +1054,69 @@ class GridModel : public GenericContainer
                         );
 
         /**
-         * @brief Build the Ybus (labelled using the gridmodel) from the Ybus (used by the solver)
+         * @brief Build the result matrix (eg Ybus) (labelled using the gridmodel) 
+         * from the input same matrix (eg Ybus) but labelled with the solver convention
          * 
          * @param Ybus : solver labelling
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        Eigen::SparseMatrix<cplx_type> _relabel_Ybus(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                     const std::vector<int> & id_solver_to_me) const;
+        template<typename T>    
+        Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
+                                               const std::vector<int> & id_solver_to_me) const {
+            Eigen::SparseMatrix<T> res(total_bus(), total_bus());
+            res.reserve(Ybus.nonZeros());
+            std::vector<Eigen::Triplet<T> > tripletList;
+            tripletList.reserve(Ybus.nonZeros());
+            const auto n_col = Ybus.rows();
+            for (Eigen::Index col_=0; col_ < n_col; ++col_){
+                for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
+                {
+                    tripletList.push_back({id_solver_to_me[it.col()], id_solver_to_me[it.row()], it.value()});
+                }
+            }
+            res.setFromTriplets(tripletList.begin(), tripletList.end());
+            res.makeCompressed();
+            return res;
+        }
+
         /**
          * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
          * from the same vector (input) that uses the solver convention.
+         * 
+         * TODO copy paste from below, find a better way !
          * 
          * @param Sbus : Sbus with the solver convention, the one used by the solver
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
          * @return CplxVect 
          */
         template<class T>
-        T _relabel_vector(const T & Sbus,
-                          const std::vector<int> & id_solver_to_me) const
+        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>> & Sbus,
+                                                            const std::vector<int> & id_solver_to_me) const
         {
-            T res = T::Zero(total_bus());
+            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
+            for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
+                auto grimodel_id = id_solver_to_me[solver_id];
+                res[grimodel_id] = Sbus[solver_id];
+            }
+            return res;
+        }
+
+        /**
+         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
+         * from the same vector (input) that uses the solver convention.
+         * 
+         * TODO copy paste from above, find a better way !
+         * 
+         * @param Sbus : Sbus with the solver convention, the one used by the solver
+         * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
+         * @return CplxVect 
+         */
+        template<class T>
+        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Matrix<T, Eigen::Dynamic, 1> & Sbus,
+                                                            const std::vector<int> & id_solver_to_me) const
+        {
+            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
             for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
                 auto grimodel_id = id_solver_to_me[solver_id];
                 res[grimodel_id] = Sbus[solver_id];
