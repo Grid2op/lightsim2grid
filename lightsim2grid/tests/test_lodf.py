@@ -39,8 +39,8 @@ class TestLODFCase14SLU(unittest.TestCase):
         self.gridmodel.change_solver(solver_type)
         V = self.gridmodel.dc_pf(1. * self.V_init, 1, 1e-8)
         assert len(V), f"dc pf has diverged with error {self.gridmodel.get_dc_solver().get_error()}"
-        self.dcYbus = 1.0 * self.gridmodel.get_dcYbus()
-        self.dcSbus = 1.0 * self.gridmodel.get_dcSbus().real
+        self.dcYbus = 1.0 * self.gridmodel.get_dcYbus_solver()
+        self.dcSbus = 1.0 * self.gridmodel.get_dcSbus_solver().real
         self.Bbus = 1.0 * self.dcYbus.real
         self.res_powerflow = 1.0 * np.concatenate((self.gridmodel.get_lineor_res()[0], self.gridmodel.get_trafohv_res()[0]))
         self.nb = self.case.bus.shape[0]
@@ -54,7 +54,7 @@ class TestLODFCase14SLU(unittest.TestCase):
     def test_from_PTDF(self):
         """compare the ls implementation pypower (in pandapowerer)
         implementation and see if they match"""
-        PTDF = 1.0 * self.gridmodel.get_ptdf()
+        PTDF = 1.0 * self.gridmodel.get_ptdf_solver()
         
         # pypower implementation
         f_ = np.concatenate((1 * self.gridmodel.get_lines().get_bus_from(), 1 * self.gridmodel.get_trafos().get_bus_from()))

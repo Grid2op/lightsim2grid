@@ -119,32 +119,32 @@ class AuxInitFromPyPowSyBl:
         # self.pp_samecase["_ppc"]["internal"]["bus"]
         max_ = np.abs(v_ls[reorder] - v_ls_ref).max()
         # assert max_ <= self.tol_eq, f"error for vresults for dc: {max_:.2e}"
-        tmp_ = self.gridmodel.get_dcYbus()[reorder.T, reorder].todense() - self.ref_samecase.get_dcYbus().todense()
+        tmp_ = self.gridmodel.get_dcYbus_solver()[reorder.T, reorder].todense() - self.ref_samecase.get_dcYbus_solver().todense()
         max_ = np.abs(tmp_).max()
-        mat_ls = self.gridmodel.get_dcYbus()[reorder.T, reorder].todense()
-        mat_pp = self.ref_samecase.get_dcYbus().todense()
+        mat_ls = self.gridmodel.get_dcYbus_solver()[reorder.T, reorder].todense()
+        mat_pp = self.ref_samecase.get_dcYbus_solver().todense()
         assert max_ <= self.tol_eq, f"error for dcYbus: {max_:.2e}"
         # check Sbus without slack
-        Sbus_ordered = self.gridmodel.get_dcSbus()[reorder].reshape(-1)
+        Sbus_ordered = self.gridmodel.get_dcSbus_solver()[reorder].reshape(-1)
         if slack_id > 0:
-            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_dcSbus()[:slack_id]).max()
+            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_dcSbus_solver()[:slack_id]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
-        if slack_id != self.gridmodel.get_dcSbus().shape[0] - 1:
-            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_dcSbus()[(slack_id+1):]).max()
+        if slack_id != self.gridmodel.get_dcSbus_solver().shape[0] - 1:
+            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_dcSbus_solver()[(slack_id+1):]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
 
         # same in AC
         v_ls = self.gridmodel.ac_pf(self.V_init_ac, 2, self.tol)
         v_ls_ref = self.ref_samecase.ac_pf(self.V_init_ac, 2, self.tol)
-        max_ = np.abs(self.gridmodel.get_Ybus()[reorder.T, reorder] - self.ref_samecase.get_Ybus()).max()
+        max_ = np.abs(self.gridmodel.get_Ybus_solver()[reorder.T, reorder] - self.ref_samecase.get_Ybus_solver()).max()
         assert max_ <= self.tol_eq, f"error for Ybus: {max_:.2e}"
         # check Sbus without slack
-        Sbus_ordered = self.gridmodel.get_Sbus()[reorder].reshape(-1)
+        Sbus_ordered = self.gridmodel.get_Sbus_solver()[reorder].reshape(-1)
         if slack_id > 0:
-            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_Sbus()[:slack_id]).max() 
+            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_Sbus_solver()[:slack_id]).max() 
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
-        if slack_id != self.gridmodel.get_Sbus().shape[0] - 1:
-            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_Sbus()[(slack_id+1):]).max()
+        if slack_id != self.gridmodel.get_Sbus_solver().shape[0] - 1:
+            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_Sbus_solver()[(slack_id+1):]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus : {max_:.2e}"
 
     def test_dc_pf(self):

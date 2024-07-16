@@ -264,7 +264,7 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered (get_J)");
         }
 
-        RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+        RealMat get_ptdf(){
                 if(_solver_type != SolverType::DC && 
                    _solver_type != SolverType::KLUDC && 
                    _solver_type != SolverType::NICSLUDC &&
@@ -272,12 +272,11 @@ class ChooseSolver
                 throw std::runtime_error("ChooseSolver::get_ptdf: cannot get ptdf for a solver that is not DC.");
                 }
             auto p_solver = get_prt_solver("get_ptdf", true);
-            const auto & res =  p_solver -> get_ptdf(dcYbus);
+            const auto & res =  p_solver -> get_ptdf();
             return res;
         }
 
-        RealMat get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
-                         const IntVect & from_bus,
+        RealMat get_lodf(const IntVect & from_bus,
                          const IntVect & to_bus){
                 if(_solver_type != SolverType::DC && 
                    _solver_type != SolverType::KLUDC && 
@@ -286,7 +285,7 @@ class ChooseSolver
                 throw std::runtime_error("ChooseSolver::get_lodf: cannot get ptdf for a solver that is not DC.");
                 }
             auto p_solver = get_prt_solver("get_lodf", true);
-            const auto & res =  p_solver -> get_lodf(dcYbus, from_bus, to_bus);
+            const auto & res =  p_solver -> get_lodf(from_bus, to_bus);
             return res;
         }
 

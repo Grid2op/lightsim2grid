@@ -836,24 +836,39 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_dcline_ex", &GridModel::get_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str())
 
         // get back the results
+        // todo _solver
         .def("get_V", &GridModel::get_V, DocGridModel::get_V.c_str())
         .def("get_Va", &GridModel::get_Va, DocGridModel::get_Va.c_str())
         .def("get_Vm", &GridModel::get_Vm, DocGridModel::get_Vm.c_str())
         .def("get_J", &GridModel::get_J_python, DocGridModel::get_J_python.c_str())
+
         .def("id_me_to_ac_solver", &GridModel::id_me_to_ac_solver, DocGridModel::id_me_to_ac_solver.c_str())
         .def("id_ac_solver_to_me", &GridModel::id_ac_solver_to_me, DocGridModel::id_ac_solver_to_me.c_str())
         .def("id_me_to_dc_solver", &GridModel::id_me_to_dc_solver, DocGridModel::id_me_to_dc_solver.c_str())
         .def("id_dc_solver_to_me", &GridModel::id_dc_solver_to_me, DocGridModel::id_dc_solver_to_me.c_str())
         .def("total_bus", &GridModel::total_bus, DocGridModel::total_bus.c_str())
         .def("nb_bus", &GridModel::nb_bus, DocGridModel::nb_bus.c_str())
+
+
         .def("get_pv", &GridModel::get_pv, DocGridModel::get_pv.c_str())
         .def("get_pq", &GridModel::get_pq, DocGridModel::get_pq.c_str())
         .def("get_slack_ids", &GridModel::get_slack_ids, DocGridModel::get_slack_ids.c_str())
+        .def("get_slack_ids_dc", &GridModel::get_slack_ids_dc, DocGridModel::get_slack_ids_dc.c_str())
         .def("get_slack_weights", &GridModel::get_slack_weights, DocGridModel::get_slack_weights.c_str())
+        .def("get_pv_solver", &GridModel::get_pv_solver, DocGridModel::get_pv_solver.c_str())
+        .def("get_pq_solver", &GridModel::get_pq_solver, DocGridModel::get_pq_solver.c_str())
+        .def("get_slack_ids_solver", &GridModel::get_slack_ids_solver, DocGridModel::get_slack_ids_solver.c_str())
+        .def("get_slack_ids_dc_solver", &GridModel::get_slack_ids_dc_solver, DocGridModel::get_slack_ids_dc_solver.c_str())
+        .def("get_slack_weights_solver", &GridModel::get_slack_weights_solver, DocGridModel::get_slack_weights_solver.c_str())
+
         .def("get_Ybus", &GridModel::get_Ybus, DocGridModel::get_Ybus.c_str())
         .def("get_dcYbus", &GridModel::get_dcYbus, DocGridModel::get_dcYbus.c_str())
         .def("get_Sbus", &GridModel::get_Sbus, DocGridModel::get_Sbus.c_str())
-        .def("get_dcSbus", &GridModel::get_dcSbus, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_dcSbus", &GridModel::get_dcSbus, DocGridModel::get_dcSbus.c_str())
+        .def("get_Ybus_solver", &GridModel::get_Ybus_solver, DocGridModel::get_Ybus_solver.c_str())
+        .def("get_dcYbus_solver", &GridModel::get_dcYbus_solver, DocGridModel::get_dcYbus_solver.c_str())
+        .def("get_Sbus_solver", &GridModel::get_Sbus_solver, DocGridModel::get_Sbus_solver.c_str())
+        .def("get_dcSbus_solver", &GridModel::get_dcSbus_solver, DocGridModel::get_dcSbus_solver.c_str())
 
         .def("check_solution", &GridModel::check_solution, DocGridModel::check_solution.c_str())
 
@@ -911,6 +926,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
         .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_ptdf_solver", &GridModel::get_ptdf_solver, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
         .def("get_lodf", &GridModel::get_lodf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
         .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
 

@@ -125,7 +125,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     reset_results();
 }
 
-RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
+RealVect GeneratorContainer::get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     RealVect res = RealVect::Zero(nb_bus_solver);
@@ -137,7 +137,7 @@ RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "GeneratorContainer::get_slack_weights: Generator with id ";
+            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -383,7 +383,7 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
-        throw std::runtime_error("Generator::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called Generator::get_slack_weights first)");
+        throw std::runtime_error("Generator::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called Generator::get_slack_weights_solver first)");
     }
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){

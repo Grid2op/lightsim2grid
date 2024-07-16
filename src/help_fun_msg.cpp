@@ -2140,7 +2140,19 @@ const std::string DocGridModel::nb_bus = R"mydelimiter(
 const std::string DocGridModel::get_pv = R"mydelimiter(
     Returns the ids of the buses that are labelled as "PV" (ie the buses on which at least a generator is connected.).
 
-    It returns a vector of integer.
+    It returns a vector of integer. 
+
+    .. danger::
+        From lightsim2grid 0.9.0 they are labelled with the `gridmodel` labelling.
+
+        This behaviour is now accessible with the
+        :func:`lightsim2grid.gridmodel.GridModel.get_pv` before version 0.9.0
+
+    .. versionchanged:: 0.9.0
+        The new version of this function returns the id labelled with the gridmodel convention (for consistency).
+
+        Earlier version returned the labelling in the "solver" convention. To access the earlier function, please 
+        use the :func:`lightsim2grid.gridmodel.GridModel.get_pv` function.
 
     .. warning:: 
         The index are given in the "solver bus" convention. This means that it might not be the bus of the original grid model.
@@ -2155,6 +2167,18 @@ const std::string DocGridModel::get_pq = R"mydelimiter(
 
     It returns a vector of integer.
 
+    .. danger::
+        From lightsim2grid 0.9.0 they are labelled with the `gridmodel` labelling.
+
+        This behaviour is now accessible with the
+        :func:`lightsim2grid.gridmodel.GridModel.get_pq` before version 0.9.0
+
+    .. versionchanged:: 0.9.0
+        The new version of this function returns the id labelled with the gridmodel convention (for consistency).
+
+        Earlier version returned the labelling in the "solver" convention. To access the earlier function, please 
+        use the :func:`lightsim2grid.gridmodel.GridModel.get_pq` function.
+
     .. warning:: 
         The index are given in the "solver bus" convention. This means that it will might be the bus of the original grid model.
 
@@ -2168,6 +2192,127 @@ const std::string DocGridModel::get_slack_ids = R"mydelimiter(
 
     It returns a vector of integer.
 
+    .. danger::
+        From lightsim2grid 0.9.0 they are labelled with the `gridmodel` labelling.
+
+        This behaviour is now accessible with the
+        :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids_solver` before version 0.9.0
+
+    .. versionchanged:: 0.9.0
+        The new version of this function returns the id labelled with the gridmodel convention (for consistency).
+
+        Earlier version returned the labelling in the "solver" convention. To access the earlier function, please 
+        use the :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids_solver` function.
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_slack_ids_dc = R"mydelimiter(
+    Returns the ids of the buses that are part of the distributed slack (for DC, currently not taken into account).
+
+    It returns a vector of integer.
+
+    .. danger::
+        From lightsim2grid 0.9.0 they are labelled with the `gridmodel` labelling.
+
+        This behaviour is now accessible with the
+        :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids_dc_solver` before version 0.9.0
+
+    .. versionchanged:: 0.9.0
+        The new version of this function returns the id labelled with the gridmodel convention (for consistency).
+
+        Earlier version returned the labelling in the "solver" convention. To access the earlier function, please 
+        use the :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids_dc_solver` function.
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_slack_weights = R"mydelimiter(
+    For each bus in the gridmodel solver, it outputs its participation to the distributed slack.
+
+    It's 0 if the current bus does not participate to it, otherwise it is made of > 0. real numbers.
+
+    This vector sums to 1 and has the same size as the number of active buses on the grid.
+
+    .. danger::
+        From lightsim2grid 0.9.0 they are labelled with the `gridmodel` labelling.
+
+        This behaviour is now accessible with the
+        :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver` before version 0.9.0
+
+    .. versionchanged:: 0.9.0
+        The new version of this function returns the id labelled with the gridmodel convention (for consistency).
+
+        Earlier version returned the labelling in the "solver" convention. To access the earlier function, please 
+        use the :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver` function.
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_pv_solver = R"mydelimiter(
+    Returns the ids of the buses that are labelled as "PV" (ie the buses on which at least a generator is connected.).
+
+    It returns a vector of integer. 
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_pv` before version 0.9.0
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_pv` of earlier
+        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_pv`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
+    .. warning:: 
+        The index are given in the "solver bus" convention. This means that it might not be the bus of the original grid model.
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+        
+)mydelimiter";
+
+const std::string DocGridModel::get_pq_solver = R"mydelimiter(
+    Returns the ids of the buses that are labelled as "PQ".
+
+    It returns a vector of integer.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_pq` before version 0.9.0
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_pq` of earlier
+        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_pq`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
+    .. warning:: 
+        The index are given in the "solver bus" convention. This means that it will might be the bus of the original grid model.
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_slack_ids_solver = R"mydelimiter(
+    Returns the ids of the buses that are part of the distributed slack.
+
+    It returns a vector of integer.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids` before version 0.9.0
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids` of earlier
+        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids`
+        now returns the id labelled with the gridmodel convention (for consistency).
+
     .. warning:: 
         The index are given in the "solver bus" convention. This means that it might not be the bus of the original grid model.
 
@@ -2176,12 +2321,44 @@ const std::string DocGridModel::get_slack_ids = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocGridModel::get_slack_weights = R"mydelimiter(
+const std::string DocGridModel::get_slack_ids_dc_solver = R"mydelimiter(
+    Returns the ids of the buses that are part of the distributed slack (for DC, currently not taken into account).
+
+    It returns a vector of integer.
+
+    .. versionadded:: 0.9.0
+        Only what is now :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids_solver` (that used 
+        to be called :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids`) was available. 
+
+        There were no possibility to retrieve that for DC powerflow.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_slack_ids` before version 0.9.0
+
+    .. warning:: 
+        The index are given in the "solver bus" convention. This means that it might not be the bus of the original grid model.
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+)mydelimiter";
+
+const std::string DocGridModel::get_slack_weights_solver = R"mydelimiter(
     For each bus used by the solver, it outputs its participation to the distributed slack.
 
     It's 0 if the current bus does not participate to it, otherwise it is made of > 0. real numbers.
 
     This vector sums to 1 and has the same size as the number of active buses on the grid.
+
+    .. danger::
+        They are labelled with the `solver` labelling, which corresponds to the previous behaviour in 
+        :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights` before version 0.9.0
+
+    .. versionadded:: 0.9.0
+        This function replace the :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver` of earlier
+        grid2op version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_slack_weights_solver`
+        now returns the id labelled with the gridmodel convention (for consistency).
 
     .. warning:: 
         This vector represents "solver buses" and not "original grid model buses".
@@ -2191,12 +2368,20 @@ const std::string DocGridModel::get_slack_weights = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocGridModel::get_Ybus = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix used to compute the powerflow.
+const std::string DocGridModel::get_Ybus_solver = R"mydelimiter(
+    This function returns the (complex) `Ybus` matrix used to compute the AC powerflow.
 
     The resulting matrix is a CSC scipy sparse matrix of complex number.
 
-    It is a square matrix, as many rows (columns) as there are connected buses on the grid.
+    It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
+        :func:`lightsim2grid.gridmodel.get_Ybus`
+
+    .. versionadded:: 0.9.0
+        It was named `get_Ybus` before this version, but the name has been changed to avoid confusing AND a new
+        function (this one) has been made with the proper `gridmodel` labelling.
 
     .. warning:: 
         Each row / columns of this matrix represents a "solver bus" (and not a "grid model bus"). In other word, the first row / column of this
@@ -2219,22 +2404,56 @@ const std::string DocGridModel::get_Ybus = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocGridModel::get_dcYbus = R"mydelimiter(
-    It is the equivalent of :func:`lightsim2grid.gridmodel.GridModel.get_Ybus` but for the dc solver.
+const std::string DocGridModel::get_dcYbus_solver = R"mydelimiter(
+    This function returns the (complex) `Ybus` matrix used to compute the DC powerflow
+    (its imaginary part should be 0.).
+
+    The resulting matrix is a CSC scipy sparse matrix of complex number.
+
+    It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
+        :func:`lightsim2grid.gridmodel.get_dcYbus`
+
+    .. versionadded:: 0.9.0
+        It was named `get_dcYbus` before this version, but the name has been changed to avoid confusing AND a new
+        function (this one) has been made with the proper `gridmodel` labelling.
+
+    .. warning:: 
+        Each row / columns of this matrix represents a "solver bus" (and not a "grid model bus"). In other word, the first row / column of this
+        matrix is not necessarily the first bus of the grid model.
 
     .. warning::
-        As opposed to some other librairies (for example Matpower of pandapower), the Ybus for the dc approximation in lightsim2grid has no
-        imaginary components. 
-        
-        It could have returned a real matrix, but we choose (out of consistency with other solvers) to keep the representation
-        as a complex numbers.
-    
-)mydelimiter"; 
+        This is given in the pair unit system !
 
-const std::string DocGridModel::get_Sbus = R"mydelimiter(
-    This function returns the (complex) `Sbus` vector, which is the vector of active / reactive power injected at each active bus
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+    Notes
+    -----
+
+    Suppose that the grid model bus of id k is connected. Then the row / column `id_me_to_ac_solver[k]` (will be >= 0) and will represent this bus:
+    `Ybus[id_me_to_ac_solver[k],:]` (rows of this bus), `Ybus[:, id_me_to_ac_solver[k]]` (column for this bus) 
+
+    .. warning:: 
+        The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
+
+)mydelimiter";
+
+
+const std::string DocGridModel::get_Sbus_solver = R"mydelimiter(
+    This function returns the (complex) `Sbus` vector used by the AC solver. 
+    It is the vector of active / reactive power injected at each active bus
 
     The resulting vector is a vector of complex number having the size of the number of connected buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Sbus with the "gridmodel" convention, you can use :func:`lightsim2grid.gridmodel.get_Sbus`
+
+    .. versionadded:: 0.9.0
+        It was named `get_Sbus` before this version, but the name has been changed to avoid confusing AND a new
+        function (this one) has been made with the proper `gridmodel` labelling.
 
     .. warning:: 
         Each row / columns of this matrix represents a "solver bus" (and not a "grid model bus"). In other word, the first row / column of this
@@ -2256,6 +2475,186 @@ const std::string DocGridModel::get_Sbus = R"mydelimiter(
         The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
 
 )mydelimiter"; 
+
+
+const std::string DocGridModel::get_dcSbus_solver = R"mydelimiter(
+    This function returns the (complex) `Sbus` vector used by the DC sovler. 
+    It is the vector of active / reactive power injected at each active bus
+
+    The resulting vector is a vector of complex number having the size of the number of **connected** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Sbus with the "gridmodel" convention, you can use :func:`lightsim2grid.gridmodel.get_dcSbus`
+
+    .. versionadded:: 0.9.0
+        
+    .. warning:: 
+        Each row / columns of this matrix represents a "solver bus" (and not a "grid model bus"). In other word, the first row / column of this
+        matrix is not necessarily the first bus of the grid model.
+
+    .. warning::
+        This is given in the pair unit system and in load convention (so generation will be negative)
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+    
+    Notes
+    -----
+
+    Suppose that the grid model bus of id k is connected. Then the row / column `id_me_to_ac_solver[k]` (will be >= 0) and will represent this bus:
+    `Sbus[id_me_to_ac_solver[k]]` is the total power injected at the grid model bus solver `k`.
+
+    .. warning:: 
+        The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
+
+)mydelimiter"; 
+
+
+const std::string DocGridModel::get_Ybus = R"mydelimiter(
+    This function returns the (complex) `Ybus` matrix (for the AC powerflow)
+    with the gridmodel convention.
+
+    The resulting matrix is a CSC scipy sparse matrix of complex number.
+
+    It is a square matrix, as many rows (columns) as there are **total** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Ybus adopting the "solver" bus labelling (old behaviour), you can use 
+        :func:`lightsim2grid.gridmodel.get_Ybus_solver`
+
+    .. danger:: 
+        Major change in version 0.9.0 of lightsim2grid (see versionchanged below)
+
+    .. versionchanged:: 0.9.0
+        It has not the same definition as the "old" behaviour. In the old behaviour, the `get_Ybus` used the
+        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.gridmodel.get_Ybus_solver`
+
+    .. warning:: 
+        Each row / columns of this matrix represents a "solver bus" (and not a "grid model bus"). In other word, the first row / column of this
+        matrix is not necessarily the first bus of the grid model.
+
+    .. warning::
+        This is given in the pair unit system !
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+    Notes
+    -----
+
+    Suppose that the grid model bus of id k is connected. Then the row / column `id_me_to_ac_solver[k]` (will be >= 0) and will represent this bus:
+    `Ybus[id_me_to_ac_solver[k],:]` (rows of this bus), `Ybus[:, id_me_to_ac_solver[k]]` (column for this bus) 
+
+    .. warning:: 
+        The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
+
+)mydelimiter";
+
+
+const std::string DocGridModel::get_dcYbus = R"mydelimiter(
+    This function returns the (complex) `Ybus` matrix (for the DC powerflow)
+    (its imaginary part should be 0.) with the gridmodel convention.
+
+    The resulting matrix is a CSC scipy sparse matrix of complex number.
+
+    It is a square matrix, as many rows (columns) as there are **total** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Ybus adopting the "solver" bus labelling (old behaviour), you can use 
+        :func:`lightsim2grid.gridmodel.get_dcYbus_solver`
+
+    .. danger:: 
+        Major change in version 0.9.0 of lightsim2grid (see versionchanged below)
+
+    .. versionchanged:: 0.9.0
+        It has not the same definition as the "old" behaviour. In the old behaviour, the `get_dcYbus` used the
+        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.gridmodel.get_dcYbus_solver`
+
+    .. warning::
+        This is given in the pair unit system !
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+
+    Notes
+    -----
+
+    Suppose that the grid model bus of id k is connected. Then the row / column `id_me_to_ac_solver[k]` (will be >= 0) and will represent this bus:
+    `Ybus[id_me_to_ac_solver[k],:]` (rows of this bus), `Ybus[:, id_me_to_ac_solver[k]]` (column for this bus) 
+
+    .. warning:: 
+        The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
+
+)mydelimiter";
+
+
+const std::string DocGridModel::get_Sbus = R"mydelimiter(
+    This function returns the (complex) `Sbus` vector of the gridmodel. It is build
+    using the "Sbus" passed to the AC solver for which the buses have been properly relabelled
+    in the gridmodel convention.
+
+    The resulting vector is a vector of complex number having the size of the number of **total** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Sbus with the "solver" convention, you can use 
+        :func:`lightsim2grid.gridmodel.get_Sbus_solver`
+
+    .. danger:: 
+        Major change in version 0.9.0 of lightsim2grid (see versionchanged below)
+
+    .. versionchanged:: 0.9.0
+        It has not the same definition as the "old" behaviour. In the old behaviour, the `get_Sbus` used the
+        solver convention. To get the "old" behaviour, you need to use :func:`lightsim2grid.gridmodel.get_Sbus_solver`
+
+    .. warning::
+        This is given in the pair unit system and in load convention (so generation will be negative)
+
+    .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+    
+    Notes
+    -----
+
+    Suppose that the grid model bus of id k is connected. Then the row / column `id_me_to_ac_solver[k]` (will be >= 0) and will represent this bus:
+    `Sbus[id_me_to_ac_solver[k]]` is the total power injected at the grid model bus solver `k`.
+
+    .. warning:: 
+        The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
+
+)mydelimiter"; 
+
+
+const std::string DocGridModel::get_dcSbus = R"mydelimiter(
+    This function returns the (complex) `Sbus` vector of the gridmodel for the DC solver (imaginary part should be 0.). 
+    It is build using the "dcSbus" passed to the DC solver for which the buses have been properly relabelled
+    in the gridmodel convention.
+
+    The resulting vector is a vector of complex number having the size of the number of **total** buses on the grid.
+
+    .. seealso::
+        If you want to retrieve the Sbus with the "sovler" convention, you can use 
+        :func:`lightsim2grid.gridmodel.get_dcSbus_solver`
+
+    .. versionadded:: 0.9.0
+
+    .. warning::
+        This is given in the pair unit system and in load convention (so generation will be negative)
+
+    .. seealso:: 
+        :func:`lightsim2grid.gridmodel.GridModel.id_me_to_ac_solver` and :func:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` for
+        ways to link the "grid model" bus id to the "solver" bus id.
+    
+    Notes
+    -----
+
+    Suppose that the grid model bus of id k is connected. Then the row / column `id_me_to_ac_solver[k]` (will be >= 0) and will represent this bus:
+    `Sbus[id_me_to_ac_solver[k]]` is the total power injected at the grid model bus solver `k`.
+
+    .. warning:: 
+        The above only holds when the bus of id `k` is connected which is when `id_me_to_ac_solver[k] >= 0` !
+
+)mydelimiter"; 
+
 
 const std::string DocGridModel::check_solution = R"mydelimiter(
     This function allows to check that a given complex voltage vector satisfies the KCL or not, given the state of the sytem.

@@ -84,7 +84,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
         *_, V0 = self._aux_get_init_pp_data()
         # Ybus from lightsim2grid
         V_ls = self.gridmodel.ac_pf(1. * V0, 30, self.tol_solver)
-        Ybus_ls = self.gridmodel.get_Ybus()
+        Ybus_ls = self.gridmodel.get_Ybus_solver()
         # np.where(np.abs(Ybus_pp - Ybus_ls).todense() >=100.)
         assert np.abs((Ybus_pp - Ybus_ls)).max() <= self.tol, f"error in Ybus: max {np.abs((Ybus_pp - Ybus_ls).todense()).max():.2e}"
         
@@ -96,7 +96,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
         *_, V0 = self._aux_get_init_pp_data()
         # Ybus from lightsim2grid
         V_ls = self.gridmodel.ac_pf(1. * V0, 30, self.tol_solver)
-        Sbus_ls = self.gridmodel.get_Sbus()
+        Sbus_ls = self.gridmodel.get_Sbus_solver()
         slack_id = bus_lookup[self.net.ext_grid["bus"].values]
         is_not_slack = np.ones(self.net.bus.shape[0], dtype=bool)
         is_not_slack[slack_id] = False
@@ -122,7 +122,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
         *_, V0 = self._aux_get_init_pp_data()
         # Ybus from lightsim2grid
         V_ls = self.gridmodel.dc_pf(1. * V0, 30, self.tol_solver)
-        Ybus_ls = self.gridmodel.get_dcYbus()
+        Ybus_ls = self.gridmodel.get_dcYbus_solver()
         # np.where(np.abs( (Ybus_pp - Ybus_ls).todense()) >= 1e-4)
         assert np.abs( (Ybus_pp - Ybus_ls).todense()).max() <= self.tol, f"error in Ybus (dc): max {np.abs((Ybus_pp - Ybus_ls).todense()).max():.2e}"
 
@@ -142,7 +142,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
         *_, V0 = self._aux_get_init_pp_data()
         # Ybus from lightsim2grid
         V_ls = self.gridmodel.dc_pf(1. * V0, 30, self.tol_solver)
-        Sbus_ls = self.gridmodel.get_dcSbus()
+        Sbus_ls = self.gridmodel.get_dcSbus_solver()
         slack_id = self.net.ext_grid["bus"].values
         is_not_slack = np.ones(self.net.bus.shape[0], dtype=bool)
         is_not_slack[slack_id] = False

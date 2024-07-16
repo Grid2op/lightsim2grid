@@ -22,10 +22,36 @@ TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm
 TODO HVDC in Jacobian (see pandapower)
 
 
-[0.8.3] 2024-07-xx
+[0.9.0] 2024-07-xx
 --------------------------
 - TODO : add basic tests for legacy grid2op
 - TODO : numpy 2. compat (includes a mode without pandapower)
+
+- [BREAKING] the previous `gridmodel.get_ptdf()` function was wrongly labeled with the
+  "solver" bus id and not the `grid` bus id which could cause issue when applying 
+  topological changes. It has now been fixed (so the `gridmodel.get_ptdf` returns the
+  proper things). If you want the previous behaviour, you need to use `gridmodel.get_ptdf_solver()`
+- [BREAKING] similarly, `gridmodel.get_Ybus()`, `gridmodel.get_dcYbus()`, `gridmodel.get_Sbus()`
+  and `gridmodel.get_dcSbus()` now return things in the `gridmodel` bus ordering. For the previous
+  behaviour you can use `gridmodel.get_Ybus_solver()`, `gridmodel.get_dcYbus_solver()`,
+  `gridmodel.get_Sbus_solver()` and `gridmodel.get_dcSbus_solver()`
+- [BREAKING] the more rational logic above also extends to all the functions listed in the 
+  table below:
+
+===============================    ===================================================
+Function with behaviour change      Name of the new function having the same behaviour
+===============================    ===================================================
+gridmodel.get_ptdf()                gridmodel.get_ptdf_solver()
+gridmodel.get_Ybus()                gridmodel.get_Ybus_solver()
+gridmodel.get_dcYbus()              gridmodel.get_dcYbus_solver()
+gridmodel.get_Sbus()                gridmodel.get_Sbus_solver()
+gridmodel.get_dcSbus()              gridmodel.get_dcSbus_solver()
+gridmodel.get_pv()                  gridmodel.get_pv_solver()
+gridmodel.get_pq()                  gridmodel.get_pq_solver()
+gridmodel.get_slack_ids()           gridmodel.get_slack_ids_solver()
+gridmodel.get_slack_ids_dc()        gridmodel.get_slack_ids_dc_solver()
+gridmodel.get_slack_weights()       gridmodel.get_slack_weights_solver()
+===============================    ==================================================
 
 - [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
   More specifically the solver type used might not be correct if changed which could 
@@ -36,6 +62,10 @@ TODO HVDC in Jacobian (see pandapower)
 - [FIXED] (consistency with pandapower) when an intial powerflow is run
   to initialized an AC powerflow, the initial voltages are 1 pu (and 
   not grid.get_init_vm_pu() as previously).
+- [FIXED] `gridmodel.get_ptdf()` now have the 
+  normal "gridmodel" bus id representation and not the "solver" bus ordering.
+- [FIXED] `gridmodel.get_lodf()` issue wrong results in case of some
+  topological modification
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`

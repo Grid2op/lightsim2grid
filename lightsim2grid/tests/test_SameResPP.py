@@ -189,7 +189,7 @@ class MyTestCase(unittest.TestCase):
         # 1) Checking Sbus conversion
         Sbus_pp = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
         Sbus_pp_right_order = Sbus_pp[pp_vect_converter]
-        Sbus_me = backend._grid.get_Sbus()
+        Sbus_me = backend._grid.get_Sbus_solver()
         # slack bus is not the same
         all_but_slack = np.array(list(set(pv_).union(set(pq_))))
         error_p = np.abs(np.real(Sbus_me[all_but_slack]) - np.real(Sbus_pp_right_order[all_but_slack]))
@@ -203,7 +203,7 @@ class MyTestCase(unittest.TestCase):
                                             f"index (lightsim): {np.where(error_q > self.tol)[0]}"
 
         # 2)  Checking Ybus conversion"
-        Y_me = backend._grid.get_Ybus()
+        Y_me = backend._grid.get_Ybus_solver()
         Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
         Y_pp_right_order = Y_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
         error_p = np.abs(np.real(Y_me) - np.real(Y_pp_right_order))
@@ -225,8 +225,8 @@ class MyTestCase(unittest.TestCase):
         Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
         backend._grid.reactivate_result_computation()
         backend._grid.tell_solver_need_reset()
-        Ydc_me = copy.deepcopy(backend._grid.get_dcYbus())
-        Sdc_me = copy.deepcopy(backend._grid.get_dcSbus())
+        Ydc_me = copy.deepcopy(backend._grid.get_dcYbus_solver())
+        Sdc_me = copy.deepcopy(backend._grid.get_dcSbus_solver())
         assert np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) <= 100.*self.tol,\
             f"\t Error for the DC approximation: resulting voltages are different " \
             f"{np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])):.5f}pu"

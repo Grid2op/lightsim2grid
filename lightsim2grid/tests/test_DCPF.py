@@ -175,7 +175,7 @@ class TestDCPF(unittest.TestCase):
         # backend._grid.get_trafos()[trafo_id]
         # pp_net.trafo.iloc[trafo_id]
         # check the Ybus for DC
-        Ybus =  backend._grid.get_dcYbus()
+        Ybus =  backend._grid.get_dcYbus_solver()
         Bbus = pp_net._ppc["internal"]["Bbus"]
         assert np.abs(Ybus - Bbus).max() <= self.tol
         # check the voltage angles

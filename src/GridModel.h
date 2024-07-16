@@ -118,7 +118,15 @@ class GridModel : public GenericContainer
         double timer_last_ac_pf() const {return timer_last_ac_pf_;}
         double timer_last_dc_pf() const {return timer_last_dc_pf_;}
 
+        /**
+         * @brief Return the total number of buses (both connected and disconnected)
+         * 
+         * For the number of connected buses see `nb_bus()`
+         * 
+         * @return Eigen::Index 
+         */
         Eigen::Index total_bus() const {return bus_vn_kv_.size();}
+
         const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
         const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
         const std::vector<int> & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
@@ -302,8 +310,38 @@ class GridModel : public GenericContainer
                        int max_iter,  // not used for DC
                        real_type tol  // not used for DC
                        );
+
+        /**
+         * @brief Retrieve the PTDF matrice, with bus labeled in the "gridmodel" format.
+         * Deactivated buses are represented by a column of 0.
+         * 
+         * It has the size (nb_line + nb_trafo, total_bus)
+         * 
+         * @return RealMat 
+        */
         RealMat get_ptdf();
+
+        /**
+         * @brief Retrieve the LODF matrice.
+         * 
+         * 
+         * It has the size (nb_line + nb_trafo, nb_line + nb_trafo)
+         * 
+         * @return RealMat 
+        */
         RealMat get_lodf();
+
+        /**
+         * @brief Retrieve the PTDF matrice, with bus labeled in the "solver" format.
+         * 
+         * Deactivated buses are represented by a column of 0.
+         * 
+         * It has the size (nb_line + nb_trafo, nb_bus)
+         * NB nb_bus is the number of activated buses !
+         * 
+         * @return RealMat 
+        */
+        RealMat get_ptdf_solver();
         
         Eigen::SparseMatrix<real_type> get_Bf();
 
@@ -338,7 +376,14 @@ class GridModel : public GenericContainer
                 _reactivate(bus_id, bus_status_); 
             }
         }
-        int nb_bus() const;  // number of activated buses
+        /**
+         * @brief Return the total number of connected buses !
+         * 
+         * For the total number of buses, see `total_bus()`
+         * 
+         * @return int 
+         */
+        int nb_bus() const;
         Eigen::Index nb_powerline() const {return powerlines_.nb();}
         Eigen::Index nb_trafo() const {return trafos_.nb();}
 
@@ -511,52 +556,231 @@ class GridModel : public GenericContainer
         tuple4d get_dclineor_res_full() const {return dc_lines_.get_res_or_full();}
         tuple4d get_dclineex_res_full() const {return dc_lines_.get_res_ex_full();}
 
-        // get some internal information, be cerafull the ID of the buses might not be the same
-        // TODO convert it back to this ID, that will make copies, but who really cares ?
-        Eigen::SparseMatrix<cplx_type> get_Ybus(){
+        /**
+         * @brief Get the Ybus solver object (AC)
+         * 
+         * This function allows to retrieve the Ybus passed to the AC solver.
+         * 
+         * It has the "solver bus id" labelling, which is different from the 
+         * "gridmodel" bus labelling.
+         * 
+         * It has the size (nb_bus, nb_bus) (number of active buses)
+         * 
+         * (new in lightsim2grid 0.9.0, used to be called `get_Ybus` before that)
+         * 
+         * @return Eigen::SparseMatrix<cplx_type> 
+         */
+        Eigen::SparseMatrix<cplx_type> get_Ybus_solver(){
             return Ybus_ac_;  // This is copied to python
         }
-        // TODO convert it back to this ID, that will make copies, but who really cares ?
-        Eigen::SparseMatrix<cplx_type> get_dcYbus(){
+
+        /**
+         * @brief Get the Ybus solver object (DC)
+         * 
+         * This function allows to retrieve the Ybus passed to the DC solver.
+         * 
+         * It has the "solver bus id" labelling, which is different from the 
+         * "gridmodel" bus labelling.
+         * 
+         * It has the size (nb_bus, nb_bus) (number of active buses)
+         * 
+         * (new in lightsim2grid 0.9.0, used to be called `get_dcYbus` before that)
+         * 
+         * @return Eigen::SparseMatrix<cplx_type> 
+         */
+        Eigen::SparseMatrix<cplx_type> get_dcYbus_solver(){
             return Ybus_dc_;  // This is copied to python
         }
-        Eigen::Ref<const CplxVect> get_Sbus() const{
+
+        /**
+         * @brief Get the Sbus solver object (AC)
+         * 
+         * This function allows to retrieve the Sbus passed to the AC solver.
+         * 
+         * It has the "solver bus id" labelling, which is different from the 
+         * "gridmodel" bus labelling.
+         * 
+         * It has the size (nb_bus, nb_bus) (number of active buses)
+         * 
+         * (new in lightsim2grid 0.9.0, used to be called `get_Sbus` before that)
+         * 
+         * @return Eigen::Ref<const CplxVect>
+         */
+        Eigen::Ref<const CplxVect> get_Sbus_solver() const{
             return acSbus_;
         }
-        Eigen::Ref<const CplxVect> get_dcSbus() const{
+
+        /**
+         * @brief Get the Sbus solver object (DC)
+         * 
+         * This function allows to retrieve the Sbus passed to the DC solver.
+         * 
+         * It has the "solver bus id" labelling, which is different from the 
+         * "gridmodel" bus labelling.
+         * 
+         * It has the size (nb_bus, nb_bus) (number of active buses)
+         * 
+         * (new in lightsim2grid 0.9.0, used to be called `get_dcSbus` before that)
+         * 
+         * @return Eigen::Ref<const CplxVect>
+         */
+        Eigen::Ref<const CplxVect> get_dcSbus_solver() const{
             return dcSbus_;
         }
-        Eigen::Ref<const Eigen::VectorXi> get_pv() const{
+
+        /**
+         * @brief Get the Ybus gridmodel object
+         * 
+         * This function allows to retrieve the Ybus as seen by the gridmodel.
+         * 
+         * It may contain empty rows / columns for disconnected buses.
+         * 
+         * It has the "solver bus id" labelling, which is different from the 
+         * "gridmodel" bus labelling.
+         * 
+         * It has the size (nb_bus, nb_bus) (number of active buses)
+         * 
+         * (new in lightsim2grid 0.9.0, used to be called `get_dcSbus` before that)
+         * 
+         * @return Eigen::Ref<const CplxVect>
+         */
+        const Eigen::SparseMatrix<cplx_type> get_Ybus() const {
+            return _relabel_Ybus(Ybus_ac_, id_ac_solver_to_me_);
+        }
+        const Eigen::SparseMatrix<cplx_type> get_dcYbus() const {
+            return _relabel_Ybus(Ybus_dc_, id_dc_solver_to_me_);
+        }
+        const CplxVect get_Sbus() const {
+            return _relabel_vector(acSbus_, id_ac_solver_to_me_);
+        }
+        const CplxVect get_dcSbus() const {
+            return _relabel_vector(dcSbus_, id_dc_solver_to_me_);
+        }
+
+        /**
+         * @brief Get the vector (list) of pv buses, solver labelling
+         * 
+         * valid for AC modeling only, TODO in DC
+         * 
+         * @return Eigen::Ref<const Eigen::VectorXi> 
+         */
+        Eigen::Ref<const Eigen::VectorXi> get_pv_solver() const{
             return bus_pv_;
         }
-        Eigen::Ref<const Eigen::VectorXi> get_pq() const{
+
+        /**
+         * @brief Get the vector (list) of pv buses, gridmodel labelling
+         * 
+         * valid for AC modeling only, TODO in DC
+         * 
+         * @return const Eigen::VectorXi
+         */
+        const Eigen::VectorXi get_pv() const{
+            return _relabel_vector(bus_pv_, id_ac_solver_to_me_);
+        }
+
+        /**
+         * @brief Get the vector (list) of pq buses, solver labelling
+         * 
+         * valid for AC modeling only, TODO in DC
+         * 
+         * @return Eigen::Ref<const Eigen::VectorXi> 
+         */
+        Eigen::Ref<const Eigen::VectorXi> get_pq_solver() const{
             return bus_pq_;
         }
-        Eigen::Ref<const Eigen::VectorXi> get_slack_ids() const{
+
+        /**
+         * @brief Get the vector (list) of pq buses, grimodel labelling
+         * 
+         * valid for AC modeling only, TODO in DC
+         * 
+         * @return const Eigen::VectorXi
+         */
+        const Eigen::VectorXi get_pq() const{
+            return _relabel_vector(bus_pv_, id_ac_solver_to_me_);
+        }
+
+        /**
+         * @brief Get the ids of the buses that participate to the slack (AC), solver labelling
+         * 
+         * @return Eigen::Ref<const Eigen::VectorXi> 
+         */
+        Eigen::Ref<const Eigen::VectorXi> get_slack_ids_solver() const{
             return slack_bus_id_ac_solver_;
         }
-        Eigen::Ref<const Eigen::VectorXi> get_slack_ids_dc() const{
+
+        /**
+         * @brief Get the ids of the buses that participate to the slack (AC), gridmodel labelling
+         * 
+         * @return const Eigen::VectorXi 
+         */
+        const Eigen::VectorXi get_slack_ids() const{
+            return _relabel_vector(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
+        }
+
+        /**
+         * @brief Get the ids of the buses that participate to the slack (DC), solver labelling
+         * 
+         * @return Eigen::Ref<const Eigen::VectorXi> 
+         */
+        Eigen::Ref<const Eigen::VectorXi> get_slack_ids_dc_solver() const{
             return slack_bus_id_dc_solver_;
         }
-        Eigen::Ref<const RealVect> get_slack_weights() const{
+
+        /**
+         * @brief Get the ids of the buses that participate to the slack (DC), gridmodel labelling
+         * 
+         * @return const Eigen::VectorXi 
+         */
+        const Eigen::VectorXi get_slack_ids_dc() const{
+            return _relabel_vector(slack_bus_id_dc_solver_, id_ac_solver_to_me_);
+        }
+
+        /**
+         * @brief Get the slack weights for each buses (solver labelling)
+         * 
+         * valid for AC modeling only, TODO in DC
+         * 
+         * @return Eigen::Ref<const RealVect> 
+         */
+        Eigen::Ref<const RealVect> get_slack_weights_solver() const{
             return slack_weights_;
         }
 
+        /**
+         * @brief Get the slack weights for each buses (gridmodel labelling)
+         * 
+         * valid for AC modeling only, TODO in DC
+         * 
+         * @return Eigen::Ref<const RealVect> 
+         */
+        const RealVect get_slack_weights() const{
+            return _relabel_vector(slack_weights_, id_ac_solver_to_me_);
+        }
+
+
+        // TODO _solver
         Eigen::Ref<const CplxVect> get_V() const{
             return _solver.get_V();
         }
+        // TODO _solver
         Eigen::Ref<const RealVect> get_Va() const{
             return _solver.get_Va();
         }
+        // TODO _solver
         Eigen::Ref<const RealVect> get_Vm() const{
             return _solver.get_Vm();
         }
+        // TODO _solver
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const{
             return _solver.get_J();
         }
+        // TODO _solver
         Eigen::SparseMatrix<real_type> get_J_python() const{
             return _solver.get_J_python();  // This is copied to python
         }
+        
         real_type get_computation_time() const{ return _solver.get_computation_time();}
         real_type get_dc_computation_time() const{ return _dc_solver.get_computation_time();}
 
@@ -725,6 +949,36 @@ class GridModel : public GenericContainer
                             const Eigen::VectorXi & slack_bus_id_me,
                             Eigen::VectorXi & slack_bus_id_solver
                         );
+
+        /**
+         * @brief Build the Ybus (labelled using the gridmodel) from the Ybus (used by the solver)
+         * 
+         * @param Ybus : solver labelling
+         * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
+         * @return Eigen::SparseMatrix<cplx_type> 
+         */
+        Eigen::SparseMatrix<cplx_type> _relabel_Ybus(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                                     const std::vector<int> & id_solver_to_me) const;
+        /**
+         * @brief Build the Sbus (or any other vector labelled using the gridmodel convention) 
+         * from the same vector (input) that uses the solver convention.
+         * 
+         * @param Sbus : Sbus with the solver convention, the one used by the solver
+         * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
+         * @return CplxVect 
+         */
+        template<class T>
+        T _relabel_vector(const T & Sbus,
+                          const std::vector<int> & id_solver_to_me) const
+        {
+            T res = T::Zero(total_bus());
+            for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
+                auto grimodel_id = id_solver_to_me[solver_id];
+                res[grimodel_id] = Sbus[solver_id];
+            }
+            return res;
+        }
+
     private:
         using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
     protected:

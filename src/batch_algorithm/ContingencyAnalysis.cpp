@@ -160,13 +160,13 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
             _grid_model.dc_pf(Vinit, max_iter, tol);
         }
     }
-    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus() : _grid_model.get_dcYbus();
+    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
     const Eigen::Index nb_buses_solver = Ybus.cols();
     const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
-    const Eigen::VectorXi & bus_pv = _grid_model.get_pv();
-    const Eigen::VectorXi & bus_pq = _grid_model.get_pq();
-    const Eigen::VectorXi & slack_ids = ac_solver_used ? _grid_model.get_slack_ids(): _grid_model.get_slack_ids_dc();
-    const RealVect & slack_weights = _grid_model.get_slack_weights();
+    const Eigen::VectorXi & bus_pv = _grid_model.get_pv_solver();
+    const Eigen::VectorXi & bus_pq = _grid_model.get_pq_solver();
+    const Eigen::VectorXi & slack_ids = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
+    const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
     
     // get the proper Sbus vector

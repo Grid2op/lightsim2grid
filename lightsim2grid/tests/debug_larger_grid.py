@@ -139,7 +139,7 @@ print("1) Checking Sbus conversion")
 pp_net = backend.init_pp_backend._grid
 Sbus_pp = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
 Sbus_pp_right_order = Sbus_pp[pp_vect_converter]
-Sbus_me = backend._grid.get_Sbus()
+Sbus_me = backend._grid.get_Sbus_solver()
 test_ok = True
 error_p = np.abs(np.real(Sbus_me) - np.real(Sbus_pp_right_order))
 if np.max(error_p) > tol:
@@ -170,7 +170,7 @@ else:
 
 ### then check the Ybus matrix
 print("2)  Checking Ybus conversion")
-Y_me = backend._grid.get_Ybus()
+Y_me = backend._grid.get_Ybus_solver()
 Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
 Y_pp_right_order = Y_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
 
@@ -414,8 +414,8 @@ Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
 backend._grid.reactivate_result_computation()
 test_ok = True
 
-Ydc_me = backend._grid.get_Ybus()
-Sdc_me = backend._grid.get_Sbus()
+Ydc_me = backend._grid.get_Ybus_solver()
+Sdc_me = backend._grid.get_Sbus_solver()
 if np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) >= 100.*tol:
     test_ok = False
     print(f"\t Error for the DC approximation: resulting voltages are different "

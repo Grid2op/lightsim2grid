@@ -40,7 +40,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // init the computations
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
-    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus() : _grid_model.get_dcYbus();
+    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
     const Eigen::Index nb_buses_solver = Ybus.cols();
 
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
@@ -51,10 +51,10 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
 
     const Eigen::Index nb_steps = gen_p.rows();
 
-    const Eigen::VectorXi & bus_pv = _grid_model.get_pv();
-    const Eigen::VectorXi & bus_pq = _grid_model.get_pq();
-    const Eigen::VectorXi & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids(): _grid_model.get_slack_ids_dc();
-    const RealVect & slack_weights = _grid_model.get_slack_weights();
+    const Eigen::VectorXi & bus_pv = _grid_model.get_pv_solver();
+    const Eigen::VectorXi & bus_pq = _grid_model.get_pq_solver();
+    const Eigen::VectorXi & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
+    const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
     _solver.reset();
     _solver_control.tell_none_changed();
     _solver_control.tell_recompute_sbus();

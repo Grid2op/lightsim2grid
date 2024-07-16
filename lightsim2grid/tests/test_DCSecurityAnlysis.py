@@ -19,7 +19,7 @@ import warnings
 import pdb
 
 
-class TestSecurityAnalysis(unittest.TestCase):
+class TestDCSecurityAnalysis(unittest.TestCase):
     def _aux_do_reset(self):
         return self.env.reset(seed=0,options={"time serie id": 0})
     
@@ -306,37 +306,40 @@ class TestSecurityAnalysis(unittest.TestCase):
         mat_flow = np.tile(res_powerflow, LODF_mat.shape[0]).reshape(LODF_mat.shape)
         por_lodf = mat_flow + LODF_mat.T * mat_flow.T
         
-        # debug ptdf
+        # debug ptdf and lodf
         PTDF_ = 1.0 * gridmodel.get_ptdf()
         dcSbus = 1.0 * gridmodel.get_dcSbus().real
-        if dcSbus.shape[0] == 15:
+        if gridmodel.nb_bus():
             # debug for `test_compare_lodf_topo`
-            PTDF = 1. * PTDF_[:,:15]
+            PTDF = 1. * PTDF_
             res_ptdf = np.dot(PTDF, dcSbus * gridmodel.get_sn_mva())
             assert np.abs(res_ptdf  - res_powerflow).max() <= 1e-6, "error for ptdf"
 
             # debug lodf
-            nb = 15  # number of buses
+            nb = gridmodel.total_bus()  # number of buses
             nbr = len(gridmodel.get_lineor_res()[0]) + len(gridmodel.get_trafohv_res()[0])
             f_ = np.concatenate((1 * gridmodel.get_lines().get_bus_from(), 1 * gridmodel.get_trafos().get_bus_from()))
             t_ = np.concatenate((1 * gridmodel.get_lines().get_bus_to(), 1 * gridmodel.get_trafos().get_bus_to()))
-            f_[f_ == 15] = 14
-            t_[t_ == 15] = 14
             Cft = scipy.sparse.csr_matrix((np.r_[np.ones(nbr), -np.ones(nbr)],
                                           (np.r_[f_, t_], np.r_[np.arange(nbr), np.arange(nbr)])),
                                           (nb, nbr))
-
             H = PTDF * Cft
             h = np.diag(H, 0)
             den = (np.ones((nbr, 1)) * h.T * -1 + 1.)
             with np.errstate(divide='ignore', invalid='ignore'):
                 LODF_pypower = (H / den)
-            update_LODF_diag(LODF_pypower)
-            assert np.abs(LODF_pypower - LODF_mat).max() <= 1e-6, "problem with lodf computation"
-        
+            update_LODF_diag(LODF_pypower)  
+            isfinite = np.isfinite(LODF_pypower)
+            assert np.abs(LODF_pypower[isfinite] - LODF_mat[isfinite]).max() <= 1e-6, (f"problem with lodf computation: "
+                                                                                       f"{np.abs(LODF_pypower - LODF_mat).max():.2e}")
+
         # compute with the reference
         nb_real_line = len(gridmodel.get_lineor_res()[0])
+        has_conv = np.any(res_v1 != 0., axis=1)
         for l_id in range(type(self.env).n_line):
+            if not has_conv[l_id]:
+                # nothing to check in this case
+                continue
             gridmodel_tmp = gridmodel.copy()
             if l_id < nb_real_line:
                 gridmodel_tmp.deactivate_powerline(l_id)
@@ -344,16 +347,14 @@ class TestSecurityAnalysis(unittest.TestCase):
                 t_id = l_id - nb_real_line
                 gridmodel_tmp.deactivate_trafo(t_id)
             res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
-            if res_tmp.shape == 0:
+            if res_tmp.shape[0] == 0:
                 continue
             lor_tmp, *_ = gridmodel_tmp.get_lineor_res()
             tor_tmpp, *_ = gridmodel_tmp.get_trafohv_res()
             powerflow_tmp = np.concatenate((lor_tmp, tor_tmpp))
             assert np.abs(res_p1[l_id] - powerflow_tmp).max() <= 1e-6, f"error for line / trafo {l_id}: {np.abs(res_p1[l_id] - powerflow_tmp)}"
             assert np.abs(por_lodf[l_id] - powerflow_tmp).max() <= 1e-6, f"error for line / trafo {l_id}: {np.abs(por_lodf[l_id] - powerflow_tmp)}"
-        import pdb
-        pdb.set_trace()
-        has_conv = np.any(res_v1 != 0., axis=1)
+
         assert np.abs(por_lodf[has_conv] - res_p1[has_conv]).max() <= 1e-6
         
     def test_compare_lodf_topo(self):

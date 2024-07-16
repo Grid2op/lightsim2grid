@@ -231,7 +231,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
 }
 
 template<class LinearSolver>
-RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
     auto timer = CustTimer();
     Eigen::SparseMatrix<real_type> Bf_T_with_slack;
     RealMat PTDF;
@@ -282,14 +282,19 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
 }
 
 template<class LinearSolver>
-RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
-                                           const IntVect & from_bus,
+RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
                                            const IntVect & to_bus){
     auto timer = CustTimer();
-    const RealMat PTDF = get_ptdf(dcYbus);  // size n_line x n_bus
+    const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
     for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
-        LODF.col(line_id).array() = PTDF.col(from_bus(line_id)).array() - PTDF.col(to_bus(line_id)).array();
+        auto f_bus = from_bus(line_id);
+        auto t_bus = to_bus(line_id);
+        if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
+            // element is disconnected
+            LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
+        }
+        LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);
         if (diag_coeff != 1.){
             LODF.col(line_id).array() /= (1. - diag_coeff);

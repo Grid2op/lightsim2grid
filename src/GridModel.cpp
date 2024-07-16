@@ -392,7 +392,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
        solver_control_.has_slack_participate_changed() || 
        solver_control_.has_pv_changed() || 
        solver_control_.has_slack_weight_changed()){
-        slack_weights_ = generators_.get_slack_weights(Ybus_ac_.rows(), id_me_to_ac_solver_); 
+        slack_weights_ = generators_.get_slack_weights_solver(Ybus_ac_.rows(), id_me_to_ac_solver_); 
     }
     // std::cout << "\tbefore compute_pf" << std::endl;
     conv = _solver.compute_pf(Ybus_ac_, V, acSbus_, slack_bus_id_ac_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
@@ -897,7 +897,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
        solver_control_.has_slack_weight_changed()){
         // TODO smarter solver: this is done both in ac and in dc !
         // std::cout << "\tget_slack_weights" << std::endl;
-        slack_weights_ = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
+        slack_weights_ = generators_.get_slack_weights_solver(Ybus_dc_.rows(), id_me_to_dc_solver_);
        }
     // std::cout << "V (init to dc pf)\n";
     // for(auto el: V) std::cout << el << ", ";
@@ -914,22 +914,53 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     return res;
 }
 
+RealMat GridModel::get_ptdf_solver(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
+    }
+    const RealMat & PTDF_solver = _dc_solver.get_ptdf();
+    return PTDF_solver;
+}
+
+
 RealMat GridModel::get_ptdf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    return _dc_solver.get_ptdf(Ybus_dc_);
+    const RealMat & PTDF_solver = get_ptdf_solver();
+    RealMat PTDF_grid(powerlines_.nb() + trafos_.nb(), total_bus());
+    int solver_col = 0;
+    for(const auto my_col: id_dc_solver_to_me()){
+        PTDF_grid.col(my_col) = PTDF_solver.col(solver_col);
+        ++solver_col;
+    }
+    return PTDF_grid;
 }
 
 RealMat GridModel::get_lodf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    IntVect from_bus(powerlines_.nb() + trafos_.nb());
-    IntVect to_bus(powerlines_.nb() + trafos_.nb());
+    const auto nb_el = powerlines_.nb() + trafos_.nb();
+    IntVect from_bus(nb_el);
+    IntVect to_bus(nb_el);
+    // retrieve the from_bus / to_bus from the grid
     from_bus << powerlines_.get_bus_from(), trafos_.get_bus_from();
     to_bus << powerlines_.get_bus_to(), trafos_.get_bus_to();
-    return _dc_solver.get_lodf(Ybus_dc_, from_bus, to_bus);
+    // convert it to solver bus id
+    IntVect from_bus_solver(nb_el);
+    IntVect to_bus_solver(nb_el);
+    for(auto el_id = 0; el_id < nb_el; ++el_id){
+        // from side
+        auto f_grid_bus = from_bus[el_id];
+        auto f_solver_bus = id_me_to_dc_solver_[f_grid_bus];
+        from_bus_solver[el_id] = f_solver_bus;
+        // to side
+        auto t_grid_bus = to_bus[el_id];
+        auto t_solver_bus = id_me_to_dc_solver_[t_grid_bus];
+        to_bus_solver[el_id] = t_solver_bus;
+    }
+    return _dc_solver.get_lodf(from_bus_solver, to_bus_solver);
 }
 
 Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
@@ -1149,7 +1180,7 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
 
 void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose) const
 {
-    const int nb_bus_solver = static_cast<int>(id_me_to_dc_solver_.size());
+    const int nb_bus_solver = static_cast<int>(id_dc_solver_to_me_.size());
     // TODO DEBUG MODE
     if(nb_bus_solver == 0) throw std::runtime_error("GridModel::fillBf_for_PTDF: it appears no DC powerflow has run on your grid.");
     
@@ -1290,4 +1321,23 @@ void GridModel::consider_only_main_component(){
     dc_lines_.disconnect_if_not_in_main_component(visited);
     // and finally deal with the buses
     init_bus_status();
+}
+
+
+Eigen::SparseMatrix<cplx_type> GridModel::_relabel_Ybus(const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                                        const std::vector<int> & id_solver_to_me) const {
+    Eigen::SparseMatrix<cplx_type> res(total_bus(), total_bus());
+    res.reserve(Ybus.nonZeros());
+    std::vector<Eigen::Triplet<cplx_type> > tripletList;
+    tripletList.reserve(Ybus.nonZeros());
+    const auto n_col = Ybus.rows();
+    for (Eigen::Index col_=0; col_ < n_col; ++col_){
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_); it; ++it)
+        {
+            tripletList.push_back({id_solver_to_me[it.col()], id_solver_to_me[it.row()], it.value()});
+        }
+    }
+    res.setFromTriplets(tripletList.begin(), tripletList.end());
+    res.makeCompressed();
+    return res;
 }

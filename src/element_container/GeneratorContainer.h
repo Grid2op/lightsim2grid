@@ -221,7 +221,7 @@ class GeneratorContainer: public GenericContainer
     /**
     Retrieve the normalized (=sum to 1.000) slack weights for all the buses
     **/
-    RealVect get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
+    RealVect get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
 
     Eigen::VectorXi get_slack_bus_id() const;
     void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);

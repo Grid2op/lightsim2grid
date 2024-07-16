@@ -317,7 +317,7 @@ class TestMultipleSlack14(unittest.TestCase):
         # NB: the test bellow only works because pandapower and lightsim have the
         # bus in the same order !
         assert len(V_ls), "lightsim diverged !"
-        Ybus_me = ls_grid.get_Ybus()
+        Ybus_me = ls_grid.get_Ybus_solver()
         Ybus_ref = pp_net._ppc["internal"]["Ybus"]
         assert np.abs((Ybus_me - Ybus_ref).todense()).max() <= 1e-6, "wrong Ybus"
 

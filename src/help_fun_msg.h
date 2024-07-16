@@ -201,13 +201,26 @@ struct DocGridModel
     static const std::string id_dc_solver_to_me;
     static const std::string total_bus;
     static const std::string nb_bus;
+
+    // TODO doc: make more precise when things are copied and when things are not
     static const std::string get_pv;
     static const std::string get_pq;
     static const std::string get_slack_ids;
+    static const std::string get_slack_ids_dc;
     static const std::string get_slack_weights;
+    static const std::string get_pv_solver;
+    static const std::string get_pq_solver;
+    static const std::string get_slack_ids_solver;
+    static const std::string get_slack_ids_dc_solver;
+    static const std::string get_slack_weights_solver;
     static const std::string get_Ybus;
     static const std::string get_dcYbus;
     static const std::string get_Sbus;
+    static const std::string get_dcSbus;
+    static const std::string get_Ybus_solver;
+    static const std::string get_dcYbus_solver;
+    static const std::string get_Sbus_solver;
+    static const std::string get_dcSbus_solver;
 
     static const std::string check_solution;
 
