@@ -52,7 +52,7 @@ class TestCase14SLU(unittest.TestCase):
 
     def test_from_pp(self):
         # test the right computation of Bf matrix (PTDF derived from python, might be slower)
-        Bf = 1.0 * self.gridmodel.get_Bf()
+        Bf = 1.0 * self.gridmodel.get_Bf_solver()
         PTDF = np.zeros((self.nbr, self.nb))
         PTDF[:, self.noslack] = spsolve(self.Bbus[np.ix_(self.noslack, self.noref)].T, Bf[:, self.noref].toarray().T).T
         # test the solver works correctly
@@ -66,7 +66,7 @@ class TestCase14SLU(unittest.TestCase):
     
     def test_ptdf_from_ls(self):
         # now test the right computation of the PTDF
-        Bf = 1.0 * self.gridmodel.get_Bf()
+        Bf = 1.0 * self.gridmodel.get_Bf_solver()
         PTDF2 = 1.0 * self.gridmodel.get_ptdf_solver()
         # test the solver works correctly
         tmp_mat = self.Bbus[np.ix_(self.noslack, self.noref)].T.todense()

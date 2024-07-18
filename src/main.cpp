@@ -840,7 +840,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_V", &GridModel::get_V, DocGridModel::get_V.c_str())
         .def("get_Va", &GridModel::get_Va, DocGridModel::get_Va.c_str())
         .def("get_Vm", &GridModel::get_Vm, DocGridModel::get_Vm.c_str())
-        .def("get_J", &GridModel::get_J_python, DocGridModel::get_J_python.c_str())
         .def("get_V_solver", &GridModel::get_V_solver, DocGridModel::get_V_solver.c_str())
         .def("get_Va_solver", &GridModel::get_Va_solver, DocGridModel::get_Va_solver.c_str())
         .def("get_Vm_solver", &GridModel::get_Vm_solver, DocGridModel::get_Vm_solver.c_str())
@@ -928,10 +927,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("tell_ybus_change_sparsity_pattern", &GridModel::tell_ybus_change_sparsity_pattern, DocGridModel::_internal_do_not_use.c_str())
         .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
-        .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
-        .def("get_ptdf_solver", &GridModel::get_ptdf_solver, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
-        .def("get_lodf", &GridModel::get_lodf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
-        .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::get_ptdf.c_str()) 
+        .def("get_ptdf_solver", &GridModel::get_ptdf_solver, DocGridModel::get_ptdf_solver.c_str())
+        .def("get_lodf", &GridModel::get_lodf, DocGridModel::get_lodf.c_str())
+        .def("get_Bf", &GridModel::get_Bf, DocGridModel::get_Bf.c_str())
+        .def("get_Bf_solver", &GridModel::get_Bf_solver, DocGridModel::get_Bf_solver.c_str())
 
          // apply action faster (optimized for grid2op representation)
          // it is not recommended to use it outside of grid2Op.

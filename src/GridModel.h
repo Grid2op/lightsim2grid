@@ -343,6 +343,7 @@ class GridModel : public GenericContainer
         */
         RealMat get_ptdf_solver();
         
+        Eigen::SparseMatrix<real_type> get_Bf_solver();
         Eigen::SparseMatrix<real_type> get_Bf();
 
         // ac powerflow
@@ -723,7 +724,9 @@ class GridModel : public GenericContainer
          * @return const Eigen::VectorXi
          */
         const Eigen::VectorXi get_pv() const{
-            return _relabel_vector(bus_pv_, id_ac_solver_to_me_);
+            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2(get_pv_solver(), id_ac_solver_to_me_);
+            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2(get_pv_solver(), id_dc_solver_to_me_);
+            throw std::runtime_error("GridModel::get_pv: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         /**
@@ -745,7 +748,9 @@ class GridModel : public GenericContainer
          * @return const Eigen::VectorXi
          */
         const Eigen::VectorXi get_pq() const{
-            return _relabel_vector(bus_pv_, id_ac_solver_to_me_);
+            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2(get_pq_solver(), id_ac_solver_to_me_);
+            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2(get_pq_solver(), id_dc_solver_to_me_);
+            throw std::runtime_error("GridModel::get_pq: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         /**
@@ -763,7 +768,7 @@ class GridModel : public GenericContainer
          * @return const Eigen::VectorXi 
          */
         const Eigen::VectorXi get_slack_ids() const{
-            return _relabel_vector(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
+            return _relabel_vector2(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
         }
 
         /**
@@ -781,7 +786,7 @@ class GridModel : public GenericContainer
          * @return const Eigen::VectorXi 
          */
         const Eigen::VectorXi get_slack_ids_dc() const{
-            return _relabel_vector(slack_bus_id_dc_solver_, id_ac_solver_to_me_);
+            return _relabel_vector2(slack_bus_id_dc_solver_, id_dc_solver_to_me_);
         }
 
         /**
@@ -803,9 +808,10 @@ class GridModel : public GenericContainer
          * @return Eigen::Ref<const RealVect> 
          */
         const RealVect get_slack_weights() const{
-            return _relabel_vector(slack_weights_, id_ac_solver_to_me_);
+            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_ac_solver_to_me_);
+            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_dc_solver_to_me_);
+            throw std::runtime_error("GridModel::get_slack_weights: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
-
 
         /**
          * @brief Get the (complex) voltage angles for each buses (solver labelling)
@@ -822,7 +828,9 @@ class GridModel : public GenericContainer
          * @return CplxVect
          */
         const CplxVect get_V() const{
-            return _relabel_vector(_solver.get_V(), id_ac_solver_to_me_);
+            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_ac_solver_to_me_);
+            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_dc_solver_to_me_);
+            throw std::runtime_error("GridModel::get_V: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         /**
@@ -840,7 +848,9 @@ class GridModel : public GenericContainer
          * @return const RealVect
          */
         const RealVect get_Va() const{
-            return _relabel_vector(_solver.get_Va(), id_ac_solver_to_me_);
+            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_ac_solver_to_me_);
+            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_dc_solver_to_me_);
+            throw std::runtime_error("GridModel::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
 
@@ -859,7 +869,9 @@ class GridModel : public GenericContainer
          * @return const RealVect
          */
         const RealVect get_Vm() const{
-            return _relabel_vector(_solver.get_Vm(), id_ac_solver_to_me_);
+            if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_ac_solver_to_me_);
+            if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_dc_solver_to_me_);
+            throw std::runtime_error("GridModel::get_Vm: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J_solver() const{
@@ -873,15 +885,6 @@ class GridModel : public GenericContainer
          */
         Eigen::SparseMatrix<real_type> get_J_python_solver() const{
             return _solver.get_J_python();  // This is copied to python
-        }
-
-        /**
-         * @brief Returns the last computed jacobian matrix (gridmodel labelling)
-         * 
-         * @return Eigen::SparseMatrix<real_type> 
-         */
-        Eigen::SparseMatrix<real_type> get_J_python() const{
-            return _relabel_matrix(_solver.get_J_python(), id_ac_solver_to_me_); // This is copied to python
         }
         
         real_type get_computation_time() const{ return _solver.get_computation_time();}
@@ -1059,20 +1062,29 @@ class GridModel : public GenericContainer
          * 
          * @param Ybus : solver labelling
          * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
+         * @param relabel_row : whether to relabel also the row id
          * @return Eigen::SparseMatrix<cplx_type> 
          */
         template<typename T>    
         Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
-                                               const std::vector<int> & id_solver_to_me) const {
-            Eigen::SparseMatrix<T> res(total_bus(), total_bus());
+                                               const std::vector<int> & id_solver_to_me,
+                                               bool relabel_row=true) const {
+            // TODO optim : if relabel_row is false, then we can just copy
+            // paste the columns easily in the target matrix, which should be
+            // way faster than this function.
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(Ybus.cols() != nb_bus()) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");
+            if(relabel_row & (Ybus.rows() != nb_bus())) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columnd (nb connected bus, ...) expected");
+            Eigen::SparseMatrix<T> res(relabel_row ? total_bus() : Ybus.rows(), total_bus());
             res.reserve(Ybus.nonZeros());
             std::vector<Eigen::Triplet<T> > tripletList;
             tripletList.reserve(Ybus.nonZeros());
-            const auto n_col = Ybus.rows();
+            const auto n_col = Ybus.cols();
             for (Eigen::Index col_=0; col_ < n_col; ++col_){
                 for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
                 {
-                    tripletList.push_back({id_solver_to_me[it.col()], id_solver_to_me[it.row()], it.value()});
+                    if(relabel_row) tripletList.push_back({id_solver_to_me[it.row()], id_solver_to_me[it.col()], it.value()});
+                    else tripletList.push_back({it.row(), id_solver_to_me[it.col()], it.value()});
                 }
             }
             res.setFromTriplets(tripletList.begin(), tripletList.end());
@@ -1091,13 +1103,14 @@ class GridModel : public GenericContainer
          * @return CplxVect 
          */
         template<class T>
-        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1>> & Sbus,
+        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & Sbus,
                                                             const std::vector<int> & id_solver_to_me) const
         {
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(Sbus.size() != nb_bus()) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
             for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
-                auto grimodel_id = id_solver_to_me[solver_id];
-                res[grimodel_id] = Sbus[solver_id];
+                res[id_solver_to_me[solver_id]] = Sbus[solver_id];
             }
             return res;
         }
@@ -1116,10 +1129,55 @@ class GridModel : public GenericContainer
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Matrix<T, Eigen::Dynamic, 1> & Sbus,
                                                             const std::vector<int> & id_solver_to_me) const
         {
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(Sbus.size() != nb_bus()) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
             for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
-                auto grimodel_id = id_solver_to_me[solver_id];
-                res[grimodel_id] = Sbus[solver_id];
+                res[id_solver_to_me[solver_id]] = Sbus[solver_id];
+            }
+            return res;
+        }
+
+        /**
+         * @brief Build the pv; pq or slack ids (or any other vector labelled using the gridmodel convention) 
+         * from the same vector (input) that uses the solver convention.
+         * 
+         * TODO copy paste from above, find a better way !
+         * 
+         * @param Sbus : Sbus with the solver convention, the one used by the solver
+         * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
+         * @return CplxVect 
+         */
+        template<class T>
+        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const Eigen::Matrix<T, Eigen::Dynamic, 1> & pv_pq_ref_bus,
+                                                             const std::vector<int> & id_solver_to_me) const
+        {
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
+            for(auto el_id = 0; el_id < pv_pq_ref_bus.size(); ++el_id){
+                res[el_id] = id_solver_to_me[pv_pq_ref_bus[solver_id]];
+            }
+            return res;
+        }
+
+        /**
+         * @brief Build the pv; pq or slack ids (or any other vector labelled using the gridmodel convention) 
+         * from the same vector (input) that uses the solver convention.
+         * 
+         * TODO copy paste from above, find a better way !
+         * 
+         * @param Sbus : Sbus with the solver convention, the one used by the solver
+         * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
+         * @return CplxVect 
+         */
+        template<class T>
+        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & pv_pq_ref_bus,
+                                                             const std::vector<int> & id_solver_to_me) const
+        {
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
+            for(auto el_id = 0; el_id < pv_pq_ref_bus.size(); ++el_id){
+                res[el_id] = id_solver_to_me[pv_pq_ref_bus[solver_id]];
             }
             return res;
         }

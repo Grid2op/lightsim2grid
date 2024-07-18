@@ -208,6 +208,17 @@ class BaseTests:
         # compute a powerflow on a net without anything
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
+        
+        # check no error when retrieving these
+        self.model.get_V()                   
+        self.model.get_V_solver()
+        self.model.get_Va()                  
+        self.model.get_Va_solver()
+        self.model.get_Vm()                  
+        self.model.get_Vm_solver()
+        if hasattr(self, "dc") and not self.dc:
+            # does not make sense in dc powerflow              
+            self.model.get_J_solver()
 
     def test_pf_disco_gen(self):
         self.do_i_skip("test_pf_disco_gen")
@@ -375,6 +386,7 @@ class BaseTests:
 
 class MakeDCTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):
+        self.dc = True
         return self.model.dc_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
@@ -406,10 +418,10 @@ class MakeDCTests(BaseTests, unittest.TestCase):
 
 class MakeACTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):
+        self.dc = False
         return self.model.ac_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             pp.runpp(net, init="flat",

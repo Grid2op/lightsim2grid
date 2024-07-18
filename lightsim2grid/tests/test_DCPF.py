@@ -37,6 +37,7 @@ class TestDCPF(unittest.TestCase):
 
     def test_case14(self):
         case = pn.case14()
+        case.name = "case14"
         self.tol = 2e-3
         self._aux_test(case)
 
@@ -64,19 +65,23 @@ class TestDCPF(unittest.TestCase):
                                               pfe_kw=0.
                                               )
         self.tol = 2e-3
+        case.name = "case14_2"
         self._aux_test(case)
 
     def test_case39(self):
         case = pn.case39()
+        case.name = "case39"
         self.tol = 3e-4
         self._aux_test(case)
 
     def test_case118(self):
         case = pn.case118()
+        case.name = "case118"
         self._aux_test(case)
 
     def test_case1888rte(self):
         case = pn.case1888rte()
+        case.name = "case1888rte"
         self.tol = 3e-4
         self._aux_test(case)
 
@@ -93,31 +98,36 @@ class TestDCPF(unittest.TestCase):
     def test_case2848rte(self):
         case = pn.case2848rte()
         self.tol = 0.1  # yeah this one is a bit tough... # TODO
+        case.name = "case2848rte"
         self._aux_test(case)
 
     def test_case6470rte(self):
         case = pn.case6470rte()
+        case.name = "case6470rte"
         self.tol_big = 0.1  # for P = C
         self.tol = 1e-2
         self._aux_test(case)
 
     def test_case6495rte(self):
         case = pn.case6495rte()
+        case.name = "case6495rte"
         self.tol = 1e-2
         self._aux_test(case)
 
     def test_case6515rte(self):
         case = pn.case6515rte()
+        case.name = "case6515rte"
         self.tol_big = 0.1  # for P = C
         self.tol = 1e-2
         self._aux_test(case)
 
     def test_case_illinois200(self):
         case = pn.case_illinois200()
+        case.name = "case_illinois200"
         self.tol = 3e-4
         self._aux_test(case)
-
-    def _aux_test(self, pn_net):
+    
+    def _aux_make_grid(self, pn_net):
         with tempfile.TemporaryDirectory() as path:
             case_name = os.path.join(path, "this_case.json")
             pp.to_json(pn_net, case_name)
@@ -127,11 +137,14 @@ class TestDCPF(unittest.TestCase):
             type(backend)._clear_grid_dependant_class_attributes()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                type(backend).env_name = pn_net
+                type(backend).env_name = pn_net.name if pn_net.name != "" else "_test"
                 backend.load_grid(case_name)
                 backend.assert_grid_correct()
                 # backend.init_pp_backend.assert_grid_correct()
-                
+        return backend
+
+    def _aux_test(self, pn_net):
+        backend = self._aux_make_grid(pn_net)
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
         # first i deactivate all slack bus in pp that are connected but not handled in ls
@@ -232,5 +245,53 @@ class TestDCPF(unittest.TestCase):
         # again, pandapower put nan for the voltages...
 
 
+class TestDCPF_LODF(TestDCPF):
+    def _aux_test(self, pn_net):
+        backend = self._aux_make_grid(pn_net)
+        nb_sub = backend.n_sub
+        pp_net = backend.init_pp_backend._grid
+        # first i deactivate all slack bus in pp that are connected but not handled in ls
+        pp_net.ext_grid["in_service"].loc[:] = False
+        pp_net.ext_grid["in_service"].iloc[0] = True
+        conv, exc_ = backend.runpf(is_dc=True)
+        
+        gridmodel = backend._grid
+        # test I can access all that without crash
+        PTDF = gridmodel.get_ptdf()        
+        assert PTDF.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.total_bus())        
+        PTDF_solver = gridmodel.get_ptdf_solver()
+        assert PTDF_solver.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.nb_bus())      
+        with self.assertRaises(RuntimeError):
+            Ybus = gridmodel.get_Ybus()              
+        Ybus_solver = gridmodel.get_Ybus_solver()
+        assert Ybus_solver.shape == (0, 0)
+        dcYbus = gridmodel.get_dcYbus()       
+        import pdb
+        pdb.set_trace()
+        assert dcYbus.shape == (gridmodel.total_bus(), gridmodel.total_bus())    
+        dcYbus_solver = gridmodel.get_dcYbus_solver()
+        assert dcYbus.shape == (gridmodel.nb_bus(), gridmodel.nb_bus())     
+        with self.assertRaises(RuntimeError):
+            Sbus = gridmodel.get_Sbus()          
+        with self.assertRaises(RuntimeError):          
+            Sbus_solver = gridmodel.get_Sbus_solver()
+        dcSbus = gridmodel.get_dcSbus()      
+        assert dcYbus.shape == (gridmodel.total_bus(), )            
+        dcSbus_solver = gridmodel.get_dcSbus_solver()
+        assert dcSbus_solver.shape == (gridmodel.total_bus(), )       
+        pv = gridmodel.get_pv()                  
+        pv_solver = gridmodel.get_pv_solver()
+        pq = gridmodel.get_pq()                  
+        pq_solver = gridmodel.get_pq_solver()
+        # slack_ids = gridmodel.get_slack_ids()           
+        # slack_ids_solver = gridmodel.get_slack_ids_solver()
+        slack_ids_dc = gridmodel.get_slack_ids_dc()        
+        slack_ids_dc_solver = gridmodel.get_slack_ids_dc_solver()      
+        slack_weights = gridmodel.get_slack_weights()       
+        slack_weights_solver = gridmodel.get_slack_weights_solver()
+        Bf = gridmodel.get_Bf()    
+        Bf_solver = gridmodel.get_Bf_solver()
+        
+        
 if __name__ == "__main__":
     unittest.main()

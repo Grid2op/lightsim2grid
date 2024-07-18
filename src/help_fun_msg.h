@@ -225,6 +225,11 @@ struct DocGridModel
     static const std::string get_dcYbus_solver;
     static const std::string get_Sbus_solver;
     static const std::string get_dcSbus_solver;
+    static const std::string get_ptdf;
+    static const std::string get_ptdf_solver;
+    static const std::string get_lodf;
+    static const std::string get_Bf;
+    static const std::string get_Bf_solver;
 
     static const std::string check_solution;
 

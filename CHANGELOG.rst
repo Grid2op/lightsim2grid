@@ -55,6 +55,7 @@ gridmodel.get_V()                   gridmodel.get_V_solver()
 gridmodel.get_Va()                  gridmodel.get_Va_solver()
 gridmodel.get_Vm()                  gridmodel.get_Vm_solver()
 gridmodel.get_J()                   gridmodel.get_J_solver()
+gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 ===============================    ==================================================
 
 - [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
@@ -70,6 +71,9 @@ gridmodel.get_J()                   gridmodel.get_J_solver()
   normal "gridmodel" bus id representation and not the "solver" bus ordering.
 - [FIXED] `gridmodel.get_lodf()` issue wrong results in case of some
   topological modification
+- [FIXED] calls to methods such as `gridmodel.get_pv` or `gridmodel.get_V` 
+  or `gridmodel.get_Ybus` could lead to severe crashes (segmentation fault)
+  on some (rare) cases. Now an exception is thrown.
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`

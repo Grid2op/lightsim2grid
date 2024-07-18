@@ -928,7 +928,7 @@ RealMat GridModel::get_ptdf(){
         throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const RealMat & PTDF_solver = get_ptdf_solver();
-    RealMat PTDF_grid(powerlines_.nb() + trafos_.nb(), total_bus());
+    RealMat PTDF_grid =  RealMat::Zero(powerlines_.nb() + trafos_.nb(), total_bus());  // , std::numeric_limits<real_type>::quiet_NaN()
     int solver_col = 0;
     for(const auto my_col: id_dc_solver_to_me()){
         PTDF_grid.col(my_col) = PTDF_solver.col(solver_col);
@@ -963,13 +963,21 @@ RealMat GridModel::get_lodf(){
     return _dc_solver.get_lodf(from_bus_solver, to_bus_solver);
 }
 
-Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
+Eigen::SparseMatrix<real_type> GridModel::get_Bf_solver(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
+        throw std::runtime_error("GridModel::get_Bf_solver: Cannot get the Bf matrix without having first computed a DC powerflow.");
     }
     Eigen::SparseMatrix<real_type> Bf;
     fillBf_for_PTDF(Bf);
     return Bf;
+}
+
+Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
+    }
+    Eigen::SparseMatrix<real_type> Bf_solver = get_Bf_solver();
+    return _relabel_matrix(Bf_solver, id_dc_solver_to_me_, false);
 }
 
 /**
@@ -1184,8 +1192,6 @@ void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transp
     // TODO DEBUG MODE
     if(nb_bus_solver == 0) throw std::runtime_error("GridModel::fillBf_for_PTDF: it appears no DC powerflow has run on your grid.");
     
-    // TODO PTDF: nb_line, nb_bus or nb_branch, nb_bus ???
-    // TODO PTDF: if we don't have nb_branch we need a converter line_id => branch 
     if(transpose){
         Bf = Eigen::SparseMatrix<real_type>(nb_bus_solver, powerlines_.nb() + trafos_.nb());
     }else{

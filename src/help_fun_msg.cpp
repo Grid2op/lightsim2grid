@@ -2008,7 +2008,7 @@ const std::string DocGridModel::_internal_do_not_use = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocGridModel::J_description = R"mydelimiter(
-    J has the shape::
+    For the distributed slack, J has the shape::
     
         | s | slack_bus |               | (pvpq+1,1) |   (1, pvpq)  |  (1, pq)   |
         | l |  -------  |               |            | ------------------------- |
@@ -2032,33 +2032,23 @@ const std::string DocGridModel::J_description = R"mydelimiter(
         By default (and this cannot be changed at the moment), all buses in `ref` will be pv buses except the first one.
 
     .. note::
-        the notation `pvpq` above means "the concatenation of the pv vector and the pq vector" (after the distributed slack is taken into account - see note just above)
+        the notation `pvpq` above means "the concatenation of the pv vector and the pq vector" 
+        (after the distributed slack is taken into account - see note just above)
+    
+    .. note::
+        All notation here are notation for the solver. You should use `gridmodel.get_pq_solver()` and
+        `gridmodel.get_pv_solver()` to retrieve their  value.
+
+    .. note::
+        For distributed slack, the `pvpq` here also integrate all the buses in the slack (except for the
+        first one which is the reference)
+
 )mydelimiter";
 
 const std::string DocGridModel::get_J_python = R"mydelimiter(
-    Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
-
-    The "jacobian" matrix is only available for some powerflow algorithms
-    (the one based on the Newton Raphson algorithm) and we provide it only for the last computed iteration.
-
-    .. versionchanged:: 0.9.0
-        They are labelled with the `grimodel` labelling. To retrieve the
-        previous behaviour (solver labelling) you can use the current
-        :func:`lightsim2grid.gridmodel.GridModel.get_J_solver`
-
-    .. danger:: 
-        Some breaking change have been introduced in lighsim2grid 0.9.0.
-        You can :func:`lightsim2grid.gridmodel.GridModel.get_J_solver` to get the previous 
-        (before 0.9.0) behaviour.
-
-    .. info::
-        You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
-        (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
-        (on the grid) they corresponds.
-
-    .. note::
-        Some powerflows (*eg* DC or Gauss Seidel) do not rely on jacobian matrix, in this case, calling this function will return an exception. 
-)mydelimiter" + DocGridModel::J_description;
+    The jacobian matrix is an internal object to the solver and should only be used
+    when on knows how exactly it is filled.
+)mydelimiter";
 
 const std::string DocGridModel::get_Va = R"mydelimiter(
     Returns the voltage angles for each buses as a numpy vector of real number.
@@ -2884,6 +2874,7 @@ const std::string DocGridModel::reactivate_result_computation = R"mydelimiter(
     .. seealso:: :func:`lightsim2grid.gridmodel.GridModel.deactivate_result_computation`
 )mydelimiter";     
 
+
 const std::string DocGridModel::ac_pf = R"mydelimiter(
     Allows to perform an AC (alternating current) powerflow.
 
@@ -2924,18 +2915,247 @@ const std::string DocGridModel::ac_pf = R"mydelimiter(
         import grid2op
         from lightsim2grid import LightSimBackend
         env_name = ...  # eg "l2rpn_case14_sandbox"
-        env = grid2op.make(env_name, backend=LightSimbackend())
+        env = grid2op.make(env_name, backend=LightSimBackend())
         grid_model = env.backend._grid
 
-        V = grid_model.ac_pf(V, 10, 1e-8)
+        # have an initial guess for the complex voltage at each bus
+        Vinit = np.ones(grid_model.total_bus(), dtype=complex)
+        
+        # maximum number of iteration
+        nb_iter = 10  # a good default
+
+        # tolerance
+        tol = 1e-8
+
+        V = grid_model.ac_pf(Vinit, nb_iter, tol)
         # if the powerflow has converged, V.shape > 0 otherwise V is empty (size 0)
         # the original V is modified in the process !
 
 )mydelimiter";     
 
 const std::string DocGridModel::dc_pf = R"mydelimiter(
-    This function has the same interface, inputs, outputs, behaviour, etc. as the :func:`lightsim2grid.gridmodel.GridModel.ac_pf`.
+    This function has the same interface, inputs, outputs, behaviour, etc.
+    as the :func:`lightsim2grid.gridmodel.GridModel.ac_pf`.
 )mydelimiter";       
+
+
+const std::string DocGridModel::get_ptdf = R"mydelimiter(
+    This function returns the PTDF (Power Transfer Distribution Factor) which tells you
+    how much the flows on each powerline / tranformer will vary if some given power
+    is injected on each bus of the grid.
+
+    It adopts the `gridmodel` bus labelling.
+
+    It is a dense matrix, with (nb lines + nb tranformers) rows and (nb **total** bus) columns.
+
+    .. note::
+        You need to run a DC powerflow before calling this method (otherwise 
+        an exception is raised.)
+
+    It is an alternative to compute DC powerflows (provided that the topology of the 
+    grid is not modified). You can do it with:
+
+    .. code-block:: python
+
+        import numpy as np
+        # create a grid model
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        env_name = ...  # eg "l2rpn_case14_sandbox"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # have an initial guess for the complex voltage at each bus
+        Vinit = np.ones(grid_model.total_bus(), dtype=complex)
+
+        Vdc = grid_model.ac_pf(Vinit, 1, 1e-8)
+
+        PTDF = grid_model.get_ptdf()
+
+        new_Sbus = 1.7 * grid_model.get_dcSbus()
+
+        new_flows = np.dot(PTDF, new_Sbus * grid_model.get_sn_mva())
+        # the flows on the grid if every injection is multiplied by 1.7
+
+    .. note::
+        If a bus is disconnected, then the associated columns is full of 0.
+
+    .. note::
+        If the vector Sbus does not sum to 0. the "slack" used is the first slack of
+        the slack vector. No distributed slack is used for DC at the moment.
+
+        If you want distributed slack in this case, please open a feature request on 
+        github.
+
+    .. note::
+        The 'power' "injected" at disconnected buses (buses with colums of PTDF full of 0.)
+        is completely discarded (multiplied by 0.)
+
+)mydelimiter";       
+
+const std::string DocGridModel::get_ptdf_solver = R"mydelimiter(
+    This function returns the PTDF (Power Transfer Distribution Factor) which tells you
+    how much the flows on each powerline / tranformer will vary if some given power
+    is injected on each bus of the grid.
+
+    It adopts the `solver` bus labelling.
+
+    It is a dense matrix, with (nb lines + nb tranformers) rows and (nb **activated** bus) columns.
+
+    Each rows represents a powerline (or a transformer) and each columns represent a bus.
+
+    So the coefficient at row `i` and column `j` of this matrix represents the increase of
+    flow (in MW) of powerline `i` if the power on bus `j` is increased of 1MW.
+
+    .. note::
+        First `len(gridmodel.get_lines())` rows represent the powerlines, the remaining
+        `len(gridmodel.get_trafos())` represent transformers.
+
+    .. note::
+        You need to run a DC powerflow before calling this method (otherwise 
+        an exception is raised.)
+
+    It is an alternative to compute DC powerflows (provided that the topology of the 
+    grid is not modified). You can do it with:
+
+    .. code-block:: python
+
+        import numpy as np
+        # create a grid model
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        env_name = ...  # eg "l2rpn_case14_sandbox"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # have an initial guess for the complex voltage at each bus
+        Vinit = np.ones(grid_model.total_bus(), dtype=complex)
+
+        Vdc = grid_model.ac_pf(Vinit, 1, 1e-8)
+
+        PTDF = grid_model.get_ptdf_solver()
+
+        new_Sbus = 1.7 * grid_model.get_dcSbus_solver()
+
+        new_flows = np.dot(PTDF, new_Sbus * grid_model.get_sn_mva())
+        # the flows on the grid if every injection is multiplied by 1.7
+        # spoiler: it will be multiplied by 1.7, but you get the idea, 
+        # you can change Sbus in a different ways...
+
+    .. note::
+        If a bus is disconnected, then the associated columns is full of 0.
+
+    .. note::
+        If the vector Sbus does not sum to 0. the "slack" used is the first slack of
+        the slack vector. No distributed slack is used for DC at the moment.
+
+        If you want distributed slack in this case, please open a feature request on 
+        github.
+
+    .. note::
+        With this convention, the disconnected bus are not modeled.
+
+)mydelimiter";     
+
+const std::string DocGridModel::get_lodf = R"mydelimiter(
+    This function returns the LODF (Line Outage Distribution Factor) which tells you
+    how much the flows on each powerline / tranformer will vary if some given 
+    powerline / transformer is disconnected.
+
+    It is a dense matrix, with (nb lines + nb tranformers) rows and (nb lines + nb tranformers)
+    columns.
+
+    Each rows / columns represent a powerline / transformers. More concretely, the coefficient
+    at row `i` and column `j` represents how much the flows on line / transformer `i` will vary
+    if line / transformer `j` is disconnected. 
+
+    .. note::
+        First `len(gridmodel.get_lines())` rows / columns represent the powerlines, the remaining
+        `len(gridmodel.get_trafos())` represent transformers.
+
+    .. note::
+        You need to run a DC powerflow before calling this method (otherwise 
+        an exception is raised.)
+
+        Internally, this method will compute the PTDF
+
+    It is an alternative to compute DC powerflows when powerlines are disconnected.
+
+    .. code-block:: python
+
+        import numpy as np
+        # create a grid model
+        import grid2op
+        from lightsim2grid import LightSimBackend
+        env_name = ...  # eg "l2rpn_case14_sandbox"
+        env = grid2op.make(env_name, backend=LightSimBackend())
+        grid_model = env.backend._grid
+
+        # have an initial guess for the complex voltage at each bus
+        Vinit = np.ones(grid_model.total_bus(), dtype=complex)
+
+        Vdc = grid_model.ac_pf(Vinit, 1, 1e-8)
+
+        LODF_mat = 1. * grid_model.get_lodf()
+
+        lor_p, *_ = grid_model.get_lineor_res()
+        tor_p, *_ = grid_model.get_trafohv_res()
+        init_powerflow = np.concatenate((lor_p, tor_p))
+
+        # if you want to see the impact of a single line disconnected
+        l_id = 0 # (or anything between 0 and n_line + n_trafo)
+        por_lodf = init_powerflow + LODF_mat[:, l_id] * init_powerflow[l_id]
+
+        # the effect when disconnecting all powerlines (one powerline disconnected each steps)
+        mat_flow = np.tile(init_powerflow, LODF_mat.shape[0]).reshape(LODF_mat.shape)
+        por_lodf = mat_flow + LODF_mat.T * mat_flow.T
+
+)mydelimiter";     
+
+const std::string DocGridModel::get_Bf = R"mydelimiter(
+    Returns the "Bus from" matrix, with the bus having the 
+    `gridmodel` id (sparse matrix).
+
+    More specifically, it is a matrix with `(nb line + nb trafo)` rows and
+    (nb **total** bus) columns.
+
+    For each powerline / transformer (row `i`), there is a `+1` for the 
+    "origin side" bus and a `-1` for the "extremity side" bus if the 
+    line / trafo is connected. If it is disconnected then the associated 
+    row will be full of 0.
+
+    .. note::
+        First `len(gridmodel.get_lines())` rows represent the powerlines, the remaining
+        `len(gridmodel.get_trafos())` represent transformers.
+
+    .. seealso::
+        :func:`lightsim2grid.gridmodel.GridModel.get_Bf_solver` which will give
+        the same matrix but with buses with the "solver" labelling (thus having
+        no columns of 0)
+
+)mydelimiter";
+
+const std::string DocGridModel::get_Bf_solver = R"mydelimiter(
+    Returns the "Bus from" matrix, with the bus having the 
+    `solver` id (sparse matrix).
+
+    More specifically, it is a matrix with `(nb line + nb trafo)` rows and
+    (nb **connected** bus) columns.
+
+    For each powerline / transformer (row `i`), there is a `+1` for the 
+    "origin side" bus and a `-1` for the "extremity side" bus if the 
+    line / trafo is connected. If it is disconnected then the associated 
+    row will be full of 0.
+
+    .. note::
+        First `len(gridmodel.get_lines())` rows represent the powerlines, the remaining
+        `len(gridmodel.get_trafos())` represent transformers.
+
+    .. seealso::
+        :func:`lightsim2grid.gridmodel.GridModel.get_Bf` which will give
+        the same matrix but with the buses having the "gridmodel" labelling
+
+)mydelimiter";
 
 const std::string DocComputers::Computers = R"mydelimiter(
     Allows the computation of time series, that is, the same grid topology is used while the active / reactive power injected
@@ -2954,7 +3174,8 @@ const std::string DocComputers::total_time = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocComputers::solver_time = R"mydelimiter(
-    Total time spent only in solving the powerflows (excluding pre processing the data, post processing them, initializing everything etc.)
+    Total time spent only in solving the powerflows 
+    (excluding pre processing the data, post processing them, initializing everything etc.)
     
     It is given in seconds (``float``).
 
