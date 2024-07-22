@@ -2968,7 +2968,7 @@ const std::string DocGridModel::get_ptdf = R"mydelimiter(
         # have an initial guess for the complex voltage at each bus
         Vinit = np.ones(grid_model.total_bus(), dtype=complex)
 
-        Vdc = grid_model.ac_pf(Vinit, 1, 1e-8)
+        Vdc = grid_model.dc_pf(Vinit, 1, 1e-8)
 
         PTDF = grid_model.get_ptdf()
 
@@ -3031,7 +3031,7 @@ const std::string DocGridModel::get_ptdf_solver = R"mydelimiter(
         # have an initial guess for the complex voltage at each bus
         Vinit = np.ones(grid_model.total_bus(), dtype=complex)
 
-        Vdc = grid_model.ac_pf(Vinit, 1, 1e-8)
+        Vdc = grid_model.dc_pf(Vinit, 1, 1e-8)
 
         PTDF = grid_model.get_ptdf_solver()
 
@@ -3094,7 +3094,7 @@ const std::string DocGridModel::get_lodf = R"mydelimiter(
         # have an initial guess for the complex voltage at each bus
         Vinit = np.ones(grid_model.total_bus(), dtype=complex)
 
-        Vdc = grid_model.ac_pf(Vinit, 1, 1e-8)
+        Vdc = grid_model.dc_pf(Vinit, 1, 1e-8)
 
         LODF_mat = 1. * grid_model.get_lodf()
 

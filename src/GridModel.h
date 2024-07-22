@@ -853,7 +853,6 @@ class GridModel : public GenericContainer
             throw std::runtime_error("GridModel::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
-
         /**
          * @brief Get the (real) voltage magnitude for each buses of the grid (solver labelling)
          * 
@@ -1153,9 +1152,11 @@ class GridModel : public GenericContainer
                                                              const std::vector<int> & id_solver_to_me) const
         {
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
-            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
-            for(auto el_id = 0; el_id < pv_pq_ref_bus.size(); ++el_id){
-                res[el_id] = id_solver_to_me[pv_pq_ref_bus[solver_id]];
+            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
+            Eigen::Index pos_id = 0;
+            for(auto el_id : pv_pq_ref_bus){
+                res[pos_id] = id_solver_to_me[el_id];
+                ++ pos_id;
             }
             return res;
         }
@@ -1171,13 +1172,15 @@ class GridModel : public GenericContainer
          * @return CplxVect 
          */
         template<class T>
-        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & pv_pq_ref_bus,
+        Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & pv_pq_ref_bus,
                                                              const std::vector<int> & id_solver_to_me) const
         {
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
-            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
-            for(auto el_id = 0; el_id < pv_pq_ref_bus.size(); ++el_id){
-                res[el_id] = id_solver_to_me[pv_pq_ref_bus[solver_id]];
+            Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
+            Eigen::Index pos_id = 0;
+            for(auto el_id : pv_pq_ref_bus){
+                res[pos_id] = id_solver_to_me[el_id];
+                ++ pos_id;
             }
             return res;
         }

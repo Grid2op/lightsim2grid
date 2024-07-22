@@ -1037,24 +1037,6 @@ void GridModel::remove_gen_slackbus(int gen_id){
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
-// void GridModel::update_bus_status(int nb_bus_before,
-//                                   Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus)
-// {
-//     for(int bus_id = 0; bus_id < active_bus.rows(); ++bus_id)
-//     {
-//         if(active_bus(bus_id, 0)){
-//             reactivate_bus(bus_id);
-//         }else{
-//             deactivate_bus(bus_id);
-//         }
-//         if(active_bus(bus_id, 1)){
-//             reactivate_bus(bus_id + nb_bus_before);
-//         }else{
-//             deactivate_bus(bus_id + nb_bus_before);
-//         }
-//     }
-// }
-
 void GridModel::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
