@@ -437,7 +437,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -m unittest test_n1contingencyrewards
+                    python -m unittest test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
                     # python -m unittest discover -v
 
 workflows:

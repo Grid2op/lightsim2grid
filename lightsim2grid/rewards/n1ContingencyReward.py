@@ -150,7 +150,7 @@ class N1ContingencyReward(BaseReward):
             tmp_res = np.abs(tmp[0])  # this is Por
             # now transform the limits in A in MW
             por, qor, vor, aor = env.backend.lines_or_info()
-            p_sq = (1e-3*th_lim_a)**2 * 3. * vor**2 - qor**2
+            p_sq = (1e-3 * th_lim_a)**2 * 3. * vor**2 - qor**2
             p_sq[p_sq <= 0.] = 0.
             limits = np.sqrt(p_sq)
         else:
