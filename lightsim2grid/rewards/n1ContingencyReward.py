@@ -86,12 +86,12 @@ class N1ContingencyReward(BaseReward):
              
         if not isinstance(env.backend, (PandaPowerBackend, LightSimBackend)):
             raise RuntimeError("Impossible to use the `N1ContingencyReward` with "
-                               "a environment with a backend that is not "
+                               "an environment with a backend that is not "
                                "``PandaPowerBackend` nor `LightSimBackend`."
                                )
         if isinstance(env.backend, LightSimBackend):
             self._backend : LightSimBackend = env.backend.copy()
-            self._backend_ls :bool  = True
+            self._backend_ls : bool  = True
         elif isinstance(env.backend, PandaPowerBackend):
             self._backend = LightSimBackend.init_grid(type(env.backend))()
             self._backend.init_from_loaded_pandapower(env.backend)
@@ -154,7 +154,7 @@ class N1ContingencyReward(BaseReward):
             p_sq[p_sq <= 0.] = 0.
             limits = np.sqrt(p_sq)
         else:
-            tmp_res = tmp[1]
+            tmp_res = 1. * tmp[1]
             limits = th_lim_a
         res = ((tmp_res > self._threshold_margin * limits) | (~np.isfinite(tmp_res))).any(axis=1)  # whether one powerline is above its limit, per cont
         res |=  (np.abs(tmp_res) <= self._tol).all(axis=1)  # other type of divergence: all 0.

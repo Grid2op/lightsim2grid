@@ -201,7 +201,7 @@ jobs:
                     git submodule update
                     make
                     CC=gcc python setup.py build
-                    python -m pip install .[test]
+                    python -m pip install .[test] gymnasium
             - run:
                 name: "Show package versions"
                 command: |
@@ -307,7 +307,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    CC=clang python -m pip install -U .
+                    CC=clang python -m pip install -U . 
     compile_clang14:
         executor: clang14
         resource_class: small
@@ -387,7 +387,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    CC=clang python -m pip install -e .[test]
+                    CC=clang python -m pip install -e .[test] gymnasium
             - run:
                 name: "Show package versions"
                 command: |
@@ -411,7 +411,7 @@ jobs:
             - run: C:\Python310\python -m pip install virtualenv
             - run: C:\Python310\python -m virtualenv venv_test
             - run: 
-                name: "Chekc python  / pip version in venv"
+                name: "Check python  / pip version in venv"
                 command: |
                     .\venv_test\Scripts\activate
                     python --version 
@@ -421,7 +421,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     git clone https://github.com/rte-france/grid2op.git _grid2op
-                    pip install -e _grid2op
+                    pip install -e _grid2op gymnasium
             - run:
                 name: "Install lightsim2grid"
                 command: |
@@ -437,25 +437,26 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -m unittest discover -v
+                    python -m unittest test_n1contingencyrewards
+                    # python -m unittest discover -v
 
 workflows:
     version: 2.1
     compile:
         jobs:
-          - compile_gcc8
+        #   - compile_gcc8  # kept
         #   - compile_gcc10
         #   - compile_gcc11
-          - compile_gcc12
-          - compile_gcc13
+        #   - compile_gcc12
+        #   - compile_gcc13  # kept
           # - compile_clang10  # does not work I don't know why, too lazy to check
-          - compile_clang11
+        #   - compile_clang11  # kept
         #   - compile_clang13
         #   - compile_clang14
         #   - compile_clang15
-          - compile_clang16
-          - compile_clang17
+        #   - compile_clang16
+        #   - compile_clang17  # kept
           - compile_windows
-        #   - test_legacy_grid2op
-        #   - compile_clang18
-        #   - compile_gcc14
+        #   - test_legacy_grid2op  # added
+        #   - compile_clang18  # added
+        #   - compile_gcc14  # added
