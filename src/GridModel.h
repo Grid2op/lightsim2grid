@@ -1071,6 +1071,7 @@ class GridModel : public GenericContainer
             // TODO optim : if relabel_row is false, then we can just copy
             // paste the columns easily in the target matrix, which should be
             // way faster than this function.
+            typedef typename Eigen::SparseMatrix<T>::StorageIndex index_type;
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             if(Ybus.cols() != nb_bus()) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");
             if(relabel_row & (Ybus.rows() != nb_bus())) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columnd (nb connected bus, ...) expected");
@@ -1082,8 +1083,12 @@ class GridModel : public GenericContainer
             for (Eigen::Index col_=0; col_ < n_col; ++col_){
                 for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
                 {
-                    if(relabel_row) tripletList.push_back({id_solver_to_me[it.row()], id_solver_to_me[it.col()], it.value()});
-                    else tripletList.push_back({it.row(), id_solver_to_me[it.col()], it.value()});
+                    if(relabel_row) tripletList.push_back({static_cast<index_type>(id_solver_to_me[it.row()]),
+                                                           static_cast<index_type>(id_solver_to_me[it.col()]),
+                                                           it.value()});
+                    else tripletList.push_back({static_cast<index_type>(it.row()), 
+                                                static_cast<index_type>(id_solver_to_me[it.col()]),
+                                                it.value()});
                 }
             }
             res.setFromTriplets(tripletList.begin(), tripletList.end());
