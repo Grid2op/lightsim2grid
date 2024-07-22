@@ -402,7 +402,7 @@ jobs:
     compile_windows:
         executor: 
             name: win/default  # executor type
-            size: medium  # ("medium" "large" "xlarge" "2xlarge")
+            size: large  # ("medium" "large" "xlarge" "2xlarge")
         steps:
             - checkout
             - run: choco install python --version=3.10  --force -y

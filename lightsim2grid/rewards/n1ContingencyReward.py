@@ -119,12 +119,13 @@ class N1ContingencyReward(BaseReward):
     def __call__(self, action, env, has_error, is_done, is_illegal, is_ambiguous):
         if is_done:
             return self.reward_min
+        
         beg = time.perf_counter()
         # retrieve the state of the grid
         self._backend_action.reset()
         act = env.backend.get_action_to_set()
-        th_lim_a = env.get_thermal_limit()
-        th_lim_a[th_lim_a <= 1] = 1  # assign 1 for the thermal limit
+        th_lim_a = 1. * env.get_thermal_limit()
+        th_lim_a[th_lim_a <= 1.] = 1.  # assign 1 for the thermal limit
         
         # apply it to the backend
         self._backend_action += act
@@ -135,7 +136,6 @@ class N1ContingencyReward(BaseReward):
             return self.reward_min
         
         # synch the contingency analyzer
-        # self._contingecy_analyzer.update_grid(self._backend_action)
         contingecy_analyzer = ContingencyAnalysis(self._backend)
         contingecy_analyzer.computer.change_solver(self._solver_type)
         contingecy_analyzer.add_multiple_contingencies(*self._l_ids)
@@ -156,12 +156,8 @@ class N1ContingencyReward(BaseReward):
         else:
             tmp_res = tmp[1]
             limits = th_lim_a
-        # print("Reward:")
-        # print(tmp_res)        
-        # print(self._threshold_margin * limits)
         res = ((tmp_res > self._threshold_margin * limits) | (~np.isfinite(tmp_res))).any(axis=1)  # whether one powerline is above its limit, per cont
         res |=  (np.abs(tmp_res) <= self._tol).all(axis=1)  # other type of divergence: all 0.
-        # print(res.nonzero())
         res = res.sum()  # count total of n-1 unsafe 
         res = len(self._l_ids) - res  # reward = things to maximise
         if self._normalize:

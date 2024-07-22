@@ -209,16 +209,16 @@ class BaseTests:
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
         
-        # check no error when retrieving these
-        self.model.get_V()                   
-        self.model.get_V_solver()
-        self.model.get_Va()                  
-        self.model.get_Va_solver()
-        self.model.get_Vm()                  
+        # check no error when retrieving these              
+        self.model.get_V_solver()          
+        self.model.get_Va_solver()            
         self.model.get_Vm_solver()
         if hasattr(self, "dc") and not self.dc:
             # does not make sense in dc powerflow              
             self.model.get_J_solver()
+            self.model.get_V()     
+            self.model.get_Va()  
+            self.model.get_Vm()            
 
     def test_pf_disco_gen(self):
         self.do_i_skip("test_pf_disco_gen")
@@ -399,12 +399,7 @@ class MakeDCTests(BaseTests, unittest.TestCase):
                        distributed_slack=False)
 
     def do_i_skip(self, test_nm):
-        #self.skipTest("dev")
         pass
-        # if test_nm == "test_pf":
-        #    pass
-        #else:
-        #    self.skipTest("dev")
 
     def check_res(self, Vfinal, net):
         assert Vfinal.shape[0] > 0, "powerflow diverged !"
@@ -431,10 +426,6 @@ class MakeACTests(BaseTests, unittest.TestCase):
 
     def do_i_skip(self, test_nm):
         pass
-        # if test_nm == "test_pf":
-        #    pass
-        # else:
-        #    self.skipTest("dev")
 
 
 if __name__ == "__main__":
