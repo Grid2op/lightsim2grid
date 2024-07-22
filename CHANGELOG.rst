@@ -25,6 +25,7 @@ TODO HVDC in Jacobian (see pandapower)
 [0.9.0] 2024-07-xx
 --------------------------
 - TODO : add basic tests for legacy grid2op
+- TODO test for clang 18 and gcc 14
 - TODO : numpy 2. compat (includes a mode without pandapower)
 
 - [BREAKING] the previous `gridmodel.get_ptdf()` function was wrongly labeled with the
