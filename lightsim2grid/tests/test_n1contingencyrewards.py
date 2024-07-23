@@ -120,7 +120,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
             sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
                                                         time_step=0)
             if not self.is_dc():
-                print(f"for {l_id}: {sim_d = }")
+                print(f"for {l_id}: {sim_d = }, {sim_i['exception']}")
                 if np.any(sim_obs.a_or > obs._thermal_limit * self.threshold_margin()) or sim_d:
                     unsafe_cont += 1       
             else:
