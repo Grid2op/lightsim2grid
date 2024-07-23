@@ -114,7 +114,9 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
             p_square = 3. * (1e-3*th_lim)**2 * (obs.v_or)**2 - (obs.q_or)**2
             p_square[p_square <= 0.] = 0.
             th_lim_p = np.sqrt(p_square) * self.threshold_margin()
-            
+        obs._obs_env.backend._grid.tell_solver_need_reset()
+        print(f"Obs env {obs._obs_env.backend._grid.get_solver_type()}")
+        print(f"Obs env {obs._obs_env.backend._grid.get_dc_solver_type()}")
         sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space(), time_step=0)
         print(f"without contingency: {sim_d = }, {sim_i['exception']}")
         # print("test:")
