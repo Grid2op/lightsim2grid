@@ -117,17 +117,22 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
             p_square = 3. * (1e-3*th_lim)**2 * (obs.v_or)**2 - (obs.q_or)**2
             p_square[p_square <= 0.] = 0.
             th_lim_p = np.sqrt(p_square) * self.threshold_margin()
+        
+        grid_cpy = self.env.backend._grid.copy()
+        obs._obs_env.backend._grid = grid_cpy
+        obs._obs_env.backend._reset_res_pointers()
         obs._obs_env.backend._grid.tell_solver_need_reset()
         print(f"Obs env {obs._obs_env.backend._grid.get_solver_type()}")
         print(f"Obs env {obs._obs_env.backend._grid.get_dc_solver_type()}")
         sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space(), time_step=0)
         print(f"without contingency: {sim_d = }, {sim_i['exception']}")
+        print(f"without contingency: {sim_d = }, {sim_i}")
         # print("test:")
         for l_id in self.my_ids:
             sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
                                                         time_step=0)
             if not self.is_dc():
-                print(f"for {l_id}: {sim_d = }, {sim_i['exception']}")
+                print(f"for {l_id}: {sim_d = }, {sim_i['exception']}, {(sim_obs.a_or / obs._thermal_limit).max()}")
                 if np.any(sim_obs.a_or > obs._thermal_limit * self.threshold_margin()) or sim_d:
                     unsafe_cont += 1       
             else:
