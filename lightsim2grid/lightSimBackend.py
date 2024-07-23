@@ -1129,7 +1129,9 @@ class LightSimBackend(Backend):
                     self._debug_Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
                     if self._debug_Vdc.shape[0] == 0:
-                        raise BackendError(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
+                        raise BackendError(f"Divergence of DC powerflow (non connected grid) at the "
+                                           f"initialization of AC powerflow. Detailed error: "
+                                           f"{self._grid.get_dc_solver().get_error()}")
                     V_init = 1. * self._debug_Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
