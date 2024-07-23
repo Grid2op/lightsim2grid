@@ -1126,6 +1126,7 @@ class LightSimBackend(Backend):
                     self.V[:] = 1. # self._grid.get_init_vm_pu()  # see issue 30
                     # apparently pandapower run a  "real" dc powerflow with vm_pu = 1
                     # when it initialize the AC powerflow, 
+                    print(f"\tLightSimBackend: {self.V.shape = }")
                     self._debug_Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
                     if self._debug_Vdc.shape[0] == 0:
@@ -1345,7 +1346,7 @@ class LightSimBackend(Backend):
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco",
-                           "_timer_fetch_data_cpp", "_debug_Vdc",
+                           "_timer_fetch_data_cpp", "_debug_Vdc", "V"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):

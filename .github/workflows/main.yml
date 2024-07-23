@@ -257,7 +257,11 @@ jobs:
           python -m pip install grid2op
           python -c "from lightsim2grid import LightSimBackend"
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
-
+      
+      - name: Debug windows CI
+        run: |
+          python -m unittest lightsim2grid.tests.test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
+          
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
