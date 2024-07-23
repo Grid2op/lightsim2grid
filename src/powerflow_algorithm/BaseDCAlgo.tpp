@@ -101,7 +101,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // initialize the solver if needed
     if(need_factorize_){
-        // std::cout << "\tneed to factorize\n";
+        std::cout << "\t\t\tneed to factorize\n";
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
@@ -124,6 +124,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
+        std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
         err_ = ErrorType::SolverSolve;
         V = CplxVect();
         V_ = CplxVect();
