@@ -59,7 +59,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // TODO SLACK (for now i put all slacks as PV, except the first one)
         // this should be handled in Sbus, because we know the amount of power absorbed by the slack
         // so we can compute it correctly !
-        // std::cout << "\tneed to retrieve slack\n";
+        std::cout << "\t\t\tneed to retrieve slack\n";
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
         // find the slack buses
@@ -75,6 +75,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
+        std::cout << "\t\t\tneed to sizeYbus_with_slack_\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
         has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
@@ -91,6 +92,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // remove the slack bus from Sbus
     if(need_factorize_ || _solver_control.need_recompute_sbus()){
+        std::cout << "\t\t\tneed to dcSbus_noslack_\n";
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
@@ -105,7 +107,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
-            // std::cout << "_linear_solver.initialize\n";
             return false;
         }
         need_factorize_ = false;
@@ -113,7 +114,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
-    RealVect Va_dc_without_slack = dcSbus_noslack_;
+    RealVect Va_dc_without_slack = dcSbus_noslack_;       
+    std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_: " << dcYbus_noslack_.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
+    std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
         err_ = error;
