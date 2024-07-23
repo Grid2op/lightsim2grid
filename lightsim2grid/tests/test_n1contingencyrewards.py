@@ -17,6 +17,7 @@ from grid2op.Reward import EpisodeDurationReward
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.rewards import N1ContingencyReward
+from lightsim2grid.solver import SolverType
 
 
 TH_LIM_A_REF = np.array([
@@ -48,7 +49,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return "educ_case14_storage"
     
     def init_backend(self):
-        return LightSimBackend()
+        return LightSimBackend(solver_type=SolverType.SparseLUSingleSlack)
     
     def is_dc(self):
         return False
@@ -72,17 +73,17 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
                                     reward_class=reward,
                                     action_class=CompleteAction,
                                     _add_to_name=type(self).__name__)
-        params = self.env.parameters
-        params.MAX_LINE_STATUS_CHANGED = 999999
-        params.MAX_SUB_CHANGED = 999999
-        params.NB_TIMESTEP_COOLDOWN_LINE = 0
-        params.NB_TIMESTEP_COOLDOWN_SUB = 0
-        self.env.change_parameters(params)
+        self.params = self.env.parameters
+        self.params.MAX_LINE_STATUS_CHANGED = 999999
+        self.params.MAX_SUB_CHANGED = 999999
+        self.params.NB_TIMESTEP_COOLDOWN_LINE = 0
+        self.params.NB_TIMESTEP_COOLDOWN_SUB = 0
+        self.env.change_parameters(self.params)
         if self.is_dc():
-            params = copy.deepcopy(params)
-            params.ENV_DC = True
-            params.FORECAST_DC = True
-        self.env.change_forecast_parameters(params)
+            self.params = copy.deepcopy(self.params)
+            self.params.ENV_DC = True
+            self.params.FORECAST_DC = True
+        self.env.change_forecast_parameters(self.params)
         assert (self.env.get_thermal_limit() == TH_LIM_A_REF).all()
         self.my_ids = self.l_ids()
         if self.my_ids is None:
@@ -92,6 +93,8 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return super().setUp()
     
     def aux_reset_correctly(self):
+        self.env.change_parameters(self.params)
+        self.env.change_forecast_parameters(self.params)
         obs = self.env.reset(seed=0, options={"time serie id": 0})
         return obs
         
@@ -136,8 +139,13 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
     def test_do_nothing(self):
         obs = self.aux_reset_correctly()
         obs, reward, done, info = self.env.step(self.env.action_space())
+        assert not done, f'done with {info["exception"]}'
+        assert len(info["exception"]) == 0
         self._aux_test_reward(obs, reward)
+        
         obs, reward, done, info = self.env.step(self.env.action_space())
+        assert not done, f'done with {info["exception"]}'
+        assert len(info["exception"]) == 0
         self._aux_test_reward(obs, reward)
         
     def test_disconnected_line(self):
