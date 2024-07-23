@@ -115,7 +115,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
     RealVect Va_dc_without_slack = dcSbus_noslack_;       
-    std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_: " << dcYbus_noslack_.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
+    std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_: " << dcYbus_noslack_.coeffs().maxCoeff() << std::endl;  // TODO DEBUG WINDOWS
     std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
