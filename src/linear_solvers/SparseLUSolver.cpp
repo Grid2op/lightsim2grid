@@ -25,11 +25,11 @@ ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> 
 
 ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
     // solves (for x) the linear system J.x = b
-    // supposes that the solver has been initialized (call sparselu_solver.analyze() before calling that)
+    // supposes that the solver has been initialized (call sparselu_solver.analyzePattern() before calling that)
     ErrorType err = ErrorType::NoError;
     bool stop = false;
     if(!doesnt_need_refactor){
-        // if the call to "klu_factor" has been made this iteration, there is no need
+        // if the call to "solver_.factorize" has been made this iteration, there is no need
         // to re factor again the matrix
         // i'm in the case where it has not
         solver_.factorize(J);
@@ -40,6 +40,7 @@ ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, 
     }
     if(!stop){
         RealVect Va = solver_.solve(b);
+        std::cout << "\tSparseLUSolver.cpp: solver_.info: " << solver_.info() << std::endl;
         if (solver_.info() != Eigen::Success) {
             err = ErrorType::SolverSolve;
         }
