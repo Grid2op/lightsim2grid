@@ -1126,7 +1126,7 @@ class LightSimBackend(Backend):
                     self.V[:] = 1. # self._grid.get_init_vm_pu()  # see issue 30
                     # apparently pandapower run a  "real" dc powerflow with vm_pu = 1
                     # when it initialize the AC powerflow, 
-                    print(f"\tLightSimBackend: {self.V.shape = }")
+                    print(f"\tLightSimBackend: self.V.shape = {self.V.shape}")
                     self._debug_Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
                     if self._debug_Vdc.shape[0] == 0:
