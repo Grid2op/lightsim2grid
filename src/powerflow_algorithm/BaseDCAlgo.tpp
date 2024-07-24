@@ -119,6 +119,8 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (sum): " << dcYbus_noslack_.coeffs().abs().sum() << std::endl;  // TODO DEBUG WINDOWS
     std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (inf norm): " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
     std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
         err_ = error;

@@ -965,6 +965,12 @@ class LightSimBackend(Backend):
         except TypeError as exc_:
             _init_action_to_set = self._get_action_to_set_deprecated()
         self._init_action_to_set += _init_action_to_set
+        assert np.isfinite(self.prod_pu_to_kv).all()
+        assert np.isfinite(self.load_pu_to_kv).all()
+        assert np.isfinite(self.lines_or_pu_to_kv).all()
+        assert np.isfinite(self.lines_ex_pu_to_kv).all()
+        if self.n_line > 0:
+            assert np.isfinite(self.storage_pu_to_kv).all()
 
     def _get_action_to_set_deprecated(self):
         warnings.warn("DEPRECATION: grid2op <=1.4 is not well supported with lightsim2grid. Lots of bugs have been"
@@ -1346,7 +1352,7 @@ class LightSimBackend(Backend):
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco",
-                           "_timer_fetch_data_cpp", "_debug_Vdc", "V"
+                           "_timer_fetch_data_cpp"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -1365,7 +1371,8 @@ class LightSimBackend(Backend):
                        "prod_p", "prod_q", "prod_v",
                        "storage_p", "storage_q", "storage_v",
                        "sh_p", "sh_q", "sh_v", "sh_bus", "sh_theta",
-                       "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",                   
+                       "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",   
+                       "_debug_Vdc"                
                        ]
         for attr_nm in li_attr_npy:
             if hasattr(self, attr_nm):
