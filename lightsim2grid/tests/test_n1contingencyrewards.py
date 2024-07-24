@@ -78,6 +78,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         self.params.MAX_SUB_CHANGED = 999999
         self.params.NB_TIMESTEP_COOLDOWN_LINE = 0
         self.params.NB_TIMESTEP_COOLDOWN_SUB = 0
+        self.params.ACTIVATE_STORAGE_LOSS = False
         self.env.change_parameters(self.params)
         if self.is_dc():
             self.params = copy.deepcopy(self.params)
@@ -134,6 +135,8 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         print(f"_amount_storage_prev = {obs._obs_env._amount_storage_prev}")
         print(f"storage p (from obs): {obs.storage_power}") # TODO DEBUG WINDOWS
         print(f"storage_power_target p (from obs): {obs.storage_power_target}") # TODO DEBUG WINDOWS
+        print(f"_obs_env._storage_power : {obs._obs_env._storage_power}") # TODO DEBUG WINDOWS
+        print(f"_obs_env.delta_time_seconds : {obs._obs_env.delta_time_seconds}") # TODO DEBUG WINDOWS
         sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space(), time_step=0)
         # print(f"without contingency: {sim_d = }, {sim_i['exception']}") # TODO DEBUG WINDOWS
         print(f"without contingency: {sim_d = }, {sim_i}")
