@@ -59,7 +59,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // TODO SLACK (for now i put all slacks as PV, except the first one)
         // this should be handled in Sbus, because we know the amount of power absorbed by the slack
         // so we can compute it correctly !
-        std::cout << "\t\t\tneed to retrieve slack\n";
+        // std::cout << "\t\t\tneed to retrieve slack\n";
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
         // find the slack buses
@@ -75,7 +75,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
-        std::cout << "\t\t\tneed to sizeYbus_with_slack_\n";
+        // std::cout << "\t\t\tneed to sizeYbus_with_slack_\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
         has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
@@ -92,7 +92,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // remove the slack bus from Sbus
     if(need_factorize_ || _solver_control.need_recompute_sbus()){
-        std::cout << "\t\t\tneed to dcSbus_noslack_\n";
+        // std::cout << "\t\t\tneed to dcSbus_noslack_\n";
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
@@ -103,7 +103,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // initialize the solver if needed
     if(need_factorize_){
-        std::cout << "\t\t\tneed to factorize\n";
+        // std::cout << "\t\t\tneed to factorize\n";
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
             err_ = status_init;

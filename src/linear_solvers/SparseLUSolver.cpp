@@ -40,7 +40,7 @@ ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, 
     }
     if(!stop){
         RealVect Va = solver_.solve(b);
-        std::cout << "\t\tSparseLUSolver.cpp: solver_.info: " << solver_.info() << std::endl;  // TODO DEBUG WINDOWS
+        // std::cout << "\t\tSparseLUSolver.cpp: solver_.info: " << solver_.info() << std::endl;  // TODO DEBUG WINDOWS
         if (solver_.info() != Eigen::Success) {
             err = ErrorType::SolverSolve;
         }

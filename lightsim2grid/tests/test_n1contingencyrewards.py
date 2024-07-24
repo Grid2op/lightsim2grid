@@ -128,6 +128,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         print(f"Obs env {obs._obs_env.backend._grid.get_solver_type()}")
         print(f"Obs env {obs._obs_env.backend._grid.get_dc_solver_type()}")
         print("HERE HERE HERE")
+        print(f"shunt p (from obs): {obs._shunt_p}")
         sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space(), time_step=0)
         # print(f"without contingency: {sim_d = }, {sim_i['exception']}")
         print(f"without contingency: {sim_d = }, {sim_i}")
