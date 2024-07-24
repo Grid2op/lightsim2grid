@@ -118,9 +118,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (max): " << dcYbus_noslack_.coeffs().maxCoeff() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (sum): " << dcYbus_noslack_.coeffs().abs().sum() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (inf norm): " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
-    std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
-    std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
         err_ = error;
@@ -131,7 +131,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
-        std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
+        // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
         err_ = ErrorType::SolverSolve;
         V = CplxVect();
         V_ = CplxVect();

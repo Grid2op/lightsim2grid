@@ -1053,7 +1053,7 @@ class LightSimBackend(Backend):
             raise BackendError(f"{exc_}") from exc_
         
         if self.__has_storage:
-            print(f"\t (in backend) storage_power {backendAction.storage_power.values[backendAction.storage_power.changed]}")  # TODO DEBUG WINDOWS
+            # print(f"\t (in backend) storage_power {backendAction.storage_power.values[backendAction.storage_power.changed]}")  # TODO DEBUG WINDOWS
             try:
                 self._grid.update_storages_p(backendAction.storage_power.changed,
                                              backendAction.storage_power.values)

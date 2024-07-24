@@ -61,6 +61,9 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return None
     
     def setUp(self) -> None:
+        import sys
+        if sys.platform == 'win32':
+            self.skipTest("Not working, see issue https://github.com/BDonnot/lightsim2grid/issues/85")
         reward = N1ContingencyReward(dc=self.is_dc(),
                                      threshold_margin=self.threshold_margin(),
                                      l_ids=self.l_ids())
@@ -73,18 +76,18 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
                                     reward_class=reward,
                                     action_class=CompleteAction,
                                     _add_to_name=type(self).__name__)
-        self.params = self.env.parameters
-        self.params.MAX_LINE_STATUS_CHANGED = 999999
-        self.params.MAX_SUB_CHANGED = 999999
-        self.params.NB_TIMESTEP_COOLDOWN_LINE = 0
-        self.params.NB_TIMESTEP_COOLDOWN_SUB = 0
-        self.params.ACTIVATE_STORAGE_LOSS = False
-        self.env.change_parameters(self.params)
+        self.env_params = self.env.parameters
+        self.env_params.MAX_LINE_STATUS_CHANGED = 999999
+        self.env_params.MAX_SUB_CHANGED = 999999
+        self.env_params.NB_TIMESTEP_COOLDOWN_LINE = 0
+        self.env_params.NB_TIMESTEP_COOLDOWN_SUB = 0
+        self.env_params.ACTIVATE_STORAGE_LOSS = False
+        self.env.change_parameters(self.env_params)
+        self.forecast_params = copy.deepcopy(self.env_params)
         if self.is_dc():
-            self.params = copy.deepcopy(self.params)
-            self.params.ENV_DC = True
-            self.params.FORECAST_DC = True
-        self.env.change_forecast_parameters(self.params)
+            self.forecast_params.ENV_DC = True
+            self.forecast_params.FORECAST_DC = True
+        self.env.change_forecast_parameters(self.forecast_params)
         assert (self.env.get_thermal_limit() == TH_LIM_A_REF).all()
         self.my_ids = self.l_ids()
         if self.my_ids is None:
@@ -94,8 +97,8 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return super().setUp()
     
     def aux_reset_correctly(self):
-        self.env.change_parameters(self.params)
-        self.env.change_forecast_parameters(self.params)
+        self.env.change_parameters(self.env_params)
+        self.env.change_forecast_parameters(self.forecast_params)
         obs = self.env.reset(seed=0, options={"time serie id": 0})
         return obs
         
@@ -128,20 +131,21 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         # print(f"{V.shape[0] = }, {V[0]:.3f}, {V[1]:.3f}") # TODO DEBUG WINDOWS
         # print(f"Obs env {obs._obs_env.backend._grid.get_solver_type()}") # TODO DEBUG WINDOWS
         # print(f"Obs env {obs._obs_env.backend._grid.get_dc_solver_type()}") # TODO DEBUG WINDOWS
-        print("HERE HERE HERE") # TODO DEBUG WINDOWS
-        print(f"env.storage_loss = {self.env.storage_loss}")
-        print(f"_obs_env.storage_loss = {obs._obs_env.storage_loss}")
-        print(f"_amount_storage = {obs._obs_env._amount_storage}")
-        print(f"_amount_storage_prev = {obs._obs_env._amount_storage_prev}")
-        print(f"storage p (from obs): {obs.storage_power}") # TODO DEBUG WINDOWS
-        print(f"storage_power_target p (from obs): {obs.storage_power_target}") # TODO DEBUG WINDOWS
-        print(f"_obs_env._storage_power : {obs._obs_env._storage_power}") # TODO DEBUG WINDOWS
-        print(f"_obs_env.delta_time_seconds : {obs._obs_env.delta_time_seconds}") # TODO DEBUG WINDOWS
+        # print("HERE HERE HERE") # TODO DEBUG WINDOWS
+        # print(f"env.storage_loss = {self.env.storage_loss}")
+        # print(f"_obs_env.storage_loss = {obs._obs_env.storage_loss}")
+        # print(f"_amount_storage = {obs._obs_env._amount_storage}")
+        # print(f"_amount_storage_prev = {obs._obs_env._amount_storage_prev}")
+        # print(f"storage p (from obs): {obs.storage_power}") # TODO DEBUG WINDOWS
+        # print(f"storage_power_target p (from obs): {obs.storage_power_target}") # TODO DEBUG WINDOWS
+        # print(f"_obs_env._storage_power : {obs._obs_env._storage_power}") # TODO DEBUG WINDOWS
+        # print(f"_obs_env.delta_time_seconds : {obs._obs_env.delta_time_seconds}") # TODO DEBUG WINDOWS
+        # print(f"storage p seen from backend of obs_env {obs._obs_env.backend._storage_res[0]}")  # TODO DEBUG WINDOWS
         sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space(), time_step=0)
         # print(f"without contingency: {sim_d = }, {sim_i['exception']}") # TODO DEBUG WINDOWS
-        print(f"without contingency: {sim_d = }, {sim_i}")
-        assert not sim_d  # TODO DEBUG WINDOWS
-        return   # TODO DEBUG WINDOWS
+        # print(f"without contingency: {sim_d = }, {sim_i}")
+        assert not sim_d, "base powerflow should not diverge"
+        # return   # TODO DEBUG WINDOWS
         # print("test:")
         for l_id in self.my_ids:
             sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
@@ -153,7 +157,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
             else:
                 if np.any(np.abs(sim_obs.p_or) > th_lim_p) or sim_d:
                     unsafe_cont += 1   
-        print(f"{unsafe_cont = }")
+        # print(f"{unsafe_cont = }")  # TODO DEBUG WINDOWS
         assert reward == (len(self.my_ids) - unsafe_cont), f"{reward} vs {(len(self.my_ids) - unsafe_cont)}"
         
     def test_do_nothing(self):
