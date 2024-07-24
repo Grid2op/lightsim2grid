@@ -59,7 +59,7 @@ executors:
 
 jobs:
     test_legacy_grid2op:
-        executor: gcc_13
+        executor: gcc_14
         resource_class: small
         steps:
             - checkout
@@ -82,6 +82,25 @@ jobs:
                 command: |
                       source venv_test/bin/activate
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+
+    compile_gcc13:
+        executor: gcc_13
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
+            - run: python3 -m virtualenv venv_test
+            - run:
+                  command: |
+                      source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel
+                      pip install -U grid2op
+                      pip install -U pybind11
+                      git submodule init
+                      git submodule update
+                      make
+                      CC=gcc python setup.py build
+                      python -m pip install -U .
 
     compile_gcc12:
         executor: gcc_12
@@ -177,8 +196,8 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
-    compile_gcc13:
-        executor: gcc_13
+    compile_and_test_gcc14:
+        executor: gcc_14
         resource_class: medium
         steps:
             - checkout
@@ -365,7 +384,25 @@ jobs:
                     CC=clang python setup.py build
                     CC=clang python -m pip install -U .
     compile_clang17:
-        executor: clang17
+        executor: clang16
+        resource_class: small
+        steps:
+            - checkout
+            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
+            - run: python3 -m virtualenv venv_test
+            - run:
+                command: |
+                    source venv_test/bin/activate
+                    pip install --upgrade pip setuptools wheel
+                    pip install -U grid2op
+                    pip install -U pybind11
+                    git submodule init
+                    git submodule update
+                    make
+                    CC=clang python setup.py build
+                    CC=clang python -m pip install -U .
+    compile_and_test_clang18:
+        executor: clang18
         resource_class: medium
         steps:
             - checkout
@@ -399,7 +436,7 @@ jobs:
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
                     python -m unittest discover -v
-    compile_windows:
+    compile_and_test_windows:
         executor: 
             name: win/default  # executor type
             size: large  # ("medium" "large" "xlarge" "2xlarge")
@@ -437,26 +474,25 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -m unittest test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
                     # python -m unittest discover -v
 
 workflows:
     version: 2.1
     compile:
         jobs:
-        #   - compile_gcc8  # kept
+          - compile_gcc8
         #   - compile_gcc10
         #   - compile_gcc11
         #   - compile_gcc12
-        #   - compile_gcc13  # kept
+          - compile_gcc13
           # - compile_clang10  # does not work I don't know why, too lazy to check
-        #   - compile_clang11  # kept
+          - compile_clang11
         #   - compile_clang13
         #   - compile_clang14
         #   - compile_clang15
         #   - compile_clang16
-        #   - compile_clang17  # kept
-          - compile_windows
-        #   - test_legacy_grid2op  # added
-        #   - compile_clang18  # added
-        #   - compile_gcc14  # added
+          - compile_clang17
+          - test_legacy_grid2op
+          - compile_and_test_windows
+          - compile_and_test_clang18
+          - compile_and_test_gcc14
