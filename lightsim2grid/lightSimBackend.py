@@ -1036,8 +1036,8 @@ class LightSimBackend(Backend):
         self._grid.update_topo(chgt, backendAction.current_topo.values)
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         
-        print(f" load p {backendAction.load_p.values[backendAction.load_p.changed]}")  # TODO DEBUG WINDOWS
-        print(f" prod_p p {backendAction.prod_p.values[backendAction.prod_p.changed]}")  # TODO DEBUG WINDOWS
+        # print(f" load p {backendAction.load_p.values[backendAction.load_p.changed]}")  # TODO DEBUG WINDOWS
+        # print(f" prod_p p {backendAction.prod_p.values[backendAction.prod_p.changed]}")  # TODO DEBUG WINDOWS
        # update the injections
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
@@ -1053,7 +1053,7 @@ class LightSimBackend(Backend):
             raise BackendError(f"{exc_}") from exc_
         
         if self.__has_storage:
-            print(f" storage_power {backendAction.storage_power.values[backendAction.storage_power.changed]}")  # TODO DEBUG WINDOWS
+            print(f"\t (in backend) storage_power {backendAction.storage_power.values[backendAction.storage_power.changed]}")  # TODO DEBUG WINDOWS
             try:
                 self._grid.update_storages_p(backendAction.storage_power.changed,
                                              backendAction.storage_power.values)
@@ -1064,8 +1064,6 @@ class LightSimBackend(Backend):
         # handle shunts
         if type(self).shunts_data_available:
             shunt_p, shunt_q, shunt_bus = backendAction.shunt_p, backendAction.shunt_q, backendAction.shunt_bus
-            print(f"\tshunt_p (pass to ls) {backendAction.shunt_p.values[backendAction.shunt_p.changed]}")  # TODO DEBUG WINDOWS
-            print(f"\tshunt_p (full) {backendAction.shunt_p.values}")  # TODO DEBUG WINDOWS
             # shunt topology
             # (need to be done before to avoid error like "impossible to set reactive value of a disconnected shunt")
             for sh_id, new_bus in shunt_bus:
@@ -1085,8 +1083,6 @@ class LightSimBackend(Backend):
                 self._grid.change_q_shunt(sh_id, new_q)
         
         self._handle_dist_slack()
-        print(f"\tshunt_p (after) {self._grid.get_shunts_res_full()[0]}")
-        print(f"dcSbus_solver {self._grid.get_dcSbus_solver()}")
         self._timer_apply_act += time.perf_counter() - tick
         
     def _handle_dist_slack(self):

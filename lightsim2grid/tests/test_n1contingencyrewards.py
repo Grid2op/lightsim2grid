@@ -118,19 +118,24 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
             p_square[p_square <= 0.] = 0.
             th_lim_p = np.sqrt(p_square) * self.threshold_margin()
         
-        grid_cpy = self.env.backend._grid.copy()
-        obs._obs_env.backend._grid = grid_cpy
-        obs._obs_env.backend._reset_res_pointers()
-        obs._obs_env.backend._grid.tell_solver_need_reset()
-        Vinit = np.ones(grid_cpy.total_bus(), dtype=complex)
-        V = grid_cpy.dc_pf(Vinit, 1, 1e-5)
-        print(f"{V.shape[0] = }, {V[0]:.3f}, {V[1]:.3f}")
-        print(f"Obs env {obs._obs_env.backend._grid.get_solver_type()}")
-        print(f"Obs env {obs._obs_env.backend._grid.get_dc_solver_type()}")
-        print("HERE HERE HERE")
-        print(f"shunt p (from obs): {obs._shunt_p}")
+        # grid_cpy = self.env.backend._grid.copy() # TODO DEBUG WINDOWS
+        # obs._obs_env.backend._grid = grid_cpy # TODO DEBUG WINDOWS
+        # obs._obs_env.backend._reset_res_pointers() # TODO DEBUG WINDOWS
+        # obs._obs_env.backend._grid.tell_solver_need_reset() # TODO DEBUG WINDOWS
+        # Vinit = np.ones(grid_cpy.total_bus(), dtype=complex) # TODO DEBUG WINDOWS
+        # V = grid_cpy.dc_pf(Vinit, 1, 1e-5) # TODO DEBUG WINDOWS
+        # print(f"{V.shape[0] = }, {V[0]:.3f}, {V[1]:.3f}") # TODO DEBUG WINDOWS
+        # print(f"Obs env {obs._obs_env.backend._grid.get_solver_type()}") # TODO DEBUG WINDOWS
+        # print(f"Obs env {obs._obs_env.backend._grid.get_dc_solver_type()}") # TODO DEBUG WINDOWS
+        print("HERE HERE HERE") # TODO DEBUG WINDOWS
+        print(f"env.storage_loss = {self.env.storage_loss}")
+        print(f"_obs_env.storage_loss = {obs._obs_env.storage_loss}")
+        print(f"_amount_storage = {obs._obs_env._amount_storage}")
+        print(f"_amount_storage_prev = {obs._obs_env._amount_storage_prev}")
+        print(f"storage p (from obs): {obs.storage_power}") # TODO DEBUG WINDOWS
+        print(f"storage_power_target p (from obs): {obs.storage_power_target}") # TODO DEBUG WINDOWS
         sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space(), time_step=0)
-        # print(f"without contingency: {sim_d = }, {sim_i['exception']}")
+        # print(f"without contingency: {sim_d = }, {sim_i['exception']}") # TODO DEBUG WINDOWS
         print(f"without contingency: {sim_d = }, {sim_i}")
         assert not sim_d  # TODO DEBUG WINDOWS
         return   # TODO DEBUG WINDOWS
