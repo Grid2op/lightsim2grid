@@ -160,26 +160,26 @@ jobs:
     strategy:
       matrix:
         python:
-          - {
-            name: cp37,
-            version: '3.7',
-          }
-          - {
-            name: cp38,
-            version: '3.8',
-          }
-          - {
-            name: cp39,
-            version: '3.9',
-          }
-          - {
-            name: cp310,
-            version: '3.10',
-          }
-          - {
-            name: cp311,
-            version: '3.11',
-          }
+          # - {
+          #   name: cp37,
+          #   version: '3.7',
+          # }
+          # - {
+          #   name: cp38,
+          #   version: '3.8',
+          # }
+          # - {
+          #   name: cp39,
+          #   version: '3.9',
+          # }
+          # - {
+          #   name: cp310,
+          #   version: '3.10',
+          # }
+          # - {
+          #   name: cp311,
+          #   version: '3.11',
+          # }
           - {
             name: cp312,
             version: '3.12',
@@ -261,7 +261,7 @@ jobs:
       - name: Debug windows CI
         run: |
           python -m unittest lightsim2grid.tests.test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
-          
+
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
@@ -524,7 +524,8 @@ jobs:
     name: Package wheels
     runs-on: ubuntu-latest
     # needs: [manylinux_build, windows_build, macos_build_37_]
-    needs: [exotic_build, macos_build_37_, windows_build, manylinux_build]
+    # needs: [exotic_build, macos_build_37_, windows_build, manylinux_build]
+    needs: [windows_build]
 
     steps:
       - name: Download wheels

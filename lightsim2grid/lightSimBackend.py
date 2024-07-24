@@ -1036,7 +1036,9 @@ class LightSimBackend(Backend):
         self._grid.update_topo(chgt, backendAction.current_topo.values)
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         
-        # update the injections
+        print(f" load p {backendAction.load_p.values[backendAction.load_p.changed]}")  # TODO DEBUG WINDOWS
+        print(f" prod_p p {backendAction.prod_p.values[backendAction.prod_p.changed]}")  # TODO DEBUG WINDOWS
+       # update the injections
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
                                      backendAction.prod_p.values)
