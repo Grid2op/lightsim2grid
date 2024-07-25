@@ -63,6 +63,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
+            - run: lsb_release -a
             - run: apt update && apt install --reinstall ca-certificates -y && apt install software-properties-common python3-launchpadlib -y
             - run: apt update && add-apt-repository -y 'ppa:deadsnakes/ppa'
             - run: apt update
