@@ -63,8 +63,12 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
-            - run: python3 -m virtualenv venv_test
+            - run: apt-get update && apt-get install python3.10-full python3.10-dev python3.10-pip python3.10-virtualenv git -y
+            - run: python3.12 -m virtualenv venv_test
+            - run: 
+                  name: Get python version
+                  command: 
+                      python3.12 --version
             - run:
                   name: "Set up virtual environment"
                   command: |
@@ -201,9 +205,12 @@ jobs:
         resource_class: medium
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
-            # - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
+            - run: apt-get update && apt-get install python3.12-full python3.12-dev python3.12-pip python3.12-virtualenv git -y
+            - run: 
+                  name: Get python version
+                  command: 
+                      python3.12 --version
+            - run: python3.12 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
                 command: |
@@ -406,8 +413,12 @@ jobs:
         resource_class: medium
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
-            - run: python3 -m virtualenv venv_test
+            - run: apt-get update && apt-get install python3.12-full python3.12-dev python3.12-pip python3.12-virtualenv git -y
+            - run: 
+                  name: Get python version
+                  command: 
+                      python3.12  --version
+            - run: python3.12 -m virtualenv venv_test
             - run:
                 name: "Install grid2op from source"
                 command: |
@@ -474,7 +485,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    # python -m unittest discover -v
+                    python -m unittest discover -v
 
 workflows:
     version: 2.1

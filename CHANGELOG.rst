@@ -28,6 +28,11 @@ TODO HVDC in Jacobian (see pandapower)
 - TODO test for clang 18 and gcc 14
 - TODO : numpy 2. compat (includes a mode without pandapower)
 
+- [BREAKING] the way to initialize lightsim2grid `GridModel` now does not require
+  pandapower (you can initialize it with pypowsybl if you want). To make it both
+  cleaner and clearer the function `lightsim2grid.gridmodel.init` has been removed.
+  Please use `lightsim2grid.gridmodel.init_from_pandapower` or 
+  `lightsim2grid.gridmodel.init_from_pypowsybl` from now on
 - [BREAKING] the previous `gridmodel.get_ptdf()` function was wrongly labeled with the
   "solver" bus id and not the `grid` bus id which could cause issue when applying 
   topological changes. It has now been fixed (so the `gridmodel.get_ptdf` returns the
