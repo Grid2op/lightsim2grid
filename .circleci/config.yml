@@ -75,7 +75,7 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gym "numpy<1.22" grid2op==1.6.4
+                      pip install --upgrade pip setuptools wheel gym "numpy<1.25" grid2op==1.6.4
                       pip install -U pybind11
                       git submodule init
                       git submodule update
