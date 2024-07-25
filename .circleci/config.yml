@@ -75,10 +75,15 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gym "numpy<2" grid2op==1.0.0 pybind11
+                      pip install --upgrade pip setuptools wheel gym "numpy<2" grid2op==1.0.0 pandapower pybind11
                       git submodule init
                       git submodule update
                       make
+                      pip freeze
+            - run:
+                  name: "Compile and install lightsim2grid"
+                  command: |
+                      source venv_test/bin/activate
                       CC=gcc python setup.py build
                       python -m pip install -e .
                       pip freeze
