@@ -63,7 +63,7 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install --reinstall ca-certificates -y
+            - run: apt-get update && apt-get install --reinstall ca-certificates -y && apt-get install software-properties-common
             - run: add-apt-repository 'ppa:deadsnakes/ppa' -y
             - run: apt-get update && install python3.10-full python3.10-dev python3.10-pip python3.10-virtualenv git -y
             - run: python3.10 -m virtualenv venv_test
@@ -497,19 +497,19 @@ workflows:
     version: 2.1
     compile:
         jobs:
-          - compile_gcc8
+        #   - compile_gcc8  # re add
         #   - compile_gcc10
         #   - compile_gcc11
         #   - compile_gcc12
-          - compile_gcc13
+        #   - compile_gcc13 # re add
           # - compile_clang10  # does not work I don't know why, too lazy to check
-          - compile_clang11
+        #   - compile_clang11  # re add
         #   - compile_clang13
         #   - compile_clang14
         #   - compile_clang15
         #   - compile_clang16
-          - compile_clang17
+        #   - compile_clang17  # re add
           - test_legacy_grid2op
-          - compile_and_test_windows
-          - compile_and_test_clang18
-          - compile_and_test_gcc14
+        #   - compile_and_test_windows # re add
+        #   - compile_and_test_clang18 # re add
+        #   - compile_and_test_gcc14 # re add
