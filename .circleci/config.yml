@@ -63,14 +63,14 @@ jobs:
         resource_class: small
         steps:
             - checkout
-            - run: apt-get update && apt-get install --reinstall ca-certificates -y && apt-get install software-properties-common
+            - run: apt-get update && apt-get install --reinstall ca-certificates -y && apt-get install software-properties-common -y
             - run: add-apt-repository 'ppa:deadsnakes/ppa' -y
             - run: apt-get update && install python3.10-full python3.10-dev python3.10-pip python3.10-virtualenv git -y
-            - run: python3.10 -m virtualenv venv_test
             - run: 
                   name: Get python version
                   command: 
                       python3.10 --version
+            - run: python3.10 -m virtualenv venv_test
             - run:
                   name: "Set up virtual environment"
                   command: |
