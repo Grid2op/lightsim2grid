@@ -41,7 +41,6 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.gridmodel import init
 from lightsim2grid.solver import SolverType
 
 
@@ -740,7 +739,8 @@ class LightSimBackend(Backend):
     
     def _aux_init_pandapower(self):
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
-        self._grid = init(self.init_pp_backend._grid)    
+        from lightsim2grid.gridmodel import init_from_pandapower
+        self._grid = init_from_pandapower(self.init_pp_backend._grid)    
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()        
         

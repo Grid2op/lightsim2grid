@@ -8,7 +8,7 @@
 
 
 import lightsim2grid
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 import pandapower as pp
 import pandapower.networks as pn
 import unittest
@@ -27,7 +27,7 @@ class TestDCLine(unittest.TestCase):
         
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            model = init(self.net)
+            model = init_from_pandapower(self.net)
         # different convention in pandapower and lightsim for now
         assert model.get_dclines()[0].target_p_or_mw == -100.
 
@@ -35,7 +35,7 @@ class TestDCLine(unittest.TestCase):
         # init ls
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            model = init(self.net)
+            model = init_from_pandapower(self.net)
         assert model.get_dclines()[0].target_p_or_mw == -self.net.dcline["p_mw"].values
         
         # run the dc powerflow for the reference
@@ -64,7 +64,7 @@ class TestDCLine(unittest.TestCase):
         # init ls
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            model = init(self.net)
+            model = init_from_pandapower(self.net)
         assert model.get_dclines()[0].target_p_or_mw == -self.net.dcline["p_mw"].values
         
         # run the dc powerflow for the reference

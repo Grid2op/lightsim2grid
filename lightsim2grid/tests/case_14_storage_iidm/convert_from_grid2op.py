@@ -13,8 +13,8 @@ import numpy as np
 import pypowsybl.network as pypo_n
 import grid2op
 
-from lightsim2grid.gridmodel import init as init_from_pp
-from lightsim2grid.gridmodel.from_pypowsybl import init as init_from_pypo
+from lightsim2grid.gridmodel import init_from_pandapower
+from lightsim2grid.gridmodel import init_from_pypowsybl
 
 
 
@@ -229,10 +229,10 @@ for el in range(pp_grid.trafo.shape[0]):
 
 
 # check that grid are equals
-ls_grid_pp = init_from_pp(pp_grid)
-ls_grid_pypo = init_from_pypo(pypo_grid,
-                              gen_slack_id=np.where(pp_grid.gen["slack"])[0],
-                              sn_mva=1.)
+ls_grid_pp = init_from_pandapower(pp_grid)
+ls_grid_pypo = init_from_pypowsybl(pypo_grid,
+                                   gen_slack_id=np.where(pp_grid.gen["slack"])[0],
+                                   sn_mva=1.)
 
 # check the elements are consistent
 for i, (el_pp, el_pypo) in enumerate(zip(ls_grid_pp.get_buses(), ls_grid_pypo.get_buses())):

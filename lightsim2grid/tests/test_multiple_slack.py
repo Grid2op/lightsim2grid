@@ -12,7 +12,7 @@ import pandapower as pp
 import numpy as np
 import pandapower.networks as pn
 import unittest
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 from functools import reduce
 
 
@@ -170,7 +170,7 @@ class TestMultipleSlack14(unittest.TestCase):
             
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid_single = init(self.net)
+            ls_grid_single = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid_single, self.net)
@@ -202,7 +202,7 @@ class TestMultipleSlack14(unittest.TestCase):
                      lightsim2grid=False)  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
@@ -228,7 +228,7 @@ class TestMultipleSlack14(unittest.TestCase):
                     init_va_degree="flat")  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
@@ -260,7 +260,7 @@ class TestMultipleSlack14(unittest.TestCase):
                     init_va_degree="flat") 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
@@ -307,7 +307,7 @@ class TestMultipleSlack14(unittest.TestCase):
             
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)

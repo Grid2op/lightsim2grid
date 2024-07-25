@@ -31,7 +31,7 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init(self.net)
+            self.model = init_from_pandapower(self.net)
 
         self.model.deactivate_bus(self.last_real_bus)
 
@@ -65,7 +65,7 @@ class MakeDCTestsDisco(BaseTests, unittest.TestCase):
         self.n_bus = self.net.bus.shape[0]
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init(self.net)
+            self.model = init_from_pandapower(self.net)
         self.model.deactivate_bus(self.last_real_bus)
 
         self.max_it = 10

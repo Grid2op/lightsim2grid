@@ -16,7 +16,7 @@ import copy
 import tempfile
 import unittest
 from lightsim2grid import LightSimBackend
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 
 
@@ -130,7 +130,7 @@ class TestMultipleL2RPN(unittest.TestCase):
             pp.runpp(self.pp_net, distributed_slack=True, init_vm_pu="flat", init_va_degree="flat")
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                ls_grid = init(self.pp_net)
+                ls_grid = init_from_pandapower(self.pp_net)
             ls_grid.tell_solver_need_reset()
             V = np.ones(2 * self.nb_bus_total, dtype=np.complex_)
             V = ls_grid.ac_pf(V, self.max_it, self.tol)
@@ -194,7 +194,7 @@ class TestMultipleSlack118(unittest.TestCase):
                  init_va_degree="flat")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid_single = init(self.net)
+            ls_grid_single = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid_single, self.net)
@@ -221,7 +221,7 @@ class TestMultipleSlack118(unittest.TestCase):
                  init_va_degree="flat")  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)

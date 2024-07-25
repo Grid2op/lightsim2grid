@@ -13,7 +13,7 @@ import numpy as np
 import warnings
 from scipy.sparse.linalg import spsolve
 
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 from lightsim2grid.solver import SolverType
 
 import pdb
@@ -30,7 +30,7 @@ class TestCase14SLU(unittest.TestCase):
         self.case = self.make_grid()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.gridmodel = init(self.case)
+            self.gridmodel = init_from_pandapower(self.case)
         self.V_init = 1. * self.gridmodel.get_bus_vn_kv()
         solver_type = self.get_solver_type()
         if solver_type not in self.gridmodel.available_solvers():

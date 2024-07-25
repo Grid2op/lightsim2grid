@@ -131,7 +131,6 @@ try:
         setattr(_DoNotUseAnywherePandaPowerBackend, "_clear_grid_dependant_class_attributes", classmethod(f))
             
         
-        
 except ImportError as exc_:
     # grid2op is not installed, we do not use it.
     pass

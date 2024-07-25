@@ -10,7 +10,7 @@ import warnings
 import numpy as np
 from scipy.sparse import csc_matrix
 
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 from lightsim2grid.solver import SolverType 
 
 import pandapower.networks as pn
@@ -65,7 +65,7 @@ class BaseCase300Tester(unittest.TestCase):
         self.net = self.get_network()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.gridmodel = init(self.net)
+            self.gridmodel = init_from_pandapower(self.net)
         self.tol = 1e-7
         self.tol_solver = 1e-8
         

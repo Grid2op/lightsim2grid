@@ -11,7 +11,7 @@ import numpy as np
 import pandapower.networks as pn
 import pandapower as pp
 
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 import warnings
 import pdb
 
@@ -36,7 +36,7 @@ class BaseTests:
         # initialize and use converters
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init(self.net_datamodel)
+            self.model = init_from_pandapower(self.net_datamodel)
 
     def assert_equal(self, tmp, ref, error=""):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
