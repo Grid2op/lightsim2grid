@@ -65,7 +65,8 @@ jobs:
             - checkout
             - run: apt-get update && apt-get install --reinstall ca-certificates -y && apt-get install software-properties-common python3-launchpadlib -y
             - run: apt-get update && add-apt-repository -y 'ppa:deadsnakes/ppa'
-            - run: apt-get update && apt-get install -y python3.10-full python3.10-dev python3.10-pip python3.10-virtualenv git
+            - run: apt-get update
+            - run: apt-get install -y python3.10-full python3.10-dev python3.10-pip python3.10-virtualenv git
             - run: 
                   name: Get python version
                   command: 
