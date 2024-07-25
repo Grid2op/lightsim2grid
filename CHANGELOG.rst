@@ -80,6 +80,9 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 - [FIXED] calls to methods such as `gridmodel.get_pv` or `gridmodel.get_V` 
   or `gridmodel.get_Ybus` could lead to severe crashes (segmentation fault)
   on some (rare) cases. Now an exception is thrown.
+- [FIXED] basic backward compatibility is ensured and tested for grid2op >= 0.9.1.post1
+  Not all features are tested and only 1.x versions are tested 
+  (ie 1.1 or 1.2 but not 1.2.1, 1.2.2, 1.2.3 etc.)
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`

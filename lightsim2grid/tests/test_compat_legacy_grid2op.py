@@ -9,12 +9,14 @@
 import warnings
 import unittest
 import numpy as np
+from packaging import version
 
 try:
     import grid2op
     from grid2op.Action import PlayableAction
     from grid2op.Environment import Environment
     from grid2op.Runner import Runner
+    from grid2op.Exceptions import Grid2OpException
     GLOP_AVAIL = True
 except ImportError:
     GLOP_AVAIL = False
@@ -27,7 +29,9 @@ except ImportError as exc_:
     GYM_AVAIL = False
     
 from lightsim2grid import LightSimBackend
-            
+
+
+GRID2OP_VER_FIXED_REWARD = version.parse("1.6.4")    
             
 class TestEnvironmentBasic(unittest.TestCase):          
     def setUp(self) -> None:
@@ -35,14 +39,29 @@ class TestEnvironmentBasic(unittest.TestCase):
             self.skipTest("grid2op not installed")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("educ_case14_storage",
-                                    test=True,
-                                    action_class=PlayableAction,
-                                    _add_to_name=type(self).__name__,
-                                    backend=LightSimBackend())
+            try:
+                self.env = grid2op.make("educ_case14_storage",
+                                        test=True,
+                                        action_class=PlayableAction,
+                                        _add_to_name=type(self).__name__,
+                                        backend=LightSimBackend())
+                self.legacy = False
+                self.issue_cooldown = False
+            except Grid2OpException as exc_:
+                self.env = grid2op.make("rte_case14_realistic",
+                                        test=True,
+                                        action_class=PlayableAction,
+                                        backend=LightSimBackend())
+                self.legacy = True
+                self.issue_cooldown = True
+                
         self.line_id = 3
         th_lim = self.env.get_thermal_limit() * 2.  # avoid all problem in general
-        th_lim[self.line_id] /= 10.  # make sure to get trouble in line 3
+        # make sure to get trouble in line 3
+        if not self.legacy:
+            th_lim[self.line_id] /= 10.  
+        else:
+            th_lim[self.line_id] /= 5.  
         self.env.set_thermal_limit(th_lim)
         
         TestEnvironmentBasic._init_env(self.env)
@@ -51,7 +70,7 @@ class TestEnvironmentBasic(unittest.TestCase):
     def _init_env(env):
         env.set_id(0)
         env.seed(0)
-        env.reset()
+        obs = env.reset()
         
     def tearDown(self) -> None:
         self.env.close()
@@ -64,8 +83,8 @@ class TestEnvironmentBasic(unittest.TestCase):
         act = self.env.action_space()
         for i in range(10):
             obs_in, reward, done, info = self.env.step(act)
-            if i < 3:
-                assert obs_in.timestep_overflow[self.line_id] == i + 1, f"error for step {i}: {obs_in.timestep_overflow[self.line_id]}"
+            if i < 2 or (i == 2 and not self.issue_cooldown):
+                assert obs_in.timestep_overflow[self.line_id] == i + 1, f"error for step {i}: {obs_in.timestep_overflow[self.line_id]} vs {i+1}"
             else:
                 assert not obs_in.line_status[self.line_id]
     
@@ -96,30 +115,49 @@ class TestBasicEnvironmentRunner(unittest.TestCase):
     def test_runner_can_make(self):
         runner = Runner(**self.env.get_params_for_runner())
         env2 = runner.init_env()
-        assert isinstance(env2, Environment)
+        if env2 is not None:
+            # used to be None in very old grid2op version
+            assert isinstance(env2, Environment)
     
     def test_runner(self):
         # create the runner
         runner_in = Runner(**self.env.get_params_for_runner())
-        res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0], episode_id=[0], add_detailed_output=True)
-        res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0], episode_id=[0])
+        try:
+            res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0], episode_id=[0], add_detailed_output=True)
+            res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0], episode_id=[0])
+            add_data_output = True
+        except TypeError:
+            # legacy mode
+            try:
+                res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0])
+                res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0])  
+            except TypeError:  
+                # super legacy mode (eg 0.9.1)  
+                res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter)
+                res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter)  
+            add_data_output = False     
+             
         # check correct results are obtained when agregated
         assert res_in[3] == 10
         assert res_in2[3] == 10
-        ref_val = 164.1740722
+        if version.parse(grid2op.__version__) >= GRID2OP_VER_FIXED_REWARD:
+            ref_val = 164.1740722
+        else:
+            ref_val = 11073.7890
         assert np.allclose(res_in[2], ref_val), f"{res_in[2]} vs {ref_val}"
         assert np.allclose(res_in2[2], ref_val), f"{res_in2[2]} vs {ref_val}"
         
-        # check detailed results
-        ep_data_in = res_in[-1]
-        for i in range(1, self.max_iter + 1):
-            # there is a bug in grid2op 1.6.4 for i = 0...
-            obs_in = ep_data_in.observations[i]
-            assert obs_in is not None, f"error for step {i}"
-            if i < 4:
-                assert obs_in.timestep_overflow[self.line_id] == i, f"error for step {i}: {obs_in.timestep_overflow[self.line_id]}"
-            else:
-                assert not obs_in.line_status[self.line_id], f"error for step {i}: line is not disconnected"
+        if add_data_output:
+            # check detailed results
+            ep_data_in = res_in[-1]
+            for i in range(1, self.max_iter + 1):
+                # there is a bug in grid2op 1.6.4 for i = 0...
+                obs_in = ep_data_in.observations[i]
+                assert obs_in is not None, f"error for step {i}"
+                if i < 4:
+                    assert obs_in.timestep_overflow[self.line_id] == i, f"error for step {i}: {obs_in.timestep_overflow[self.line_id]}"
+                else:
+                    assert not obs_in.line_status[self.line_id], f"error for step {i}: line is not disconnected"
     
         
 class TestBasicEnvironmentGym(unittest.TestCase):

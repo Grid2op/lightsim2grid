@@ -75,7 +75,7 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gym "numpy<1.25" grid2op==1.6.4
+                      pip install --upgrade pip setuptools wheel gym "numpy<2" grid2op==1.0.0
                       pip install -U pybind11
                       git submodule init
                       git submodule update
@@ -84,9 +84,108 @@ jobs:
                       python -m pip install -U .
                       pip freeze
             - run:
-                name: legacy test
+                name: legacy test (grid2op 1.0.0)
                 command: |
                       source venv_test/bin/activate
+                      sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
+                      sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.1)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.1
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.2)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.2
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.3)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.3
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.4)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.4
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.5)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.5
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.6)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.6
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.7)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.7
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.8)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.8
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.9)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.9
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op ~1.10)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op~=1.10
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op 0.9.1.post1 - l2rpn wcci 2020)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op==0.9.1.post1
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op 1.2.2 - l2rpn neurips 2020)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op==1.2.2
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op 1.6.3 - l2rpn Icaps 2021)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op==1.6.3
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op 1.7.2 - l2rpn wcci 2022)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op==1.7.2
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op 1.9.0 - l2rpn Delft 2023)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op==1.9.0
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            - run:
+                name: legacy test (grid2op 1.9.1 - l2rpn IDF 2023)
+                command: |
+                      source venv_test/bin/activate
+                      python -m pip install grid2op==1.9.1
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
 
     compile_gcc13:
