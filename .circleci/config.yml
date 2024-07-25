@@ -75,7 +75,7 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11
+                      pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
                       pip install pandapower grid2op==1.0.0
                       git submodule init
                       git submodule update
@@ -99,7 +99,7 @@ jobs:
                 name: legacy test (grid2op ~1.1)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.1
+                      pip install "grid2op~=1.1.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -107,7 +107,7 @@ jobs:
                 name: legacy test (grid2op ~1.2)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.2
+                      pip install "grid2op~=1.2.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -115,7 +115,7 @@ jobs:
                 name: legacy test (grid2op ~1.3)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.3
+                      pip install" grid2op~=1.3.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -123,7 +123,7 @@ jobs:
                 name: legacy test (grid2op ~1.4)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.4
+                      pip install "grid2op~=1.4.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -131,7 +131,7 @@ jobs:
                 name: legacy test (grid2op ~1.5)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.5
+                      pip install "grid2op~=1.5.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -139,7 +139,7 @@ jobs:
                 name: legacy test (grid2op ~1.6)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.6
+                      pip install "grid2op~=1.6.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -147,31 +147,31 @@ jobs:
                 name: legacy test (grid2op ~1.7)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.7
+                      pip install "grid2op~=1.7.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op ~1.8)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.8
+                      pip install "grid2op~=1.8.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op ~1.9)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.9
+                      pip install "grid2op~=1.9.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op ~1.10)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op~=1.10
+                      pip install "grid2op~=1.10.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 0.9.1.post1 - l2rpn wcci 2020)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op==0.9.1.post1
+                      pip install grid2op==0.9.1.post1
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -179,7 +179,7 @@ jobs:
                 name: legacy test (grid2op 1.2.2 - l2rpn neurips 2020)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op==1.2.2
+                      pip install grid2op==1.2.2
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -187,26 +187,25 @@ jobs:
                 name: legacy test (grid2op 1.6.3 - l2rpn Icaps 2021)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op==1.6.3
+                      pip install grid2op==1.6.3
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 1.7.2 - l2rpn wcci 2022)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op==1.7.2
+                      pip install grid2op==1.7.2
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 1.9.0 - l2rpn Delft 2023)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op==1.9.0
-                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+                      ppip install grid2op==1.9.0
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 1.9.1 - l2rpn IDF 2023)
                 command: |
                       source venv_test/bin/activate
-                      python -m pip install grid2op==1.9.1
+                      pip install grid2op==1.9.1
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
 
     compile_gcc13:
