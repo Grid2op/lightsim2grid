@@ -70,7 +70,7 @@ jobs:
                   name: Get python version
                   command: 
                       python3 --version
-            - run: python3 -m virtualenv venv_test
+            - run: python3 -m venv venv_test
             - run:
                   name: "Set up virtual environment"
                   command: |
