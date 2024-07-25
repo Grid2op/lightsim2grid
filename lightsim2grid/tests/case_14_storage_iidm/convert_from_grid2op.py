@@ -13,9 +13,7 @@ import numpy as np
 import pypowsybl.network as pypo_n
 import grid2op
 
-from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.gridmodel import init_from_pypowsybl
-
+from lightsim2grid.gridmodel import init_from_pandapower, init_from_pypowsybl
 
 
 def get_voltage_level_id(el, nb_dig_bus):

@@ -113,7 +113,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import init, GridModel"
+          python3 -c "from lightsim2grid.gridmodel import GridModel"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -134,6 +134,7 @@ jobs:
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+          python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         run:
@@ -242,22 +243,30 @@ jobs:
         shell: bash
         run: python -m pip install dist/*.whl --user
 
-      - name: Check package can be imported
+      - name: Check package can be imported (bare install)
         run: |
           mkdir tmp_for_import_checking
           cd tmp_for_import_checking
-          python -c "import lightsim2grid"
-          python -c "from lightsim2grid import *"
-          python -c "from lightsim2grid.newtonpf import newtonpf"
-          cd ..
+          python3 -c "import lightsim2grid"
+          python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import GridModel"
       
-      - name: Check LightSimBackend can be imported
+      - name: Check LightSimBackend can be imported (with grid2op)
         run: |
-          cd tmp_for_import_checking
           python -m pip install grid2op
+          cd tmp_for_import_checking
           python -c "from lightsim2grid import LightSimBackend"
           python -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
-      
+          python -c "from lightsim2grid.timeSerie import TimeSerie"
+          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
+          python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
+          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          
       # - name: Debug windows CI
       #   run: |
       #     python -m unittest lightsim2grid.tests.test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
@@ -374,7 +383,7 @@ jobs:
           python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python -c "from lightsim2grid.gridmodel import init, GridModel"
+          python -c "from lightsim2grid.gridmodel import GridModel"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -395,6 +404,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
+          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         run: |
@@ -510,10 +520,12 @@ jobs:
             python -c "import lightsim2grid" &&
             python -c "from lightsim2grid import *" &&
             python -c "from lightsim2grid.newtonpf import newtonpf" &&
-            python -c "from lightsim2grid.timeSerie import TimeSeriesCPP" &&
-            python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP" &&
-            python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP" &&
-            python -c "from lightsim2grid.gridmodel import init, GridModel"
+            python -c "from lightsim2grid.timeSerie import TimeSeriesCPP, TimeSerie" &&
+            python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP, ContingencyAnalysis" &&
+            python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP, SecurityAnalysis" &&
+            python -c "from lightsim2grid.gridmodel import GridModel, init_from_pandapower" &&
+            python -c "from lightsim2grid import LightSimBackend" &&
+            python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:

@@ -8,10 +8,8 @@
 
 import warnings
 import numpy as np
-from scipy.sparse import csc_matrix
 
 from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.solver import SolverType 
 
 import pandapower.networks as pn
 import pandapower as pp
