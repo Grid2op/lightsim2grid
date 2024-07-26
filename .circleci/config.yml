@@ -334,14 +334,29 @@ jobs:
         resource_class: medium
         steps:
             - checkout
-            - run: apt-get update && apt-get install --reinstall ca-certificates -y
-            - run: add-apt-repository 'ppa:deadsnakes/ppa' -y
-            - run: apt-get update && apt-get install python3.12-full python3.12-dev python3.12-pip python3.12-virtualenv git -y
+            - run: apt-get update
+            - run: apt install -y python3 python3-dev python3-venv python3-pip git
             - run: 
-                  name: Get python version
+                  name: Show python version
                   command: 
-                      python3.12 --version
-            - run: python3.12 -m virtualenv venv_test
+                      python3 --version
+            - run: python3 -m venv venv_test
+            - run:
+                  name: "Set up virtual environment"
+                  command: |
+                      source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel gymnasium "numpy<2" pybind11 scipy
+                      git submodule init
+                      git submodule update
+                      make
+                      pip freeze
+            - run:
+                  name: "Compile and install lightsim2grid"
+                  command: |
+                      source venv_test/bin/activate
+                      CC=gcc python setup.py build
+                      CC=gcc python -m pip install -e .
+                      pip freeze
             - run:
                 name: "Install grid2op from source"
                 command: |
@@ -349,16 +364,6 @@ jobs:
                     pip install --upgrade pip setuptools wheel
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
-            - run:
-                name: "Install lightsim2grid"
-                command: |
-                    source venv_test/bin/activate
-                    pip install -U pybind11
-                    git submodule init
-                    git submodule update
-                    make
-                    CC=gcc python setup.py build
-                    python -m pip install .[test] gymnasium
             - run:
                 name: "Show package versions"
                 command: |
@@ -387,7 +392,7 @@ jobs:
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    python -m pip install -U .
+                    CC=clang python -m pip install -U .
     compile_clang10:
         executor: clang10
         resource_class: small
@@ -407,7 +412,7 @@ jobs:
                     pip install --upgrade pip setuptools wheel
                     pip install -U pybind11
                     CC=clang python setup.py build
-                    python -m pip install .
+                    CC=clang python -m pip install .
     compile_clang11:
         executor: clang11
         resource_class: small
@@ -544,14 +549,29 @@ jobs:
         resource_class: medium
         steps:
             - checkout
-            - run: apt-get update && apt-get install --reinstall ca-certificates -y
-            - run: add-apt-repository 'ppa:deadsnakes/ppa' -y
-            - run: apt-get update && apt-get install python3.12-full python3.12-dev python3.12-pip python3.12-virtualenv git -y
+            - run: apt-get update
+            - run: apt install -y python3 python3-dev python3-venv python3-pip git
             - run: 
-                  name: Get python version
+                  name: Show python version
                   command: 
-                      python3.12  --version
-            - run: python3.12 -m virtualenv venv_test
+                      python3 --version
+            - run: python3 -m venv venv_test
+            - run:
+                  name: "Set up virtual environment"
+                  command: |
+                      source venv_test/bin/activate
+                      pip install --upgrade pip setuptools wheel gymnasium "numpy<2" pybind11 scipy
+                      git submodule init
+                      git submodule update
+                      make
+                      pip freeze
+            - run:
+                  name: "Compile and install lightsim2grid"
+                  command: |
+                      source venv_test/bin/activate
+                      CC=clang python setup.py build
+                      CC=clang python -m pip install -e .
+                      pip freeze
             - run:
                 name: "Install grid2op from source"
                 command: |
@@ -559,16 +579,6 @@ jobs:
                     pip install --upgrade pip setuptools wheel
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op
-            - run:
-                name: "Install lightsim2grid"
-                command: |
-                    source venv_test/bin/activate
-                    pip install -U pybind11
-                    git submodule init
-                    git submodule update
-                    make
-                    CC=clang python setup.py build
-                    CC=clang python -m pip install -e .[test] gymnasium
             - run:
                 name: "Show package versions"
                 command: |
@@ -579,7 +589,7 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
-                    python -m unittest discover -v
+                    python -m unittest discover  -v
     compile_and_test_windows:
         executor: 
             name: win/default  # executor type

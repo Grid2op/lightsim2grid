@@ -23,10 +23,10 @@ except ImportError:
 
 try:
     from grid2op.gym_compat import GymEnv, BoxGymActSpace, BoxGymObsSpace, DiscreteActSpace, MultiDiscreteActSpace
-    GYM_AVAIL = True
+    GYM_AVAIL_GLOP = True
 except ImportError as exc_:
     print(exc_)
-    GYM_AVAIL = False
+    GYM_AVAIL_GLOP = False
 
 try:
     import gymnasium
@@ -177,7 +177,7 @@ class TestBasicEnvironmentRunner(unittest.TestCase):
         
 class TestBasicEnvironmentGym(unittest.TestCase):
     def setUp(self) -> None:
-        if not GYM_AVAIL:
+        if not GYM_AVAIL_GLOP:
             self.skipTest("gym is not installed (no gym compat before 1.3.0)")
         TestEnvironmentBasic.setUp(self)
         self.new_gym_api = False
