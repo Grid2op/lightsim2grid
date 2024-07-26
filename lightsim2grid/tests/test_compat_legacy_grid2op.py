@@ -27,11 +27,26 @@ try:
 except ImportError as exc_:
     print(exc_)
     GYM_AVAIL = False
+
+try:
+    import gymnasium
+    GYMANSIUM_AVAIL = True
+except ImportError:
+    GYMANSIUM_AVAIL = False
     
+try: 
+    import gym
+    GYM_AVAIL = True
+except ImportError:
+    GYM_AVAIL = False
+    
+
 from lightsim2grid import LightSimBackend
 
 
 GRID2OP_VER_FIXED_REWARD = version.parse("1.5.0")    
+GRID2OP_VER_NEW_GYM_API = version.parse("1.8.0")    
+            
             
 class TestEnvironmentBasic(unittest.TestCase):          
     def setUp(self) -> None:
@@ -163,8 +178,14 @@ class TestBasicEnvironmentRunner(unittest.TestCase):
 class TestBasicEnvironmentGym(unittest.TestCase):
     def setUp(self) -> None:
         if not GYM_AVAIL:
-            self.skipTest("gym is not installed (gymnasium did not exist in 1.6.4)")
+            self.skipTest("gym is not installed (no gym compat before 1.3.0)")
         TestEnvironmentBasic.setUp(self)
+        self.new_gym_api = False
+        if GYMANSIUM_AVAIL:
+            self.new_gym_api = True
+        if version.parse(grid2op.__version__) >= GRID2OP_VER_NEW_GYM_API:
+            self.new_gym_api = True
+        
 
     def tearDown(self) -> None:
         self.env.close()
@@ -172,7 +193,10 @@ class TestBasicEnvironmentGym(unittest.TestCase):
     
     def _aux_run_envs(self, act, env_gym):
         for i in range(10):
-            obs_in, reward, done, info = env_gym.step(act)
+            if self.new_gym_api:
+                obs_in, reward, done, truncated, info = env_gym.step(act)
+            else:
+                obs_in, reward, done, info = env_gym.step(act)
             if i < 3:
                 assert obs_in["timestep_overflow"][self.line_id] == i + 1, f"error for step {i}: {obs_in['timestep_overflow'][self.line_id]}"
             else:
