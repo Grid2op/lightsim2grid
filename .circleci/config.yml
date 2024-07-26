@@ -372,6 +372,7 @@ jobs:
                 name: "Show package versions"
                 command: |
                     source venv_test/bin/activate
+                    pip install pypowsybl
                     pip freeze
             - run:
                 name: "make tests"
@@ -588,6 +589,7 @@ jobs:
                 name: "Show package versions"
                 command: |
                     source venv_test/bin/activate
+                    pip install pypowsybl
                     pip freeze
             - run:
                 name: "make tests"

@@ -93,7 +93,7 @@ jobs:
         run: 
           make
 
-      - name: Build wheel
+      - name: Build lightsim2grid wheel
         run: |
           # export __O3_OPTIM=1
           python3 setup.py bdist_wheel
@@ -103,7 +103,7 @@ jobs:
         if: matrix.python.name == 'cp311'
         run: python3 setup.py sdist
 
-      - name: Install wheel
+      - name: Install lightsim2grid wheel
         run: |
           python3 -m pip install wheelhouse/*.whl --user
           python3 -m pip freeze
@@ -238,7 +238,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade setuptools
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements_compile.txt
 
       - name: Compile SuiteSparse cmake
         run: |
@@ -261,7 +261,7 @@ jobs:
         shell: bash
         run: python -m pip install dist/*.whl --user
 
-      - name: Check package can be imported (bare install)
+      - name: Check package can be imported (bare install, default numpy)
         run: |
           mkdir tmp_for_import_checking
           cd tmp_for_import_checking
@@ -272,7 +272,20 @@ jobs:
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
           python3 -c "from lightsim2grid.gridmodel import GridModel"
-      
+
+      - name: Check package can be imported (bare install, numpy < 2)
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
+        run: |
+          python3 -m pip install "numpy<2"
+          cd tmp_for_import_checking
+          python3 -c "import lightsim2grid"
+          python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import GridModel"
+
       - name: Check LightSimBackend can be imported (with grid2op)
         run: |
           python -m pip install grid2op
@@ -369,7 +382,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --upgrade setuptools  # for python >= 3.12
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements_compile.txt
 
       - name: Compile SuiteSparse make
         run: |
@@ -391,17 +404,30 @@ jobs:
           python -m pip install dist/*.whl --user
           python -m pip freeze
 
-      - name: Check package can be imported (bare install)
+      - name: Check package can be imported (bare install, default numpy)
         run: |
           mkdir tmp_for_import_checking
           cd tmp_for_import_checking
-          python -c "import lightsim2grid"
-          python -c "from lightsim2grid import *"
-          python -c "from lightsim2grid.newtonpf import newtonpf"
-          python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
-          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
-          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "import lightsim2grid"
+          python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import GridModel"
+
+      - name: Check package can be imported (bare install, numpy < 2)
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
+        run: |
+          python3 -m pip install "numpy<2"
+          cd tmp_for_import_checking
+          python3 -c "import lightsim2grid"
+          python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import GridModel"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -521,7 +547,7 @@ jobs:
           CIBW_ARCHS_MACOS: arm64 
           CIBW_ARCHS_WINDOWS: ARM64 
           CIBW_ENVIRONMENT: __O3_OPTIM=1
-          CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11 pip
+          CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11 pip && python -m pip install "numpy>=2; python_version >= '3.9'"  "numpy; python_version < '3.9'"
           CIBW_BEFORE_BUILD_MACOS: make clean && make CC=clang CXX=clang++  # no need to cross compile this because host is already arm64 based
           CIBW_BEFORE_BUILD_LINUX: make clean && make  # maybe we need to cross compile this (host x64) but maybe not (qemu) ?
           CIBW_BEFORE_BUILD_WINDOWS: > 
@@ -532,7 +558,7 @@ jobs:
             cmake -DCMAKE_INSTALL_PREFIX=..\built -DCMAKE_BUILD_TYPE=Release -DCMAKE_GENERATOR_PLATFORM=arm64 .. &&
             cmake --build . --config Release &&
             cmake --install . --prefix ..\built
-          CIBW_TEST_REQUIRES: grid2op pandapower
+          CIBW_TEST_REQUIRES: grid2op pandapower "numpy<2"
           CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" &&
@@ -553,9 +579,7 @@ jobs:
   package:
     name: Package wheels
     runs-on: ubuntu-latest
-    # needs: [manylinux_build, windows_build, macos_build_37_]
     needs: [exotic_build, macos_build_37_, windows_build, manylinux_build]
-    # needs: [windows_build]
 
     steps:
       - name: Download wheels
