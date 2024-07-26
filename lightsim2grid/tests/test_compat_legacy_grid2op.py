@@ -178,7 +178,7 @@ class TestBasicEnvironmentRunner(unittest.TestCase):
 class TestBasicEnvironmentGym(unittest.TestCase):
     def setUp(self) -> None:
         if not GYM_AVAIL_GLOP:
-            self.skipTest("gym is not installed (no gym compat before 1.3.0)")
+            self.skipTest("grid2op was not yet compatible with gym with the gym_compat module.")
         TestEnvironmentBasic.setUp(self)
         self.new_gym_api = False
         if GYMANSIUM_AVAIL:

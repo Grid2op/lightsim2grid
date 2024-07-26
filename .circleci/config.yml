@@ -161,7 +161,7 @@ jobs:
                 name: legacy test (grid2op ~1.9)
                 command: |
                       source venv_test/bin/activate
-                      pip uninstall gym
+                      pip uninstall gym -y
                       pip install gymnasium
                       pip install "grid2op~=1.9.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -175,7 +175,7 @@ jobs:
                 name: legacy test (grid2op 0.9.1.post1 - l2rpn wcci 2020)
                 command: |
                       source venv_test/bin/activate
-                      pip uninstall gymnasium
+                      pip uninstall gymnasium -y
                       pip install gym
                       pip install grid2op==0.9.1.post1
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
