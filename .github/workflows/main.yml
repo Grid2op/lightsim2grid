@@ -124,7 +124,6 @@ jobs:
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
         run: |
           python3 -m pip install "numpy<2"
-          mkdir tmp_for_import_checking
           cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
           python3 -c "from lightsim2grid import *"

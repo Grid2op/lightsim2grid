@@ -209,7 +209,7 @@ jobs:
                 name: legacy test (grid2op 1.9.0 - l2rpn Delft 2023)
                 command: |
                       source venv_test/bin/activate
-                      pip uninstall gym
+                      pip uninstall gym -y
                       pip install gymnasium
                       pip install grid2op==1.9.0
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
