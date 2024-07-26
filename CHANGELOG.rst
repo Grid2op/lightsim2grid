@@ -24,9 +24,6 @@ TODO HVDC in Jacobian (see pandapower)
 
 [0.9.0] 2024-07-xx
 --------------------------
-- TODO test for clang 18 and gcc 14
-- TODO : numpy 2. compat (includes a mode without pandapower)
-
 - [BREAKING] the way to initialize lightsim2grid `GridModel` now does not require
   pandapower (you can initialize it with pypowsybl if you want). To make it both
   cleaner and clearer the function `lightsim2grid.gridmodel.init` has been removed.
@@ -81,7 +78,7 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
   on some (rare) cases. Now an exception is thrown.
 - [FIXED] basic backward compatibility is ensured and tested for legacy grid2op >= 0.9.1.post1
   Not all features are tested and only 1.x versions are tested 
-  (ie 1.1 or 1.2 but not 1.2.1, 1.2.2, 1.2.3 etc.)
+  (ie 1.1 or 1.2 but not 1.2.1, 1.2.2, 1.2.3 etc.) and only for python 3.11
 - [FIXED] a bug when using `LightSimBackend` with some old (but not too old) grid2op
   versions.
 - [ADDED] it is now possible to deactivate the support for shunts by 
@@ -89,6 +86,11 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
   to `False`
 - [IMPROVED] in the `ContingencyAnalysis` class, the underlying cpp model will now
   perform an initial powerflow.
+- [IMPROVED] distributed wheels are now compiled (whenever possible) with numpy 2. 
+  This makes them compatible with both numpy 1.xx and numpy 2.yy versions.
+- [IMPROVED] tests are now performed when lightsim2grid is compiled with 
+  the latest clang (18) and gcc (14)
+  versions on the CI
 
 [0.8.2.post1] 2024-04-xx
 --------------------------

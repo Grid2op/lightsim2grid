@@ -978,11 +978,15 @@ class LightSimBackend(Backend):
         except TypeError as exc_:
             _init_action_to_set = self._get_action_to_set_deprecated()
         self._init_action_to_set += _init_action_to_set
-        assert np.isfinite(self.prod_pu_to_kv).all()
-        assert np.isfinite(self.load_pu_to_kv).all()
-        assert np.isfinite(self.lines_or_pu_to_kv).all()
-        assert np.isfinite(self.lines_ex_pu_to_kv).all()
-        if self.__has_storage and self.n_storage > 0:
+        if self.prod_pu_to_kv is not None:
+            assert np.isfinite(self.prod_pu_to_kv).all()
+        if self.load_pu_to_kv is not None:
+            assert np.isfinite(self.load_pu_to_kv).all()
+        if self.lines_or_pu_to_kv is not None:
+            assert np.isfinite(self.lines_or_pu_to_kv).all()
+        if self.lines_ex_pu_to_kv is not None:
+            assert np.isfinite(self.lines_ex_pu_to_kv).all()
+        if self.__has_storage and self.n_storage > 0 and self.storage_pu_to_kv is not None:
             assert np.isfinite(self.storage_pu_to_kv).all()
         
     def _get_action_to_set_deprecated(self):
