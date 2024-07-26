@@ -189,14 +189,14 @@ jobs:
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
-            - run:
-                name: legacy test (grid2op 1.6.3 - l2rpn Icaps 2021)
-                command: |
-                      source venv_test/bin/activate
-                      pip install grid2op==1.6.3
-                      sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
-                      sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
-                      python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
+            # - run:
+            #     name: legacy test (grid2op 1.6.3 - l2rpn Icaps 2021)(NOT WORKING WITH PYTHON 3.11)
+            #     command: |
+            #           source venv_test/bin/activate
+            #           pip install grid2op==1.6.3
+            #           sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
+            #           sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
+            #           python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 1.7.2 - l2rpn wcci 2022)
                 command: |
