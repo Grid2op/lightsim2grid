@@ -178,6 +178,7 @@ class LightSimBackend(Backend):
         self.load_pu_to_kv = None
         self.lines_or_pu_to_kv = None
         self.lines_ex_pu_to_kv = None
+        self.storage_pu_to_kv = None
 
         self.p_or = None
         self.q_or = None
@@ -1383,7 +1384,7 @@ class LightSimBackend(Backend):
         li_attr_npy = ["thermal_limit_a", "_sh_vnkv", "_init_bus_load", "_init_bus_gen",
                        "_init_bus_lor", "_init_bus_lex", "nb_obj_per_bus", "next_prod_p", "topo_vect",
                        "shunt_topo_vect", "V", "prod_pu_to_kv", "load_pu_to_kv", "lines_or_pu_to_kv",
-                       "lines_ex_pu_to_kv",
+                       "lines_ex_pu_to_kv", "storage_pu_to_kv",
                        "p_or", "q_or", "v_or", "a_or",
                        "p_ex", "q_ex", "v_ex", "a_ex",
                        "load_p", "load_q", "load_v",
