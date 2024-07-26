@@ -46,6 +46,7 @@ from lightsim2grid.solver import SolverType
 
 
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
+grid2op_min_shunt_cls_properly_handled = version.parse("1.9.7")
 
 
 class LightSimBackend(Backend):
@@ -136,9 +137,12 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
+        if version.parse(grid2op.__version__) < grid2op_min_shunt_cls_properly_handled:
+            warnings.warn(f"You are using a legacy grid2op version. It is not possible to deactivate the shunts in lightsim2grid. "
+                          f"Please upgrade to grid2op >= {grid2op_min_shunt_cls_properly_handled}")
+            self.shunts_data_available = True  # needs to be self and not type(self) here
+            type(self).shunts_data_available = True
             
-        # self.shunts_data_available = True  # needs to be self and not type(self) here
-        
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
         self.__nb_powerline = None

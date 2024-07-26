@@ -31,7 +31,7 @@ except ImportError as exc_:
 from lightsim2grid import LightSimBackend
 
 
-GRID2OP_VER_FIXED_REWARD = version.parse("1.6.4")    
+GRID2OP_VER_FIXED_REWARD = version.parse("1.5.0")    
             
 class TestEnvironmentBasic(unittest.TestCase):          
     def setUp(self) -> None:
