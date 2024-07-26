@@ -79,10 +79,15 @@ jobs:
       - name: Setup path
         run: echo "/opt/python/${{ matrix.python.name }}-${{ matrix.python.abi }}/bin/" >> $GITHUB_PATH
 
+      - name: get python version
+        run: |
+          python3 --version
+
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements_compile.txt
+          python3 -m pip freeze
 
       - name: Compile SuiteSparse
         run: 
@@ -96,15 +101,29 @@ jobs:
 
       - name: Build source archive
         if: matrix.python.name == 'cp311'
-        run: python setup.py sdist
+        run: python3 setup.py sdist
 
       - name: Install wheel
         run: |
-          pip3 install wheelhouse/*.whl --user
-          pip freeze
+          python3 -m pip install wheelhouse/*.whl --user
+          python3 -m pip freeze
 
-      - name: Check package can be imported (bare install)
+      - name: Check package can be imported (bare install, default numpy)
         run: |
+          mkdir tmp_for_import_checking
+          cd tmp_for_import_checking
+          python3 -c "import lightsim2grid"
+          python3 -c "from lightsim2grid import *"
+          python3 -c "from lightsim2grid.newtonpf import newtonpf"
+          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python3 -c "from lightsim2grid.gridmodel import GridModel"
+
+      - name: Check package can be imported (bare install, numpy < 2)
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
+        run: |
+          python3 -m pip install "numpy<2"
           mkdir tmp_for_import_checking
           cd tmp_for_import_checking
           python3 -c "import lightsim2grid"
@@ -123,7 +142,7 @@ jobs:
 
       - name: Install grid2op
         run: | 
-          python3 -m pip install grid2op
+          python3 -m pip install grid2op pandapower
           python3 -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
