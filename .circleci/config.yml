@@ -564,7 +564,8 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gymnasium "numpy<2" pybind11 scipy
+                      pip install --upgrade pip setuptools wheel 
+                      pip install gymnasium "numpy<2" pybind11 scipy
                       git submodule init
                       git submodule update
                       make
@@ -615,13 +616,13 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     .\venv_test\Scripts\activate
+                    pip install gymnasium "numpy<2" pybind11 scipy
                     git clone https://github.com/rte-france/grid2op.git _grid2op
                     pip install -e _grid2op gymnasium
             - run:
                 name: "Install lightsim2grid"
                 command: |
                     .\venv_test\Scripts\activate
-                    pip install -U pybind11
                     git submodule init
                     git submodule update
                     python setup.py build
@@ -638,19 +639,19 @@ workflows:
     version: 2.1
     compile:
         jobs:
-        #   - compile_gcc8  # re add
+          - compile_gcc8  # re add
         #   - compile_gcc10
         #   - compile_gcc11
         #   - compile_gcc12
-        #   - compile_gcc13 # re add
+          - compile_gcc13 # re add
           # - compile_clang10  # does not work I don't know why, too lazy to check
-        #   - compile_clang11  # re add
+          - compile_clang11  # re add
         #   - compile_clang13
         #   - compile_clang14
         #   - compile_clang15
         #   - compile_clang16
-        #   - compile_clang17  # re add
+          - compile_clang17  # re add
           - test_legacy_grid2op
-        #   - compile_and_test_windows # re add
-        #   - compile_and_test_clang18 # re add
-        #   - compile_and_test_gcc14 # re add
+          - compile_and_test_windows # re add
+          - compile_and_test_clang18 # re add
+          - compile_and_test_gcc14 # re add
