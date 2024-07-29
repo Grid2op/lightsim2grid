@@ -23,6 +23,11 @@ TODO HVDC in Jacobian (see pandapower)
 TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  `remove_from_Ybus`
       in order to perform the "invertibility" check
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
+TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
+
+[0.9.1] 2024-xx-yy
+--------------------------
+
 
 [0.9.0] 2024-07-29
 --------------------------
