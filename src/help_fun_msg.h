@@ -195,19 +195,41 @@ struct DocGridModel
     static const std::string get_Va;
     static const std::string get_Vm;
     static const std::string get_V;
+    static const std::string get_J_python_solver;
+    static const std::string get_Va_solver;
+    static const std::string get_Vm_solver;
+    static const std::string get_V_solver;
     static const std::string id_me_to_ac_solver;
     static const std::string id_ac_solver_to_me;
     static const std::string id_me_to_dc_solver;
     static const std::string id_dc_solver_to_me;
     static const std::string total_bus;
     static const std::string nb_bus;
+
+    // TODO doc: make more precise when things are copied and when things are not
     static const std::string get_pv;
     static const std::string get_pq;
     static const std::string get_slack_ids;
+    static const std::string get_slack_ids_dc;
     static const std::string get_slack_weights;
+    static const std::string get_pv_solver;
+    static const std::string get_pq_solver;
+    static const std::string get_slack_ids_solver;
+    static const std::string get_slack_ids_dc_solver;
+    static const std::string get_slack_weights_solver;
     static const std::string get_Ybus;
     static const std::string get_dcYbus;
     static const std::string get_Sbus;
+    static const std::string get_dcSbus;
+    static const std::string get_Ybus_solver;
+    static const std::string get_dcYbus_solver;
+    static const std::string get_Sbus_solver;
+    static const std::string get_dcSbus_solver;
+    static const std::string get_ptdf;
+    static const std::string get_ptdf_solver;
+    static const std::string get_lodf;
+    static const std::string get_Bf;
+    static const std::string get_Bf_solver;
 
     static const std::string check_solution;
 

@@ -56,11 +56,21 @@ class BaseDCAlgo: public BaseAlgo
                         real_type tol
                         );
 
-        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus);
-        virtual RealMat get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
-                                 const IntVect & from_bus,
-                                 const IntVect & to_bus);  // TODO LODF
+        virtual RealMat get_ptdf();
+        virtual RealMat get_lodf(const IntVect & from_bus,
+                                 const IntVect & to_bus);
         virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO BSDF
+        
+        virtual void update_internal_Ybus(const Coeff & coeff, bool add){
+            int row_res = static_cast<int>(coeff.row_id);
+            row_res = mat_bus_id_(row_res);
+            if(row_res == -1) return;
+            int col_res = static_cast<int>(coeff.col_id);
+            col_res = mat_bus_id_(col_res);
+            if(col_res == -1) return;
+            auto val = add ? std::real(coeff.value) : - std::real(coeff.value);
+            dcYbus_noslack_.coeffRef(row_res, col_res) += val;
+        }
 
     private:
         // no copy allowed

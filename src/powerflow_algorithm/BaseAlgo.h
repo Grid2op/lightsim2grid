@@ -132,16 +132,19 @@ class BaseAlgo : public BaseConstants
             _solver_control = solver_control;
         }
         virtual void reset();
-        virtual RealMat get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+        virtual RealMat get_ptdf(){
             throw std::runtime_error("Impossible to get the PTDF matrix with this solver type.");
         }
-        virtual RealMat get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
-                                 const IntVect & from_bus,
+        virtual RealMat get_lodf(const IntVect & from_bus,
                                  const IntVect & to_bus){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the LODF matrix with this solver type.");
         }
         virtual Eigen::SparseMatrix<real_type> get_bsdf(){  // TODO interface is likely to change
             throw std::runtime_error("Impossible to get the BSDF matrix with this solver type.");
+        }
+
+        virtual void update_internal_Ybus(const Coeff & new_coeffs, bool add){
+            throw std::runtime_error("Function update_internal_Ybus not implemented in general.");
         }
         
     protected:

@@ -100,3 +100,7 @@ class TestTimeSeriesCPP(unittest.TestCase):
             obs, *_ = env.step(env.action_space())
             if np.max(np.abs(ampss[1 + it_num] - obs.a_or * 1e-3))  > 1e-6:
                 raise RuntimeError(f"error at it {it_num}")
+
+
+if __name__ == "__main__":
+    unittest.main()

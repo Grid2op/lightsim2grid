@@ -87,6 +87,7 @@ class __ContingencyAnalysis(object):
                                "\tfrom lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP\n"
                                "and refer to the appropriate documentation.")
         from grid2op.Environment import Environment
+        self.__is_closed = False
         if isinstance(grid2op_env, Environment):    
             if not isinstance(grid2op_env.backend, LightSimBackend):
                 raise RuntimeError("This class only works with LightSimBackend")
@@ -105,6 +106,7 @@ class __ContingencyAnalysis(object):
         self.__computed = False
         self._vs = None
         self._ampss = None
+        self._mws = None
 
         self.available_solvers = self.computer.available_solvers()
         if SolverType.KLU in self.available_solvers:
@@ -122,6 +124,7 @@ class __ContingencyAnalysis(object):
 
     # TODO implement that !
     def __update_grid(self, backend_act):
+        raise NotImplementedError("TODO !")
         self.clear(with_contlist=False)
         self._ls_backend.apply_action(backend_act)
         # run the powerflow
@@ -134,9 +137,14 @@ class __ContingencyAnalysis(object):
         """
         Clear the list of contingencies to simulate
         """
+        
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+
         self.__computed = False
         self._vs = None
         self._ampss = None
+        self._mws = None
         if with_contlist:
             self.computer.clear()
             self._contingency_order = {}
@@ -151,7 +159,7 @@ class __ContingencyAnalysis(object):
 
         for stuff in single_cont:
             if isinstance(stuff, type(self).STR_TYPES):
-                stuff = np.where(type(self._ls_backend).name_line == stuff)
+                stuff = (type(self._ls_backend).name_line == stuff).nonzero()
                 stuff = stuff[0]
                 if stuff.size == 0:
                     # name is not found
@@ -200,6 +208,9 @@ class __ContingencyAnalysis(object):
         add contingencies again.)
 
         """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        
         li_disc = self._single_cont_to_li_int(args)
         li_disc_tup = tuple(li_disc)
         if li_disc_tup not in self._contingency_order:
@@ -246,7 +257,10 @@ class __ContingencyAnalysis(object):
             # add a multiple contingencies the first one disconnect powerline 2 and 
             # and the second one disconnect powerline 3
             security_anlysis.add_multiple_contingencies(env.name_line[2], 3)
-        """        
+        """     
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+           
         for single_cont in args:
             if isinstance(single_cont, Iterable) and not isinstance(single_cont, type(self).STR_TYPES):
                 # this is a contingency consisting in cutting multiple powerlines
@@ -266,6 +280,9 @@ class __ContingencyAnalysis(object):
             for single_cont_id in range(env.n_line):
                 self.add_single_contingency(single_cont_id)
         """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        
         for single_cont_id in range(type(self._ls_backend).n_line):
             self.add_single_contingency(single_cont_id)
 
@@ -297,6 +314,8 @@ class __ContingencyAnalysis(object):
             # res_a[row_id] will be the flows, on all powerline corresponding to the `row_id` contingency.
             # you can retrieve it with `security_analysis.contingency_order[row_id]`
         """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
         
         all_defaults = self.computer.my_defaults()
         if len(args) == 0:
@@ -335,11 +354,14 @@ class __ContingencyAnalysis(object):
             been entered. Please use `get_flows()` method for easier reading back of the results
 
         """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        
         v_init = 1. * self._ls_backend.V
         self.computer.compute(v_init,
                               self._ls_backend.max_it,
                               self._ls_backend.tol)
-        self._vs = self.computer.get_voltages()
+        self._vs = 1. * self.computer.get_voltages()
         self.__computed = True
         return self._vs
 
@@ -353,9 +375,13 @@ class __ContingencyAnalysis(object):
             been entered. Please use `get_flows()` method for easier reading back of the results !
 
         """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
-        self._ampss = 1e3 * self.computer.compute_flows()
+        self.computer.compute_flows()
+        self._ampss = 1e3 * self.computer.get_flows()
         return self._ampss
 
     def compute_P(self):
@@ -368,16 +394,29 @@ class __ContingencyAnalysis(object):
             been entered. Please use `get_flows()` method for easier reading back of the results !
 
         """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
-        self._mws = 1.0 * self.computer.compute_power_flows()
+        self.computer.compute_power_flows()
+        self._mws = 1.0 * self.computer.get_power_flows()
         return self._mws
 
     def close(self):
         """permanently close the object"""
-        self._ls_backend.close()
+        if self.__is_closed:
+            return
         self.clear()
         self.computer.close()
+        self._ls_backend.close()
+        self.__is_closed = True
+        
+    def change_solver(self, solver_type):
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        self.computer.change_solver(solver_type)
+        self.clear()
         
         
 if GRID2OP_INSTALLED:

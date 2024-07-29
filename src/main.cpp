@@ -836,24 +836,42 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_bus_dcline_ex", &GridModel::get_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str())
 
         // get back the results
+        // todo _solver
         .def("get_V", &GridModel::get_V, DocGridModel::get_V.c_str())
         .def("get_Va", &GridModel::get_Va, DocGridModel::get_Va.c_str())
         .def("get_Vm", &GridModel::get_Vm, DocGridModel::get_Vm.c_str())
-        .def("get_J", &GridModel::get_J_python, DocGridModel::get_J_python.c_str())
+        .def("get_V_solver", &GridModel::get_V_solver, DocGridModel::get_V_solver.c_str())
+        .def("get_Va_solver", &GridModel::get_Va_solver, DocGridModel::get_Va_solver.c_str())
+        .def("get_Vm_solver", &GridModel::get_Vm_solver, DocGridModel::get_Vm_solver.c_str())
+        .def("get_J_solver", &GridModel::get_J_python_solver, DocGridModel::get_J_python_solver.c_str())
+
         .def("id_me_to_ac_solver", &GridModel::id_me_to_ac_solver, DocGridModel::id_me_to_ac_solver.c_str())
         .def("id_ac_solver_to_me", &GridModel::id_ac_solver_to_me, DocGridModel::id_ac_solver_to_me.c_str())
         .def("id_me_to_dc_solver", &GridModel::id_me_to_dc_solver, DocGridModel::id_me_to_dc_solver.c_str())
         .def("id_dc_solver_to_me", &GridModel::id_dc_solver_to_me, DocGridModel::id_dc_solver_to_me.c_str())
         .def("total_bus", &GridModel::total_bus, DocGridModel::total_bus.c_str())
         .def("nb_bus", &GridModel::nb_bus, DocGridModel::nb_bus.c_str())
+
+
         .def("get_pv", &GridModel::get_pv, DocGridModel::get_pv.c_str())
         .def("get_pq", &GridModel::get_pq, DocGridModel::get_pq.c_str())
         .def("get_slack_ids", &GridModel::get_slack_ids, DocGridModel::get_slack_ids.c_str())
+        .def("get_slack_ids_dc", &GridModel::get_slack_ids_dc, DocGridModel::get_slack_ids_dc.c_str())
         .def("get_slack_weights", &GridModel::get_slack_weights, DocGridModel::get_slack_weights.c_str())
+        .def("get_pv_solver", &GridModel::get_pv_solver, DocGridModel::get_pv_solver.c_str())
+        .def("get_pq_solver", &GridModel::get_pq_solver, DocGridModel::get_pq_solver.c_str())
+        .def("get_slack_ids_solver", &GridModel::get_slack_ids_solver, DocGridModel::get_slack_ids_solver.c_str())
+        .def("get_slack_ids_dc_solver", &GridModel::get_slack_ids_dc_solver, DocGridModel::get_slack_ids_dc_solver.c_str())
+        .def("get_slack_weights_solver", &GridModel::get_slack_weights_solver, DocGridModel::get_slack_weights_solver.c_str())
+
         .def("get_Ybus", &GridModel::get_Ybus, DocGridModel::get_Ybus.c_str())
         .def("get_dcYbus", &GridModel::get_dcYbus, DocGridModel::get_dcYbus.c_str())
         .def("get_Sbus", &GridModel::get_Sbus, DocGridModel::get_Sbus.c_str())
-        .def("get_dcSbus", &GridModel::get_dcSbus, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_dcSbus", &GridModel::get_dcSbus, DocGridModel::get_dcSbus.c_str())
+        .def("get_Ybus_solver", &GridModel::get_Ybus_solver, DocGridModel::get_Ybus_solver.c_str())
+        .def("get_dcYbus_solver", &GridModel::get_dcYbus_solver, DocGridModel::get_dcYbus_solver.c_str())
+        .def("get_Sbus_solver", &GridModel::get_Sbus_solver, DocGridModel::get_Sbus_solver.c_str())
+        .def("get_dcSbus_solver", &GridModel::get_dcSbus_solver, DocGridModel::get_dcSbus_solver.c_str())
 
         .def("check_solution", &GridModel::check_solution, DocGridModel::check_solution.c_str())
 
@@ -898,7 +916,6 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_dclineex_res_full", &GridModel::get_dclineex_res_full, DocGridModel::_internal_do_not_use.c_str())
         
         // do something with the grid
-        // .def("init_Ybus", &DataModel::init_Ybus) // temporary
         .def("deactivate_result_computation", &GridModel::deactivate_result_computation, DocGridModel::deactivate_result_computation.c_str())
         .def("reactivate_result_computation", &GridModel::reactivate_result_computation, DocGridModel::reactivate_result_computation.c_str())
         .def("dc_pf", &GridModel::dc_pf, DocGridModel::dc_pf.c_str())
@@ -910,13 +927,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("tell_ybus_change_sparsity_pattern", &GridModel::tell_ybus_change_sparsity_pattern, DocGridModel::_internal_do_not_use.c_str())
         .def("get_solver_control", &GridModel::get_solver_control, "TODO")
         .def("compute_newton", &GridModel::ac_pf, DocGridModel::ac_pf.c_str())
-        .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
-        .def("get_lodf", &GridModel::get_lodf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
-        .def("get_Bf", &GridModel::get_Bf, DocGridModel::_internal_do_not_use.c_str()) // TODO PTDF
+        .def("get_ptdf", &GridModel::get_ptdf, DocGridModel::get_ptdf.c_str()) 
+        .def("get_ptdf_solver", &GridModel::get_ptdf_solver, DocGridModel::get_ptdf_solver.c_str())
+        .def("get_lodf", &GridModel::get_lodf, DocGridModel::get_lodf.c_str())
+        .def("get_Bf", &GridModel::get_Bf, DocGridModel::get_Bf.c_str())
+        .def("get_Bf_solver", &GridModel::get_Bf_solver, DocGridModel::get_Bf_solver.c_str())
 
          // apply action faster (optimized for grid2op representation)
          // it is not recommended to use it outside of grid2Op.
-        // .def("update_bus_status", &GridModel::update_bus_status, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_p", &GridModel::update_gens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_sgens_p", &GridModel::update_sgens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_v", &GridModel::update_gens_v, DocGridModel::_internal_do_not_use.c_str())
@@ -970,14 +988,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // perform the computations
         .def("compute_Vs", &TimeSeries::compute_Vs, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_Vs.c_str())
-        .def("compute_flows", &TimeSeries::compute_flows, py::call_guard<py::gil_scoped_release>(), DocComputers::compute_flows.c_str())
+        .def("compute_flows", &TimeSeries::compute_flows, DocComputers::compute_flows.c_str())
         .def("compute_power_flows", &TimeSeries::compute_power_flows, DocComputers::compute_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
         
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &TimeSeries::get_flows, DocComputers::get_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_power_flows", &TimeSeries::get_power_flows, DocComputers::get_power_flows.c_str())  // need to be done after "compute_Vs"  and "compute_flows"
-        .def("get_voltages", &TimeSeries::get_voltages, DocComputers::get_voltages.c_str())  // need to be done after "compute_Vs" 
-        .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str())  // need to be done after "compute_Vs" 
+        // see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#returning-values-to-python
+        .def("get_flows", &TimeSeries::get_flows, DocComputers::get_flows.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_power_flows", &TimeSeries::get_power_flows, DocComputers::get_power_flows.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs"  and "compute_flows"
+        .def("get_voltages", &TimeSeries::get_voltages, DocComputers::get_voltages.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs" 
+        .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str(), py::return_value_policy::reference_internal)  // need to be done after "compute_Vs" 
         ;
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
@@ -1007,13 +1026,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // perform the computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())
-        .def("compute_flows", &ContingencyAnalysis::compute_flows, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute_flows.c_str())
+        .def("compute_flows", &ContingencyAnalysis::compute_flows, DocSecurityAnalysis::compute_flows.c_str())
         .def("compute_power_flows", &ContingencyAnalysis::compute_power_flows, DocSecurityAnalysis::compute_power_flows.c_str())
 
         // results (for now only flow (at each -line origin- or voltages -at each buses)
-        .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str())
-        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str())
-        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str())
+        // see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#returning-values-to-python
+        .def("get_flows", &ContingencyAnalysis::get_flows, DocSecurityAnalysis::get_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocSecurityAnalysis::get_voltages.c_str(), py::return_value_policy::reference_internal)
+        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocSecurityAnalysis::get_power_flows.c_str(), py::return_value_policy::reference_internal)
 
         // timers
         .def("total_time", &ContingencyAnalysis::total_time, DocComputers::total_time.c_str())

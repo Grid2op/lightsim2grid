@@ -66,7 +66,7 @@ from lightsim2grid.newtonpf import newtonpf
 V, converged, iterations, J = newtonpf(Ybus, V, Sbus, ref, weights, pv, pq, ppci, options)
 ```
 
-This function uses the KLU algorithm and a c++ implementation of a Newton solver for speed.
+This function uses the KLU algorithm (when available) and a c++ implementation of a Newton solver for speed.
 
 ## Installation (from pypi official repository, recommended)
 

@@ -11,7 +11,7 @@
 #include <iostream>
 #include <sstream>
 
-const int GenericContainer::_deactivated_bus_id = -1;
+const int GenericContainer::_deactivated_bus_id = BaseConstants::_deactivated_bus_id;
 
 // TODO all functions bellow are generic ! Make a base class for that
 void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const {

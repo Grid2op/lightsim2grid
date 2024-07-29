@@ -125,7 +125,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     reset_results();
 }
 
-RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
+RealVect GeneratorContainer::get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     RealVect res = RealVect::Zero(nb_bus_solver);
@@ -137,7 +137,7 @@ RealVect GeneratorContainer::get_slack_weights(Eigen::Index nb_bus_solver, const
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
-            exc_ << "GeneratorContainer::get_slack_weights: Generator with id ";
+            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
             exc_ << gen_id;
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
@@ -187,9 +187,16 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
-        if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
+        // gen is purposedly not pv
+        if (!voltage_regulator_on_[gen_id]) continue;  
+
+        // in this case turned off generators are not pv
+        // except the slack that can have a target of 0MW but is still "on"
+        // no matter what
+        bool gen_pseudo_off = p_mw_(gen_id) == 0.;
+        // if (gen_slack_weight_[gen_id] != 0.) gen_pseudo_off = false;  // useless: slack is not PV anyway
+        if ((!turnedoff_gen_pv_) && gen_pseudo_off) continue;  
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
@@ -324,7 +331,10 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_t
         if(!status_[gen_id]) continue;
         
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+        bool pseudo_off = p_mw_(gen_id) == 0.;
+        // though "pseudo off" a slack is still "PV"
+        if(gen_slack_weight_[gen_id] != 0.) pseudo_off = false;  
+        if ((!turnedoff_gen_pv_) && pseudo_off) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
@@ -373,7 +383,7 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
-        throw std::runtime_error("Generator::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called Generator::get_slack_weights first)");
+        throw std::runtime_error("Generator::set_p_slack: Impossible to set the active value of generators for the slack bus: no known slack (you should haved called Generator::get_slack_weights_solver first)");
     }
     const auto nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){

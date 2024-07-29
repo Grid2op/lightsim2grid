@@ -36,7 +36,6 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 {
     // TODO find a way to factorize that with TrafoContainer::compute_results
     // TODO and LineContainer::compute_results
-
     if (_voltages.size() == 0)
     {
         std::ostringstream exc_;

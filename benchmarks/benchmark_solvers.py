@@ -9,7 +9,7 @@
 import numpy as np
 import os
 import warnings
-
+import pandas as pd
 from grid2op import make
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import ChangeNothing
@@ -160,7 +160,10 @@ def main(max_ts,
 
     # NOW PRINT THE RESULTS
     print("Configuration:")
-    print_configuration()
+    config_str = print_configuration()
+    if save_results != DONT_SAVE:
+        with open(save_results+"config_info.txt", "w", encoding="utf-8") as f:
+            f.write(config_str)
     # order on which the solvers will be 
     this_order =  [el for el in res_times.keys() if el not in order_solver_print] + order_solver_print
 
@@ -184,11 +187,12 @@ def main(max_ts,
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
         print(res_use_with_grid2op_1)
-        if save_results != DONT_SAVE:
-            with open(save_results, "w", encoding="utf-8") as f:
-                f.write(res_use_with_grid2op_1)
     else:
         print(tab)
+        
+    if save_results != DONT_SAVE:
+        dt = pd.DataFrame(tab, columns=hds)
+        dt.to_csv(save_results+"speed.csv", index=False, header=True, sep=";")
     print()
 
     if TABULATE_AVAIL:
@@ -216,6 +220,10 @@ def main(max_ts,
         print(res_use_with_grid2op_2)
     else:
         print(tab)
+        
+    if save_results != DONT_SAVE:
+        dt = pd.DataFrame(tab, columns=hds)
+        dt.to_csv(save_results+"diff.csv", index=False, header=True, sep=";")
     print()
 
 

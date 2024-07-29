@@ -8,7 +8,7 @@
 
 
 import lightsim2grid
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 import pandapower as pp
 import pandapower.networks as pn
 import unittest
@@ -27,7 +27,7 @@ class TestDCLine(unittest.TestCase):
         
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            model = init(self.net)
+            model = init_from_pandapower(self.net)
         # different convention in pandapower and lightsim for now
         assert model.get_dclines()[0].target_p_or_mw == -100.
 
@@ -35,7 +35,7 @@ class TestDCLine(unittest.TestCase):
         # init ls
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            model = init(self.net)
+            model = init_from_pandapower(self.net)
         assert model.get_dclines()[0].target_p_or_mw == -self.net.dcline["p_mw"].values
         
         # run the dc powerflow for the reference
@@ -47,7 +47,7 @@ class TestDCLine(unittest.TestCase):
         Vinit = np.ones(self.net.bus.shape[0], dtype=np.complex128) * model.get_init_vm_pu()
         V_ls = model.dc_pf(Vinit, 1, 1.)
         theta_ls = np.rad2deg(np.angle(V_ls))
-        p_ls = 1.0 * model.get_Sbus() * model.get_sn_mva()
+        p_ls = 1.0 * model.get_Sbus_solver() * model.get_sn_mva()
         
         # different convention in pandapower and lightsim for now
         assert np.allclose(model.get_dclines()[0].res_p_or_mw, -self.net.res_dcline["p_from_mw"].values)
@@ -57,14 +57,14 @@ class TestDCLine(unittest.TestCase):
         # assert np.allclose(p_ref, -1.0 * np.real(p_ls))  # pp does not use that
         
         BDC_ref = self.net._ppc["internal"]["Bbus"].todense()
-        BDC_ls = model.get_dcYbus().todense()
+        BDC_ls = model.get_dcYbus_solver().todense()
         assert np.abs(BDC_ls - BDC_ref).max() <= 1e-6
 
     def _aux_test_ac(self, max_iteration=10, tolerance_mva=1e-08):
         # init ls
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            model = init(self.net)
+            model = init_from_pandapower(self.net)
         assert model.get_dclines()[0].target_p_or_mw == -self.net.dcline["p_mw"].values
         
         # run the dc powerflow for the reference
@@ -79,7 +79,7 @@ class TestDCLine(unittest.TestCase):
         Vinit_pp *= np.exp(1J * self.net._ppc["internal"]["Va_it"][:,0])
         V_ls = model.ac_pf(Vinit_pp, max_iteration, tolerance_mva)
         theta_ls = np.rad2deg(np.angle(V_ls))
-        p_ls = 1.0 * model.get_Sbus() * model.get_sn_mva()
+        p_ls = 1.0 * model.get_Sbus_solver() * model.get_sn_mva()
         
         # different convention in pandapower and lightsim for now
         assert np.allclose(model.get_dclines()[0].res_p_or_mw, -self.net.res_dcline["p_from_mw"].values)
@@ -89,7 +89,7 @@ class TestDCLine(unittest.TestCase):
         # assert np.allclose(p_ref, -1.0 * np.real(p_ls))  # pp does not use that
         
         Y_ref = self.net._ppc["internal"]["Ybus"].todense()
-        Y_ls = model.get_Ybus().todense()
+        Y_ls = model.get_Ybus_solver().todense()
         assert np.abs(Y_ls - Y_ref).max() <= 1e-6
         
     def test_dc_powerflow_without_loss(self):

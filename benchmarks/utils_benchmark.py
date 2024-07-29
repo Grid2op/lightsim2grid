@@ -128,45 +128,92 @@ def str2bool(v):
 
 
 def print_configuration():
+    res = []
     print()
-    print(f"- date: {datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}")
+    tmp = f"- date: {datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}"
+    res.append(tmp)
+    print(tmp)
     try:
         import platform
-        print(f"- system: {platform.system()} {platform.release()}")
+        tmp = f"- system: {platform.system()} {platform.release()}"
+        res.append(tmp)
+        print(tmp)
     except ImportError:
-        print(f"- system: please install the `platform` to have this information")
+        tmp = f"- system: please install the `platform` to have this information"
+        res.append(tmp)
+        print(tmp)
 
     try:
         import distro
-        print(f"- OS: {distro.linux_distribution(full_distribution_name=False)[0]} "
-              f"{distro.linux_distribution(full_distribution_name=False)[1]}")
+        tmp = (f"- OS: {distro.linux_distribution(full_distribution_name=False)[0]} "
+               f"{distro.linux_distribution(full_distribution_name=False)[1]}")
+        res.append(tmp)
+        print(tmp)
     except ImportError:
-        print(f"- OS: please install the `distro` to have this information")
+        tmp = (f"- OS: please install the `distro` to have this information")
+        res.append(tmp)
+        print(tmp)
 
     try:
         import cpuinfo
         info_ = cpuinfo.get_cpu_info()
-        print(f"- processor: {info_['brand_raw']}")
-        print(f"- python version: {info_['python_version']}")
+        tmp = (f"- processor: {info_['brand_raw']}")
+        res.append(tmp)
+        print(tmp)
+        tmp = (f"- python version: {info_['python_version']}")
+        res.append(tmp)
+        print(tmp)
+
     except ImportError:
-        print(f"- processor: please install the `py-cpuinfo` to have this information")
-        print(f"- python version: please install the `py-cpuinfo` to have this information")
+        tmp = (f"- processor: please install the `py-cpuinfo` to have this information")
+        res.append(tmp)
+        print(tmp)
+        tmp = (f"- python version: please install the `py-cpuinfo` to have this information")
+        res.append(tmp)
+        print(tmp)
 
     import pandas as pd
     import pandapower as pp
     import lightsim2grid
     import grid2op
-    print(f"- numpy version: {np.__version__}")
-    print(f"- pandas version: {pd.__version__}")
-    print(f"- pandapower version: {pp.__version__}")
-    print(f"- grid2op version: {grid2op.__version__}")
-    print(f"- lightsim2grid version: {lightsim2grid.__version__}")
-    if hasattr(lightsim2grid, "compilation_options"):
-        print(f"- lightsim2grid extra information: ")
+    tmp = (f"- numpy version: {np.__version__}")
+    res.append(tmp)
+    print(tmp)
+    tmp = (f"- pandas version: {pd.__version__}")
+    res.append(tmp)
+    print(tmp)
+    tmp = (f"- pandapower version: {pp.__version__}")
+    res.append(tmp)
+    print(tmp)
+    tmp = (f"- grid2op version: {grid2op.__version__}")
+    res.append(tmp)
+    print(tmp)
+    tmp = (f"- lightsim2grid version: {lightsim2grid.__version__}")
+    res.append(tmp)
+    print(tmp)
+    try:
+        from lightsim2grid import compilation_options
+        tmp = (f"- lightsim2grid extra information: ")
+        res.append(tmp)
+        print(tmp)
         print()
-        print(f"\t- klu_solver_available: {lightsim2grid.compilation_options.klu_solver_available} ")
-        print(f"\t- nicslu_solver_available: {lightsim2grid.compilation_options.nicslu_solver_available} ")
-        print(f"\t- cktso_solver_available: {lightsim2grid.compilation_options.cktso_solver_available} ")
-        print(f"\t- compiled_march_native: {lightsim2grid.compilation_options.compiled_march_native} ")
-        print(f"\t- compiled_o3_optim: {lightsim2grid.compilation_options.compiled_o3_optim} ")
+        tmp = (f"\t- klu_solver_available: {lightsim2grid.compilation_options.klu_solver_available} ")
+        res.append(tmp)
+        print(tmp)
+        tmp = (f"\t- nicslu_solver_available: {lightsim2grid.compilation_options.nicslu_solver_available} ")
+        res.append(tmp)
+        print(tmp)
+        tmp = (f"\t- cktso_solver_available: {lightsim2grid.compilation_options.cktso_solver_available} ")
+        res.append(tmp)
+        print(tmp)
+        tmp = (f"\t- compiled_march_native: {lightsim2grid.compilation_options.compiled_march_native} ")
+        res.append(tmp)
+        print(tmp)
+        tmp = (f"\t- compiled_o3_optim: {lightsim2grid.compilation_options.compiled_o3_optim} ")
+        res.append(tmp)
+        print(tmp)
+    except ImportError:
+        # before it was introduced
+        pass
     print()
+    return '\n'.join(res)

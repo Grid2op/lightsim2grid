@@ -11,7 +11,7 @@ import warnings
 import os
 import numpy as np
 from lightsim2grid import LightSimBackend
-from lightsim2grid.gridmodel.from_pypowsybl import init as init_pypow
+from lightsim2grid.gridmodel import init_from_pypowsybl
 import grid2op
 from grid2op.Runner import Runner
 import pypowsybl.network as pypow_net
@@ -88,7 +88,7 @@ class BackendTester2(unittest.TestCase):
     
     def test_init(self):
         grid_tmp = pypow_net.load(os.path.join(self.path, self.file_name))
-        grid = init_pypow(grid_tmp, gen_slack_id=5, sort_index=True) 
+        grid = init_from_pypowsybl(grid_tmp, gen_slack_id=5, sort_index=True) 
         grid.ac_pf(np.ones(14, dtype=np.complex128), 10, 1e-6)
         
     def test_runpf(self):

@@ -12,11 +12,16 @@ import numpy as np
 import unittest
 import warnings
 
-from lightsim2grid.gridmodel.from_pypowsybl import init
+from lightsim2grid.gridmodel import init_from_pypowsybl
 
-import pandapower.networks as pn
-import pandapower as pdp
-from lightsim2grid.gridmodel import init as init_from_pp
+try:
+    import pandapower.networks as pn
+    import pandapower as pdp
+    from lightsim2grid.gridmodel import init_from_pandapower
+    PDP_AVAIL = True
+except ImportError:
+    # pandapower not available, eg if testing with numpy 2
+    PDP_AVAIL = False
 
 
 class AuxInitFromPyPowSyBl:    
@@ -35,18 +40,22 @@ class AuxInitFromPyPowSyBl:
     
     def compare_pp(self):
         """will this test suite compare pypowsybl and pandapower (cannot be used for ieee57 or ieee118)"""
-        return True
+        return PDP_AVAIL
     
     def setUp(self) -> None:
         self.network_ref = self.get_pypo_grid()
         
         # init equivalent pandapower grid (if any)
-        tmp = self.get_equiv_pdp_grid()
+        if PDP_AVAIL:
+            tmp = self.get_equiv_pdp_grid()
+        else:
+            tmp = None
+            
         if tmp is not None:
             self.pp_samecase = tmp
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                self.ref_samecase = init_from_pp(self.pp_samecase)
+                self.ref_samecase = init_from_pandapower(self.pp_samecase)
             self.can_pp = True
         else:
             # TODO will crash later if no equiv grid
@@ -55,11 +64,11 @@ class AuxInitFromPyPowSyBl:
             self.ref_samecase = None
             
         # init lightsim2grid model
-        self.gridmodel = init(self.network_ref, slack_bus_id=self.get_slackbus_id())
+        self.gridmodel = init_from_pypowsybl(self.network_ref, slack_bus_id=self.get_slackbus_id())
         
         # use some data
         self.nb_bus_total = self.network_ref.get_buses().shape[0]
-        self.V_init_dc = np.ones(self.nb_bus_total, dtype=np.complex_)
+        self.V_init_dc = np.ones(self.nb_bus_total, dtype=np.complex128)
         self.V_init_ac = 1.04 * self.V_init_dc
         self.tol = 1e-7  # for the solver
         self.tol_eq = self.get_tol_eq()
@@ -82,7 +91,9 @@ class AuxInitFromPyPowSyBl:
             
         # check the SBus and Ybus in DC (i need to run powerflow for that)      
         v_ls = self.gridmodel.dc_pf(1.0 * self.V_init_dc, 2, self.tol)
-        v_ls_ref = self.ref_samecase.dc_pf(1.0 * self.V_init_dc, 2, self.tol)
+        v_ls_ref = None
+        if self.ref_samecase is not None:
+            v_ls_ref = self.ref_samecase.dc_pf(1.0 * self.V_init_dc, 2, self.tol)
         slack_id = self.get_slackbus_id()
         reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
         
@@ -117,34 +128,35 @@ class AuxInitFromPyPowSyBl:
         # # self.pp_samecase["_ppc"]["internal"]["Bbus"]
         # self.pp_samecase["_ppc"]["internal"]["Ybus"][64,67]
         # self.pp_samecase["_ppc"]["internal"]["bus"]
-        max_ = np.abs(v_ls[reorder] - v_ls_ref).max()
-        # assert max_ <= self.tol_eq, f"error for vresults for dc: {max_:.2e}"
-        tmp_ = self.gridmodel.get_dcYbus()[reorder.T, reorder].todense() - self.ref_samecase.get_dcYbus().todense()
+        if v_ls_ref is not None:
+            max_ = np.abs(v_ls[reorder] - v_ls_ref).max()
+            assert max_ <= self.tol_eq, f"error for vresults for dc: {max_:.2e}"
+        tmp_ = self.gridmodel.get_dcYbus_solver()[reorder.T, reorder].todense() - self.ref_samecase.get_dcYbus_solver().todense()
         max_ = np.abs(tmp_).max()
-        mat_ls = self.gridmodel.get_dcYbus()[reorder.T, reorder].todense()
-        mat_pp = self.ref_samecase.get_dcYbus().todense()
+        mat_ls = self.gridmodel.get_dcYbus_solver()[reorder.T, reorder].todense()
+        mat_pp = self.ref_samecase.get_dcYbus_solver().todense()
         assert max_ <= self.tol_eq, f"error for dcYbus: {max_:.2e}"
         # check Sbus without slack
-        Sbus_ordered = self.gridmodel.get_dcSbus()[reorder].reshape(-1)
+        Sbus_ordered = self.gridmodel.get_dcSbus_solver()[reorder].reshape(-1)
         if slack_id > 0:
-            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_dcSbus()[:slack_id]).max()
+            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_dcSbus_solver()[:slack_id]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
-        if slack_id != self.gridmodel.get_dcSbus().shape[0] - 1:
-            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_dcSbus()[(slack_id+1):]).max()
+        if slack_id != self.gridmodel.get_dcSbus_solver().shape[0] - 1:
+            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_dcSbus_solver()[(slack_id+1):]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
 
         # same in AC
         v_ls = self.gridmodel.ac_pf(self.V_init_ac, 2, self.tol)
         v_ls_ref = self.ref_samecase.ac_pf(self.V_init_ac, 2, self.tol)
-        max_ = np.abs(self.gridmodel.get_Ybus()[reorder.T, reorder] - self.ref_samecase.get_Ybus()).max()
+        max_ = np.abs(self.gridmodel.get_Ybus_solver()[reorder.T, reorder] - self.ref_samecase.get_Ybus_solver()).max()
         assert max_ <= self.tol_eq, f"error for Ybus: {max_:.2e}"
         # check Sbus without slack
-        Sbus_ordered = self.gridmodel.get_Sbus()[reorder].reshape(-1)
+        Sbus_ordered = self.gridmodel.get_Sbus_solver()[reorder].reshape(-1)
         if slack_id > 0:
-            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_Sbus()[:slack_id]).max() 
+            max_ = np.abs(Sbus_ordered[:slack_id] - self.ref_samecase.get_Sbus_solver()[:slack_id]).max() 
             assert max_ <= self.tol_eq, f"error for dc Sbus: {max_:.2e}"
-        if slack_id != self.gridmodel.get_Sbus().shape[0] - 1:
-            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_Sbus()[(slack_id+1):]).max()
+        if slack_id != self.gridmodel.get_Sbus_solver().shape[0] - 1:
+            max_ = np.abs(Sbus_ordered[(slack_id+1):] - self.ref_samecase.get_Sbus_solver()[(slack_id+1):]).max()
             assert max_ <= self.tol_eq, f"error for dc Sbus : {max_:.2e}"
 
     def test_dc_pf(self):
@@ -253,7 +265,7 @@ class TestCase57FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
         return pn.case57()
     
     def compare_pp(self):
-        return False
+        return super().compare_pp() and False
     
     def get_tol_eq(self):
         return 1e-4  # otherwise vangle from pypowsybl and pandapower does not match
@@ -276,7 +288,7 @@ class TestCase118FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
         return 3e-5  # otherwise vangle from pypowsybl and pandapower does not match
     
     def compare_pp(self):
-        return False
+        return super().compare_pp() and False
                 
         
 class TestCase300FromPypo(AuxInitFromPyPowSyBl):
@@ -297,7 +309,7 @@ class TestCase300FromPypo(AuxInitFromPyPowSyBl):
         return 3e-5  # otherwise vangle from pypowsybl and pandapower does not match
     
     def compare_pp(self):
-        return False
+        return super().compare_pp() and False
     
     def get_slackbus_id(self):
         # does not work with PP, probably bus not ordered the same

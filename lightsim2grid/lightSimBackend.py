@@ -9,6 +9,7 @@
 import os
 import copy
 from typing import Tuple, Optional, Any, Dict, Union
+from packaging import version
 try:
     from typing import Self
 except ImportError:
@@ -41,8 +42,11 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.gridmodel import init
 from lightsim2grid.solver import SolverType
+
+
+grid2op_min_cls_attr_ver = version.parse("1.6.4")
+grid2op_min_shunt_cls_properly_handled = version.parse("1.9.7")
 
 
 class LightSimBackend(Backend):
@@ -52,6 +56,7 @@ class LightSimBackend(Backend):
     """
     
     shunts_data_available = True
+    glop_version = Backend.glop_version if hasattr(Backend, "glop_version") else grid2op.__version__
     
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
@@ -123,7 +128,7 @@ class LightSimBackend(Backend):
         elif loader_method == "pypowsybl":
             self.supported_grid_format = ("xiidm", )  # new in 0.8.0
         else:
-            raise BackendError(f"Uknown loader_metho : '{loader_method}'")
+            raise BackendError(f"Uknown loader_method : '{loader_method}'")
         
         # lazy loading because it crashes...
         from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
@@ -132,9 +137,12 @@ class LightSimBackend(Backend):
         if not self.__has_storage:
             warnings.warn("Please upgrade your grid2Op to >= 1.5.0. You are using a backward compatibility "
                           "feature that will be removed in further lightsim2grid version.")
+        if version.parse(grid2op.__version__) < grid2op_min_shunt_cls_properly_handled:
+            warnings.warn(f"You are using a legacy grid2op version. It is not possible to deactivate the shunts in lightsim2grid. "
+                          f"Please upgrade to grid2op >= {grid2op_min_shunt_cls_properly_handled}")
+            self.shunts_data_available = True  # needs to be self and not type(self) here
+            type(self).shunts_data_available = True
             
-        self.shunts_data_available = True  # needs to be self and not type(self) here
-        
         self.nb_bus_total = None
         self.initdc = True  # does not really hurt computation time
         self.__nb_powerline = None
@@ -170,6 +178,7 @@ class LightSimBackend(Backend):
         self.load_pu_to_kv = None
         self.lines_or_pu_to_kv = None
         self.lines_ex_pu_to_kv = None
+        self.storage_pu_to_kv = None
 
         self.p_or = None
         self.q_or = None
@@ -256,6 +265,7 @@ class LightSimBackend(Backend):
         self._trafo_lv_res = None
         self._storage_res = None
         self._reset_res_pointers()
+        self._debug_Vdc = None   # use only for debug !
         
     def _aux_init_super(self, 
                         detailed_infos_for_cascading_failures,
@@ -558,7 +568,8 @@ class LightSimBackend(Backend):
         if "gen_slack_id" in loader_kwargs:
             gen_slack_id = loader_kwargs["gen_slack_id"]
         self._grid, subs_id = init_pypow(grid_tmp, gen_slack_id=gen_slack_id, sort_index=True, return_sub_id=True)
-        (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
+        (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
+         batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
         self.__nb_bus_before = len(self._grid.get_bus_vn_kv())
         self._aux_pypowsybl_init_substations(loader_kwargs)
         self._aux_setup_right_after_grid_init()   
@@ -568,7 +579,10 @@ class LightSimBackend(Backend):
         self.n_gen = len(self._grid.get_generators())
         self.n_load = len(self._grid.get_loads())
         self.n_storage = len(self._grid.get_storages())
-        self.n_shunt = len(self._grid.get_shunts())
+        if type(self).shunts_data_available:
+            self.n_shunt = len(self._grid.get_shunts())
+        else:
+            self.n_shunt = None
         
         df = grid_tmp.get_substations()
         from_sub = True
@@ -723,15 +737,20 @@ class LightSimBackend(Backend):
             setattr(self, attr_nm, copy.deepcopy(getattr( type(pp_net), attr_nm)))
         
     def _load_grid_pandapower(self, path=None, filename=None):
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
+        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
             type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
+        type(self.init_pp_backend).set_env_name(type(self).env_name)
+        if type(self).glop_version is not None:
+            type(self.init_pp_backend).glop_version = type(self).glop_version
         self.init_pp_backend.load_grid(path, filename)
         self._aux_init_pandapower()
     
     def _aux_init_pandapower(self):
         self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
-
-        self._grid = init(self.init_pp_backend._grid)    
+        from lightsim2grid.gridmodel import init_from_pandapower
+        self._grid = init_from_pandapower(self.init_pp_backend._grid)    
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()        
         
@@ -742,47 +761,51 @@ class LightSimBackend(Backend):
             else:
                 self._grid.deactivate_bus(bus_id)
 
-        self.n_line = self.init_pp_backend.n_line
-        self.n_gen = self.init_pp_backend.n_gen
-        self.n_load = self.init_pp_backend.n_load
-        self.n_sub = self.init_pp_backend.n_sub
-        self.sub_info = self.init_pp_backend.sub_info
-        self.dim_topo = self.init_pp_backend.dim_topo
-        self.load_to_subid = self.init_pp_backend.load_to_subid
-        self.gen_to_subid = self.init_pp_backend.gen_to_subid
-        self.line_or_to_subid = self.init_pp_backend.line_or_to_subid
-        self.line_ex_to_subid = self.init_pp_backend.line_ex_to_subid
-        self.load_to_sub_pos = self.init_pp_backend.load_to_sub_pos
-        self.gen_to_sub_pos = self.init_pp_backend.gen_to_sub_pos
-        self.line_or_to_sub_pos = self.init_pp_backend.line_or_to_sub_pos
-        self.line_ex_to_sub_pos = self.init_pp_backend.line_ex_to_sub_pos
+        pp_cls = type(self.init_pp_backend)
+        if pp_cls.n_line <= -1:
+            warnings.warn("You are using a legacy (quite old now) grid2op version. Please upgrade it.")
+            pp_cls = self.init_pp_backend
+        self.n_line = pp_cls.n_line
+        self.n_gen = pp_cls.n_gen
+        self.n_load = pp_cls.n_load
+        self.n_sub = pp_cls.n_sub
+        self.sub_info = pp_cls.sub_info
+        self.dim_topo = pp_cls.dim_topo
+        self.load_to_subid = pp_cls.load_to_subid
+        self.gen_to_subid = pp_cls.gen_to_subid
+        self.line_or_to_subid = pp_cls.line_or_to_subid
+        self.line_ex_to_subid = pp_cls.line_ex_to_subid
+        self.load_to_sub_pos = pp_cls.load_to_sub_pos
+        self.gen_to_sub_pos = pp_cls.gen_to_sub_pos
+        self.line_or_to_sub_pos = pp_cls.line_or_to_sub_pos
+        self.line_ex_to_sub_pos = pp_cls.line_ex_to_sub_pos
+        
+        self.name_gen = pp_cls.name_gen
+        self.name_load = pp_cls.name_load
+        self.name_line = pp_cls.name_line
+        self.name_sub = pp_cls.name_sub
 
         self.prod_pu_to_kv = self.init_pp_backend.prod_pu_to_kv
         self.load_pu_to_kv = self.init_pp_backend.load_pu_to_kv
         self.lines_or_pu_to_kv = self.init_pp_backend.lines_or_pu_to_kv
         self.lines_ex_pu_to_kv = self.init_pp_backend.lines_ex_pu_to_kv
 
-        self.name_gen = self.init_pp_backend.name_gen
-        self.name_load = self.init_pp_backend.name_load
-        self.name_line = self.init_pp_backend.name_line
-        self.name_sub = self.init_pp_backend.name_sub
-            
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
-            self.n_storage = self.init_pp_backend.n_storage
-            self.storage_to_subid = self.init_pp_backend.storage_to_subid
+            self.n_storage = pp_cls.n_storage
+            self.storage_to_subid = pp_cls.storage_to_subid
             self.storage_pu_to_kv = self.init_pp_backend.storage_pu_to_kv
-            self.name_storage = self.init_pp_backend.name_storage
-            self.storage_to_sub_pos = self.init_pp_backend.storage_to_sub_pos
-            self.storage_type = self.init_pp_backend.storage_type
-            self.storage_Emin = self.init_pp_backend.storage_Emin
-            self.storage_Emax = self.init_pp_backend.storage_Emax
-            self.storage_max_p_prod = self.init_pp_backend.storage_max_p_prod
-            self.storage_max_p_absorb = self.init_pp_backend.storage_max_p_absorb
-            self.storage_marginal_cost = self.init_pp_backend.storage_marginal_cost
-            self.storage_loss = self.init_pp_backend.storage_loss
-            self.storage_discharging_efficiency = self.init_pp_backend.storage_discharging_efficiency
-            self.storage_charging_efficiency = self.init_pp_backend.storage_charging_efficiency
+            self.name_storage = pp_cls.name_storage
+            self.storage_to_sub_pos = pp_cls.storage_to_sub_pos
+            self.storage_type = pp_cls.storage_type
+            self.storage_Emin = pp_cls.storage_Emin
+            self.storage_Emax = pp_cls.storage_Emax
+            self.storage_max_p_prod = pp_cls.storage_max_p_prod
+            self.storage_max_p_absorb = pp_cls.storage_max_p_absorb
+            self.storage_marginal_cost = pp_cls.storage_marginal_cost
+            self.storage_loss = pp_cls.storage_loss
+            self.storage_discharging_efficiency = pp_cls.storage_discharging_efficiency
+            self.storage_charging_efficiency = pp_cls.storage_charging_efficiency
         
         self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
 
@@ -818,10 +841,21 @@ class LightSimBackend(Backend):
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
         self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
         self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
-        self.n_shunt = self.init_pp_backend.n_shunt
-        self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
-        self.name_shunt = self.init_pp_backend.name_shunt
         
+        if type(self).shunts_data_available:
+            if pp_cls.n_shunt is not None:
+                # modern grid2op version
+                self.n_shunt = pp_cls.n_shunt
+                self.shunt_to_subid = pp_cls.shunt_to_subid
+                self.name_shunt = pp_cls.name_shunt
+            else:
+                # legacy grid2op version...
+                warnings.warn("You are using a legacy grid2op version, please upgrade grid2op.")
+                self.n_shunt = self.init_pp_backend.n_shunt
+                self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
+                self.name_shunt = self.init_pp_backend.name_shunt
+        else:
+            self.n_shunt = None
         self._compute_pos_big_topo()
         if hasattr(self.init_pp_backend, "_sh_vnkv"):
             # attribute has been added in grid2op ~1.3 or 1.4
@@ -832,7 +866,9 @@ class LightSimBackend(Backend):
     def _aux_finish_setup_after_reading(self):
         # set up the "lightsim grid" accordingly
         cls = type(self)
-        
+        if cls.n_line <= -1:
+            warnings.warn("You are using a legacy (quite old now) grid2op version. Please upgrade it.")
+            cls = self
         self._grid.set_load_pos_topo_vect(cls.load_pos_topo_vect)
         self._grid.set_gen_pos_topo_vect(cls.gen_pos_topo_vect)
         self._grid.set_line_or_pos_topo_vect(cls.line_or_pos_topo_vect[:self.__nb_powerline])
@@ -919,8 +955,9 @@ class LightSimBackend(Backend):
         self.__me_at_init = self._grid.copy()
         self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
-        self.sh_bus[:] = 1
-        
+        if cls.shunts_data_available:
+            self.sh_bus[:] = 1
+            
     def assert_grid_correct_after_powerflow(self) -> None:
         """
         This method is called by the environment. It ensure that the backend remains consistent even after a powerflow
@@ -932,6 +969,8 @@ class LightSimBackend(Backend):
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
         self.init_pp_backend.__class__ = type(self.init_pp_backend).init_grid(type(self))
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend  # lazy import
+        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
         self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:
@@ -940,7 +979,17 @@ class LightSimBackend(Backend):
         except TypeError as exc_:
             _init_action_to_set = self._get_action_to_set_deprecated()
         self._init_action_to_set += _init_action_to_set
-
+        if self.prod_pu_to_kv is not None:
+            assert np.isfinite(self.prod_pu_to_kv).all()
+        if self.load_pu_to_kv is not None:
+            assert np.isfinite(self.load_pu_to_kv).all()
+        if self.lines_or_pu_to_kv is not None:
+            assert np.isfinite(self.lines_or_pu_to_kv).all()
+        if self.lines_ex_pu_to_kv is not None:
+            assert np.isfinite(self.lines_ex_pu_to_kv).all()
+        if self.__has_storage and self.n_storage > 0 and self.storage_pu_to_kv is not None:
+            assert np.isfinite(self.storage_pu_to_kv).all()
+        
     def _get_action_to_set_deprecated(self):
         warnings.warn("DEPRECATION: grid2op <=1.4 is not well supported with lightsim2grid. Lots of bugs have been"
                       "fixed since then. Please upgrade to grid2op >= 1.5",
@@ -1005,7 +1054,9 @@ class LightSimBackend(Backend):
         self._grid.update_topo(chgt, backendAction.current_topo.values)
         self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
         
-        # update the injections
+        # print(f" load p {backendAction.load_p.values[backendAction.load_p.changed]}")  # TODO DEBUG WINDOWS
+        # print(f" prod_p p {backendAction.prod_p.values[backendAction.prod_p.changed]}")  # TODO DEBUG WINDOWS
+       # update the injections
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
                                      backendAction.prod_p.values)
@@ -1020,6 +1071,7 @@ class LightSimBackend(Backend):
             raise BackendError(f"{exc_}") from exc_
         
         if self.__has_storage:
+            # print(f"\t (in backend) storage_power {backendAction.storage_power.values[backendAction.storage_power.changed]}")  # TODO DEBUG WINDOWS
             try:
                 self._grid.update_storages_p(backendAction.storage_power.changed,
                                              backendAction.storage_power.values)
@@ -1098,12 +1150,17 @@ class LightSimBackend(Backend):
                 if self.initdc:
                     self._grid.deactivate_result_computation()
                     # if I init with dc values, it should depends on previous state
-                    self.V[:] = self._grid.get_init_vm_pu()  # see issue 30
-                    Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
+                    self.V[:] = 1. # self._grid.get_init_vm_pu()  # see issue 30
+                    # apparently pandapower run a  "real" dc powerflow with vm_pu = 1
+                    # when it initialize the AC powerflow, 
+                    # print(f"\tLightSimBackend: self.V.shape = {self.V.shape}")  # TODO DEBUG WINDOWS
+                    self._debug_Vdc = self._grid.dc_pf(copy.deepcopy(self.V), self.max_it, self.tol)
                     self._grid.reactivate_result_computation()
-                    if Vdc.shape[0] == 0:
-                        raise BackendError(f"Divergence of DC powerflow (non connected grid) at the initialization of AC powerflow. Detailed error: {self._grid.get_dc_solver().get_error()}")
-                    V_init = Vdc
+                    if self._debug_Vdc.shape[0] == 0:
+                        raise BackendError(f"Divergence of DC powerflow (non connected grid) at the "
+                                           f"initialization of AC powerflow. Detailed error: "
+                                           f"{self._grid.get_dc_solver().get_error()}")
+                    V_init = 1. * self._debug_Vdc
                 else:
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
@@ -1132,7 +1189,7 @@ class LightSimBackend(Backend):
             beg_readback = time.perf_counter()
             self.V[:] = V
             self._fetch_grid_data()
-        
+                    
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
              self.v_or[:self.__nb_powerline],
@@ -1164,13 +1221,13 @@ class LightSimBackend(Backend):
 
             self.load_p[:], self.load_q[:], self.load_v[:], self.load_theta[:] = self._load_res
             self.prod_p[:], self.prod_q[:], self.prod_v[:], self.gen_theta[:] = self._gen_res
+
             if self.__has_storage:
                 self.storage_p[:], self.storage_q[:], self.storage_v[:], self.storage_theta[:] = self._storage_res
-            self.storage_v[self.storage_v == -1.] = 0.  # voltage is 0. for disconnected elements in grid2op
+                self.storage_v[self.storage_v == -1.] = 0.  # voltage is 0. for disconnected elements in grid2op
             self._timer_read_data_back +=  time.perf_counter() - beg_readback
-            
-            self.next_prod_p[:] = self.prod_p
 
+            self.next_prod_p[:] = self.prod_p
             if self._stop_if_load_disco and ((~np.isfinite(self.load_v)).any() or (self.load_v <= 0.).any()):
                 disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
                 load_disco = np.where(disco)[0]
@@ -1324,18 +1381,18 @@ class LightSimBackend(Backend):
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
 
         # copy the numpy array
-        res.__nb_bus_before = copy.deepcopy(self.__nb_bus_before)
         li_attr_npy = ["thermal_limit_a", "_sh_vnkv", "_init_bus_load", "_init_bus_gen",
                        "_init_bus_lor", "_init_bus_lex", "nb_obj_per_bus", "next_prod_p", "topo_vect",
                        "shunt_topo_vect", "V", "prod_pu_to_kv", "load_pu_to_kv", "lines_or_pu_to_kv",
-                       "lines_ex_pu_to_kv",
+                       "lines_ex_pu_to_kv", "storage_pu_to_kv",
                        "p_or", "q_or", "v_or", "a_or",
                        "p_ex", "q_ex", "v_ex", "a_ex",
                        "load_p", "load_q", "load_v",
                        "prod_p", "prod_q", "prod_v",
                        "storage_p", "storage_q", "storage_v",
                        "sh_p", "sh_q", "sh_v", "sh_bus", "sh_theta",
-                       "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",                   
+                       "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",   
+                       "_debug_Vdc"                
                        ]
         for attr_nm in li_attr_npy:
             if hasattr(self, attr_nm):
@@ -1343,29 +1400,30 @@ class LightSimBackend(Backend):
                 setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
 
         # copy class attribute for older grid2op version (did not use the class attribute)
-        cls_attr = ["env_name", 
-                    "n_line", "n_gen", "n_load", "n_sub",
-                    "name_gen", "name_load", "name_line", "name_sub", "name_storage",
-                    "sub_info", "dim_topo", 
-                    "load_to_subid", "gen_to_subid", "line_or_to_subid",
-                    "line_ex_to_subid", "load_to_sub_pos", "line_or_to_sub_pos",
-                    "line_ex_to_sub_pos", "load_pos_topo_vect", "gen_pos_topo_vect",
-                    "line_or_pos_topo_vect", "line_ex_pos_topo_vect", "storage_pos_topo_vect",
+        if version.parse(grid2op.__version__) <= grid2op_min_cls_attr_ver:
+            cls_attr = ["env_name", 
+                        "n_line", "n_gen", "n_load", "n_sub",
+                        "name_gen", "name_load", "name_line", "name_sub", "name_storage",
+                        "sub_info", "dim_topo", 
+                        "load_to_subid", "gen_to_subid", "line_or_to_subid",
+                        "line_ex_to_subid", "load_to_sub_pos", "line_or_to_sub_pos",
+                        "line_ex_to_sub_pos", "load_pos_topo_vect", "gen_pos_topo_vect",
+                        "line_or_pos_topo_vect", "line_ex_pos_topo_vect", "storage_pos_topo_vect",
 
-                    "shunts_data_available", "shunt_to_subid", "n_shunt", "name_shunt",
+                        "shunts_data_available", "shunt_to_subid", "n_shunt", "name_shunt",
 
-                    "n_storage", "storage_to_subid", "storage_to_sub_pos", "storage_type", 
-                    "storage_Emax", "storage_Emin", "storage_max_p_prod", "storage_max_p_absorb",
-                    "storage_marginal_cost", "storage_loss", "storage_charging_efficiency", 
-                    "storage_discharging_efficiency",
+                        "n_storage", "storage_to_subid", "storage_to_sub_pos", "storage_type", 
+                        "storage_Emax", "storage_Emin", "storage_max_p_prod", "storage_max_p_absorb",
+                        "storage_marginal_cost", "storage_loss", "storage_charging_efficiency", 
+                        "storage_discharging_efficiency",
 
-                    "alarms_area_names", "alarms_lines_area", "alarms_area_lines"
-                    ] + type(self)._li_attr_disp
+                        "alarms_area_names", "alarms_lines_area", "alarms_area_lines"
+                        ] + type(self)._li_attr_disp
 
-        for attr_nm in cls_attr:
-            if hasattr(self, attr_nm) and not hasattr(type(self), attr_nm):
-                # this test is needed for backward compatibility with other grid2op version
-                setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
+            for attr_nm in cls_attr:
+                if hasattr(self, attr_nm):
+                    # this test is needed for backward compatibility with other grid2op version
+                    setattr(res, attr_nm, copy.deepcopy(getattr(self, attr_nm)))
         ###############
 
         # handle the most complicated
@@ -1378,7 +1436,6 @@ class LightSimBackend(Backend):
         res.available_solvers = self.available_solvers
         res._reset_res_pointers()
         res._fetch_grid_data()
-        
         # assign back "self" attributes
         self._grid = mygrid
         self.init_pp_backend = inippbackend
@@ -1469,5 +1526,6 @@ class LightSimBackend(Backend):
         self._timer_apply_act = 0.
         self._grid.tell_solver_need_reset()
         self._reset_res_pointers()
-        self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
-        self.topo_vect[:] = self.__init_topo_vect  # TODO
+        if type(self).shunts_data_available:
+            self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
+        self.topo_vect[:] = self.__init_topo_vect  # TODO#

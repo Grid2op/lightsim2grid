@@ -280,3 +280,11 @@ bug_sparselu_eigen.cpp
 test_segfault.sh
 nohup.out
 test_rte/
+venv_312/
+benchmarks/requirements_venv_bench_solvers.txt
+patch_*.patch
+lightsim2grid/tests/venv_test_pp/
+*_quantique.py
+venv_legacy_311/
+venv_test
+lightsim2grid/gridmodel/from_pypowsybl/pypowsybl.ipynb

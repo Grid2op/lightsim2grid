@@ -12,7 +12,7 @@ import pandapower as pp
 import numpy as np
 import pandapower.networks as pn
 import unittest
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 from functools import reduce
 
 
@@ -170,7 +170,7 @@ class TestMultipleSlack14(unittest.TestCase):
             
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid_single = init(self.net)
+            ls_grid_single = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid_single, self.net)
@@ -202,7 +202,7 @@ class TestMultipleSlack14(unittest.TestCase):
                      lightsim2grid=False)  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
@@ -228,7 +228,7 @@ class TestMultipleSlack14(unittest.TestCase):
                     init_va_degree="flat")  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
@@ -260,7 +260,7 @@ class TestMultipleSlack14(unittest.TestCase):
                     init_va_degree="flat") 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
@@ -307,7 +307,7 @@ class TestMultipleSlack14(unittest.TestCase):
             
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init(self.net)
+            ls_grid = init_from_pandapower(self.net)
         
         V = np.ones(self.nb_bus_total, dtype=np.complex_)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
@@ -317,7 +317,7 @@ class TestMultipleSlack14(unittest.TestCase):
         # NB: the test bellow only works because pandapower and lightsim have the
         # bus in the same order !
         assert len(V_ls), "lightsim diverged !"
-        Ybus_me = ls_grid.get_Ybus()
+        Ybus_me = ls_grid.get_Ybus_solver()
         Ybus_ref = pp_net._ppc["internal"]["Ybus"]
         assert np.abs((Ybus_me - Ybus_ref).todense()).max() <= 1e-6, "wrong Ybus"
 
@@ -330,6 +330,7 @@ class TestMultipleSlack14(unittest.TestCase):
         assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= 1e-6)
+
 
 if __name__ == "__main__":
     unittest.main()

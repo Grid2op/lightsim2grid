@@ -33,7 +33,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         return false;
     }
     BaseAlgo::reset_timer();
-    bool doesnt_need_refactor = true;
+    bool has_just_been_factorized = false;
 
     auto timer = CustTimer();
     if(need_factorize_ ||
@@ -59,7 +59,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // TODO SLACK (for now i put all slacks as PV, except the first one)
         // this should be handled in Sbus, because we know the amount of power absorbed by the slack
         // so we can compute it correctly !
-        // std::cout << "\tneed to retrieve slack\n";
+        // std::cout << "\t\t\tneed to retrieve slack\n";
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
         // find the slack buses
@@ -75,9 +75,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
-        // std::cout << "\tneed to change Ybus\n";
+        // std::cout << "\t\t\tneed to sizeYbus_with_slack_\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
-        doesnt_need_refactor = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
+        has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
     }
     
@@ -92,7 +92,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // remove the slack bus from Sbus
     if(need_factorize_ || _solver_control.need_recompute_sbus()){
-        // std::cout << "\tneed to compute Sbus\n";
+        // std::cout << "\t\t\tneed to dcSbus_noslack_\n";
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
@@ -103,30 +103,35 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     // initialize the solver if needed
     if(need_factorize_){
-        // std::cout << "\tneed to factorize\n";
+        // std::cout << "\t\t\tneed to factorize\n";
         ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
         if(status_init != ErrorType::NoError){
             err_ = status_init;
-            // std::cout << "_linear_solver.initialize\n";
             return false;
         }
         need_factorize_ = false;
-        doesnt_need_refactor = true;
+        has_just_been_factorized = true;
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
-    RealVect Va_dc_without_slack = dcSbus_noslack_;
-    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, doesnt_need_refactor);
+    RealVect Va_dc_without_slack = dcSbus_noslack_;       
+    // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (max): " << dcYbus_noslack_.coeffs().maxCoeff() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (sum): " << dcYbus_noslack_.coeffs().abs().sum() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (inf norm): " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
+    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
         err_ = error;
         timer_total_nr_ += timer.duration();
-            // std::cout << "_linear_solver.solve\n";
         return false;
     }
-
+    
     if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
+        // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
         err_ = ErrorType::SolverSolve;
         V = CplxVect();
         V_ = CplxVect();
@@ -142,7 +147,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;
         auto timer_postproc = CustTimer();
     #endif // __COUT_TIMES
-
+    
     // retrieve back the results in the proper shape (add back the slack bus)
     // TODO have a better way for this, for example using `.segment(0,npv)`
     // see the BaseAlgo.cpp: _evaluate_Fx
@@ -207,10 +212,11 @@ void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen
         for (typename Eigen::SparseMatrix<ref_mat_type>::InnerIterator it(ref_mat, k); it; ++it)
         {
             int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
-            if(mat_bus_id_(row_res) == -1) continue;
             row_res = mat_bus_id_(row_res);
             int col_res = static_cast<int>(it.col());  // should be k   // TODO Eigen::Index here ?
             col_res = mat_bus_id_(col_res);
+            if(row_res == -1) continue;
+            if(col_res == -1) continue;
             tripletList.push_back(Eigen::Triplet<real_type> (row_res, col_res, std::real(it.value())));
         }
     }
@@ -233,7 +239,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
 }
 
 template<class LinearSolver>
-RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> & dcYbus){
+RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
     auto timer = CustTimer();
     Eigen::SparseMatrix<real_type> Bf_T_with_slack;
     RealMat PTDF;
@@ -284,14 +290,19 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(const Eigen::SparseMatrix<cplx_type> 
 }
 
 template<class LinearSolver>
-RealMat BaseDCAlgo<LinearSolver>::get_lodf(const Eigen::SparseMatrix<cplx_type> & dcYbus,
-                                           const IntVect & from_bus,
+RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
                                            const IntVect & to_bus){
     auto timer = CustTimer();
-    const RealMat PTDF = get_ptdf(dcYbus);  // size n_line x n_bus
+    const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
     for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
-        LODF.col(line_id).array() = PTDF.col(from_bus(line_id)).array() - PTDF.col(to_bus(line_id)).array();
+        auto f_bus = from_bus(line_id);
+        auto t_bus = to_bus(line_id);
+        if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
+            // element is disconnected
+            LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
+        }
+        LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);
         if (diag_coeff != 1.){
             LODF.col(line_id).array() /= (1. - diag_coeff);

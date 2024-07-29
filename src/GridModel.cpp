@@ -392,7 +392,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
        solver_control_.has_slack_participate_changed() || 
        solver_control_.has_pv_changed() || 
        solver_control_.has_slack_weight_changed()){
-        slack_weights_ = generators_.get_slack_weights(Ybus_ac_.rows(), id_me_to_ac_solver_); 
+        slack_weights_ = generators_.get_slack_weights_solver(Ybus_ac_.rows(), id_me_to_ac_solver_); 
     }
     // std::cout << "\tbefore compute_pf" << std::endl;
     conv = _solver.compute_pf(Ybus_ac_, V, acSbus_, slack_bus_id_ac_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
@@ -785,6 +785,7 @@ void GridModel::fillpv_pq(const std::vector<int>& id_me_to_solver,
     bus_pv_ = Eigen::VectorXi::Map(&bus_pv[0], bus_pv.size());
     bus_pq_ = Eigen::VectorXi::Map(&bus_pq[0], bus_pq.size());
 }
+
 void GridModel::compute_results(bool ac){
     // retrieve results from powerflow
     const auto & Va = ac ? _solver.get_Va() : _dc_solver.get_Va();
@@ -896,7 +897,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
        solver_control_.has_slack_weight_changed()){
         // TODO smarter solver: this is done both in ac and in dc !
         // std::cout << "\tget_slack_weights" << std::endl;
-        slack_weights_ = generators_.get_slack_weights(Ybus_dc_.rows(), id_me_to_dc_solver_);
+        slack_weights_ = generators_.get_slack_weights_solver(Ybus_dc_.rows(), id_me_to_dc_solver_);
        }
     // std::cout << "V (init to dc pf)\n";
     // for(auto el: V) std::cout << el << ", ";
@@ -913,31 +914,70 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     return res;
 }
 
+RealMat GridModel::get_ptdf_solver(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
+    }
+    const RealMat & PTDF_solver = _dc_solver.get_ptdf();
+    return PTDF_solver;
+}
+
+
 RealMat GridModel::get_ptdf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    return _dc_solver.get_ptdf(Ybus_dc_);
+    const RealMat & PTDF_solver = get_ptdf_solver();
+    RealMat PTDF_grid =  RealMat::Zero(powerlines_.nb() + trafos_.nb(), total_bus());  // , std::numeric_limits<real_type>::quiet_NaN()
+    int solver_col = 0;
+    for(const auto my_col: id_dc_solver_to_me()){
+        PTDF_grid.col(my_col) = PTDF_solver.col(solver_col);
+        ++solver_col;
+    }
+    return PTDF_grid;
 }
 
 RealMat GridModel::get_lodf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    IntVect from_bus(powerlines_.nb() + trafos_.nb());
-    IntVect to_bus(powerlines_.nb() + trafos_.nb());
+    const auto nb_el = powerlines_.nb() + trafos_.nb();
+    IntVect from_bus(nb_el);
+    IntVect to_bus(nb_el);
+    // retrieve the from_bus / to_bus from the grid
     from_bus << powerlines_.get_bus_from(), trafos_.get_bus_from();
     to_bus << powerlines_.get_bus_to(), trafos_.get_bus_to();
-    return _dc_solver.get_lodf(Ybus_dc_, from_bus, to_bus);
+    // convert it to solver bus id
+    IntVect from_bus_solver(nb_el);
+    IntVect to_bus_solver(nb_el);
+    for(auto el_id = 0; el_id < nb_el; ++el_id){
+        // from side
+        auto f_grid_bus = from_bus[el_id];
+        auto f_solver_bus = id_me_to_dc_solver_[f_grid_bus];
+        from_bus_solver[el_id] = f_solver_bus;
+        // to side
+        auto t_grid_bus = to_bus[el_id];
+        auto t_solver_bus = id_me_to_dc_solver_[t_grid_bus];
+        to_bus_solver[el_id] = t_solver_bus;
+    }
+    return _dc_solver.get_lodf(from_bus_solver, to_bus_solver);
+}
+
+Eigen::SparseMatrix<real_type> GridModel::get_Bf_solver(){
+    if(Ybus_dc_.size() == 0){
+        throw std::runtime_error("GridModel::get_Bf_solver: Cannot get the Bf matrix without having first computed a DC powerflow.");
+    }
+    Eigen::SparseMatrix<real_type> Bf;
+    fillBf_for_PTDF(Bf);
+    return Bf;
 }
 
 Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
     }
-    Eigen::SparseMatrix<real_type> Bf;
-    fillBf_for_PTDF(Bf);
-    return Bf;
+    Eigen::SparseMatrix<real_type> Bf_solver = get_Bf_solver();
+    return _relabel_matrix(Bf_solver, id_dc_solver_to_me_, false);
 }
 
 /**
@@ -997,24 +1037,6 @@ void GridModel::remove_gen_slackbus(int gen_id){
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
-// void GridModel::update_bus_status(int nb_bus_before,
-//                                   Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus)
-// {
-//     for(int bus_id = 0; bus_id < active_bus.rows(); ++bus_id)
-//     {
-//         if(active_bus(bus_id, 0)){
-//             reactivate_bus(bus_id);
-//         }else{
-//             deactivate_bus(bus_id);
-//         }
-//         if(active_bus(bus_id, 1)){
-//             reactivate_bus(bus_id + nb_bus_before);
-//         }else{
-//             deactivate_bus(bus_id + nb_bus_before);
-//         }
-//     }
-// }
-
 void GridModel::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
@@ -1148,12 +1170,10 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
 
 void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose) const
 {
-    const int nb_bus_solver = static_cast<int>(id_me_to_dc_solver_.size());
+    const int nb_bus_solver = static_cast<int>(id_dc_solver_to_me_.size());
     // TODO DEBUG MODE
     if(nb_bus_solver == 0) throw std::runtime_error("GridModel::fillBf_for_PTDF: it appears no DC powerflow has run on your grid.");
     
-    // TODO PTDF: nb_line, nb_bus or nb_branch, nb_bus ???
-    // TODO PTDF: if we don't have nb_branch we need a converter line_id => branch 
     if(transpose){
         Bf = Eigen::SparseMatrix<real_type>(nb_bus_solver, powerlines_.nb() + trafos_.nb());
     }else{

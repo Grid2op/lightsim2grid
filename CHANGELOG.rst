@@ -18,6 +18,87 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm ?
+TODO HVDC in Jacobian (see pandapower)
+TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  `remove_from_Ybus`
+      in order to perform the "invertibility" check
+TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
+
+[0.9.0] 2024-07-29
+--------------------------
+- [BREAKING] installing pandapower lightsim2grid does not require anymore to install
+  pandapower (you can initialize `GridModel` with pypowsybl or pandapower if you want). To make it both
+  cleaner and clearer the function `lightsim2grid.gridmodel.init` has been removed.
+  Please use `lightsim2grid.gridmodel.init_from_pandapower` or 
+  `lightsim2grid.gridmodel.init_from_pypowsybl` from now on
+- [BREAKING] the previous `gridmodel.get_ptdf()` function was wrongly labelled with the
+  "solver" bus id and not the `gridmodel` bus id which could cause issue when it was computed 
+  on some grid configuration. It has now been fixed (so the `gridmodel.get_ptdf` returns the
+  proper things). If you want the previous behaviour, you need to use `gridmodel.get_ptdf_solver()`
+- [BREAKING] similarly, `gridmodel.get_Ybus()`, `gridmodel.get_dcYbus()`, `gridmodel.get_Sbus()`
+  and `gridmodel.get_dcSbus()` now return things in the `gridmodel` bus ordering. For the previous
+  behaviour you can use `gridmodel.get_Ybus_solver()`, `gridmodel.get_dcYbus_solver()`,
+  `gridmodel.get_Sbus_solver()` and `gridmodel.get_dcSbus_solver()`
+- [BREAKING] the more rational logic above also extends to all the functions listed in the 
+  table below:
+
+===============================    ===================================================
+Function with behaviour change      Name of the new function having the same behaviour
+===============================    ===================================================
+gridmodel.get_ptdf()                gridmodel.get_ptdf_solver()
+gridmodel.get_Ybus()                gridmodel.get_Ybus_solver()
+gridmodel.get_dcYbus()              gridmodel.get_dcYbus_solver()
+gridmodel.get_Sbus()                gridmodel.get_Sbus_solver()
+gridmodel.get_dcSbus()              gridmodel.get_dcSbus_solver()
+gridmodel.get_pv()                  gridmodel.get_pv_solver()
+gridmodel.get_pq()                  gridmodel.get_pq_solver()
+gridmodel.get_slack_ids()           gridmodel.get_slack_ids_solver()
+gridmodel.get_slack_ids_dc()        gridmodel.get_slack_ids_dc_solver()
+gridmodel.get_slack_weights()       gridmodel.get_slack_weights_solver()
+gridmodel.get_V()                   gridmodel.get_V_solver()
+gridmodel.get_Va()                  gridmodel.get_Va_solver()
+gridmodel.get_Vm()                  gridmodel.get_Vm_solver()
+gridmodel.get_J()                   gridmodel.get_J_solver()
+gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
+===============================    ==================================================
+
+- [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
+  More specifically the solver type used might not be correct if changed which could 
+  lead to wrong Ybus being passed to the solver.
+- [FIXED] some compatibility mode with python `3.7`
+- [FIXED] a bug when "turned off" generator were not PV (slack was 
+  "turned off" when its target P was 0. But still the slack so ends up producing something...)
+- [FIXED] (consistency with pandapower) when an intial powerflow is run
+  to initialized an AC powerflow, the initial voltages are 1 pu (and 
+  not `gridmodel.get_init_vm_pu()` as previously).
+- [FIXED] `gridmodel.get_ptdf()` now have the 
+  normal "gridmodel" bus id representation and not the "solver" bus ordering.
+- [FIXED] `gridmodel.get_lodf()` issue wrong results in case of some
+  topological modification
+- [FIXED] calls to methods such as `gridmodel.get_pv` or `gridmodel.get_V` 
+  or `gridmodel.get_Ybus` could lead to severe crashes (segmentation fault)
+  on some (rare) cases. Now an exceptions should be thrown in these cases.
+- [FIXED] basic backward compatibility is ensured and tested for legacy grid2op >= 0.9.1.post1
+  Not all features are tested and only 1.x versions are tested 
+  (ie 1.1 or 1.2 but not 1.2.1, 1.2.2, 1.2.3 etc.) and only for python 3.11
+- [FIXED] a bug when using `LightSimBackend` with some old (but not too old) grid2op
+  versions.
+- [FIXED] various compatibility bugs when using old grid2op versions.
+- [ADDED] it is now possible to deactivate the support for shunts by 
+  subclassing the LightSimBackend class and setting the `shunts_data_available`
+  to `False`
+- [IMPROVED] in the `ContingencyAnalysis` class, the underlying cpp model will now
+  perform an initial powerflow.
+- [IMPROVED] distributed wheels are now compiled (whenever possible) with numpy 2. 
+  This makes them compatible with both numpy 1.x.y and numpy 2.z.t versions.
+- [IMPROVED] tests are now performed when lightsim2grid is compiled with 
+  the latest clang (18) and gcc (14) versions on the CI using python 3.11
+
+[0.8.2.post1] 2024-04-xx
+--------------------------
+- [FIXED] a "forward compatibility" issue with grid2op 1.10.2
+  (due to wrong usage of some internal classes when loading a pandapower grid)
+
 [0.8.2] 2024-04-22
 --------------------
 - [FIXED] CI was broken after migration to artifact v4, set it back to v3 

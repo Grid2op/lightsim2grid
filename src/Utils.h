@@ -55,6 +55,13 @@ enum class ErrorType {NoError,
                       LicenseError};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
 
+
+struct Coeff{
+    Eigen::Index row_id;
+    Eigen::Index col_id;
+    cplx_type value;
+};
+
 // define some constant for compilation outside of "setup.py"
 #ifndef VERSION_MAJOR
 #define VERSION_MAJOR -1

@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.8.2"
+__version__ = "0.9.0.dev1"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -318,8 +318,13 @@ ext_modules = [
 # before pandapower 2.8 scipy was forced to be <= 1.6 which does not work with
 # python 3.10+
 req_pkgs = [
-        "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
-        "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
+    "setuptools",
+    "pip",
+    "pybind11",
+    "scipy",
+    "numpy"
+        # "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
+        # "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
 if sys.version_info < (3, 11):
     req_pkgs.append("typing_extensions")

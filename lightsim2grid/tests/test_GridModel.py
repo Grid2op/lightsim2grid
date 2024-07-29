@@ -11,7 +11,7 @@ import numpy as np
 import pandapower.networks as pn
 import pandapower as pp
 
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 import warnings
 import pdb
 
@@ -36,7 +36,7 @@ class BaseTests:
         # initialize and use converters
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init(self.net_datamodel)
+            self.model = init_from_pandapower(self.net_datamodel)
 
     def assert_equal(self, tmp, ref, error=""):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
@@ -208,6 +208,17 @@ class BaseTests:
         # compute a powerflow on a net without anything
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
+        
+        # check no error when retrieving these              
+        self.model.get_V_solver()          
+        self.model.get_Va_solver()            
+        self.model.get_Vm_solver()
+        if hasattr(self, "dc") and not self.dc:
+            # does not make sense in dc powerflow              
+            self.model.get_J_solver()
+            self.model.get_V()     
+            self.model.get_Va()  
+            self.model.get_Vm()            
 
     def test_pf_disco_gen(self):
         self.do_i_skip("test_pf_disco_gen")
@@ -375,6 +386,7 @@ class BaseTests:
 
 class MakeDCTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):
+        self.dc = True
         return self.model.dc_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
@@ -387,12 +399,7 @@ class MakeDCTests(BaseTests, unittest.TestCase):
                        distributed_slack=False)
 
     def do_i_skip(self, test_nm):
-        #self.skipTest("dev")
         pass
-        # if test_nm == "test_pf":
-        #    pass
-        #else:
-        #    self.skipTest("dev")
 
     def check_res(self, Vfinal, net):
         assert Vfinal.shape[0] > 0, "powerflow diverged !"
@@ -406,10 +413,10 @@ class MakeDCTests(BaseTests, unittest.TestCase):
 
 class MakeACTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):
+        self.dc = False
         return self.model.ac_pf(V0, self.max_it, self.tol)
 
     def run_ref_pf(self, net):
-
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             pp.runpp(net, init="flat",
@@ -419,10 +426,6 @@ class MakeACTests(BaseTests, unittest.TestCase):
 
     def do_i_skip(self, test_nm):
         pass
-        # if test_nm == "test_pf":
-        #    pass
-        # else:
-        #    self.skipTest("dev")
 
 
 if __name__ == "__main__":

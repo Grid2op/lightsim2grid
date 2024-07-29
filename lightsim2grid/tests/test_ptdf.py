@@ -13,7 +13,7 @@ import numpy as np
 import warnings
 from scipy.sparse.linalg import spsolve
 
-from lightsim2grid.gridmodel import init
+from lightsim2grid.gridmodel import init_from_pandapower
 from lightsim2grid.solver import SolverType
 
 import pdb
@@ -30,7 +30,7 @@ class TestCase14SLU(unittest.TestCase):
         self.case = self.make_grid()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.gridmodel = init(self.case)
+            self.gridmodel = init_from_pandapower(self.case)
         self.V_init = 1. * self.gridmodel.get_bus_vn_kv()
         solver_type = self.get_solver_type()
         if solver_type not in self.gridmodel.available_solvers():
@@ -38,8 +38,8 @@ class TestCase14SLU(unittest.TestCase):
         self.gridmodel.change_solver(solver_type)
         V = self.gridmodel.dc_pf(self.V_init, 1, 1e-8)
         assert len(V), f"dc pf has diverged with error {self.gridmodel.get_dc_solver().get_error()}"
-        self.dcYbus = 1.0 * self.gridmodel.get_dcYbus()
-        self.dcSbus = 1.0 * self.gridmodel.get_dcSbus().real
+        self.dcYbus = 1.0 * self.gridmodel.get_dcYbus_solver()
+        self.dcSbus = 1.0 * self.gridmodel.get_dcSbus_solver().real
         self.Bbus = 1.0 * self.dcYbus.real
         self.res_powerflow = 1.0 * np.concatenate((self.gridmodel.get_lineor_res()[0], self.gridmodel.get_trafohv_res()[0]))
         self.nb = self.case.bus.shape[0]
@@ -52,7 +52,7 @@ class TestCase14SLU(unittest.TestCase):
 
     def test_from_pp(self):
         # test the right computation of Bf matrix (PTDF derived from python, might be slower)
-        Bf = 1.0 * self.gridmodel.get_Bf()
+        Bf = 1.0 * self.gridmodel.get_Bf_solver()
         PTDF = np.zeros((self.nbr, self.nb))
         PTDF[:, self.noslack] = spsolve(self.Bbus[np.ix_(self.noslack, self.noref)].T, Bf[:, self.noref].toarray().T).T
         # test the solver works correctly
@@ -66,8 +66,8 @@ class TestCase14SLU(unittest.TestCase):
     
     def test_ptdf_from_ls(self):
         # now test the right computation of the PTDF
-        Bf = 1.0 * self.gridmodel.get_Bf()
-        PTDF2 = 1.0 * self.gridmodel.get_ptdf()
+        Bf = 1.0 * self.gridmodel.get_Bf_solver()
+        PTDF2 = 1.0 * self.gridmodel.get_ptdf_solver()
         # test the solver works correctly
         tmp_mat = self.Bbus[np.ix_(self.noslack, self.noref)].T.todense()
         for line_id in range(self.nbr):

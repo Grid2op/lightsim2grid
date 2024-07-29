@@ -22,7 +22,8 @@ class TestSecurityAnalysis(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
-    
+        self.obs = self.env.reset(seed=0,options={"time serie id": 0})
+        
     def tearDown(self) -> None:
         self.env.close()
         return super().tearDown()
@@ -200,7 +201,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         sa1 = ContingencyAnalysis(self.env)
         conts = [0, [0, 4], [5, 7], 4]
         sa1.add_multiple_contingencies(*conts)
-        self.env.reset()
+        obs = self.env.reset()
         sa2 = ContingencyAnalysis(self.env)
         sa2.add_multiple_contingencies(*conts)
 
@@ -229,3 +230,24 @@ class TestSecurityAnalysis(unittest.TestCase):
         # check that indeed the matrix are different
         assert np.max(np.abs(res_a1 - res_a2)) > 1.
         assert np.max(np.abs(res_p1 - res_p2)) > 1.
+        
+        params = self.env.parameters
+        params.MAX_LINE_STATUS_CHANGED = 2
+        params.NO_OVERFLOW_DISCONNECTION = True
+        self.obs.change_forecast_parameters(params)
+        
+        for cont_id, cont in enumerate(conts):
+            if isinstance(cont, (list, tuple, np.ndarray)):
+                act_dict = {"set_line_status": [(l_id, -1) for l_id in cont]}
+            else:
+                act_dict = {"set_line_status": [(cont, -1)]}
+            sim_obs1 = self.obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
+            sim_obs2 = obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
+            assert (np.abs(res_p1[cont_id, :] - sim_obs1.p_or) <= 1e-5).all(), f"{res_p1[cont_id, :] - sim_obs1.p_or}"
+            assert (np.abs(res_p2[cont_id, :] - sim_obs2.p_or) <= 1e-5).all(), f"{res_p2[cont_id, :] - sim_obs2.p_or}"
+            assert (np.abs(res_a1[cont_id, :] - sim_obs1.a_or) <= 1e-4).all(), f"{res_a1[cont_id, :] - sim_obs1.a_or}"
+            assert (np.abs(res_a2[cont_id, :] - sim_obs2.a_or) <= 1e-4).all(), f"{res_a2[cont_id, :] - sim_obs2.a_or}"
+
+
+if __name__ == "__main__":
+    unittest.main()
