@@ -287,3 +287,4 @@ lightsim2grid/tests/venv_test_pp/
 *_quantique.py
 venv_legacy_311/
 venv_test
+lightsim2grid/gridmodel/from_pypowsybl/pypowsybl.ipynb

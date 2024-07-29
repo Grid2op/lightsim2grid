@@ -20,7 +20,9 @@ Change Log
 
 TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm ?
 TODO HVDC in Jacobian (see pandapower)
-
+TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  `remove_from_Ybus`
+      in order to perform the "invertibility" check
+TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
 
 [0.9.0] 2024-07-29
 --------------------------
@@ -81,6 +83,7 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
   (ie 1.1 or 1.2 but not 1.2.1, 1.2.2, 1.2.3 etc.) and only for python 3.11
 - [FIXED] a bug when using `LightSimBackend` with some old (but not too old) grid2op
   versions.
+- [FIXED] various compatibility bugs when using old grid2op versions.
 - [ADDED] it is now possible to deactivate the support for shunts by 
   subclassing the LightSimBackend class and setting the `shunts_data_available`
   to `False`
