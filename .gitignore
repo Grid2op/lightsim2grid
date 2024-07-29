@@ -284,3 +284,6 @@ venv_312/
 benchmarks/requirements_venv_bench_solvers.txt
 patch_*.patch
 lightsim2grid/tests/venv_test_pp/
+*_quantique.py
+venv_legacy_311/
+venv_test

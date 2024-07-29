@@ -22,16 +22,16 @@ TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm
 TODO HVDC in Jacobian (see pandapower)
 
 
-[0.9.0] 2024-07-xx
+[0.9.0] 2024-07-29
 --------------------------
-- [BREAKING] the way to initialize lightsim2grid `GridModel` now does not require
-  pandapower (you can initialize it with pypowsybl if you want). To make it both
+- [BREAKING] installing pandapower lightsim2grid does not require anymore to install
+  pandapower (you can initialize `GridModel` with pypowsybl or pandapower if you want). To make it both
   cleaner and clearer the function `lightsim2grid.gridmodel.init` has been removed.
   Please use `lightsim2grid.gridmodel.init_from_pandapower` or 
   `lightsim2grid.gridmodel.init_from_pypowsybl` from now on
-- [BREAKING] the previous `gridmodel.get_ptdf()` function was wrongly labeled with the
-  "solver" bus id and not the `grid` bus id which could cause issue when applying 
-  topological changes. It has now been fixed (so the `gridmodel.get_ptdf` returns the
+- [BREAKING] the previous `gridmodel.get_ptdf()` function was wrongly labelled with the
+  "solver" bus id and not the `gridmodel` bus id which could cause issue when it was computed 
+  on some grid configuration. It has now been fixed (so the `gridmodel.get_ptdf` returns the
   proper things). If you want the previous behaviour, you need to use `gridmodel.get_ptdf_solver()`
 - [BREAKING] similarly, `gridmodel.get_Ybus()`, `gridmodel.get_dcYbus()`, `gridmodel.get_Sbus()`
   and `gridmodel.get_dcSbus()` now return things in the `gridmodel` bus ordering. For the previous
@@ -63,19 +63,19 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 - [FIXED] the `change_solver` in the `ContingencyAnalysis` did not work correctly.
   More specifically the solver type used might not be correct if changed which could 
   lead to wrong Ybus being passed to the solver.
-- [FIXED] some compatibility mode with python 3.7
+- [FIXED] some compatibility mode with python `3.7`
 - [FIXED] a bug when "turned off" generator were not PV (slack was 
-  "turned off" when its target P was 0. But still the slack...)
+  "turned off" when its target P was 0. But still the slack so ends up producing something...)
 - [FIXED] (consistency with pandapower) when an intial powerflow is run
   to initialized an AC powerflow, the initial voltages are 1 pu (and 
-  not grid.get_init_vm_pu() as previously).
+  not `gridmodel.get_init_vm_pu()` as previously).
 - [FIXED] `gridmodel.get_ptdf()` now have the 
   normal "gridmodel" bus id representation and not the "solver" bus ordering.
 - [FIXED] `gridmodel.get_lodf()` issue wrong results in case of some
   topological modification
 - [FIXED] calls to methods such as `gridmodel.get_pv` or `gridmodel.get_V` 
   or `gridmodel.get_Ybus` could lead to severe crashes (segmentation fault)
-  on some (rare) cases. Now an exception is thrown.
+  on some (rare) cases. Now an exceptions should be thrown in these cases.
 - [FIXED] basic backward compatibility is ensured and tested for legacy grid2op >= 0.9.1.post1
   Not all features are tested and only 1.x versions are tested 
   (ie 1.1 or 1.2 but not 1.2.1, 1.2.2, 1.2.3 etc.) and only for python 3.11
@@ -87,10 +87,9 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 - [IMPROVED] in the `ContingencyAnalysis` class, the underlying cpp model will now
   perform an initial powerflow.
 - [IMPROVED] distributed wheels are now compiled (whenever possible) with numpy 2. 
-  This makes them compatible with both numpy 1.xx and numpy 2.yy versions.
+  This makes them compatible with both numpy 1.x.y and numpy 2.z.t versions.
 - [IMPROVED] tests are now performed when lightsim2grid is compiled with 
-  the latest clang (18) and gcc (14)
-  versions on the CI
+  the latest clang (18) and gcc (14) versions on the CI using python 3.11
 
 [0.8.2.post1] 2024-04-xx
 --------------------------
