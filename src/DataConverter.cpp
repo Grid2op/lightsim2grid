@@ -7,6 +7,8 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataConverter.h"
+#include <iostream>
+
 
 void PandaPowerConverter::_check_init(){
     if(sn_mva_ <= 0.){
@@ -114,7 +116,8 @@ std::tuple<RealVect,
 
         r_sc(i) = std::real(zab_triangle);
         x_sc(i) = std::imag(zab_triangle);
-        b_sc(i) = -my_two_ * my_i / zbc_triangle;
+        // b_sc(i) = -my_two_ * my_i / zbc_triangle;
+        b_sc(i) = my_two_ / zbc_triangle;
     }
 
     std::tuple<RealVect, RealVect, CplxVect> res =
@@ -126,12 +129,12 @@ std::tuple<RealVect,
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_line_param(const RealVect & branch_r,
-                                               const RealVect & branch_x,
-                                               const RealVect & branch_c,
-                                               const RealVect & branch_g,  // TODO
-                                               const RealVect & branch_from_kv,
-                                               const RealVect & branch_to_kv)
+           PandaPowerConverter::get_line_param_legacy(const RealVect & branch_r,
+                                                      const RealVect & branch_x,
+                                                      const RealVect & branch_g,
+                                                      const RealVect & branch_c,
+                                                      const RealVect & branch_from_kv,
+                                                      const RealVect & branch_to_kv)
 {
     //TODO does not use c at the moment!
     _check_init();
@@ -141,11 +144,50 @@ std::tuple<RealVect,
     RealVect powerlines_r = branch_r.array() / branch_from_pu.array();
     RealVect powerlines_x = branch_x.array() / branch_from_pu.array();
 
-    CplxVect powerlines_h = CplxVect::Constant(nb_line, 2.0 * f_hz_ * M_PI * 1e-9);
-    powerlines_h.array() *= branch_c.array().cast<cplx_type>();
+    // b = 2 * net.f_hz * math.pi * line["c_nf_per_km"].values * 1e-9 * baseR * length_km * parallel
+    // g = line["g_us_per_km"].values * 1e-6 * baseR * length_km * parallel
+    // g + 1j . b
+    CplxVect powerlines_h = CplxVect::Constant(nb_line, 0.);
+    powerlines_h.array() += (1e-6 * branch_g.array().cast<cplx_type>() + 
+                             my_i * 2.0 * f_hz_ * M_PI * 1e-9 * branch_c.array().cast<cplx_type>());
     powerlines_h.array() *=  branch_from_pu.array().cast<cplx_type>();
     std::tuple<RealVect, RealVect, CplxVect> res = std::tuple<RealVect,
            RealVect,
            CplxVect> (std::move(powerlines_r), std::move(powerlines_x), std::move(powerlines_h));
     return res;
 }
+
+std::tuple<RealVect,
+           RealVect,
+           CplxVect,
+           CplxVect>
+    PandaPowerConverter::get_line_param(const RealVect & branch_r,
+                                        const RealVect & branch_x,
+                                        const RealVect & branch_g,
+                                        const RealVect & branch_c,
+                                        const RealVect & branch_from_kv,
+                                        const RealVect & branch_to_kv)
+{
+    _check_init();
+    const int nb_line = static_cast<int>(branch_r.size());
+    RealVect branch_from_pu = branch_from_kv.array() * branch_from_kv.array() / sn_mva_;
+
+    RealVect powerlines_r = branch_r.array() / branch_from_pu.array();
+    RealVect powerlines_x = branch_x.array() / branch_from_pu.array();
+
+    // TODO
+    // b = 2 * net.f_hz * math.pi * line["c_nf_per_km"].values * 1e-9 * baseR * length_km * parallel
+    // g = line["g_us_per_km"].values * 1e-6 * baseR * length_km * parallel
+    // g + 1j . b
+    CplxVect powerlines_h_or = CplxVect::Constant(nb_line, 0.);
+    powerlines_h_or.array() += (1e-6 * branch_g.array().cast<cplx_type>() + 
+                                my_i * 2.0 * f_hz_ * M_PI * 1e-9 * branch_c.array().cast<cplx_type>());
+    powerlines_h_or.array() *=  branch_from_pu.array().cast<cplx_type>() * 0.5;
+    CplxVect powerlines_h_ex = powerlines_h_or;
+    // END TODO
+
+    std::tuple<RealVect, RealVect, CplxVect, CplxVect> res = std::tuple<RealVect, RealVect, CplxVect, CplxVect>(
+        std::move(powerlines_r), std::move(powerlines_x), std::move(powerlines_h_or), std::move(powerlines_h_ex));
+    return res;
+}
+

@@ -8,13 +8,12 @@
 
 import unittest
 import numpy as np
-import pdb
-from numpy.lib.arraysetops import isin
 import pandapower.networks as pn
 from lightsim2grid_cpp import PandaPowerConverter
 
 
-class MakeTests(unittest.TestCase):
+class TestDataConverterLegacy(unittest.TestCase):
+    """test the converter used for legacy pandapower version (before 2.14.something)"""
     def setUp(self):
         self.converter = PandaPowerConverter()
         self.tol = 1e-8
@@ -27,17 +26,17 @@ class MakeTests(unittest.TestCase):
         net = pn.case6ww()
         self.converter.set_sn_mva(net.sn_mva)  # TODO raise an error if not set !
         self.converter.set_f_hz(net.f_hz)
-        line_r, line_x, line_h = self.converter.get_line_param(
+        line_r, line_x, line_h = self.converter.get_line_param_legacy(
             net.line["r_ohm_per_km"].values * net.line["length_km"].values,
             net.line["x_ohm_per_km"].values * net.line["length_km"].values,
-            net.line["c_nf_per_km"].values * net.line["length_km"].values,
             net.line["g_us_per_km"].values * net.line["length_km"].values,
+            net.line["c_nf_per_km"].values * net.line["length_km"].values,
             net.bus.loc[net.line["from_bus"]]["vn_kv"],
             net.bus.loc[net.line["to_bus"]]["vn_kv"]
             )
         res_r = np.array([0.001, 0.0005, 0.001, 0.0008, 0.0005, 0.0005, 0.001, 0.0007, 0.0012, 0.0002, 0.002])
         res_x = np.array([0.002, 0.002, 0.003, 0.003, 0.0025, 0.001, 0.003, 0.002, 0.0026, 0.001, 0.004])
-        res_h = np.array([4.+0.j, 4.+0.j, 6.+0.j, 6.+0.j, 6.+0.j, 2.+0.j, 4.+0.j, 5.+0.j, 5.+0.j, 2.+0.j, 8.+0.j])
+        res_h = 1j * np.array([4.+0.j, 4.+0.j, 6.+0.j, 6.+0.j, 6.+0.j, 2.+0.j, 4.+0.j, 5.+0.j, 5.+0.j, 2.+0.j, 8.+0.j])
         # new in pandapower 2.7.0 : order changed, sn_mva changed!
         order_270 = [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 2]
         # for el_r, el_x in zip(line_r, line_x): print(np.where((np.abs(res_r*100.-el_r) <= 1e-6) & (np.abs(res_x*100.-el_x) <= 1e-6))[0])
@@ -49,11 +48,11 @@ class MakeTests(unittest.TestCase):
         net = pn.case30()
         self.converter.set_sn_mva(net.sn_mva)  # TODO raise an error if not set !
         self.converter.set_f_hz(net.f_hz)
-        line_r, line_x, line_h = self.converter.get_line_param(
+        line_r, line_x, line_h = self.converter.get_line_param_legacy(
             net.line["r_ohm_per_km"].values * net.line["length_km"].values,
             net.line["x_ohm_per_km"].values * net.line["length_km"].values,
-            net.line["c_nf_per_km"].values * net.line["length_km"].values,
             net.line["g_us_per_km"].values * net.line["length_km"].values,
+            net.line["c_nf_per_km"].values * net.line["length_km"].values,
             net.bus.loc[net.line["from_bus"]]["vn_kv"],
             net.bus.loc[net.line["to_bus"]]["vn_kv"]
             )
@@ -69,12 +68,12 @@ class MakeTests(unittest.TestCase):
                            0.0018, 0.0027, 0.0033, 0.0038, 0.0021, 0.004 , 0.0042, 0.006 ,
                            0.0045, 0.002 , 0.002 , 0.0006, 0.0018, 0.0004, 0.0012, 0.0008,
                            0.0004])
-        res_h = np.array([3.+0.j, 2.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
-                           0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 2.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
-                           0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
-                           0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
-                           0.+0.j, 2.+0.j, 2.+0.j, 1.+0.j, 2.+0.j, 0.+0.j, 1.+0.j, 1.+0.j,
-                           0.+0.j])
+        res_h = 1j * np.array([3.+0.j, 2.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
+                               0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 2.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
+                               0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
+                               0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j, 0.+0.j,
+                               0.+0.j, 2.+0.j, 2.+0.j, 1.+0.j, 2.+0.j, 0.+0.j, 1.+0.j, 1.+0.j,
+                               0.+0.j])
         # new in pandapower 2.7.0 : order changed, sn_mva changed!
         # for el_r, el_x, el_h in zip(line_r, line_x, line_h): 
         #     print(np.where((np.abs(res_r*100.-el_r) <= 1e-6) & 
@@ -90,11 +89,11 @@ class MakeTests(unittest.TestCase):
         net = pn.case118()
         self.converter.set_sn_mva(net.sn_mva)  # TODO raise an error if not set !
         self.converter.set_f_hz(net.f_hz)
-        line_r, line_x, line_h = self.converter.get_line_param(
+        line_r, line_x, line_h = self.converter.get_line_param_legacy(
             net.line["r_ohm_per_km"].values * net.line["length_km"].values,
             net.line["x_ohm_per_km"].values * net.line["length_km"].values,
-            net.line["c_nf_per_km"].values * net.line["length_km"].values,
             net.line["g_us_per_km"].values * net.line["length_km"].values,
+            net.line["c_nf_per_km"].values * net.line["length_km"].values,
             net.bus.loc[net.line["from_bus"]]["vn_kv"],
             net.bus.loc[net.line["to_bus"]]["vn_kv"]
             )
@@ -156,41 +155,41 @@ class MakeTests(unittest.TestCase):
                            1.500e-03, 1.350e-04, 5.610e-04, 3.760e-04, 2.000e-04, 9.860e-04,
                            6.820e-04, 3.020e-04, 9.190e-04, 9.190e-04, 2.180e-03, 1.170e-03,
                            1.015e-03, 2.778e-03, 3.240e-03, 1.270e-03, 4.115e-03])
-        res_h = np.array([  2.54 +0.j,   1.082+0.j,   0.502+0.j,   0.878+0.j,   4.88 +0.j,
-                             4.444+0.j,   1.178+0.j,   3.368+0.j,   3.6  +0.j,  12.4  +0.j,
-                             1.034+0.j,   3.68 +0.j,  10.38 +0.j,   1.572+0.j,   4.978+0.j,
-                             1.264+0.j,   0.648+0.j,   4.72 +0.j,   2.28 +0.j,   1.87 +0.j,
-                             8.174+0.j,   3.796+0.j,   2.58 +0.j,   3.48 +0.j,   4.06 +0.j,
-                             1.234+0.j,   2.76 +0.j,   2.76 +0.j,   4.7  +0.j,   1.934+0.j,
-                             5.28 +0.j,  10.6  +0.j,   2.14 +0.j,   5.48 +0.j,   4.14 +0.j,
-                             0.874+0.j,   3.268+0.j,   2.18 +0.j,   4.06 +0.j,   1.876+0.j,
-                             1.11 +0.j,   4.94 +0.j,   5.44 +0.j,   2.3  +0.j,   2.54 +0.j,
-                             2.86 +0.j,   1.876+0.j,   5.46 +0.j,   4.72 +0.j,   6.04 +0.j,
-                             1.474+0.j,   2.4  +0.j,   4.76 +0.j,   2.16 +0.j,   3.28 +0.j,
-                             1.464+0.j,   2.94 +0.j,   1.816+0.j,   5.36 +0.j,   5.41 +0.j,
-                             4.07 +0.j,   4.08 +0.j,   6.2  +0.j,   0.986+0.j,   1.434+0.j,
-                             4.72 +0.j,   1.844+0.j,   4.72 +0.j,   6.268+0.j,   0.76 +0.j,
-                             4.61 +0.j,   2.02 +0.j,   2.   +0.j,   6.2  +0.j,   0.768+0.j,
-                             5.18 +0.j,   1.628+0.j,   1.972+0.j,   0.276+0.j,   5.02 +0.j,
-                             3.58 +0.j,   1.198+0.j,   1.356+0.j,   2.14 +0.j,   4.44 +0.j,
-                             0.21 +0.j,   4.66 +0.j,   1.298+0.j,   1.142+0.j,   2.98 +0.j,
-                             1.01 +0.j,   2.16 +0.j,   2.46 +0.j,   4.04 +0.j,   4.98 +0.j,
-                             8.64 +0.j,   2.84 +0.j,  17.64 +0.j,   2.16 +0.j,   2.38 +0.j,
-                            51.4  +0.j,  90.8  +0.j,   3.99 +0.j,   0.83 +0.j,  11.73 +0.j,
-                             2.51 +0.j,   1.926+0.j,   1.426+0.j,   3.194+0.j,   6.32 +0.j,
-                             0.268+0.j,   1.318+0.j,   3.66 +0.j,   0.568+0.j,   0.984+0.j,
-                             2.7  +0.j,   4.2  +0.j,  42.2  +0.j,   0.55 +0.j,   1.552+0.j,
-                             1.222+0.j,   4.66 +0.j,   3.44 +0.j,   6.068+0.j,   4.226+0.j,
-                             2.24 +0.j,   3.32 +0.j,   3.16 +0.j,   4.72 +0.j, 116.2  +0.j,
-                             1.604+0.j,   8.6  +0.j,   8.6  +0.j,   4.44 +0.j,   1.258+0.j,
-                             1.874+0.j,   3.42 +0.j,   1.396+0.j,   4.058+0.j,   3.1  +0.j,
-                           123.   +0.j,   7.38 +0.j,   7.3  +0.j,   2.02 +0.j,   0.732+0.j,
-                             0.374+0.j,   2.42 +0.j,   3.32 +0.j,   2.42 +0.j,   1.788+0.j,
-                             5.98 +0.j,   1.748+0.j,   5.69 +0.j,   5.36 +0.j,   5.646+0.j,
-                             3.76 +0.j,   3.88 +0.j,   1.456+0.j,   1.468+0.j,   0.98 +0.j,
-                            21.6  +0.j, 104.6  +0.j,   1.738+0.j,  38.   +0.j,   2.48 +0.j,
-                             2.48 +0.j,   5.78 +0.j,   3.1  +0.j,   2.682+0.j,   7.092+0.j,
-                             8.28 +0.j,  12.2  +0.j,  10.198+0.j])
+        res_h = 1j * np.array([  2.54 +0.j,   1.082+0.j,   0.502+0.j,   0.878+0.j,   4.88 +0.j,
+                                 4.444+0.j,   1.178+0.j,   3.368+0.j,   3.6  +0.j,  12.4  +0.j,
+                                 1.034+0.j,   3.68 +0.j,  10.38 +0.j,   1.572+0.j,   4.978+0.j,
+                                 1.264+0.j,   0.648+0.j,   4.72 +0.j,   2.28 +0.j,   1.87 +0.j,
+                                 8.174+0.j,   3.796+0.j,   2.58 +0.j,   3.48 +0.j,   4.06 +0.j,
+                                 1.234+0.j,   2.76 +0.j,   2.76 +0.j,   4.7  +0.j,   1.934+0.j,
+                                 5.28 +0.j,  10.6  +0.j,   2.14 +0.j,   5.48 +0.j,   4.14 +0.j,
+                                 0.874+0.j,   3.268+0.j,   2.18 +0.j,   4.06 +0.j,   1.876+0.j,
+                                 1.11 +0.j,   4.94 +0.j,   5.44 +0.j,   2.3  +0.j,   2.54 +0.j,
+                                 2.86 +0.j,   1.876+0.j,   5.46 +0.j,   4.72 +0.j,   6.04 +0.j,
+                                 1.474+0.j,   2.4  +0.j,   4.76 +0.j,   2.16 +0.j,   3.28 +0.j,
+                                 1.464+0.j,   2.94 +0.j,   1.816+0.j,   5.36 +0.j,   5.41 +0.j,
+                                 4.07 +0.j,   4.08 +0.j,   6.2  +0.j,   0.986+0.j,   1.434+0.j,
+                                 4.72 +0.j,   1.844+0.j,   4.72 +0.j,   6.268+0.j,   0.76 +0.j,
+                                 4.61 +0.j,   2.02 +0.j,   2.   +0.j,   6.2  +0.j,   0.768+0.j,
+                                 5.18 +0.j,   1.628+0.j,   1.972+0.j,   0.276+0.j,   5.02 +0.j,
+                                 3.58 +0.j,   1.198+0.j,   1.356+0.j,   2.14 +0.j,   4.44 +0.j,
+                                 0.21 +0.j,   4.66 +0.j,   1.298+0.j,   1.142+0.j,   2.98 +0.j,
+                                 1.01 +0.j,   2.16 +0.j,   2.46 +0.j,   4.04 +0.j,   4.98 +0.j,
+                                 8.64 +0.j,   2.84 +0.j,  17.64 +0.j,   2.16 +0.j,   2.38 +0.j,
+                                51.4  +0.j,  90.8  +0.j,   3.99 +0.j,   0.83 +0.j,  11.73 +0.j,
+                                 2.51 +0.j,   1.926+0.j,   1.426+0.j,   3.194+0.j,   6.32 +0.j,
+                                 0.268+0.j,   1.318+0.j,   3.66 +0.j,   0.568+0.j,   0.984+0.j,
+                                 2.7  +0.j,   4.2  +0.j,  42.2  +0.j,   0.55 +0.j,   1.552+0.j,
+                                 1.222+0.j,   4.66 +0.j,   3.44 +0.j,   6.068+0.j,   4.226+0.j,
+                                 2.24 +0.j,   3.32 +0.j,   3.16 +0.j,   4.72 +0.j, 116.2  +0.j,
+                                 1.604+0.j,   8.6  +0.j,   8.6  +0.j,   4.44 +0.j,   1.258+0.j,
+                                 1.874+0.j,   3.42 +0.j,   1.396+0.j,   4.058+0.j,   3.1  +0.j,
+                               123.   +0.j,   7.38 +0.j,   7.3  +0.j,   2.02 +0.j,   0.732+0.j,
+                                 0.374+0.j,   2.42 +0.j,   3.32 +0.j,   2.42 +0.j,   1.788+0.j,
+                                 5.98 +0.j,   1.748+0.j,   5.69 +0.j,   5.36 +0.j,   5.646+0.j,
+                                 3.76 +0.j,   3.88 +0.j,   1.456+0.j,   1.468+0.j,   0.98 +0.j,
+                                21.6  +0.j, 104.6  +0.j,   1.738+0.j,  38.   +0.j,   2.48 +0.j,
+                                 2.48 +0.j,   5.78 +0.j,   3.1  +0.j,   2.682+0.j,   7.092+0.j,
+                                 8.28 +0.j,  12.2  +0.j,  10.198+0.j])
         # new in pandapower 2.7.0 : order changed, sn_mva changed!
         # for el_r, el_x in zip(line_r, line_x): print(np.where((np.abs(res_r*100.-el_r) <= 1e-6) & (np.abs(res_x*100.-el_x) <= 1e-6))[0])
         # for el in [el for el in np.arange(line_r.shape[0]) if not np.isin(el, order_270)]: print(el)
@@ -243,13 +242,13 @@ class MakeTests(unittest.TestCase):
                                4.04933224e-05, 3.88000000e-04, 3.75000000e-04, 3.86000000e-04,
                                2.68000000e-04, 3.70000000e-04, 1.59594718e-04, 3.70000000e-04,
                                2.01181945e-04])
-        trafo_h_res = np.array([ 0.        -0.j        ,  0.        -0.j        ,
-                                0.        -0.j        ,  4.4602909 -0.00140652j,
-                               16.40272367-0.00022869j,  0.        -0.j        ,
-                                0.        -0.j        ,  0.        -0.j        ,
-                                0.        -0.j        ,  0.        -0.j        ,
-                               63.96323106-0.01411497j,  0.        -0.j        ,
-                               81.1310369 -0.02879733j])
+        trafo_h_res = 1j * np.array([ 0.        -0.j        ,  0.        -0.j        ,
+                                      0.        -0.j        ,  4.4602909 -0.00140652j,
+                                     16.40272367-0.00022869j,  0.        -0.j        ,
+                                      0.        -0.j        ,  0.        -0.j        ,
+                                      0.        -0.j        ,  0.        -0.j        ,
+                                     63.96323106-0.01411497j,  0.        -0.j        ,
+                                     81.1310369 -0.02879733j])
         # new in pandapower 2.7.0 : order changed, sn_mva changed!
         # for el_r, el_x in zip(trafo_r, trafo_x): print(np.where((np.abs(trafo_r_res*100.-el_r) <= 1e-6) & (np.abs(trafo_x_res*100.-el_x) <= 1e-6))[0])
         # for el in [el for el in np.arange(line_r.shape[0]) if not np.isin(el, order_270)]: print(el)

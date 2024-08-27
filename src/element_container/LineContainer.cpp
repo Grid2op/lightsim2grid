@@ -143,8 +143,8 @@ void LineContainer::_update_model_coeffs()
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
         const cplx_type ys = 1. / (powerlines_r_(i) + my_i * powerlines_x_(i));
-        const cplx_type h_or = my_i * powerlines_h_or_(i);
-        const cplx_type h_ex = my_i * powerlines_h_ex_(i);
+        const cplx_type h_or = powerlines_h_or_(i);
+        const cplx_type h_ex = powerlines_h_ex_(i);
         yac_ff_(i) = (ys + h_or);
         yac_tt_(i) = (ys + h_ex);
         yac_tf_(i) = -ys;
@@ -287,8 +287,8 @@ void LineContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         yft_bp = -ys_bp_r;
         ytf_bp = -ys_bp_r;
         const real_type ys_bpp_r = std::imag(ys_bpp); 
-        yff_bpp = ys_bpp_r + std::imag(my_i * powerlines_h_or_(line_id));
-        ytt_bpp = ys_bpp_r + std::imag(my_i * powerlines_h_ex_(line_id));
+        yff_bpp = ys_bpp_r + std::imag(powerlines_h_or_(line_id));
+        ytt_bpp = ys_bpp_r + std::imag(powerlines_h_ex_(line_id));
         yft_bpp = -ys_bpp_r;
         ytf_bpp = -ys_bpp_r;
 

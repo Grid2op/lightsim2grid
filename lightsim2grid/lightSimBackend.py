@@ -628,20 +628,20 @@ class LightSimBackend(Backend):
             use_grid2op_default_names = False
             
         if use_grid2op_default_names:
-            self.name_load = np.array([f"load_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())])
-            self.name_gen = np.array([f"gen_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())])
+            self.name_load = np.array([f"load_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
+            self.name_gen = np.array([f"gen_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())]).astype(str)
             self.name_line = np.array([f"{el.bus_or_id}_{el.bus_ex_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
-                                    [f"{el.bus_hv_id}_{el.bus_lv_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_trafos())])
-            self.name_storage = np.array([f"storage_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())])
-            self.name_shunt = np.array([f"shunt_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())])
+                                    [f"{el.bus_hv_id}_{el.bus_lv_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
+            self.name_storage = np.array([f"storage_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())]).astype(str)
+            self.name_shunt = np.array([f"shunt_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())]).astype(str)
         else:
-            self.name_load = np.array(load_sub.index)
-            self.name_gen = np.array(gen_sub.index)
-            self.name_line = np.concatenate((lor_sub.index, tor_sub.index))
-            self.name_storage = np.array(batt_sub.index)
-            self.name_shunt = np.array(sh_sub.index)
-            self.name_sub = np.array(buses_sub_id.index)
-        
+            self.name_load = np.array(load_sub.index.astype(str))
+            self.name_gen = np.array(gen_sub.index.astype(str))
+            self.name_line = np.concatenate((lor_sub.index.astype(str), tor_sub.index.astype(str)))
+            self.name_storage = np.array(batt_sub.index.astype(str))
+            self.name_shunt = np.array(sh_sub.index.astype(str))
+            self.name_sub = np.array(buses_sub_id.index.astype(str))
+
         if "reconnect_disco_gen" in loader_kwargs and loader_kwargs["reconnect_disco_gen"]:
             for el in self._grid.get_generators():
                 if not el.connected:

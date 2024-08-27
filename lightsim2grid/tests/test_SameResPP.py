@@ -385,15 +385,15 @@ class MyTestCase(unittest.TestCase):
         vn_trafo_hv, vn_trafo_lv, shift_pp = _calc_tap_from_dataframe(pp_net, trafo_df)
         ratio = _calc_nominal_ratio_from_dataframe(ppc, trafo_df, vn_trafo_hv, vn_trafo_lv, bus_lookup)
         r_t, x_t, b_t = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
-
+        b_t *= 1j  # to fix https://github.com/BDonnot/lightsim2grid/issues/88
+        
         # check where there are mismatch if any
         val_r_pp = r_t
         val_r_me = trafo_r
         all_equals_r = np.abs(val_r_pp - val_r_me) <= self.tol
         if not np.all(all_equals_r):
-            test_ok = False
-            print(f"\t Error: some trafo resistance are not equal, max error: {np.max(np.abs(val_r_pp - val_r_me)):.5f}")
-
+            raise AssertionError(f"\t Error: some trafo resistance are not equal, max error: {np.max(np.abs(val_r_pp - val_r_me)):.5f}")
+        
         val_x_pp = x_t
         val_x_me = trafo_x
         all_equals_x = np.abs(val_x_pp - val_x_me) <= self.tol

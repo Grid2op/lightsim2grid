@@ -24,10 +24,15 @@ TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  
       in order to perform the "invertibility" check
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
+TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
 [0.9.1] 2024-xx-yy
 --------------------------
-
+- [FIXED] a bug due to wrong type (in a numpy array) for the element name which lead in turn 
+  to a fail assertion (equality between two numpy arrays returning a bool and not an array)
+- [IMPROVED] removing a weird `1j * h_` when initializing powerlines and transformers. This was 
+  part of a pandapower "hack" which is not present anymore (see 
+  https://github.com/BDonnot/lightsim2grid/issues/88#issue-2443299039)
 
 [0.9.0] 2024-07-29
 --------------------------

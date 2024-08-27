@@ -59,3 +59,8 @@ class TestBug(unittest.TestCase):
         # and it used to make this diverge
         sim_o, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space())
         assert not sim_d, "should have converged"
+           
+          
+if __name__ == "__main__":
+    unittest.main()
+            

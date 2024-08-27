@@ -659,6 +659,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def(py::init<>())
         .def("set_f_hz", &PandaPowerConverter::set_f_hz)
         .def("set_sn_mva", &PandaPowerConverter::set_sn_mva)
+        .def("get_line_param_legacy", &PandaPowerConverter::get_line_param_legacy)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
         .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
 

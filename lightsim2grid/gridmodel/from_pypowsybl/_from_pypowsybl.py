@@ -138,8 +138,8 @@ def init(net : pypo.network,
     b2 = df_line["b2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.imag*v2/sn_mva
     g1 = df_line["g1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.real*v1/sn_mva
     g2 = df_line["g2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.real*v2/sn_mva
-    line_h_or = (b1 + 1j * g1)
-    line_h_ex = (b2 + 1j * g2)
+    line_h_or = (g1 + 1j * b1)
+    line_h_ex = (g2 + 1j * b2)
     lor_bus, lor_disco = _aux_get_bus(bus_df, df_line, conn_key="connected1", bus_key="bus1_id")
     lex_bus, lex_disco = _aux_get_bus(bus_df, df_line, conn_key="connected2", bus_key="bus2_id")
     model.init_powerlines_full(line_r,
@@ -178,7 +178,7 @@ def init(net : pypo.network,
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
     model.init_trafo(df_trafo["r"].values / trafo_to_pu,
                      df_trafo["x"].values / trafo_to_pu,
-                     2.*(1j*df_trafo["g"].values + df_trafo["b"].values) * trafo_to_pu,
+                     2.*(df_trafo["g"].values + 1j * df_trafo["b"].values) * trafo_to_pu,
                      tap_step_pct,
                      tap_pos,
                      shift_,

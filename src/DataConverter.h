@@ -50,15 +50,28 @@ class PandaPowerConverter : public BaseConstants
                            const RealVect & trafo_pfe_kw,
                            const RealVect & trafo_i0_pct);
         /**
-        pair unit properly the powerlines
+        pair unit properly the powerlines (for legacy (<= 2.14.somthing) pandapower)
         **/
         std::tuple<RealVect,
                    RealVect,
                    CplxVect>
+           get_line_param_legacy(const RealVect & branch_r,
+                                 const RealVect & branch_x,
+                                 const RealVect & branch_g,
+                                 const RealVect & branch_c,
+                                 const RealVect & branch_from_kv,
+                                 const RealVect & branch_to_kv);
+        /**
+        pair unit properly the powerlines (for most recent pandapower)
+        **/
+        std::tuple<RealVect,
+                   RealVect,
+                   CplxVect,
+                   CplxVect>
            get_line_param(const RealVect & branch_r,
                           const RealVect & branch_x,
+                          const RealVect & branch_g,
                           const RealVect & branch_c,
-                          const RealVect & branch_g, //TODO g is not supported atm!
                           const RealVect & branch_from_kv,
                           const RealVect & branch_to_kv);
 
