@@ -1024,6 +1024,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         
         // inspect the class
         .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
+        .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency, DocGridModel::_internal_do_not_use.c_str())  // TODO
 
         // perform the computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())

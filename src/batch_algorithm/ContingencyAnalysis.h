@@ -103,7 +103,8 @@ class ContingencyAnalysis: public BaseBatchSolverSynch
 
         // make the computation
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
-        
+        IntVect is_grid_connected_after_contingency();
+
         Eigen::Ref<RealMat > compute_flows() {
             compute_flows_from_Vs();
             clean_flows();
