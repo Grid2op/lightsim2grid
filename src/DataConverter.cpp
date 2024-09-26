@@ -22,17 +22,17 @@ void PandaPowerConverter::_check_init(){
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param(const RealVect & tap_step_pct,
-                                                const RealVect & tap_pos,
-                                                const RealVect & tap_angles,
-                                                const std::vector<bool> & is_tap_hv_side,
-                                                const RealVect & vn_hv,  // nominal voltage of hv bus
-                                                const RealVect & vn_lv,  // nominal voltage of lv bus
-                                                const RealVect & trafo_vk_percent,
-                                                const RealVect & trafo_vkr_percent,
-                                                const RealVect & trafo_sn_trafo_mva,
-                                                const RealVect & trafo_pfe_kw,
-                                                const RealVect & trafo_i0_pct)
+           PandaPowerConverter::get_trafo_param_legacy(const RealVect & tap_step_pct,
+                                                       const RealVect & tap_pos,
+                                                       const RealVect & tap_angles,
+                                                       const std::vector<bool> & is_tap_hv_side,
+                                                       const RealVect & vn_hv,  // nominal voltage of hv bus
+                                                       const RealVect & vn_lv,  // nominal voltage of lv bus
+                                                       const RealVect & trafo_vk_percent,
+                                                       const RealVect & trafo_vkr_percent,
+                                                       const RealVect & trafo_sn_trafo_mva,
+                                                       const RealVect & trafo_pfe_kw,
+                                                       const RealVect & trafo_i0_pct)
 {
     //TODO consistency: move this class outside of here
     _check_init();
@@ -83,8 +83,6 @@ std::tuple<RealVect,
     baseR.array() /= sn_mva_;
     // pfe = get_trafo_values(trafo_df, "pfe_kw") * 1e-3
     RealVect pfe =  trafo_pfe_kw.array() * 1e-3;
-
-    // Calculate subsceptance ###
     // vnl_squared = vn_lv_kv ** 2
     RealVect vnl_squared = vn_lv.array() * vn_lv.array();
     // b_real = pfe / vnl_squared * baseR
@@ -92,7 +90,6 @@ std::tuple<RealVect,
     // b_img = (i0 / 100. * sn) ** 2 - pfe ** 2
     tmp2 = (trafo_i0_pct.array() * 0.01 * trafo_sn_trafo_mva.array());
     RealVect b_img =  tmp2.array() * tmp2.array() - pfe.array() * pfe.array();
-
     // b_img[b_img < 0] = 0
     for(int i = 0; i<nb_trafo; ++i) {if (b_img(i) < 0.)  b_img(i) = 0.;}
     //  b_img = np.sqrt(b_img) * baseR / vnl_squared

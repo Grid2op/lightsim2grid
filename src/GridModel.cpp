@@ -267,10 +267,11 @@ void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
         throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
     _ls_to_orig = ls_to_orig;
     const auto size = ls_to_orig.lpNorm<Eigen::Infinity>();
-    _orig_to_ls = IntVect::Zero(size);
-    _orig_to_ls.array() -= 1;
-    for(auto i = 0; i < size; ++i){
-        _orig_to_ls[i] = _ls_to_orig[i];
+    _orig_to_ls = IntVect::Constant(size + 1, -1);
+    int i = 0;
+    for(auto el : _ls_to_orig){
+        if(el != -1) _orig_to_ls[el] = i;
+        ++i;
     }
 }
 
@@ -287,7 +288,7 @@ void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
     }
     if(nb_bus_ls != bus_vn_kv_.size()) 
         throw std::runtime_error("Impossible to set the converter orig_to_ls: the number of 'non -1' component in the provided vector does not match the number of buses on the grid.");
-    _ls_to_orig = IntVect::Zero(nb_bus_ls);
+    _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
     Eigen::Index ls2or_ind = 0;
     for(auto or2ls_ind = 0; or2ls_ind < nb_bus_ls; ++or2ls_ind){
         const auto my_ind = _orig_to_ls[or2ls_ind];

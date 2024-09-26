@@ -43,14 +43,12 @@ def init(net : pypo.network,
          sort_index=True,
          f_hz = 50.,  # unused
          only_main_component=True,
-         return_sub_id=False):
+         return_sub_id=False,
+         n_busbar_per_sub=None,  # new in 0.9.1
+         buses_for_sub=None,  # new in 0.9.1
+         ):
     model = GridModel()
     # model.set_f_hz(f_hz)
-    
-    # for substation
-    # network.get_voltage_levels()["substation_id"]
-    # network.get_substations()
-    # network.get_busbar_sections()
     
     if gen_slack_id is not None and slack_bus_id is not None:
         raise RuntimeError("Impossible to intialize a grid with both gen_slack_id and slack_bus_id")
@@ -61,15 +59,68 @@ def init(net : pypo.network,
         bus_df = bus_df_orig.sort_index()
     else:
         bus_df = bus_df_orig
-    bus_df["bus_id"] = np.arange(bus_df.shape[0])
-    bus_df_orig["bus_id"] = bus_df.loc[bus_df_orig.index]["bus_id"]
-    voltage_levels = net.get_voltage_levels()
+    
+    if sort_index:
+        voltage_levels = net.get_voltage_levels().sort_index()
+    else:
+        voltage_levels = net.get_voltage_levels()
+        
+    all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values
+    if n_busbar_per_sub is not None and buses_for_sub is not None:
+        # I am in a compatibility mode,
+        # I need to use the same convention as grid2op
+        # for the buses labelling
+        bus_df = bus_df.sort_values("voltage_level_id", kind="stable")
+        sub_unique = bus_df["voltage_level_id"].unique()
+        nb_sub_unique = sub_unique.shape[0]
+        sub_unique_id = np.arange(nb_sub_unique)
+        bus_per_sub =  bus_df[["voltage_level_id", "name"]].groupby("voltage_level_id").count()
+        if (bus_per_sub["name"] > n_busbar_per_sub).any():
+            max_bb = bus_per_sub["name"].max()
+            raise RuntimeError(f"Impossible configuration: we found a substation with {max_bb} "
+                               f"while asking for {n_busbar_per_sub}. We cannot load a grid with these "
+                               f"kwargs. If you use LightSimBackend, you need to change `loader_kwargs` "
+                               f"and especially the `n_busbar_per_sub` to be >= {max_bb}")
+        bus_local_id = np.concatenate([np.arange(el) for el in bus_per_sub.values])
+        sub_id_duplicate = np.repeat(sub_unique_id, bus_per_sub.values.ravel())
+        bus_global_id = bus_local_id * nb_sub_unique + sub_id_duplicate
+        bus_df["bus_id"] = bus_global_id
+        all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
+        all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
+        ls_to_orig = np.zeros(n_busbar_per_sub * nb_sub_unique, dtype=int) - 1
+        ls_to_orig[bus_df["bus_id"].values] = np.arange(bus_df.shape[0])
+        n_sub = nb_sub_unique
+        n_bb_per_sub = n_busbar_per_sub
+        bus_df = bus_df.sort_index()
+    else:
+        if buses_for_sub is not None:
+            raise NotImplementedError("This is not implemented at the moment")
+        bus_df["bus_id"] = np.arange(bus_df.shape[0]) 
+        ls_to_orig = 1 * bus_df_orig["bus_id"].values
+        bus_df_orig["bus_id"] = bus_df.loc[bus_df_orig.index]["bus_id"]
+        
+        n_sub = bus_df.shape[0]
+        n_bb_per_sub = None
+        if n_busbar_per_sub is not None:
+            # used to be done in the Backend previously, now we do it here instead
+            bus_init = 1. * all_buses_vn_kv
+            ls_to_orig = 1. * bus_df["bus_id"].values
+            bus_doubled = np.concatenate([bus_init for _ in range(n_busbar_per_sub)])
+            ls_to_orig = np.concatenate([orig_to_ls + i * self.__nb_bus_before 
+                                             for i in range(self.n_busbar_per_sub)]
+                                            )
+        else:
+            warnings.warn("You should avoid using this function without at least `buses_for_sub` or `n_busbar_per_sub`")
+
     model.set_sn_mva(sn_mva)
     model.set_init_vm_pu(1.06)
-    model.init_bus(voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values,
+    model.init_bus(all_buses_vn_kv,
                    0, 0  # unused
                    )
-    model._orig_to_ls = 1 * bus_df_orig["bus_id"].values
+    model._ls_to_orig = ls_to_orig
+    model.set_n_sub(nb_sub_unique)
+    if n_bb_per_sub is not None:
+        model._max_nb_bus_per_sub = n_busbar_per_sub
     
     # do the generators
     if sort_index:
@@ -82,8 +133,21 @@ def init(net : pypo.network,
     min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min * 1e-4 + 1.
     max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max * 1e-4 - 1.
     gen_bus, gen_disco = _aux_get_bus(bus_df, df_gen)
+
+    # dirty fix for when regulating elements are not the same
+    bus_reg = df_gen["regulated_element_id"].values
+    vl_reg = df_gen["voltage_level_id"].values
+    mask_ref_bbs = bus_reg != df_gen.index
+    
+    bbs_df = net.get_busbar_sections()
+    if not (np.isin(bus_reg[mask_ref_bbs], bbs_df.index)).all():
+        raise RuntimeError("At least some generator are in 'remote control' mode "
+                           "and does not control a busbar section, this is not supported "
+                           "at the moment.")
+    vl_reg[mask_ref_bbs] = bbs_df.loc[bus_reg[mask_ref_bbs], "voltage_level_id"].values
     model.init_generators_full(df_gen["target_p"].values,
-                               df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
+                            #    df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
+                               df_gen["target_v"].values / voltage_levels.loc[vl_reg]["nominal_v"].values,
                                df_gen["target_q"].values,
                                df_gen["voltage_regulator_on"].values,
                                min_q,
@@ -178,7 +242,7 @@ def init(net : pypo.network,
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
     model.init_trafo(df_trafo["r"].values / trafo_to_pu,
                      df_trafo["x"].values / trafo_to_pu,
-                     2.*(df_trafo["g"].values + 1j * df_trafo["b"].values) * trafo_to_pu,
+                     (df_trafo["g"].values + 1j * df_trafo["b"].values) * trafo_to_pu,
                      tap_step_pct,
                      tap_pos,
                      shift_,
@@ -296,6 +360,7 @@ def init(net : pypo.network,
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
         model.consider_only_main_component()
+    model.init_bus_status()  # automatically disconnect non connected buses
     if not return_sub_id:
         # for backward compatibility
         return model

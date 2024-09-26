@@ -30,8 +30,15 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 --------------------------
 - [FIXED] a bug due to wrong type (in a numpy array) for the element name which lead in turn 
   to a fail assertion (equality between two numpy arrays returning a bool and not an array)
+- [FIXED] a bug when init a grid from pypowsybl: the wrong value was used for trafos `h` (double)
+- [FIXED] a bug when init a grid from pypowsybl: wrong values for `_ls_to_orig` and `_orig_to_ls`
+  was set (and later used)
+- [FIXED] yet another bug when init a grid from pypowsybl: the voltage in kV (not in pu)
+  could be set due to "wrong" labelling of the bus ids
 - [ADDED] a method for the `ContingencyAnalysisCPP` class that returns, for all contingencies
   in the contingency list, which will be simulated and which causes the grid to be disconnected.
+- [ADDED] it is now possible to use "one substation" (voltage level) pypowsybl side is
+  one substation in lightsim2grid.
 - [IMPROVED] removing a weird `1j * h_` when initializing powerlines and transformers. This was 
   part of a pandapower "hack" which is not present anymore (see 
   https://github.com/BDonnot/lightsim2grid/issues/88#issue-2443299039)

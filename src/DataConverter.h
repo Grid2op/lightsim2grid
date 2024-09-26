@@ -33,7 +33,7 @@ class PandaPowerConverter : public BaseConstants
 
         // data converters
         /**
-        This converts the trafo from pandapower to r, x and h (pair unit)
+        This converts the trafo from pandapower to r, x and h (pair unit) (for legacy (<= 2.14.somthing) pandapower)
         **/
         std::tuple<RealVect,
                    RealVect,
@@ -48,7 +48,40 @@ class PandaPowerConverter : public BaseConstants
                            const RealVect & trafo_vkr_percent,
                            const RealVect & trafo_sn_trafo_mva,
                            const RealVect & trafo_pfe_kw,
-                           const RealVect & trafo_i0_pct);
+                           const RealVect & trafo_i0_pct)
+        { 
+            // TODO
+            return get_trafo_param_legacy(tap_step_pct,
+                                          tap_pos,
+                                          tap_angles,
+                                          is_tap_hv_side,
+                                          vn_hv,
+                                          vn_lv,
+                                          trafo_vk_percent,
+                                          trafo_vkr_percent,
+                                          trafo_sn_trafo_mva,
+                                          trafo_pfe_kw,
+                                          trafo_i0_pct);
+        }
+        /**
+        This converts the trafo from pandapower to r, x and h (pair unit) (for legacy (<= 2.14.somthing) pandapower)
+        **/
+        std::tuple<RealVect,
+                   RealVect,
+                   CplxVect>
+           get_trafo_param_legacy(const RealVect & tap_step_pct,
+                                  const RealVect & tap_pos,
+                                  const RealVect & tap_angles,
+                                  const std::vector<bool> & is_tap_hv_side,
+                                  const RealVect & vn_hv,  // nominal voltage of hv bus
+                                  const RealVect & vn_lv,  // nominal voltage of lv bus
+                                  const RealVect & trafo_vk_percent,
+                                  const RealVect & trafo_vkr_percent,
+                                  const RealVect & trafo_sn_trafo_mva,
+                                  const RealVect & trafo_pfe_kw,
+                                  const RealVect & trafo_i0_pct);
+
+
         /**
         pair unit properly the powerlines (for legacy (<= 2.14.somthing) pandapower)
         **/

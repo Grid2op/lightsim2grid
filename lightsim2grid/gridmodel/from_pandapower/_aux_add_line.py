@@ -8,10 +8,10 @@
 
 import numpy as np
 from packaging import version
-_MIN_PP_VERSION = version.parse("2.14.6")
 import pandapower as pp
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
+from ._my_const import _MIN_PP_VERSION_ADV_GRID_MODEL
 
 def _aux_add_line(converter, model, pp_net, pp_to_ls=None):
     """
@@ -32,7 +32,7 @@ def _aux_add_line(converter, model, pp_net, pp_to_ls=None):
                            "Some pp_net.line[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     #### find the right powerline parameters
-    if version.parse(pp.__version__) >= _MIN_PP_VERSION:
+    if version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL:
         # new pandapower with support for different h at both side
         line_r, line_x, line_h_or, line_h_ex = \
             converter.get_line_param(

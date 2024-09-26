@@ -10,10 +10,12 @@ import copy
 import unittest
 import numpy as np
 from packaging import version
-MIN_PP_VERSION = version.parse("2.14")
 
 import pandapower as pp
 from pandapower_contingency import run_contingency, run_contingency_ls2g
+
+from lightsim2grid.gridmodel import init_from_pandapower
+from lightsim2grid.gridmodel.from_pandapower._my_const import _MIN_PP_VERSION_ADV_GRID_MODEL
 
 
 def run_for_from_bus_loading(net, **kwargs):
@@ -26,11 +28,57 @@ def run_for_from_bus_loading(net, **kwargs):
         max_i_ka_limit = net.trafo.sn_mva.values / (net.trafo.vn_hv_kv.values * np.sqrt(3))
         net.res_trafo["loading_percent"] = net.res_trafo.i_hv_ka / max_i_ka_limit * 100.
         
-        
-class PandapowerIntegration(unittest.TestCase):
+
+class GridModelInit(unittest.TestCase):
     def setUp(self) -> None:
-        if version.parse(pp.__version__) < MIN_PP_VERSION:
-            self.skipTest(f"Pandapower too old for this test: requires >={MIN_PP_VERSION}, found {pp.__version__}")
+        if version.parse(pp.__version__) < _MIN_PP_VERSION_ADV_GRID_MODEL:
+            self.skipTest(f"Pandapower too old for this test: requires >={_MIN_PP_VERSION_ADV_GRID_MODEL}, found {pp.__version__}")
+        return super().setUp()
+    
+    def _aux_test_init(self, case=None):
+        if case is None:
+            case = pp.networks.case118()
+            
+        gridmodel = init_from_pandapower(case)
+        
+        # run powerflow
+        pp.runpp(case)
+        resV = gridmodel.ac_pf(np.ones(case.bus.shape[0], dtype=np.complex128), 10, 1e-8)
+        
+        # check Ybus
+        Ybus_pp = case["_ppc"]["internal"]["Ybus"]
+        Ybus_ls = gridmodel.get_Ybus()
+        assert Ybus_pp.shape == Ybus_ls.shape
+        assert Ybus_ls.size == Ybus_pp.size
+        assert (Ybus_ls.nonzero()[0] == Ybus_pp.nonzero()[0]).all()
+        assert (Ybus_ls.nonzero()[1] == Ybus_pp.nonzero()[1]).all()
+        if np.abs(Ybus_ls - Ybus_pp).max() >= 1e-8:
+            tol = 1e-1
+            while True:
+                row_, col_ = (np.abs(Ybus_ls - Ybus_pp).toarray() >= tol).nonzero()
+                if len(row_) >= 1:
+                    raise AssertionError("Error for some Ybus coeffs. "
+                                         f"There are {(np.abs(Ybus_ls - Ybus_pp) >= 1e-8).sum()} difference (>= 1e-8). "
+                                         f"At tolerance {tol:.1e}, issues are with {row_}, {col_}")
+                tol /= 10
+        # check Sbus
+        # TODO
+        
+        # check resulting voltages
+        # TODO
+        
+        # check flows
+        # TODO
+        
+    def test_case118(self):
+        net = pp.networks.case118()   
+        self._aux_test_init(net)    
+        
+
+class PandapowerContingencyIntegration(unittest.TestCase):
+    def setUp(self) -> None:
+        if version.parse(pp.__version__) < _MIN_PP_VERSION_ADV_GRID_MODEL:
+            self.skipTest(f"Pandapower too old for this test: requires >={_MIN_PP_VERSION_ADV_GRID_MODEL}, found {pp.__version__}")
         return super().setUp()
     
     def _aux_test_case(self, case=None, nminus1_cases=None):
@@ -80,7 +128,6 @@ class PandapowerIntegration(unittest.TestCase):
             assert (~np.isfinite(test_net.res_bus["vm_pu"])).any()
         # end of the "test of the integration test"
         #############
-        
         # now the contingency analysis
         cont_lines = np.delete(cont_lines, lines_diff_behaviour)
         cont_trafo = np.delete(cont_trafo, trafos_diff_behaviour)
