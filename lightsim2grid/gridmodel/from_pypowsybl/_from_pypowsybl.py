@@ -7,9 +7,11 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import warnings
+import copy
 import numpy as np
 import pandas as pd
 import pypowsybl as pypo
+from pypowsybl.network import PerUnitView
 from typing import Union
 
 from lightsim2grid_cpp import GridModel
@@ -66,6 +68,8 @@ def init(net : pypo.network,
         voltage_levels = net.get_voltage_levels()
         
     all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values
+    sub_unique = None
+    sub_unique_id = None
     if n_busbar_per_sub is not None and buses_for_sub is not None:
         # I am in a compatibility mode,
         # I need to use the same convention as grid2op
@@ -127,6 +131,7 @@ def init(net : pypo.network,
         df_gen = net.get_generators().sort_index()
     else:
         df_gen = net.get_generators()
+        
     # to handle encoding in 32 bits and overflow when "splitting" the Q values among 
     min_q = df_gen["min_q"].values.astype(np.float32)
     max_q = df_gen["max_q"].values.astype(np.float32)
@@ -135,11 +140,11 @@ def init(net : pypo.network,
     gen_bus, gen_disco = _aux_get_bus(bus_df, df_gen)
 
     # dirty fix for when regulating elements are not the same
-    bus_reg = df_gen["regulated_element_id"].values
-    vl_reg = df_gen["voltage_level_id"].values
+    bus_reg = copy.deepcopy(df_gen["regulated_element_id"].values)
+    vl_reg = copy.deepcopy(df_gen["voltage_level_id"].values)
     mask_ref_bbs = bus_reg != df_gen.index
     
-    bbs_df = net.get_busbar_sections()
+    bbs_df = net.get_busbar_sections().copy()
     if not (np.isin(bus_reg[mask_ref_bbs], bbs_df.index)).all():
         raise RuntimeError("At least some generator are in 'remote control' mode "
                            "and does not control a busbar section, this is not supported "
@@ -180,30 +185,36 @@ def init(net : pypo.network,
     else:
         df_line = net.get_lines()
     # per unit
-    branch_from_kv = voltage_levels.loc[df_line["voltage_level1_id"].values]["nominal_v"].values
-    branch_to_kv = voltage_levels.loc[df_line["voltage_level2_id"].values]["nominal_v"].values
+    grid_pu = PerUnitView(net)
+    df_line_pu = grid_pu.get_lines().loc[df_line.index]
+    # branch_from_kv = voltage_levels.loc[df_line["voltage_level1_id"].values]["nominal_v"].values
+    # branch_to_kv = voltage_levels.loc[df_line["voltage_level2_id"].values]["nominal_v"].values
     
     # only valid for lines with same voltages at both side...
-    # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva
-    # line_r = df_line["r"].values / branch_from_pu
-    # line_x = df_line["x"].values / branch_from_pu  
-    # line_h_or = (1j*df_line["g1"].values + df_line["b1"].values) * branch_from_pu
-    # line_h_ex = (1j*df_line["g2"].values + df_line["b2"].values) * branch_from_pu
+    # # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva
+    # # line_r = df_line["r"].values / branch_from_pu
+    # # line_x = df_line["x"].values / branch_from_pu  
+    # # line_h_or = (1j*df_line["g1"].values + df_line["b1"].values) * branch_from_pu
+    # # line_h_ex = (1j*df_line["g2"].values + df_line["b2"].values) * branch_from_pu
     # real per unit conversion 
     # see https://github.com/powsybl/pypowsybl/issues/642
     # see https://github.com/powsybl/powsybl-core/blob/266442cbbd84f630acf786018618eaa3d496c6ba/ieee-cdf/ieee-cdf-converter/src/main/java/com/powsybl/ieeecdf/converter/IeeeCdfImporter.java#L347
     # for right formula
-    v1 = branch_from_kv
-    v2 = branch_to_kv
-    line_r = sn_mva *  df_line["r"].values / v1 / v2
-    line_x = sn_mva *  df_line["x"].values / v1 / v2
-    tmp_ = np.reciprocal(df_line["r"].values + 1j*df_line["x"].values)
-    b1 = df_line["b1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.imag*v1/sn_mva
-    b2 = df_line["b2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.imag*v2/sn_mva
-    g1 = df_line["g1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.real*v1/sn_mva
-    g2 = df_line["g2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.real*v2/sn_mva
-    line_h_or = (g1 + 1j * b1)
-    line_h_ex = (g2 + 1j * b2)
+    # v1 = branch_from_kv
+    # v2 = branch_to_kv
+    # line_r = sn_mva *  df_line["r"].values / v1 / v2
+    # line_x = sn_mva *  df_line["x"].values / v1 / v2
+    # tmp_ = np.reciprocal(df_line["r"].values + 1j*df_line["x"].values)
+    # b1 = df_line["b1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.imag*v1/sn_mva
+    # b2 = df_line["b2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.imag*v2/sn_mva
+    # g1 = df_line["g1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.real*v1/sn_mva
+    # g2 = df_line["g2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.real*v2/sn_mva
+    # line_h_or = (g1 + 1j * b1)
+    # line_h_ex = (g2 + 1j * b2)
+    line_r = df_line_pu["r"].values
+    line_x = df_line_pu["x"].values
+    line_h_or = (df_line_pu["g1"].values + 1j * df_line_pu["b1"].values)
+    line_h_ex = (df_line_pu["g2"].values + 1j * df_line_pu["b2"].values)
     lor_bus, lor_disco = _aux_get_bus(bus_df, df_line, conn_key="connected1", bus_key="bus1_id")
     lex_bus, lex_disco = _aux_get_bus(bus_df, df_line, conn_key="connected2", bus_key="bus2_id")
     model.init_powerlines_full(line_r,
@@ -223,6 +234,8 @@ def init(net : pypo.network,
         df_trafo = net.get_2_windings_transformers().sort_index()
     else:
         df_trafo = net.get_2_windings_transformers()
+        
+    df_trafo_pu = grid_pu.get_2_windings_transformers().loc[df_trafo.index]
     # TODO net.get_ratio_tap_changers()
     # TODO net.get_phase_tap_changers()
     shift_ = np.zeros(df_trafo.shape[0])
@@ -230,19 +243,39 @@ def init(net : pypo.network,
     is_tap_hv_side = np.ones(df_trafo.shape[0], dtype=bool)  # TODO
     
     # per unit
-    trafo_from_kv = voltage_levels.loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
-    trafo_to_kv = voltage_levels.loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
-    trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva
+    # trafo_from_kv = voltage_levels.loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
+    # trafo_to_kv = voltage_levels.loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
+    # trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva
     # tap
-    tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
-    has_tap = tap_step_pct != 0.
-    tap_pos[has_tap] += 1
-    tap_step_pct[~has_tap] = 1.0  # or any other values...
+    # tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
+    # has_tap = tap_step_pct != 0.
+    # tap_pos[has_tap] += 1
+    # tap_step_pct[~has_tap] = 1.0  # or any other values...
+    # trafo_r = df_trafo["r"].values / trafo_to_pu
+    # trafo_x = df_trafo["x"].values / trafo_to_pu
+    # trafo_h = (df_trafo["g"].values + 1j * df_trafo["b"].values) * trafo_to_pu
+    trafo_r = df_trafo_pu["r"].values
+    trafo_x = df_trafo_pu["x"].values
+    trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values)
+    tmp = df_trafo_pu["rated_u2"]  / df_trafo_pu["rated_u1"]
+    no_tap = tmp == 1.
+    tap_neg = tmp < 1. 
+    tap_positive = tmp > 1. 
+    tmp[tap_positive] -= 1.
+    tmp[tap_positive] *= 100.
+    tmp[tap_neg] = -(1. / tmp[tap_neg] -1.)*100.
+    tmp[no_tap] = 1.
+    tap_step_pct = 1. * tmp
+    tap_pos[tap_positive] += 1
+    tap_pos[tap_neg] += 1
+    import pdb
+    pdb.set_trace()
+    
     tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
-    model.init_trafo(df_trafo["r"].values / trafo_to_pu,
-                     df_trafo["x"].values / trafo_to_pu,
-                     (df_trafo["g"].values + 1j * df_trafo["b"].values) * trafo_to_pu,
+    model.init_trafo(trafo_r,
+                     trafo_x,
+                     trafo_h,
                      tap_step_pct,
                      tap_pos,
                      shift_,
@@ -366,8 +399,13 @@ def init(net : pypo.network,
         return model
     else:
         # voltage_level_id is kind of what I call "substation" in grid2op
-        vl_unique = bus_df["voltage_level_id"].unique()
-        sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
+        if sub_unique is None:
+            vl_unique = bus_df["voltage_level_id"].unique()
+            sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
+        else:
+            # already computed before when innitializing the buses and substations
+            # I don't do it again to ensure consistency
+            sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
         buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_id", "sub_id"]]
         gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
         load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]

@@ -653,12 +653,6 @@ class LightSimBackend(Backend):
             self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
             self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
             self.n_sub = grid_tmp.get_voltage_levels().shape[0]
-            
-            # raise NotImplementedError("Today the only supported behaviour is to consider the 'buses' of the powsybl grid "
-            #                           "are the 'substation' of this backend. "
-            #                           "This will change in the future, but in the meantime please add "
-            #                           "'use_buses_for_sub' = True in the `loader_kwargs` when loading "
-            #                           "a lightsim2grid grid.")
         
         # the names
         use_grid2op_default_names = True
@@ -1106,7 +1100,7 @@ class LightSimBackend(Backend):
         
         # print(f" load p {backendAction.load_p.values[backendAction.load_p.changed]}")  # TODO DEBUG WINDOWS
         # print(f" prod_p p {backendAction.prod_p.values[backendAction.prod_p.changed]}")  # TODO DEBUG WINDOWS
-       # update the injections
+        # update the injections
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
                                      backendAction.prod_p.values)

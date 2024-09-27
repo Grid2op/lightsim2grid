@@ -661,7 +661,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_sn_mva", &PandaPowerConverter::set_sn_mva)
         .def("get_line_param_legacy", &PandaPowerConverter::get_line_param_legacy)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
-        .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
+        .def("get_trafo_param", &PandaPowerConverter::get_trafo_param)
+        .def("get_trafo_param_legacy", &PandaPowerConverter::get_trafo_param_legacy);
 
     py::class_<SolverControl>(m, "SolverControl", "TODO")
         .def(py::init<>())
