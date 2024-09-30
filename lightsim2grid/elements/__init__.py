@@ -6,29 +6,33 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["DataGen",
+__all__ = ["GeneratorContainer",
            "GenInfo",
-           "DataSGen",
+           "SGenContainer",
            "SGenInfo",
-           "DataLoad",
+           "LoadContainer",
            "LoadInfo",
-           "DataShunt",
+           "ShuntContainer",
            "ShuntInfo",
-           "DataTrafo",
+           "TrafoContainer",
            "TrafoInfo",
-           "DataLine",
+           "LineContainer",
            "LineInfo",
+           "DCLineContainer",
+           "DCLineInfo",
            ]
 
-from lightsim2grid_cpp import DataGen
+from lightsim2grid_cpp import GeneratorContainer
 from lightsim2grid_cpp import GenInfo
-from lightsim2grid_cpp import DataSGen
+from lightsim2grid_cpp import SGenContainer
 from lightsim2grid_cpp import SGenInfo
-from lightsim2grid_cpp import DataLoad
+from lightsim2grid_cpp import LoadContainer
 from lightsim2grid_cpp import LoadInfo
-from lightsim2grid_cpp import DataShunt
+from lightsim2grid_cpp import ShuntContainer
 from lightsim2grid_cpp import ShuntInfo
-from lightsim2grid_cpp import DataTrafo
+from lightsim2grid_cpp import TrafoContainer
 from lightsim2grid_cpp import TrafoInfo
-from lightsim2grid_cpp import DataLine
+from lightsim2grid_cpp import LineContainer
 from lightsim2grid_cpp import LineInfo
+from lightsim2grid_cpp import DCLineContainer
+from lightsim2grid_cpp import DCLineInfo

@@ -72,32 +72,66 @@ class LightSimBackend(Backend):
                  stop_if_load_disco : Optional[bool] = True,
                  stop_if_gen_disco : Optional[bool] = True,
                  ):
+        #: ``int`` maximum number of iteration allowed for the solver
+        #: if the solver has not converge after this, it will 
+        #: send a "divergence error"
         self.max_it = max_iter
+        
+        #: ``float`` tolerance of the solver
         self.tol = tol  # tolerance for the solver
+        
         self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
         self.__current_solver_type = solver_type
         
-        # does the "turned off" generators (including when p=0)
-        # are pv buses
+        #: does the "turned off" generators (including when p=0)
+        #: are pv buses
         self._turned_off_pv = turned_off_pv
         
-        # distributed slack, on non renewable gen with P > 0
+        #: distributed slack, on non renewable gen with P > 0
         self._dist_slack_non_renew = dist_slack_non_renew
         
         # add the static gen to the list of controlable gen in grid2Op
         self._use_static_gen = use_static_gen  # TODO implement it
 
+        #: For now, you can initialize a "lightsim2grid" LightsimBackend
+        #: either from pypowsybl or from pandapower.
+        #: Use with `LightsimBackend(..., loader_method="pypowsybl")`
+        #: or `LightsimBackend(..., loader_method="pandapower")` (default)
         self._loader_method = loader_method
         
+        #: Which key-word arguments will be used to initialize the Gridmodel
+        #: either from pandapower or lightsim2grid.
+        #: It is not currently used for pandapower.
+        #:
+        #: For pypowsybl it can contain the following keys:
+        #: 
+        #:   - `n_busbar_per_sub` (``int``): number of independant buses for
+        #:     each substation in the GridModel.
+        #:   - `use_buses_for_sub` (``bool``): whether to use the buses (in the 
+        #:     pypowsybl Network) to initialize the "substation" in the lightsim2grid
+        #:     Gridmodel (if ``True``). If ``False`` it will use the `voltage_levels`
+        #:     of the pypowsybl Network.
+        #:   - `gen_slack_id` (``int``): which generator will be used for the slack
+        #:   - `use_grid2op_default_names` (``bool``): whether to use the "default names"
+        #:     assigne by grid2op or to read them from the the iidm grid.
+        #:   - `reconnect_disco_gen` (``bool``): whether to reconnect the disconnected 
+        #:     generators in the iidm grid. If set to ``True`` then the generators will be
+        #:     reconnected with a p setpoint of 0. MW and a voltage setpoint of 1 pu
+        #:   - `reconnect_disco_load` (``bool``): whether to reconnec the disconnected
+        #:     load from in the iidm grid. If reconnected, load will have a target
+        #:     p set to 0. and a target q set to 0.
+        #: 
         self._loader_kwargs = loader_kwargs
 
         #: .. versionadded:: 0.8.0
-        #: if set to `True` (default) then the backend will raise a 
+        #:
+        #: if set to ``True`` (default) then the backend will raise a 
         #: BackendError in case of disconnected load
         self._stop_if_load_disco = stop_if_load_disco
         
         #: .. versionadded:: 0.8.0
-        #: if set to `True` (default) then the backend will raise a 
+        #:
+        #: if set to ``True`` (default) then the backend will raise a 
         #: BackendError in case of disconnected generator
         self._stop_if_gen_disco = stop_if_gen_disco
                                         
@@ -119,10 +153,12 @@ class LightSimBackend(Backend):
             self._can_be_copied = can_be_copied
 
         #: .. versionadded:: 0.8.0
+        #:
         #: Which type of grid format can be read by your backend.
         #: It is "json" if loaded from pandapower or
         #: "xiidm" if loaded from pypowsybl.
         self.supported_grid_format = None
+        
         if loader_method == "pandapower":
             self.supported_grid_format = ("json", )  # new in 0.8.0
         elif loader_method == "pypowsybl":
