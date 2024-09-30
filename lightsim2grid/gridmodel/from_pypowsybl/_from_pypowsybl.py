@@ -11,9 +11,11 @@ import copy
 import numpy as np
 import pandas as pd
 import pypowsybl as pypo
-from pypowsybl.network import PerUnitView
-from typing import Union
+from typing import Optional, Union
+from packaging import version
 
+PP_BUG_RATIO_TAP_CHANGER = version.parse("1.7.0")
+PYPOWSYBL_VER = version.parse(pypo.__version__)
 from lightsim2grid_cpp import GridModel
 
 
@@ -38,12 +40,13 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
     return bus_id, mask_disco.values
 
 
-def init(net : pypo.network,
+def init(net : pypo.network.Network,
          gen_slack_id: Union[int, str] = None,
          slack_bus_id: int = None,
          sn_mva = 100.,
          sort_index=True,
          f_hz = 50.,  # unused
+         net_pu : Optional[pypo.network.Network] = None,
          only_main_component=True,
          return_sub_id=False,
          n_busbar_per_sub=None,  # new in 0.9.1
@@ -185,8 +188,16 @@ def init(net : pypo.network,
     else:
         df_line = net.get_lines()
     # per unit
-    grid_pu = PerUnitView(net)
-    df_line_pu = grid_pu.get_lines().loc[df_line.index]
+    if net_pu is None:
+        try:
+            net_pu = copy.deepcopy(net)
+            net_pu.per_unit = True
+        except Exception as exc_:
+            from pypowsybl.network import PerUnitView
+            net_pu = PerUnitView(net)
+            warnings.warn("The `PerUnitView` (python side) is less efficient and less "
+                        "tested that the equivalent java class. Please upgrade pypowsybl version")
+    df_line_pu = net_pu.get_lines().loc[df_line.index]
     # branch_from_kv = voltage_levels.loc[df_line["voltage_level1_id"].values]["nominal_v"].values
     # branch_to_kv = voltage_levels.loc[df_line["voltage_level2_id"].values]["nominal_v"].values
     
@@ -235,12 +246,15 @@ def init(net : pypo.network,
     else:
         df_trafo = net.get_2_windings_transformers()
         
-    df_trafo_pu = grid_pu.get_2_windings_transformers().loc[df_trafo.index]
-    # TODO net.get_ratio_tap_changers()
-    # TODO net.get_phase_tap_changers()
+    df_trafo_pu = net_pu.get_2_windings_transformers().loc[df_trafo.index]
+    ratio_tap_changer = net_pu.get_ratio_tap_changers()
+    if net.get_phase_tap_changers().shape[0] > 0:
+        raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter (but they are by lightsim2grid)")
+    # phase_tap_changer = net_pu.get_phase_tap_changers()
+    
     shift_ = np.zeros(df_trafo.shape[0])
-    tap_pos = 1.0 * shift_
-    is_tap_hv_side = np.ones(df_trafo.shape[0], dtype=bool)  # TODO
+    tap_position = 1.0 * shift_
+    is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO
     
     # per unit
     # trafo_from_kv = voltage_levels.loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
@@ -257,19 +271,32 @@ def init(net : pypo.network,
     trafo_r = df_trafo_pu["r"].values
     trafo_x = df_trafo_pu["x"].values
     trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values)
-    tmp = df_trafo_pu["rated_u2"]  / df_trafo_pu["rated_u1"]
-    no_tap = tmp == 1.
-    tap_neg = tmp < 1. 
-    tap_positive = tmp > 1. 
-    tmp[tap_positive] -= 1.
-    tmp[tap_positive] *= 100.
-    tmp[tap_neg] = -(1. / tmp[tap_neg] -1.)*100.
-    tmp[no_tap] = 1.
-    tap_step_pct = 1. * tmp
-    tap_pos[tap_positive] += 1
-    tap_pos[tap_neg] += 1
-    import pdb
-    pdb.set_trace()
+    
+    # now get the ratio    
+    # in lightsim2grid (cpp)
+    # RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
+    # in powsybl (https://javadoc.io/doc/com.powsybl/powsybl-core/latest/com/powsybl/iidm/network/TwoWindingsTransformer.html)
+    #  rho = transfo.getRatedU2() / transfo.getRatedU1()
+    # * (transfo.getRatioTapChanger() != null ? transfo.getRatioTapChanger().getCurrentStep().getRho() : 1);
+    # * (transfo.getPhaseTapChanger() != null ? transfo.getPhaseTapChanger().getCurrentStep().getRho() : 1);
+    ratio = 1. * (df_trafo_pu["rated_u2"].values / df_trafo_pu["rated_u1"].values)
+    has_r_tap_changer = np.isin(df_trafo_pu.index, ratio_tap_changer.index)
+    
+    if PYPOWSYBL_VER <= PP_BUG_RATIO_TAP_CHANGER:
+        # bug in per unit view in both python and java
+        ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
+    else:
+        ratio[has_r_tap_changer] *= 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
+    no_tap = ratio == 1.
+    tap_neg = ratio < 1. 
+    tap_positive = ratio > 1. 
+    tap_step_pct = 1. * ratio
+    tap_step_pct[tap_positive] -= 1.
+    tap_step_pct[tap_positive] *= 100.
+    tap_step_pct[tap_neg] = (ratio[tap_neg] - 1.)*100.
+    tap_step_pct[no_tap] = 100.
+    tap_position[tap_positive] += 1
+    tap_position[tap_neg] += 1
     
     tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
@@ -277,7 +304,7 @@ def init(net : pypo.network,
                      trafo_x,
                      trafo_h,
                      tap_step_pct,
-                     tap_pos,
+                     tap_position,
                      shift_,
                      is_tap_hv_side,
                      tor_bus, # TODO do I need to change hv / lv
