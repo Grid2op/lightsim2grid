@@ -35,6 +35,11 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   was set (and later used)
 - [FIXED] yet another bug when init a grid from pypowsybl: the voltage in kV (not in pu)
   could be set due to "wrong" labelling of the bus ids
+- [FIXED] yet another bug when init a grid from pypowsybl: the ratio of the transformers 
+  sent in lightsim2grid did not take into account the "`rated_u1` `rated_u2`" on both side 
+  (only used on one side)
+- [FIXED] yet another bug when init a grid from pypowsybl: the ratio of the transformers 
+  sent in lightsim2grid did not take into account the ratio in the  `pypow_net.get_ratio_tap_changers()`
 - [ADDED] a method for the `ContingencyAnalysisCPP` class that returns, for all contingencies
   in the contingency list, which will be simulated and which causes the grid to be disconnected.
 - [ADDED] it is now possible to use "one substation" (voltage level) pypowsybl side is

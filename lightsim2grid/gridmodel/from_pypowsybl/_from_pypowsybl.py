@@ -93,7 +93,6 @@ def init(net : pypo.network.Network,
         bus_global_id = bus_local_id * nb_sub_unique + sub_id_duplicate
         bus_df["bus_id"] = bus_global_id
         all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
-        all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
         ls_to_orig = np.zeros(n_busbar_per_sub * nb_sub_unique, dtype=int) - 1
         ls_to_orig[bus_df["bus_id"].values] = np.arange(bus_df.shape[0])
         n_sub = nb_sub_unique
@@ -102,30 +101,32 @@ def init(net : pypo.network.Network,
     else:
         if buses_for_sub is not None:
             raise NotImplementedError("This is not implemented at the moment")
-        bus_df["bus_id"] = np.arange(bus_df.shape[0]) 
-        ls_to_orig = 1 * bus_df_orig["bus_id"].values
-        bus_df_orig["bus_id"] = bus_df.loc[bus_df_orig.index]["bus_id"]
+        # retrieve the labels from the buses in the original grid
+        bus_df["bus_id"] = -1
+        bus_df.loc[bus_df_orig.index, "bus_id"] = np.arange(bus_df.shape[0]) 
+        bus_df = bus_df.sort_values("bus_id")
+        ls_to_orig = 1 * bus_df["bus_id"].values
         
         n_sub = bus_df.shape[0]
         n_bb_per_sub = None
-        if n_busbar_per_sub is not None:
-            # used to be done in the Backend previously, now we do it here instead
-            bus_init = 1. * all_buses_vn_kv
-            ls_to_orig = 1. * bus_df["bus_id"].values
-            bus_doubled = np.concatenate([bus_init for _ in range(n_busbar_per_sub)])
-            ls_to_orig = np.concatenate([orig_to_ls + i * self.__nb_bus_before 
-                                             for i in range(self.n_busbar_per_sub)]
-                                            )
-        else:
-            warnings.warn("You should avoid using this function without at least `buses_for_sub` or `n_busbar_per_sub`")
-
+        if n_busbar_per_sub is None:
+            warnings.warn("You should avoid using this function without at least `buses_for_sub` or `n_busbar_per_sub`. "
+                          "Setting automatically n_busbar_per_sub=1")
+            n_busbar_per_sub = 1
+            
+        # used to be done in the Backend previously, now we do it here instead
+        bus_init = 1. * all_buses_vn_kv
+        bus_doubled = np.concatenate([bus_init for _ in range(n_busbar_per_sub)])
+        ls_to_orig = np.concatenate((ls_to_orig, np.full((n_busbar_per_sub - 1) * n_sub, fill_value=-1, dtype=ls_to_orig.dtype)))
+        
+    all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
     model.set_sn_mva(sn_mva)
     model.set_init_vm_pu(1.06)
     model.init_bus(all_buses_vn_kv,
                    0, 0  # unused
                    )
     model._ls_to_orig = ls_to_orig
-    model.set_n_sub(nb_sub_unique)
+    model.set_n_sub(n_sub)
     if n_bb_per_sub is not None:
         model._max_nb_bus_per_sub = n_busbar_per_sub
     
@@ -136,10 +137,19 @@ def init(net : pypo.network.Network,
         df_gen = net.get_generators()
         
     # to handle encoding in 32 bits and overflow when "splitting" the Q values among 
-    min_q = df_gen["min_q"].values.astype(np.float32)
-    max_q = df_gen["max_q"].values.astype(np.float32)
-    min_q[~np.isfinite(min_q)] = np.finfo(np.float32).min * 1e-4 + 1.
-    max_q[~np.isfinite(max_q)] = np.finfo(np.float32).max * 1e-4 - 1.
+    min_float_value = np.finfo(np.float32).min * 1e-4 + 1.
+    max_float_value = np.finfo(np.float32).max * 1e-4 + 1.
+    min_q_aux = 1. * df_gen["min_q"].values
+    too_small = min_q_aux < min_float_value
+    min_q_aux[too_small] = min_float_value
+    min_q = min_q_aux.astype(np.float32)
+    
+    max_q_aux = 1. * df_gen["max_q"].values
+    too_big = np.abs(max_q_aux) > max_float_value
+    max_q_aux[too_big] = np.sign(max_q_aux[too_big]) * max_float_value
+    max_q = max_q_aux.astype(np.float32)
+    min_q[~np.isfinite(min_q)] = min_float_value
+    max_q[~np.isfinite(max_q)] = max_float_value
     gen_bus, gen_disco = _aux_get_bus(bus_df, df_gen)
 
     # dirty fix for when regulating elements are not the same
@@ -391,8 +401,8 @@ def init(net : pypo.network.Network,
         else:
             try:
                 gen_slack_id_int = int(gen_slack_id)
-            except Exception:
-                raise RuntimeError("'slack_bus_id' should be either an int or a generator names")
+            except Exception as exc_:
+                raise RuntimeError("'slack_bus_id' should be either an int or a generator names") from exc_
             if gen_slack_id_int != gen_slack_id:
                 raise RuntimeError("'slack_bus_id' should be either an int or a generator names")
         model.add_gen_slackbus(gen_slack_id_int, 1.)
@@ -405,6 +415,8 @@ def init(net : pypo.network.Network,
         for gen_id, is_slack in enumerate(gen_is_conn_slack):
             if is_slack:
                 model.add_gen_slackbus(gen_id, 1. / nb_conn)    
+    else:
+        raise RuntimeError("You need to provide at least one slack with `gen_slack_id` or `slack_bus_id`")
     
     # TODO
     # sgen => regular gen (from net.get_generators()) with voltage_regulator off TODO 

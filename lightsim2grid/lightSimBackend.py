@@ -605,7 +605,7 @@ class LightSimBackend(Backend):
         (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
          batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
         if not buses_for_sub: 
-            self.__nb_bus_before = len(self._grid.get_bus_vn_kv())
+            self.__nb_bus_before = self._grid.get_n_sub()
         else:
             self.__nb_bus_before = grid_tmp.get_buses().shape[0]
         self._aux_setup_right_after_grid_init()   

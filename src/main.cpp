@@ -947,6 +947,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // auxiliary functions
         .def("set_n_sub", &GridModel::set_n_sub, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_n_sub", &GridModel::get_n_sub, DocGridModel::_internal_do_not_use.c_str())
         .def("set_max_nb_bus_per_sub", &GridModel::set_max_nb_bus_per_sub, DocGridModel::_internal_do_not_use.c_str())
         .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_gen_pos_topo_vect", &GridModel::set_gen_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())

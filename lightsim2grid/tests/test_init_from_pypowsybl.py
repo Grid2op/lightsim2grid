@@ -29,7 +29,8 @@ class AuxInitFromPyPowSyBl:
         return pp.network.create_ieee14()
     
     def get_slackbus_id(self):
-        # id in pandapower
+        # id in pandapower which is the same than the ID in the pypowsybl network when loaded from disk
+        # but might not be the same as the lightsim2grid gridmodel (if sort_index is True, which is the default)
         return 0
     
     def get_equiv_pdp_grid(self):
@@ -64,7 +65,7 @@ class AuxInitFromPyPowSyBl:
             self.ref_samecase = None
             
         # init lightsim2grid model
-        self.gridmodel = init_from_pypowsybl(self.network_ref, slack_bus_id=self.get_slackbus_id())
+        self.gridmodel, self.el_ids = init_from_pypowsybl(self.network_ref, slack_bus_id=self.get_slackbus_id(), return_sub_id=True)
         
         # use some data
         self.nb_bus_total = self.network_ref.get_buses().shape[0]
@@ -128,6 +129,8 @@ class AuxInitFromPyPowSyBl:
         # # self.pp_samecase["_ppc"]["internal"]["Bbus"]
         # self.pp_samecase["_ppc"]["internal"]["Ybus"][64,67]
         # self.pp_samecase["_ppc"]["internal"]["bus"]
+        # bus_id = self.el_ids[0]
+        # reorder = np.argsort([int(el.lstrip("VL").rstrip("0").rstrip("_")) for el in bus_id.index]).reshape(1, -1)
         if v_ls_ref is not None:
             max_ = np.abs(v_ls[reorder] - v_ls_ref).max()
             assert max_ <= self.tol_eq, f"error for vresults for dc: {max_:.2e}"

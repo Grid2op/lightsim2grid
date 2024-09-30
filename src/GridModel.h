@@ -972,6 +972,10 @@ class GridModel : public GenericContainer
         {
             n_sub_ = n_sub;
         }
+        int get_n_sub() const
+        {
+            return n_sub_;
+        }
         void set_max_nb_bus_per_sub(int max_nb_bus_per_sub)
         {
             if(bus_vn_kv_.size() != n_sub_ * max_nb_bus_per_sub){
