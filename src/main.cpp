@@ -659,8 +659,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def(py::init<>())
         .def("set_f_hz", &PandaPowerConverter::set_f_hz)
         .def("set_sn_mva", &PandaPowerConverter::set_sn_mva)
+        .def("get_line_param_legacy", &PandaPowerConverter::get_line_param_legacy)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
-        .def("get_trafo_param", &PandaPowerConverter::get_trafo_param);
+        .def("get_trafo_param", &PandaPowerConverter::get_trafo_param)
+        .def("get_trafo_param_legacy", &PandaPowerConverter::get_trafo_param_legacy);
 
     py::class_<SolverControl>(m, "SolverControl", "TODO")
         .def(py::init<>())
@@ -945,6 +947,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         // auxiliary functions
         .def("set_n_sub", &GridModel::set_n_sub, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_n_sub", &GridModel::get_n_sub, DocGridModel::_internal_do_not_use.c_str())
         .def("set_max_nb_bus_per_sub", &GridModel::set_max_nb_bus_per_sub, DocGridModel::_internal_do_not_use.c_str())
         .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_gen_pos_topo_vect", &GridModel::set_gen_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
@@ -1023,6 +1026,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         
         // inspect the class
         .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
+        .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency, DocGridModel::_internal_do_not_use.c_str())  // TODO
 
         // perform the computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())

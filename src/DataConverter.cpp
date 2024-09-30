@@ -7,6 +7,8 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "DataConverter.h"
+#include <iostream>
+
 
 void PandaPowerConverter::_check_init(){
     if(sn_mva_ <= 0.){
@@ -20,17 +22,17 @@ void PandaPowerConverter::_check_init(){
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param(const RealVect & tap_step_pct,
-                                                const RealVect & tap_pos,
-                                                const RealVect & tap_angles,
-                                                const std::vector<bool> & is_tap_hv_side,
-                                                const RealVect & vn_hv,  // nominal voltage of hv bus
-                                                const RealVect & vn_lv,  // nominal voltage of lv bus
-                                                const RealVect & trafo_vk_percent,
-                                                const RealVect & trafo_vkr_percent,
-                                                const RealVect & trafo_sn_trafo_mva,
-                                                const RealVect & trafo_pfe_kw,
-                                                const RealVect & trafo_i0_pct)
+           PandaPowerConverter::get_trafo_param_legacy(const RealVect & tap_step_pct,
+                                                       const RealVect & tap_pos,
+                                                       const RealVect & tap_angles,
+                                                       const std::vector<bool> & is_tap_hv_side,
+                                                       const RealVect & vn_hv,  // nominal voltage of hv bus
+                                                       const RealVect & vn_lv,  // nominal voltage of lv bus
+                                                       const RealVect & trafo_vk_percent,
+                                                       const RealVect & trafo_vkr_percent,
+                                                       const RealVect & trafo_sn_trafo_mva,
+                                                       const RealVect & trafo_pfe_kw,
+                                                       const RealVect & trafo_i0_pct)
 {
     //TODO consistency: move this class outside of here
     _check_init();
@@ -81,8 +83,6 @@ std::tuple<RealVect,
     baseR.array() /= sn_mva_;
     // pfe = get_trafo_values(trafo_df, "pfe_kw") * 1e-3
     RealVect pfe =  trafo_pfe_kw.array() * 1e-3;
-
-    // Calculate subsceptance ###
     // vnl_squared = vn_lv_kv ** 2
     RealVect vnl_squared = vn_lv.array() * vn_lv.array();
     // b_real = pfe / vnl_squared * baseR
@@ -90,7 +90,6 @@ std::tuple<RealVect,
     // b_img = (i0 / 100. * sn) ** 2 - pfe ** 2
     tmp2 = (trafo_i0_pct.array() * 0.01 * trafo_sn_trafo_mva.array());
     RealVect b_img =  tmp2.array() * tmp2.array() - pfe.array() * pfe.array();
-
     // b_img[b_img < 0] = 0
     for(int i = 0; i<nb_trafo; ++i) {if (b_img(i) < 0.)  b_img(i) = 0.;}
     //  b_img = np.sqrt(b_img) * baseR / vnl_squared
@@ -114,7 +113,8 @@ std::tuple<RealVect,
 
         r_sc(i) = std::real(zab_triangle);
         x_sc(i) = std::imag(zab_triangle);
-        b_sc(i) = -my_two_ * my_i / zbc_triangle;
+        // b_sc(i) = -my_two_ * my_i / zbc_triangle;
+        b_sc(i) = my_two_ / zbc_triangle;
     }
 
     std::tuple<RealVect, RealVect, CplxVect> res =
@@ -126,12 +126,12 @@ std::tuple<RealVect,
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_line_param(const RealVect & branch_r,
-                                               const RealVect & branch_x,
-                                               const RealVect & branch_c,
-                                               const RealVect & branch_g,  // TODO
-                                               const RealVect & branch_from_kv,
-                                               const RealVect & branch_to_kv)
+           PandaPowerConverter::get_line_param_legacy(const RealVect & branch_r,
+                                                      const RealVect & branch_x,
+                                                      const RealVect & branch_g,
+                                                      const RealVect & branch_c,
+                                                      const RealVect & branch_from_kv,
+                                                      const RealVect & branch_to_kv)
 {
     //TODO does not use c at the moment!
     _check_init();
@@ -141,11 +141,50 @@ std::tuple<RealVect,
     RealVect powerlines_r = branch_r.array() / branch_from_pu.array();
     RealVect powerlines_x = branch_x.array() / branch_from_pu.array();
 
-    CplxVect powerlines_h = CplxVect::Constant(nb_line, 2.0 * f_hz_ * M_PI * 1e-9);
-    powerlines_h.array() *= branch_c.array().cast<cplx_type>();
+    // b = 2 * net.f_hz * math.pi * line["c_nf_per_km"].values * 1e-9 * baseR * length_km * parallel
+    // g = line["g_us_per_km"].values * 1e-6 * baseR * length_km * parallel
+    // g + 1j . b
+    CplxVect powerlines_h = CplxVect::Constant(nb_line, 0.);
+    powerlines_h.array() += (1e-6 * branch_g.array().cast<cplx_type>() + 
+                             my_i * 2.0 * f_hz_ * M_PI * 1e-9 * branch_c.array().cast<cplx_type>());
     powerlines_h.array() *=  branch_from_pu.array().cast<cplx_type>();
     std::tuple<RealVect, RealVect, CplxVect> res = std::tuple<RealVect,
            RealVect,
            CplxVect> (std::move(powerlines_r), std::move(powerlines_x), std::move(powerlines_h));
     return res;
 }
+
+std::tuple<RealVect,
+           RealVect,
+           CplxVect,
+           CplxVect>
+    PandaPowerConverter::get_line_param(const RealVect & branch_r,
+                                        const RealVect & branch_x,
+                                        const RealVect & branch_g,
+                                        const RealVect & branch_c,
+                                        const RealVect & branch_from_kv,
+                                        const RealVect & branch_to_kv)
+{
+    _check_init();
+    const int nb_line = static_cast<int>(branch_r.size());
+    RealVect branch_from_pu = branch_from_kv.array() * branch_from_kv.array() / sn_mva_;
+
+    RealVect powerlines_r = branch_r.array() / branch_from_pu.array();
+    RealVect powerlines_x = branch_x.array() / branch_from_pu.array();
+
+    // TODO
+    // b = 2 * net.f_hz * math.pi * line["c_nf_per_km"].values * 1e-9 * baseR * length_km * parallel
+    // g = line["g_us_per_km"].values * 1e-6 * baseR * length_km * parallel
+    // g + 1j . b
+    CplxVect powerlines_h_or = CplxVect::Constant(nb_line, 0.);
+    powerlines_h_or.array() += (1e-6 * branch_g.array().cast<cplx_type>() + 
+                                my_i * 2.0 * f_hz_ * M_PI * 1e-9 * branch_c.array().cast<cplx_type>());
+    powerlines_h_or.array() *=  branch_from_pu.array().cast<cplx_type>() * 0.5;
+    CplxVect powerlines_h_ex = powerlines_h_or;
+    // END TODO
+
+    std::tuple<RealVect, RealVect, CplxVect, CplxVect> res = std::tuple<RealVect, RealVect, CplxVect, CplxVect>(
+        std::move(powerlines_r), std::move(powerlines_x), std::move(powerlines_h_or), std::move(powerlines_h_ex));
+    return res;
+}
+

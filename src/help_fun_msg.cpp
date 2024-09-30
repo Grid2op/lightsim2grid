@@ -16,7 +16,7 @@ const std::string DocSolver::get_J_python = R"mydelimiter(
     The "jacobian" matrix is only available for some powerflow (the one based on the Newton Raphson algorithm)
     and we provide it only for the last computed iteration.
 
-    .. info::
+    .. note::
         It is using the "solver" labelling, as this is accessed from the solvers.
 
     .. seealso::
@@ -31,7 +31,7 @@ const std::string DocSolver::get_J_python = R"mydelimiter(
 const std::string DocSolver::get_Va = R"mydelimiter(
     Returns the voltage angles for each buses as a numpy vector of real number.
 
-    .. info::
+    .. note::
         It is using the "solver" labelling, as this is accessed from the solvers.
 
     .. seealso::
@@ -46,7 +46,7 @@ const std::string DocSolver::get_Va = R"mydelimiter(
 const std::string DocSolver::get_Vm = R"mydelimiter(
     Returns the voltage magnitude for each buses as a numpy vector of real number.
 
-    .. info::
+    .. note::
         It is using the "solver" labelling, as this is accessed from the solvers.
 
     .. seealso::
@@ -60,7 +60,7 @@ const std::string DocSolver::get_Vm = R"mydelimiter(
 const std::string DocSolver::get_V = R"mydelimiter(
     Returns the complex voltage for each buses as a numpy vector of complex number.    
     
-    .. info::
+    .. note::
         It is using the "solver" labelling, as this is accessed from the solvers.
 
     .. seealso::
@@ -1624,7 +1624,8 @@ const std::string DocIterator::DCLineInfo = R"mydelimiter(
     inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
 
     For the sake of simplicity, you can only control the active value at the `or` side of the dc powerline. The
-    active value at the `ex` side 
+    active value at the `ex` side is then computed by the GridModel.
+
 )mydelimiter";
 
 const std::string DocIterator::target_p_or_mw = R"mydelimiter(
@@ -1638,13 +1639,16 @@ const std::string DocIterator::target_p_or_mw = R"mydelimiter(
 
 const std::string DocIterator::target_vm_or_pu = R"mydelimiter(
     The target active voltage setpoint at the `or` side of the powerline (in pu NOT in kV).
+
 )mydelimiter";
 
 const std::string DocIterator::target_vm_ex_pu = R"mydelimiter(
     The target active voltage setpoint at the `ex` side of the powerline (in pu NOT in kV).
+
 )mydelimiter";
 
 const std::string DocIterator::dc_line_formula = R"mydelimiter(
+
     .. note::
         A DC line is modeled by two connected generators and some losses to convert the power from one to the other.
 
@@ -1658,7 +1662,7 @@ const std::string DocIterator::dc_line_formula = R"mydelimiter(
         - if `or_mw` is positive, then `ex_mw = -1.0 * (or_mw - loss_mw) * (1.0 - 0.01 * loss_percent)`
         - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw
 
-        Where `or_mw` denotes the power injected at the origin side and `ex_mw` the power injected at the `extremity`
+        Where `or_mw` denotes the power injected at the `origin` side and `ex_mw` the power injected at the `extremity`
         side.
 
     .. note::
@@ -1733,10 +1737,12 @@ const std::string DocIterator::res_theta_ex_deg_dcline = R"mydelimiter(
 
 const std::string DocIterator::gen_or = R"mydelimiter(
     Direct access to the "or" generators, directly returns a :class:`lightsim2grid.elements.GenInfo`
+
 )mydelimiter" + DocIterator::dc_line_formula;
 
 const std::string DocIterator::gen_ex = R"mydelimiter(
-    Direct access to the "ex" generators, directly returns a :class:`lightsim2grid.elements.GenInfo`
+    Direct access to the "ex" generators, directly returns a :class:`lightsim2grid.elements.GenInfo` 
+
 )mydelimiter" + DocIterator::dc_line_formula;
 
 const std::string DocGridModel::GridModel = R"mydelimiter(
@@ -2065,7 +2071,7 @@ const std::string DocGridModel::get_Va = R"mydelimiter(
         You can :func:`lightsim2grid.gridmodel.GridModel.get_Va_solver` to get the
         previous (before 0.9.0) behaviour.
 
-    .. info::
+    .. note::
         You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
         (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
@@ -2087,7 +2093,7 @@ const std::string DocGridModel::get_Vm = R"mydelimiter(
         You can :func:`lightsim2grid.gridmodel.GridModel.get_Vm_solver` to get the previous 
         (before 0.9.0) behaviour.
 
-    .. info::
+    .. note::
         You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
         (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
@@ -2148,7 +2154,7 @@ const std::string DocGridModel::get_Va_solver = R"mydelimiter(
         lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_Va`
         now returns the id labelled with the gridmodel convention (for consistency).
 
-    .. info::
+    .. note::
         You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` 
         (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
@@ -2169,7 +2175,7 @@ const std::string DocGridModel::get_Vm_solver = R"mydelimiter(
         lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_Vm`
         now returns the id labelled with the gridmodel convention (for consistency).
 
-    .. info::
+    .. note::
         You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
 
@@ -2189,7 +2195,7 @@ const std::string DocGridModel::get_V_solver = R"mydelimiter(
         lightsim2grid version. The new version of :func:`lightsim2grid.gridmodel.GridModel.get_V`
         now returns the id labelled with the gridmodel convention (for consistency).
 
-    .. info::
+    .. note::
         You can use the :attr:`lightsim2grid.gridmodel.GridModel.id_ac_solver_to_me` (or :attr:`lightsim2grid.gridmodel.GridModel.id_dc_solver_to_me`) to know at which bus
         (on the grid) they corresponds.
 

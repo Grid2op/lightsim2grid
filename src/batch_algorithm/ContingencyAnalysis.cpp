@@ -115,6 +115,20 @@ bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus
     return check_invertible(Ybus);
 }
 
+IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
+    const bool ac_solver_used = _solver.ac_solver_used();
+    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
+    IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
+    int cont_id = 0;
+    for(const auto & coeffs_modif: _li_coeffs){
+        if(remove_from_Ybus(Ybus, coeffs_modif)) res(cont_id) = 1;
+        else res(cont_id) = 0;
+        readd_to_Ybus(Ybus, coeffs_modif);
+        ++cont_id;
+    }
+    return res;
+}
+
 void ContingencyAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                      const std::vector<Coeff> & coeffs) const
 {

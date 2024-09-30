@@ -7,8 +7,11 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import numpy as np
+from packaging import version
+import pandapower as pp
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
+from ._my_const import _MIN_PP_VERSION_ADV_GRID_MODEL
 
 def _aux_add_line(converter, model, pp_net, pp_to_ls=None):
     """
@@ -29,21 +32,41 @@ def _aux_add_line(converter, model, pp_net, pp_to_ls=None):
                            "Some pp_net.line[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     #### find the right powerline parameters
-    line_r, line_x, line_h = \
-        converter.get_line_param(
-            pp_net.line["r_ohm_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.line["x_ohm_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.line["c_nf_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.line["g_us_per_km"].values * pp_net.line["length_km"].values,
-            pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"], 
-            pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"], 
-            )
+    if version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL:
+        # new pandapower with support for different h at both side
+        line_r, line_x, line_h_or, line_h_ex = \
+            converter.get_line_param(
+                pp_net.line["r_ohm_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.line["x_ohm_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.line["g_us_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.line["c_nf_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"], 
+                pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"], 
+                )
 
-    ### add them to the grid
-    model.init_powerlines(line_r, line_x, line_h,
-                          pp_bus_to_ls(pp_net.line["from_bus"].values, pp_to_ls),
-                          pp_bus_to_ls(pp_net.line["to_bus"].values, pp_to_ls)
-                          )
+        ### add them to the grid
+        model.init_powerlines_full(line_r, line_x, line_h_or, line_h_ex,
+                                   pp_bus_to_ls(pp_net.line["from_bus"].values, pp_to_ls),
+                                   pp_bus_to_ls(pp_net.line["to_bus"].values, pp_to_ls)
+                                  )
+        
+    else:
+        # legacy pandapower, when they did not support lines with different h both side
+        line_r, line_x, line_h = \
+            converter.get_line_param_legacy(
+                pp_net.line["r_ohm_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.line["x_ohm_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.line["g_us_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.line["c_nf_per_km"].values * pp_net.line["length_km"].values,
+                pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"], 
+                pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"], 
+                )
+
+        ### add them to the grid
+        model.init_powerlines(line_r, line_x, line_h,
+                              pp_bus_to_ls(pp_net.line["from_bus"].values, pp_to_ls),
+                              pp_bus_to_ls(pp_net.line["to_bus"].values, pp_to_ls)
+                              )
     for line_id, is_connected in enumerate(pp_net.line["in_service"].values):
         if not is_connected:
             # powerline is deactivated

@@ -23,6 +23,30 @@ TODO HVDC in Jacobian (see pandapower)
 TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  `remove_from_Ybus`
       in order to perform the "invertibility" check
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
+TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
+TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
+
+[0.9.1] 2024-xx-yy
+--------------------------
+- [FIXED] a bug due to wrong type (in a numpy array) for the element name which lead in turn 
+  to a fail assertion (equality between two numpy arrays returning a bool and not an array)
+- [FIXED] a bug when init a grid from pypowsybl: the wrong value was used for trafos `h` (double)
+- [FIXED] a bug when init a grid from pypowsybl: wrong values for `_ls_to_orig` and `_orig_to_ls`
+  was set (and later used)
+- [FIXED] yet another bug when init a grid from pypowsybl: the voltage in kV (not in pu)
+  could be set due to "wrong" labelling of the bus ids
+- [FIXED] yet another bug when init a grid from pypowsybl: the ratio of the transformers 
+  sent in lightsim2grid did not take into account the "`rated_u1` `rated_u2`" on both side 
+  (only used on one side)
+- [FIXED] yet another bug when init a grid from pypowsybl: the ratio of the transformers 
+  sent in lightsim2grid did not take into account the ratio in the  `pypow_net.get_ratio_tap_changers()`
+- [ADDED] a method for the `ContingencyAnalysisCPP` class that returns, for all contingencies
+  in the contingency list, which will be simulated and which causes the grid to be disconnected.
+- [ADDED] it is now possible to use "one substation" (voltage level) pypowsybl side is
+  one substation in lightsim2grid.
+- [IMPROVED] removing a weird `1j * h_` when initializing powerlines and transformers. This was 
+  part of a pandapower "hack" which is not present anymore (see 
+  https://github.com/BDonnot/lightsim2grid/issues/88#issue-2443299039)
 
 [0.9.0] 2024-07-29
 --------------------------

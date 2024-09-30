@@ -133,7 +133,7 @@ void TrafoContainer::_update_model_coeffs()
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
         const cplx_type ys = 1. / (r_(i) + my_i * x_(i));
-        const cplx_type h = my_i * h_(i) * 0.5;
+        const cplx_type h = h_(i) * 0.5;
         double tau = ratio_(i);
         if(!is_tap_hv_side_[i]) tau = my_one_ / tau;
         real_type theta_shift = shift_(i);
@@ -452,8 +452,8 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         ytf_bp = -std::imag(ys_bp * emitheta_shift_bp);
         yft_bp = -std::imag(ys_bp * eitheta_shift_bp);
         const real_type ys_bpp_r = std::imag(ys_bpp); 
-        yff_bpp = (ys_bpp_r + std::imag(0.5 * my_i * h_(tr_id))) / (tau_bpp * tau_bpp);
-        ytt_bpp = ys_bpp_r + std::imag(0.5 * my_i * h_(tr_id));
+        yff_bpp = (ys_bpp_r + std::imag(0.5 * h_(tr_id))) / (tau_bpp * tau_bpp);
+        ytt_bpp = ys_bpp_r + std::imag(0.5 * h_(tr_id));
         ytf_bpp = -ys_bpp_r / tau_bpp;
         yft_bpp = -ys_bpp_r / tau_bpp;
 
