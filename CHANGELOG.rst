@@ -26,7 +26,13 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.9.1] 2024-xx-yy
+[0.9.2] 2024-xx-yy
+--------------------------
+- [ADDED] support loading a grid when everything is NOT on the same bus
+  (`topo_vect` used to be wrong in this case). This is especially usefull
+  for grid loaded with `pypowsybl`
+
+[0.9.1] 2024-09-30
 --------------------------
 - [FIXED] a bug due to wrong type (in a numpy array) for the element name which lead in turn 
   to a fail assertion (equality between two numpy arrays returning a bool and not an array)

@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "0.9.1"
+__version__ = "0.9.2.dev0"
 
 __all__ = ["newtonpf", "SolverType", "ErrorType", "solver", "compilation_options"]
 

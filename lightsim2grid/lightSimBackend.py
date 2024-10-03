@@ -991,7 +991,6 @@ class LightSimBackend(Backend):
         self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int).reshape(-1)
 
         self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int).reshape(-1)
-        
         if cls.shunts_data_available:
             self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
@@ -1031,12 +1030,28 @@ class LightSimBackend(Backend):
             self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
         self._count_object_per_bus()
+        self.topo_vect[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
+                                                                         cls.load_to_subid)
+        self.topo_vect[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
+                                                                         cls.gen_to_subid)
+        self.topo_vect[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
+                                                                            cls.storage_to_subid)
+        lor_glob_bus = np.concatenate((np.array([el.bus_or_id for el in self._grid.get_lines()]),
+                                       np.array([el.bus_hv_id for el in self._grid.get_trafos()])))
+        self.topo_vect[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus,
+                                                                            cls.line_or_to_subid)
+        lex_glob_bus = np.concatenate((np.array([el.bus_ex_id for el in self._grid.get_lines()]),
+                                       np.array([el.bus_lv_id for el in self._grid.get_trafos()])))
+        self.topo_vect[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus,
+                                                                            cls.line_ex_to_subid)
+        
         self._grid.tell_solver_need_reset()
         self.__me_at_init = self._grid.copy()
         self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
         self.__init_topo_vect[:] = self.topo_vect
         if cls.shunts_data_available:
-            self.sh_bus[:] = 1
+            self.sh_bus[:] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_shunts()]),
+                                                     cls.shunt_to_subid)
             
     def assert_grid_correct_after_powerflow(self) -> None:
         """
