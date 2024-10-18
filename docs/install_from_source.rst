@@ -40,7 +40,7 @@ First, you can download it with git with:
 
 .. code-block::
 
-    git clone https://github.com/BDonnot/lightsim2grid.git
+    git clone https://github.com/Grid2Op/lightsim2grid.git
     cd lightsim2grid
     # it is recommended to do a python virtual environment
     python -m virtualenv venv  # optional

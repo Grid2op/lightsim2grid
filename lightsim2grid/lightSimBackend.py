@@ -57,7 +57,11 @@ class LightSimBackend(Backend):
     
     shunts_data_available = True
     glop_version = Backend.glop_version if hasattr(Backend, "glop_version") else grid2op.__version__
-    
+    if not hasattr(Backend, "n_busbar_per_sub"):
+        # for legacy grid2op
+        n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
+        
+        
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
                  can_be_copied: bool=True,
@@ -673,8 +677,10 @@ class LightSimBackend(Backend):
             self.gen_to_subid = np.array(this_gen_sub, dtype=dt_int)
             self.line_or_to_subid = np.concatenate((this_lor_sub, this_tor_sub)).astype(dt_int)
             self.line_ex_to_subid = np.concatenate((this_lex_sub, this_tex_sub)).astype(dt_int)
-            self.storage_to_subid = np.array(this_batt_sub, dtype=dt_int)
-            self.shunt_to_subid = np.array(this_sh_sub, dtype=dt_int)
+            if self.__has_storage:
+                self.storage_to_subid = np.array(this_batt_sub, dtype=dt_int)
+            if self.n_shunt is not None:
+                self.shunt_to_subid = np.array(this_sh_sub, dtype=dt_int)
         else:
             # consider effectively that each "voltage_levels" in powsybl grid
             # is a substation (in the underlying gridmodel)
@@ -686,9 +692,11 @@ class LightSimBackend(Backend):
             self.gen_to_subid = np.array(gen_sub.values.ravel(), dtype=dt_int)
             self.line_or_to_subid = np.concatenate((lor_sub.values.ravel(), tor_sub.values.ravel())).astype(dt_int)
             self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
-            self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
+            if self.__has_storage:
+                self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
             self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
-            self.n_sub = grid_tmp.get_voltage_levels().shape[0]
+            if self.n_shunt is not None:
+                self.n_sub = grid_tmp.get_voltage_levels().shape[0]
         
         # the names
         use_grid2op_default_names = True
@@ -991,7 +999,6 @@ class LightSimBackend(Backend):
         self.nb_obj_per_bus = np.zeros(2 * self.__nb_bus_before, dtype=dt_int).reshape(-1)
 
         self.topo_vect = np.ones(cls.dim_topo, dtype=dt_int).reshape(-1)
-        
         if cls.shunts_data_available:
             self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
@@ -1031,13 +1038,40 @@ class LightSimBackend(Backend):
             self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
 
         self._count_object_per_bus()
-        self._grid.tell_solver_need_reset()
-        self.__me_at_init = self._grid.copy()
-        self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
-        self.__init_topo_vect[:] = self.topo_vect
-        if cls.shunts_data_available:
-            self.sh_bus[:] = 1
+        
+        # set the initial topology vector
+        n_sub_cls_orig = cls.n_sub
+        n_sub_ls_orig = LightSimBackend.n_sub
+        try:
+            cls.n_sub = self.n_sub
+            LightSimBackend.n_sub = self.n_sub
+            self.topo_vect[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
+                                                                            cls.load_to_subid)
+            self.topo_vect[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
+                                                                            cls.gen_to_subid)
+            if self.__has_storage:
+                self.topo_vect[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
+                                                                                    cls.storage_to_subid)
+            lor_glob_bus = np.concatenate((np.array([el.bus_or_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus_hv_id for el in self._grid.get_trafos()])))
+            self.topo_vect[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus,
+                                                                                cls.line_or_to_subid)
+            lex_glob_bus = np.concatenate((np.array([el.bus_ex_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus_lv_id for el in self._grid.get_trafos()])))
+            self.topo_vect[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus,
+                                                                                cls.line_ex_to_subid)
             
+            self._grid.tell_solver_need_reset()
+            self.__me_at_init = self._grid.copy()
+            self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
+            self.__init_topo_vect[:] = self.topo_vect
+            if cls.shunts_data_available:
+                self.sh_bus[:] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_shunts()]),
+                                                        cls.shunt_to_subid)
+        finally:
+            cls.n_sub = n_sub_cls_orig
+            LightSimBackend.n_sub = n_sub_ls_orig
+        
     def assert_grid_correct_after_powerflow(self) -> None:
         """
         This method is called by the environment. It ensure that the backend remains consistent even after a powerflow
@@ -1054,10 +1088,11 @@ class LightSimBackend(Backend):
         self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:
-            # feature added in grid2op 1.4 or 1.5
             _init_action_to_set = self.get_action_to_set()
-        except TypeError as exc_:
-            _init_action_to_set = self._get_action_to_set_deprecated()
+        except TypeError:
+            # I am in legacy grid2op version...
+            _init_action_to_set = _dont_use_get_action_to_set_legacy(self)
+            
         self._init_action_to_set += _init_action_to_set
         if self.prod_pu_to_kv is not None:
             assert np.isfinite(self.prod_pu_to_kv).all()
@@ -1069,22 +1104,6 @@ class LightSimBackend(Backend):
             assert np.isfinite(self.lines_ex_pu_to_kv).all()
         if self.__has_storage and self.n_storage > 0 and self.storage_pu_to_kv is not None:
             assert np.isfinite(self.storage_pu_to_kv).all()
-        
-    def _get_action_to_set_deprecated(self):
-        warnings.warn("DEPRECATION: grid2op <=1.4 is not well supported with lightsim2grid. Lots of bugs have been"
-                      "fixed since then. Please upgrade to grid2op >= 1.5",
-                      DeprecationWarning)
-        line_status = self.get_line_status()
-        line_status = 2 * line_status - 1
-        line_status = line_status.astype(dt_int)
-        topo_vect = self.get_topo_vect()
-        prod_p, _, prod_v = self.generators_info()
-        load_p, load_q, _ = self.loads_info()
-        complete_action_class = CompleteAction.init_grid(self)
-        set_me = complete_action_class()
-        set_me.update({"set_line_status": line_status,
-                       "set_bus": topo_vect})
-        return set_me
 
     def _count_object_per_bus(self):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
@@ -1147,7 +1166,7 @@ class LightSimBackend(Backend):
             self._grid.update_loads_q(backendAction.load_q.changed,
                                       backendAction.load_q.values)
         except RuntimeError as exc_:
-            # see https://github.com/BDonnot/lightsim2grid/issues/66 (even though it's not a "bug" and has not been replicated)
+            # see https://github.com/Grid2Op/lightsim2grid/issues/66 (even though it's not a "bug" and has not been replicated)
             raise BackendError(f"{exc_}") from exc_
         
         if self.__has_storage:
@@ -1567,7 +1586,7 @@ class LightSimBackend(Backend):
                 # backward compat when this was not defined:
                 n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
             for i in range(n_busbar_per_sub):
-                res[(i * cls.n_sub <= shunt_bus) & (shunt_bus < (i+1) * cls.n_sub)] = i + 1
+                res[(i * self.n_sub <= shunt_bus) & (shunt_bus < (i+1) * self.n_sub)] = i + 1
             res[shunt_bus == -1] = -1
             self.sh_bus[:] = res
         
@@ -1610,3 +1629,35 @@ class LightSimBackend(Backend):
         if type(self).shunts_data_available:
             self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
         self.topo_vect[:] = self.__init_topo_vect  # TODO#
+
+
+def _dont_use_global_bus_to_local_legacy(cls, global_bus: np.ndarray, to_sub_id: np.ndarray) -> np.ndarray:
+    res = (1 * global_bus).astype(dt_int)  # make a copy
+    assert cls.n_busbar_per_sub >= 1, f"cls.n_busbar_per_sub should be >=1, found {cls.n_busbar_per_sub}"
+    assert cls.n_sub >= 1, f"cls.n_sub should be >=1, found {cls.n_sub}"
+    for i in range(cls.n_busbar_per_sub):
+        res[(i * cls.n_sub <= global_bus) & (global_bus < (i+1) * cls.n_sub)] = i + 1
+    res[global_bus == -1] = -1
+    return res
+        
+        
+def _dont_use_get_action_to_set_legacy(self, *arg, **kwargs):
+    warnings.warn("DEPRECATION: grid2op <=1.4 is not well supported with lightsim2grid. Lots of bugs have been"
+                    "fixed since then. Please upgrade to grid2op >= 1.10",
+                    DeprecationWarning)
+    line_status = self.get_line_status()
+    line_status = 2 * line_status - 1
+    line_status = line_status.astype(dt_int)
+    topo_vect = self.get_topo_vect()
+    prod_p, _, prod_v = self.generators_info()
+    load_p, load_q, _ = self.loads_info()
+    complete_action_class = CompleteAction.init_grid(self)
+    set_me = complete_action_class()
+    set_me.update({"set_line_status": line_status,
+                    "set_bus": topo_vect})
+    return set_me
+
+
+if not hasattr(Backend, "global_bus_to_local"):
+    # for legacy grid2op
+    setattr(LightSimBackend, "global_bus_to_local", classmethod(_dont_use_global_bus_to_local_legacy))

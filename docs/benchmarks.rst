@@ -365,7 +365,7 @@ The results can be found in:
 
 .. note::
   Any contribution here is more than welcomed. You can write a github discussion here 
-  https://github.com/BDonnot/lightsim2grid/discussions/new?category=show-and-tell 
+  https://github.com/Grid2Op/lightsim2grid/discussions/new?category=show-and-tell 
   and describe rapidly your setup and we'll make sure to include your benchmark in future release.
 
   Thanks !

@@ -102,7 +102,7 @@ which was, at time of writing:
   install it by typing `brew install llvm` in a terminal.
 
 We do not cover in this installation guide how to install such compiler. But if you have any issue,
-feel free to send us a `github issue <https://github.com/BDonnot/lightsim2grid/issues>`_ and we will
+feel free to send us a `github issue <https://github.com/Grid2Op/lightsim2grid/issues>`_ and we will
 do our best to answer.
 
 Install python and git
@@ -148,7 +148,7 @@ First, you can download it with git with:
 
 .. code-block:: bash
 
-    git clone https://github.com/BDonnot/lightsim2grid.git
+    git clone https://github.com/Grid2Op/lightsim2grid.git
     cd lightsim2grid
     # it is recommended to do a python virtual environment
     python -m virtualenv venv  # optional

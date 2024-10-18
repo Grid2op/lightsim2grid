@@ -20,7 +20,7 @@ ErrorType CKTSOLinearSolver::reset(){
     if(ai_ != nullptr) delete [] ai_;
     if(ap_ != nullptr) delete [] ap_;
 
-    // should not be deleted, see https://github.com/BDonnot/lightsim2grid/issues/52#issuecomment-1333565959
+    // should not be deleted, see https://github.com/Grid2Op/lightsim2grid/issues/52#issuecomment-1333565959
     // if(iparm_!= nullptr) delete iparm_;
     // if(oparm_!= nullptr) delete oparm_;
 

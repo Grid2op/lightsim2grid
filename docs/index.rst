@@ -6,7 +6,7 @@
 Welcome to LightSim2Grid's documentation!
 =========================================
 LightSim2Grid is a simulator that can be used to accelerate the computation (leading to approximately the
-same results) when using the `Grid2Op <https://github.com/rte-france/Grid2Op>`_ platform.
+same results) when using the `Grid2Op <https://github.com/Grid2Op/grid2op>`_ platform.
 
 It is a port in c++ of some part of the excellent `PandaPower <https://github.com/e2nIEE/pandapower>`_ package
 to make the computation faster.
@@ -29,6 +29,7 @@ As from version 0.5.3:
    disclaimer
    use_with_grid2op
    benchmarks
+   benchmarks_grid_sizes
    use_solver
    rewards
    physical_law_checker

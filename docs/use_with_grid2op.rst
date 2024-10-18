@@ -12,7 +12,7 @@ can use it transparently.
 
 **NB** By default, the fastest resolution method (among KLU and SparseLU linear solver is used). For now it
 is not easy to change it. If this is of any interest for you, please let us know with a
-`feature request <https://github.com/BDonnot/lightsim2grid/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=>`_
+`feature request <https://github.com/Grid2Op/lightsim2grid/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=>`_
 
 
 Regular environments

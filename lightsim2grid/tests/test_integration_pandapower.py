@@ -82,7 +82,7 @@ class PandapowerContingencyIntegration(unittest.TestCase):
         return super().setUp()
     
     def _aux_test_case(self, case=None, nminus1_cases=None):
-        """test inspired from the test provided in the github issue https://github.com/BDonnot/lightsim2grid/issues/88#issuecomment-2265150641
+        """test inspired from the test provided in the github issue https://github.com/Grid2Op/lightsim2grid/issues/88#issuecomment-2265150641
         linked https://github.com/pawellytaev/pandapower/blob/da4b5ae6acd42e75dd37ef20d4dcbd823fef48d3/pandapower/test/contingency/test_contingency.py#L156"""
         if case is None:
             case = pp.networks.case118()

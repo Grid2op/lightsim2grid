@@ -3,8 +3,9 @@ Disclaimer
 
 Disclaimer
 ----------
+
 This disclaimer only serves as a complement to the
-`LICENSE <https://github.com/BDonnot/lightsim2grid/blob/master/LICENSE>`_ file provided with it. It can not serve as a
+`LICENSE <https://github.com/Grid2Op/lightsim2grid/blob/master/LICENSE>`_ file provided with it. It can not serve as a
 replacement of this file.
 
 The simulator implemented in this package is made for speed mainly to serve as a grid2op backend (see

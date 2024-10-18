@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -377,7 +377,7 @@ setup(name='LightSim2Grid',
       version=__version__,
       author='Benjamin Donnot',
       author_email='benjamin.donnot@rte-france.com',
-      url='https://github.com/BDonnot/lightsim2grid/',
+      url='https://github.com/grid2op/lightsim2grid/',
       description='LightSim2Grid implements a c++ backend targeting the Grid2Op platform.',
       long_description=long_description,
       long_description_content_type='text/markdown',

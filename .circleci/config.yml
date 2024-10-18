@@ -162,7 +162,7 @@ jobs:
                 command: |
                       source venv_test/bin/activate
                       pip uninstall gym -y
-                      pip install gymnasium
+                      pip install "gymnasium<1"  # issue with OrderedDict otherwise
                       pip install "grid2op~=1.9.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
@@ -210,7 +210,7 @@ jobs:
                 command: |
                       source venv_test/bin/activate
                       pip uninstall gym -y
-                      pip install gymnasium
+                      pip install "gymnasium<1"  # issue with OrderedDict otherwise
                       pip install grid2op==1.9.0
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
@@ -366,7 +366,7 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     pip install --upgrade pip setuptools wheel
-                    git clone https://github.com/rte-france/grid2op.git _grid2op
+                    git clone https://github.com/Grid2Op/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
                 name: "Show package versions"
@@ -583,7 +583,7 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     pip install --upgrade pip setuptools wheel
-                    git clone https://github.com/rte-france/grid2op.git _grid2op
+                    git clone https://github.com/Grid2Op/grid2op.git _grid2op
                     pip install -e _grid2op
             - run:
                 name: "Show package versions"
@@ -619,7 +619,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     pip install gymnasium "numpy<2" pybind11 scipy
-                    git clone https://github.com/rte-france/grid2op.git _grid2op
+                    git clone https://github.com/Grid2Op/grid2op.git _grid2op
                     pip install -e _grid2op gymnasium
             - run:
                 name: "Install lightsim2grid"

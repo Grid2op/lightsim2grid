@@ -36,7 +36,7 @@ RUN pip3 install -e .[optional]
 WORKDIR /
 
 # install lightsim
-RUN git clone --recurse-submodules https://github.com/BDonnot/lightsim2grid.git
+RUN git clone --recurse-submodules https://github.com/Grid2Op/lightsim2grid.git
 WORKDIR /lightsim2grid
 RUN git pull
 RUN git remote update

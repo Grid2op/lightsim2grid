@@ -213,7 +213,7 @@ If you use this package in one of your work, please cite:
     year = {2020},
     publisher = {GitHub},
     journal = {GitHub repository},
-    howpublished = {\url{https://GitHub.com/bdonnot/lightsim2grid}},
+    howpublished = {\url{https://GitHub.com/Grid2Op/lightsim2grid}},
 }
 ```
 
@@ -269,7 +269,7 @@ using the Newton-Raphson algorithm, with a single slack bus, without enforcing q
 **NB** to run these tests you need to install grid2op from source otherwise all the test of the LightSim2gridBackend 
 will fail. In order to do so you can do:
 ```
-git clone https://github.com/rte-france/Grid2Op.git
+git clone https://github.com/Grid2Op/grid2op.git
 cd Grid2Op
 pip3 install -U -e .
 cd ..

@@ -385,7 +385,7 @@ class MyTestCase(unittest.TestCase):
         vn_trafo_hv, vn_trafo_lv, shift_pp = _calc_tap_from_dataframe(pp_net, trafo_df)
         ratio = _calc_nominal_ratio_from_dataframe(ppc, trafo_df, vn_trafo_hv, vn_trafo_lv, bus_lookup)
         r_t, x_t, b_t = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
-        b_t *= 1j  # to fix https://github.com/BDonnot/lightsim2grid/issues/88
+        b_t *= 1j  # to fix https://github.com/Grid2Op/lightsim2grid/issues/88
         
         # check where there are mismatch if any
         val_r_pp = r_t
