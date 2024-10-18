@@ -1162,7 +1162,7 @@ class LightSimBackend(Backend):
             self._grid.update_loads_q(backendAction.load_q.changed,
                                       backendAction.load_q.values)
         except RuntimeError as exc_:
-            # see https://github.com/BDonnot/lightsim2grid/issues/66 (even though it's not a "bug" and has not been replicated)
+            # see https://github.com/Grid2Op/lightsim2grid/issues/66 (even though it's not a "bug" and has not been replicated)
             raise BackendError(f"{exc_}") from exc_
         
         if self.__has_storage:

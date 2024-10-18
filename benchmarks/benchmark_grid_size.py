@@ -184,6 +184,53 @@ def get_loads_gens(load_p_init, load_q_init, gen_p_init, sgen_p_init, prng):
     return load_p, load_q, gen_p, sgen_p
 
 
+def run_grid2op_env(env_lightsim, case, reset_solver,
+                    solver_preproc_solver_time, 
+                    g2op_speeds,
+                    g2op_step_time,
+                    ls_solver_time,
+                    ls_gridmodel_time,
+                    g2op_sizes
+                    ):
+    _ = env_lightsim.reset()
+    done = False
+    nb_step = 0
+    changed_sgen = case.sgen["in_service"].values
+    while not done:
+        # hack for static gen...
+        changed_sgen = copy.deepcopy(case.sgen["in_service"].values)
+        this_sgen = sgen_p[nb_step, :].astype(np.float32)
+        # this_sgen = sgen_p_init[changed_sgen].astype(np.float32)
+        env_lightsim.backend._grid.update_sgens_p(changed_sgen, this_sgen)
+        obs, reward, done, info = env_lightsim.step(env_lightsim.action_space())
+        if reset_solver:
+            env_lightsim.backend._grid.tell_solver_need_reset()
+        nb_step += 1
+        
+    # NB lightsim2grid does not handle "static gen" because I cannot set "p" in gen in grid2op
+    # so results will vary between TimeSeries and grid2op !
+    # env_lightsim.backend._grid.tell_solver_need_reset()
+    # env_lightsim.backend._grid.dc_pf(env_lightsim.backend.V, 1, 1e-7)
+    # env_lightsim.backend._grid.get_bus_status()
+    if nb_step != nb_ts:
+        warnings.warn(f"only able to make {nb_step} (out of {nb_ts}) for {case_name} in grid2op. Results will not be availabe for grid2op step")
+        solver_preproc_solver_time.append(None)
+        g2op_speeds.append(None)
+        g2op_step_time.append(None)
+        ls_solver_time.append(None)
+        ls_gridmodel_time.append(None)
+    else:
+        total_time = env_lightsim.backend._timer_preproc + env_lightsim.backend._timer_solver # + env_lightsim.backend._timer_postproc
+        # total_time = env_lightsim._time_step
+        solver_preproc_solver_time.append(total_time)
+        g2op_speeds.append(1.0 * nb_step / total_time)
+        g2op_step_time.append(1.0 * env_lightsim._time_step / nb_step)
+        ls_solver_time.append(env_lightsim.backend.comp_time)
+        ls_gridmodel_time.append(env_lightsim.backend.timer_gridmodel_xx_pf)
+    g2op_sizes.append(env_lightsim.n_sub)
+    return nb_step
+        
+        
 if __name__ == "__main__":
     prng = np.random.default_rng(42)
     case_names_displayed = [get_env_name_displayed(el) for el in case_names]
@@ -193,6 +240,13 @@ if __name__ == "__main__":
     g2op_step_time = []
     ls_solver_time = []
     ls_gridmodel_time = []
+    
+    solver_preproc_solver_time_reset = []
+    g2op_speeds_reset = []
+    g2op_sizes_reset = []
+    g2op_step_time_reset = []
+    ls_solver_time_reset = []
+    ls_gridmodel_time_reset = []
     
     ts_times = []
     ts_speeds = []
@@ -269,40 +323,25 @@ if __name__ == "__main__":
                                         gen_p_g2op,
                                         sgen_p)
         # Perform the computation using grid2op
-        _ = env_lightsim.reset()
-        done = False
-        nb_step = 0
-        changed_sgen = case.sgen["in_service"].values
-        while not done:
-            # hack for static gen...
-            changed_sgen = copy.deepcopy(case.sgen["in_service"].values)
-            this_sgen = sgen_p[nb_step, :].astype(np.float32)
-            # this_sgen = sgen_p_init[changed_sgen].astype(np.float32)
-            env_lightsim.backend._grid.update_sgens_p(changed_sgen, this_sgen)
-            obs, reward, done, info = env_lightsim.step(env_lightsim.action_space())
-            nb_step += 1
-        # NB lightsim2grid does not handle "static gen" because I cannot set "p" in gen in grid2op
-        # so results will vary between TimeSeries and grid2op !
-        # env_lightsim.backend._grid.tell_solver_need_reset()
-        # env_lightsim.backend._grid.dc_pf(env_lightsim.backend.V, 1, 1e-7)
-        # env_lightsim.backend._grid.get_bus_status()
-        if nb_step != nb_ts:
-            warnings.warn(f"only able to make {nb_step} (out of {nb_ts}) for {case_name} in grid2op. Results will not be availabe for grid2op step")
-            solver_preproc_solver_time.append(None)
-            g2op_speeds.append(None)
-            g2op_step_time.append(None)
-            ls_solver_time.append(None)
-            ls_gridmodel_time.append(None)
-            g2op_sizes.append(env_lightsim.n_sub)
-        else:
-            total_time = env_lightsim.backend._timer_preproc + env_lightsim.backend._timer_solver # + env_lightsim.backend._timer_postproc
-            # total_time = env_lightsim._time_step
-            solver_preproc_solver_time.append(total_time)
-            g2op_speeds.append(1.0 * nb_step / total_time)
-            g2op_step_time.append(1.0 * env_lightsim._time_step / nb_step)
-            ls_solver_time.append(env_lightsim.backend.comp_time)
-            ls_gridmodel_time.append(env_lightsim.backend.timer_gridmodel_xx_pf)
-        g2op_sizes.append(env_lightsim.n_sub)
+        reset_solver = True  # non default
+        nb_step_reset = run_grid2op_env(env_lightsim, case, reset_solver,
+                                        solver_preproc_solver_time_reset, 
+                                        g2op_speeds_reset,
+                                        g2op_step_time_reset,
+                                        ls_solver_time_reset,
+                                        ls_gridmodel_time_reset,
+                                        g2op_sizes_reset
+                                        )
+        
+        reset_solver = False  # default
+        nb_step = run_grid2op_env(env_lightsim, case, reset_solver,
+                                  solver_preproc_solver_time, 
+                                  g2op_speeds,
+                                  g2op_step_time,
+                                  ls_solver_time,
+                                  ls_gridmodel_time,
+                                  g2op_sizes
+                                  )
         
         # Perform the computation using TimeSerie
         env_lightsim.reset()
@@ -362,8 +401,36 @@ if __name__ == "__main__":
     print_configuration()
     print(f"Solver used for linear algebra: {linear_solver_used_str}")
     print()
+        
+    print("Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf') (no recycling allowed, non default)")
+    tab_g2op = []
+    for i, nm_ in enumerate(case_names_displayed):
+        tab_g2op.append((nm_,
+                         ts_sizes[i],
+                         1000. * g2op_step_time_reset[i] if g2op_step_time_reset[i] else None,
+                         1000. / g2op_speeds_reset[i] if g2op_speeds_reset[i] else None,
+                         g2op_speeds_reset[i],
+                         1000. * ls_gridmodel_time_reset[i] / nb_step_reset if ls_gridmodel_time_reset[i] else None,
+                         1000. * ls_solver_time_reset[i] / nb_step_reset if ls_solver_time_reset[i] else None,
+                         ))
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_2 = tabulate(tab_g2op,
+                                          headers=["grid",
+                                                   "size (nb bus)",
+                                                   "avg step duration (ms)",
+                                                   "time [DC + AC] (ms / pf)",
+                                                   "speed (pf / s)",
+                                                   "time in 'gridmodel' (ms / pf)",
+                                                   "time in 'pf algo' (ms / pf)",
+                                                   ], 
+                                          tablefmt="rst")
+        print(res_use_with_grid2op_2)
+    else:
+        print(tab_g2op)
+    print()
     
-    print("Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf')")
+    
+    print("Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf') (recyling allowed, default)")
     tab_g2op = []
     for i, nm_ in enumerate(case_names_displayed):
         tab_g2op.append((nm_,
@@ -389,7 +456,6 @@ if __name__ == "__main__":
     else:
         print(tab_g2op)
     print()
-        
         
     print("Results for TimeSeries (288 consecutive steps)")
     tab_ts = []

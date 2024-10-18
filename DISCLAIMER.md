@@ -18,7 +18,7 @@ This disclaimer only serves as a complement to the [`LICENSE`](LICENSE.md) file 
 replacement of this file.
 
 The simulator implemented in this package is made for speed mainly to serve as a grid2op backend (see
-https://github.com/rte-france/grid2op for more information). We recall here that grid2op is a research testbed platform
+https://github.com/Grid2Op/grid2op for more information). We recall here that grid2op is a research testbed platform
 aiming at emulating sequential decisions making in powergrids targeting mainly the "reinforcement learning"
 community (though open to anyone).
 

@@ -29,7 +29,7 @@ RUN apt-get update && \
 RUN pip3 install -U grid2op pybind11
 
 # install lightsim
-RUN git clone --recurse-submodules https://github.com/BDonnot/lightsim2grid.git
+RUN git clone --recurse-submodules https://github.com/Grid2Op/lightsim2grid.git
 WORKDIR /lightsim2grid
 RUN git pull
 RUN git remote update

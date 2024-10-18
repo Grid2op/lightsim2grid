@@ -103,8 +103,8 @@ Usage
 --------------------------
 In this section we briefly explain how to switch from one solver to another. An example of code using this feature
 is given in the
-`"benchmark_solvers.py" <https://github.com/BDonnot/lightsim2grid/blob/master/benchmarks/benchmark_solvers.py>`_
-script available in the `"benchmarks" <https://github.com/BDonnot/lightsim2grid/tree/master/benchmarks/>`_
+`"benchmark_solvers.py" <https://github.com/Grid2Op/lightsim2grid/blob/master/benchmarks/benchmark_solvers.py>`_
+script available in the `"benchmarks" <https://github.com/Grid2Op/lightsim2grid/tree/master/benchmarks/>`_
 directory of the lightsim2grid repository.
 
 To change the solver used by the backend, the preferred solution is to set it once you create it:

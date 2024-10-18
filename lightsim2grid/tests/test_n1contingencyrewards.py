@@ -63,7 +63,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
     def setUp(self) -> None:
         import sys
         if sys.platform == 'win32':
-            self.skipTest("Not working, see issue https://github.com/BDonnot/lightsim2grid/issues/85")
+            self.skipTest("Not working, see issue https://github.com/Grid2Op/lightsim2grid/issues/85")
         reward = N1ContingencyReward(dc=self.is_dc(),
                                      threshold_margin=self.threshold_margin(),
                                      l_ids=self.l_ids())

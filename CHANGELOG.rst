@@ -26,11 +26,15 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.9.2] 2024-xx-yy
+[0.9.2] 2024-10-18
 --------------------------
 - [ADDED] support loading a grid when everything is NOT on the same bus
   (`topo_vect` used to be wrong in this case). This is especially usefull
   for grid loaded with `pypowsybl`
+- [ADDED] a file benchmarking the timings for running powerflow on different
+  grid sizes.
+- [UPDATED] urls to match the new repo location
+- [UPDATED] urls to match new grid2op location
 
 [0.9.1] 2024-09-30
 --------------------------
@@ -52,7 +56,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   one substation in lightsim2grid.
 - [IMPROVED] removing a weird `1j * h_` when initializing powerlines and transformers. This was 
   part of a pandapower "hack" which is not present anymore (see 
-  https://github.com/BDonnot/lightsim2grid/issues/88#issue-2443299039)
+  https://github.com/Grid2Op/lightsim2grid/issues/88#issue-2443299039)
 
 [0.9.0] 2024-07-29
 --------------------------
@@ -231,7 +235,7 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 - [IMPROVED] computation speed: grid is not read another time in some cases.
   For example, if load and generators do not change, then Sbus is not
   recomputed. Likewise, if the topology does not change, then the Ybus 
-  is not recomputed either see https://github.com/BDonnot/lightsim2grid/issues/72
+  is not recomputed either see https://github.com/Grid2Op/lightsim2grid/issues/72
 
 [0.7.5.post1] 2024-03-14
 -------------------------
@@ -244,12 +248,12 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
   multiple powerflows used the same solver
 - [FIXED] a bug in AC and DC powerflow when shunts had active values
 - [ADDED] possibility to initialize a powergrid based on pypowsybl 
-  see https://github.com/BDonnot/lightsim2grid/issues/53
+  see https://github.com/Grid2Op/lightsim2grid/issues/53
 - [ADDED] some more algorithm to perform powerflow: Fast Decoupled Powerflow (in BX and XB variant)
-  see https://github.com/BDonnot/lightsim2grid/issues/63
+  see https://github.com/Grid2Op/lightsim2grid/issues/63
 - [ADDED] build lightsim2grid for python 3.12
 - [ADDED] support for non distributed slack but multiple slack buses
-  see https://github.com/BDonnot/lightsim2grid/issues/50 (ONLY FOR AC powerflow)
+  see https://github.com/Grid2Op/lightsim2grid/issues/50 (ONLY FOR AC powerflow)
 - [IMPROVED] now shipping `src` and `eigen` directory in the source of 
   lightsim2grid to allow their installation if wheels are not provided.
 - [IMPROVED] in the underlying cpp GridModel powerlines can now have 2
@@ -266,7 +270,7 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 - [IMPROVED] initialize the underlying "PandaPowerBackend" without numba
 - [IMPROVED] grid2op import to be more compliant with renaming of uppercased file names
 - [IMPROVED] decoupling of the PandapowerBackend class and the class "internally" used by LightSimBackend
-  when loading the grid. This caused some issue, *eg* https://github.com/rte-france/Grid2Op/issues/508
+  when loading the grid. This caused some issue, *eg* https://github.com/Grid2Op/grid2op/issues/508
 
 [0.7.2] 2023-06-06
 --------------------
@@ -384,7 +388,7 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 - [FIXED] a bug for static generator (wrong signed convention were used in some part of the c++ code). This has
   no impact at all for provided grid2op environments.
 - [FIXED] An issue where the backend could get "stuck" in a wrong state because of the way the Vinit was computed (see
-  `Issue 30 <https://github.com/BDonnot/lightsim2grid/issues/30>`_)
+  `Issue 30 <https://github.com/Grid2Op/lightsim2grid/issues/30>`_)
 - [ADDED] experimental support for the `NICSLU` linear solver (requires a proper license and library, see
   https://github.com/chenxm1986/nicslu for more information. Support does not include multi threaded at the moment).
 - [IMPROVED] minor performance improvements for the solvers based on Newton Raphson (faster filling of the Jacobian
@@ -412,7 +416,7 @@ gridmodel.get_Bf()                  gridmodel.get_Bf_solver()
 [0.5.1] 2021-04-09
 -------------------
 - [FIXED] yet another compilation issue with clang (see
-  `Issue 22 <https://github.com/BDonnot/lightsim2grid/issues/22>`_)
+  `Issue 22 <https://github.com/Grid2Op/lightsim2grid/issues/22>`_)
 - [ADDED] circleci to check compilation for gcc
 - [ADDED] circleci to check compilation for clang
 - [ADDED] circleci to check compilation for msvc
