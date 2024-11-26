@@ -28,10 +28,10 @@ void BaseAlgo::reset(){
 
 
 RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
-                                  const CplxVect & V,
-                                  const CplxVect & Sbus,
-                                  const Eigen::VectorXi & pv,
-                                  const Eigen::VectorXi & pq)
+                                const CplxVect & V,
+                                const CplxVect & Sbus,
+                                const Eigen::VectorXi & pv,
+                                const Eigen::VectorXi & pq)
 {
     auto timer = CustTimer();
     auto npv = pv.size();

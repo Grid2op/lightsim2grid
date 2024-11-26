@@ -14,7 +14,7 @@ import pypowsybl as pypo
 from typing import Optional, Union
 from packaging import version
 
-PP_BUG_RATIO_TAP_CHANGER = version.parse("1.7.0")
+PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9.0")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
 from lightsim2grid_cpp import GridModel
 
