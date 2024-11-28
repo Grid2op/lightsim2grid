@@ -26,10 +26,12 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.9.2.post2] 2024-11-28
+[0.9.2.post2] 2024-11-29
 --------------------------
 - [FIXED] The attribute `can_output_theta` (of base `Backend` class)
   was not set to `True` if using the pypowsybl loader.
+- [FIXED] the github CI to work properly on many linux buit image
+- [IMPROVED] build on python 3.13
 
 [0.9.2.post1] 2024-11-28
 --------------------------

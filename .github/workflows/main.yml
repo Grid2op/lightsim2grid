@@ -47,6 +47,11 @@ jobs:
             abi: cp312,
             version: '3.12',
           }
+          - {
+            name: cp313,
+            abi: cp313,
+            version: '3.13',
+          }
 
         cont:
           - {
@@ -163,7 +168,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4  # v4 broken
         with:
-          name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
+          name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}.*
           path: wheelhouse/*.whl
 
       - name: Upload source archive
@@ -203,6 +208,10 @@ jobs:
           - {
             name: cp312,
             version: '3.12',
+          }
+          - {
+            name: cp313,
+            version: '3.13',
           }
         win_arch:
           - {
@@ -306,7 +315,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}
+          name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}.*
           path: dist/*.whl
 
   macos_build_37_:
@@ -339,6 +348,10 @@ jobs:
           - {
             name: cp312,
             version: '3.12',
+          }
+          - {
+            name: cp313,
+            version: '3.13',
           }
         runner:
           - {
@@ -459,7 +472,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
+          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}.*
           path: dist/*.whl
 
   exotic_build:
@@ -506,6 +519,10 @@ jobs:
             name: cp312,
             version: '3.12',
           }
+          - {
+            name: cp313,
+            version: '3.13',
+          }
         exclude:
           - python: 
               name: cp310  # because already done natively above
@@ -517,6 +534,8 @@ jobs:
               name: macos-14
           - python: 
               name: cp312  # because already done natively above
+          - python: 
+              name: cp313  # because already done natively above
             runner:
               name: macos-14
           - python: 
@@ -574,7 +593,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
-          name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}.*
           path: ./wheelhouse/*.whl
 
   package:
