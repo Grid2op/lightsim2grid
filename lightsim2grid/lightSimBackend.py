@@ -156,6 +156,9 @@ class LightSimBackend(Backend):
         if not hasattr(self, "_can_be_copied"):
             self._can_be_copied = can_be_copied
 
+        #: I can output the voltage angle
+        self.can_output_theta = True
+        
         #: .. versionadded:: 0.8.0
         #:
         #: Which type of grid format can be read by your backend.
@@ -836,7 +839,6 @@ class LightSimBackend(Backend):
         self._aux_init_pandapower()
     
     def _aux_init_pandapower(self):
-        self.can_output_theta = True  # i can compute the "theta" and output it to grid2op
         from lightsim2grid.gridmodel import init_from_pandapower
         self._grid = init_from_pandapower(self.init_pp_backend._grid)    
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
