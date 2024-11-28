@@ -146,7 +146,7 @@ jobs:
           python3 -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
-        run:
+        run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend"
           python3 -c "from lightsim2grid.timeSerie import TimeSerie"
