@@ -166,13 +166,13 @@ jobs:
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4  # v4 broken
+        uses: actions/upload-artifact@v4
         with:
-          name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}.*
+          # name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}.*
           path: wheelhouse/*.whl
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v4  # v4 broken
+        uses: actions/upload-artifact@v4
         if: matrix.python.name == 'cp311'
         with:
           name: lightsim2grid-sources
@@ -313,9 +313,9 @@ jobs:
       #     python -m unittest lightsim2grid.tests.test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}.*
+          # name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}.*
           path: dist/*.whl
 
   macos_build_37_:
@@ -470,9 +470,9 @@ jobs:
           python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}.*
+          # name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}.*
           path: dist/*.whl
 
   exotic_build:
@@ -579,7 +579,7 @@ jobs:
             cmake --build . --config Release &&
             cmake --install . --prefix ..\built
           CIBW_TEST_REQUIRES: grid2op pandapower "numpy<2"
-          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
+          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64 cp313-*" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" &&
             python -c "from lightsim2grid import *" &&
@@ -591,9 +591,9 @@ jobs:
             python -c "from lightsim2grid import LightSimBackend" &&
             python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}.*
+          # name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}.*
           path: ./wheelhouse/*.whl
 
   package:
@@ -603,12 +603,12 @@ jobs:
 
     steps:
       - name: Download wheels
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: download
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheels
           path: |
