@@ -50,8 +50,8 @@ jobs:
 
         cont:
           - {
-            name: manylinux2014_x86_64, 
-            val: quay.io/pypa/manylinux2014_x86_64,
+            name: manylinux_2_28_x86_64, 
+            val: quay.io/pypa/manylinux_2_28_x86_64,
             arch: amd64
           }
           # - {
@@ -63,6 +63,7 @@ jobs:
     container: 
       image: ${{matrix.cont.val}}
       # does not work if not manylinux2014_x86_64...
+      # does not work if not manylinux_2_28_x86_64...
 
     steps:
       # - name: Set up QEMU
@@ -72,7 +73,7 @@ jobs:
       #     platforms: arm64
 
       - name: Checkout sources
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -160,13 +161,13 @@ jobs:
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v2  # v4 broken
+        uses: actions/upload-artifact@v4  # v4 broken
         with:
           name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v2  # v4 broken
+        uses: actions/upload-artifact@v4  # v4 broken
         if: matrix.python.name == 'cp311'
         with:
           name: lightsim2grid-sources
