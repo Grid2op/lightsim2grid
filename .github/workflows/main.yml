@@ -156,7 +156,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
-        run:
+        run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
