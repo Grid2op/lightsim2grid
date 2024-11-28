@@ -1331,12 +1331,16 @@ class LightSimBackend(Backend):
                 disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
                 load_disco = np.where(disco)[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
-                raise BackendError(f"At least one load is disconnected (check loads {load_disco})")
+                # Support load shedding (Grid2op 1.11.0)
+                if not self.allow_shedding if hasattr(self, "allow_shedding") else True:
+                    raise BackendError(f"At least one load is disconnected (check loads {load_disco})")
             if self._stop_if_gen_disco and ((~np.isfinite(self.prod_v)).any() or (self.prod_v <= 0.).any()):
                 disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
                 gen_disco = np.where(disco)[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
-                raise BackendError(f"At least one generator is disconnected (check gen {gen_disco})")
+                # Support generator shedding (Grid2op 1.11.0)
+                if not self.allow_shedding if hasattr(self, "allow_shedding") else True:
+                    raise BackendError(f"At least one generator is disconnected (check gen {gen_disco})")
             # TODO storage case of divergence !
 
             if type(self).shunts_data_available:
@@ -1607,6 +1611,10 @@ class LightSimBackend(Backend):
 
     def get_current_solver_type(self) -> SolverType:
         return self.__current_solver_type
+    
+    def set_shedding(self, allow_shedding:bool=False):
+        # Support load / generator shedding (selected by user when initializing environment)
+        self.allow_shedding = allow_shedding
 
     def reset(self,
               path : Union[os.PathLike, str],
