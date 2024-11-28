@@ -50,8 +50,8 @@ jobs:
 
         cont:
           - {
-            name: manylinux2014_x86_64, 
-            val: quay.io/pypa/manylinux2014_x86_64,
+            name: manylinux_2_28_x86_64, 
+            val: quay.io/pypa/manylinux_2_28_x86_64,
             arch: amd64
           }
           # - {
@@ -63,6 +63,7 @@ jobs:
     container: 
       image: ${{matrix.cont.val}}
       # does not work if not manylinux2014_x86_64...
+      # does not work if not manylinux_2_28_x86_64...
 
     steps:
       # - name: Set up QEMU
@@ -72,7 +73,7 @@ jobs:
       #     platforms: arm64
 
       - name: Checkout sources
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -145,7 +146,7 @@ jobs:
           python3 -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
-        run:
+        run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend"
           python3 -c "from lightsim2grid.timeSerie import TimeSerie"
@@ -155,18 +156,18 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
-        run:
+        run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3  # v4 broken
+        uses: actions/upload-artifact@v4  # v4 broken
         with:
           name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v3  # v4 broken
+        uses: actions/upload-artifact@v4  # v4 broken
         if: matrix.python.name == 'cp311'
         with:
           name: lightsim2grid-sources

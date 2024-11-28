@@ -55,7 +55,7 @@ case_names = [
               "case9241pegase.json"
               ]
 
-def make_grid2op_env(pp_case, casse_name, load_p, load_q, gen_p, sgen_p):
+def make_grid2op_env(pp_case, case_name, load_p, load_q, gen_p, sgen_p):
     param = Parameters.Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
         
@@ -75,7 +75,7 @@ def make_grid2op_env(pp_case, casse_name, load_p, load_q, gen_p, sgen_p):
     return env_lightsim
 
 
-def make_grid2op_env_pp(pp_case, casse_name, load_p, load_q, gen_p, sgen_p):
+def make_grid2op_env_pp(pp_case, case_name, load_p, load_q, gen_p, sgen_p):
     param = Parameters.Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
         
