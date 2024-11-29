@@ -88,6 +88,7 @@ Pypi packages are available for linux (`x86_64` cpu architecture), windows (`x86
 - 3.10 (lightsim2grid >= 0.6.1)
 - 3.11 (lightsim2grid >= 0.7.1)
 - 3.12 (lightsim2grid >= 0.7.5)
+- 3.13 (lightsim2grid >= 0.9.2.post2)
 
 
 As from version 0.8.2, we also distribute windows `arm64` and macos `arm64` binaries of lightsim2grid that can be installed
