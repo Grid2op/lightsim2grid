@@ -547,6 +547,8 @@ jobs:
               name: macos-14
           - python: 
               name: cp312  # because already done natively above
+            runner:
+              name: macos-14
           - python: 
               name: cp313  # because already done natively above
             runner:
