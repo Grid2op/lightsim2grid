@@ -151,6 +151,7 @@ jobs:
           python3 -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
+        if: matrix.python.name != 'cp3.13' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend"
@@ -161,6 +162,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
+        if: matrix.python.name != 'cp3.13' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
@@ -297,6 +299,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check LightSimBackend can be imported (with grid2op)
+        if: matrix.python.name != 'cp3.13' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           python -m pip install grid2op
           cd tmp_for_import_checking
@@ -307,6 +310,12 @@ jobs:
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
           python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          
+      - name: Check LightSimBackend can be used to create env
+        if: matrix.python.name != 'cp3.13' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
+        run: |
+          cd tmp_for_import_checking
+          python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
           
       # - name: Debug windows CI
       #   run: |
@@ -455,6 +464,7 @@ jobs:
           python -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
+        if: matrix.python.name != 'cp3.13' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python -v -c "from lightsim2grid import LightSimBackend"
@@ -465,6 +475,7 @@ jobs:
           python -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
+        if: matrix.python.name != 'cp3.13' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
