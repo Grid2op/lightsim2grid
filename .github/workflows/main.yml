@@ -168,12 +168,12 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          # name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}.*
+          name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
         uses: actions/upload-artifact@v4
-        if: matrix.python.name == 'cp311'
+        if: matrix.python.name == 'cp312'
         with:
           name: lightsim2grid-sources
           path: dist/*.tar.gz
@@ -315,7 +315,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          # name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}.*
+          name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}
           path: dist/*.whl
 
   macos_build_37_:
@@ -472,7 +472,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          # name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}.*
+          name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
           path: dist/*.whl
 
   exotic_build:
@@ -559,7 +559,7 @@ jobs:
           platforms: all
 
       - name: Compile with cibuildwheel
-        uses: pypa/cibuildwheel@v2.17.0
+        uses: pypa/cibuildwheel@v2.22.0
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
           CIBW_BUILD: "${{ matrix.python.name}}-*"
@@ -593,7 +593,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          # name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}.*
+          name: lightsim2grid-wheel-exotic-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
 
   package:
