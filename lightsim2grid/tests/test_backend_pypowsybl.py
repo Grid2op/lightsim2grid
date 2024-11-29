@@ -71,6 +71,7 @@ class BackendTester(unittest.TestCase):
         # DC powerflow
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
+        assert backend.can_output_theta
 
 class BackendTester2(unittest.TestCase):
     """issue is still not replicated and these tests pass"""
@@ -101,6 +102,7 @@ class BackendTester2(unittest.TestCase):
         # DC powerflow
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
+        assert backend.can_output_theta
                 
 if CAN_DO_TEST_SUITE:
     dir_path = os.path.dirname(os.path.realpath(__file__))

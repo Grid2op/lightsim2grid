@@ -47,6 +47,11 @@ jobs:
             abi: cp312,
             version: '3.12',
           }
+          - {
+            name: cp313,
+            abi: cp313,
+            version: '3.13',
+          }
 
         cont:
           - {
@@ -101,7 +106,7 @@ jobs:
           auditwheel repair dist/*.whl
 
       - name: Build source archive
-        if: matrix.python.name == 'cp311'
+        if: matrix.python.name == 'cp312'
         run: python3 setup.py sdist
 
       - name: Install lightsim2grid wheel
@@ -122,7 +127,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check package can be imported (bare install, numpy < 2)
-        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313'
         run: |
           python3 -m pip install "numpy<2"
           cd tmp_for_import_checking
@@ -141,11 +146,13 @@ jobs:
           # otherwise urllib3 v2.0 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'OpenSSL 1.0.2k-fips  26 Jan 2017'
 
       - name: Install grid2op
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: | 
           python3 -m pip install grid2op pandapower
           python3 -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend"
@@ -156,19 +163,20 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4  # v4 broken
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheel-linux-${{ matrix.python.name }}-${{ matrix.cont.name }}
           path: wheelhouse/*.whl
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v4  # v4 broken
-        if: matrix.python.name == 'cp311'
+        uses: actions/upload-artifact@v4
+        if: matrix.python.name == 'cp312'
         with:
           name: lightsim2grid-sources
           path: dist/*.tar.gz
@@ -203,6 +211,10 @@ jobs:
           - {
             name: cp312,
             version: '3.12',
+          }
+          - {
+            name: cp313,
+            version: '3.13',
           }
         win_arch:
           - {
@@ -275,7 +287,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check package can be imported (bare install, numpy < 2)
-        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313'
         run: |
           python3 -m pip install "numpy<2"
           cd tmp_for_import_checking
@@ -288,6 +300,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check LightSimBackend can be imported (with grid2op)
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           python -m pip install grid2op
           cd tmp_for_import_checking
@@ -299,12 +312,18 @@ jobs:
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
           python -c "from lightsim2grid.gridmodel import init_from_pandapower"
           
+      - name: Check LightSimBackend can be used to create env
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
+        run: |
+          cd tmp_for_import_checking
+          python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
+
       # - name: Debug windows CI
       #   run: |
       #     python -m unittest lightsim2grid.tests.test_n1contingencyrewards.TestN1ContingencyReward_Base.test_do_nothing
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheel-win-${{ matrix.python.name }}-${{ matrix.win_arch.msvc}}
           path: dist/*.whl
@@ -339,6 +358,10 @@ jobs:
           - {
             name: cp312,
             version: '3.12',
+          }
+          - {
+            name: cp313,
+            version: '3.13',
           }
         runner:
           - {
@@ -418,7 +441,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check package can be imported (bare install, numpy < 2)
-        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313'
         run: |
           python3 -m pip install "numpy<2"
           cd tmp_for_import_checking
@@ -437,11 +460,13 @@ jobs:
           # otherwise urllib3 v2.0 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'OpenSSL 1.0.2k-fips  26 Jan 2017'
 
       - name: Install grid2op
+        if: matrix.python.name != 'cp313'  # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: | 
           python -m pip install grid2op
           python -m pip freeze
 
       - name: Check extra can be imported can be imported (with grid2op)
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python -v -c "from lightsim2grid import LightSimBackend"
@@ -452,12 +477,13 @@ jobs:
           python -c "from lightsim2grid.gridmodel import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
+        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
         run: |
           cd tmp_for_import_checking
           python -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheel-darwin-${{ matrix.python.name }}-${{ matrix.runner.arch}}
           path: dist/*.whl
@@ -506,6 +532,10 @@ jobs:
             name: cp312,
             version: '3.12',
           }
+          - {
+            name: cp313,
+            version: '3.13',
+          }
         exclude:
           - python: 
               name: cp310  # because already done natively above
@@ -517,6 +547,10 @@ jobs:
               name: macos-14
           - python: 
               name: cp312  # because already done natively above
+            runner:
+              name: macos-14
+          - python: 
+              name: cp313  # because already done natively above
             runner:
               name: macos-14
           - python: 
@@ -540,7 +574,7 @@ jobs:
           platforms: all
 
       - name: Compile with cibuildwheel
-        uses: pypa/cibuildwheel@v2.17.0
+        uses: pypa/cibuildwheel@v2.22.0
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
           CIBW_BUILD: "${{ matrix.python.name}}-*"
@@ -560,7 +594,7 @@ jobs:
             cmake --build . --config Release &&
             cmake --install . --prefix ..\built
           CIBW_TEST_REQUIRES: grid2op pandapower "numpy<2"
-          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
+          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64 cp313-*" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" &&
             python -c "from lightsim2grid import *" &&
@@ -572,9 +606,9 @@ jobs:
             python -c "from lightsim2grid import LightSimBackend" &&
             python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
       - name: Upload wheel
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: lightsim2grid-wheel-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}
+          name: lightsim2grid-wheel-exotic-${{ matrix.runner.whl_nm}}-${{ matrix.python.name }}
           path: ./wheelhouse/*.whl
 
   package:
@@ -584,12 +618,12 @@ jobs:
 
     steps:
       - name: Download wheels
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: download
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheels
           path: |
