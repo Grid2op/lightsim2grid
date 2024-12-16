@@ -89,8 +89,9 @@ class Issue66Tester(unittest.TestCase):
         
         act = self.env.action_space({"set_storage": [(0, -1)]})
         obs, reward, done, info = self.env.step(act)
-        assert len(info['exception']) == 0
-        assert not done
+        # grid2op >= 1.11.0 requires this 
+        assert len(info['exception']) == 1
+        assert done
         # should not raise any RuntimeError
         
         

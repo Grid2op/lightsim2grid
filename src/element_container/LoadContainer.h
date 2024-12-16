@@ -153,7 +153,21 @@ class LoadContainer : public GenericContainer
     void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);}
     int get_bus(int load_id) {return _get_bus(load_id, status_, bus_id_);}
     void change_p(int load_id, real_type new_p, SolverControl & solver_control);
+    void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
+    {
+        if (p_mw_(load_id) != new_p) {
+            solver_control.tell_recompute_sbus();
+            p_mw_(load_id) = new_p;
+        }
+    }
     void change_q(int load_id, real_type new_q, SolverControl & solver_control);
+    void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
+    {
+        if (q_mvar_(load_id) != new_q) {
+            solver_control.tell_recompute_sbus();
+            q_mvar_(load_id) = new_q;
+        }
+    }
     virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
 

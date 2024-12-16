@@ -117,10 +117,7 @@ void LoadContainer::change_p(int load_id, real_type new_p, SolverControl & solve
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
-    if (p_mw_(load_id) != new_p) {
-        solver_control.tell_recompute_sbus();
-        p_mw_(load_id) = new_p;
-    }
+    change_p_nothrow(load_id, new_p, solver_control);
 }
 
 void LoadContainer::change_q(int load_id, real_type new_q, SolverControl & solver_control)
@@ -134,10 +131,7 @@ void LoadContainer::change_q(int load_id, real_type new_q, SolverControl & solve
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
-    if (q_mvar_(load_id) != new_q) {
-        solver_control.tell_recompute_sbus();
-        q_mvar_(load_id) = new_q;
-    }
+    change_q_nothrow(load_id, new_q, solver_control);
 }
 
 void LoadContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {

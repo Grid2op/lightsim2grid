@@ -494,9 +494,9 @@ class GridModel : public GenericContainer
 //                reactivate_storage(storage_id);  // requirement from grid2op, might be discussed
 //                storages_.change_p(storage_id, new_p, need_reset_);
 //            }
-               storages_.change_p(storage_id, new_p, solver_control_);
+               storages_.change_p_nothrow(storage_id, new_p, solver_control_);
             }
-        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q(storage_id, new_q, solver_control_); }
+        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, solver_control_); }
         int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id);}
 
         //deactivate a powerline (disconnect it)
