@@ -26,6 +26,13 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.9.3] 2024-12-16
+-------------------
+- [FIXED] an issue with the storage units (when asking it to produce / consume 
+  but deactivating them with the same action the grid did not diverge)
+- [IMPROVED] add the grid2op "detachement" support (loads and generators are allowed
+  to be disconnected from the grid)
+  
 [0.9.2.post2] 2024-11-29
 --------------------------
 - [FIXED] The attribute `can_output_theta` (of base `Backend` class)

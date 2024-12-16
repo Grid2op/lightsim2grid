@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.9.2.post2"
+__version__ = "0.9.3"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)

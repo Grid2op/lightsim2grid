@@ -36,6 +36,12 @@ try:
 except ImportError:
     # for backward compatibility with grid2op <= 1.9.8
     DEFAULT_N_BUSBAR_PER_SUB = 2
+
+try:
+    from grid2op.Space import DEFAULT_ALLOW_DETACHMENT
+except ImportError:
+    # for backward compatibility with grid2op <= 1.11.0
+    DEFAULT_ALLOW_DETACHMENT = False
     
 try:
     from typing import Literal
@@ -61,6 +67,9 @@ class LightSimBackend(Backend):
         # for legacy grid2op
         n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
         
+    if not hasattr(Backend, "detachment_is_allowed"):
+        # for legacy grid2op (< 1.11.0)
+        detachment_is_allowed = DEFAULT_ALLOW_DETACHMENT
         
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
@@ -73,8 +82,8 @@ class LightSimBackend(Backend):
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
                  loader_method: Literal["pandapower", "pypowsybl"] = "pandapower",
                  loader_kwargs : Optional[dict] = None,
-                 stop_if_load_disco : Optional[bool] = True,
-                 stop_if_gen_disco : Optional[bool] = True,
+                 stop_if_load_disco : Optional[bool] = None,
+                 stop_if_gen_disco : Optional[bool] = None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
         #: if the solver has not converge after this, it will 
@@ -298,6 +307,13 @@ class LightSimBackend(Backend):
         # backend SHOULD not do these kind of stuff
         self._idx_hack_storage = []
         
+        #: ..versionadded: 0.9.3
+        #: sometimes some actions will make the grid fails
+        #: but grid2op expect it to fail not on "apply_action"
+        #: but rather when calling `runpf`
+        #: this flags remembers it
+        self._next_pf_fails : Optional[BackendError] = None
+        
         # speed optimization
         self._lineor_res = None
         self._lineex_res = None
@@ -349,6 +365,10 @@ class LightSimBackend(Backend):
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
             # do not forget to propagate this if needed
             self.can_handle_more_than_2_busbar()
+            
+        if hasattr(type(self), "can_handle_detachment"):
+            # do not forget to propagate this if needed
+            self.can_handle_detachment()
             
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
@@ -516,7 +536,9 @@ class LightSimBackend(Backend):
             self._grid.turnedoff_no_pv()
     
     def _assign_right_solver(self):
-        has_single_slack = np.where(np.array([el.slack_weight for el in self._grid.get_generators()]) != 0.)[0].shape[0] == 1
+        slack_weights = np.array([el.slack_weight for el in self._grid.get_generators()])
+        nb_slack_nonzero = (np.abs(slack_weights) > 0.).sum()
+        has_single_slack = nb_slack_nonzero == 1
         if has_single_slack and not self._dist_slack_non_renew:
             if SolverType.KLUSingleSlack in self.available_solvers:
                 # use the faster KLU if available
@@ -530,14 +552,70 @@ class LightSimBackend(Backend):
                 self._grid.change_solver(SolverType.KLU)
             else:
                 self._grid.change_solver(SolverType.SparseLU)
+        
+    def _aux_set_correct_detach_flags(self):
+        if self.detachment_is_allowed:
+            # user allowed detachment, I check the correct flags
+            if self._stop_if_gen_disco is None:
+                # user did not specify anything
+                self._stop_if_gen_disco = False
+            elif not self._stop_if_gen_disco:
+                # force conversion to proper type
+                self._stop_if_gen_disco = False
+            elif self._stop_if_gen_disco:
+                # erase default values and continue like the grid2op call specifies
+                warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_gen_disco=True`")
+                self._stop_if_gen_disco = False
                 
+            if self._stop_if_load_disco is None:
+                # user did not specify anything
+                self._stop_if_load_disco = False
+            elif not self._stop_if_load_disco:
+                # force conversion to the proper type
+                self._stop_if_load_disco = False
+            elif self._stop_if_load_disco:
+                # erase default values and continue like the grid2op call specifies
+                warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_load_disco=True`")
+                self._stop_if_load_disco = False
+                
+        else:
+            # user did not allow detachment (or it's a legacy grid2op version), I check the correct flags
+            if self._stop_if_gen_disco is None:
+                # user did not specify anything
+                self._stop_if_gen_disco = True
+            elif self._stop_if_gen_disco:
+                # force conversion to proper type
+                self._stop_if_gen_disco = True
+            elif not self._stop_if_gen_disco:
+                # erase default values and continue like the grid2op call specifies
+                warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_gen_disco=False`")
+                self._stop_if_gen_disco = True
+                
+            if self._stop_if_load_disco is None:
+                # user did not specify anything
+                self._stop_if_load_disco = True
+            elif self._stop_if_load_disco:
+                # force conversion to proper type
+                self._stop_if_load_disco = True
+            elif not self._stop_if_load_disco:
+                # erase default values and continue like the grid2op call specifies
+                warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_load_disco=False`")
+                self._stop_if_load_disco = True
+        
     def load_grid(self,
                   path : Union[os.PathLike, str],
                   filename : Optional[Union[os.PathLike, str]]=None) -> None: 
-        if hasattr(type(self), "can_handle_more_than_2_busbar"):
+        cls = type(self)
+        if hasattr(cls, "can_handle_more_than_2_busbar"):
             # grid2op version >= 1.10.0 then we use this
             self.can_handle_more_than_2_busbar()
-        
+            
+        if hasattr(cls, "can_handle_detachment"):
+            # grid2op version >= 1.11.0 then we use this
+            self.can_handle_detachment()
+            
+        self._aux_set_correct_detach_flags()
+            
         if self._loader_method == "pandapower":
             self._load_grid_pandapower(path, filename)
         elif self._loader_method == "pypowsybl":
@@ -546,6 +624,7 @@ class LightSimBackend(Backend):
             raise BackendError(f"Impossible to initialize the backend with '{self._loader_method}'")
         self._grid.tell_solver_need_reset()
         self._reset_res_pointers()  # force the re reading of the accessors at next powerflow
+        self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
     
     def _should_not_have_to_do_this(self, path=None, filename=None):
         # included in grid2op now !
@@ -1148,6 +1227,7 @@ class LightSimBackend(Backend):
         Specific implementation of the method to apply an action modifying a powergrid in the pandapower format.
         """
         tick = time.perf_counter()
+        self._next_pf_fails = None
         active_bus, *_, topo__, shunts__ = backendAction()
 
         # change the overall topology
@@ -1178,7 +1258,11 @@ class LightSimBackend(Backend):
                                              backendAction.storage_power.values)
             except RuntimeError as exc_:
                 # modification of power of disconnected storage has no effect in lightsim2grid
-                pass
+                if self.detachment_is_allowed:
+                    # a storage units is allowed to be disconnected in this case
+                    pass
+                else:
+                    self._next_pf_fails = BackendError("Some storage units would be disconnected")
 
         # handle shunts
         if type(self).shunts_data_available:
@@ -1231,7 +1315,10 @@ class LightSimBackend(Backend):
     def runpf(self, is_dc : bool=False) -> Tuple[bool, Union[Exception, None]]:
         my_exc_ = None
         res = False
-        try:
+        try:            
+            if self._next_pf_fails is not None:
+                raise self._next_pf_fails
+            
             beg_preproc = time.perf_counter()
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
@@ -1344,7 +1431,7 @@ class LightSimBackend(Backend):
             if type(self).shunts_data_available:
                 self._set_shunt_info()
 
-            if (self.line_or_theta >= 1e6).any() or (self.line_ex_theta >= 1e6).any():
+            if (np.abs(self.line_or_theta) >= 1e6).any() or (np.abs(self.line_ex_theta) >= 1e6).any():
                 raise BackendError(f"Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_changes()
@@ -1369,6 +1456,7 @@ class LightSimBackend(Backend):
 
     def _fill_nans(self):
         """fill the results vectors with nans"""
+        self._next_pf_fails = None
         self.p_or[:] = np.NaN
         self.q_or[:] = np.NaN
         self.v_or[:] = np.NaN
@@ -1474,7 +1562,7 @@ class LightSimBackend(Backend):
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco",
-                           "_timer_fetch_data_cpp"
+                           "_timer_fetch_data_cpp", "_next_pf_fails"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
