@@ -141,12 +141,20 @@ class LightSimBackend(Backend):
         #:
         #: if set to ``True`` (default) then the backend will raise a 
         #: BackendError in case of disconnected load
+        #:
+        #: .. note:: When using grid2op >= 1.11.0 and lightsim2grid >= 0.10.0 this 
+        #:    is automatically set-up with the call to grid2op.make, 
+        #:    to match the behaviour expected by `allow_detachment`
         self._stop_if_load_disco = stop_if_load_disco
         
         #: .. versionadded:: 0.8.0
         #:
         #: if set to ``True`` (default) then the backend will raise a 
         #: BackendError in case of disconnected generator
+        #:
+        #: .. note:: When using grid2op >= 1.11.0 and lightsim2grid >= 0.10.0 this 
+        #:    is automatically set-up with the call to grid2op.make, 
+        #:    to match the behaviour expected by `allow_detachment`
         self._stop_if_gen_disco = stop_if_gen_disco
         
         #: .. versionadded:: 0.10.0
@@ -154,6 +162,10 @@ class LightSimBackend(Backend):
         #: if set to ``True`` (default) then the backend will raise a 
         #: BackendError in case of disconnected storage that are 
         #: asked to produce / absorb something
+        #:
+        #: .. note:: When using grid2op >= 1.11.0 and lightsim2grid >= 0.10.0 this 
+        #:    is automatically set-up with the call to grid2op.make, 
+        #:    to match the behaviour expected by `allow_detachment`
         self._stop_if_storage_disco = stop_if_storage_disco
                                         
         self._aux_init_super(detailed_infos_for_cascading_failures,
@@ -1606,7 +1618,7 @@ class LightSimBackend(Backend):
                            "supported_grid_format", 
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
-                           "_stop_if_load_disco", "_stop_if_gen_disco",
+                           "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
                            "_timer_fetch_data_cpp", "_next_pf_fails"
                            ]
         for attr_nm in li_regular_attr:
