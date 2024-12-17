@@ -575,77 +575,81 @@ class LightSimBackend(Backend):
                 self._grid.change_solver(SolverType.KLU)
             else:
                 self._grid.change_solver(SolverType.SparseLU)
-        
+    
+    def _aux_set_correct_detach_flags_d_allowed(self):
+        # user allowed detachment, I check the correct flags
+        if self._stop_if_gen_disco is None:
+            # user did not specify anything
+            self._stop_if_gen_disco = False
+        elif not self._stop_if_gen_disco:
+            # force conversion to proper type
+            self._stop_if_gen_disco = False
+        elif self._stop_if_gen_disco:
+            # erase default values and continue like the grid2op call specifies
+            warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_gen_disco=True`")
+            self._stop_if_gen_disco = False
+            
+        if self._stop_if_load_disco is None:
+            # user did not specify anything
+            self._stop_if_load_disco = False
+        elif not self._stop_if_load_disco:
+            # force conversion to the proper type
+            self._stop_if_load_disco = False
+        elif self._stop_if_load_disco:
+            # erase default values and continue like the grid2op call specifies
+            warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_load_disco=True`")
+            self._stop_if_load_disco = False
+            
+        if self._stop_if_storage_disco is None:
+            # user did not specify anything
+            self._stop_if_storage_disco = False
+        elif not self._stop_if_storage_disco:
+            # force conversion to the proper type
+            self._stop_if_storage_disco = False
+        elif self._stop_if_storage_disco:
+            # erase default values and continue like the grid2op call specifies
+            warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_storage_disco=True`")
+            self._stop_if_storage_disco = False
+    
+    def _aux_set_correct_detach_flags_d_not_allowed(self):# user did not allow detachment (or it's a legacy grid2op version), I check the correct flags
+        if self._stop_if_gen_disco is None:
+            # user did not specify anything
+            self._stop_if_gen_disco = True
+        elif self._stop_if_gen_disco:
+            # force conversion to proper type
+            self._stop_if_gen_disco = True
+        elif not self._stop_if_gen_disco:
+            # erase default values and continue like the grid2op call specifies
+            warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_gen_disco=False`")
+            self._stop_if_gen_disco = True
+            
+        if self._stop_if_load_disco is None:
+            # user did not specify anything
+            self._stop_if_load_disco = True
+        elif self._stop_if_load_disco:
+            # force conversion to proper type
+            self._stop_if_load_disco = True
+        elif not self._stop_if_load_disco:
+            # erase default values and continue like the grid2op call specifies
+            warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_load_disco=False`")
+            self._stop_if_load_disco = True
+            
+        if self._stop_if_storage_disco is None:
+            # user did not specify anything
+            self._stop_if_storage_disco = True
+        elif self._stop_if_storage_disco:
+            # force conversion to proper type
+            self._stop_if_storage_disco = True
+        elif not self._stop_if_storage_disco:
+            # erase default values and continue like the grid2op call specifies
+            warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_storage_disco=False`")
+            self._stop_if_storage_disco = True
+                
     def _aux_set_correct_detach_flags(self):
         if self.detachment_is_allowed:
-            # user allowed detachment, I check the correct flags
-            if self._stop_if_gen_disco is None:
-                # user did not specify anything
-                self._stop_if_gen_disco = False
-            elif not self._stop_if_gen_disco:
-                # force conversion to proper type
-                self._stop_if_gen_disco = False
-            elif self._stop_if_gen_disco:
-                # erase default values and continue like the grid2op call specifies
-                warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_gen_disco=True`")
-                self._stop_if_gen_disco = False
-                
-            if self._stop_if_load_disco is None:
-                # user did not specify anything
-                self._stop_if_load_disco = False
-            elif not self._stop_if_load_disco:
-                # force conversion to the proper type
-                self._stop_if_load_disco = False
-            elif self._stop_if_load_disco:
-                # erase default values and continue like the grid2op call specifies
-                warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_load_disco=True`")
-                self._stop_if_load_disco = False
-                
-            if self._stop_if_storage_disco is None:
-                # user did not specify anything
-                self._stop_if_storage_disco = False
-            elif not self._stop_if_storage_disco:
-                # force conversion to the proper type
-                self._stop_if_storage_disco = False
-            elif self._stop_if_storage_disco:
-                # erase default values and continue like the grid2op call specifies
-                warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_storage_disco=True`")
-                self._stop_if_storage_disco = False
-                
+            self._aux_set_correct_detach_flags_d_allowed()
         else:
-            # user did not allow detachment (or it's a legacy grid2op version), I check the correct flags
-            if self._stop_if_gen_disco is None:
-                # user did not specify anything
-                self._stop_if_gen_disco = True
-            elif self._stop_if_gen_disco:
-                # force conversion to proper type
-                self._stop_if_gen_disco = True
-            elif not self._stop_if_gen_disco:
-                # erase default values and continue like the grid2op call specifies
-                warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_gen_disco=False`")
-                self._stop_if_gen_disco = True
-                
-            if self._stop_if_load_disco is None:
-                # user did not specify anything
-                self._stop_if_load_disco = True
-            elif self._stop_if_load_disco:
-                # force conversion to proper type
-                self._stop_if_load_disco = True
-            elif not self._stop_if_load_disco:
-                # erase default values and continue like the grid2op call specifies
-                warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_load_disco=False`")
-                self._stop_if_load_disco = True
-                
-            if self._stop_if_storage_disco is None:
-                # user did not specify anything
-                self._stop_if_storage_disco = True
-            elif self._stop_if_storage_disco:
-                # force conversion to proper type
-                self._stop_if_storage_disco = True
-            elif not self._stop_if_storage_disco:
-                # erase default values and continue like the grid2op call specifies
-                warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_storage_disco=False`")
-                self._stop_if_storage_disco = True
+            self._aux_set_correct_detach_flags_d_not_allowed()
         
     def load_grid(self,
                   path : Union[os.PathLike, str],
@@ -1463,23 +1467,23 @@ class LightSimBackend(Backend):
             self.next_prod_p[:] = self.prod_p
             if self._stop_if_load_disco and ((~np.isfinite(self.load_v)).any() or (self.load_v <= 0.).any()):
                 disco = (~np.isfinite(self.load_v)) | (self.load_v <= 0.)
-                load_disco = np.where(disco)[0]
+                load_disco = disco.nonzero()[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
                 raise BackendError(f"At least one load is disconnected (check loads {load_disco})")
             if self._stop_if_gen_disco and ((~np.isfinite(self.prod_v)).any() or (self.prod_v <= 0.).any()):
                 disco = (~np.isfinite(self.prod_v)) | (self.prod_v <= 0.)
-                gen_disco = np.where(disco)[0]
+                gen_disco = disco.nonzero()[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
                 raise BackendError(f"At least one generator is disconnected (check gen {gen_disco})")
             
             if self.__has_storage:
-                sto_active = (self.storage_p != 0.)
+                sto_active = (np.abs(self.storage_p) > 0.)
                 sto_act_disco = (((~np.isfinite(self.storage_v)) & sto_active).any() or 
                                  ((self.storage_v <= 0.) & sto_active).any()
                                 )
                 if self._stop_if_storage_disco and sto_act_disco:
                     disco = ((~np.isfinite(self.storage_v)) | (self.storage_v <= 0.)) & sto_active
-                    sto_disco = np.where(disco)[0]
+                    sto_disco = disco.nonzero()[0]
                     self._timer_postproc += time.perf_counter() - beg_postroc
                     raise BackendError(f"At least one storage unit is disconnected (check gen {sto_disco})")
             # TODO storage case of divergence !
