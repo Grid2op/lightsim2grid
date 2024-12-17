@@ -26,6 +26,23 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.10.0] 2024-12-17
+-------------------
+- [BREAKING] disconnected storage now raises errors if some power is produced / absorbed, when using legacy grid2op version,
+  you can retrieve the previous behaviour by initializing the `LightSimBackend` with
+  `backend = LightSimBackend(..., stop_if_storage_disco=False)`
+- [BREAKING] with the new `detachment_is_allowed` feature in grid2op, the kwargs `stop_if_load_disco`,
+  `stop_if_gen_disco` (and `stop_if_storage_disco`) are now optional. They are set up from the 
+  call to `grid2op.make(...)` and are erased by the `allow_detachment` kwargs. In other words,
+  you don't need to set `stop_if_load_disco`, `stop_if_gen_disco` or `stop_if_storage_disco`. It is 
+  automatically set by `grid2op.make(..., allow_detachment=XXX)` to have the correct bahaviour.
+- [FIXED] an issue with the storage units (when asking it to produce / consume 
+  but deactivating them with the same action the grid did not diverge)
+- [IMPROVED] add the grid2op "detachement" support (loads and generators are allowed
+  to be disconnected from the grid)
+- [ADDED] a kwargs `stop_if_storage_disco` to control (in legacy grid2op version) the behaviour 
+  of the backend when a storage unit is disconnected.
+
 [0.9.2.post2] 2024-11-29
 --------------------------
 - [FIXED] The attribute `can_output_theta` (of base `Backend` class)

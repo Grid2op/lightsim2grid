@@ -190,7 +190,9 @@ def run_grid2op_env(env_lightsim, case, reset_solver,
                     g2op_step_time,
                     ls_solver_time,
                     ls_gridmodel_time,
-                    g2op_sizes
+                    g2op_sizes,
+                    sgen_p,
+                    nb_ts
                     ):
     _ = env_lightsim.reset()
     done = False
@@ -330,7 +332,7 @@ if __name__ == "__main__":
                                         g2op_step_time_reset,
                                         ls_solver_time_reset,
                                         ls_gridmodel_time_reset,
-                                        g2op_sizes_reset
+                                        g2op_sizes_reset, sgen_p, nb_ts
                                         )
         
         reset_solver = False  # default
@@ -340,7 +342,7 @@ if __name__ == "__main__":
                                   g2op_step_time,
                                   ls_solver_time,
                                   ls_gridmodel_time,
-                                  g2op_sizes
+                                  g2op_sizes, sgen_p, nb_ts
                                   )
         
         # Perform the computation using TimeSerie
