@@ -40,7 +40,7 @@ except ImportError:
 try:
     from grid2op.Space import DEFAULT_ALLOW_DETACHMENT
 except ImportError:
-    # for backward compatibility with grid2op <= 1.11.0
+    # for backward compatibility with grid2op < 1.11.0
     DEFAULT_ALLOW_DETACHMENT = False
     
 try:
@@ -84,6 +84,7 @@ class LightSimBackend(Backend):
                  loader_kwargs : Optional[dict] = None,
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
+                 stop_if_storage_disco : Optional[bool] = None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
         #: if the solver has not converge after this, it will 
@@ -147,6 +148,13 @@ class LightSimBackend(Backend):
         #: if set to ``True`` (default) then the backend will raise a 
         #: BackendError in case of disconnected generator
         self._stop_if_gen_disco = stop_if_gen_disco
+        
+        #: .. versionadded:: 0.10.0
+        #:
+        #: if set to ``True`` (default) then the backend will raise a 
+        #: BackendError in case of disconnected storage that are 
+        #: asked to produce / absorb something
+        self._stop_if_storage_disco = stop_if_storage_disco
                                         
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
@@ -159,7 +167,8 @@ class LightSimBackend(Backend):
                              loader_method,
                              loader_kwargs,
                              stop_if_load_disco,
-                             stop_if_gen_disco)
+                             stop_if_gen_disco,
+                             stop_if_storage_disco)
         
         # backward compat: need to define it if not done by grid2op
         if not hasattr(self, "_can_be_copied"):
@@ -339,7 +348,8 @@ class LightSimBackend(Backend):
                         loader_method,
                         loader_kwargs,
                         stop_if_load_disco,
-                        stop_if_gen_disco):
+                        stop_if_gen_disco,
+                        stop_if_storage_disco):
         try:
             # for grid2Op >= 1.7.1
             Backend.__init__(self,
@@ -355,6 +365,7 @@ class LightSimBackend(Backend):
                              loader_kwargs=loader_kwargs,
                              stop_if_load_disco=stop_if_load_disco,
                              stop_if_gen_disco=stop_if_gen_disco,
+                             stop_if_storage_disco=stop_if_storage_disco
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
@@ -578,6 +589,17 @@ class LightSimBackend(Backend):
                 warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_load_disco=True`")
                 self._stop_if_load_disco = False
                 
+            if self._stop_if_storage_disco is None:
+                # user did not specify anything
+                self._stop_if_storage_disco = False
+            elif not self._stop_if_storage_disco:
+                # force conversion to the proper type
+                self._stop_if_storage_disco = False
+            elif self._stop_if_storage_disco:
+                # erase default values and continue like the grid2op call specifies
+                warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_storage_disco=True`")
+                self._stop_if_storage_disco = False
+                
         else:
             # user did not allow detachment (or it's a legacy grid2op version), I check the correct flags
             if self._stop_if_gen_disco is None:
@@ -601,6 +623,17 @@ class LightSimBackend(Backend):
                 # erase default values and continue like the grid2op call specifies
                 warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_load_disco=False`")
                 self._stop_if_load_disco = True
+                
+            if self._stop_if_storage_disco is None:
+                # user did not specify anything
+                self._stop_if_storage_disco = True
+            elif self._stop_if_storage_disco:
+                # force conversion to proper type
+                self._stop_if_storage_disco = True
+            elif not self._stop_if_storage_disco:
+                # erase default values and continue like the grid2op call specifies
+                warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_storage_disco=False`")
+                self._stop_if_storage_disco = True
         
     def load_grid(self,
                   path : Union[os.PathLike, str],
@@ -1426,6 +1459,17 @@ class LightSimBackend(Backend):
                 gen_disco = np.where(disco)[0]
                 self._timer_postproc += time.perf_counter() - beg_postroc
                 raise BackendError(f"At least one generator is disconnected (check gen {gen_disco})")
+            
+            if self.__has_storage:
+                sto_active = (self.storage_p != 0.)
+                sto_act_disco = (((~np.isfinite(self.storage_v)) & sto_active).any() or 
+                                 ((self.storage_v <= 0.) & sto_active).any()
+                                )
+                if self._stop_if_storage_disco and sto_act_disco:
+                    disco = ((~np.isfinite(self.storage_v)) | (self.storage_v <= 0.)) & sto_active
+                    sto_disco = np.where(disco)[0]
+                    self._timer_postproc += time.perf_counter() - beg_postroc
+                    raise BackendError(f"At least one storage unit is disconnected (check gen {sto_disco})")
             # TODO storage case of divergence !
 
             if type(self).shunts_data_available:
@@ -1537,7 +1581,8 @@ class LightSimBackend(Backend):
                             self._loader_method,
                             self._loader_kwargs,
                             self._stop_if_load_disco,
-                            self._stop_if_gen_disco)
+                            self._stop_if_gen_disco,
+                            self._stop_if_storage_disco)
         
         # for backward compat (attribute was not necessarily present in early grid2op)
         if not hasattr(res, "_can_be_copied"):
