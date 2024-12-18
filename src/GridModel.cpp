@@ -540,7 +540,9 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed()){
-            init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
+            init_converter_bus_id(id_me_to_solver, id_solver_to_me);
+            const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
+            init_Ybus(Ybus, nb_bus_solver);
         }
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
@@ -642,9 +644,9 @@ void GridModel::process_results(bool conv,
     }
 }
 
-void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                          std::vector<int>& id_me_to_solver,
-                          std::vector<int>& id_solver_to_me){
+void GridModel::init_converter_bus_id(std::vector<int>& id_me_to_solver,
+                                      std::vector<int>& id_solver_to_me){
+
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(bus_vn_kv_.size());
@@ -660,8 +662,10 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
             ++bus_id_solver;
         }
     }
-    const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
+}
 
+void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+                          int nb_bus_solver){
     Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus_solver, nb_bus_solver);
     Ybus.reserve(nb_bus_solver + 2*powerlines_.nb() + 2*trafos_.nb());
 }

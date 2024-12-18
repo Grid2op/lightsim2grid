@@ -1049,8 +1049,9 @@ class GridModel : public GenericContainer
         // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                       std::vector<int> & id_me_to_solver,
-                       std::vector<int>& id_solver_to_me);
+                       int nb_bus_solver);
+        void init_converter_bus_id(std::vector<int>& id_me_to_solver,
+                                   std::vector<int>& id_solver_to_me);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
         void init_slack_bus(const CplxVect & Sbus,
