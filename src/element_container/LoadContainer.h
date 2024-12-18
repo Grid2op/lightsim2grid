@@ -16,7 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-#include "GenericContainer.h"
+#include "OneSideContainer.h"
 
 /**
 This class is a container for all loads on the grid.
@@ -31,11 +31,8 @@ NOTE: this class is also used for the storage units! So storage units are modele
 which entails that negative storage: the unit is discharging, power is injected in the grid,
 positive storage: the unit is charging, power is taken from the grid.
 **/
-class LoadContainer : public GenericContainer
+class LoadContainer : public OneSideContainer
 {
-    // TODO make a single class for load and shunt and just specialize the part where the
-    // TODO powerflow equations are located (when i update the Y matrix)
-
     // iterators part
     public:
         class LoadInfo
@@ -117,70 +114,32 @@ class LoadContainer : public GenericContainer
     // regular implementation
     public:
     typedef std::tuple<
-       std::vector<std::string>,
-       std::vector<real_type>, // p_mw
-       std::vector<real_type>, // q_mvar
-       std::vector<int>, // bus_id
-       std::vector<bool> // status
+       OneSideContainer::StateRes  // state of the base class 
        >  StateRes;
 
-    LoadContainer() {};
+    LoadContainer():OneSideContainer(){};
 
     // pickle (python)
     LoadContainer::StateRes get_state() const;
-    void set_state(LoadContainer::StateRes & my_state );
+    void set_state(LoadContainer::StateRes & my_state);
 
-
-    void init(const RealVect & loads_p,
-              const RealVect & loads_q,
-              const Eigen::VectorXi & loads_bus_id
-              );
-
-    int nb() const { return static_cast<int>(p_mw_.size()); }
-
-    void deactivate(int load_id, SolverControl & solver_control) {
-        if(status_[load_id]){
-            solver_control.tell_recompute_sbus();
-        }
-        _deactivate(load_id, status_);
-    }
-    void reactivate(int load_id, SolverControl & solver_control) {
-        if(!status_[load_id]){
-            solver_control.tell_recompute_sbus();
-        }
-        _reactivate(load_id, status_);
-    }
-    void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);}
-    int get_bus(int load_id) {return _get_bus(load_id, status_, bus_id_);}
-    void change_p(int load_id, real_type new_p, SolverControl & solver_control);
-    void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
+    void init(const RealVect & load_p_mw,
+              const RealVect & load_q_mvar,
+              const Eigen::VectorXi & load_bus_id
+              )
     {
-        if (p_mw_(load_id) != new_p) {
-            solver_control.tell_recompute_sbus();
-            p_mw_(load_id) = new_p;
-        }
+        OneSideContainer::init_base(load_p_mw,
+                                    load_q_mvar,
+                                    load_bus_id,
+                                    "loads");
+        reset_results();
     }
-    void change_q(int load_id, real_type new_q, SolverControl & solver_control);
-    void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
-    {
-        if (q_mvar_(load_id) != new_q) {
-            solver_control.tell_recompute_sbus();
-            q_mvar_(load_id) = new_q;
-        }
-    }
-    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
-    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
-        const int nb_ = nb();
-        for(int el_id = 0; el_id < nb_; ++el_id)
-        {
-            if(!status_[el_id]) continue;
-            bus_status[bus_id_[el_id]] = true;
-        }
-    }    
-
+    virtual void reset_results()
+    {
+        OneSideContainer::reset_results();
+    }
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,
                          const Eigen::Ref<const CplxVect> & V,
@@ -188,29 +147,6 @@ class LoadContainer : public GenericContainer
                          const RealVect & bus_vn_kv,
                          real_type sn_mva,
                          bool ac);
-    void reset_results();
-
-    tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
-    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
-    
-    Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
-    const std::vector<bool>& get_status() const {return status_;}
-    Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
-
-    protected:
-        // physical properties
-
-        // input data
-        RealVect p_mw_;
-        RealVect q_mvar_;
-        Eigen::VectorXi bus_id_;
-        std::vector<bool> status_;
-
-        //output data
-        RealVect res_p_;  // in MW
-        RealVect res_q_;  // in MVar
-        RealVect res_v_;  // in kV
-        RealVect res_theta_;  // in degree
 };
 
 #endif  //LOAD_CONTAINER_H

@@ -452,32 +452,33 @@ class GridModel : public GenericContainer
         void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
         void reactivate_load(int load_id) {loads_.reactivate(load_id, solver_control_); }
         void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_load(int load_id, real_type new_p) {loads_.change_p(load_id, new_p, solver_control_); }
-        void change_q_load(int load_id, real_type new_q) {loads_.change_q(load_id, new_q, solver_control_); }
+        void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
+        void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, solver_control_); }
         void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, solver_control_); }
         void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p(gen_id, new_p, solver_control_); }
-        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v(gen_id, new_v_pu, solver_control_); }
+        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, solver_control_); }
+        void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, solver_control_); }
+        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, solver_control_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
 
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, solver_control_); }
         void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, solver_control_); }
         void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size()));  }
-        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, solver_control_); }
-        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, solver_control_); }
+        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
+        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, solver_control_); }
         void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, solver_control_); }
         void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p(sgen_id, new_p, solver_control_); }
-        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, solver_control_); }
+        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
+        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
 
         //storage units
