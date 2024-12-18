@@ -18,6 +18,9 @@ Change Log
 - maybe have a look at suitesparse "sliplu" tools ?
 - easier building (get rid of the "make" part)
 
+TODO: speed directly update the pv, pq, Sbus and Ybus part when updating the elements
+      (less error prone and faster to recompute). Then what is passed to the solver 
+      is "only" a "mask" of these data when null
 TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm ?
 TODO HVDC in Jacobian (see pandapower)
 TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  `remove_from_Ybus`
@@ -25,6 +28,15 @@ TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
+
+[0.10.0.post1] 2024-12-xx
+----------------------------
+- [FIXED] an error when changing of bus one of the slack (did not trigger the 
+  recompute of pv bus ids)
+- [FIXED] an issue when turning off a generator: it was still declared as "slack"
+  if it was one.
+- [IMPROVED] refactoring of the c++ side container element to reduce
+  code (for "one end" elements such as loads, generators, static generators and shunts)
 
 [0.10.0] 2024-12-17
 -------------------

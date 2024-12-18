@@ -15,7 +15,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-#include "GenericContainer.h"
+#include "OneSideContainer.h"
 
 /**
 This class is a container for all shunts on the grid.
@@ -26,7 +26,7 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
-class ShuntContainer : public GenericContainer
+class ShuntContainer : public OneSideContainer
 {
     // iterators part
     public:
@@ -107,50 +107,26 @@ class ShuntContainer : public GenericContainer
         }
 
     public:
-    typedef std::tuple<
-           std::vector<std::string>, 
-           std::vector<real_type>, // p_mw
-           std::vector<real_type>, // q_mvar
-           std::vector<int>, // bus_id
-           std::vector<bool> // status
-           >  StateRes;
+    typedef std::tuple<OneSideContainer::StateRes >  StateRes;
 
-    ShuntContainer() {};
+    ShuntContainer():OneSideContainer() {};
 
-    void init(const RealVect & shunt_p_mw,
-              const RealVect & shunt_q_mvar,
-              const Eigen::VectorXi & shunt_bus_id
-              );
+
+    void init(const RealVect & load_p_mw,
+              const RealVect & load_q_mvar,
+              const Eigen::VectorXi & load_bus_id
+              )
+    {
+        OneSideContainer::init_base(load_p_mw,
+                                    load_q_mvar,
+                                    load_bus_id,
+                                    "shunts");
+        reset_results();
+    }
 
     // pickle (python)
     ShuntContainer::StateRes get_state() const;
     void set_state(ShuntContainer::StateRes & my_state );
-
-
-    int nb() const { return static_cast<int>(p_mw_.size()); }
-
-    void deactivate(int shunt_id, SolverControl & solver_control) {
-        if(status_[shunt_id]){
-            solver_control.tell_recompute_sbus();  // DC
-            solver_control.tell_recompute_ybus();  // AC
-        }
-        _deactivate(shunt_id, status_);
-    }
-    void reactivate(int shunt_id, SolverControl & solver_control) {
-        if(!status_[shunt_id]){
-            solver_control.tell_recompute_sbus();  // DC
-            solver_control.tell_recompute_ybus();  // AC
-        }
-        _reactivate(shunt_id, status_);
-    }
-    void change_bus(int shunt_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(shunt_id, new_bus_id, bus_id_, solver_control, nb_bus);}
-    void change_p(int shunt_id, real_type new_p, SolverControl & solver_control);
-    void change_q(int shunt_id, real_type new_q, SolverControl & solver_control);
-    int get_bus(int shunt_id) const {return _get_bus(shunt_id, status_, bus_id_);}
-    Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
-
-    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
-    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     
     virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                           bool ac,
@@ -161,16 +137,7 @@ class ShuntContainer : public GenericContainer
                             const std::vector<int> & id_grid_to_solver,
                             real_type sn_mva,
                             FDPFMethod xb_or_bx) const;
-    virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
-        const int nb_ = nb();
-        for(int el_id = 0; el_id < nb_; ++el_id)
-        {
-            if(!status_[el_id]) continue;
-            bus_status[bus_id_[el_id]] = true;
-        }
-    }    
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
                          const Eigen::Ref<const RealVect> & Vm,
@@ -179,7 +146,11 @@ class ShuntContainer : public GenericContainer
                          const RealVect & bus_vn_kv,
                          real_type sn_mva,
                          bool ac);
-    void reset_results();
+
+    virtual void reset_results()
+    {
+        OneSideContainer::reset_results();
+    }
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
@@ -192,16 +163,9 @@ class ShuntContainer : public GenericContainer
         // physical properties
 
         // input data
-        RealVect p_mw_;
-        RealVect q_mvar_;
-        Eigen::VectorXi bus_id_;
-        std::vector<bool> status_;
 
         //output data
-        RealVect res_p_;  // in MW
-        RealVect res_q_;  // in MVar
-        RealVect res_v_;  // in kV
-        RealVect res_theta_;  // in kV
+
 };
 
 #endif  //SHUNT_CONTAINER_H

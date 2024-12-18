@@ -18,7 +18,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-#include "GenericContainer.h"
+#include "OneSideContainer.h"
 
 /**
 This class represents the list of all generators.
@@ -29,7 +29,7 @@ https://pandapower.readthedocs.io/en/latest/elements/gen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model
 **/
-class GeneratorContainer: public GenericContainer
+class GeneratorContainer: public OneSideContainer
 {
     public:
     class GenInfo
@@ -111,22 +111,18 @@ class GeneratorContainer: public GenericContainer
 
     public:
     typedef std::tuple<
-       std::vector<std::string>,
+       OneSideContainer::StateRes,
        bool,
        std::vector<bool>, // voltage_regulator_on
-       std::vector<real_type>, // p_mw
        std::vector<real_type>, // vm_pu_
-       std::vector<real_type>, // q_mvar_
        std::vector<real_type>, // min_q_
        std::vector<real_type>, // max_q_
-       std::vector<int>, // bus_id
-       std::vector<bool>, // status
        std::vector<bool>, // gen_slackbus
        std::vector<real_type> // gen_slack_weight_
        >  StateRes;
 
-    GeneratorContainer():turnedoff_gen_pv_(true){};
-    GeneratorContainer(bool turnedoff_gen_pv):turnedoff_gen_pv_(turnedoff_gen_pv) {};
+    GeneratorContainer():OneSideContainer(), turnedoff_gen_pv_(true){};
+    GeneratorContainer(bool turnedoff_gen_pv):OneSideContainer(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
 
     // TODO add pmin and pmax here !
     void init(const RealVect & generators_p,
@@ -144,8 +140,6 @@ class GeneratorContainer: public GenericContainer
                    const RealVect & generators_max_q,
                    const Eigen::VectorXi & generators_bus_id
                    );
-
-    int nb() const { return static_cast<int>(p_mw_.size()); }
 
     // iterator
     typedef GeneratorConstIterator const_iterator_type;
@@ -195,6 +189,7 @@ class GeneratorContainer: public GenericContainer
             remove_slackbus(gen_id, unused_solver_control);
         }
     }
+
     // returns only the gen_id with the highest p that is connected to this bus !
     int assign_slack_bus(int slack_bus_id,
                          const std::vector<real_type> & gen_p_per_bus,
@@ -241,7 +236,7 @@ class GeneratorContainer: public GenericContainer
     void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
                               SolverControl & solver_control);
 
-    void deactivate(int gen_id, SolverControl & solver_control) {
+    virtual void deactivate(int gen_id, SolverControl & solver_control) {
         if (status_[gen_id]){
             solver_control.tell_recompute_sbus();
             solver_control.tell_pq_changed();  // bus might now be pq
@@ -253,41 +248,44 @@ class GeneratorContainer: public GenericContainer
             }
         }
         _deactivate(gen_id, status_);
+        gen_slackbus_[gen_id] = false;
     }
-    void reactivate(int gen_id, SolverControl & solver_control) {
+
+    virtual void reactivate(int gen_id, SolverControl & solver_control) {
         if(!status_[gen_id]){
             solver_control.tell_recompute_sbus();
-            solver_control.tell_pq_changed();  // bus might now be pv
+            // bus might change between pv / pq depending on the state of the generator
+            // TODO speed optim here
+            solver_control.tell_pq_changed();
+            solver_control.tell_pv_changed(); 
+
             if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-            solver_control.tell_pv_changed();
             if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
                 solver_control.tell_slack_participate_changed();
                 solver_control.tell_slack_weight_changed();
             }
+            if(gen_slack_weight_[gen_id] != 0.){
+                gen_slackbus_[gen_id] = true;
+            }
         }
         _reactivate(gen_id, status_);
     }
-    void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+    virtual void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
         if (new_bus_id != bus_id_[gen_id]){
             if (gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]) solver_control.has_slack_participate_changed();
+            // bus might change between pv / pq depending on the state of the generator
+            // TODO speed optim here
+            solver_control.tell_pq_changed();
+            solver_control.tell_pv_changed(); 
         }
-        _change_bus(gen_id, new_bus_id, bus_id_, solver_control, nb_bus);}
-    int get_bus(int gen_id) {return _get_bus(gen_id, status_, bus_id_);}
-    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
-    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
-        const int nb_gen = nb();
-        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-        {
-            if(!status_[gen_id]) continue;
-            bus_status[bus_id_[gen_id]] = true;
-        }
-    }    
+        _change_bus(gen_id, new_bus_id, bus_id_, solver_control, nb_bus);
+    }
+
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
-    void change_p(int gen_id, real_type new_p, SolverControl & solver_control);
     void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
-    void change_q(int gen_id, real_type new_q, SolverControl & solver_control);
+    void change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control);
+    virtual void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
     virtual void fillpv(std::vector<int>& bus_pv,
@@ -299,14 +297,17 @@ class GeneratorContainer: public GenericContainer
                        RealVect & total_q_min_per_bus,
                        RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
 
-    void compute_results(const Eigen::Ref<const RealVect> & Va,
-                         const Eigen::Ref<const RealVect> & Vm,
-                         const Eigen::Ref<const CplxVect> & V,
-                         const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv,
-                         real_type sn_mva,
-                         bool ac);
-    void reset_results();
+    virtual void compute_results(const Eigen::Ref<const RealVect> & Va,
+                                 const Eigen::Ref<const RealVect> & Vm,
+                                 const Eigen::Ref<const CplxVect> & V,
+                                 const std::vector<int> & id_grid_to_solver,
+                                 const RealVect & bus_vn_kv,
+                                 real_type sn_mva,
+                                 bool ac);
+    void reset_results(){
+        OneSideContainer::reset_results();
+    }
+
     void set_q(const RealVect & reactive_mismatch,
                const std::vector<int> & id_grid_to_solver,
                bool ac,
@@ -315,6 +316,7 @@ class GeneratorContainer: public GenericContainer
                const RealVect & total_q_max_per_bus);
 
     void get_vm_for_dc(RealVect & Vm);
+
     /**
     this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
     the ac powerflow
@@ -323,13 +325,6 @@ class GeneratorContainer: public GenericContainer
 
     virtual void gen_p_per_bus(std::vector<real_type> & res) const;
 
-    tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
-    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
-    Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
-
-    const std::vector<bool>& get_status() const {return status_;}
-    Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
-
     void cout_v(){
         for(const auto & el : vm_pu_){
             std::cout << "V " << el << std::endl;
@@ -337,16 +332,12 @@ class GeneratorContainer: public GenericContainer
     }
     protected:
         // physical properties
+        RealVect min_q_;
+        RealVect max_q_;
 
         // input data
         std::vector<bool> voltage_regulator_on_;
-        RealVect p_mw_;
         RealVect vm_pu_;
-        RealVect q_mvar_;
-        RealVect min_q_;
-        RealVect max_q_;
-        Eigen::VectorXi bus_id_;
-        std::vector<bool> status_;
 
         // remember which generators are "slack bus"
         std::vector<bool> gen_slackbus_;  // say for each generator if it's a slack or not
@@ -355,12 +346,6 @@ class GeneratorContainer: public GenericContainer
         // intermediate data
         // Eigen::VectorXi total_gen_per_bus_;
         RealVect bus_slack_weight_;  // do not sum to 1., for each node of the grid, say the raw contribution for the generator
-
-        //output data
-        RealVect res_p_;  // in MW
-        RealVect res_q_;  // in MVar
-        RealVect res_v_;  // in kV
-        RealVect res_theta_;  // in deg (and not rad)
 
         // different parameter of the behaviour of the class
         bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?

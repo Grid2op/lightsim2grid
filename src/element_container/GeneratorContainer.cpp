@@ -16,45 +16,12 @@ void GeneratorContainer::init(const RealVect & generators_p,
                               const RealVect & generators_max_q,
                               const Eigen::VectorXi & generators_bus_id)
 {
-    int size = static_cast<int>(generators_p.size());
-    GenericContainer::check_size(generators_p, size, "generators_p");
-    GenericContainer::check_size(generators_v, size, "generators_v");
-    GenericContainer::check_size(generators_min_q, size, "generators_min_q");
-    GenericContainer::check_size(generators_max_q, size, "generators_max_q");
-    GenericContainer::check_size(generators_bus_id, size, "generators_bus_id");
-
-    p_mw_ = generators_p;
-    vm_pu_ = generators_v;
-    bus_id_ = generators_bus_id;
-    min_q_ = generators_min_q;
-    max_q_ = generators_max_q;
-    if(min_q_.size() != max_q_.size())
-    {
-        std::ostringstream exc_;
-        exc_ << "GeneratorContainer::init: Impossible to initialize generator with generators_min_q of size ";
-        exc_ << min_q_.size();
-        exc_ << " and generators_max_q of size ";
-        exc_ << max_q_.size();
-        exc_ << ". Both should match";
-        throw std::runtime_error(exc_.str());
-    }
-    const int nb_gen = static_cast<int>(min_q_.size());
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if (min_q_(gen_id) > max_q_(gen_id))
-        {
-            std::ostringstream exc_;
-            exc_ << "GeneratorContainer::init: Impossible to initialize generator min_q being above max_q for generator ";
-            exc_ << gen_id;
-            throw std::runtime_error(exc_.str());
-        }
-    }
-    status_ = std::vector<bool>(generators_p.size(), true);
-    gen_slackbus_ = std::vector<bool>(generators_p.size(), false);
-    gen_slack_weight_ = std::vector<real_type>(generators_p.size(), 0.);
-    turnedoff_gen_pv_ = true;
-    voltage_regulator_on_ = std::vector<bool>(generators_p.size(), true);
-    q_mvar_ = RealVect::Zero(generators_p.size());
-    reset_results();
+    const auto generators_q = RealVect::Zero(generators_p.size());
+    const auto voltage_regulator_on = std::vector<bool>(generators_p.size(), true);
+    init_full(generators_p, generators_v, generators_q,
+              voltage_regulator_on,
+              generators_min_q, generators_max_q,
+              generators_bus_id);
 }
 
 void GeneratorContainer::init_full(const RealVect & generators_p,
@@ -66,60 +33,82 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
                                    const Eigen::VectorXi & generators_bus_id
                                    )
 {
-    init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
+    OneSideContainer::init_base(generators_p, generators_q, generators_bus_id, "generators");
+
+    // check the sizes
     int size = static_cast<int>(generators_p.size());
-    GenericContainer::check_size(generators_q, size, "generators_q");
-    GenericContainer::check_size(voltage_regulator_on, size, "voltage_regulator_on");
+    check_size(generators_v, size, "generators_v");
+    check_size(generators_min_q, size, "generators_min_q");
+    check_size(generators_max_q, size, "generators_max_q");
+    check_size(voltage_regulator_on, size, "voltage_regulator_on");
+
+    // fill the data
+    vm_pu_ = generators_v;
+    min_q_ = generators_min_q;
+    max_q_ = generators_max_q;
+    for(int gen_id = 0; gen_id < size; ++gen_id){
+        if (min_q_(gen_id) > max_q_(gen_id))
+        {
+            std::ostringstream exc_;
+            exc_ << "GeneratorContainer::init: Impossible to initialize generator min_q being above max_q for generator ";
+            exc_ << gen_id;
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    gen_slackbus_ = std::vector<bool>(generators_p.size(), false);
+    gen_slack_weight_ = std::vector<real_type>(generators_p.size(), 0.);
+    turnedoff_gen_pv_ = true;
     voltage_regulator_on_ = voltage_regulator_on;
-    q_mvar_ = generators_q;
+    reset_results();
 }
 
 
 GeneratorContainer::StateRes GeneratorContainer::get_state() const
 {
-     std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
      std::vector<real_type> vm_pu(vm_pu_.begin(), vm_pu_.end());
-     std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
      std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
      std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
-     std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
-     std::vector<bool> status = status_;
      std::vector<bool> slack_bus = gen_slackbus_;
      std::vector<bool> voltage_regulator_on = voltage_regulator_on_;
      std::vector<real_type> slack_weight = gen_slack_weight_;
-     GeneratorContainer::StateRes res(names_, turnedoff_gen_pv_, voltage_regulator_on,
-                           p_mw, vm_pu, q_mvar,
-                           min_q, max_q, bus_id, status, slack_bus, slack_weight);
+     GeneratorContainer::StateRes res(OneSideContainer::get_state(), 
+                                      turnedoff_gen_pv_,
+                                      voltage_regulator_on,
+                                      vm_pu,
+                                      min_q,
+                                      max_q,
+                                      slack_bus,
+                                      slack_weight);
      return res;
 }
 
 void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
-    names_ = std::get<0>(my_state);
+    OneSideContainer::set_base_state(std::get<0>(my_state));
     turnedoff_gen_pv_ = std::get<1>(my_state);
 
     // the generators themelves
     std::vector<bool> & voltage_regulator_on = std::get<2>(my_state);
-    std::vector<real_type> & p_mw = std::get<3>(my_state);
-    std::vector<real_type> & vm_pu = std::get<4>(my_state);
-    std::vector<real_type> & q_mvar = std::get<5>(my_state);
-    std::vector<real_type> & min_q = std::get<6>(my_state);
-    std::vector<real_type> & max_q = std::get<7>(my_state);
-    std::vector<int> & bus_id = std::get<8>(my_state);
-    std::vector<bool> & status = std::get<9>(my_state);
-    std::vector<bool> & slack_bus = std::get<10>(my_state);
-    std::vector<real_type> & slack_weight = std::get<11>(my_state);
-    // TODO check sizes
+    std::vector<real_type> & vm_pu = std::get<3>(my_state);
+    std::vector<real_type> & min_q = std::get<4>(my_state);
+    std::vector<real_type> & max_q = std::get<5>(my_state);
+    std::vector<bool> & slack_bus = std::get<6>(my_state);
+    std::vector<real_type> & slack_weight = std::get<7>(my_state);
 
-    // input data
+    // check sizes
+    const auto size = nb();
+    check_size(voltage_regulator_on, size, "voltage_regulator_on");
+    check_size(vm_pu, size, "vm_pu");
+    check_size(min_q, size, "min_q");
+    check_size(max_q, size, "max_q");
+    check_size(slack_bus, size, "slack_bus");
+    check_size(slack_weight, size, "slack_weight");
+
+    // assign data
     voltage_regulator_on_ = voltage_regulator_on;
-    p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
     vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
-    q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
     min_q_ = RealVect::Map(&min_q[0], min_q.size());
     max_q_ = RealVect::Map(&max_q[0], max_q.size());
-    bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
-    status_ = status;
     gen_slackbus_ = slack_bus;
     gen_slack_weight_ = slack_weight;
     reset_results();
@@ -224,8 +213,7 @@ void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                          bool ac)
 {
     const int nb_gen = nb();
-    v_kv_from_vpu(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-    v_deg_from_va(Va, Vm, status_, nb_gen, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
+    OneSideContainer::compute_results_base(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(!status_[gen_id]){
             res_p_(gen_id) = 0.;
@@ -233,13 +221,6 @@ void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         }
         res_p_(gen_id) = p_mw_(gen_id);
     }
-}
-
-void GeneratorContainer::reset_results(){
-    res_p_ = RealVect(nb());  // in MW
-    res_q_ = RealVect(nb());  // in MVar
-    res_v_ = RealVect(nb());  // in kV
-    res_theta_ = RealVect(nb());  // in deg
 }
 
 void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
@@ -258,18 +239,8 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::change_p(int gen_id, real_type new_p, SolverControl & solver_control)
+void GeneratorContainer::change_p_nothrow(int gen_id, real_type new_p, SolverControl & solver_control)
 {
-    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
-    if(!my_status)
-    {
-        // TODO DEBUG MODE only this in debug mode
-        std::ostringstream exc_;
-        exc_ << "GeneratorContainer::change_p: Impossible to change the active value of a disconnected generator (check gen. id ";
-        exc_ << gen_id;
-        exc_ << ")";
-        throw std::runtime_error(exc_.str());
-    }
     if(!turnedoff_gen_pv_){
         // if turned off generators (including these with p==0)
         // are not pv, if we change the active generation, it changes
@@ -280,30 +251,7 @@ void GeneratorContainer::change_p(int gen_id, real_type new_p, SolverControl & s
             solver_control.tell_pv_changed();
            }
     }
-    if (p_mw_(gen_id) != new_p){
-        solver_control.tell_recompute_sbus();
-        p_mw_(gen_id) = new_p;
-    }
-}
-
-void GeneratorContainer::change_q(int gen_id, real_type new_q, SolverControl & solver_control)
-{
-    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
-    if(!my_status)
-    {
-        // TODO DEBUG MODE only this in debug mode
-        std::ostringstream exc_;
-        exc_ << "GeneratorContainer::change_q: Impossible to change the reactive value of a disconnected generator (check gen. id ";
-        exc_ << gen_id;
-        exc_ << ")";
-        throw std::runtime_error(exc_.str());
-    }
-    // TODO DEBUG MODE : raise an error if generator is regulating voltage, maybe ? 
-    // this would have not effect
-    if (q_mvar_(gen_id) != new_q){
-        solver_control.tell_recompute_sbus();
-        q_mvar_(gen_id) = new_q;
-    }
+    OneSideContainer::change_p_nothrow(gen_id, new_p, solver_control);
 }
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
@@ -318,6 +266,11 @@ void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl 
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    change_v_nothrow(gen_id, new_v_pu, solver_control);
+}
+
+void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control)
+{
     if (vm_pu_(gen_id) != new_v_pu) solver_control.tell_v_changed();
     vm_pu_(gen_id) = new_v_pu;
 }
@@ -331,6 +284,8 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_t
         if(!status_[gen_id]) continue;
         
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
+
+        // pseudo off generator (with p == 0)
         bool pseudo_off = p_mw_(gen_id) == 0.;
         // though "pseudo off" a slack is still "PV"
         if(gen_slack_weight_[gen_id] != 0.) pseudo_off = false;  
@@ -498,24 +453,6 @@ void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eige
     }
 }
 
-void GeneratorContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
-    const int nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        if(!status_[gen_id]) continue;
-        const auto my_bus = bus_id_(gen_id);
-        if(my_bus == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "Generator::reconnect_connected_buses: Generator with id ";
-            exc_ << gen_id;
-            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_gen(...)` ?.";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_status[my_bus] = true;  // this bus is connected
-    }
-}
-
 void GeneratorContainer::gen_p_per_bus(std::vector<real_type> & res) const
 {
     const int nb_gen = nb();
@@ -525,17 +462,4 @@ void GeneratorContainer::gen_p_per_bus(std::vector<real_type> & res) const
         const auto my_bus = bus_id_(gen_id);
         if (p_mw_(gen_id) > 0.) res[my_bus] += p_mw_(gen_id);
     }
-}
-
-void GeneratorContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
-    const int nb_gen = nb();
-    SolverControl unused_solver_control;
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        if(!status_[gen_id]) continue;
-        const auto my_bus = bus_id_(gen_id);
-        if(!busbar_in_main_component[my_bus]){
-            deactivate(gen_id, unused_solver_control);
-        }
-    }    
 }
