@@ -61,9 +61,15 @@ def _aux_add_trafo(converter, model, pp_net, pp_to_ls):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
     is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
 
-    if np.any(pp_net.trafo["tap_phase_shifter"].values):
-        raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
-                           "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
+    if int(pp.__version__.split(".")[0]) < 3:
+        if np.any(pp_net.trafo["tap_phase_shifter"].values):
+            raise RuntimeError("Ideal phase shifters are not modeled. Please remove all trafos with "
+                               "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
+    else:
+        if np.any(pp_net.trafo["tap_changer_type"].values == "Ideal") or \
+           np.any(pp_net.trafo3w["tap_changer_type"].values == "Ideal"):
+            raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 2-winding or 3-winding trafos "
+                               "with \"tap_changer_type\" set to \"Ideal\".")
 
     tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
     if np.any(~np.isfinite(tap_angles_)):
