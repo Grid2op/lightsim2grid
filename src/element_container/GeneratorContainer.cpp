@@ -292,10 +292,10 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_t
         if ((!turnedoff_gen_pv_) && pseudo_off) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
-        std::cout << "gen_id " << gen_id << std::endl;
-        std::cout << "id_grid_to_solver.size() " << id_grid_to_solver.size() << std::endl;
-        std::cout << "bus_id_me " << bus_id_me << std::endl;
-        std::cout << "======== " << std::endl;
+        // std::cout << "gen_id " << gen_id << std::endl;
+        // std::cout << "id_grid_to_solver.size() " << id_grid_to_solver.size() << std::endl;
+        // std::cout << "bus_id_me " << bus_id_me << std::endl;
+        // std::cout << "======== " << std::endl;
 
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){

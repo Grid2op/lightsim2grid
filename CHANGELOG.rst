@@ -29,12 +29,13 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.10.0.post1] 2024-12-xx
+[0.10.1.dev0] 2025-xx-yy
 ----------------------------
 - [FIXED] an error when changing of bus one of the slack (did not trigger the 
   recompute of pv bus ids)
 - [FIXED] an issue when turning off a generator: it was still declared as "slack"
   if it was one.
+- [FIXED] could not disconnect a generator when it was a slack bus
 - [IMPROVED] refactoring of the c++ side container element to reduce
   code (for "one end" elements such as loads, generators, static generators and shunts)
 
