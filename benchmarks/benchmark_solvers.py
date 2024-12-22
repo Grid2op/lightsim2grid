@@ -11,6 +11,7 @@ import os
 import warnings
 import pandas as pd
 from grid2op import make
+from grid2op.Backend import PandaPowerBackend
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import ChangeNothing
 import re
@@ -105,7 +106,14 @@ def main(max_ts,
         if re.match("^.*\\.json$", env_name_input) is None:
             # i provided an environment name
             env_pp = make(env_name_input, param=param, test=test,
+                          backend=PandaPowerBackend(lightsim2grid=False, with_numba=True),
                           data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+            env_pp_no_numba = make(env_name_input, param=param, test=test,
+                                   backend=PandaPowerBackend(lightsim2grid=False, with_numba=False),
+                                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+            env_pp_ls_numba = make(env_name_input, param=param, test=test,
+                                   backend=PandaPowerBackend(lightsim2grid=True, with_numba=True),
+                                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
         else:
@@ -126,6 +134,16 @@ def main(max_ts,
         nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
         pp_comp_time = env_pp.backend.comp_time
         pp_time_pf = env_pp._time_powerflow
+        
+        tmp_no_numba = run_env(env_pp_no_numba, max_ts, agent, chron_id=0, env_seed=0)
+        nb_ts_pp_no_numba, time_pp_no_numba, aor_pp_no_numba, gen_p_pp_no_numba, gen_q_pp_no_numba = tmp_no_numba
+        pp_no_numba_comp_time = env_pp_no_numba.backend.comp_time
+        pp_no_numba_time_pf = env_pp_no_numba._time_powerflow
+        
+        tmp_ls_numba = run_env(env_pp_ls_numba, max_ts, agent, chron_id=0, env_seed=0)
+        nb_ts_pp_ls_numba, time_pp_ls_numba, aor_pp_ls_numba, gen_p_ls_numba, gen_q_ls_numba = tmp_ls_numba
+        pp_ls_numba_comp_time = env_pp_ls_numba.backend.comp_time
+        pp_ls_numba_time_pf = env_pp_ls_numba._time_powerflow
 
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
@@ -174,6 +192,12 @@ def main(max_ts,
         tab.append(["PP", f"{nb_ts_pp/time_pp:.2e}",
                     f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
                     f"{1000.*pp_comp_time/nb_ts_pp:.2e}"])
+        tab.append(["PP (no numba)", f"{nb_ts_pp_no_numba/time_pp_no_numba:.2e}",
+                    f"{1000.*pp_no_numba_time_pf/nb_ts_pp_no_numba:.2e}",
+                    f"{1000.*pp_no_numba_comp_time/nb_ts_pp_no_numba:.2e}"])
+        tab.append(["PP (with lightsim)", f"{nb_ts_pp_ls_numba/time_pp_ls_numba:.2e}",
+                    f"{1000.*pp_ls_numba_time_pf/nb_ts_pp_ls_numba:.2e}",
+                    f"{1000.*pp_ls_numba_comp_time/nb_ts_pp_ls_numba:.2e}"])
 
     for key in this_order:
         if key not in res_times:
