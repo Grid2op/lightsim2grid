@@ -247,7 +247,19 @@ at the time of the benchmark.
 More information
 ~~~~~~~~~~~~~~~~~
 
-TODO
+For all the benchmarks, the stopping criteria (of the solver, for each steps) is based on the maximum discrepency (at each bus) of the Kirchhoff Current Law's. 
+The solver stops if this `tolerance` is under `1e-8` "per unit".
+
+For all "steps", the model is intialized with the "DC" (direct current) approximation before the AC powerflow is run. In these benchmark, only the timings
+of the AC powerflow is reported.
+
+These benchmarks mimic a typical behaviour in grid2op where in most cases the "agent" does nothing: between two consecutive steps, 
+there is no modification of the topology. Only the injection (active and reactive power consumed and active generation as well as target voltage 
+setpoint of generators are modified between two steps). The topology does not change, the tap of the transformers stay the same etc.
+
+Finally, as opposed to pandapower Backend, lightsim2grid Backend is to "recycle" partially some of its comptuation. Concretely this means, in this 
+case, that the Ybus matrix is not recomputed at each steps (but computed only at the first one) for example. 
+
 
 Differences
 ~~~~~~~~~~~~~~~~~~~
@@ -330,6 +342,10 @@ using Gauss Seidel as opposed to using Newton Raphson solver)
 When using Newton Raphson solvers, the difference in absolute values when using lightsim2grid compared
 with using PandaPowerBackend is neglectible: less than 1e-06 in all cases (and 0.00 when comparing the
 flows on the powerline for both environments).
+
+.. note::
+  The differences reported here are in comparison with pandapower. This is why there is 0. to 
+  all the columns corresponding to the `PP (ref)` row.
 
 Other benchmark
 ----------------
