@@ -23,6 +23,13 @@ except ImportError:
     print("Be carefull: there might be maintenance")
     from grid2op.Chronics import GridStateFromFile
 
+try:
+    from pypowsybl2grid import PyPowSyBlBackend
+    pypow_error = None
+except ImportError as exc_:
+    pypow_error = exc_
+    print("Backend based on pypowsybl will not be benchmarked")
+ 
 from grid2op.Parameters import Parameters
 import lightsim2grid
 from lightsim2grid.lightSimBackend import LightSimBackend
@@ -116,12 +123,32 @@ def main(max_ts,
                                    data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+            if pypow_error is None:
+                env_pypow = make(env_name_input, param=param, test=test,
+                                 backend=PyPowSyBlBackend(),
+                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
         else:
             # I provided an environment path
             env_pp = make("blank", param=param, test=True,
                           data_feeding_kwargs={"gridvalueClass": ChangeNothing},
-                          grid_path=env_name_input
+                          grid_path=env_name_input,
+                          backend=PandaPowerBackend(lightsim2grid=False, with_numba=True)
                           )
+            env_pp_no_numba = make("blank", param=param, test=True,
+                                   data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                   grid_path=env_name_input,
+                                   backend=PandaPowerBackend(lightsim2grid=False, with_numba=False)
+                                   )
+            env_pp_ls_numba = make("blank", param=param, test=True,
+                                   data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                   grid_path=env_name_input,
+                                   backend=PandaPowerBackend(lightsim2grid=True, with_numba=True)
+                                   )
+            if pypow_error is None:
+                env_pypow = make("blank", param=param, test=True,
+                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                 grid_path=env_name_input,
+                                 backend=PyPowSyBlBackend())
             env_lightsim = make("blank", param=param, test=True,
                                 backend=LightSimBackend(),
                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
@@ -134,17 +161,35 @@ def main(max_ts,
         nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
         pp_comp_time = env_pp.backend.comp_time
         pp_time_pf = env_pp._time_powerflow
+        if hasattr(env_pp, "_time_step"):
+            # for oldest grid2op version where this was not stored
+            time_pp = env_pp._time_step
         
         tmp_no_numba = run_env(env_pp_no_numba, max_ts, agent, chron_id=0, env_seed=0)
         nb_ts_pp_no_numba, time_pp_no_numba, aor_pp_no_numba, gen_p_pp_no_numba, gen_q_pp_no_numba = tmp_no_numba
         pp_no_numba_comp_time = env_pp_no_numba.backend.comp_time
         pp_no_numba_time_pf = env_pp_no_numba._time_powerflow
+        if hasattr(env_pp_no_numba, "_time_step"):
+            # for oldest grid2op version where this was not stored
+            time_pp_no_numba = env_pp_no_numba._time_step
         
         tmp_ls_numba = run_env(env_pp_ls_numba, max_ts, agent, chron_id=0, env_seed=0)
         nb_ts_pp_ls_numba, time_pp_ls_numba, aor_pp_ls_numba, gen_p_ls_numba, gen_q_ls_numba = tmp_ls_numba
         pp_ls_numba_comp_time = env_pp_ls_numba.backend.comp_time
         pp_ls_numba_time_pf = env_pp_ls_numba._time_powerflow
+        if hasattr(env_pp_ls_numba, "_time_step"):
+            # for oldest grid2op version where this was not stored
+            time_pp_ls_numba = env_pp_ls_numba._time_step
 
+    if pypow_error is None:
+        # also benchmark pypowsybl backend
+        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0)
+        pypow_comp_time = env_pypow.backend.comp_time
+        pypow_time_pf = env_pypow._time_powerflow
+        if hasattr(env_pypow, "_time_step"):
+            # for oldest grid2op version where this was not stored
+            time_pypow = env_pypow._time_step
+    
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
     
@@ -172,13 +217,16 @@ def main(max_ts,
                                                                 with_type_solver=wst, env_seed=0)
         gs_comp_time = env_lightsim.backend.comp_time
         gs_time_pf = env_lightsim._time_powerflow
+        if hasattr(env_lightsim, "_time_step"):
+            # for oldest grid2op version where this was not stored
+            time_gs = env_lightsim._time_step
         res_times[solver_type] = (solver_names[solver_type],
                                   nb_ts_gs, time_gs, aor_gs, gen_p_gs,
                                   gen_q_gs, gs_comp_time, gs_time_pf)
 
     # NOW PRINT THE RESULTS
     print("Configuration:")
-    config_str = print_configuration()
+    config_str = print_configuration(pypow_error)
     if save_results != DONT_SAVE:
         with open(save_results+"config_info.txt", "w", encoding="utf-8") as f:
             f.write(config_str)
@@ -198,7 +246,11 @@ def main(max_ts,
         tab.append(["PP (with lightsim)", f"{nb_ts_pp_ls_numba/time_pp_ls_numba:.2e}",
                     f"{1000.*pp_ls_numba_time_pf/nb_ts_pp_ls_numba:.2e}",
                     f"{1000.*pp_ls_numba_comp_time/nb_ts_pp_ls_numba:.2e}"])
-
+    if pypow_error is None:
+        tab.append(["pypowsybl", f"{nb_ts_pypow/time_pypow:.2e}",
+                    f"{1000.*pypow_time_pf/nb_ts_pypow:.2e}",
+                    f"{1000.*pypow_comp_time/nb_ts_pypow:.2e}"])
+        
     for key in this_order:
         if key not in res_times:
             continue

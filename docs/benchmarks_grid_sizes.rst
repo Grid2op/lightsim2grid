@@ -1,3 +1,4 @@
+.. _benchmark-grid-size:
 
 Benchmarks (grid size)
 ======================
@@ -7,7 +8,7 @@ The code to run these benchmarks are given with this package int the [benchmark]
 
 TODO DOC in progress
 
-If you are interested in other type of benchmark, let us know !
+If you are interested in other type of benchmarks, let us know !
 
 TL;DR
 -------
@@ -100,7 +101,7 @@ make use of all the available cores, which would increase the number of steps th
 Computation time using grid2op
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This benchmark in doing repeat calls to `env.step(do_nothing)` (usually 288) for a given environment build 
+This benchmark in doing repeat calls to `env.step(do_nothing)` (usually 288 or 1000) for a given environment build 
 on a grid coming from data available in pandapower.
 
 Then we compare different measurments:
@@ -129,6 +130,10 @@ Then we compare different measurments:
     
 - `time in 'pf algo' (ms / pf)` gives the time spent in the algorithm that computes the AC powerflow only
 
+.. warning::
+  For more information about what is actually done and the wordings used in this section, 
+  you can consult the page :ref:`benchmark-deep-dive`
+  
 The results are given in two tables:
 
 - the first one corresponds to the default settings were lightsim2grid is allowed to "recycle" previous
