@@ -28,12 +28,20 @@ As from version 0.5.3:
    quickstart
    disclaimer
    use_with_grid2op
-   benchmarks
-   benchmarks_grid_sizes
    use_solver
    rewards
    physical_law_checker
 
+Benchmarkings
+----------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Benchmarks
+
+   benchmarks
+   benchmarks_grid_sizes
+   benchmarks_dive
 
 Technical Documentation (work in progress)
 -------------------------------------------

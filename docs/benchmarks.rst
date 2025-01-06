@@ -1,3 +1,4 @@
+.. _benchmark-solvers:
 
 Benchmarks (solvers)
 ======================
@@ -35,12 +36,23 @@ All of them has been run on a computer with a the following characteristics:
 	- compiled_o3_optim: True 
 
 
-To run the benchmark `cd` in the [benchmark](./benchmarks) folder and type:
+To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
+(we suppose here that you have already installed lightsim2grid):
+
+.. code-block:: bash
+  pip install -r req_benchmarks.txt
+
+This will install the required packages to run the benchmark smoothly (most notably `grid2op` and `numba`)
+and then you can start the benchmark with the following commands:
 
 .. code-block:: bash
 
     python3 benchmark_solvers.py --env_name l2rpn_case14_sandbox --no_test --number 1000
     python3 benchmark_solvers.py --env_name l2rpn_neurips_2020_track2_small --no_test --number 1000
+
+.. note::
+  The first time you execute them, some data might be downloaded. These data comes from the grid2op
+  package and contains the time series (how each load and generation behaves) for different steps.
 
 (results may vary depending on the hard drive, the ram etc. and are presented here for illustration only)
 
@@ -56,6 +68,7 @@ and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
   pandapower documentation for more information)
 - **PP (with lightsim)**: is again the `PandaPowerBackend` which uses lightsim2grid to compute the powerflow (drr
   pandapower documentation for more information)
+- **pypowsybl**: benchmarks the "pypowsybl2grid" backend based on the python implementation of the powsybl framework.
 - **GS** (Gauss Seidel): the grid2op backend based on lightsim2grid that uses the "Gauss Seidel"
   solver to compute the powerflows.
 - **GS synch** (Gauss Seidel synch version): the grid2op backend based on lightsim2grid that uses a
@@ -101,10 +114,10 @@ and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
 - **FDPF BX (CKTSO *)** (Fast Decoupled Powerflow, BX variant - with CKTSO linear solver) same as `FDPF BX (SLU)` but using CKTSO instead 
   of SparseLU
 
-**NB** all backend above are implemented in lightsim2grid.
+**NB** all backends above (except pandapower) are implemented in lightsim2grid.
 
 **NB** solver with \* are available provided that lightsim2grid is installed from source and following the instructions 
-in the documentation.
+in the documentation. Some license might be needed.
 
 All benchmarks where done with all the customization (for speed, *eg* `-O3` and `-march=native` for linux). 
 See the readme for more information.
@@ -122,16 +135,17 @@ In this first subsection we compare the computation times:
   the observations etc.). It is reported in "iteration per second" (`it/s`) and 
   represents the number of grid2op "step"
   that can be computed per second.
-- **grid2op 'backend.runpf' time** corresponds to the time the solver take 
+- **grid2op 'backend.runpf' time** corresponds to the time the grid2op backend take 
   to perform a powerflow
-  as seen from grid2op (counting the resolution time and some time to check 
+  as seen from grid2op (counting the resolution time of the powerflow solver and some time to check 
   the validity of the results but
   not the time to update the grid nor the grid2op environment), for lightsim2grid 
   it includes the time to read back the data
   from c++ to python. It is reported in milli seconds (ms).
 - **solver powerflow time** corresponds only to the time spent in the solver 
   itself. It does not take into
-  account any of the checking, nor the transfer of the data python side etc. 
+  account any of the checking, nor the transfer of the data python side, nor the 
+  computation of the initial state (done through DC approximation) etc. 
   It is reported in milli seconds (ms) as well.
 
 There are two major differences between **grid2op 'backend.runpf' time** and **solver powerflow time**. In **grid2op 'backend.runpf' time**
@@ -251,14 +265,19 @@ For all the benchmarks, the stopping criteria (of the solver, for each steps) is
 The solver stops if this `tolerance` is under `1e-8` "per unit".
 
 For all "steps", the model is intialized with the "DC" (direct current) approximation before the AC powerflow is run. In these benchmark, only the timings
-of the AC powerflow is reported.
+of the AC powerflow is reported in the column "`solver powerflow time (ms)`". This time is however included in the other columns.
 
 These benchmarks mimic a typical behaviour in grid2op where in most cases the "agent" does nothing: between two consecutive steps, 
 there is no modification of the topology. Only the injection (active and reactive power consumed and active generation as well as target voltage 
 setpoint of generators are modified between two steps). The topology does not change, the tap of the transformers stay the same etc.
 
-Finally, as opposed to pandapower Backend, lightsim2grid Backend is to "recycle" partially some of its comptuation. Concretely this means, in this 
-case, that the Ybus matrix is not recomputed at each steps (but computed only at the first one) for example. 
+Finally, as opposed to pandapower Backend, lightsim2grid Backend is able to "recycle" partially some of its comptuation. Concretely this means, in this 
+case, that the Ybus matrix is not recomputed at each steps (but computed only at the first one) for example. This can lead to some time savings in these
+cases.
+
+.. warning::
+  For more information about what is actually done and the wordings used in this section, 
+  you can consult the page :ref:`benchmark-deep-dive`
 
 
 Differences

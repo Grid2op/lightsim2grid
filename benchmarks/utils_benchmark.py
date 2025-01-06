@@ -127,7 +127,7 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def print_configuration():
+def print_configuration(pypow_error=True):
     res = []
     print()
     tmp = f"- date: {datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}"
@@ -185,6 +185,16 @@ def print_configuration():
     tmp = (f"- pandapower version: {pp.__version__}")
     res.append(tmp)
     print(tmp)
+    if pypow_error is None:
+        import pypowsybl as pypo
+        tmp = (f"- pywposybl version: {pypo.__version__}")
+        res.append(tmp)
+        print(tmp)
+        import pypowsybl2grid
+        tmp = (f"- pypowsybl2grid version: {pypowsybl2grid.__version__}")
+        res.append(tmp)
+        print(tmp)
+        
     tmp = (f"- grid2op version: {grid2op.__version__}")
     res.append(tmp)
     print(tmp)
