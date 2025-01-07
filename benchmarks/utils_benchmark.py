@@ -12,6 +12,7 @@ import numpy as np
 from tqdm import tqdm
 import argparse
 import datetime
+import importlib
 from grid2op.Environment import MultiMixEnvironment
 import pdb
 
@@ -186,12 +187,10 @@ def print_configuration(pypow_error=True):
     res.append(tmp)
     print(tmp)
     if pypow_error is None:
-        import pypowsybl as pypo
-        tmp = (f"- pywposybl version: {pypo.__version__}")
+        tmp = (f"- pywposybl version: {importlib.metadata.version('pypowsybl')}")
         res.append(tmp)
         print(tmp)
-        import pypowsybl2grid
-        tmp = (f"- pypowsybl2grid version: {pypowsybl2grid.__version__}")
+        tmp = (f"- pypowsybl2grid version: {importlib.metadata.version('pypowsybl2grid')}")
         res.append(tmp)
         print(tmp)
         

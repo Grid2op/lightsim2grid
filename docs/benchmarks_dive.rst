@@ -1,3 +1,6 @@
+.. |grid2op_layer| image:: ./img/grid2op_layer.jpg
+.. |benchmarks_explanation| image:: ./img/benchmarks_explanation.jpg
+
 .. _benchmark-deep-dive:
 
 Deep dive into the benchmarking of lightsim2grid
@@ -6,6 +9,53 @@ Deep dive into the benchmarking of lightsim2grid
 At various occasion, we benchmark lightsim2grid with other available solvers.
 
 In most cases, we benchmark them using the `grid2op` package. In this section we briefly explain what happens and how to interpret the different figures and tables.
+
+TL;DR
+------
+
+Grid2op can be really shematically summarized by:
+
+|grid2op_layer|
+
+In our benchmarks (in lightsim2grid) we only consider the "2. perform the steps" phase, the other two steps are not monitored at all
+because they are irrelevant to the benchmarking of lightsim2grid.
+
+Then we report the average (accross the 288 or 1000 steps, depending on the benchmark) of the execution time of different quantities
+(see table below for more information):
+
+|benchmarks_explanation|
+
+For :ref:`benchmark-solvers`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **grid2op speed (it/s)** : average of the time taken for 1 step accross the "2. for each steps"
+- **grid2op 'backend.runpf' time (ms)** , average of the time taken to compute:
+
+   - for pandapower and lightsim2grid:  `2e.`, `2f.` and `2g.`
+   - for pypowsybl: `2e.` and `2f.`
+- **solver powerflow time (ms)** : 
+   - for pandapower and lightsim2grid:  `2e3c`
+   - for pypowsybl: `2e3`
+
+For :ref:`benchmark-grid-size`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In the "TL;DR" section:
+
+- **time (recycling)**
+- **time (no recycling)**
+- **time (TimeSerie)**
+- **time (ContingencyAnalysis)**
+
+In the "Computation time using grid2op" section:
+
+- **avg step duration (ms)**
+- **time [DC + AC] (ms / pf)**
+- **speed (pf / s)**
+- **time in 'gridmodel' (ms / pf)**
+- **time in 'pf algo' (ms / pf)**
+
+toto
 
 Grid2op in a nutshell
 ----------------------
@@ -48,7 +98,7 @@ This section will detail the steps 2e. of the overview of the previous section, 
 
 The goal of this 2e. steps is to find the solution to the KCL for each buses of the grid. This is done thanks to a "solver". 
 This solver is "wrapped" to grid2op with what is called a "grid2op backend". This is why there are 2 columns dedicated to this
-"step 2e." in the page :ref:`benchmark-solver` for example, the column `grid2op 'backend.runpf' time (ms)` counts all the computation
+"step 2e." in the page :ref:`benchmark-solvers` for example, the column `grid2op 'backend.runpf' time (ms)` counts all the computation
 happening in steps 2e. (and depending on the implementation - this is the case with lightsim2grid- even step 2f. and 2g.) whereas the 
 column `solver powerflow time (ms)` only counts thet time spent in the "solver" for the AC powerflow.
 
@@ -57,12 +107,12 @@ What is happening in step 2e. (basically in the `backend.runpf` function) is:
 1. before some basic initial steps (*eg* the connexity of the grid)
 2. find some initial solution for the complex voltage at each bus 
    (this is done with the Direct Current approximation in pandapower and lightsim2grid)
-3. start the resolution of the KCL in AC (for pandapower and lightsim2grid in most benchmarks)
-4. derives all the others quantities from that (active and reactive flows on each line, 
+3. start the resolution of the KCL in AC (for pandapower and lightsim2grid in most benchmarks) and 
+   derives all the others quantities from that (active and reactive flows on each line, 
    current flow on each line, reactive power absorbed / produced for each generators, voltage angle and magnitude 
    at each side of each powerline etc.)
-5. pass all the data from the underlying data structure (*eg* "convert" from Eigen -a c++ library- vectors to numpy array if you use lightsim2grid)
-6. check for possible terminal conditions that would stop the grid2op episode
+4. pass all the data from the underlying data structure (*eg* "convert" from Eigen -a c++ library- vectors to numpy array if you use lightsim2grid)
+5. check for possible terminal conditions that would stop the grid2op episode
 
 Not all backends are forced to behave this way. For example, some backend might be initialized without first running a DC powerflow. 
 Similarly, steps 5. and 6. above are not mandatory and can be done elsewhere in the code.
@@ -71,7 +121,7 @@ For lightsim2grid and pandapower (default implementation) all these steps are pe
 comparable to this regard.
 
 At this stage, we know that `grid2op 'backend.runpf' time (ms)` corresponds to all the time spent in 2e including all 
-the time to perform 2e1, 2e2, 2e3, 2e4, 2e5 and 2e6.
+the time to perform 2e1, 2e2, 2e3, 2e4 and 2e5.
 
 For pandapower and lightsim2grid, `solver powerflow time (ms)` does not report time spent on 2e3 (point 3. above: as you might 
 remember this is a zoom into the 2e. steps of grid2op) but only a part of it (explained in the next, and last, section)
@@ -107,7 +157,7 @@ Now we can properly explain what is reported on the column `solver powerflow tim
 - for pypowsybl unfortunately, we do not have that much detail at hand. So the time reportd in `solver powerflow time (ms)` will 
   include all steps 2e3a, 2e3b, 2e3c and 2e3d.
 
-In the pages :ref:`benchmark-solver` and :ref:`benchmark-grid-size` the concept of `recycling` is used without a proper definition. With this view
+In the pages :ref:`benchmark-solvers` and :ref:`benchmark-grid-size` the concept of `recycling` is used without a proper definition. With this view
 of the physical solver, we can start to explain it. A first type of "recycling" is to reuse previous data when the conversion between a. and b. happens. 
 This can saves a lot of time.
 
@@ -149,8 +199,8 @@ There are different algorithms to solve the AC KCL (the operation performed at s
 - Newton Raphson
 - Fast Decoupled
 
-When we benchmark lightsim2grid in the page :ref:`benchmark-solver` all 3 algorithms are tested, and for the page 
-:ref:`benchmark-grid-sizebenchmark-grid-size` only Newton-Raphson algorithm is used (if you are interested in more, please
+When we benchmark lightsim2grid in the page :ref:`benchmark-solvers` all 3 algorithms are tested, and for the page 
+:ref:`benchmark-grid-size` only Newton-Raphson algorithm is used (if you are interested in more, please
 let us know, no problem at all).
 
 Pandapower
@@ -194,12 +244,12 @@ needs to be solved repeatedly. They can be decomposed in different steps (as alw
 without entering into detail and with lots of simplifications):
 
 1. perform some initial checks (to make sure data are consistent)
-2. initialize the linear solver (require to allocate some memory, create some vectors, etc.)
+2. initialize the linear solver (require to allocate some memory, create some vectors, copy some data around)
 3. repeat :
    1. check if maximum number of allowed iterations is reached (divergence) if so, stop
    2. check if the stopping criteria are met (convergence) if so, stop
-   3. update a linear system based on the value of complex voltages at each buses
-   4. solve the new linear system
+   3. update the linear system(s) based on the value of complex voltages at each buses
+   4. solve the new linear system(s)
    5. update the complex voltages at each buses
 
 .. note::
@@ -210,4 +260,14 @@ without entering into detail and with lots of simplifications):
    The checks 1. and 2. might actually happen at the end of the loop (so after 5. in this case) depending on the algorithm
    but this does not change the message.
 
-TODO recycling !!!  
+In lightsim2grid, at time of writing, you can use different linear solver to solve the linear systems at step 3.4 above. This is why you 
+have different options like "FDPF XB (SLU)" and "FDPF XB (KLU)": the same algorithm is used (Fast Decoupled Powerflow, XB variant) but
+it internally uses respectively SLU and KLU to solver the linar system at step 3.
+
+This is why there are 16 rows in the tables at section :ref:`benchmark-solvers` : 4 different 
+powerflow algorithms each combined with 4 different linear solvers.
+
+Finally, in lightsim2grid the "recycling" takes also place at this steps. For example, the "intial steps" (1.) or the "initializing" (2.) of the linear
+solver might not be performed if not needed. Similarly, steps 3.3 and 3.4 might be faster if "recycling" is allowed. For example, for the 
+KLU linear solver, the first system solved takes longer than the others. Hence, if the solver can be reused the "slower first iteration" is 
+done only once, leading to a greater throughput overall.

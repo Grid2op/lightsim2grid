@@ -37,8 +37,8 @@ and the timings here are averaged accross all the powerflows performed)
 
 For detailed explanation about each column as well as the hardware used, please refer to the section below, but in summary:
 
-- benchmark were run on python 3.12 with an old laptop (i7-6820HQ CPU @ 2.70GHz from 2015) see section :ref:`bench_grid_size_hardware`
-  for more information
+- benchmark were run on python 3.12 with an old laptop (i7-6820HQ CPU @ 2.70GHz from 2015) (see section :ref:`bench_grid_size_hardware`
+  and page :ref:`benchmark-deep-dive` for more information about the exact definition of the timers ):
 - `time (recycling)` indicates the average time it took to run 1 powerflow (with consecutive run of 288 powerflows)
   while allowing lighsim2grid to re use some basic previous computation from one powerflow to another. This is the most consommations
   usecase in grid2op for example (default behaviour). See :ref:`bench_grid_size_glop` for more information

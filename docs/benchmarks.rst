@@ -97,7 +97,7 @@ and then you can start the benchmark with the following commands:
 (we remind that these simulations correspond to simulation on one core of the CPU. Of course it is possible to
 make use of all the available cores, which would increase the number of steps that can be performed)
 
-We compare up to 19 different "solvers" (combination of "linear solver used" (*eg* Eigen, KLU, CKTSO, NICSLU)
+We compare up to 20 different "solvers" (combination of "linear solver used" (*eg* Eigen, KLU, CKTSO, NICSLU)
 and powerflow algorithm (*eg* "Newton Raphson", or "Fast Decoupled")):
 
 - **PP**: PandaPowerBackend (default grid2op backend) which is the reference in our benchmarks (uses the numba
@@ -168,7 +168,7 @@ See the readme for more information.
 Computation time
 ~~~~~~~~~~~~~~~~~~~
 
-In this first subsection we compare the computation times:
+In this first subsection we compare the computation times (detailed explanation on page :ref:`benchmark-deep-dive`):
 
 - **grid2op speed** from a grid2op point of view
   (this include the time to compute the powerflow, plus the time to modify 
