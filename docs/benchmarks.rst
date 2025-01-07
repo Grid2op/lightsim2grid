@@ -10,21 +10,60 @@ TODO DOC in progress
 
 If you are interested in other type of benchmark, let us know !
 
+.. note::
+  Benchmarks performed here does not reflect performance of your usage of grid2op. In particular, there is no "agent",
+  the time to "reset" the environment is not taken into account etc.
+
+  The objective is to assess the performance of lightsim2grid (compared to pandapower and pypowsybl) when used as
+  a grid2op backend. Hence all timings exclude part of the code not related with this goal.
+
+TL;DR
+---------
+
+The default pandapower backend is the slowest one.
+
+Pypowsybl is, for this benchmark, always 3-4 times faster than pandapower (*ie* it allows to perform
+3 times more grid2op iteration in the same amount of time).
+
+Lightsim2grid is ~20 times faster than pandapower (it allows to perform 20 times more interation
+for the same amount of time).
+
+When diving into lightsim2grid, the faster resolution method is "Newton-Raphson" (with or without distributed slack),
+closely followed by the "Fast Decoupled Powerflow" method. 
+
+Concerning the linear solver used for the lightsim2grid backends, it has little to no impact if you use KLU, NICSLU or 
+CKTSO. To avoid license issues, we then recommend to use the KLU linear solver (if you compiled lightsim2grid from source,
+we strongly recommend you to perform its installation too).
+
+The default linear solver in Eigen (called here Sparse LU) is much slower than KLU and you should avoid to use it if possible
+(it's probably better to take some more time to build lightsim2grid with KLU).
+But if you don't have the choice, SparseLU still give better performance than pypowsybl or pandapower.
+
+We do not recommend to use Gauss Seidel method (much slower than everything else).
+
+.. note::
+  More time have been spent to optimize Newton-Raphson algorithm in lightsim2grid than to optimize Gauss Seidel or
+  Fast Decoupled method. The results here should be extrapolate outside of lightsim2grid usage.
+
+  At time of writing only a prelimary version of the backend based on pypowsybl was avaialble.
+
 Using a grid2op environment
 ----------------------------
+
 In this section we perform some benchmark of a `do nothing` agent to test the raw performance of lightsim2grid
-compared with pandapower when using grid2op.
+compared with pandapower and pypowsybl when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- date: 2024-12-22 18:05  CET
 - system: Linux 6.5.0-1024-oem
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.12.8.final.0 (64 bit)
+- python version: 3.9.21.final.0 (64 bit)
 - numpy version: 1.26.4
 - pandas version: 2.2.3
 - pandapower version: 2.14.10
+- pywposybl version: 1.9.0.dev1
+- pypowsybl2grid version: 0.1.0
 - grid2op version: 1.10.5
 - lightsim2grid version: 0.10.0
 - lightsim2grid extra information: 
@@ -34,7 +73,6 @@ All of them has been run on a computer with a the following characteristics:
 	- cktso_solver_available: True 
 	- compiled_march_native: True 
 	- compiled_o3_optim: True 
-
 
 To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
 (we suppose here that you have already installed lightsim2grid):
