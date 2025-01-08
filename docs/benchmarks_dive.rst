@@ -29,31 +29,31 @@ For :ref:`benchmark-solvers`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **grid2op speed (it/s)** : average of the time taken for 1 step accross the "2. for each steps"
-- **grid2op 'backend.runpf' time (ms)** , average of the time taken to compute:
+- **grid2op 'backend.runpf' time (ms)** , average of the time taken to compute  `2e.`, `2f.` and `2g.`
+- **time in 'algo' (ms / pf)** : 
 
-   - for pandapower and lightsim2grid:  `2e.`, `2f.` and `2g.`
-   - for pypowsybl: `2e.` and `2f.`
-- **solver powerflow time (ms)** : 
    - for pandapower and lightsim2grid:  `2e3c`
-   - for pypowsybl: `2e3`
+   - for pypowsybl: `2e2` and `2e3`
 
 For :ref:`benchmark-grid-size`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-In the "TL;DR" section:
+Results in the "TL;DR" section:
 
-- **time (recycling)**
-- **time (no recycling)**
-- **time (TimeSerie)**
-- **time (ContingencyAnalysis)**
+- **time (recycling)** : average time taken over the 288 runs of `2e1`, `2e2` and `2e3` when recycling is allowed 
+  (for some steps `2e1` or `2e2` might be reused from previous computation and 2e3 is also faster)
+- **time (no recycling)** : average time taken over the 288 runs of `2e1`, `2e2` and `2e3` when no recycling is allowed
+  (`2e1` and `2e2` are always computed and `2e3` cannot reuse previous memory allocation or previous states etc., it is then slower)
+- **time (TimeSerie)**: equivalent to `2e3` but when using the `TimeSerie` lightsim2grid module
+- **time (ContingencyAnalysis)**: equivalent to `2e3` but when using the `ContingencyAnalysis` lightsim2grid module.
 
-In the "Computation time using grid2op" section:
+Tesults in the "Computation time using grid2op" section:
 
-- **avg step duration (ms)**
-- **time [DC + AC] (ms / pf)**
-- **speed (pf / s)**
-- **time in 'gridmodel' (ms / pf)**
-- **time in 'pf algo' (ms / pf)**
+- **avg step duration (ms)**: average time to perform a step in grid2op, so to compute all `2`
+- **time [DC + AC] (ms / pf)** : average time taken over the 288 runs of `2e1`, `2e2` and `2e3`
+- **speed (pf / s)** : inverse of the above (1. / time [DC + AC])
+- **time in 'solver' (ms / pf)**: average time spent in `2e3`
+- **time in 'algo' (ms / pf)**: average time spent in `2e3c`
 
 toto
 
@@ -145,7 +145,8 @@ There is the "external layer" that can be accessed and modified more or less eas
 a. perform some check on the external layer / data model
 b. convert this "external model" / "data model" into something that can be processed by an algorithm
 c. run this algorithm
-d. convert back the results into the "external layer" / "data model" so that user can easily access it
+d. convert back the results from itnernal data to the "external layer" / "data model" so that user can easily access it. This
+   steps also include the computation of reactive value of generators, slack distribution, current flows on each powerline etc.
 
 
 Now we can properly explain what is reported on the column `solver powerflow time (ms)` :

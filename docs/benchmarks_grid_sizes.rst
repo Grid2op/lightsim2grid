@@ -121,14 +121,14 @@ Then we compare different measurments:
   - post processing the internal data (which includes *eg* the flows on the lines in amps, the reactive value
     produced / absorbed by each generator etc.)
 
-- `time in 'gridmodel' (ms / pf)` gives the time it takes to only perform the AC powerflow:
+- `time in 'solver' (ms / pf)` gives the time it takes to only perform the AC powerflow:
 
   - converting the provided data into valid matrix / vector to run an AC powerflow
   - computing the AC Powerflow
   - post processing the internal data (which includes *eg* the flows on the lines in amps, the reactive value
     produced / absorbed by each generator etc.)
     
-- `time in 'pf algo' (ms / pf)` gives the time spent in the algorithm that computes the AC powerflow only
+- `time in 'algo' (ms / pf)` gives the time spent in the algorithm that computes the AC powerflow only
 
 .. warning::
   For more information about what is actually done and the wordings used in this section, 
@@ -157,7 +157,7 @@ the other.
 Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf') (recyling allowed, default)
 
 ================  ===============  ========================  ==========================  ================  ===============================  =============================
-grid                size (nb bus)    avg step duration (ms)    time [DC + AC] (ms / pf)    speed (pf / s)    time in 'gridmodel' (ms / pf)    time in 'pf algo' (ms / pf)
+grid                size (nb bus)    avg step duration (ms)    time [DC + AC] (ms / pf)    speed (pf / s)    time in 'solver' (ms / pf)    time in 'algo' (ms / pf)
 ================  ===============  ========================  ==========================  ================  ===============================  =============================
 case14                         14                  0.758799                   0.0597669        16731.7                           0.0303807                      0.0250171
 case118                       118                  0.913219                   0.211025          4738.78                          0.167014                       0.149728
@@ -176,7 +176,7 @@ case9241pegase               9241                 46.1182                    37.
 Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf') (**no recycling allowed**, non default)
 
 ================  ===============  ========================  ==========================  ================  ===============================  =============================
-grid                size (nb bus)    avg step duration (ms)    time [DC + AC] (ms / pf)    speed (pf / s)    time in 'gridmodel' (ms / pf)    time in 'pf algo' (ms / pf)
+grid                size (nb bus)    avg step duration (ms)    time [DC + AC] (ms / pf)    speed (pf / s)    time in 'solver' (ms / pf)    time in 'algo' (ms / pf)
 ================  ===============  ========================  ==========================  ================  ===============================  =============================
 case14                         14                  0.777772                    0.119986         8334.27                          0.0688201                      0.0567457
 case118                       118                  1.26015                     0.531649         1880.94                          0.383771                       0.343062
