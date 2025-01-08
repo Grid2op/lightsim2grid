@@ -9,9 +9,8 @@
 import os
 import unittest
 import numpy as np
-import pdb
 import zipfile
-from lightsim2grid.newtonpf import newtonpf_old as newtonpf
+from lightsim2grid.pandapower_compat import newtonpf_old as newtonpf
 from scipy import sparse
 
 
