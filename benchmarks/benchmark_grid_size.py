@@ -422,8 +422,8 @@ if __name__ == "__main__":
                                                    "avg step duration (ms)",
                                                    "time [DC + AC] (ms / pf)",
                                                    "speed (pf / s)",
-                                                   "time in 'gridmodel' (ms / pf)",
-                                                   "time in 'pf algo' (ms / pf)",
+                                                   "time in 'solver' (ms / pf)",
+                                                   "time in 'algo' (ms / pf)",
                                                    ], 
                                           tablefmt="rst")
         print(res_use_with_grid2op_2)

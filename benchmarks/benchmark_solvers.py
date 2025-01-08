@@ -234,7 +234,7 @@ def main(max_ts,
     this_order =  [el for el in res_times.keys() if el not in order_solver_print] + order_solver_print
 
     env_name = get_env_name_displayed(env_name_input)
-    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"solver powerflow time (ms)"]
+    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"time in 'algo' (ms / pf)"]
     tab = []
     if no_pp is False:
         tab.append(["PP", f"{nb_ts_pp/time_pp:.2e}",
@@ -278,10 +278,10 @@ def main(max_ts,
         print(tab)
     print()
 
+    hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
     if no_pp is False:
-        hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
         tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
-
+    
     for key in this_order:
         if key not in res_times:
             continue
