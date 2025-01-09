@@ -63,7 +63,7 @@ All of them has been run on a computer with a the following characteristics:
 - numpy version: 1.26.4
 - pandas version: 2.2.3
 - pandapower version: 2.14.10
-- pywposybl version: 1.9.0.dev1
+- pypowsybl version: 1.9.0.dev1
 - pypowsybl2grid version: 0.1.0
 - grid2op version: 1.10.5
 - lightsim2grid version: 0.10.0

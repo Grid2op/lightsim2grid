@@ -82,7 +82,7 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
         if not keep_forecast:
             env.deactivate_forecast()
         need_reset = True
-
+    
     if need_reset:
         obs = env.reset()
     else:
@@ -187,7 +187,7 @@ def print_configuration(pypow_error=True):
     res.append(tmp)
     print(tmp)
     if pypow_error is None:
-        tmp = (f"- pywposybl version: {importlib.metadata.version('pypowsybl')}")
+        tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
         res.append(tmp)
         print(tmp)
         tmp = (f"- pypowsybl2grid version: {importlib.metadata.version('pypowsybl2grid')}")

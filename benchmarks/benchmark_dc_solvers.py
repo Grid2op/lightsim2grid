@@ -6,26 +6,34 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
+import time
 import numpy as np
 import os
 import warnings
 import pandas as pd
+import re
+
 from grid2op import make
 from grid2op.Backend import PandaPowerBackend
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import ChangeNothing
-import re
-
-from lightsim2grid import solver
+from grid2op.Environment import MultiMixEnvironment
 try:
     from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 except ImportError:
     print("Be carefull: there might be maintenance")
     from grid2op.Chronics import GridStateFromFile
-
 from grid2op.Parameters import Parameters
+from grid2op.dtypes import dt_float
+
 import lightsim2grid
-from lightsim2grid.lightSimBackend import LightSimBackend
+from lightsim2grid import solver
+from lightsim2grid import LightSimBackend, TimeSerie
+try:
+    from lightsim2grid import ContingencyAnalysis
+except ImportError:
+    from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
+    
 from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
@@ -33,31 +41,20 @@ try:
     TABULATE_AVAIL = True
 except ImportError:
     print("The tabulate package is not installed. Some output might not work properly")
-
+    
+try:
+    from pypowsybl2grid import PyPowSyBlBackend
+    pypow_error = None
+except ImportError as exc_:
+    pypow_error = exc_
+    print("Backend based on pypowsybl will not be benchmarked")
+    
 MAX_TS = 1000
 ENV_NAME = "rte_case14_realistic"
 DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
-solver_names = {# lightsim2grid.SolverType.GaussSeidel: "GS",
-                # lightsim2grid.SolverType.GaussSeidelSynch: "GS synch",
-                # lightsim2grid.SolverType.SparseLU: "NR (SLU)",
-                # lightsim2grid.SolverType.KLU: "NR (KLU)",
-                # lightsim2grid.SolverType.NICSLU: "NR (NICSLU *)",
-                # lightsim2grid.SolverType.CKTSO: "NR (CKTSO *)",
-                # lightsim2grid.SolverType.SparseLUSingleSlack: "NR single (SLU)",
-                # lightsim2grid.SolverType.KLUSingleSlack: "NR single (KLU)",
-                # lightsim2grid.SolverType.NICSLUSingleSlack: "NR single (NICSLU *)",
-                # lightsim2grid.SolverType.CKTSOSingleSlack: "NR single (CKTSO *)",
-                # lightsim2grid.SolverType.FDPF_XB_SparseLU: "FDPF XB (SLU)",
-                # lightsim2grid.SolverType.FDPF_BX_SparseLU: "FDPF BX (SLU)",
-                # lightsim2grid.SolverType.FDPF_XB_KLU: "FDPF XB (KLU)",
-                # lightsim2grid.SolverType.FDPF_BX_KLU: "FDPF BX (KLU)",
-                # lightsim2grid.SolverType.FDPF_XB_NICSLU: "FDPF XB (NICSLU *)",
-                # lightsim2grid.SolverType.FDPF_BX_NICSLU: "FDPF BX (NICSLU *)",
-                # lightsim2grid.SolverType.FDPF_XB_CKTSO: "FDPF XB (CKTSO *)",
-                # lightsim2grid.SolverType.FDPF_BX_CKTSO: "FDPF BX (CKTSO *)",
-                lightsim2grid.SolverType.DC: "DC",
+solver_names = {lightsim2grid.SolverType.DC: "DC",
                 lightsim2grid.SolverType.KLUDC: "DC (KLU)",
                 lightsim2grid.SolverType.NICSLUDC: "DC (NICSLU *)",
                 lightsim2grid.SolverType.CKTSODC: "DC (CKTSO *)"
@@ -92,14 +89,12 @@ def main(max_ts,
             env_pp = make(env_name_input, param=param, test=test,
                           backend=PandaPowerBackend(lightsim2grid=False, with_numba=True),
                           data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-            env_pp_no_numba = make(env_name_input, param=param, test=test,
-                                   backend=PandaPowerBackend(lightsim2grid=False, with_numba=False),
-                                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-            env_pp_ls_numba = make(env_name_input, param=param, test=test,
-                                   backend=PandaPowerBackend(lightsim2grid=True, with_numba=True),
-                                   data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+            if pypow_error is None:
+                env_pypow = make(env_name_input, param=param, test=test,
+                                 backend=PyPowSyBlBackend(),
+                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
         else:
             # I provided an environment path
             env_pp = make("blank", param=param, test=True,
@@ -110,6 +105,11 @@ def main(max_ts,
                                 backend=LightSimBackend(),
                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                 grid_path=env_name_input)
+            if pypow_error is None:
+                env_pypow = make("blank", param=param, test=True,
+                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                 grid_path=env_name_input,
+                                 backend=PyPowSyBlBackend())
             _, env_name_input = os.path.split(env_name_input)
 
     agent = DoNothingAgent(action_space=env_pp.action_space)
@@ -118,17 +118,16 @@ def main(max_ts,
         nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
         pp_comp_time = env_pp.backend.comp_time
         pp_time_pf = env_pp._time_powerflow
-        
-        tmp_no_numba = run_env(env_pp_no_numba, max_ts, agent, chron_id=0, env_seed=0)
-        nb_ts_pp_no_numba, time_pp_no_numba, aor_pp_no_numba, gen_p_pp_no_numba, gen_q_pp_no_numba = tmp_no_numba
-        pp_no_numba_comp_time = env_pp_no_numba.backend.comp_time
-        pp_no_numba_time_pf = env_pp_no_numba._time_powerflow
-        
-        tmp_ls_numba = run_env(env_pp_ls_numba, max_ts, agent, chron_id=0, env_seed=0)
-        nb_ts_pp_ls_numba, time_pp_ls_numba, aor_pp_ls_numba, gen_p_ls_numba, gen_q_ls_numba = tmp_ls_numba
-        pp_ls_numba_comp_time = env_pp_ls_numba.backend.comp_time
-        pp_ls_numba_time_pf = env_pp_ls_numba._time_powerflow
-
+    
+    if pypow_error is None:
+        # also benchmark pypowsybl backend
+        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0)
+        pypow_comp_time = env_pypow.backend.comp_time
+        pypow_time_pf = env_pypow._time_powerflow
+        if hasattr(env_pypow, "_time_step"):
+            # for oldest grid2op version where this was not stored
+            time_pypow = env_pypow._time_step
+            
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
     
@@ -160,6 +159,78 @@ def main(max_ts,
                                   nb_ts_gs, time_gs, aor_gs, gen_p_gs,
                                   gen_q_gs, gs_comp_time, gs_time_pf)
 
+    env_name = get_env_name_displayed(env_name_input)
+
+    real_env_ls = env_lightsim
+    if isinstance(real_env_ls, MultiMixEnvironment):
+        # get the first (in alphabetical order) env in case of multimix
+        real_env_ls = real_env_ls[next(iter(sorted(real_env_ls.keys())))]
+        
+    # Perform the computation using TimeSerie
+    load_p = 1. * real_env_ls.chronics_handler.real_data.data.load_p[:nb_ts_gs]
+    load_q = 1. * real_env_ls.chronics_handler.real_data.data.load_q[:nb_ts_gs]
+    prod_p = 1. * real_env_ls.chronics_handler.real_data.data.prod_p[:nb_ts_gs]
+    time_serie = TimeSerie(real_env_ls)
+    computer_ts = time_serie.computer
+    computer_ts.change_solver(lightsim2grid.SolverType.KLUDC)
+    v_init = real_env_ls.backend.V
+    status = computer_ts.compute_Vs(prod_p,
+                                    np.zeros((nb_ts_gs, 0), dtype=dt_float),
+                                    load_p,
+                                    load_q,
+                                    v_init,
+                                    real_env_ls.backend.max_it,
+                                    real_env_ls.backend.tol)
+    time_serie._TimeSerie__computed = True
+    a_or = time_serie.compute_A()
+    p_or = time_serie.compute_P()
+    assert status, f"some powerflow diverge for Time Series for {env_name}: {computer_ts.nb_solved()} "
+    ts_time = 1e3 * (computer_ts.total_time() + computer_ts.amps_computation_time()) / computer_ts.nb_solved()
+    ts_algo_time = 1e3 * (computer_ts.solver_time()) / computer_ts.nb_solved()        
+    
+    # perform the computation using PTDF
+    obs = real_env_ls.reset()
+    load_bus = real_env_ls.local_bus_to_global(obs.load_bus, obs.load_to_subid)
+    gen_bus = real_env_ls.local_bus_to_global(obs.gen_bus, obs.gen_to_subid)
+    Sbus = np.zeros((nb_ts_gs,  real_env_ls.backend._grid.total_bus()), dtype=float)
+    Sbus[:, load_bus] -= load_p
+    Sbus[:, gen_bus] += prod_p
+    T_Sbus = 1. * Sbus.T
+    
+    PTDF_ = 1.0 * real_env_ls.backend._grid.get_ptdf()
+    beg_ = time.perf_counter()
+    flows = np.dot(PTDF_, T_Sbus).T
+    end_ = time.perf_counter()
+    time_only_ptdf, *_ = real_env_ls.backend._grid.get_dc_solver().get_timers_ptdf_lodf()
+    time_only_ptdf *= 1000. / Sbus.shape[0]
+    time_flow_ptdf = 1000. * (end_ - beg_) / Sbus.shape[0]
+    # ts_time = 1e3 * (computer_ts.total_time() + computer_ts.amps_computation_time()) / computer_ts.nb_solved()
+    # ts_algo_time = 1e3 * (computer_ts.solver_time()) / computer_ts.nb_solved()  
+    
+    # Perform a securtiy analysis (up to 1000 contingencies)
+    real_env_ls.reset()
+    sa = ContingencyAnalysis(real_env_ls)
+    computer_sa = sa.computer
+    computer_sa.change_solver(lightsim2grid.SolverType.KLUDC)
+    for i in range(real_env_ls.n_line):
+        sa.add_single_contingency(i)
+        if i >= 1000:
+            break
+    p_or_sa, a_or_sa, voltages = sa.get_flows()
+    sa_time = 1e3 * (computer_sa.total_time() + computer_sa.amps_computation_time()) / computer_sa.nb_solved() 
+    sa_algo_time = 1e3 * (computer_sa.solver_time()) / computer_sa.nb_solved()    
+    
+    # perform the computation using LODF
+    init_powerflow = p_or[0]
+    init_powerflow_diag = np.diag(init_powerflow)
+    LODF_mat = 1.0 * real_env_ls.backend._grid.get_lodf()
+    beg_ = time.perf_counter()
+    por_lodf = init_powerflow + LODF_mat * init_powerflow_diag
+    end_ = time.perf_counter()
+    _, time_only_lodf, _ = real_env_ls.backend._grid.get_dc_solver().get_timers_ptdf_lodf()
+    time_only_lodf *= 1000. / init_powerflow.shape[0]
+    time_flow_lodf = 1000. * (end_ - beg_) / init_powerflow.shape[0]
+    
     # NOW PRINT THE RESULTS
     print("Configuration:")
     config_str = print_configuration()
@@ -169,19 +240,18 @@ def main(max_ts,
     # order on which the solvers will be 
     this_order =  [el for el in res_times.keys() if el not in order_solver_print] + order_solver_print
 
-    env_name = get_env_name_displayed(env_name_input)
-    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"solver powerflow time (ms)"]
+    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms / pf)", f"time in 'algo' (ms / pf)"]
     tab = []
     if no_pp is False:
         tab.append(["PP DC", f"{nb_ts_pp/time_pp:.2e}",
                     f"{1000.*pp_time_pf/nb_ts_pp:.2e}",
                     f"{1000.*pp_comp_time/nb_ts_pp:.2e}"])
-        tab.append(["PP DC (no numba)", f"{nb_ts_pp_no_numba/time_pp_no_numba:.2e}",
-                    f"{1000.*pp_no_numba_time_pf/nb_ts_pp_no_numba:.2e}",
-                    f"{1000.*pp_no_numba_comp_time/nb_ts_pp_no_numba:.2e}"])
-        tab.append(["PP DC (with lightsim)", f"{nb_ts_pp_ls_numba/time_pp_ls_numba:.2e}",
-                    f"{1000.*pp_ls_numba_time_pf/nb_ts_pp_ls_numba:.2e}",
-                    f"{1000.*pp_ls_numba_comp_time/nb_ts_pp_ls_numba:.2e}"])
+        
+        
+    if pypow_error is None:
+        tab.append(["pypowsybl", f"{nb_ts_pypow/time_pypow:.2e}",
+                    f"{1000.*pypow_time_pf/nb_ts_pypow:.2e}",
+                    f"{1000.*pypow_comp_time/nb_ts_pypow:.2e}"])
 
     for key in this_order:
         if key not in res_times:
@@ -190,7 +260,11 @@ def main(max_ts,
         tab.append([solver_name,
                     f"{nb_ts_gs/time_gs:.2e}",
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
-                    f"{1000.*gs_comp_time/nb_ts_gs:.2e}"])
+                    f"{1000.*gs_comp_time/nb_ts_gs:.2e}"]) 
+    tab.append(("time serie **", None, ts_time, ts_algo_time))
+    tab.append(("PTDF **", None, time_only_ptdf + time_flow_ptdf, time_flow_ptdf))
+    tab.append(("contingency analysis ***", None, sa_time, sa_algo_time))
+    tab.append(("LODF ***", None, time_only_lodf + time_flow_lodf, time_flow_lodf))
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
@@ -233,8 +307,8 @@ def main(max_ts,
         dt = pd.DataFrame(tab, columns=hds)
         dt.to_csv(save_results+"diff.csv", index=False, header=True, sep=";")
     print()
-
-
+    
+    
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Benchmark of lightsim with a "do nothing" agent '

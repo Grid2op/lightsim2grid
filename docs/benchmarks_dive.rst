@@ -55,7 +55,6 @@ Tesults in the "Computation time using grid2op" section:
 - **time in 'solver' (ms / pf)**: average time spent in `2e3`
 - **time in 'algo' (ms / pf)**: average time spent in `2e3c`
 
-toto
 
 Grid2op in a nutshell
 ----------------------
@@ -272,3 +271,14 @@ Finally, in lightsim2grid the "recycling" takes also place at this steps. For ex
 solver might not be performed if not needed. Similarly, steps 3.3 and 3.4 might be faster if "recycling" is allowed. For example, for the 
 KLU linear solver, the first system solved takes longer than the others. Hence, if the solver can be reused the "slower first iteration" is 
 done only once, leading to a greater throughput overall.
+
+TimeSerie module
+---------------------------
+
+TODO doc coming soon
+
+
+ContingencyAnalysis module
+----------------------------
+
+TODO doc coming soon
