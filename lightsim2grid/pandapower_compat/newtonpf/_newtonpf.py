@@ -8,7 +8,11 @@
 
 import warnings
 from packaging import version
-from importlib.metadata import version as version_metadata
+try:
+    from importlib.metadata import version as version_metadata
+except ImportError:
+    # for compat with python 3.7 ...
+    version_metadata = None
 import numpy as np
 from scipy import sparse
 
@@ -85,8 +89,14 @@ def newtonpf(*args, **kwargs):
         V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
 
     """
-    
-    if version.parse(version_metadata("pandapower")) <= _PP_VERSION_MAX:
+    if version_metadata is not None:
+        pp_ver = version_metadata("pandapower")
+    else:
+        # for compat with python 3.7
+        import pandapower as pp
+        pp_ver = pp.__version__
+        
+    if version.parse(pp_ver) <= _PP_VERSION_MAX:
         try:
             # should be the old version
             return newtonpf_old(*args, **kwargs)
