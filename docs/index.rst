@@ -40,6 +40,7 @@ Benchmarkings
    :caption: Benchmarks
 
    benchmarks
+   benchmarks_dc
    benchmarks_grid_sizes
    benchmarks_dive
 
