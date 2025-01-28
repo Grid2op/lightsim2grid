@@ -28,17 +28,17 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
-void GenericContainer::_reactivate(int el_id, std::vector<bool> & status){
+void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & status){
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     status,
-                    "_reactivate");
+                    "_generic_reactivate");
     status[el_id] = true;  //TODO why it's needed to do that again
 }
 
-void GenericContainer::_deactivate(int el_id, std::vector<bool> & status){
+void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & status){
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     status,
-                    "_deactivate");
+                    "_generic__deactivate");
     status[el_id] = false;
 }
 

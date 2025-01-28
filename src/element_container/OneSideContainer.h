@@ -18,6 +18,32 @@
 #include "Utils.h"
 #include "GenericContainer.h"
 
+// same for all
+// - X nb 
+// - X get_bus
+// - get_buses
+// - get_res
+// - get_res_full
+// - get_theta
+// - get_status
+// - get_bus_id
+// - reconnect_connected_buses
+// - update_bus_status
+
+// same public api but need overriden in private api
+// - deactivate
+// - reactivate
+// - change_bus
+// - change_p
+// - change_q
+// - reset_results
+// - compute_results
+
+// need to modify in overriden class
+// - get_state
+// - set_state
+// - init
+
 
 class OneSideContainer : public GenericContainer
 {
@@ -36,18 +62,9 @@ class OneSideContainer : public GenericContainer
 
     OneSideContainer() {};
 
-    // pickle (python)
-    OneSideContainer::StateRes get_state() const;
-    void set_base_state(OneSideContainer::StateRes & my_state);
-
-    void init_base(const RealVect & els_p,
-                   const RealVect & els_q,
-                   const Eigen::VectorXi & els_bus_id,
-                   const std::string & name_el
-                   );
-
+    // public generic API
     int nb() const { return static_cast<int>(p_mw_.size()); }
-    int get_bus(int load_id) {return _get_bus(load_id, status_, bus_id_);}
+    int get_bus(int el_id) {return _get_bus(el_id, status_, bus_id_);}
     Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
 
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
@@ -56,24 +73,114 @@ class OneSideContainer : public GenericContainer
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
     Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
+    void reconnect_connected_buses(std::vector<bool> & bus_status) const{
+        const int nb_els = nb();
+        for(int el_id = 0; el_id < nb_els; ++el_id)
+        {
+            if(!status_[el_id]) continue;
+            const auto my_bus = bus_id_(el_id);
+            if(my_bus == _deactivated_bus_id){
+                // TODO DEBUG MODE only this in debug mode
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::reconnect_connected_buses: element with id ";
+                exc_ << el_id;
+                exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx(...)` ?.";
+                throw std::runtime_error(exc_.str());
+            }
+            bus_status[my_bus] = true;  // this bus is connected
+        }
+    }
+    void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+        const int nb_el = nb();
+        SolverControl unused_solver_control;
+        for(int el_id = 0; el_id < nb_el; ++el_id)
+        {
+            if(!status_[el_id]) continue;
+            const auto my_bus = bus_id_(el_id);
+            if(!busbar_in_main_component[my_bus]){
+                deactivate(el_id, unused_solver_control);
+            }
+        }    
+    }
+    void update_bus_status(std::vector<bool> & bus_status) const {
+        const int nb_ = nb();
+        for(int el_id = 0; el_id < nb_; ++el_id)
+        {
+            if(!status_[el_id]) continue;
+            bus_status[bus_id_[el_id]] = true;
+        }
+    }    
 
+    // base function that can be called
+    OneSideContainer::StateRes get_base_state() const
+    {
+        std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
+        std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
+        std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
+        std::vector<bool> status = status_;
+        OneSideContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
+        return res;
+    }
+    void set_base_state(OneSideContainer::StateRes & my_state)
+    {
+        // read data
+        names_ = std::get<0>(my_state);
+        std::vector<real_type> & p_mw = std::get<1>(my_state);
+        std::vector<real_type> & q_mvar = std::get<2>(my_state);
+        std::vector<int> & bus_id = std::get<3>(my_state);
+        std::vector<bool> & status = std::get<4>(my_state);
 
-    virtual void deactivate(int el_id, SolverControl & solver_control) {
+        // check sizes
+        const auto size = p_mw.size();
+        check_size(names_, size, "names");
+        check_size(p_mw, size, "p_mw");
+        check_size(q_mvar, size, "q_mvar");
+        check_size(bus_id, size, "bus_id");
+        check_size(status, size, "status");
+
+        // input data
+        p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
+        q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
+        bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
+        status_ = status;
+    }
+
+    void init_base(const RealVect & els_p,
+                   const RealVect & els_q,
+                   const Eigen::VectorXi & els_bus_id,
+                   const std::string & name_el
+                   )
+    {
+        int size = static_cast<int>(els_p.size());
+        check_size(els_p, size, name_el + "_p");
+        check_size(els_q, size, name_el + "_q");
+        check_size(els_bus_id, size, name_el + "_bus_id");
+
+        p_mw_ = els_p;
+        q_mvar_ = els_q;
+        bus_id_ = els_bus_id;
+        status_ = std::vector<bool>(els_p.size(), true);
+    }
+
+    void deactivate(int el_id, SolverControl & solver_control) {
         if(status_[el_id]){
             solver_control.tell_recompute_sbus();
         }
-        _deactivate(el_id, status_);
+        _generic_deactivate(el_id, status_);
+        this->_deactivate(el_id, solver_control);
     }
-    virtual void reactivate(int el_id, SolverControl & solver_control) {
+    void reactivate(int el_id, SolverControl & solver_control) {
         if(!status_[el_id]){
             solver_control.tell_recompute_sbus();
         }
-        _reactivate(el_id, status_);
+        _generic_reactivate(el_id, status_);
+        this->_reactivate(el_id, solver_control);
     }
-    virtual void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-        _change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);
+    void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);
+        this->_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);
     }
-    virtual void change_p(int el_id, real_type new_p, SolverControl & solver_control){
+    void change_p(int el_id, real_type new_p, SolverControl & solver_control){
         bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
         if(!my_status)
         {
@@ -112,26 +219,28 @@ class OneSideContainer : public GenericContainer
             q_mvar_(load_id) = new_q;
         }
     }
-    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
-    virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
 
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
-        const int nb_ = nb();
-        for(int el_id = 0; el_id < nb_; ++el_id)
-        {
-            if(!status_[el_id]) continue;
-            bus_status[bus_id_[el_id]] = true;
-        }
-    }    
+    void compute_results(const Eigen::Ref<const RealVect> & Va,
+                         const Eigen::Ref<const RealVect> & Vm,
+                         const Eigen::Ref<const CplxVect> & V,
+                         const std::vector<int> & id_grid_to_solver,
+                         const RealVect & bus_vn_kv,
+                         real_type sn_mva,
+                         bool ac);
+    void reset_results();
 
-    void compute_results_base(const Eigen::Ref<const RealVect> & Va,
-                              const Eigen::Ref<const RealVect> & Vm,
-                              const Eigen::Ref<const CplxVect> & V,
-                              const std::vector<int> & id_grid_to_solver,
-                              const RealVect & bus_vn_kv,
-                              real_type sn_mva,
-                              bool ac);
-    virtual void reset_results();
+    protected:
+        virtual void _reset_results() {};
+        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                      const Eigen::Ref<const RealVect> & Vm,
+                                      const Eigen::Ref<const CplxVect> & V,
+                                      const std::vector<int> & id_grid_to_solver,
+                                      const RealVect & bus_vn_kv,
+                                      real_type sn_mva,
+                                      bool ac) {};
+        virtual void _deactivate(int el_id, SolverControl & solver_control) {};
+        virtual void _reactivate(int el_id, SolverControl & solver_control) {};
+        virtual void _change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {};
 
     protected:
         // physical properties
