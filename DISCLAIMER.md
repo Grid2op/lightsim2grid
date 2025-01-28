@@ -37,14 +37,17 @@ Open source options for powerflow analysis
 To get free of these limitations and be able to perform state of the art powerflow analysis, 
 while still using open source softwares, we kindly recommend you to have a look at:
 
-- [Matpower](https://matpower.org/) which is a "free, open-source tools for electric power system simulation and 
-  optimization "
-- [Pandapower](https://www.pandapower.org/) that is "An easy to use open source tool for power system modeling, 
-  analysis and optimization with a high degree of automation. "
-- [PowerModels](https://lanl-ansi.github.io/PowerModels.jl/stable/) described by its authors as "Julia/JuMP package 
-  for Steady-State Power Network Optimization".
-- [GridPack](https://www.pnnl.gov/projects/gridpacktm-open-source-framework-developing-high-performance-computing-simulations-power) which is described as "An open source toolkit for 
-  developing power grid simulation applications for high performance computing architectures"
-- [Dynaωo](https://github.com/dynawo/dynawo) an hybrid C++/Modelica suite of simulation tools for
-  power systems.
+- [Matpower](https://matpower.org/) which is a "*free, open-source tools for electric power system simulation and 
+  optimization*"
+- [Pandapower](https://www.pandapower.org/) that is "*An easy to use open source tool for power system modeling, 
+  analysis and optimization with a high degree of automation.*"
+- [PowerModels](https://lanl-ansi.github.io/PowerModels.jl/stable/) described by its authors as "*Julia/JuMP package 
+  for Steady-State Power Network Optimization*".
+- [GridPack](https://www.pnnl.gov/projects/gridpacktm-open-source-framework-developing-high-performance-computing-simulations-power) which is described as "*An open source toolkit for developing power grid simulation applications for high performance computing architectures*"
+- [Dynaωo](https://github.com/dynawo/dynawo) "*an hybrid C++/Modelica suite of simulation tools for
+  power systems*"
+- [Rustpower](https://github.com/chengts95/rustpower): "*RustPower is a cutting-edge power flow calculation library written in Rust, specifically designed for steady-state analysis of electrical power systems*"
+- [PowSyBl](https://www.powsybl.org/): "*An open-source set of Power System Blocks dedicated to grid analysis, visualization, and simulation.*"
 
+Feel free to consult the excellent https://github.com/jinningwang/best-of-ps?tab=readme-ov-file#steady-state-simulation for an updated 
+list of power system simulation tools.

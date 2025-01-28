@@ -38,6 +38,11 @@ while still using open source software, we kindly recommend you to have a look a
   developing power grid simulation applications for high performance computing architectures"
 - `Dynaωo <https://github.com/dynawo/dynawo>`_ an hybrid C++/Modelica suite of simulation tools for
   power systems.
+- `Rustpower <https://github.com/chengts95/rustpower>`_ : "*RustPower is a cutting-edge power flow calculation library written in Rust, specifically designed for steady-state analysis of electrical power systems*"
+- `PowSyBl <https://www.powsybl.org>`_ : "*An open-source set of Power System Blocks dedicated to grid analysis, visualization, and simulation.*"
+
+Feel free to consult the excellent https://github.com/jinningwang/best-of-ps?tab=readme-ov-file#steady-state-simulation for an updated 
+list of power system simulation tools.
 
 * :ref:`genindex`
 * :ref:`modindex`
