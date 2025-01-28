@@ -147,9 +147,9 @@ class GenericContainer : public BaseConstants
         /**
         activation / deactivation of elements
         **/
-        void _reactivate(int el_id, std::vector<bool> & status);
-        void _deactivate(int el_id, std::vector<bool> & status);
-        void _change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus);
+        void _generic_reactivate(int el_id, std::vector<bool> & status);
+        void _generic_deactivate(int el_id, std::vector<bool> & status);
+        void _generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus);
         int _get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const;
 
         /**
