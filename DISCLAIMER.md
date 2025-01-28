@@ -43,7 +43,7 @@ while still using open source softwares, we kindly recommend you to have a look 
   analysis and optimization with a high degree of automation. "
 - [PowerModels](https://lanl-ansi.github.io/PowerModels.jl/stable/) described by its authors as "Julia/JuMP package 
   for Steady-State Power Network Optimization".
-- [GridPack](https://www.gridpack.org/wiki/index.php/Main_Page) which is described as "An open source toolkit for 
+- [GridPack](https://www.pnnl.gov/projects/gridpacktm-open-source-framework-developing-high-performance-computing-simulations-power) which is described as "An open source toolkit for 
   developing power grid simulation applications for high performance computing architectures"
 - [Dynaωo](https://github.com/dynawo/dynawo) an hybrid C++/Modelica suite of simulation tools for
   power systems.
