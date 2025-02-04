@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -322,7 +322,8 @@ req_pkgs = [
     "pip",
     "pybind11",
     "scipy",
-    "numpy"
+    "numpy",
+    "packaging", 
         # "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
         # "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
@@ -363,7 +364,6 @@ pkgs = {
             "grid2op>=1.6.4",
             "numba",
             "pandapower>=2.14.0",  # interface changed for pandapower, not backward compatible
-            "packaging", 
             "pypowsybl"
         ]
     }

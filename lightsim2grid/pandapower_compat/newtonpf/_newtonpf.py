@@ -7,18 +7,24 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import warnings
+from packaging import version
+try:
+    from importlib.metadata import version as version_metadata
+except ImportError:
+    # for compat with python 3.7 ...
+    version_metadata = None
 import numpy as np
 from scipy import sparse
 
-from lightsim2grid_cpp import SparseLUSolver, SparseLUSolverSingleSlack
+from lightsim2grid.solver import SparseLUSolver, SparseLUSolverSingleSlack
 
 try:
-    from lightsim2grid_cpp import KLUSolver, KLUSolverSingleSlack
+    from lightsim2grid.solver import KLUSolver, KLUSolverSingleSlack
     KLU_solver_available = True
 except ImportError:
     KLU_solver_available = False
 
-_PP_VERSION_MAX = "2.7.0"
+_PP_VERSION_MAX = version.parse("2.7.0")
 
 
 def _isolate_slack_ids(Sbus, pv, pq):
@@ -43,10 +49,11 @@ def _get_valid_solver(options, Ybus):
         Ybus = sparse.csc_matrix(Ybus)
 
     if not Ybus.has_canonical_format:
-        raise RuntimeError("Your matrix should be in a canonical format. See "
-                           "https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csc_matrix.has_canonical_format.html"
-                           " for more information.")
-    
+        Ybus.sum_duplicates()
+        if not Ybus.has_canonical_format:
+            raise RuntimeError("Your matrix should be in a canonical format. See "
+                            "https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csc_matrix.has_canonical_format.html"
+                            " for more information.")
     return solver
 
 
@@ -73,17 +80,23 @@ def newtonpf(*args, **kwargs):
 
     .. code-block::
 
-        from lightsim2grid.newtonpf import newtonpf
+        from lightsim2grid.pandapower_compat import newtonpf
 
-        # when pandapower version <= 2.7.0
+        # with pandapower version <= 2.7.0
         V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, pv, pq, ppci, options)
 
-        # when pandapower version > 2.7.0
+        # with pandapower version > 2.7.0
         V, converged, iterations, J, Vm_it, Va_it = newtonpf(Ybus, Sbus, V0, ref, pv, pq, ppci, options)
 
     """
-    import pandapower as pp
-    if pp.__version__ <= _PP_VERSION_MAX:
+    if version_metadata is not None:
+        pp_ver = version_metadata("pandapower")
+    else:
+        # for compat with python 3.7
+        import pandapower as pp
+        pp_ver = pp.__version__
+        
+    if version.parse(pp_ver) <= _PP_VERSION_MAX:
         try:
             # should be the old version
             return newtonpf_old(*args, **kwargs)

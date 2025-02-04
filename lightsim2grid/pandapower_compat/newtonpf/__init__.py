@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, RTE (https://www.rte-france.com)
+# Copyright (c) 2020, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -8,4 +8,4 @@
 
 __all__ = ["newtonpf", "newtonpf_new", "newtonpf_old"]
 
-from lightsim2grid.pandapower_compat import newtonpf, newtonpf_new, newtonpf_old
+from lightsim2grid.pandapower_compat.newtonpf._newtonpf import newtonpf, newtonpf_new, newtonpf_old
