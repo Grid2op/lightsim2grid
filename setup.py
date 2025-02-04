@@ -322,7 +322,8 @@ req_pkgs = [
     "pip",
     "pybind11",
     "scipy",
-    "numpy"
+    "numpy",
+    "packaging", 
         # "pandapower" if sys.version_info < (3, 10) else "pandapower>=2.8",
         # "pytest",  # for pandapower see https://github.com/e2nIEE/pandapower/issues/1988
     ]
@@ -363,7 +364,6 @@ pkgs = {
             "grid2op>=1.6.4",
             "numba",
             "pandapower>=2.14.0",  # interface changed for pandapower, not backward compatible
-            "packaging", 
             "pypowsybl"
         ]
     }
