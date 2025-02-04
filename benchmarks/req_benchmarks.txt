@@ -1,0 +1,6 @@
+numba
+tabulate
+py-cpuinfo
+grid2op
+distro
+matplotlib
