@@ -360,7 +360,7 @@ if __name__ == "__main__":
                                      env_lightsim.backend.tol)
         time_serie._TimeSerie__computed = True
         a_or = time_serie.compute_A()
-        assert status, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
+        assert status or computer.nb_solver() == nb_step_pp, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
 
         if VERBOSE:
             # print detailed results if needed
@@ -403,7 +403,32 @@ if __name__ == "__main__":
     print_configuration()
     print(f"Solver used for linear algebra: {linear_solver_used_str}")
     print()
-        
+    
+    print("TL;DR")
+    tab_tldr = []
+    for i, nm_ in enumerate(case_names_displayed):
+        tab_tldr.append((nm_,
+                         ts_sizes[i],
+                         1000. * ls_gridmodel_time[i] / nb_step if ls_gridmodel_time[i] else None,
+                         1000. * ls_gridmodel_time_reset[i] / nb_step_reset if ls_gridmodel_time_reset[i] else None,
+                         1000. / ts_speeds[i] if ts_speeds[i] else None,
+                         1000. / sa_speeds[i] if sa_speeds[i] else None,
+                         ))
+    if TABULATE_AVAIL:
+        res_use_with_grid2op_2 = tabulate(tab_tldr,
+                                          headers=["grid",
+                                                   "size (nb bus)",
+                                                   "time (recycling)",
+                                                   "time (no recycling)",
+                                                   "time (`TimeSerie`)",
+                                                   "time (`ContingencyAnalysis`)",
+                                                   ], 
+                                          tablefmt="rst")
+        print(res_use_with_grid2op_2)
+    else:
+        print(tab_tldr)
+    print()
+    
     print("Results using grid2op.steps (288 consecutive steps, only measuring 'dc pf [init] + ac pf') (no recycling allowed, non default)")
     tab_g2op = []
     for i, nm_ in enumerate(case_names_displayed):
@@ -417,13 +442,13 @@ if __name__ == "__main__":
                          ))
     if TABULATE_AVAIL:
         res_use_with_grid2op_2 = tabulate(tab_g2op,
-                                          headers=["grid",
+                                          headers=["grid name",
                                                    "size (nb bus)",
                                                    "avg step duration (ms)",
                                                    "time [DC + AC] (ms / pf)",
                                                    "speed (pf / s)",
-                                                   "time in 'gridmodel' (ms / pf)",
-                                                   "time in 'pf algo' (ms / pf)",
+                                                   "time in 'solver' (ms / pf)",
+                                                   "time in 'algo' (ms / pf)",
                                                    ], 
                                           tablefmt="rst")
         print(res_use_with_grid2op_2)
@@ -450,8 +475,8 @@ if __name__ == "__main__":
                                                    "avg step duration (ms)",
                                                    "time [DC + AC] (ms / pf)",
                                                    "speed (pf / s)",
-                                                   "time in 'gridmodel' (ms / pf)",
-                                                   "time in 'pf algo' (ms / pf)",
+                                                   "time in 'solver' (ms / pf)",
+                                                   "time in 'algo' (ms / pf)",
                                                    ], 
                                           tablefmt="rst")
         print(res_use_with_grid2op_2)

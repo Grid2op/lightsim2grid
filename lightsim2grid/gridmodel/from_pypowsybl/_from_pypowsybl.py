@@ -14,7 +14,7 @@ import pypowsybl as pypo
 from typing import Optional, Union
 from packaging import version
 
-PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9.0")
+PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
 from lightsim2grid_cpp import GridModel
 
@@ -251,12 +251,14 @@ def init(net : pypo.network.Network,
     model.set_line_names(df_line.index)   
             
     # for trafo
+    # I extract trafo with `all_attributes=True` so that I have access to the
+    # `rho`
     if sort_index:
-        df_trafo = net.get_2_windings_transformers().sort_index()
+        df_trafo = net.get_2_windings_transformers(all_attributes=True).sort_index()
     else:
-        df_trafo = net.get_2_windings_transformers()
+        df_trafo = net.get_2_windings_transformers(all_attributes=True)
         
-    df_trafo_pu = net_pu.get_2_windings_transformers().loc[df_trafo.index]
+    df_trafo_pu = net_pu.get_2_windings_transformers(all_attributes=True).loc[df_trafo.index]
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
     if net.get_phase_tap_changers().shape[0] > 0:
         raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter (but they are by lightsim2grid)")
@@ -296,7 +298,7 @@ def init(net : pypo.network.Network,
         # bug in per unit view in both python and java
         ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
     else:
-        ratio[has_r_tap_changer] *= 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
+        ratio[has_r_tap_changer] = 1. * df_trafo_pu.loc[has_r_tap_changer, "rho"].values
     no_tap = ratio == 1.
     tap_neg = ratio < 1. 
     tap_positive = ratio > 1. 
