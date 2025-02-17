@@ -363,7 +363,7 @@ class GridModel : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _deactivate(bus_id, bus_status_);
+                _generic_deactivate(bus_id, bus_status_);
             }
         }
         // if a bus is connected, but isolated, it will make the powerflow diverge
@@ -374,7 +374,7 @@ class GridModel : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _reactivate(bus_id, bus_status_); 
+                _generic_reactivate(bus_id, bus_status_); 
             }
         }
         /**

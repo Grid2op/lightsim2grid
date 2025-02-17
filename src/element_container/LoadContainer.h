@@ -128,10 +128,10 @@ class LoadContainer : public OneSideContainer
               const Eigen::VectorXi & load_bus_id
               )
     {
-        OneSideContainer::init_base(load_p_mw,
-                                    load_q_mvar,
-                                    load_bus_id,
-                                    "loads");
+        init_osc(load_p_mw,
+                 load_q_mvar,
+                 load_bus_id,
+                 "loads");
         reset_results();
     }
 
@@ -140,13 +140,15 @@ class LoadContainer : public OneSideContainer
     {
         OneSideContainer::reset_results();
     }
-    void compute_results(const Eigen::Ref<const RealVect> & Va,
-                         const Eigen::Ref<const RealVect> & Vm,
-                         const Eigen::Ref<const CplxVect> & V,
-                         const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv,
-                         real_type sn_mva,
-                         bool ac);
+
+    protected:
+    virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                  const Eigen::Ref<const RealVect> & Vm,
+                                  const Eigen::Ref<const CplxVect> & V,
+                                  const std::vector<int> & id_grid_to_solver,
+                                  const RealVect & bus_vn_kv,
+                                  real_type sn_mva,
+                                  bool ac);
 };
 
 #endif  //LOAD_CONTAINER_H

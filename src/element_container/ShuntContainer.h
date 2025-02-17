@@ -112,15 +112,15 @@ class ShuntContainer : public OneSideContainer
     ShuntContainer():OneSideContainer() {};
 
 
-    void init(const RealVect & load_p_mw,
-              const RealVect & load_q_mvar,
-              const Eigen::VectorXi & load_bus_id
+    void init(const RealVect & shunt_p_mw,
+              const RealVect & shunt_q_mvar,
+              const Eigen::VectorXi & shunt_bus_id
               )
     {
-        OneSideContainer::init_base(load_p_mw,
-                                    load_q_mvar,
-                                    load_bus_id,
-                                    "shunts");
+        init_osc(shunt_p_mw,
+                 shunt_q_mvar,
+                 shunt_bus_id,
+                 "shunts");
         reset_results();
     }
 
@@ -139,25 +139,15 @@ class ShuntContainer : public OneSideContainer
                             FDPFMethod xb_or_bx) const;
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
 
-    void compute_results(const Eigen::Ref<const RealVect> & Va,
-                         const Eigen::Ref<const RealVect> & Vm,
-                         const Eigen::Ref<const CplxVect> & V,
-                         const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv,
-                         real_type sn_mva,
-                         bool ac);
+    protected:
 
-    virtual void reset_results()
-    {
-        OneSideContainer::reset_results();
-    }
-
-    tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
-    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
-    
-    Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
-    Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
-    const std::vector<bool>& get_status() const {return status_;}
+    virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                  const Eigen::Ref<const RealVect> & Vm,
+                                  const Eigen::Ref<const CplxVect> & V,
+                                  const std::vector<int> & id_grid_to_solver,
+                                  const RealVect & bus_vn_kv,
+                                  real_type sn_mva,
+                                  bool ac);
 
     protected:
         // physical properties
