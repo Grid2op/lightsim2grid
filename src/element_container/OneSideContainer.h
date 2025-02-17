@@ -148,7 +148,8 @@ class OneSideContainer : public GenericContainer
     }
     void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
     {
-        this->_change_p(load_id, new_p, solver_control);
+        bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
+        this->_change_p(load_id, new_p, my_status, solver_control);
         if (p_mw_(load_id) != new_p) {
             solver_control.tell_recompute_sbus();
             p_mw_(load_id) = new_p;
@@ -169,7 +170,8 @@ class OneSideContainer : public GenericContainer
     }
     void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
     {
-        this->_change_q(load_id, new_q, solver_control);
+        bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
+        this->_change_q(load_id, new_q, my_status, solver_control);
         if (q_mvar_(load_id) != new_q) {
             solver_control.tell_recompute_sbus();
             q_mvar_(load_id) = new_q;
@@ -256,8 +258,8 @@ class OneSideContainer : public GenericContainer
         virtual void _deactivate(int el_id, SolverControl & solver_control) {};
         virtual void _reactivate(int el_id, SolverControl & solver_control) {};
         virtual void _change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {};
-        virtual void _change_p(int el_id, real_type new_p, SolverControl & solver_control) {};
-        virtual void _change_q(int el_id, real_type new_p, SolverControl & solver_control) {};
+        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
+        virtual void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {};
         // virtual void _change_v(int el_id, real_type new_p, SolverControl & solver_control) {};
 
     protected:

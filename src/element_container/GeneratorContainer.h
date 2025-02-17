@@ -332,7 +332,7 @@ class GeneratorContainer: public OneSideContainer
                                   real_type sn_mva,
                                   bool ac);
 
-    virtual void _change_p(int load_id, real_type new_p, SolverControl & solver_control);
+    virtual void _change_p(int load_id, real_type new_p, bool my_status, SolverControl & solver_control);
     
     protected:
         // physical properties

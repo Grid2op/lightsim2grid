@@ -238,7 +238,7 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::_change_p(int gen_id, real_type new_p, SolverControl & solver_control)
+void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control)
 {
     if(!turnedoff_gen_pv_){
         // if turned off generators (including these with p==0)
@@ -269,6 +269,7 @@ void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl 
 
 void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control)
 {
+    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if (vm_pu_(gen_id) != new_v_pu) solver_control.tell_v_changed();
     vm_pu_(gen_id) = new_v_pu;
 }
