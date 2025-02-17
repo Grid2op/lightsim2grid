@@ -140,14 +140,27 @@ class ShuntContainer : public OneSideContainer
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
 
     protected:
+        virtual void _change_p(int shunt_id, real_type new_p, SolverControl & solver_control)
+        {
+            if(p_mw_(shunt_id) != new_p){
+                solver_control.tell_recompute_ybus();
+            }
+        }
 
-    virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
-                                  const Eigen::Ref<const RealVect> & Vm,
-                                  const Eigen::Ref<const CplxVect> & V,
-                                  const std::vector<int> & id_grid_to_solver,
-                                  const RealVect & bus_vn_kv,
-                                  real_type sn_mva,
-                                  bool ac);
+        virtual void _change_q(int shunt_id, real_type new_q, SolverControl & solver_control)
+        {
+            if(q_mvar_(shunt_id) != new_q){
+                solver_control.tell_recompute_ybus();
+            }
+        }
+        
+        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                    const Eigen::Ref<const RealVect> & Vm,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const std::vector<int> & id_grid_to_solver,
+                                    const RealVect & bus_vn_kv,
+                                    real_type sn_mva,
+                                    bool ac);
 
     protected:
         // physical properties
