@@ -38,11 +38,11 @@ void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & status
 void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & status){
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     status,
-                    "_generic__deactivate");
+                    "_generic_deactivate");
     status[el_id] = false;
 }
 
-void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
+void GenericContainer::_generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
     _check_in_range(static_cast<Eigen::Index>(el_id),

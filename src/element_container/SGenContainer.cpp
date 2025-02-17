@@ -19,7 +19,7 @@ void SGenContainer::init(const RealVect & sgen_p,
                          const Eigen::VectorXi & sgen_bus_id)
 {
     int size = static_cast<int>(sgen_p.size());
-    OneSideContainer::init_base(sgen_p, sgen_q, sgen_bus_id, "static_generators");
+    OneSideContainer::init_osc(sgen_p, sgen_q, sgen_bus_id, "static_generators");
     
     GenericContainer::check_size(sgen_pmin, size, "sgen_pmin");
     GenericContainer::check_size(sgen_pmax, size, "sgen_pmax");
@@ -39,13 +39,13 @@ SGenContainer::StateRes SGenContainer::get_state() const
      std::vector<real_type> p_max(p_max_mw_.begin(), p_max_mw_.end());
      std::vector<real_type> q_min(q_min_mvar_.begin(), q_min_mvar_.end());
      std::vector<real_type> q_max(q_max_mvar_.begin(), q_max_mvar_.end());
-     SGenContainer::StateRes res(OneSideContainer::get_state(), p_min, p_max, q_min, q_max);
+     SGenContainer::StateRes res(OneSideContainer::get_osc_state(), p_min, p_max, q_min, q_max);
      return res;
 }
 
 void SGenContainer::set_state(SGenContainer::StateRes & my_state )
 {    
-    OneSideContainer::set_base_state(std::get<0>(my_state));
+    OneSideContainer::set_osc_state(std::get<0>(my_state));
 
     std::vector<real_type> & p_min = std::get<1>(my_state);
     std::vector<real_type> & p_max = std::get<2>(my_state);
@@ -87,7 +87,7 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_t
     }
 }
 
-void SGenContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
+void SGenContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
                                     const Eigen::Ref<const RealVect> & Vm,
                                     const Eigen::Ref<const CplxVect> & V,
                                     const std::vector<int> & id_grid_to_solver,
@@ -95,7 +95,6 @@ void SGenContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                     real_type sn_mva,
                                     bool ac)
 {
-    OneSideContainer::compute_results_base(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
     const int nb_sgen = nb();
     res_p_ = p_mw_;
     if(ac) res_q_ = q_mvar_;

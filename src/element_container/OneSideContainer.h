@@ -29,6 +29,7 @@
 // - get_bus_id
 // - reconnect_connected_buses
 // - update_bus_status
+// - gen_p_per_bus
 
 // same public api but need overriden in private api
 // - deactivate
@@ -52,14 +53,6 @@ class OneSideContainer : public GenericContainer
 
     // regular implementation
     public:
-    typedef std::tuple<
-       std::vector<std::string>,
-       std::vector<real_type>, // p_mw
-       std::vector<real_type>, // q_mvar
-       std::vector<int>, // bus_id
-       std::vector<bool> // status
-       >  StateRes;
-
     OneSideContainer() {};
 
     // public generic API
@@ -112,73 +105,34 @@ class OneSideContainer : public GenericContainer
     }    
 
     // base function that can be called
-    OneSideContainer::StateRes get_base_state() const
+    void gen_p_per_bus(std::vector<real_type> & res) const
     {
-        std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
-        std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
-        std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
-        std::vector<bool> status = status_;
-        OneSideContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
-        return res;
-    }
-    void set_base_state(OneSideContainer::StateRes & my_state)
-    {
-        // read data
-        names_ = std::get<0>(my_state);
-        std::vector<real_type> & p_mw = std::get<1>(my_state);
-        std::vector<real_type> & q_mvar = std::get<2>(my_state);
-        std::vector<int> & bus_id = std::get<3>(my_state);
-        std::vector<bool> & status = std::get<4>(my_state);
-
-        // check sizes
-        const auto size = p_mw.size();
-        check_size(names_, size, "names");
-        check_size(p_mw, size, "p_mw");
-        check_size(q_mvar, size, "q_mvar");
-        check_size(bus_id, size, "bus_id");
-        check_size(status, size, "status");
-
-        // input data
-        p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
-        q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
-        bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
-        status_ = status;
-    }
-
-    void init_base(const RealVect & els_p,
-                   const RealVect & els_q,
-                   const Eigen::VectorXi & els_bus_id,
-                   const std::string & name_el
-                   )
-    {
-        int size = static_cast<int>(els_p.size());
-        check_size(els_p, size, name_el + "_p");
-        check_size(els_q, size, name_el + "_q");
-        check_size(els_bus_id, size, name_el + "_bus_id");
-
-        p_mw_ = els_p;
-        q_mvar_ = els_q;
-        bus_id_ = els_bus_id;
-        status_ = std::vector<bool>(els_p.size(), true);
+        const int nb_gen = nb();
+        for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
+        {
+            if(!status_[sgen_id]) continue;
+            const auto my_bus = bus_id_(sgen_id);
+            res[my_bus] += p_mw_(sgen_id);
+        }
     }
 
     void deactivate(int el_id, SolverControl & solver_control) {
         if(status_[el_id]){
             solver_control.tell_recompute_sbus();
         }
-        _generic_deactivate(el_id, status_);
         this->_deactivate(el_id, solver_control);
+        _generic_deactivate(el_id, status_);
     }
     void reactivate(int el_id, SolverControl & solver_control) {
         if(!status_[el_id]){
             solver_control.tell_recompute_sbus();
         }
-        _generic_reactivate(el_id, status_);
         this->_reactivate(el_id, solver_control);
+        _generic_reactivate(el_id, status_);
     }
     void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        this->_change_bus(load_id, new_bus_id, solver_control, nb_bus);
         _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);
-        this->_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);
     }
     void change_p(int el_id, real_type new_p, SolverControl & solver_control){
         bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
@@ -192,14 +146,15 @@ class OneSideContainer : public GenericContainer
         }
         change_p_nothrow(el_id, new_p, solver_control);
     }
-    virtual void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
+    void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
     {
+        this->_change_p(load_id, new_p, solver_control);
         if (p_mw_(load_id) != new_p) {
             solver_control.tell_recompute_sbus();
             p_mw_(load_id) = new_p;
         }
     }
-    virtual void change_q(int el_id, real_type new_q, SolverControl & solver_control)
+    void change_q(int el_id, real_type new_q, SolverControl & solver_control)
     {
         bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
         if(!my_status)
@@ -212,8 +167,9 @@ class OneSideContainer : public GenericContainer
         }
         change_q_nothrow(el_id, new_q, solver_control);
     }
-    virtual void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
+    void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
     {
+        this->_change_q(load_id, new_q, solver_control);
         if (q_mvar_(load_id) != new_q) {
             solver_control.tell_recompute_sbus();
             q_mvar_(load_id) = new_q;
@@ -230,6 +186,65 @@ class OneSideContainer : public GenericContainer
     void reset_results();
 
     protected:
+
+        typedef std::tuple<
+        std::vector<std::string>,
+        std::vector<real_type>, // p_mw
+        std::vector<real_type>, // q_mvar
+        std::vector<int>, // bus_id
+        std::vector<bool> // status
+        >  StateRes;
+        OneSideContainer::StateRes get_osc_state() const  // osc: one side element
+        {
+            std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
+            std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
+            std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
+            std::vector<bool> status = status_;
+            OneSideContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
+            return res;
+        }
+
+        void set_osc_state(OneSideContainer::StateRes & my_state)  // osc: one side element
+        {
+            // read data
+            names_ = std::get<0>(my_state);
+            std::vector<real_type> & p_mw = std::get<1>(my_state);
+            std::vector<real_type> & q_mvar = std::get<2>(my_state);
+            std::vector<int> & bus_id = std::get<3>(my_state);
+            std::vector<bool> & status = std::get<4>(my_state);
+
+            // check sizes
+            const auto size = p_mw.size();
+            check_size(names_, size, "names");
+            check_size(p_mw, size, "p_mw");
+            check_size(q_mvar, size, "q_mvar");
+            check_size(bus_id, size, "bus_id");
+            check_size(status, size, "status");
+
+            // input data
+            p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
+            q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
+            bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
+            status_ = status;
+        }
+        
+        void init_osc(const RealVect & els_p,
+                    const RealVect & els_q,
+                    const Eigen::VectorXi & els_bus_id,
+                    const std::string & name_el
+                    )  // osc: one side element
+        {
+            int size = static_cast<int>(els_p.size());
+            check_size(els_p, size, name_el + "_p");
+            check_size(els_q, size, name_el + "_q");
+            check_size(els_bus_id, size, name_el + "_bus_id");
+
+            p_mw_ = els_p;
+            q_mvar_ = els_q;
+            bus_id_ = els_bus_id;
+            status_ = std::vector<bool>(els_p.size(), true);
+        }
+
         virtual void _reset_results() {};
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
@@ -241,6 +256,9 @@ class OneSideContainer : public GenericContainer
         virtual void _deactivate(int el_id, SolverControl & solver_control) {};
         virtual void _reactivate(int el_id, SolverControl & solver_control) {};
         virtual void _change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {};
+        virtual void _change_p(int el_id, real_type new_p, SolverControl & solver_control) {};
+        virtual void _change_q(int el_id, real_type new_p, SolverControl & solver_control) {};
+        // virtual void _change_v(int el_id, real_type new_p, SolverControl & solver_control) {};
 
     protected:
         // physical properties

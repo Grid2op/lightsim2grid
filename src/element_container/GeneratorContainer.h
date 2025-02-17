@@ -236,56 +236,12 @@ class GeneratorContainer: public OneSideContainer
     void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
                               SolverControl & solver_control);
 
-    virtual void deactivate(int gen_id, SolverControl & solver_control) {
-        if (status_[gen_id]){
-            solver_control.tell_recompute_sbus();
-            solver_control.tell_pq_changed();  // bus might now be pq
-            if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-            solver_control.tell_pv_changed();
-            if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
-                solver_control.tell_slack_participate_changed();
-                solver_control.tell_slack_weight_changed();
-            }
-        }
-        _deactivate(gen_id, status_);
-        gen_slackbus_[gen_id] = false;
-    }
-
-    virtual void reactivate(int gen_id, SolverControl & solver_control) {
-        if(!status_[gen_id]){
-            solver_control.tell_recompute_sbus();
-            // bus might change between pv / pq depending on the state of the generator
-            // TODO speed optim here
-            solver_control.tell_pq_changed();
-            solver_control.tell_pv_changed(); 
-
-            if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-            if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
-                solver_control.tell_slack_participate_changed();
-                solver_control.tell_slack_weight_changed();
-            }
-            if(gen_slack_weight_[gen_id] != 0.){
-                gen_slackbus_[gen_id] = true;
-            }
-        }
-        _reactivate(gen_id, status_);
-    }
-    virtual void change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-        if (new_bus_id != bus_id_[gen_id]){
-            if (gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]) solver_control.has_slack_participate_changed();
-            // bus might change between pv / pq depending on the state of the generator
-            // TODO speed optim here
-            solver_control.tell_pq_changed();
-            solver_control.tell_pv_changed(); 
-        }
-        _change_bus(gen_id, new_bus_id, bus_id_, solver_control, nb_bus);
-    }
 
     real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
     real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
+
     void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
     void change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control);
-    virtual void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control);
 
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
     virtual void fillpv(std::vector<int>& bus_pv,
@@ -297,13 +253,6 @@ class GeneratorContainer: public OneSideContainer
                        RealVect & total_q_min_per_bus,
                        RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
 
-    virtual void compute_results(const Eigen::Ref<const RealVect> & Va,
-                                 const Eigen::Ref<const RealVect> & Vm,
-                                 const Eigen::Ref<const CplxVect> & V,
-                                 const std::vector<int> & id_grid_to_solver,
-                                 const RealVect & bus_vn_kv,
-                                 real_type sn_mva,
-                                 bool ac);
     void reset_results(){
         OneSideContainer::reset_results();
     }
@@ -323,13 +272,68 @@ class GeneratorContainer: public OneSideContainer
     **/
     void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
 
-    virtual void gen_p_per_bus(std::vector<real_type> & res) const;
-
     void cout_v(){
         for(const auto & el : vm_pu_){
             std::cout << "V " << el << std::endl;
         }
     }
+
+
+    protected:
+
+    virtual void _deactivate(int gen_id, SolverControl & solver_control) {
+        if (status_[gen_id]){
+            solver_control.tell_recompute_sbus();
+            solver_control.tell_pq_changed();  // bus might now be pq
+            if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
+            solver_control.tell_pv_changed();
+            if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
+                solver_control.tell_slack_participate_changed();
+                solver_control.tell_slack_weight_changed();
+            }
+        }
+        gen_slackbus_[gen_id] = false;
+    }
+
+    virtual void _reactivate(int gen_id, SolverControl & solver_control) {
+        if(!status_[gen_id]){
+            solver_control.tell_recompute_sbus();
+            // bus might change between pv / pq depending on the state of the generator
+            // TODO speed optim here
+            solver_control.tell_pq_changed();
+            solver_control.tell_pv_changed(); 
+
+            if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
+            if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
+                solver_control.tell_slack_participate_changed();
+                solver_control.tell_slack_weight_changed();
+            }
+            if(gen_slack_weight_[gen_id] != 0.){
+                gen_slackbus_[gen_id] = true;
+            }
+        }
+    }
+
+    virtual void _change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        if (new_bus_id != bus_id_[gen_id]){
+            if (gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]) solver_control.has_slack_participate_changed();
+            // bus might change between pv / pq depending on the state of the generator
+            // TODO speed optim here
+            solver_control.tell_pq_changed();
+            solver_control.tell_pv_changed(); 
+        }
+    }
+
+    virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                  const Eigen::Ref<const RealVect> & Vm,
+                                  const Eigen::Ref<const CplxVect> & V,
+                                  const std::vector<int> & id_grid_to_solver,
+                                  const RealVect & bus_vn_kv,
+                                  real_type sn_mva,
+                                  bool ac);
+
+    virtual void _change_p(int load_id, real_type new_p, SolverControl & solver_control);
+    
     protected:
         // physical properties
         RealVect min_q_;

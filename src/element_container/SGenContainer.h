@@ -154,28 +154,14 @@ class SGenContainer: public OneSideContainer
     
     virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const ;
 
-    void compute_results(const Eigen::Ref<const RealVect> & Va,
-                         const Eigen::Ref<const RealVect> & Vm,
-                         const Eigen::Ref<const CplxVect> & V,
-                         const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv,
-                         real_type sn_mva,
-                         bool ac);
-    virtual void reset_results()
-    {
-        OneSideContainer::reset_results();
-    }
-
-    void gen_p_per_bus(std::vector<real_type> & res) const
-    {
-        const int nb_gen = nb();
-        for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
-        {
-            if(!status_[sgen_id]) continue;
-            const auto my_bus = bus_id_(sgen_id);
-            res[my_bus] += p_mw_(sgen_id);
-        }
-    }
+    protected:
+    virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                  const Eigen::Ref<const RealVect> & Vm,
+                                  const Eigen::Ref<const CplxVect> & V,
+                                  const std::vector<int> & id_grid_to_solver,
+                                  const RealVect & bus_vn_kv,
+                                  real_type sn_mva,
+                                  bool ac);
 
     protected:
         // physical properties

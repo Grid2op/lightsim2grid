@@ -12,13 +12,13 @@
 
 ShuntContainer::StateRes ShuntContainer::get_state() const
 {
-     ShuntContainer::StateRes res(OneSideContainer::get_state());
+     ShuntContainer::StateRes res(OneSideContainer::get_osc_state());
      return res;
 }
 
 void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 {
-    OneSideContainer::set_base_state(std::get<0>(my_state));
+    OneSideContainer::set_osc_state(std::get<0>(my_state));
     reset_results();
 }
 
@@ -102,15 +102,14 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_
     }
 }
 
-void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                     const Eigen::Ref<const RealVect> & Vm,
-                                     const Eigen::Ref<const CplxVect> & V,
-                                     const std::vector<int> & id_grid_to_solver,
-                                     const RealVect & bus_vn_kv,
-                                     real_type sn_mva,
-                                     bool ac)
+void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
+                                      const Eigen::Ref<const RealVect> & Vm,
+                                      const Eigen::Ref<const CplxVect> & V,
+                                      const std::vector<int> & id_grid_to_solver,
+                                      const RealVect & bus_vn_kv,
+                                      real_type sn_mva,
+                                      bool ac)
 {
-    OneSideContainer::compute_results_base(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
     const int nb_shunt = static_cast<int>(p_mw_.size());
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
         if(!status_[shunt_id]) {

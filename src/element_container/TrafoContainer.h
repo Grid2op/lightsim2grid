@@ -180,7 +180,7 @@ class TrafoContainer : public GenericContainer
             solver_control.tell_ybus_some_coeffs_zero();
             solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
         }
-        _deactivate(trafo_id, status_);
+        _generic_deactivate(trafo_id, status_);
     }
     void reactivate(int trafo_id, SolverControl & solver_control) {
         if(!status_[trafo_id]){
@@ -188,10 +188,10 @@ class TrafoContainer : public GenericContainer
             solver_control.tell_ybus_change_sparsity_pattern();  // this might change
             solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
         }
-        _reactivate(trafo_id, status_);
+        _generic_reactivate(trafo_id, status_);
     }
-    void change_bus_hv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_hv_id_, solver_control, nb_bus);}
-    void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_change_bus(trafo_id, new_bus_id, bus_lv_id_, solver_control, nb_bus);}
+    void change_bus_hv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_generic_change_bus(trafo_id, new_bus_id, bus_hv_id_, solver_control, nb_bus);}
+    void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_generic_change_bus(trafo_id, new_bus_id, bus_lv_id_, solver_control, nb_bus);}
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
     void reconnect_connected_buses(std::vector<bool> & bus_status) const;

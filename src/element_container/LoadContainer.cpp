@@ -12,14 +12,14 @@
 
 LoadContainer::StateRes LoadContainer::get_state() const
 {
-    const auto tmp = OneSideContainer::get_state();
+    const auto tmp = OneSideContainer::get_osc_state();  // osc : one side container
     LoadContainer::StateRes res(tmp);
     return res;
 }
 
 void LoadContainer::set_state(LoadContainer::StateRes & my_state)
 {
-    OneSideContainer::set_base_state(std::get<0>(my_state));
+    OneSideContainer::set_osc_state(std::get<0>(my_state));  // osc : one side container
     reset_results();
 }
 
@@ -49,7 +49,7 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
     }
 }
 
-void LoadContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
+void LoadContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
                                     const Eigen::Ref<const RealVect> & Vm,
                                     const Eigen::Ref<const CplxVect> & V,
                                     const std::vector<int> & id_grid_to_solver,
@@ -57,7 +57,6 @@ void LoadContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
                                     real_type sn_mva,
                                     bool ac)
 {
-    OneSideContainer::compute_results_base(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
     const int nb_loads = nb();
     res_p_ = p_mw_;
     if(ac) res_q_ = q_mvar_;

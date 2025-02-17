@@ -33,7 +33,7 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
                                    const Eigen::VectorXi & generators_bus_id
                                    )
 {
-    OneSideContainer::init_base(generators_p, generators_q, generators_bus_id, "generators");
+    init_osc(generators_p, generators_q, generators_bus_id, "generators");
 
     // check the sizes
     int size = static_cast<int>(generators_p.size());
@@ -63,7 +63,7 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
 }
 
 
-GeneratorContainer::StateRes GeneratorContainer::get_state() const
+GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one side container
 {
      std::vector<real_type> vm_pu(vm_pu_.begin(), vm_pu_.end());
      std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
@@ -71,7 +71,7 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const
      std::vector<bool> slack_bus = gen_slackbus_;
      std::vector<bool> voltage_regulator_on = voltage_regulator_on_;
      std::vector<real_type> slack_weight = gen_slack_weight_;
-     GeneratorContainer::StateRes res(OneSideContainer::get_state(), 
+     GeneratorContainer::StateRes res(get_osc_state(),  // osc : one side container
                                       turnedoff_gen_pv_,
                                       voltage_regulator_on,
                                       vm_pu,
@@ -84,7 +84,7 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const
 
 void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
-    OneSideContainer::set_base_state(std::get<0>(my_state));
+    OneSideContainer::set_osc_state(std::get<0>(my_state));
     turnedoff_gen_pv_ = std::get<1>(my_state);
 
     // the generators themelves
@@ -204,16 +204,15 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void GeneratorContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                         const Eigen::Ref<const RealVect> & Vm,
-                                         const Eigen::Ref<const CplxVect> & V,
-                                         const std::vector<int> & id_grid_to_solver,
-                                         const RealVect & bus_vn_kv,
-                                         real_type sn_mva,
-                                         bool ac)
+void GeneratorContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
+                                          const Eigen::Ref<const RealVect> & Vm,
+                                          const Eigen::Ref<const CplxVect> & V,
+                                          const std::vector<int> & id_grid_to_solver,
+                                          const RealVect & bus_vn_kv,
+                                          real_type sn_mva,
+                                          bool ac)
 {
     const int nb_gen = nb();
-    OneSideContainer::compute_results_base(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(!status_[gen_id]){
             res_p_(gen_id) = 0.;
@@ -239,7 +238,7 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::change_p_nothrow(int gen_id, real_type new_p, SolverControl & solver_control)
+void GeneratorContainer::_change_p(int gen_id, real_type new_p, SolverControl & solver_control)
 {
     if(!turnedoff_gen_pv_){
         // if turned off generators (including these with p==0)
@@ -251,7 +250,6 @@ void GeneratorContainer::change_p_nothrow(int gen_id, real_type new_p, SolverCon
             solver_control.tell_pv_changed();
            }
     }
-    OneSideContainer::change_p_nothrow(gen_id, new_p, solver_control);
 }
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
@@ -455,16 +453,5 @@ void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eige
             if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, I need to reset the solver
             remove_slackbus(gen_id, solver_control);
         }
-    }
-}
-
-void GeneratorContainer::gen_p_per_bus(std::vector<real_type> & res) const
-{
-    const int nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-    {
-        if(!status_[gen_id]) continue;
-        const auto my_bus = bus_id_(gen_id);
-        if (p_mw_(gen_id) > 0.) res[my_bus] += p_mw_(gen_id);
     }
 }
