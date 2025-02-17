@@ -85,6 +85,7 @@ class LightSimBackend(Backend):
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
                  stop_if_storage_disco : Optional[bool] = None,
+                 automatically_disconnect : bool = False, 
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
         #: if the solver has not converge after this, it will 
@@ -167,7 +168,17 @@ class LightSimBackend(Backend):
         #:    is automatically set-up with the call to grid2op.make, 
         #:    to match the behaviour expected by `allow_detachment`
         self._stop_if_storage_disco = stop_if_storage_disco
-                                        
+        
+        #: .. versionadded:: 0.11.0
+        #: if set to ``True`` the backend will automatically
+        #: disconnect any load / generator not in the main
+        #: connected component. The default is ``False``
+        #: which means it will NOT disconnect them
+        #: automatically and raise a "non connected grid"
+        #: error (this should only be used if grid2op allows detachment
+        #: and the detachment is allowed in the env configuration)
+        self._automatically_disconnect = automatically_disconnect
+            
         self._aux_init_super(detailed_infos_for_cascading_failures,
                              can_be_copied,
                              solver_type,
@@ -180,7 +191,16 @@ class LightSimBackend(Backend):
                              loader_kwargs,
                              stop_if_load_disco,
                              stop_if_gen_disco,
-                             stop_if_storage_disco)
+                             stop_if_storage_disco,
+                             automatically_disconnect)
+        
+        #: whether or not to run a routine to detect the islanding
+        #: before computing the powerflow (this routine should
+        #: automatically switch off element not in the main CC)
+        #: by default it's False and only set to True if 
+        #: automatically_disconnect is True (and if the environment
+        #: supports detachment)
+        self._need_islanding_detection = False  
         
         # backward compat: need to define it if not done by grid2op
         if not hasattr(self, "_can_be_copied"):
@@ -361,7 +381,8 @@ class LightSimBackend(Backend):
                         loader_kwargs,
                         stop_if_load_disco,
                         stop_if_gen_disco,
-                        stop_if_storage_disco):
+                        stop_if_storage_disco,
+                        automatically_disconnect):
         try:
             # for grid2Op >= 1.7.1
             Backend.__init__(self,
@@ -377,7 +398,8 @@ class LightSimBackend(Backend):
                              loader_kwargs=loader_kwargs,
                              stop_if_load_disco=stop_if_load_disco,
                              stop_if_gen_disco=stop_if_gen_disco,
-                             stop_if_storage_disco=stop_if_storage_disco
+                             stop_if_storage_disco=stop_if_storage_disco,
+                             automatically_disconnect=automatically_disconnect
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
@@ -586,7 +608,7 @@ class LightSimBackend(Backend):
             self._stop_if_gen_disco = False
         elif self._stop_if_gen_disco:
             # erase default values and continue like the grid2op call specifies
-            warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_gen_disco=True`")
+            warnings.warn("Call to `grid2op.make(..., allow_detachment=True)` will erase the lightsim2grid kwargs `stop_if_gen_disco=True`")
             self._stop_if_gen_disco = False
             
         if self._stop_if_load_disco is None:
@@ -597,7 +619,7 @@ class LightSimBackend(Backend):
             self._stop_if_load_disco = False
         elif self._stop_if_load_disco:
             # erase default values and continue like the grid2op call specifies
-            warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_load_disco=True`")
+            warnings.warn("Call to `grid2op.make(..., allow_detachment=True)` will erase the lightsim2grid kwargs `stop_if_load_disco=True`")
             self._stop_if_load_disco = False
             
         if self._stop_if_storage_disco is None:
@@ -608,7 +630,7 @@ class LightSimBackend(Backend):
             self._stop_if_storage_disco = False
         elif self._stop_if_storage_disco:
             # erase default values and continue like the grid2op call specifies
-            warnings.warn("Call to `grid2op.make(..., allow_detachement=True)` will erase the lightsim2grid kwargs `stop_if_storage_disco=True`")
+            warnings.warn("Call to `grid2op.make(..., allow_detachment=True)` will erase the lightsim2grid kwargs `stop_if_storage_disco=True`")
             self._stop_if_storage_disco = False
     
     def _aux_set_correct_detach_flags_d_not_allowed(self):# user did not allow detachment (or it's a legacy grid2op version), I check the correct flags
@@ -620,7 +642,7 @@ class LightSimBackend(Backend):
             self._stop_if_gen_disco = True
         elif not self._stop_if_gen_disco:
             # erase default values and continue like the grid2op call specifies
-            warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_gen_disco=False`")
+            warnings.warn("Call to `grid2op.make(..., allow_detachment=False)` will erase the lightsim2grid kwargs `stop_if_gen_disco=False`")
             self._stop_if_gen_disco = True
             
         if self._stop_if_load_disco is None:
@@ -631,7 +653,7 @@ class LightSimBackend(Backend):
             self._stop_if_load_disco = True
         elif not self._stop_if_load_disco:
             # erase default values and continue like the grid2op call specifies
-            warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_load_disco=False`")
+            warnings.warn("Call to `grid2op.make(..., allow_detachment=False)` will erase the lightsim2grid kwargs `stop_if_load_disco=False`")
             self._stop_if_load_disco = True
             
         if self._stop_if_storage_disco is None:
@@ -642,7 +664,7 @@ class LightSimBackend(Backend):
             self._stop_if_storage_disco = True
         elif not self._stop_if_storage_disco:
             # erase default values and continue like the grid2op call specifies
-            warnings.warn("Call to `grid2op.make(..., allow_detachement=False)` will erase the lightsim2grid kwargs `stop_if_storage_disco=False`")
+            warnings.warn("Call to `grid2op.make(..., allow_detachment=False)` will erase the lightsim2grid kwargs `stop_if_storage_disco=False`")
             self._stop_if_storage_disco = True
                 
     def _aux_set_correct_detach_flags(self):
@@ -664,6 +686,12 @@ class LightSimBackend(Backend):
             self.can_handle_detachment()
             
         self._aux_set_correct_detach_flags()
+        if self._automatically_disconnect and not self.detachment_is_allowed:
+            warnings.warn(("It is not possible to automatically disconnect element if grid2op "
+                           "if grid2op does not allow detachment (make sure to upgrade to grid2op >= 1.11 "
+                           "or if the environment is not configure to use it (add the kwargs grid2op.make(..., allow_detachment=True))")
+                          )
+            self._automatically_disconnect = False
             
         if self._loader_method == "pandapower":
             self._load_grid_pandapower(path, filename)
@@ -674,6 +702,8 @@ class LightSimBackend(Backend):
         self._grid.tell_solver_need_reset()
         self._reset_res_pointers()  # force the re reading of the accessors at next powerflow
         self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        if self._automatically_disconnect:
+            self._need_islanding_detection = True
     
     def _should_not_have_to_do_this(self, path=None, filename=None):
         # included in grid2op now !
@@ -1175,22 +1205,7 @@ class LightSimBackend(Backend):
         try:
             cls.n_sub = self.n_sub
             LightSimBackend.n_sub = self.n_sub
-            self.topo_vect[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
-                                                                            cls.load_to_subid)
-            self.topo_vect[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
-                                                                            cls.gen_to_subid)
-            if self.__has_storage:
-                self.topo_vect[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
-                                                                                    cls.storage_to_subid)
-            lor_glob_bus = np.concatenate((np.array([el.bus_or_id for el in self._grid.get_lines()]),
-                                        np.array([el.bus_hv_id for el in self._grid.get_trafos()])))
-            self.topo_vect[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus,
-                                                                                cls.line_or_to_subid)
-            lex_glob_bus = np.concatenate((np.array([el.bus_ex_id for el in self._grid.get_lines()]),
-                                        np.array([el.bus_lv_id for el in self._grid.get_trafos()])))
-            self.topo_vect[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus,
-                                                                                cls.line_ex_to_subid)
-            
+            self._read_topo_vect(self.topo_vect)
             self._grid.tell_solver_need_reset()
             self.__me_at_init = self._grid.copy()
             self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
@@ -1201,6 +1216,25 @@ class LightSimBackend(Backend):
         finally:
             cls.n_sub = n_sub_cls_orig
             LightSimBackend.n_sub = n_sub_ls_orig
+    
+    def _read_topo_vect(self, res):
+        """the input vector "res" is modified !"""
+        cls = type(self)
+        res[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
+                                                                        cls.load_to_subid)
+        res[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
+                                                                        cls.gen_to_subid)
+        if self.__has_storage:
+            res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
+                                                                                cls.storage_to_subid)
+        lor_glob_bus = np.concatenate((np.array([el.bus_or_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus_hv_id for el in self._grid.get_trafos()])))
+        res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus,
+                                                                            cls.line_or_to_subid)
+        lex_glob_bus = np.concatenate((np.array([el.bus_ex_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus_lv_id for el in self._grid.get_trafos()])))
+        res[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus,
+                                                                            cls.line_ex_to_subid)
         
     def assert_grid_correct_after_powerflow(self) -> None:
         """
@@ -1282,10 +1316,16 @@ class LightSimBackend(Backend):
         # change the overall topology
         chgt = backendAction.current_topo.changed
         self._grid.update_topo(chgt, backendAction.current_topo.values)
-        self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
+        if not self._automatically_disconnect:
+            # the backend cannot change the topology, so 
+            # this holds
+            self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
+        else:
+            if chgt.sum():
+                # there has been topological changes, I need 
+                # to perform a BFS to detect possible islanding
+                self._need_islanding_detection = True
         
-        # print(f" load p {backendAction.load_p.values[backendAction.load_p.changed]}")  # TODO DEBUG WINDOWS
-        # print(f" prod_p p {backendAction.prod_p.values[backendAction.prod_p.changed]}")  # TODO DEBUG WINDOWS
         # update the injections
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
@@ -1369,6 +1409,9 @@ class LightSimBackend(Backend):
                 raise self._next_pf_fails
             
             beg_preproc = time.perf_counter()
+            if self._need_islanding_detection:
+                self._grid.consider_only_main_component()
+                
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
@@ -1495,6 +1538,12 @@ class LightSimBackend(Backend):
                 raise BackendError(f"Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_changes()
+            
+            if self._need_islanding_detection:
+                # topology might have changed in the
+                # powerflow computation
+                self._read_topo_vect(self.topo_vect)
+                self._need_islanding_detection = False
             self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
@@ -1508,7 +1557,7 @@ class LightSimBackend(Backend):
                 # set back the solver to its previous state
                 self._grid.change_solver(self.__current_solver_type)
             self._grid.tell_solver_need_reset()
-
+            self._need_islanding_detection = True
         # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
         if self.__has_storage:
             res = res, my_exc_
@@ -1598,7 +1647,8 @@ class LightSimBackend(Backend):
                             self._loader_kwargs,
                             self._stop_if_load_disco,
                             self._stop_if_gen_disco,
-                            self._stop_if_storage_disco)
+                            self._stop_if_storage_disco,
+                            self._automatically_disconnect)
         
         # for backward compat (attribute was not necessarily present in early grid2op)
         if not hasattr(res, "_can_be_copied"):
@@ -1623,7 +1673,8 @@ class LightSimBackend(Backend):
                            "max_it", "tol", "_turned_off_pv", "_dist_slack_non_renew",
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
-                           "_timer_fetch_data_cpp", "_next_pf_fails"
+                           "_timer_fetch_data_cpp", "_next_pf_fails", "_automatically_disconnect",
+                           "_need_islanding_detection"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
@@ -1682,7 +1733,7 @@ class LightSimBackend(Backend):
         res.init_pp_backend = inippbackend  # this is const
         res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
         res._backend_action_class = self._backend_action_class  # this is const
-        res.__init_topo_vect = self.__init_topo_vect
+        res.__init_topo_vect = 1 * self.__init_topo_vect
         res.available_solvers = self.available_solvers
         res._orig_grid_pypowsybl = self._orig_grid_pypowsybl 
         res._reset_res_pointers()
