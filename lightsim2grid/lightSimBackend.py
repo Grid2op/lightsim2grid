@@ -1557,7 +1557,10 @@ class LightSimBackend(Backend):
                 # set back the solver to its previous state
                 self._grid.change_solver(self.__current_solver_type)
             self._grid.tell_solver_need_reset()
-            self._need_islanding_detection = True
+            if self._automatically_disconnect:
+                # trigger a check for the connected component only
+                # if relevant attribute is set
+                self._need_islanding_detection = True
         # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
         if self.__has_storage:
             res = res, my_exc_
@@ -1831,6 +1834,9 @@ class LightSimBackend(Backend):
         if type(self).shunts_data_available:
             self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
         self.topo_vect[:] = self.__init_topo_vect  # TODO#
+        if self._automatically_disconnect:
+            # automatically disconnect things if needed (and if the option is properly set)
+            self._need_islanding_detection = True
 
 
 def _dont_use_global_bus_to_local_legacy(cls, global_bus: np.ndarray, to_sub_id: np.ndarray) -> np.ndarray:

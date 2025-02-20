@@ -217,7 +217,7 @@ class OneSideContainer : public GenericContainer
 
             // check sizes
             const auto size = p_mw.size();
-            check_size(names_, size, "names");
+            if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
             check_size(p_mw, size, "p_mw");
             check_size(q_mvar, size, "q_mvar");
             check_size(bus_id, size, "bus_id");
