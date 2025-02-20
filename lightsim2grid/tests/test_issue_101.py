@@ -38,18 +38,43 @@ class Issue101Tester(unittest.TestCase):
         return super().tearDown()
     
     def test_disco_gen(self):
-        """test i can disconnect a load"""
+        """test i can disconnect a gen"""
+        gen_id = 0
         obs, reward, done, info = self.env.step(self.env.action_space(
             {
-                "set_bus": {"generators_id": [(0, -1)]}
+                "set_bus": {"generators_id": [(gen_id, -1)]}
             }
         ))
         assert not done
-        _, _, done, info = self.env.step(self.env.action_space({}))
+        assert obs.gen_p[gen_id] == 0.
+        
+        obs1, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
-        _, _, done, info = self.env.step(self.env.action_space({}))
+        assert obs1.gen_p[gen_id] == 0.
+        
+        obs2, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
-    
+        assert obs2.gen_p[gen_id] == 0.
+        
+    def test_disco_load(self):
+        """test i can disconnect a load"""
+        load_id = 0
+        obs, reward, done, info = self.env.step(self.env.action_space(
+            {
+                "set_bus": {"loads_id": [(load_id, -1)]}
+            }
+        ))
+        assert not done
+        assert obs.load_p[load_id] == 0.
+        assert obs.load_p_detached[load_id] == 0.
+        
+        obs1, _, done, info = self.env.step(self.env.action_space({}))
+        assert not done
+        assert obs1.load_p[load_id] == 0.
+        
+        obs2, _, done, info = self.env.step(self.env.action_space({}))
+        assert not done
+        assert obs2.load_p[load_id] == 0.
         
         
 if __name__ == "__main__":

@@ -161,7 +161,12 @@ class SGenContainer: public OneSideContainer
                                   const std::vector<int> & id_grid_to_solver,
                                   const RealVect & bus_vn_kv,
                                   real_type sn_mva,
-                                  bool ac);
+                                  bool ac)
+                                  {
+
+                                        set_osc_res_p();
+                                        set_osc_res_q(ac);
+                                  }
 
     protected:
         // physical properties

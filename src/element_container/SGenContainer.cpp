@@ -86,20 +86,3 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_t
         Sbus.coeffRef(bus_id_solver) += tmp;
     }
 }
-
-void SGenContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
-                                    const Eigen::Ref<const RealVect> & Vm,
-                                    const Eigen::Ref<const CplxVect> & V,
-                                    const std::vector<int> & id_grid_to_solver,
-                                    const RealVect & bus_vn_kv,
-                                    real_type sn_mva,
-                                    bool ac)
-{
-    const int nb_sgen = nb();
-    res_p_ = p_mw_;
-    if(ac) res_q_ = q_mvar_;
-    else{
-        // no q in DC mode
-        for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id) res_q_(sgen_id) = 0.;
-    }
-}

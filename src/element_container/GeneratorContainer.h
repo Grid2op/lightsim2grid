@@ -253,10 +253,6 @@ class GeneratorContainer: public OneSideContainer
                        RealVect & total_q_min_per_bus,
                        RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
 
-    void reset_results(){
-        OneSideContainer::reset_results();
-    }
-
     void set_q(const RealVect & reactive_mismatch,
                const std::vector<int> & id_grid_to_solver,
                bool ac,
@@ -330,7 +326,9 @@ class GeneratorContainer: public OneSideContainer
                                   const std::vector<int> & id_grid_to_solver,
                                   const RealVect & bus_vn_kv,
                                   real_type sn_mva,
-                                  bool ac);
+                                  bool ac){
+                                    set_osc_res_p();
+                                  }
 
     virtual void _change_p(int load_id, real_type new_p, bool my_status, SolverControl & solver_control);
     

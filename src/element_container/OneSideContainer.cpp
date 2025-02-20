@@ -75,7 +75,7 @@ void OneSideContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
     this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
 }
 
-void OneSideContainer::reset_results(){
+void OneSideContainer::reset_osc_results(){
     // std::cout << "Loads reset_results \n";
     res_p_ = RealVect(nb());  // in MW
     res_q_ =  RealVect(nb());  // in MVar
