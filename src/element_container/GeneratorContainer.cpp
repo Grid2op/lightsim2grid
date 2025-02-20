@@ -204,24 +204,6 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
     }
 }
 
-void GeneratorContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
-                                          const Eigen::Ref<const RealVect> & Vm,
-                                          const Eigen::Ref<const CplxVect> & V,
-                                          const std::vector<int> & id_grid_to_solver,
-                                          const RealVect & bus_vn_kv,
-                                          real_type sn_mva,
-                                          bool ac)
-{
-    const int nb_gen = nb();
-    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!status_[gen_id]){
-            res_p_(gen_id) = 0.;
-            continue;
-        }
-        res_p_(gen_id) = p_mw_(gen_id);
-    }
-}
-
 void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     const int nb_gen = nb();
     int bus_id_me;

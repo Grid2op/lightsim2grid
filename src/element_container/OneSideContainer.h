@@ -185,7 +185,11 @@ class OneSideContainer : public GenericContainer
                          const RealVect & bus_vn_kv,
                          real_type sn_mva,
                          bool ac);
-    void reset_results();
+
+    // can be overriden, but has a default behaviour
+    virtual void reset_results(){
+        reset_osc_results();
+    }
 
     protected:
 
@@ -196,6 +200,7 @@ class OneSideContainer : public GenericContainer
         std::vector<int>, // bus_id
         std::vector<bool> // status
         >  StateRes;
+
         OneSideContainer::StateRes get_osc_state() const  // osc: one side element
         {
             std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
@@ -247,6 +252,31 @@ class OneSideContainer : public GenericContainer
             status_ = std::vector<bool>(els_p.size(), true);
         }
 
+        void set_osc_res_p(){
+            const int nb_els = nb();
+            res_p_ = p_mw_;
+            for(int el_id = 0; el_id < nb_els; ++el_id){
+                if(!status_[el_id]) res_p_[el_id] = 0.;
+            }
+        }
+
+        void set_osc_res_q(bool ac){
+            const int nb_els = nb();
+            if(ac){
+                res_q_ = q_mvar_;
+                for(int el_id = 0; el_id < nb_els; ++el_id){
+                    if(!status_[el_id]) res_q_[el_id] = 0.;
+                }
+            }
+            else{
+                // no q in DC mode
+                for(int el_id = 0; el_id < nb_els; ++el_id) res_q_(el_id) = 0.;
+            }
+        }
+
+        void reset_osc_results();
+
+    protected:
         virtual void _reset_results() {};
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
