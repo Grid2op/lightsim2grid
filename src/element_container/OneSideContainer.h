@@ -60,6 +60,7 @@ class OneSideContainer : public GenericContainer
     int get_bus(int el_id) {return _get_bus(el_id, status_, bus_id_);}
     Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
 
+    Eigen::Ref<const RealVect> get_target_p() const {return p_mw_;}
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
     
