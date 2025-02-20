@@ -11,11 +11,18 @@ import warnings
 
 import grid2op
 from lightsim2grid import LightSimBackend
+try:
+    from grid2op.Space import DEFAULT_ALLOW_DETACHMENT
+    CAN_TEST_DETACHMENT = True
+except ImportError:
+    CAN_TEST_DETACHMENT = False
 import pdb
 
 
 class TestDistSlackBackend(unittest.TestCase):
     def setUp(self) -> None:
+        if not CAN_TEST_DETACHMENT:
+            self.skipTest("Detachement is not available on this grid2op version.")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env0 = grid2op.make("l2rpn_case14_sandbox",
