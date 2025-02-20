@@ -545,6 +545,12 @@ class GridModel : public GenericContainer
 
         Eigen::Ref<const IntVect> get_all_shunt_buses() const {return shunts_.get_buses();}
 
+        Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_load_target_p() const {return loads_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_gen_target_p() const {return generators_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_sgen_target_p() const {return sgens_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_storage_target_p() const {return storages_.get_target_p();}
+
         // complete results (with theta)
         tuple4d get_loads_res_full() const {return loads_.get_res_full();}
         tuple4d get_shunts_res_full() const {return shunts_.get_res_full();}

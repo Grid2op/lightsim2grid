@@ -1520,7 +1520,8 @@ class LightSimBackend(Backend):
                 raise BackendError(f"At least one generator is disconnected (check gen {gen_disco})")
             
             if self.__has_storage:
-                sto_active = (np.abs(self.storage_p) > 0.)
+                # TODO speed optim here: self._grid.get_storage_target_p() is not "cached"
+                sto_active = (np.abs(self._grid.get_storage_target_p()) > 0.)
                 sto_act_disco = (((~np.isfinite(self.storage_v)) & sto_active).any() or 
                                  ((self.storage_v <= 0.) & sto_active).any()
                                 )
