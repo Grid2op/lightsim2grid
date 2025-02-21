@@ -36,7 +36,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] an issue when turning off a generator: it was still declared as "slack"
   if it was one.
 - [FIXED] could not disconnect a generator when it was a slack bus
-- [ADDED] packaging package as a dependency
+- [ADDED] an option in `LightSimBackend` automatically disconnect load and generators
+  if they are not in the main connected component.
 - [IMPROVED] refactoring of the c++ side container element to reduce
   code (for "one end" elements such as loads, generators, static generators and shunts)
 
