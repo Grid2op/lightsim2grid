@@ -1113,10 +1113,12 @@ class LightSimBackend(Backend):
 
     def _aux_finish_setup_after_reading(self):
         # set up the "lightsim grid" accordingly
-        cls = type(self)
-        if cls.n_line <= -1:
+        my_cls = type(self)
+        if my_cls.n_line <= -1:
             warnings.warn("You are using a legacy (quite old now) grid2op version. Please upgrade it.")
             cls = self
+        else:
+            cls = my_cls
         self._grid.set_load_pos_topo_vect(cls.load_pos_topo_vect)
         self._grid.set_gen_pos_topo_vect(cls.gen_pos_topo_vect)
         self._grid.set_line_or_pos_topo_vect(cls.line_or_pos_topo_vect[:self.__nb_powerline])
@@ -1205,7 +1207,11 @@ class LightSimBackend(Backend):
         try:
             cls.n_sub = self.n_sub
             LightSimBackend.n_sub = self.n_sub
-            self._read_topo_vect(self.topo_vect)
+            if my_cls.load_pos_topo_vect is None:
+                # old grid2op version
+                self.topo_vect[:] = 1
+            else:
+                self._read_topo_vect(self.topo_vect)
             self._grid.tell_solver_need_reset()
             self.__me_at_init = self._grid.copy()
             self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
@@ -1219,6 +1225,7 @@ class LightSimBackend(Backend):
     
     def _read_topo_vect(self, res):
         """the input vector "res" is modified !"""
+        # TODO speed optimization here to read it "better"
         cls = type(self)
         res[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
                                                                         cls.load_to_subid)
@@ -1229,12 +1236,10 @@ class LightSimBackend(Backend):
                                                                                 cls.storage_to_subid)
         lor_glob_bus = np.concatenate((np.array([el.bus_or_id for el in self._grid.get_lines()]),
                                         np.array([el.bus_hv_id for el in self._grid.get_trafos()])))
-        res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus,
-                                                                            cls.line_or_to_subid)
+        res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus, cls.line_or_to_subid)
         lex_glob_bus = np.concatenate((np.array([el.bus_ex_id for el in self._grid.get_lines()]),
                                         np.array([el.bus_lv_id for el in self._grid.get_trafos()])))
-        res[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus,
-                                                                            cls.line_ex_to_subid)
+        res[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus, cls.line_ex_to_subid)
         
     def assert_grid_correct_after_powerflow(self) -> None:
         """
