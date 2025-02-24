@@ -1235,10 +1235,10 @@ class GridModel : public GenericContainer
         /**
         optimization for grid2op
         **/
-        template<class T>
+        template<class FunctorType>
         void update_continuous_values(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
                                       Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
-                                      T fun)
+                                      FunctorType fun)
         {
             for(int el_id = 0; el_id < has_changed.rows(); ++el_id)
             {
