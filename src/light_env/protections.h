@@ -12,6 +12,7 @@
 #include "GridModel.h"
 #include <vector>
 
+
 class Protections
 {
     protected:
@@ -133,6 +134,7 @@ class Protections
                 }
                 line_disconnected_.push_back(line_id_disco_this_iter);
             }
+            // TODO update overflow: set them to 0 if not on overflow after the routine
         }
 
         CplxVect run_powerflow(GridModel & grid, int max_iter, float tol) const{

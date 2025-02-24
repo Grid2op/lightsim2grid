@@ -27,7 +27,10 @@ class LightEnv
         typedef std::tuple<RealVect, double, bool, bool,  InfoReturnedType > StepReturnedType;
         typedef std::tuple<RealVect, InfoReturnedType > ResetReturnedType;
 
-        LightEnv():has_been_checked_(false){};
+        LightEnv(const GridModel & gridmodel):
+            has_been_checked_(false),
+            grid_(gridmodel)
+            {};
 
         void assign_time_series(const RealMat & load_p,
                                 const RealMat & load_q,
@@ -42,12 +45,20 @@ class LightEnv
             load_p_ = load_p;
             load_q_ = load_q;
             gen_p_ = gen_p;
+            gen_v_ = gen_v;
             storage_p_ = storage_p;
             shunt_p_ = shunt_p;
             shunt_q_ = shunt_q;
             sgen_p_ = sgen_p;
             sgen_q_ = sgen_q;
         }
+
+        void assign_protections(const Protections & protections){
+            has_been_checked_ = false;
+            protections_ = protections;
+        }
+
+        const Protections & get_protections() const {return protections_;}
 
         ResetReturnedType reset(){
             if(!has_been_checked_){

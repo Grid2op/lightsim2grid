@@ -17,6 +17,11 @@
 #include "batch_algorithm/TimeSeries.h"
 #include "batch_algorithm/ContingencyAnalysis.h"
 
+#include "light_env/inj_action.h"
+#include "light_env/topo_action.h"
+#include "light_env/protections.h"
+#include "light_env/light_env.h"
+
 #include "help_fun_msg.h"
 
 #ifndef KLU_SOLVER_AVAILABLE
@@ -1053,5 +1058,27 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("amps_computation_time", &ContingencyAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
         .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
         .def("nb_solved", &ContingencyAnalysis::nb_solved, DocComputers::nb_solved.c_str())
+        ;
+
+
+        // light environment
+        py::class_<Protections>(m, "Protections", "Limited protection used for the fast environment")
+        .def(py::init<>())
+        .def("get_thermal_limit_or", &Protections::get_thermal_limit_or, "TODO")
+        .def("get_thermal_limit_ex", &Protections::get_thermal_limit_ex, "TODO")
+        .def("get_max_line_time_step_overflow", &Protections::get_max_line_time_step_overflow, "TODO")
+        .def("set_thermal_limit_or", &Protections::set_thermal_limit_or, "TODO")
+        .def("set_thermal_limit_ex", &Protections::set_thermal_limit_ex, "TODO")
+        .def("set_max_line_time_step_overflow", &Protections::set_max_line_time_step_overflow, "TODO")
+
+        ;
+
+        py::class_<LightEnv>(m, "LightEnv", "Fast implementation of a grid2op env in pure c++ with (very) limited functionality")
+        .def(py::init<const GridModel &>())
+        .def("assign_time_series", &LightEnv::assign_time_series, "TODO")
+        .def("reset", &LightEnv::reset, "TODO")
+        .def("step", &LightEnv::step, "TODO")
+        .def("get_protections", &LightEnv::get_protections, "TODO")
+
         ;
 }
