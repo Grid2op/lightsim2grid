@@ -9,8 +9,9 @@
 #ifndef INJ_ACTION_H
 #define INJ_ACTION_H
 
-#include <vector>
 #include "GridModel.h"
+
+#include <vector>
 
 
 class InjAction
@@ -63,7 +64,7 @@ class InjAction
                 auto tmp = new_values(el_id);
                 if(isfinite(tmp))
                 {
-                    (grid.*fun)(el_id, static_cast<real_type>(new_values[el_id]));
+                    (grid.*fun)(el_id, static_cast<real_type>(tmp));
                 }
             }
         }
