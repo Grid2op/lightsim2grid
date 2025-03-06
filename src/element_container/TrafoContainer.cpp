@@ -276,14 +276,14 @@ void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         if(!status_[trafo_id]) {
             res_p_hv_(trafo_id) = 0.0;  // in MW
             res_q_hv_(trafo_id) = 0.0;  // in MVar
-            res_v_hv_(trafo_id) = 0.0;  // in kV
+            res_v_hv_(trafo_id) = v_disco_el_;  // in kV
             res_a_hv_(trafo_id) = 0.0;  // in kA
             res_p_lv_(trafo_id) = 0.0;  // in MW
             res_q_lv_(trafo_id) = 0.0;  // in MVar
-            res_v_lv_(trafo_id) = 0.0;  // in kV
+            res_v_lv_(trafo_id) = v_disco_el_;  // in kV
             res_a_lv_(trafo_id) = 0.0;  // in kA
-            res_theta_hv_(trafo_id) = 0.0;  // in degree
-            res_theta_lv_(trafo_id) = 0.0;  // in degree            
+            res_theta_hv_(trafo_id) = theta_disco_el_;  // in degree
+            res_theta_lv_(trafo_id) = theta_disco_el_;  // in degree            
             continue;
         }
 
