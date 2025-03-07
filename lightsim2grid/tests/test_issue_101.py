@@ -8,6 +8,8 @@
 
 import unittest
 import warnings
+
+import numpy as np
 from lightsim2grid import LightSimBackend
 
 import grid2op
@@ -39,7 +41,7 @@ class Issue101Tester(unittest.TestCase):
         self.env.close()
         return super().tearDown()
     
-    def test_disco_gen(self):
+    def test_disco_gen(self, tol=1e-5):
         """test i can disconnect a gen"""
         gen_id = 0
         obs, reward, done, info = self.env.step(self.env.action_space(
@@ -49,28 +51,31 @@ class Issue101Tester(unittest.TestCase):
         ))
         assert not done
         assert obs.gen_detached[gen_id]
-        assert obs.gen_p[gen_id] == 0.
-        assert obs.gen_v[gen_id] == 0.
-        assert obs.gen_q[gen_id] == 0.
-        assert abs(obs.gen_p_detached[gen_id] - 79.8) <= 1e-5
+        assert np.abs(obs.gen_p[gen_id]) <= tol
+        assert np.abs(obs.gen_v[gen_id]) <= tol
+        assert np.abs(obs.gen_q[gen_id]) <= tol
+        assert np.abs(obs.gen_theta[gen_id]) <= tol
+        assert abs(obs.gen_p_detached[gen_id] - 79.8) <= tol
         
         obs1, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
-        assert obs.gen_detached[gen_id]
-        assert obs1.gen_p[gen_id] == 0.
-        assert obs1.gen_v[gen_id] == 0.
-        assert obs1.gen_q[gen_id] == 0.
-        assert abs(obs1.gen_p_detached[gen_id] - 80.5) <= 1e-5
+        assert obs1.gen_detached[gen_id]
+        assert np.abs(obs1.gen_p[gen_id]) <= tol
+        assert np.abs(obs1.gen_v[gen_id]) <= tol
+        assert np.abs(obs1.gen_q[gen_id]) <= tol
+        assert np.abs(obs1.gen_theta[gen_id]) <= tol
+        assert abs(obs1.gen_p_detached[gen_id] - 80.5) <= tol
         
         obs2, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
-        assert obs.gen_detached[gen_id]
-        assert obs2.gen_p[gen_id] == 0.
-        assert obs2.gen_v[gen_id] == 0.
-        assert obs2.gen_q[gen_id] == 0.
-        assert abs(obs2.gen_p_detached[gen_id] - 80.5) <= 1e-5
+        assert obs2.gen_detached[gen_id]
+        assert np.abs(obs2.gen_p[gen_id]) <= tol
+        assert np.abs(obs2.gen_v[gen_id]) <= tol
+        assert np.abs(obs2.gen_q[gen_id]) <= tol
+        assert np.abs(obs2.gen_theta[gen_id]) <= tol
+        assert abs(obs2.gen_p_detached[gen_id] - 80.5) <= tol
         
-    def test_disco_load(self):
+    def test_disco_load(self, tol=1e-5):
         """test i can disconnect a load"""
         load_id = 0
         obs, reward, done, info = self.env.step(self.env.action_space(
@@ -80,28 +85,28 @@ class Issue101Tester(unittest.TestCase):
         ))
         assert not done
         assert obs.load_detached[load_id]
-        assert obs.load_p[load_id] == 0.
-        assert obs.load_q[load_id] == 0.
-        assert obs.load_v[load_id] == 0.
-        assert abs(obs.load_p_detached[load_id] - 21.9) <= 1e-5
+        assert np.abs(obs.load_p[load_id]) <= tol
+        assert np.abs(obs.load_q[load_id]) <= tol
+        assert np.abs(obs.load_v[load_id]) <= tol
+        assert abs(obs.load_p_detached[load_id] - 21.9) <= tol
         
         obs1, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
         assert obs1.load_detached[load_id]
-        assert obs1.load_p[load_id] == 0.
-        assert obs1.load_q[load_id] == 0.
-        assert obs1.load_v[load_id] == 0.
-        assert abs(obs1.load_p_detached[load_id] - 21.7) <= 1e-5
+        assert np.abs(obs1.load_p[load_id]) <= tol
+        assert np.abs(obs1.load_q[load_id]) <= tol
+        assert np.abs(obs1.load_v[load_id]) <= tol
+        assert abs(obs1.load_p_detached[load_id] - 21.7) <= tol
         
         obs2, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
         assert obs2.load_detached[load_id]
-        assert obs2.load_p[load_id] == 0.
-        assert obs2.load_q[load_id] == 0.
-        assert obs2.load_v[load_id] == 0.
-        assert abs(obs2.load_p_detached[load_id] - 21.6) <= 1e-5
+        assert np.abs(obs2.load_p[load_id]) <= tol
+        assert np.abs(obs2.load_q[load_id]) <= tol
+        assert np.abs(obs2.load_v[load_id]) <= tol
+        assert abs(obs2.load_p_detached[load_id] - 21.6) <= tol
     
-    def test_disco_storage(self):
+    def test_disco_storage(self, tol=1e-5):
         """test i can disconnect a storage unit"""
         sto_id = 0
         obs, reward, done, info = self.env.step(self.env.action_space(
@@ -112,8 +117,8 @@ class Issue101Tester(unittest.TestCase):
         ))
         assert not done
         assert obs.storage_detached[sto_id]
-        assert obs.storage_power[sto_id] == 0., f"{obs.storage_power[sto_id]} vs 0."
-        assert abs(obs.storage_p_detached[sto_id] - 1.) <= 1e-5, f"{obs.storage_p_detached[sto_id]} vs 1."
+        assert np.abs(obs.storage_power[sto_id]) <= tol, f"{obs.storage_power[sto_id]} vs 0."
+        assert abs(obs.storage_p_detached[sto_id] - 1.) <= tol, f"{obs.storage_p_detached[sto_id]} vs 1."
         
         obs1, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
