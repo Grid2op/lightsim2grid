@@ -384,14 +384,14 @@ void LineContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         if(!status_[line_id]) {
             res_powerline_por_(line_id) = 0.0;  // in MW
             res_powerline_qor_(line_id) = 0.0;  // in MVar
-            res_powerline_vor_(line_id) = 0.0;  // in kV
+            res_powerline_vor_(line_id) = v_disco_el_;  // in kV
             res_powerline_aor_(line_id) = 0.0;  // in kA
             res_powerline_pex_(line_id) = 0.0;  // in MW
             res_powerline_qex_(line_id) = 0.0;  // in MVar
-            res_powerline_vex_(line_id) = 0.0;  // in kV
+            res_powerline_vex_(line_id) = v_disco_el_;  // in kV
             res_powerline_aex_(line_id) = 0.0;  // in kA
-            res_powerline_thetaor_(line_id) = 0.0;  // in kV
-            res_powerline_thetaex_(line_id) = 0.0;  // in kV
+            res_powerline_thetaor_(line_id) = theta_disco_el_;  // in deg
+            res_powerline_thetaex_(line_id) = theta_disco_el_;  // in deg
             continue;
         }
 

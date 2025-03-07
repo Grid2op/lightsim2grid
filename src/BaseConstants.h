@@ -25,6 +25,8 @@ class BaseConstants
         static const real_type my_two_;
         static const real_type my_zero_;
         static const real_type my_180_pi_;
+        static const real_type v_disco_el_;
+        static const real_type theta_disco_el_;
         static const int _deactivated_bus_id;
 };
 

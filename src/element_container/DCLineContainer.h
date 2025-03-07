@@ -162,12 +162,12 @@ class DCLineContainer : public GenericContainer
 
     // accessor / modifiers
     void deactivate(int dcline_id, SolverControl & solver_control) {
-        _deactivate(dcline_id, status_);
+        _generic_deactivate(dcline_id, status_);
         from_gen_.deactivate(dcline_id, solver_control);
         to_gen_.deactivate(dcline_id, solver_control);
         }
     void reactivate(int dcline_id, SolverControl & solver_control) {
-        _reactivate(dcline_id, status_);
+        _generic_reactivate(dcline_id, status_);
         from_gen_.reactivate(dcline_id, solver_control);
         to_gen_.reactivate(dcline_id, solver_control);
         }

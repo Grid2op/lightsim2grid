@@ -10,46 +10,16 @@
 #include <sstream>
 #include <iostream>
 
-void LoadContainer::init(const RealVect & loads_p,
-                         const RealVect & loads_q,
-                         const Eigen::VectorXi & loads_bus_id)
-{
-    int size = static_cast<int>(loads_p.size());
-    GenericContainer::check_size(loads_p, size, "loads_p");
-    GenericContainer::check_size(loads_q, size, "loads_q");
-    GenericContainer::check_size(loads_bus_id, size, "loads_bus_id");
-
-    p_mw_ = loads_p;
-    q_mvar_ = loads_q;
-    bus_id_ = loads_bus_id;
-    status_ = std::vector<bool>(loads_p.size(), true);
-    reset_results();
-}
-
 LoadContainer::StateRes LoadContainer::get_state() const
 {
-     std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
-     std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
-     std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
-     std::vector<bool> status = status_;
-     LoadContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
-     return res;
+    const auto tmp = OneSideContainer::get_osc_state();  // osc : one side container
+    LoadContainer::StateRes res(tmp);
+    return res;
 }
 
-void LoadContainer::set_state(LoadContainer::StateRes & my_state )
+void LoadContainer::set_state(LoadContainer::StateRes & my_state)
 {
-    names_ = std::get<0>(my_state);
-    std::vector<real_type> & p_mw = std::get<1>(my_state);
-    std::vector<real_type> & q_mvar = std::get<2>(my_state);
-    std::vector<int> & bus_id = std::get<3>(my_state);
-    std::vector<bool> & status = std::get<4>(my_state);
-    // TODO check sizes
-
-    // input data
-    p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
-    q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
-    bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
-    status_ = status;
+    OneSideContainer::set_osc_state(std::get<0>(my_state));  // osc : one side container
     reset_results();
 }
 
@@ -77,90 +47,4 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
         tmp += my_i * q_mvar_(load_id);
         Sbus.coeffRef(bus_id_solver) -= tmp;
     }
-}
-
-void LoadContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                    const Eigen::Ref<const RealVect> & Vm,
-                                    const Eigen::Ref<const CplxVect> & V,
-                                    const std::vector<int> & id_grid_to_solver,
-                                    const RealVect & bus_vn_kv,
-                                    real_type sn_mva,
-                                    bool ac)
-{
-    const int nb_load = nb();
-    v_kv_from_vpu(Va, Vm, status_, nb_load, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-    v_deg_from_va(Va, Vm, status_, nb_load, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
-    res_p_ = p_mw_;
-    if(ac) res_q_ = q_mvar_;
-    else{
-        // no q in DC mode
-        for(int load_id = 0; load_id < nb_load; ++load_id) res_q_(load_id) = 0.;
-    }
-}
-
-void LoadContainer::reset_results(){
-    // std::cout << "Loads reset_results \n";
-    res_p_ = RealVect(nb());  // in MW
-    res_q_ =  RealVect(nb());  // in MVar
-    res_v_ = RealVect(nb());  // in kV
-    res_theta_ = RealVect(nb());  // in deg
-}
-
-void LoadContainer::change_p(int load_id, real_type new_p, SolverControl & solver_control)
-{
-    bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
-    if(!my_status)
-    {
-        std::ostringstream exc_;
-        exc_ << "LoadContainer::change_p: Impossible to change the active value of a disconnected load (check load id ";
-        exc_ << load_id;
-        exc_ << ")";
-        throw std::runtime_error(exc_.str());
-    }
-    change_p_nothrow(load_id, new_p, solver_control);
-}
-
-void LoadContainer::change_q(int load_id, real_type new_q, SolverControl & solver_control)
-{
-    bool my_status = status_.at(load_id); // and this check that load_id is not out of bound
-    if(!my_status)
-    {
-        std::ostringstream exc_;
-        exc_ << "LoadContainer::change_q: Impossible to change the reactive value of a disconnected load (check load id ";
-        exc_ << load_id;
-        exc_ << ")";
-        throw std::runtime_error(exc_.str());
-    }
-    change_q_nothrow(load_id, new_q, solver_control);
-}
-
-void LoadContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
-    const int nb_load = nb();
-    for(int load_id = 0; load_id < nb_load; ++load_id)
-    {
-        if(!status_[load_id]) continue;
-        const auto my_bus = bus_id_(load_id);
-        if(my_bus == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "LoadContainer::reconnect_connected_buses: Load with id ";
-            exc_ << load_id;
-            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_load(...)` ?.";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_status[my_bus] = true;  // this bus is connected
-    }
-}
-
-void LoadContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
-    const int nb_el = nb();
-    SolverControl unused_solver_control;
-    for(int el_id = 0; el_id < nb_el; ++el_id)
-    {
-        if(!status_[el_id]) continue;
-        const auto my_bus = bus_id_(el_id);
-        if(!busbar_in_main_component[my_bus]){
-            deactivate(el_id, unused_solver_control);
-        }
-    }    
 }

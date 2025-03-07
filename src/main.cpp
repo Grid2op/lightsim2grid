@@ -916,6 +916,13 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_sgens_res_full", &GridModel::get_sgens_res_full, DocGridModel::_internal_do_not_use.c_str())
         .def("get_dclineor_res_full", &GridModel::get_dclineor_res_full, DocGridModel::_internal_do_not_use.c_str())
         .def("get_dclineex_res_full", &GridModel::get_dclineex_res_full, DocGridModel::_internal_do_not_use.c_str())
+
+        .def("get_shunt_target_p", &GridModel::get_shunt_target_p, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_load_target_p", &GridModel::get_load_target_p, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_gen_target_p", &GridModel::get_gen_target_p, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_sgen_target_p", &GridModel::get_sgen_target_p, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_storage_target_p", &GridModel::get_storage_target_p, DocGridModel::_internal_do_not_use.c_str())
+
         
         // do something with the grid
         .def("deactivate_result_computation", &GridModel::deactivate_result_computation, DocGridModel::deactivate_result_computation.c_str())

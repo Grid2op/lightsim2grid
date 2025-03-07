@@ -15,4 +15,6 @@ const real_type BaseConstants::my_two_ = 2.0;
 const real_type BaseConstants::my_half_ = 0.5;
 const real_type BaseConstants::my_zero_ = 0.;
 const real_type BaseConstants::my_180_pi_ = 180. / M_PI;
+const real_type BaseConstants::v_disco_el_ = 0.0;
+const real_type BaseConstants::theta_disco_el_ = 0.0;
 const int BaseConstants::_deactivated_bus_id = -1;

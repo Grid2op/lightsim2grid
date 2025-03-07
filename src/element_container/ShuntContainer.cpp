@@ -10,46 +10,15 @@
 
 #include <iostream>
 
-void ShuntContainer::init(const RealVect & shunt_p_mw,
-                          const RealVect & shunt_q_mvar,
-                          const Eigen::VectorXi & shunt_bus_id)
-{
-    int size = static_cast<int>(shunt_p_mw.size());
-    GenericContainer::check_size(shunt_p_mw, size, "shunt_p_mw");
-    GenericContainer::check_size(shunt_q_mvar, size, "shunt_q_mvar");
-    GenericContainer::check_size(shunt_bus_id, size, "shunt_bus_id");
-
-    p_mw_ = shunt_p_mw;
-    q_mvar_ = shunt_q_mvar;
-    bus_id_ = shunt_bus_id;
-    status_ = std::vector<bool>(p_mw_.size(), true); // by default everything is connected
-    reset_results();
-}
-
 ShuntContainer::StateRes ShuntContainer::get_state() const
 {
-     std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
-     std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
-     std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
-     std::vector<bool> status = status_;
-     ShuntContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
+     ShuntContainer::StateRes res(OneSideContainer::get_osc_state());
      return res;
 }
 
 void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 {
-    names_ = std::get<0>(my_state);
-    std::vector<real_type> & p_mw = std::get<1>(my_state);
-    std::vector<real_type> & q_mvar = std::get<2>(my_state);
-    std::vector<int> & bus_id = std::get<3>(my_state);
-    std::vector<bool> & status = std::get<4>(my_state);
-    // TODO check sizes
-
-    // input data
-    p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
-    q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
-    bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
-    status_ = status;
+    OneSideContainer::set_osc_state(std::get<0>(my_state));
     reset_results();
 }
 
@@ -133,23 +102,15 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_
     }
 }
 
-void ShuntContainer::fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver){
-    throw std::runtime_error("ShuntContainer::fillYbus_spmat: should not be used anymore !");
-}
-
-void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                     const Eigen::Ref<const RealVect> & Vm,
-                                     const Eigen::Ref<const CplxVect> & V,
-                                     const std::vector<int> & id_grid_to_solver,
-                                     const RealVect & bus_vn_kv,
-                                     real_type sn_mva,
-                                     bool ac)
+void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
+                                      const Eigen::Ref<const RealVect> & Vm,
+                                      const Eigen::Ref<const CplxVect> & V,
+                                      const std::vector<int> & id_grid_to_solver,
+                                      const RealVect & bus_vn_kv,
+                                      real_type sn_mva,
+                                      bool ac)
 {
     const int nb_shunt = static_cast<int>(p_mw_.size());
-    v_kv_from_vpu(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-    v_deg_from_va(Va, Vm, status_, nb_shunt, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
-    // res_p_ = RealVect::Constant(nb_shunt, my_zero_);
-    // res_q_ = RealVect::Constant(nb_shunt, my_zero_);
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
         if(!status_[shunt_id]) {
             res_p_(shunt_id) = my_zero_;
@@ -170,63 +131,4 @@ void ShuntContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
         if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
         else res_q_(shunt_id) = my_zero_;
     }
-}
-
-void ShuntContainer::reset_results(){
-    res_p_ = RealVect(nb());  // in MW
-    res_q_ = RealVect(nb());  // in MVar
-    res_v_ = RealVect(nb());  // in kV
-    res_theta_ = RealVect(nb());  // in deg
-}
-
-void ShuntContainer::change_p(int shunt_id, real_type new_p, SolverControl & solver_control)
-{
-    bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
-    if(!my_status) throw std::runtime_error("Impossible to change the active value of a disconnected shunt");
-    if(p_mw_(shunt_id) != new_p){
-        solver_control.tell_recompute_ybus();
-        solver_control.tell_recompute_sbus();  // in dc mode sbus is modified
-        p_mw_(shunt_id) = new_p;
-    }
-}
-
-void ShuntContainer::change_q(int shunt_id, real_type new_q, SolverControl & solver_control)
-{
-    bool my_status = status_.at(shunt_id); // and this check that load_id is not out of bound
-    if(!my_status) throw std::runtime_error("Impossible to change the reactive value of a disconnected shunt");
-    if(q_mvar_(shunt_id) != new_q){
-        solver_control.tell_recompute_ybus();
-        q_mvar_(shunt_id) = new_q;
-    }
-}
-
-void ShuntContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const {
-    const int nb_shunt = nb();
-    for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id)
-    {
-        if(!status_[shunt_id]) continue;
-        const auto my_bus = bus_id_(shunt_id);
-        if(my_bus == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "ShuntContainer::reconnect_connected_buses: Shunt with id ";
-            exc_ << shunt_id;
-            exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_shunt(...)` ?.";
-            throw std::runtime_error(exc_.str());
-        }
-        bus_status[my_bus] = true;  // this bus is connected
-    }
-}
-
-void ShuntContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
-    const int nb_el = nb();
-    SolverControl unused_solver_control;
-    for(int el_id = 0; el_id < nb_el; ++el_id)
-    {
-        if(!status_[el_id]) continue;
-        const auto my_bus = bus_id_(el_id);
-        if(!busbar_in_main_component[my_bus]){
-            deactivate(el_id, unused_solver_control);
-        }
-    }    
 }

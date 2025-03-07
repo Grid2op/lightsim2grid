@@ -28,21 +28,21 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
-void GenericContainer::_reactivate(int el_id, std::vector<bool> & status){
+void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & status){
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     status,
-                    "_reactivate");
+                    "_generic_reactivate");
     status[el_id] = true;  //TODO why it's needed to do that again
 }
 
-void GenericContainer::_deactivate(int el_id, std::vector<bool> & status){
+void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & status){
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     status,
-                    "_deactivate");
+                    "_generic_deactivate");
     status[el_id] = false;
 }
 
-void GenericContainer::_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
+void GenericContainer::_generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
     _check_in_range(static_cast<Eigen::Index>(el_id),
@@ -109,7 +109,7 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) {
-            v(el_id) = -1;
+            v(el_id) = v_disco_el_;
             continue;
         }
         int el_bus_me_id = bus_me_id(el_id);
@@ -139,7 +139,7 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) {
-            theta(el_id) = -1;
+            theta(el_id) = theta_disco_el_;
             continue;
         }
         int el_bus_me_id = bus_me_id(el_id);

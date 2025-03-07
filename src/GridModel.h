@@ -363,7 +363,7 @@ class GridModel : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _deactivate(bus_id, bus_status_);
+                _generic_deactivate(bus_id, bus_status_);
             }
         }
         // if a bus is connected, but isolated, it will make the powerflow diverge
@@ -374,7 +374,7 @@ class GridModel : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _reactivate(bus_id, bus_status_); 
+                _generic_reactivate(bus_id, bus_status_); 
             }
         }
         /**
@@ -452,32 +452,33 @@ class GridModel : public GenericContainer
         void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
         void reactivate_load(int load_id) {loads_.reactivate(load_id, solver_control_); }
         void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_load(int load_id, real_type new_p) {loads_.change_p(load_id, new_p, solver_control_); }
-        void change_q_load(int load_id, real_type new_q) {loads_.change_q(load_id, new_q, solver_control_); }
+        void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
+        void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, solver_control_); }
         void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, solver_control_); }
         void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p(gen_id, new_p, solver_control_); }
-        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v(gen_id, new_v_pu, solver_control_); }
+        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, solver_control_); }
+        void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, solver_control_); }
+        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, solver_control_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
 
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, solver_control_); }
         void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, solver_control_); }
         void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size()));  }
-        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p(shunt_id, new_p, solver_control_); }
-        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q(shunt_id, new_q, solver_control_); }
+        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
+        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, solver_control_); }
         void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, solver_control_); }
         void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, solver_control_, static_cast<int>(bus_vn_kv_.size())); }
-        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p(sgen_id, new_p, solver_control_); }
-        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q(sgen_id, new_q, solver_control_); }
+        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
+        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
 
         //storage units
@@ -543,6 +544,12 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_ex();}
 
         Eigen::Ref<const IntVect> get_all_shunt_buses() const {return shunts_.get_buses();}
+
+        Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_load_target_p() const {return loads_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_gen_target_p() const {return generators_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_sgen_target_p() const {return sgens_.get_target_p();}
+        Eigen::Ref<const RealVect>  get_storage_target_p() const {return storages_.get_target_p();}
 
         // complete results (with theta)
         tuple4d get_loads_res_full() const {return loads_.get_res_full();}
@@ -1048,8 +1055,9 @@ class GridModel : public GenericContainer
         // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                       std::vector<int> & id_me_to_solver,
-                       std::vector<int>& id_solver_to_me);
+                       int nb_bus_solver);
+        void init_converter_bus_id(std::vector<int>& id_me_to_solver,
+                                   std::vector<int>& id_solver_to_me);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
         void init_slack_bus(const CplxVect & Sbus,

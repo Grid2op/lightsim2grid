@@ -540,7 +540,9 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed()){
-            init_Ybus(Ybus, id_me_to_solver, id_solver_to_me);
+            init_converter_bus_id(id_me_to_solver, id_solver_to_me);
+            const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
+            init_Ybus(Ybus, nb_bus_solver);
         }
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
@@ -642,9 +644,9 @@ void GridModel::process_results(bool conv,
     }
 }
 
-void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                          std::vector<int>& id_me_to_solver,
-                          std::vector<int>& id_solver_to_me){
+void GridModel::init_converter_bus_id(std::vector<int>& id_me_to_solver,
+                                      std::vector<int>& id_solver_to_me){
+
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(bus_vn_kv_.size());
@@ -660,8 +662,10 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
             ++bus_id_solver;
         }
     }
-    const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
+}
 
+void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+                          int nb_bus_solver){
     Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus_solver, nb_bus_solver);
     Ybus.reserve(nb_bus_solver + 2*powerlines_.nb() + 2*trafos_.nb());
 }
@@ -1276,38 +1280,79 @@ void GridModel::consider_only_main_component(){
 
     // find the connected buses
     // TODO copy paste from SecurityAnalysis
-    std::queue<Eigen::Index> neighborhood;
-    for(const auto & el : slack_buses_id) neighborhood.push(el);
-    if(neighborhood.empty()){
-        throw std::runtime_error("There is no slack buses defined in your grid. You cannot isolate the main component.");
-    }
-    std::vector<bool> visited(nb_busbars, false);
+    // for(const auto & el : slack_buses_id) neighborhood.push(el);
+    std::vector<bool> tmp_visited(nb_busbars, false);
+    std::vector<int> conn_comp(nb_busbars, -1);
     std::vector<bool> already_added(nb_busbars, false);
-    while (true)
+
+    int connected_comp = 0;
+    std::queue<Eigen::Index> neighborhood;
+    while(true)
     {
-        const Eigen::Index col_id = neighborhood.front();
-        neighborhood.pop();
-        visited[col_id] = true;
-        for (Eigen::SparseMatrix<real_type>::InnerIterator it(graph, col_id); it; ++it)
-        {
-            // add in the queue all my neighbor (if the coefficient is big enough)
-            if(!visited[it.row()] && !already_added[it.row()]){  // && abs(it.value()) > 1e-8
-                neighborhood.push(it.row());
-                already_added[it.row()] = true;
+        neighborhood = std::queue<Eigen::Index>();
+
+        // choose bus id (one of the slack) to start
+        bool one_added = false;
+        for(const auto & el : slack_buses_id){
+            if(!tmp_visited[el] && !already_added[el])
+            {
+                one_added = true;
+                neighborhood.push(el);
+                break;
             }
         }
-        if(neighborhood.empty()) break;
+        
+        if(!one_added) break; // no more slack bus, I stop
+
+        // start the bfs
+        while (true)
+        {
+            const Eigen::Index col_id = neighborhood.front();
+            neighborhood.pop();
+            tmp_visited[col_id] = true;
+            conn_comp[col_id] = connected_comp;
+            for (Eigen::SparseMatrix<real_type>::InnerIterator it(graph, col_id); it; ++it)
+            {
+                // add in the queue all my neighbor
+                if(!tmp_visited[it.row()] && !already_added[it.row()]){
+                    neighborhood.push(it.row());
+                    already_added[it.row()] = true;
+                }
+            }
+            if(neighborhood.empty()) break;  // no more neighbors
+        }
+
+        // go to the next connected comp
+        ++connected_comp;
+    }
+
+    // TODO speed optim: if connected_comp == 1 => don't do the following 2 steps
+    
+    // find the connected comp with the most buses
+    int main_cc_id = -1;
+    std::vector<int> nb_bus_per_cc(connected_comp, 0);
+    for(const auto el : conn_comp){
+        if(el == -1) continue;
+        nb_bus_per_cc[el] += 1;
+    }
+    main_cc_id = std::distance(nb_bus_per_cc.begin(),
+                               std::max_element(nb_bus_per_cc.begin(), nb_bus_per_cc.end()));
+
+    // mark as visited the element in this cc
+    std::vector<bool> bus_in_main_cc(nb_busbars, false);
+    for(int bus_id = 0; bus_id < nb_busbars; ++bus_id){
+        if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
 
     // disconnected elements not in main component
-    powerlines_.disconnect_if_not_in_main_component(visited);
-    shunts_.disconnect_if_not_in_main_component(visited);
-    trafos_.disconnect_if_not_in_main_component(visited);
-    loads_.disconnect_if_not_in_main_component(visited);
-    sgens_.disconnect_if_not_in_main_component(visited);
-    storages_.disconnect_if_not_in_main_component(visited);
-    generators_.disconnect_if_not_in_main_component(visited);
-    dc_lines_.disconnect_if_not_in_main_component(visited);
+    powerlines_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    shunts_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    trafos_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    loads_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    sgens_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    storages_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    generators_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    dc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc);
     // and finally deal with the buses
     init_bus_status();
 }

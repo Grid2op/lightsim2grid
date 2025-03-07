@@ -76,7 +76,7 @@ jobs:
                   command: |
                       source venv_test/bin/activate
                       pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
-                      pip install pandapower grid2op==1.0.0
+                      pip install "pandapower<3" grid2op==1.0.0
                       git submodule init
                       git submodule update
                       make
