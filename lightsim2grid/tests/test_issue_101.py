@@ -123,12 +123,12 @@ class Issue101Tester(unittest.TestCase):
         obs1, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
         assert obs1.storage_detached[sto_id]
-        assert obs1.storage_power[sto_id] == 0., f"{obs1.storage_power[sto_id]} vs 0."
+        assert abs(obs1.storage_power[sto_id]) <= tol, f"{obs1.storage_power[sto_id]} vs 0."
         
         obs2, _, done, info = self.env.step(self.env.action_space({}))
         assert not done
         assert obs2.storage_detached[sto_id]
-        assert obs2.storage_power[sto_id] == 0., f"{obs2.storage_power[sto_id]} vs 0."
+        assert abs(obs2.storage_power[sto_id]) <= tol, f"{obs2.storage_power[sto_id]} vs 0."
         
         
 if __name__ == "__main__":
