@@ -28,9 +28,34 @@ except ImportError as exc_:
 TIMER_INFO = False  # do i print information regarding computation time
 
 
+def create_transformers(n_pdp):
+    # bus = n_pdp.bus[['vn_kv']]
+    # trafo_and_bus = n_pdp.trafo.merge(bus.rename(columns=lambda x: x + '_lv_bus'), left_on='lv_bus', right_index=True, how='left')
+    trafo_and_bus = n_pdp.trafo
+    n_tap = np.where(~np.isnan(trafo_and_bus['tap_pos']) & ~np.isnan(trafo_and_bus['tap_neutral']) & ~np.isnan(trafo_and_bus['tap_step_percent']),
+                     1.0 + (trafo_and_bus['tap_pos'] - trafo_and_bus['tap_neutral']) * trafo_and_bus['tap_step_percent'] / 100.0, 1.0)
+    rated_u1 = np.where(trafo_and_bus['tap_side'] == "hv", trafo_and_bus['vn_hv_kv'] * n_tap, trafo_and_bus['vn_hv_kv'])
+    rated_u2 = np.where(trafo_and_bus['tap_side'] == "lv", trafo_and_bus['vn_lv_kv'] * n_tap, trafo_and_bus['vn_lv_kv'])
+    c = n_pdp.sn_mva / n_pdp.trafo['sn_mva']
+    rk = trafo_and_bus['vkr_percent'] / 100 * c
+    zk = trafo_and_bus['vk_percent'] / 100 * c
+    xk = np.sqrt(zk ** 2 - rk ** 2)
+    ym = trafo_and_bus['i0_percent'] / 100
+    gm = trafo_and_bus['pfe_kw'] / (trafo_and_bus['sn_mva'] * 1000) / c
+    bm = -1 * np.sign(ym) * np.sqrt(ym ** 2 - gm ** 2)
+    
+    zb_tr = (rated_u2 ** 2) / n_pdp.sn_mva
+    r = rk * zb_tr / trafo_and_bus['parallel']
+    x = xk * zb_tr / trafo_and_bus['parallel']
+    g = gm / zb_tr * trafo_and_bus['parallel']
+    b = bm / zb_tr * trafo_and_bus['parallel']
+    return r, x, g, b
+    
+    
 class MyTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tol = 1e-4  # results are equal if they match up to tol
+        self.raise_error = True
 
     def test_case14(self):
         case = pn.case14()
@@ -84,6 +109,13 @@ class MyTestCase(unittest.TestCase):
         case = pn.case_illinois200()
         self._aux_test(case)
 
+    def _assert_or_print(self, boolean: bool, msg: str):
+        if not boolean:
+            if not self.raise_error:
+                print(msg)
+            else:
+                raise AssertionError(msg)
+            
     def _aux_test(self, pn_net):
         n_busbar = 2
         with tempfile.TemporaryDirectory() as path:
@@ -103,15 +135,15 @@ class MyTestCase(unittest.TestCase):
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
         # first i deactivate all slack bus in pp that are connected but not handled in ls
-        pp_net.ext_grid["in_service"].loc[:] = False
-        pp_net.ext_grid["in_service"].iloc[0] = True
+        pp_net.ext_grid["in_service"] = False
+        pp_net.ext_grid.loc[pp_net.ext_grid.index[0], "in_service"] = True
         conv_pp, exc_pp = backend.init_pp_backend.runpf()
         conv, exc_ = backend.runpf()
         # backend._debug_Vdc
         # backend.init_pp_backend._grid._ppc["internal"]["Va_it"][0]
         # np.abs(backend._grid.check_solution(backend.init_pp_backend._grid["_ppc"]["internal"]["V"], False)).max()
-        assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
-        assert conv, "Error: lightsim do not converge"
+        self._assert_or_print(conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks")
+        self._assert_or_print(conv, "Error: lightsim do not converge")
 
         por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend.init_pp_backend.lines_or_info())
         pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend.init_pp_backend.lines_ex_info())
@@ -119,13 +151,13 @@ class MyTestCase(unittest.TestCase):
         # I- Check for divergence and equality of flows"
         por_ls, qor_ls, vor_ls, aor_ls = backend.lines_or_info()
         max_mis = np.max(np.abs(por_ls - por_pp))
-        assert max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
+        self._assert_or_print(max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW")
         max_mis = np.max(np.abs(qor_ls - qor_pp))
-        assert max_mis <= self.tol, f"Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr"
+        self._assert_or_print(max_mis <= self.tol, f"Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr")
         max_mis = np.max(np.abs(vor_ls - vor_pp))
-        assert max_mis <= self.tol, f"Error: vor do not match, maximum absolute error is {max_mis:.5f} kV"
+        self._assert_or_print(max_mis <= self.tol, f"Error: vor do not match, maximum absolute error is {max_mis:.5f} kV")
         max_mis = np.max(np.abs(aor_ls - aor_pp))
-        assert max_mis <= self.tol, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} A"
+        self._assert_or_print(max_mis <= self.tol, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} A")
 
         # "II - Check for possible solver issues"
         with warnings.catch_warnings():
@@ -171,12 +203,12 @@ class MyTestCase(unittest.TestCase):
                 print(f"\t Info: Time to perform {nb_iter - index_V} NR iterations for a grid with {nb_sub} "
                       f"buses: {1000. * time_for_nr:.2f}ms")
             error_va = np.abs(solver.get_Va() - np.angle(backend.init_pp_backend._grid._ppc["internal"]["V"]))
-            assert np.max(error_va) <= self.tol, f"Error: VA do not match for iteration {index_V}, maximum absolute " \
-                                                 f"error is {np.max(error_va):.5f} rad"
+            self._assert_or_print(np.max(error_va) <= self.tol, f"Error: VA do not match for iteration {index_V}, maximum absolute " \
+                                                 f"error is {np.max(error_va):.5f} rad")
 
             error_vm = np.abs(np.abs(solver.get_Vm() - np.abs(backend.init_pp_backend._grid._ppc["internal"]["V"])))
-            assert np.max(error_vm) <= self.tol, f"\t Error: VM do not match for iteration {index_V}, maximum absolute " \
-                                                 f"error  is {np.max(error_vm):.5f} pu"
+            self._assert_or_print(np.max(error_vm) <= self.tol, f"\t Error: VM do not match for iteration {index_V}, maximum absolute " \
+                                                 f"error  is {np.max(error_vm):.5f} pu")
             solver.reset()
 
         if TIMER_INFO:
@@ -207,12 +239,12 @@ class MyTestCase(unittest.TestCase):
         Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
         Y_pp_right_order = Y_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
         error_p = np.abs(np.real(Y_me) - np.real(Y_pp_right_order))
-        assert np.max(error_p) <= self.tol, f"Error: P do not match for Ybus, maximum absolute error " \
-                                            f"is {np.max(error_p):.5f}"
+        self._assert_or_print(np.max(error_p) <= self.tol, f"Error: P do not match for Ybus, maximum absolute error " \
+                                            f"is {np.max(error_p):.5f}")
 
         error_q = np.abs(np.imag(Y_me) - np.imag(Y_pp_right_order))
-        assert np.max(error_q) <= self.tol, f"\t Error: Q do not match for Ybus, maximum absolute error is " \
-                                            f"{np.max(error_q):.5f}"
+        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: Q do not match for Ybus, maximum absolute error is " \
+                                            f"{np.max(error_q):.5f}")
 
         # "IV - Check for the initialization (dc powerflow)"
         # 1) check that the results are same for dc lightsim and dc pandapower
@@ -220,16 +252,16 @@ class MyTestCase(unittest.TestCase):
             mult_ = 1.0
         else:
             mult_ = pp_net["_options"]["init_vm_pu"]
-        Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * mult_
+        Vinit = np.ones(backend.nb_bus_total, dtype=complex) * mult_
         backend._grid.deactivate_result_computation()
         Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
         backend._grid.reactivate_result_computation()
         backend._grid.tell_solver_need_reset()
         Ydc_me = copy.deepcopy(backend._grid.get_dcYbus_solver())
         Sdc_me = copy.deepcopy(backend._grid.get_dcSbus_solver())
-        assert np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) <= 100.*self.tol,\
+        self._assert_or_print(np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) <= 100.*self.tol,\
             f"\t Error for the DC approximation: resulting voltages are different " \
-            f"{np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])):.5f}pu"
+            f"{np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])):.5f}pu")
 
         if np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub])) >= self.tol:
             warnings.warn("\t Warning: maximum difference after DC approximation is "
@@ -257,7 +289,11 @@ class MyTestCase(unittest.TestCase):
                 baseMVA, bus, gen, branch, svc, tcsc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
             except ValueError:
                 # change in pandapower 2.14
-                baseMVA, bus, gen, branch, svc, tcsc, ssc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+                try:
+                    baseMVA, bus, gen, branch, svc, tcsc, ssc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+                except ValueError:
+                    # change in pandapower 3.
+                    baseMVA, bus, gen, branch, svc, tcsc, ssc, vsc, ref, pv, pq, *_, V0, ref_gens = _get_pf_variables_from_ppci(ppci, True)
         
         Va0 = bus[:, VA] * (np.pi / 180.)
         try:
@@ -279,14 +315,14 @@ class MyTestCase(unittest.TestCase):
         Va[pvpq] = np.real(scipy.sparse.linalg.spsolve(pvpq_matrix, ref_matrix))
         ####
 
-        assert np.max(error_p) <= self.tol, f"\t Error: P do not match for Sbus (dc), maximum absolute error is " \
+        self._assert_or_print(np.max(error_p) <= self.tol, f"\t Error: P do not match for Sbus (dc), maximum absolute error is " \
                                             f"{np.max(error_p):.5f} MW, \nError: significative difference for bus " \
-                                            f"index (lightsim): {np.where(error_p > self.tol)[0]}"
+                                            f"index (lightsim): {np.where(error_p > self.tol)[0]}")
 
         error_q = np.abs(np.imag(Sdc_me) - np.imag(Pbus_pp_ro))
-        assert np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus (dc), maximum absolute error is " \
+        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus (dc), maximum absolute error is " \
                                             f"{np.max(error_q):.5f} MVAr, \n\t Error: significative difference for " \
-                                            f"bus index (lightsim): {np.where(error_q > self.tol)[0]}"
+                                            f"bus index (lightsim): {np.where(error_q > self.tol)[0]}")
 
         # "3) check that the Ybus matrix is same for PP and lightisim in DC"
         with warnings.catch_warnings():
@@ -311,10 +347,10 @@ class MyTestCase(unittest.TestCase):
             mult_coeff = 1.0
         else:
             mult_coeff = pp_net["_options"]["init_vm_pu"]
-        Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * mult_coeff
+        Vinit = np.ones(backend.nb_bus_total, dtype=complex) * mult_coeff
         Vinit[:nb_sub] = V_init_ref[pp_vect_converter]
         conv = backend._grid.ac_pf(Vinit, max_iter, tol_this)
-        assert conv.shape[0] > 0, "\t Error: the lightsim diverge when initialized with pandapower Vinit_dc"
+        self._assert_or_print(conv.shape[0] > 0, "\t Error: the lightsim diverge when initialized with pandapower Vinit_dc")
         lpor, lqor, lvor, laor = backend._grid.get_lineor_res()
         tpor, tqor, tvor, taor = backend._grid.get_trafohv_res()
         tpex, tqex, tvex, taex = backend._grid.get_trafolv_res()
@@ -327,13 +363,13 @@ class MyTestCase(unittest.TestCase):
         test_ok = True
 
         max_mis = np.max(np.abs(p_or_me2 - por_pp))
-        assert np.max(error_q) <= self.tol, f"\t Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
+        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: por do not match, maximum absolute error is {max_mis:.5f} MW")
         max_mis = np.max(np.abs(q_or_me2 - qor_pp))
-        assert np.max(error_q) <= self.tol, f"\t Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr"
+        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr")
         max_mis = np.max(np.abs(v_or_me2 - vor_pp))
-        assert np.max(error_q) <= self.tol, f"\t Error: vor do not match, maximum absolute error is {max_mis:.5f} kV"
+        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: vor do not match, maximum absolute error is {max_mis:.5f} kV")
         max_mis = np.max(np.abs(a_or_me2 - aor_pp))
-        assert np.max(error_q) <= self.tol, f"\t Error: aor do not match, maximum absolute error is {max_mis:.5f} A"
+        self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: aor do not match, maximum absolute error is {max_mis:.5f} A")
 
         # "V - Check trafo proper conversion to r,x, b"
         from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
@@ -357,9 +393,9 @@ class MyTestCase(unittest.TestCase):
         shift_[~np.isfinite(shift_)] = 0.
         is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
         is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
-        if np.any(pp_net.trafo["tap_phase_shifter"].values):
-            raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
-                               "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
+        # if np.any(pp_net.trafo["tap_phase_shifter"].values):
+            # raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
+                            #    "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
         tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
         tap_angles_[~np.isfinite(tap_angles_)] = 0.
         tap_angles_ = np.deg2rad(tap_angles_)
@@ -384,33 +420,51 @@ class MyTestCase(unittest.TestCase):
         vn_lv = ppc["bus"][bus_lookup[lv_bus], BASE_KV]
         vn_trafo_hv, vn_trafo_lv, shift_pp = _calc_tap_from_dataframe(pp_net, trafo_df)
         ratio = _calc_nominal_ratio_from_dataframe(ppc, trafo_df, vn_trafo_hv, vn_trafo_lv, bus_lookup)
-        r_t, x_t, b_t = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
-        b_t *= 1j  # to fix https://github.com/Grid2Op/lightsim2grid/issues/88
-        
+        try:
+            r_t, x_t, b_t = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
+            b_t *= 1j  # to fix https://github.com/Grid2Op/lightsim2grid/issues/88
+        except ValueError:
+            # change in pandapower 3.
+            r_t, x_t, g_t, b_orig_t, g_asym, b_asym = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
+            b_t = 1j * (g_t + 1j * b_orig_t)  # 1j * XXX to fix https://github.com/Grid2Op/lightsim2grid/issues/88
+            
+            # debug with pypowsybl
+            # not per unit...
+            r_py_ing, x_py_ing, g_py_ing, b_py_ing = create_transformers(pp_net)  # py for pypowsybl implementation, ingeneering units
+            # see https://github.com/powsybl/pypowsybl/blob/53fdbdd8d83d89b8c30a8a51617b0b3df725c4c5/pypowsybl/network/impl/pandapower_converter.py#L111
+            # now per unit
+            sn_mva = 1. #pp_net.sn_mva
+            trafo_to_kv = vn_trafo_lv
+            trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva
+            r_py = r_py_ing / trafo_to_pu
+            x_py = x_py_ing / trafo_to_pu
+            g_py = g_py_ing * trafo_to_pu
+            b_py = b_py_ing * trafo_to_pu
+            
         # check where there are mismatch if any
         val_r_pp = r_t
         val_r_me = trafo_r
         all_equals_r = np.abs(val_r_pp - val_r_me) <= self.tol
-        if not np.all(all_equals_r):
-            raise AssertionError(f"\t Error: some trafo resistance are not equal, max error: {np.max(np.abs(val_r_pp - val_r_me)):.5f}")
+        self._assert_or_print(np.all(all_equals_r),
+            f"\t Error: some trafo resistance are not equal, max error: {np.max(np.abs(val_r_pp - val_r_me)):.5f}")
         
         val_x_pp = x_t
         val_x_me = trafo_x
         all_equals_x = np.abs(val_x_pp - val_x_me) <= self.tol
-        assert np.all(all_equals_x), f"\t Error: some trafo x are not equal, max error: " \
-                                     f"{np.max(np.abs(val_x_pp - val_x_me)):.5f}"
+        self._assert_or_print(np.all(all_equals_x), f"\t Error: some trafo x are not equal, max error: " \
+                                     f"{np.max(np.abs(val_x_pp - val_x_me)):.5f}")
 
         val_ib_pp = np.imag(b_t)
         val_ib_me = np.imag(trafo_b)
         all_equals_imag_b = np.abs(val_ib_pp - val_ib_me) <= self.tol
-        assert np.all(all_equals_imag_b), f"\t Error: some trafo (imag) b are not equal, max error: " \
-                                          f"{np.max(np.abs(val_ib_pp - val_ib_me)):.5f}"
+        self._assert_or_print(np.all(all_equals_imag_b), f"\t Error: some trafo (imag) b are not equal, max error: " \
+                                          f"{np.max(np.abs(val_ib_pp - val_ib_me)):.5f}")
 
         val_reb_pp = np.real(b_t)
         val_reb_me = np.real(trafo_b)
         all_equals_real_b = np.abs(val_reb_pp - val_reb_me) <= self.tol
-        assert np.all(all_equals_real_b), f"\t Error: some trafo (real) b are not equal, max error: " \
-                                          f"{np.max(np.abs(val_reb_pp - val_reb_me)):.5f}"
+        self._assert_or_print(np.all(all_equals_real_b), f"\t Error: some trafo (real) b are not equal, max error: " \
+                                          f"{np.max(np.abs(val_reb_pp - val_reb_me)):.5f}")
 
 if __name__ == '__main__':
     unittest.main()

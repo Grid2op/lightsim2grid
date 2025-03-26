@@ -701,7 +701,7 @@ class LightSimBackend(Backend):
             raise BackendError(f"Impossible to initialize the backend with '{self._loader_method}'")
         self._grid.tell_solver_need_reset()
         self._reset_res_pointers()  # force the re reading of the accessors at next powerflow
-        self.V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        self.V = np.ones(self.nb_bus_total, dtype=complex)
         if self._automatically_disconnect:
             self._need_islanding_detection = True
     
@@ -1164,40 +1164,40 @@ class LightSimBackend(Backend):
         if cls.shunts_data_available:
             self.shunt_topo_vect = np.ones(cls.n_shunt, dtype=dt_int)
              # shunts
-            self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-            self.sh_q = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-            self.sh_v = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-            self.sh_theta = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.sh_p = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.nan).reshape(-1)
+            self.sh_q = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.nan).reshape(-1)
+            self.sh_v = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.nan).reshape(-1)
+            self.sh_theta = np.full(cls.n_shunt, dtype=dt_float, fill_value=np.nan).reshape(-1)
             self.sh_bus = np.full(cls.n_shunt, dtype=dt_int, fill_value=-1).reshape(-1)
 
-        self.p_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.q_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.v_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.a_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.p_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.q_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.v_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.a_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.p_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.q_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.v_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.a_or = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.p_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.q_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.v_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.a_ex = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
 
-        self.load_p = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.load_q = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.load_v = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.load_p = np.full(cls.n_load, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.load_q = np.full(cls.n_load, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.load_v = np.full(cls.n_load, dtype=dt_float, fill_value=np.nan).reshape(-1)
 
-        self.prod_p = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.prod_q = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.prod_v = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.prod_p = np.full(cls.n_gen, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.prod_q = np.full(cls.n_gen, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.prod_v = np.full(cls.n_gen, dtype=dt_float, fill_value=np.nan).reshape(-1)
         
-        self.line_or_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.line_ex_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.load_theta = np.full(cls.n_load, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-        self.gen_theta = np.full(cls.n_gen, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+        self.line_or_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.line_ex_theta = np.full(cls.n_line, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.load_theta = np.full(cls.n_load, dtype=dt_float, fill_value=np.nan).reshape(-1)
+        self.gen_theta = np.full(cls.n_gen, dtype=dt_float, fill_value=np.nan).reshape(-1)
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
-            self.storage_p = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-            self.storage_q = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-            self.storage_v = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
-            self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.NaN).reshape(-1)
+            self.storage_p = np.full(cls.n_storage, dtype=dt_float, fill_value=np.nan).reshape(-1)
+            self.storage_q = np.full(cls.n_storage, dtype=dt_float, fill_value=np.nan).reshape(-1)
+            self.storage_v = np.full(cls.n_storage, dtype=dt_float, fill_value=np.nan).reshape(-1)
+            self.storage_theta = np.full(cls.n_storage, dtype=dt_float, fill_value=np.nan).reshape(-1)
 
         self._count_object_per_bus()
         
@@ -1421,7 +1421,7 @@ class LightSimBackend(Backend):
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
                 # But not when it initializes in DC mode... (see below)
-                self.V = np.ones(self.nb_bus_total, dtype=np.complex_) #  * self._grid.get_init_vm_pu()
+                self.V = np.ones(self.nb_bus_total, dtype=complex) #  * self._grid.get_init_vm_pu()
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
                 V = self._grid.dc_pf(self.V, self.max_it, self.tol)
@@ -1431,7 +1431,7 @@ class LightSimBackend(Backend):
             else:
                 if (self.V is None) or (self.V.shape[0] == 0):
                     # create the vector V as it is not created
-                    self.V = np.ones(self.nb_bus_total, dtype=np.complex_) * self._grid.get_init_vm_pu()
+                    self.V = np.ones(self.nb_bus_total, dtype=complex) * self._grid.get_init_vm_pu()
                 if self.initdc:
                     self._grid.deactivate_result_computation()
                     # if I init with dc values, it should depends on previous state
@@ -1575,38 +1575,38 @@ class LightSimBackend(Backend):
     def _fill_nans(self):
         """fill the results vectors with nans"""
         self._next_pf_fails = None
-        self.p_or[:] = np.NaN
-        self.q_or[:] = np.NaN
-        self.v_or[:] = np.NaN
-        self.a_or[:] = np.NaN
-        self.p_ex[:] = np.NaN
-        self.q_ex[:] = np.NaN
-        self.v_ex[:] = np.NaN
-        self.a_ex[:] = np.NaN
-        self.load_p[:] = np.NaN
-        self.load_q[:] = np.NaN
-        self.load_v[:] = np.NaN
-        self.prod_p[:] = np.NaN
-        self.next_prod_p[:] = np.NaN
-        self.prod_q[:] = np.NaN
-        self.prod_v[:] = np.NaN
-        self.line_or_theta[:] = np.NaN
-        self.line_ex_theta[:] = np.NaN
-        self.load_theta[:] = np.NaN
-        self.gen_theta[:] = np.NaN
+        self.p_or[:] = np.nan
+        self.q_or[:] = np.nan
+        self.v_or[:] = np.nan
+        self.a_or[:] = np.nan
+        self.p_ex[:] = np.nan
+        self.q_ex[:] = np.nan
+        self.v_ex[:] = np.nan
+        self.a_ex[:] = np.nan
+        self.load_p[:] = np.nan
+        self.load_q[:] = np.nan
+        self.load_v[:] = np.nan
+        self.prod_p[:] = np.nan
+        self.next_prod_p[:] = np.nan
+        self.prod_q[:] = np.nan
+        self.prod_v[:] = np.nan
+        self.line_or_theta[:] = np.nan
+        self.line_ex_theta[:] = np.nan
+        self.load_theta[:] = np.nan
+        self.gen_theta[:] = np.nan
 
         if type(self).shunts_data_available:
-            self.sh_p[:] = np.NaN
-            self.sh_q[:] = np.NaN
-            self.sh_v[:] = np.NaN
-            self.sh_theta[:] = np.NaN
+            self.sh_p[:] = np.nan
+            self.sh_q[:] = np.nan
+            self.sh_v[:] = np.nan
+            self.sh_theta[:] = np.nan
             self.sh_bus[:] = -1
 
         if self.__has_storage:
-            self.storage_p[:] = np.NaN
-            self.storage_q[:] = np.NaN
-            self.storage_v[:] = np.NaN
-            self.storage_theta[:] = np.NaN
+            self.storage_p[:] = np.nan
+            self.storage_q[:] = np.nan
+            self.storage_v[:] = np.nan
+            self.storage_theta[:] = np.nan
         self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
         self._reset_res_pointers()
     
@@ -1621,11 +1621,14 @@ class LightSimBackend(Backend):
         self._shunt_res = None
         
     def __deepcopy__(self, memo):
-        result = self.copy()
+        if hasattr(type(self), "copy_public"):
+            result = self.copy_public()
+        else:
+            result = self.copy()
         memo[id(self)] = result
         return result
 
-    def copy(self) -> Self:
+    def copy(self, orig_grid=None) -> Self:
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
         __me_at_init = self.__me_at_init
@@ -1737,7 +1740,15 @@ class LightSimBackend(Backend):
         ###############
 
         # handle the most complicated
-        res._grid = mygrid.copy()
+        if mygrid is not None:
+            res._grid = mygrid.copy()
+            res._reset_res_pointers()
+            res._fetch_grid_data()
+            if orig_grid is not None:
+                if mygrid is not orig_grid:
+                    raise Grid2OpException("Error in the copy of a LightSimBackend: my_grid is not orig_grid")
+        else:
+            res._grid = None
         res.__me_at_init = __me_at_init.copy()  # this is const
         res.init_pp_backend = inippbackend  # this is const
         res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
@@ -1745,8 +1756,7 @@ class LightSimBackend(Backend):
         res.__init_topo_vect = 1 * self.__init_topo_vect
         res.available_solvers = self.available_solvers
         res._orig_grid_pypowsybl = self._orig_grid_pypowsybl 
-        res._reset_res_pointers()
-        res._fetch_grid_data()
+        
         # assign back "self" attributes
         self._grid = mygrid
         self.init_pp_backend = inippbackend
