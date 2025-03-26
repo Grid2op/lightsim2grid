@@ -32,7 +32,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 [0.10.3] 2025-03-xx
 ----------------------
 - [FIXED] remove deprecated use of numpy<2 function in LightSimBackend
-- [FIXED] the "copy.deepcopy" of a lightsim2grid backend does not crash anymore (see issue #97)
+- [FIXED] the "copy.deepcopy" of a lightsim2grid backend does not crash anymore 
+  (see issues #36 and #97)
 
 [0.10.2] 2025-03-07
 ----------------------
