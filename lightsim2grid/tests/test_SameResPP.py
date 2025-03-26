@@ -55,7 +55,7 @@ def create_transformers(n_pdp):
 class MyTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tol = 1e-4  # results are equal if they match up to tol
-        self.raise_error = False
+        self.raise_error = True
 
     def test_case14(self):
         case = pn.case14()
@@ -427,8 +427,6 @@ class MyTestCase(unittest.TestCase):
             # change in pandapower 3.
             r_t, x_t, g_t, b_orig_t, g_asym, b_asym = _calc_r_x_y_from_dataframe(pp_net, trafo_df, vn_trafo_lv, vn_lv, pp_net.sn_mva)
             b_t = 1j * (g_t + 1j * b_orig_t)  # 1j * XXX to fix https://github.com/Grid2Op/lightsim2grid/issues/88
-            import pdb
-            pdb.set_trace()
             
             # debug with pypowsybl
             # not per unit...
