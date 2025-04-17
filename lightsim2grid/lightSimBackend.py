@@ -355,6 +355,9 @@ class LightSimBackend(Backend):
         #: this flags remembers it
         self._next_pf_fails : Optional[BackendError] = None
         
+        # issue if dc then ac powerflow
+        self._last_dc = True
+        
         # speed optimization
         self._lineor_res = None
         self._lineex_res = None
@@ -406,14 +409,19 @@ class LightSimBackend(Backend):
                           "you cannot set max_iter, tol nor solver_type arguments.")
             Backend.__init__(self,
                              detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
-            
-        if hasattr(type(self), "can_handle_more_than_2_busbar"):
+        
+        cls = type(self)
+        if hasattr(cls, "can_handle_more_than_2_busbar"):
             # do not forget to propagate this if needed
             self.can_handle_more_than_2_busbar()
             
-        if hasattr(type(self), "can_handle_detachment"):
+        if hasattr(cls, "can_handle_detachment"):
             # do not forget to propagate this if needed
             self.can_handle_detachment()
+            
+        if automatically_disconnect:
+            # authorize disconnection of elements in the backend
+            self._prevent_automatic_disconnection = False
             
     def turnedoff_no_pv(self):
         self._turned_off_pv = False
@@ -1421,6 +1429,7 @@ class LightSimBackend(Backend):
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
                 # But not when it initializes in DC mode... (see below)
+                self._last_dc = True
                 self.V = np.ones(self.nb_bus_total, dtype=complex) #  * self._grid.get_init_vm_pu()
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
@@ -1450,6 +1459,10 @@ class LightSimBackend(Backend):
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
+                if self._last_dc:
+                    # otherwise might segfault is a dc powerflow as been run before an ac one
+                    self._grid.tell_solver_need_reset()
+                    self._last_dc = False
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
                 self._timer_solver += time.perf_counter() - tick
                 if V.shape[0] == 0:
@@ -1609,6 +1622,7 @@ class LightSimBackend(Backend):
             self.storage_theta[:] = np.nan
         self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
         self._reset_res_pointers()
+        self._last_dc = True
     
     def _reset_res_pointers(self):
         self._lineor_res  = None
@@ -1686,7 +1700,8 @@ class LightSimBackend(Backend):
                            "_use_static_gen", "_loader_method", "_loader_kwargs",
                            "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
                            "_timer_fetch_data_cpp", "_next_pf_fails", "_automatically_disconnect",
-                           "_need_islanding_detection"
+                           "_need_islanding_detection",
+                           "_last_dc"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):
