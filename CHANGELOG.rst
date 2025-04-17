@@ -37,6 +37,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] an issue that could lead to a "segfault" if the "runpf" method of
   `LightSimBackend` was called first with is_dc=True and then with is_dc=False
 - [IMPROVED] compat with grid2op 1.11.0
+- [IMPROVED] now test proper compilation on clang 20 (was limited to clang 18 before)
 
 [0.10.2] 2025-03-07
 ----------------------

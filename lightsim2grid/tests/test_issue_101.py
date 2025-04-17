@@ -29,10 +29,14 @@ class Issue101Tester(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("educ_case14_storage", 
-                                     test=True,
-                                     allow_detachment=True,
-                                     backend=LightSimBackend(),
-                                     action_class=CompleteAction)
+                                    test=True,
+                                    allow_detachment=True,
+                                    backend=LightSimBackend(),
+                                    action_class=CompleteAction)
+        params = self.env.parameters
+        params.ENV_DOES_REDISPATCHING = False
+        self.env.change_parameters(params)
+        self.env.change_forecast_parameters(params)
         self.env.reset(seed=0, options={"time serie id": 0})
         obs = self.env.reset()
         return super().setUp()
@@ -49,7 +53,7 @@ class Issue101Tester(unittest.TestCase):
                 "set_bus": {"generators_id": [(gen_id, -1)]}
             }
         ))
-        assert not done
+        assert not done, info["exception"]
         assert obs.gen_detached[gen_id]
         assert np.abs(obs.gen_p[gen_id]) <= tol
         assert np.abs(obs.gen_v[gen_id]) <= tol
@@ -58,7 +62,7 @@ class Issue101Tester(unittest.TestCase):
         assert abs(obs.gen_p_detached[gen_id] - 79.8) <= tol
         
         obs1, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
+        assert not done, info["exception"]
         assert obs1.gen_detached[gen_id]
         assert np.abs(obs1.gen_p[gen_id]) <= tol
         assert np.abs(obs1.gen_v[gen_id]) <= tol
@@ -67,7 +71,7 @@ class Issue101Tester(unittest.TestCase):
         assert abs(obs1.gen_p_detached[gen_id] - 80.5) <= tol
         
         obs2, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
+        assert not done, info["exception"]
         assert obs2.gen_detached[gen_id]
         assert np.abs(obs2.gen_p[gen_id]) <= tol
         assert np.abs(obs2.gen_v[gen_id]) <= tol
@@ -83,7 +87,7 @@ class Issue101Tester(unittest.TestCase):
                 "set_bus": {"loads_id": [(load_id, -1)]}
             }
         ))
-        assert not done
+        assert not done, info["exception"]
         assert obs.load_detached[load_id]
         assert np.abs(obs.load_p[load_id]) <= tol
         assert np.abs(obs.load_q[load_id]) <= tol
@@ -91,7 +95,7 @@ class Issue101Tester(unittest.TestCase):
         assert abs(obs.load_p_detached[load_id] - 21.9) <= tol
         
         obs1, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
+        assert not done, info["exception"]
         assert obs1.load_detached[load_id]
         assert np.abs(obs1.load_p[load_id]) <= tol
         assert np.abs(obs1.load_q[load_id]) <= tol
@@ -99,7 +103,7 @@ class Issue101Tester(unittest.TestCase):
         assert abs(obs1.load_p_detached[load_id] - 21.7) <= tol
         
         obs2, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
+        assert not done, info["exception"]
         assert obs2.load_detached[load_id]
         assert np.abs(obs2.load_p[load_id]) <= tol
         assert np.abs(obs2.load_q[load_id]) <= tol
@@ -115,18 +119,18 @@ class Issue101Tester(unittest.TestCase):
                 "set_storage": [(0, 1.)]
             }
         ))
-        assert not done
+        assert not done, info["exception"]
         assert obs.storage_detached[sto_id]
         assert np.abs(obs.storage_power[sto_id]) <= tol, f"{obs.storage_power[sto_id]} vs 0."
         assert abs(obs.storage_p_detached[sto_id] - 1.) <= tol, f"{obs.storage_p_detached[sto_id]} vs 1."
         
         obs1, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
+        assert not done, info["exception"]
         assert obs1.storage_detached[sto_id]
         assert abs(obs1.storage_power[sto_id]) <= tol, f"{obs1.storage_power[sto_id]} vs 0."
         
         obs2, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
+        assert not done, info["exception"]
         assert obs2.storage_detached[sto_id]
         assert abs(obs2.storage_power[sto_id]) <= tol, f"{obs2.storage_power[sto_id]} vs 0."
         
