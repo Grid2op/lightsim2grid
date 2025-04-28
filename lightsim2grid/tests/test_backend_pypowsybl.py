@@ -168,7 +168,6 @@ if CAN_DO_TEST_SUITE:
             res_cpy = runner_cpy.run(nb_episode=1, max_iter=10)
             for el, el_cpy in zip(res[0], res_cpy[0]):
                 assert el == el_cpy, f"{el} vs {el_cpy}"
-            
         
 # TODO env tester
 if __name__ == "__main__":

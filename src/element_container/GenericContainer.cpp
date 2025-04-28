@@ -109,7 +109,7 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) {
-            v(el_id) = -1;
+            v(el_id) = v_disco_el_;
             continue;
         }
         int el_bus_me_id = bus_me_id(el_id);
@@ -139,7 +139,7 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
     for(int el_id = 0; el_id < nb_element; ++el_id){
         // if the element is disconnected, i leave it like that
         if(!status[el_id]) {
-            theta(el_id) = -1;
+            theta(el_id) = theta_disco_el_;
             continue;
         }
         int el_bus_me_id = bus_me_id(el_id);
