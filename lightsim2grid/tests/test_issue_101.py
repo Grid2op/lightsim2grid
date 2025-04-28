@@ -8,18 +8,12 @@
 
 import unittest
 import warnings
-<<<<<<< HEAD
-from lightsim2grid import LightSimBackend
-
-import grid2op
-=======
 
 import numpy as np
 from lightsim2grid import LightSimBackend
 
 import grid2op
 from grid2op.Action import CompleteAction
->>>>>>> bd-dev
 try:
     from grid2op.Space import DEFAULT_ALLOW_DETACHMENT
     CAN_TEST_ISSUE_101 = True
@@ -34,12 +28,6 @@ class Issue101Tester(unittest.TestCase):
             self.skipTest("grid2op does not allow detachement, please upgrade grid2op")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-<<<<<<< HEAD
-            self.env = grid2op.make("l2rpn_case14_sandbox", 
-                                     test=True,
-                                     allow_detachment=True,
-                                     backend=LightSimBackend())
-=======
             self.env = grid2op.make("educ_case14_storage", 
                                     test=True,
                                     allow_detachment=True,
@@ -49,7 +37,6 @@ class Issue101Tester(unittest.TestCase):
         params.ENV_DOES_REDISPATCHING = False
         self.env.change_parameters(params)
         self.env.change_forecast_parameters(params)
->>>>>>> bd-dev
         self.env.reset(seed=0, options={"time serie id": 0})
         obs = self.env.reset()
         return super().setUp()
@@ -58,11 +45,7 @@ class Issue101Tester(unittest.TestCase):
         self.env.close()
         return super().tearDown()
     
-<<<<<<< HEAD
-    def test_disco_gen(self):
-=======
     def test_disco_gen(self, tol=1e-5):
->>>>>>> bd-dev
         """test i can disconnect a gen"""
         gen_id = 0
         obs, reward, done, info = self.env.step(self.env.action_space(
@@ -70,20 +53,6 @@ class Issue101Tester(unittest.TestCase):
                 "set_bus": {"generators_id": [(gen_id, -1)]}
             }
         ))
-<<<<<<< HEAD
-        assert not done
-        assert obs.gen_p[gen_id] == 0.
-        
-        obs1, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
-        assert obs1.gen_p[gen_id] == 0.
-        
-        obs2, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
-        assert obs2.gen_p[gen_id] == 0.
-        
-    def test_disco_load(self):
-=======
         assert not done, info["exception"]
         assert obs.gen_detached[gen_id]
         assert np.abs(obs.gen_p[gen_id]) <= tol
@@ -111,7 +80,6 @@ class Issue101Tester(unittest.TestCase):
         assert abs(obs2.gen_p_detached[gen_id] - 80.5) <= tol
         
     def test_disco_load(self, tol=1e-5):
->>>>>>> bd-dev
         """test i can disconnect a load"""
         load_id = 0
         obs, reward, done, info = self.env.step(self.env.action_space(
@@ -119,19 +87,6 @@ class Issue101Tester(unittest.TestCase):
                 "set_bus": {"loads_id": [(load_id, -1)]}
             }
         ))
-<<<<<<< HEAD
-        assert not done
-        assert obs.load_p[load_id] == 0.
-        assert obs.load_p_detached[load_id] == 0.
-        
-        obs1, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
-        assert obs1.load_p[load_id] == 0.
-        
-        obs2, _, done, info = self.env.step(self.env.action_space({}))
-        assert not done
-        assert obs2.load_p[load_id] == 0.
-=======
         assert not done, info["exception"]
         assert obs.load_detached[load_id]
         assert np.abs(obs.load_p[load_id]) <= tol
@@ -178,7 +133,6 @@ class Issue101Tester(unittest.TestCase):
         assert not done, info["exception"]
         assert obs2.storage_detached[sto_id]
         assert abs(obs2.storage_power[sto_id]) <= tol, f"{obs2.storage_power[sto_id]} vs 0."
->>>>>>> bd-dev
         
         
 if __name__ == "__main__":
