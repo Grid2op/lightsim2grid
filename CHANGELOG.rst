@@ -29,6 +29,16 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.10.3] 2025-04-28
+----------------------
+- [FIXED] remove deprecated use of numpy<2 function in LightSimBackend
+- [FIXED] the "copy.deepcopy" of a lightsim2grid backend does not crash anymore 
+  (see issues #36 and #97)
+- [FIXED] an issue that could lead to a "segfault" if the "runpf" method of
+  `LightSimBackend` was called first with is_dc=True and then with is_dc=False
+- [IMPROVED] compat with grid2op 1.11.0
+- [IMPROVED] now test proper compilation on clang 20 (was limited to clang 18 before)
+
 [0.10.2] 2025-03-07
 ----------------------
 - [FIXED] an error when changing of bus one of the slack (did not trigger the 

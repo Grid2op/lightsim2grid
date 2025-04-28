@@ -377,6 +377,12 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
     // std::cout << "before pre process" << std::endl;
+    // std::cout << "acSbus_.size()" << acSbus_.size() << std::endl;
+    // std::cout << "Ybus_ac_.size()" << Ybus_ac_.size() << std::endl;
+    // std::cout << "id_me_to_ac_solver_.size()" << id_me_to_ac_solver_.size() << std::endl;
+    // std::cout << "id_ac_solver_to_me_.size()" << id_ac_solver_to_me_.size() << std::endl;
+    // std::cout << "slack_bus_id_ac_me_.size()" << slack_bus_id_ac_me_.size() << std::endl;
+    // std::cout << "slack_bus_id_ac_solver_.size()" << slack_bus_id_ac_solver_.size() << std::endl;
     CplxVect V = pre_process_solver(Vinit, 
                                     acSbus_,
                                     Ybus_ac_,
@@ -386,6 +392,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                     slack_bus_id_ac_solver_,
                                     is_ac,
                                     solver_control_);
+    // std::cout << "after pre process" << std::endl;
 
     // start the solver
     if(solver_control_.need_reset_solver() || 
@@ -399,6 +406,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     conv = _solver.compute_pf(Ybus_ac_, V, acSbus_, slack_bus_id_ac_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
 
     // store results (in ac mode) 
+    // std::cout << "\tbefore process_results" << std::endl;
     process_results(conv, res, Vinit, true, id_me_to_ac_solver_);
 
     timer_last_ac_pf_ = timer.duration();
