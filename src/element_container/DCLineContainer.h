@@ -17,6 +17,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
+#include "BaseSubstation.h"
 #include "GenericContainer.h"
 #include "GeneratorContainer.h"
 
@@ -180,7 +181,7 @@ class DCLineContainer : public GenericContainer
 
     // for buses only connected through dc line, i don't add them
     // they are not in the same "connected component"
-    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {
+    virtual void reconnect_connected_buses(Substation & Substation) const {
         // from_gen_.reconnect_connected_buses(bus_status);
         // to_gen_.reconnect_connected_buses(bus_status);
     }
@@ -189,9 +190,9 @@ class DCLineContainer : public GenericContainer
     virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     virtual void nb_line_end(std::vector<int> & res) const;
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
-        from_gen_.update_bus_status(bus_status);
-        to_gen_.update_bus_status(bus_status);
+    virtual void update_bus_status(Substation & substation) const {
+        from_gen_.update_bus_status(substation);
+        to_gen_.update_bus_status(substation);
     }
     
     real_type get_qmin_or(int dcline_id) {return from_gen_.get_qmin(dcline_id);}

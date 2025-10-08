@@ -10,6 +10,7 @@
 Use the pandapower converter to properly initialize a GridModel c++ object.
 """
 
+from typing import Optional
 import numpy as np
 from numbers import Number
 
@@ -27,7 +28,10 @@ from ._aux_add_storage import _aux_add_storage
 from ._aux_add_dc_line import _aux_add_dc_line
 
 
-def init(pp_net: "pandapower.auxiliary.pandapowerNet") -> GridModel:
+def init(pp_net: "pandapower.auxiliary.pandapowerNet",
+         n_sub: Optional[int]=None,  # number of voltage levels
+         n_busbar_per_sub: Optional[int]=None,  # max number of buses allowed per substation / voltage level
+         ) -> GridModel:
     """
     Convert a pandapower network as input into a GridModel.
 
@@ -77,9 +81,37 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet") -> GridModel:
             if isinstance(tmp_, Number):
                 model.set_init_vm_pu(float(tmp_))
     model.set_sn_mva(pp_net.sn_mva)
-
+    if n_sub is None:
+        n_sub = pp_net.bus.shape[0]
+        if n_busbar_per_sub is not None and n_busbar_per_sub != 1:
+            raise RuntimeError(f"If n_sub is None, n_busbar_per_sub must be None (or 1), found {n_busbar_per_sub}.")
+        n_busbar_per_sub = 1
+    # input data check
+    try:
+        tmp = int(n_sub)
+    except ValueError as exc_:
+        raise RuntimeError("Impossible to convert n_sub to int") from exc_
+    if tmp != n_sub:
+        raise RuntimeError(f"n_sub should be a int, you provided {tmp} which cannot safely be converted to an int.")
+    n_sub = tmp
+    if n_sub <= 0:
+        raise RuntimeError(f"You need to provide a grid with at least 1 substation / voltage level, provided n_sub={n_sub}")
+    
+    try:
+        tmp = int(n_busbar_per_sub)
+    except ValueError as exc_:
+        raise RuntimeError("Impossible to convert n_busbar_per_sub to int") from exc_
+    if tmp != n_busbar_per_sub:
+        raise RuntimeError(f"n_busbar_per_sub should be a int, you provided {tmp} which cannot safely be converted to an int.")
+    n_busbar_per_sub = tmp
+    if n_busbar_per_sub <= 0:
+        raise RuntimeError(f"You need to provide a grid with at least 1 busbar per "
+                           f"substation / voltage level, provided n_busbar_per_sub={n_busbar_per_sub}")
+    
     tmp_bus_ind = np.argsort(pp_net.bus.index)
-    model.init_bus(pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
+    model.init_bus(n_sub,
+                   n_busbar_per_sub,
+                   pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
                    pp_net.line.shape[0],
                    pp_net.trafo.shape[0])
     if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):

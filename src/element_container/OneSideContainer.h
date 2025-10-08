@@ -67,7 +67,7 @@ class OneSideContainer : public GenericContainer
     Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
     const std::vector<bool>& get_status() const {return status_;}
     Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
-    void reconnect_connected_buses(std::vector<bool> & bus_status) const{
+    void reconnect_connected_buses(Substation & substation) const{
         const int nb_els = nb();
         for(int el_id = 0; el_id < nb_els; ++el_id)
         {
@@ -81,9 +81,10 @@ class OneSideContainer : public GenericContainer
                 exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx(...)` ?.";
                 throw std::runtime_error(exc_.str());
             }
-            bus_status[my_bus] = true;  // this bus is connected
+            substation.reconnect_bus(my_bus);  // this bus is connected
         }
     }
+    
     void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
         const int nb_el = nb();
         SolverControl unused_solver_control;
@@ -96,12 +97,12 @@ class OneSideContainer : public GenericContainer
             }
         }    
     }
-    void update_bus_status(std::vector<bool> & bus_status) const {
+    void update_bus_status(Substation & substation) const {
         const int nb_ = nb();
         for(int el_id = 0; el_id < nb_; ++el_id)
         {
             if(!status_[el_id]) continue;
-            bus_status[bus_id_[el_id]] = true;
+            substation.reconnect_bus(bus_id_[el_id]);
         }
     }    
 

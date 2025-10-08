@@ -16,6 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
+#include "BaseSubstation.h"
 #include "GenericContainer.h"
 
 /**
@@ -194,7 +195,7 @@ class TrafoContainer : public GenericContainer
     void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {_generic_change_bus(trafo_id, new_bus_id, bus_lv_id_, solver_control, nb_bus);}
     int get_bus_hv(int trafo_id) {return _get_bus(trafo_id, status_, bus_hv_id_);}
     int get_bus_lv(int trafo_id) {return _get_bus(trafo_id, status_, bus_lv_id_);}
-    void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    void reconnect_connected_buses(Substation & substation) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     
     virtual void nb_line_end(std::vector<int> & res) const;
@@ -216,13 +217,15 @@ class TrafoContainer : public GenericContainer
                                  int nb_powerline,
                                  bool transpose) const;
     virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+    virtual void update_bus_status(Substation & substation) const {
         const int nb_ = nb();
         for(int el_id = 0; el_id < nb_; ++el_id)
         {
             if(!status_[el_id]) continue;
-            bus_status[bus_hv_id_[el_id]] = true;
-            bus_status[bus_lv_id_[el_id]] = true;
+            // bus_status[bus_hv_id_[el_id]] = true;
+            // bus_status[bus_lv_id_[el_id]] = true;
+            substation.reconnect_bus(bus_hv_id_[el_id]);
+            substation.reconnect_bus(bus_lv_id_[el_id]);
         }
     }    
 

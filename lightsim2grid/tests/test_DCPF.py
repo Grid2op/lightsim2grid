@@ -26,7 +26,6 @@ except ImportError as exc_:
     from lightsim2grid.solver import SparseLUSolver
     ClassSolver = SparseLUSolver
 
-import pdb
 TIMER_INFO = False  # do i print information regarding computation time
 
 
@@ -256,7 +255,7 @@ class TestDCPF_LODF(TestDCPF):
         PTDF = gridmodel.get_ptdf()        
         assert PTDF.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.total_bus())        
         PTDF_solver = gridmodel.get_ptdf_solver()
-        assert PTDF_solver.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.nb_bus()) 
+        assert PTDF_solver.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.nb_connected_bus()) 
         assert (PTDF[:, id_dc_solver_to_me] == PTDF_solver).all()      
         with self.assertRaises(RuntimeError):
             Ybus = gridmodel.get_Ybus()              
@@ -265,7 +264,7 @@ class TestDCPF_LODF(TestDCPF):
         dcYbus = gridmodel.get_dcYbus()     
         assert dcYbus.shape == (gridmodel.total_bus(), gridmodel.total_bus())    
         dcYbus_solver = gridmodel.get_dcYbus_solver()
-        assert dcYbus_solver.shape == (gridmodel.nb_bus(), gridmodel.nb_bus())   
+        assert dcYbus_solver.shape == (gridmodel.nb_connected_bus(), gridmodel.nb_connected_bus())   
         assert (dcYbus[id_dc_solver_to_me.reshape(-1,1), id_dc_solver_to_me.reshape(1,-1)] != dcYbus_solver).nnz == 0    
         with self.assertRaises(RuntimeError):
             Sbus = gridmodel.get_Sbus()                
@@ -274,7 +273,7 @@ class TestDCPF_LODF(TestDCPF):
         dcSbus = gridmodel.get_dcSbus()      
         assert dcSbus.shape == (gridmodel.total_bus(), )            
         dcSbus_solver = gridmodel.get_dcSbus_solver()
-        assert dcSbus_solver.shape == (gridmodel.nb_bus(), )   
+        assert dcSbus_solver.shape == (gridmodel.nb_connected_bus(), )   
         assert (dcSbus[id_dc_solver_to_me] == dcSbus_solver).all()    
         pv = gridmodel.get_pv()                  
         pv_solver = gridmodel.get_pv_solver()
@@ -298,12 +297,12 @@ class TestDCPF_LODF(TestDCPF):
         slack_weights = gridmodel.get_slack_weights()    
         assert slack_weights.shape == (gridmodel.total_bus(), )      
         slack_weights_solver = gridmodel.get_slack_weights_solver()
-        assert slack_weights_solver.shape == (gridmodel.nb_bus(), )    
+        assert slack_weights_solver.shape == (gridmodel.nb_connected_bus(), )    
         assert (slack_weights[id_dc_solver_to_me] == slack_weights_solver).all()
         Bf = gridmodel.get_Bf()    
         assert Bf.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.total_bus())
         Bf_solver = gridmodel.get_Bf_solver()
-        assert Bf_solver.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.nb_bus())
+        assert Bf_solver.shape == (len(gridmodel.get_lines()) + len(gridmodel.get_trafos()), gridmodel.nb_connected_bus())
         
     def _aux_test(self, pn_net):
         backend = self._aux_make_grid(pn_net)

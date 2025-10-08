@@ -521,7 +521,7 @@ void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & B
 }
 
 
-void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+void TrafoContainer::reconnect_connected_buses(Substation & substation) const{
 
     const Eigen::Index nb_trafo = nb();
     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
@@ -537,7 +537,8 @@ void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) c
             exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
             throw std::runtime_error(exc_.str());
         }
-        bus_status[bus_or_id_me] = true;
+        // bus_status[bus_or_id_me] = true;
+        substation.reconnect_bus(bus_or_id_me);
 
         const auto bus_ex_id_me = bus_lv_id_(trafo_id);        
         if(bus_ex_id_me == _deactivated_bus_id){
@@ -548,7 +549,8 @@ void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) c
             exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
             throw std::runtime_error(exc_.str());
         }
-        bus_status[bus_ex_id_me] = true;
+        // bus_status[bus_ex_id_me] = true;
+        substation.reconnect_bus(bus_ex_id_me);
     }
 }
 

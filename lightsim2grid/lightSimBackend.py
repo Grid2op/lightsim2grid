@@ -1006,7 +1006,9 @@ class LightSimBackend(Backend):
     
     def _aux_init_pandapower(self):
         from lightsim2grid.gridmodel import init_from_pandapower
-        self._grid = init_from_pandapower(self.init_pp_backend._grid)    
+        self._grid = init_from_pandapower(self.init_pp_backend._grid,
+                                          self.init_pp_backend.n_sub,
+                                          self.n_busbar_per_sub)    
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()        
         
@@ -1554,7 +1556,7 @@ class LightSimBackend(Backend):
                 self._set_shunt_info()
 
             if (np.abs(self.line_or_theta) >= 1e6).any() or (np.abs(self.line_ex_theta) >= 1e6).any():
-                raise BackendError(f"Some theta are above 1e6 which should not be happening !")
+                raise BackendError("Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_changes()
             

@@ -852,7 +852,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("id_me_to_dc_solver", &GridModel::id_me_to_dc_solver, DocGridModel::id_me_to_dc_solver.c_str())
         .def("id_dc_solver_to_me", &GridModel::id_dc_solver_to_me, DocGridModel::id_dc_solver_to_me.c_str())
         .def("total_bus", &GridModel::total_bus, DocGridModel::total_bus.c_str())
-        .def("nb_bus", &GridModel::nb_bus, DocGridModel::nb_bus.c_str())
+        .def("nb_connected_bus", &GridModel::nb_connected_bus, DocGridModel::nb_connected_bus.c_str())
 
 
         .def("get_pv", &GridModel::get_pv, DocGridModel::get_pv.c_str())

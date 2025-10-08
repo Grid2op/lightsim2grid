@@ -62,7 +62,6 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
     reset_results();
 }
 
-
 GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one side container
 {
      std::vector<real_type> vm_pu(vm_pu_.begin(), vm_pu_.end());
@@ -251,7 +250,7 @@ void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl 
 
 void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control)
 {
-    bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
+    bool my_status = status_.at(gen_id); // and this check that gen_id is not out of bound [[maybe_unused]] 
     if (vm_pu_(gen_id) != new_v_pu) solver_control.tell_v_changed();
     vm_pu_(gen_id) = new_v_pu;
 }
