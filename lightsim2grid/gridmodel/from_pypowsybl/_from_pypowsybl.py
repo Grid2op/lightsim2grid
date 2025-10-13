@@ -27,11 +27,12 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
     mask_disco = ~df[conn_key]
     if mask_disco.all():
         raise RuntimeError("All element of the same type are disconnected, the init will not work.")
-    first_el_co = np.where(~mask_disco.values)[0][0]
+    first_el_co = (~mask_disco.values).nonzero()[0][0]
     # retrieve the bus where the element are
     tmp_bus_id = df[bus_key].copy()
     tmp_bus_id[mask_disco] = df.iloc[first_el_co][bus_key]  # assign a "random" bus to disco element
-    bus_id = bus_df.loc[tmp_bus_id.values]["bus_id"].values
+    bus_id = bus_df.loc[tmp_bus_id.values]["bus_global_id"].values
+
     # deactivate the element not on the main component
     # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
     # mask_disco[wrong_component] = True
@@ -51,9 +52,12 @@ def init(net : pypo.network.Network,
          return_sub_id=False,
          n_busbar_per_sub=None,  # new in 0.9.1
          buses_for_sub=None,  # new in 0.9.1
+         init_vm_pu=1.06,
          ):
     model = GridModel()
     # model.set_f_hz(f_hz)
+    model.set_sn_mva(float(sn_mva))
+    model.set_init_vm_pu(float(init_vm_pu))
     
     if gen_slack_id is not None and slack_bus_id is not None:
         raise RuntimeError("Impossible to intialize a grid with both gen_slack_id and slack_bus_id")
@@ -61,74 +65,134 @@ def init(net : pypo.network.Network,
     # assign unique id to the buses
     bus_df_orig = net.get_buses()
     if sort_index:
-        bus_df = bus_df_orig.sort_index()
+        bus_df = bus_df_orig.sort_index().copy()
     else:
-        bus_df = bus_df_orig
+        bus_df = bus_df_orig.copy()
+    bus_df["orig_id"] = np.arange(bus_df.shape[0])
     
     if sort_index:
         voltage_levels = net.get_voltage_levels().sort_index()
     else:
         voltage_levels = net.get_voltage_levels()
-        
+    
     all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values
     sub_unique = None
     sub_unique_id = None
-    if n_busbar_per_sub is not None and buses_for_sub is not None:
+    nb_bus_per_vl = bus_df[["voltage_level_id", "name"]].groupby("voltage_level_id").count()
+    
+    if buses_for_sub is not None and buses_for_sub:
         # I am in a compatibility mode,
-        # I need to use the same convention as grid2op
-        # for the buses labelling
-        bus_df = bus_df.sort_values("voltage_level_id", kind="stable")
-        sub_unique = bus_df["voltage_level_id"].unique()
-        nb_sub_unique = sub_unique.shape[0]
-        sub_unique_id = np.arange(nb_sub_unique)
-        bus_per_sub =  bus_df[["voltage_level_id", "name"]].groupby("voltage_level_id").count()
-        if (bus_per_sub["name"] > n_busbar_per_sub).any():
-            max_bb = bus_per_sub["name"].max()
-            raise RuntimeError(f"Impossible configuration: we found a substation with {max_bb} "
-                               f"while asking for {n_busbar_per_sub}. We cannot load a grid with these "
-                               f"kwargs. If you use LightSimBackend, you need to change `loader_kwargs` "
-                               f"and especially the `n_busbar_per_sub` to be >= {max_bb}")
-        bus_local_id = np.concatenate([np.arange(el) for el in bus_per_sub.values])
-        sub_id_duplicate = np.repeat(sub_unique_id, bus_per_sub.values.ravel())
-        bus_global_id = bus_local_id * nb_sub_unique + sub_id_duplicate
-        bus_df["bus_id"] = bus_global_id
-        all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
-        ls_to_orig = np.zeros(n_busbar_per_sub * nb_sub_unique, dtype=int) - 1
-        ls_to_orig[bus_df["bus_id"].values] = np.arange(bus_df.shape[0])
-        n_sub = nb_sub_unique
-        n_bb_per_sub = n_busbar_per_sub
-        bus_df = bus_df.sort_index()
-    else:
-        if buses_for_sub is not None:
-            raise NotImplementedError("This is not implemented at the moment")
-        # retrieve the labels from the buses in the original grid
-        bus_df["bus_id"] = -1
-        bus_df.loc[bus_df_orig.index, "bus_id"] = np.arange(bus_df.shape[0]) 
-        bus_df = bus_df.sort_values("bus_id")
-        ls_to_orig = 1 * bus_df["bus_id"].values
+        # the "substation" in lightsim2grid will be read
+        # from the buses in the original grid (and not from the
+        # voltage levels)
         
-        n_sub = bus_df.shape[0]
-        n_bb_per_sub = None
+        # bus_df = bus_df.sort_values("voltage_level_id", kind="stable")
+        # sub_unique = bus_df["voltage_level_id"].unique()
+        # nb_sub_unique = sub_unique.shape[0]
+        # sub_unique_id = np.arange(nb_sub_unique)
         if n_busbar_per_sub is None:
-            warnings.warn("You should avoid using this function without at least `buses_for_sub` or `n_busbar_per_sub`. "
-                          "Setting automatically n_busbar_per_sub=1")
+            # setting automatically n_busbar_per_sub
+            # to 1
+            # TODO logger here
             n_busbar_per_sub = 1
             
-        # used to be done in the Backend previously, now we do it here instead
-        bus_init = 1. * all_buses_vn_kv
-        bus_doubled = np.concatenate([bus_init for _ in range(n_busbar_per_sub)])
-        ls_to_orig = np.concatenate((ls_to_orig, np.full((n_busbar_per_sub - 1) * n_sub, fill_value=-1, dtype=ls_to_orig.dtype)))
+        # if (nb_bus_per_vl["name"] > n_busbar_per_sub).any():
+        #     max_bb = nb_bus_per_vl["name"].max()
+        #     raise RuntimeError(f"Impossible configuration: we found a substation with {max_bb} "
+        #                        f"while asking for {n_busbar_per_sub}. We cannot load a grid with these "
+        #                        f"kwargs. If you use LightSimBackend, you need to change `loader_kwargs` "
+        #                        f"and especially the `n_busbar_per_sub` to be >= {max_bb}")
+        # bus_local_id = np.concatenate([np.arange(el) for el in nb_bus_per_vl.values])
+        # sub_id_duplicate = np.repeat(sub_unique_id, nb_bus_per_vl.values.ravel())
+        # bus_global_id = bus_local_id * nb_sub_unique + sub_id_duplicate
+        # bus_df["bus_global_id"] = bus_global_id
+        # all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
+        # ls_to_orig = np.zeros(n_busbar_per_sub * nb_sub_unique, dtype=int) - 1
+        # ls_to_orig[bus_df["bus_global_id"].values] = np.arange(bus_df.shape[0])
+        # n_sub = nb_sub_unique
+        # n_bb_per_sub = n_busbar_per_sub
+        # bus_df = bus_df.sort_index()
         
-    all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
-    model.set_sn_mva(sn_mva)
-    model.set_init_vm_pu(1.06)
-    model.init_bus(all_buses_vn_kv,
+        all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"], "nominal_v"].values
+        if n_busbar_per_sub > 1:
+            all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
+        n_sub_ls = bus_df.shape[0]
+        ls_to_orig = np.zeros(all_buses_vn_kv.shape[0], dtype=int) - 1
+        ls_to_orig[:n_sub_ls] = np.arange(n_sub_ls)
+        n_busbar_per_sub_ls = n_busbar_per_sub
+        bus_df["bus_global_id"] = np.arange(n_sub_ls)
+    else:        
+        # the "substation" in lightsim2grid
+        voltage_levels["nb_bus_per_vl"] = nb_bus_per_vl["name"]
+        bus_df["name"] = [[el] for el in bus_df.index]
+        voltage_levels["bus_names"] = bus_df[["name", "voltage_level_id"]].groupby("voltage_level_id").sum()   
+
+        bus_df["local_id"] = [voltage_levels.loc[el, "bus_names"].index(id_) + 1 
+                            for id_, el in zip(bus_df.index,
+                                                bus_df["voltage_level_id"].values)]
+        n_vl = voltage_levels.shape[0]
+        voltage_levels["vl_id"] = np.arange(n_vl)
+        bus_df["bus_global_id"] = [(loc_id - 1) * n_vl + voltage_levels.loc[vl, "vl_id"]
+                                   for loc_id, vl in zip(
+                                       bus_df["local_id"],
+                                       bus_df["voltage_level_id"]
+                                   )]
+        nb_bus_per_vl_in_grid = nb_bus_per_vl.max()
+        if n_busbar_per_sub is None:
+            # setting automatically n_busbar_per_sub
+            # to the value read from the grid
+            # TODO logger here
+            n_busbar_per_sub = int(nb_bus_per_vl_in_grid.iloc[0])
+        elif n_busbar_per_sub < nb_bus_per_vl_in_grid:
+            raise RuntimeError(f"The input pypowsybl grid counts some voltage levels "
+                               f"with {nb_bus_per_vl_in_grid} independant buses, "
+                               f"which is not compatible with the n_busbar_per_sub={n_busbar_per_sub} "
+                               "given as input.")
+        all_buses_vn_kv = voltage_levels["nominal_v"].values
+        if n_busbar_per_sub > 1:
+            all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
+        n_sub_ls = voltage_levels.shape[0]
+        n_busbar_per_sub_ls = n_busbar_per_sub
+        ls_to_orig = np.zeros(all_buses_vn_kv.shape[0], dtype=int) - 1
+        ls_to_orig[bus_df["bus_global_id"].values] = np.arange(bus_df.shape[0])
+        # all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
+        # # retrieve the labels from the buses in the original grid
+        # # bus_df["bus_id"] = -1
+        # # bus_df.loc[bus_df_orig.index, "bus_id"] = np.arange(bus_df.shape[0]) 
+        # # bus_df = bus_df.sort_values("bus_id")
+        # # ls_to_orig = 1 * bus_df["bus_id"].values
+        # ls_to_orig = np.arange(voltage_levels.shape[0])
+        
+        # n_sub = bus_df.shape[0]
+        # n_bb_per_sub = None
+        # nb_bus_per_vl_in_grid = bus_df.groupby("voltage_level_id").count()["name"].max()
+        # if n_busbar_per_sub is None:
+        #     # warnings.warn("You should avoid using this function without at least `buses_for_sub` or `n_busbar_per_sub`. "
+        #                 #   f"Setting automatically n_busbar_per_sub={nb_bus_per_vl_in_grid}")
+        #     n_busbar_per_sub = nb_bus_per_vl_in_grid
+        # elif n_busbar_per_sub < nb_bus_per_vl_in_grid:
+        #     raise ReferenceError(f"The input pypowsybl grid counts some voltage levels "
+        #                          f"with {nb_bus_per_vl_in_grid} independant buses, "
+        #                          f"which is not compatible with the {n_busbar_per_sub} "
+        #                          "given as input.")
+            
+        # # used to be done in the Backend previously, now we do it here instead
+        # bus_init = 1. * all_buses_vn_kv
+        # # TODO ls_to_orig
+        # ls_to_orig = np.concatenate((ls_to_orig, np.full((n_busbar_per_sub - 1) * n_sub, fill_value=-1, dtype=ls_to_orig.dtype)))
+        # n_sub_ls = voltage_levels.shape[0]
+        # n_busbar_per_sub_ls = n_busbar_per_sub
+    # all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
+    model.init_bus(n_sub_ls,
+                   n_busbar_per_sub_ls,
+                   all_buses_vn_kv,
                    0, 0  # unused
                    )
     model._ls_to_orig = ls_to_orig
-    model.set_n_sub(n_sub)
-    if n_bb_per_sub is not None:
-        model._max_nb_bus_per_sub = n_busbar_per_sub
+    model._max_nb_bus_per_sub = n_busbar_per_sub_ls
+    # model.set_n_sub(n_sub)
+    # if n_bb_per_sub is not None:
+        # model._max_nb_bus_per_sub = n_busbar_per_sub
     
     # do the generators
     if sort_index:
@@ -396,7 +460,8 @@ def init(net : pypo.network.Network,
         bus_id, gen_id = model.assign_slack_to_most_connected()
     elif gen_slack_id is not None:
         if slack_bus_id is not None:
-            raise RuntimeError(f"You provided both gen_slack_id and slack_bus_id which is not possible.")
+            raise RuntimeError("You provided both gen_slack_id and slack_bus_id "
+                               "which is not possible.")
         
         if isinstance(gen_slack_id, str):
             gen_slack_id_int = int((df_gen.index == gen_slack_id).nonzero()[0][0])
@@ -404,9 +469,11 @@ def init(net : pypo.network.Network,
             try:
                 gen_slack_id_int = int(gen_slack_id)
             except Exception as exc_:
-                raise RuntimeError("'slack_bus_id' should be either an int or a generator names") from exc_
+                raise RuntimeError("'slack_bus_id' should be either an int or "
+                                   "a generator names") from exc_
             if gen_slack_id_int != gen_slack_id:
-                raise RuntimeError("'slack_bus_id' should be either an int or a generator names")
+                raise RuntimeError("'slack_bus_id' should be either an int or a "
+                                   "generator names")
         model.add_gen_slackbus(gen_slack_id_int, 1.)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
@@ -447,7 +514,7 @@ def init(net : pypo.network.Network,
             # already computed before when innitializing the buses and substations
             # I don't do it again to ensure consistency
             sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
-        buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_id", "sub_id"]]
+        buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_global_id", "sub_id"]]
         gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
         load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
         lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]

@@ -682,8 +682,28 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy)
-        .def_property("_ls_to_orig", &GridModel::get_ls_to_orig, &GridModel::set_ls_to_orig, "remember the conversion from bus index in lightsim2grid to bus index in original file format (*eg* pandapower of pypowsybl).")
-        .def_property("_orig_to_ls", &GridModel::get_orig_to_ls, &GridModel::set_orig_to_ls, "remember the conversion from bus index in original file format (*eg* pandapower of pypowsybl) to bus index in lightsim2grid.")
+        .def_property("_ls_to_orig",
+                      &GridModel::get_ls_to_orig,
+                      &GridModel::set_ls_to_orig,
+                      R"mydelimiter(
+_ls_to_orig: has the size of the number of possible buses in lightsim2grid 
+(*ie* `n_sub_ * max_nb_bus_per_sub_` ) and gives the id of the corresponding
+bus in the original grid (pandapower or pypowsybl).
+
+If a "-1" is present, then this bus does not exist in the original grid, 
+it is only present in the lightsim2grid gridmodel.
+)mydelimiter")
+        .def_property("_orig_to_ls",
+                      &GridModel::get_orig_to_ls,
+                      &GridModel::set_orig_to_ls,
+                      R"mydelimiter(
+Opposite to _ls_to_orig. The vector _orig_to_ls has the size of the number
+of buses in the original grid (pandapower or pypowsybl) and tells 
+to which bus of lightsim2grid it corresponds. It should be a >= integer
+between 0 and `n_sub_ * max_nb_bus_per_sub_`
+
+)mydelimiter"
+                    )
         .def_property("_max_nb_bus_per_sub",
                       &GridModel::get_max_nb_bus_per_sub,
                       &GridModel::set_max_nb_bus_per_sub,

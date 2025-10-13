@@ -1297,8 +1297,22 @@ class GridModel : public GenericContainer
     protected:
         // memory for the import
         // TODO switches: move to BaseSubstation
-        IntVect _ls_to_orig;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
-        IntVect _orig_to_ls;  // for converter from bus in lightsim2grid index to bus in original file format (*eg* pandapower or pypowsybl)
+        /**
+         * _ls_to_orig: has the size of the number of possible buses in lightsim2grid 
+         * (*ie* `n_sub_ * max_nb_bus_per_sub_` ) and gives the id of the corresponding
+         * bus in the original grid (pandapower or pypowsybl).
+         * 
+         * If a "-1" is present, then this bus does not exist in the original grid, 
+         * it is only present in the lightsim2grid gridmodel.
+         */
+        IntVect _ls_to_orig; 
+        /**
+         * Opposite to _ls_to_orig. The vector _orig_to_ls has the size of the number
+         * of buses in the original grid (pandapower or pypowsybl) and tells 
+         * to which bus of lightsim2grid it corresponds. It should be a >= integer
+         * between 0 and `n_sub_ * max_nb_bus_per_sub_`
+         */
+        IntVect _orig_to_ls;
 
         // member of the grid
         double timer_last_ac_pf_;

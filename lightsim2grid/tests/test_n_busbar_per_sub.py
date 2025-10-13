@@ -103,7 +103,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
         cls = type(self.env)            
         res = self._aux_find_sub(self.env, cls.LOA_COL)
         if res is None:
-            raise RuntimeError(f"Cannot carry the test 'test_move_load' as "
+            raise RuntimeError("Cannot carry the test 'test_move_load' as "
                                "there are no suitable subastation in your grid.")
         (sub_id, el_id, line_or_id, line_ex_id) = res
         for new_bus in self.list_loc_bus:
@@ -233,7 +233,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
         cls = type(self.env)            
         res = self._aux_find_sub_shunt(self.env)
         if res is None:
-            raise RuntimeError(f"Cannot carry the test 'test_move_load' as "
+            raise RuntimeError("Cannot carry the test 'test_move_load' as "
                                "there are no suitable subastation in your grid.")
         (sub_id, el_id, line_or_id, line_ex_id) = res
         for new_bus in self.list_loc_bus:
@@ -246,7 +246,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             self.env.backend.apply_action(bk_act)
             self.env.backend._set_shunt_info()
             sh_p, sh_q, sh_v, sh_bus = self.env.backend.shunt_info()
-            assert sh_bus[el_id] == new_bus
+            assert sh_bus[el_id] == new_bus, f"{sh_bus[el_id]} vs {new_bus}"
             global_bus = sub_id + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
                 assert self.env.backend._grid.get_shunts()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_shunts()[el_id].bus_id} vs {global_bus}"

@@ -13,10 +13,14 @@ import pandapower.networks as pn
 import os
 import copy
 import numpy as np
-from pandapower.std_types import parameter_from_std_type
-import scipy
 import pdb
 import warnings
+
+
+from packaging import version
+# pandapower version with more advanced grid modelling
+MAX_PP_DATAREADER_NOT_BROKEN = version.parse("2.16")  
+CURRENT_PP_VERSION = version.parse(pp.__version__)
 
 from lightsim2grid import LightSimBackend
 try:
@@ -33,6 +37,8 @@ class TestDCPF(unittest.TestCase):
     def setUp(self) -> None:
         self.tol = 1e-4  # results are equal if they match up to tol
         self.tol_big = 0.01  # for P = C
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
 
     def test_case14(self):
         case = pn.case14()
@@ -168,7 +174,7 @@ class TestDCPF(unittest.TestCase):
         por_ls, qor_ls, vor_ls, aor_ls = backend.lines_or_info()
         big_err_lid = np.where(np.abs(por_ls - por_pp) > 5000)[0]
         backend.line_ex_to_subid[big_err_lid]
-        psub_ls, qsub_ls, pbus_ls, qbus_ls, diff_v_bus_ls = backend.check_kirchoff()
+        psub_ls, qsub_ls, pbus_ls, qbus_ls, diff_v_bus_ls = backend.check_kirchhoff()
         # below it does not work due to a bug fixed in dev_1.8.2 (after 1.8.2.dev4)
         # psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
         

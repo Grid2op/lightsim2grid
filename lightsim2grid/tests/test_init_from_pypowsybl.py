@@ -24,7 +24,10 @@ except ImportError:
     PDP_AVAIL = False
 
 
-class AuxInitFromPyPowSyBl:    
+class AuxInitFromPyPowSyBlBusesForSub:    
+    def use_buses_for_sub(self):
+        return True
+    
     def get_pypo_grid(self):
         return pp.network.create_ieee14()
     
@@ -65,12 +68,19 @@ class AuxInitFromPyPowSyBl:
             self.ref_samecase = None
             
         # init lightsim2grid model
-        self.gridmodel, self.el_ids = init_from_pypowsybl(self.network_ref, slack_bus_id=self.get_slackbus_id(), return_sub_id=True)
+        self.gridmodel, self.el_ids = init_from_pypowsybl(self.network_ref,
+                                                          slack_bus_id=self.get_slackbus_id(),
+                                                          sort_index=False,
+                                                          return_sub_id=True,
+                                                          buses_for_sub=self.use_buses_for_sub())
         
         # use some data
-        self.nb_bus_total = self.network_ref.get_buses().shape[0]
+        if self.use_buses_for_sub():
+            self.nb_bus_total = self.network_ref.get_buses().shape[0]
+        else:
+            self.nb_bus_total = self.gridmodel.get_bus_vn_kv().shape[0]
         self.V_init_dc = np.ones(self.nb_bus_total, dtype=np.complex128)
-        self.V_init_ac = 1.04 * self.V_init_dc
+        self.V_init_ac = 1.06 * self.V_init_dc
         self.tol = 1e-7  # for the solver
         self.tol_eq = self.get_tol_eq()
         return super().setUp()
@@ -221,8 +231,9 @@ class AuxInitFromPyPowSyBl:
         # check that pypow solution is "feasible" as seen by lightsim2grid
         if res_pypow[0].status == pp._pypowsybl.LoadFlowComponentStatus.CONVERGED:
             v_pypow = v_mag_pypo * np.exp(1j * np.deg2rad(v_ang_pypo))
-            pypow_to_ls = np.argsort(reorder).reshape(-1)
-            v_pypow_ls = self.gridmodel.check_solution(v_pypow[pypow_to_ls], False)
+            v_pypow_for_ls = self.V_init_dc.copy()
+            v_pypow_for_ls[self.gridmodel._orig_to_ls] = v_pypow
+            v_pypow_ls = self.gridmodel.check_solution(v_pypow_for_ls, False)
             assert np.abs(v_pypow_ls).max() <= 10. * self.tol_eq, f"error when checking results of pypowsybl in lightsim2grid: {np.abs(v_pypow_ls).max():.2e}"
                  
         # check voltage angles
@@ -243,11 +254,16 @@ class AuxInitFromPyPowSyBl:
         
 
         
-class TestCase14FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase14FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     pass
+
+
+class TestCase14FromPypo(TestCase14FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
         
         
-class TestCase30FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase30FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 30"""
     # unittest.TestCase does not work because of https://github.com/powsybl/pypowsybl/issues/644
     def get_pypo_grid(self):
@@ -255,9 +271,15 @@ class TestCase30FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
     
     def get_equiv_pdp_grid(self):
         return pn.case_ieee30()
+ 
+ 
+class TestCase30FromPypo(TestCase30FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
+    
+           
         
-        
-class TestCase57FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase57FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 57"""
     # does not appear to be the same grid !
     def get_pypo_grid(self):
@@ -272,9 +294,14 @@ class TestCase57FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
     
     def get_tol_eq(self):
         return 1e-4  # otherwise vangle from pypowsybl and pandapower does not match
-                
+
+
+class TestCase57FromPypo(TestCase57FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
+                    
         
-class TestCase118FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase118FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 118: does not work because of https://github.com/e2nIEE/pandapower/issues/2131"""
     # does not work because of https://github.com/e2nIEE/pandapower/issues/2131
     def get_pypo_grid(self):
@@ -292,9 +319,14 @@ class TestCase118FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
     
     def compare_pp(self):
         return super().compare_pp() and False
+
+
+class TestCase118FromPypo(TestCase118FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
                 
         
-class TestCase300FromPypo(AuxInitFromPyPowSyBl):
+class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub):
     """compare from the ieee 300"""
     # does not work because of phase tap changer
     def get_pypo_grid(self):
@@ -317,6 +349,11 @@ class TestCase300FromPypo(AuxInitFromPyPowSyBl):
     def get_slackbus_id(self):
         # does not work with PP, probably bus not ordered the same
         return 257
+
+
+class TestCase300FromPypo(TestCase300FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
 
 
 if __name__ == "__main__":
