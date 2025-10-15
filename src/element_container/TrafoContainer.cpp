@@ -28,24 +28,39 @@ void TrafoContainer::init(const RealVect & trafo_r,
     DOES NOT WORK WITH POWERLINES
     **/
     const int size = static_cast<int>(trafo_r.size());
+    GenericContainer::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
+    GenericContainer::check_size(trafo_tap_pos, size, "trafo_tap_pos");
+    //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
+
+    RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
+
+
+    init(trafo_r, trafo_x, trafo_b, ratio, trafo_shift_degree, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+}
+void TrafoContainer::init(const RealVect & trafo_r,
+                          const RealVect & trafo_x,
+                          const CplxVect & trafo_b,
+                          const RealVect & trafo_ratio,
+                          const RealVect & trafo_shift_degree,
+                          const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                          const Eigen::VectorXi & trafo_hv_id,
+                          const Eigen::VectorXi & trafo_lv_id
+                          )
+{
+    const int size = static_cast<int>(trafo_r.size());
     GenericContainer::check_size(trafo_r, size, "trafo_r");
     GenericContainer::check_size(trafo_x, size, "trafo_x");
     GenericContainer::check_size(trafo_b, size, "trafo_b");
-    GenericContainer::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
-    GenericContainer::check_size(trafo_tap_pos, size, "trafo_tap_pos");
+    GenericContainer::check_size(trafo_ratio, size, "trafo_ratio");
     GenericContainer::check_size(trafo_shift_degree, size, "trafo_shift_degree");
     GenericContainer::check_size(trafo_tap_hv, static_cast<std::vector<bool>::size_type>(size), "trafo_tap_hv");
     GenericContainer::check_size(trafo_hv_id, size, "trafo_hv_id");
     GenericContainer::check_size(trafo_lv_id, size, "trafo_lv_id");
 
-    //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
-
-    RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
-
     r_ = trafo_r;
     x_ = trafo_x;
     h_ = trafo_b;
-    ratio_ = ratio;
+    ratio_ = trafo_ratio;
     shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
     bus_hv_id_ = trafo_hv_id;
     bus_lv_id_ = trafo_lv_id;
@@ -53,7 +68,6 @@ void TrafoContainer::init(const RealVect & trafo_r,
     status_ = std::vector<bool>(trafo_r.size(), true);
     _update_model_coeffs();
     reset_results();
-
 }
 
 

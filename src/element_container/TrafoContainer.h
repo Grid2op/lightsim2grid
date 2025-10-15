@@ -140,16 +140,27 @@ class TrafoContainer : public GenericContainer
     TrafoContainer() {};
 
     void init(const RealVect & trafo_r,
-                           const RealVect & trafo_x,
-                           const CplxVect & trafo_b,
-                           const RealVect & trafo_tap_step_pct,
-            //                        const RealVect & trafo_tap_step_degree,
-                           const RealVect & trafo_tap_pos,
-                           const RealVect & trafo_shift_degree,
-                           const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                           const Eigen::VectorXi & trafo_hv_id,
-                           const Eigen::VectorXi & trafo_lv_id
+              const RealVect & trafo_x,
+              const CplxVect & trafo_b,
+              const RealVect & trafo_tap_step_pct,
+              //                      const RealVect & trafo_tap_step_degree,
+              const RealVect & trafo_tap_pos,
+              const RealVect & trafo_shift_degree,
+              const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+              const Eigen::VectorXi & trafo_hv_id,
+              const Eigen::VectorXi & trafo_lv_id
               );
+
+    void init(const RealVect & trafo_r,
+              const RealVect & trafo_x,
+              const CplxVect & trafo_b,
+              const RealVect & trafo_ratio,
+              const RealVect & trafo_shift_degree,
+              const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+              const Eigen::VectorXi & trafo_hv_id,
+              const Eigen::VectorXi & trafo_lv_id
+              );
+
     //pickle
     TrafoContainer::StateRes get_state() const;
     void set_state(TrafoContainer::StateRes & my_state );

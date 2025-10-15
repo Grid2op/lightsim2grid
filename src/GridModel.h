@@ -200,19 +200,32 @@ class GridModel : public GenericContainer
                         const Eigen::VectorXi & shunt_bus_id){
             shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
         }
+        void init_trafo_pandapower(const RealVect & trafo_r,
+                                   const RealVect & trafo_x,
+                                   const CplxVect & trafo_b,
+                                   const RealVect & trafo_tap_step_pct,
+                                   const RealVect & trafo_tap_pos,
+                                   const RealVect & trafo_shift_degree,
+                                   const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                                   const Eigen::VectorXi & trafo_hv_id,
+                                   const Eigen::VectorXi & trafo_lv_id
+                                   ){
+            trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
+                         trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+        }
         void init_trafo(const RealVect & trafo_r,
                         const RealVect & trafo_x,
                         const CplxVect & trafo_b,
-                        const RealVect & trafo_tap_step_pct,
-                        const RealVect & trafo_tap_pos,
+                        const RealVect & trafo_ratio,
                         const RealVect & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & trafo_hv_id,
                         const Eigen::VectorXi & trafo_lv_id
-                        ){
-            trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
+                           ){
+            trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
                          trafo_tap_hv, trafo_hv_id, trafo_lv_id);
         }
+
         void init_generators(const RealVect & generators_p,
                              const RealVect & generators_v,
                              const RealVect & generators_min_q,

@@ -755,6 +755,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("init_powerlines", &GridModel::init_powerlines, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_powerlines_full", &GridModel::init_powerlines_full, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_shunt", &GridModel::init_shunt, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("init_trafo_pandapower", &GridModel::init_trafo_pandapower, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_trafo", &GridModel::init_trafo, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_generators", &GridModel::init_generators, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_generators_full", &GridModel::init_generators_full, DocGridModel::_internal_do_not_use.c_str())  // same

@@ -112,15 +112,15 @@ def _aux_add_trafo(converter, model, pp_net, pp_to_ls):
                                              )
 
     # initialize the grid
-    model.init_trafo(trafo_r,
-                     trafo_x,
-                     trafo_b,
-                     tap_step_pct,
-                     tap_pos,
-                     shift_,
-                     is_tap_hv_side,
-                     pp_bus_to_ls(pp_net.trafo["hv_bus"].values, pp_to_ls),
-                     pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls))
+    model.init_trafo_pandapower(trafo_r,
+                                trafo_x,
+                                trafo_b,
+                                tap_step_pct,
+                                tap_pos,
+                                shift_,
+                                is_tap_hv_side,
+                                pp_bus_to_ls(pp_net.trafo["hv_bus"].values, pp_to_ls),
+                                pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls))
     # pp_net._ppc["internal"]["Bbus"][64, 67]
     # pp_net._ppc["internal"]["branch"][180]
     # trafo_r[7]

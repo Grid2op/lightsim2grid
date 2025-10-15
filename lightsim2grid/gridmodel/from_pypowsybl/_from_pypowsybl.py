@@ -363,24 +363,23 @@ def init(net : pypo.network.Network,
         ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
     else:
         ratio[has_r_tap_changer] = 1. * df_trafo_pu.loc[has_r_tap_changer, "rho"].values
-    no_tap = ratio == 1.
-    tap_neg = ratio < 1. 
-    tap_positive = ratio > 1. 
-    tap_step_pct = 1. * ratio
-    tap_step_pct[tap_positive] -= 1.
-    tap_step_pct[tap_positive] *= 100.
-    tap_step_pct[tap_neg] = (ratio[tap_neg] - 1.)*100.
-    tap_step_pct[no_tap] = 100.
-    tap_position[tap_positive] += 1
-    tap_position[tap_neg] += 1
+    # no_tap = ratio == 1.
+    # tap_neg = ratio < 1. 
+    # tap_positive = ratio > 1. 
+    # tap_step_pct = 1. * ratio
+    # tap_step_pct[tap_positive] -= 1.
+    # tap_step_pct[tap_positive] *= 100.
+    # tap_step_pct[tap_neg] = (ratio[tap_neg] - 1.)*100.
+    # tap_step_pct[no_tap] = 100.
+    # tap_position[tap_positive] += 1
+    # tap_position[tap_neg] += 1
     
     tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
     model.init_trafo(trafo_r,
                      trafo_x,
                      trafo_h,
-                     tap_step_pct,
-                     tap_position,
+                     ratio,
                      shift_,
                      is_tap_hv_side,
                      tor_bus, # TODO do I need to change hv / lv
