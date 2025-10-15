@@ -226,7 +226,7 @@ jobs:
           #   msvc: x86
           # }
     env:
-      RUNNER_OS: windows-2019
+      RUNNER_OS: windows-2022
       PYTHON_VERSION: ${{ matrix.python.version }}
 
     steps:
@@ -502,7 +502,7 @@ jobs:
             cibuildwheel: macos
           }
           - {
-            name: windows-2019,  # host on x86_64
+            name: windows-2022,  # host on x86_64
             whl_nm: windows_arm64,
             cibuildwheel: windows
           }
@@ -556,7 +556,7 @@ jobs:
           - python: 
               name: cp38  # does not work
             runner:
-              name: windows-2019
+              name: windows-2022
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
