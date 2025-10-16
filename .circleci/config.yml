@@ -296,7 +296,7 @@ jobs:
             # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3 python3-pip python3.9-distutils git -y  # python3-full does not exists, python3-dev cannot be installed...
+            - run: apt-get update && apt-get install python3 python3-pip python-distutils-extra git -y  # python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...
             # - run: python3 -m pip install virtualenv
             # - run: python3 -m virtualenv venv_test
             - run: 
