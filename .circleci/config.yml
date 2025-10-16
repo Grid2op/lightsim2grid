@@ -296,20 +296,29 @@ jobs:
             # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3 python3-pip python3-dev git -y
+            - run: apt-get update && apt-get install python3 python3-pip git -y  # python3-full does not exists, python3-dev cannot be installed...
             - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
+            # - run: python3 -m virtualenv venv_test
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command: |
+                    python3 -m pip install uv --break-system-packages --root-user-action=ignore
+                    uv --version
+            - run: 
+                name: Setup uv venv on python 3.11  # python 3.9 is installed by default which might cause some issues
+                command:
+                    uv venv venv_test --python 3.11
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install --upgrade pip setuptools wheel
-                    pip install -U grid2op
-                    pip install -U pybind11
+                    uv pip install --upgrade pip setuptools wheel
+                    uv pip install -U grid2op
+                    uv pip install -U pybind11
                     git submodule init
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    CC=clang python -m pip install -U .
+                    CC=clang uv pip install -U .
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
