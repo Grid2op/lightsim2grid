@@ -396,7 +396,7 @@ jobs:
             - run:
                 name: "Show package versions"
                 command: |
-                    source venv_test/bin/activate
+                    .\venv_test\Scripts\activate
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
