@@ -27,7 +27,7 @@ executors:
 jobs:
     test_legacy_grid2op:
         executor: gcc_latest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: cat /etc/os-release
@@ -189,7 +189,7 @@ jobs:
 
     compile_gcc_prev_latest:
         executor: gcc_prev_latest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
@@ -208,7 +208,7 @@ jobs:
 
     compile_gcc_earliest:
         executor: gcc_earliest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip -y
@@ -275,7 +275,7 @@ jobs:
 
     compile_clang_earliest:
         executor: clang_earliest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-pip python3-full git -y
@@ -295,7 +295,7 @@ jobs:
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
