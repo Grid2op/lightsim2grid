@@ -23,6 +23,13 @@ except ImportError:
     # pandapower not available, eg if testing with numpy 2
     PDP_AVAIL = False
 
+from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+
+
+if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+    # deactivate compat with recent pandapower version, for now
+    PDP_AVAIL = False
+
 
 class AuxInitFromPyPowSyBlBusesForSub:    
     def use_buses_for_sub(self):

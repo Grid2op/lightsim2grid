@@ -1,4 +1,4 @@
-# Copyright (c) 2020, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2025, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -17,11 +17,6 @@ import pdb
 import warnings
 
 
-from packaging import version
-# pandapower version with more advanced grid modelling
-MAX_PP_DATAREADER_NOT_BROKEN = version.parse("2.16")  
-CURRENT_PP_VERSION = version.parse(pp.__version__)
-
 from lightsim2grid import LightSimBackend
 try:
     from lightsim2grid.solver import KLUSolver
@@ -29,6 +24,9 @@ try:
 except ImportError as exc_:
     from lightsim2grid.solver import SparseLUSolver
     ClassSolver = SparseLUSolver
+
+
+from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
 
 TIMER_INFO = False  # do i print information regarding computation time
 
