@@ -37,13 +37,14 @@ jobs:
                   name: Get python version
                   command: 
                       python3 --version
-                      
-            - python/install-packages:
-                pkg-manager: uv
-            # - run: 
-            #     name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
-            #     command:
-            #         python3 -m pip install uv --user --break-system-packages
+
+            # - python/install-packages:
+            #     pkg-manager: uv
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command:
+                    python3 -m pip install uv --user --break-system-packages
+                    uv --version
             - run: 
                 name: Setup uv venv on python 3.11
                 command:
