@@ -264,7 +264,7 @@ jobs:
                 name: "Show package versions"
                 command: |
                     source venv_test/bin/activate
-                    pip install pypowsybl
+                    pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
                 name: "make tests"
@@ -352,7 +352,7 @@ jobs:
                 name: "Show package versions"
                 command: |
                     source venv_test/bin/activate
-                    pip install pypowsybl
+                    pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
                 name: "make tests"
@@ -392,6 +392,12 @@ jobs:
                     git submodule update
                     python setup.py build
                     python -m pip install -e .[test]
+                    pip freeze
+            - run:
+                name: "Show package versions"
+                command: |
+                    source venv_test/bin/activate
+                    pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
                 name: "make tests"
