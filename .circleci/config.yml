@@ -297,7 +297,7 @@ jobs:
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update && apt-get install python3 python3-pip git -y  # python3-full does not exists, python3-dev cannot be installed...
-            - run: python3 -m pip install virtualenv
+            # - run: python3 -m pip install virtualenv
             # - run: python3 -m virtualenv venv_test
             - run: 
                 name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
