@@ -292,10 +292,11 @@ jobs:
         resource_class: medium
         steps:
             - checkout
+            - run: cat /etc/os-release
             # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3-pip python3-full git -y
+            - run: apt-get update && apt-get install python3 python3-pip python3-dev git -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
