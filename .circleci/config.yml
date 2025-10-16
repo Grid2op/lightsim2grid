@@ -300,9 +300,11 @@ jobs:
             # - run: python3 -m pip install virtualenv
             # - run: python3 -m virtualenv venv_test
             - run:
-                name: get pip
+                name: get pip  # python3 -m ensurepip --upgrade does not work
                 command: |
-                    python3 -m ensurepip --upgrade
+                    cd /tmp
+                    wget https://bootstrap.pypa.io/get-pip.py
+                    python get-pip.py
             - run: 
                 name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
                 command: |
