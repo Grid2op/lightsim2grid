@@ -296,20 +296,39 @@ jobs:
             # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3-setuptools git -y  # python3-pip is broken... python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...  python3-distutils-extra does not work either...
+            # - run: apt-get update && apt-get install python3-setuptools git -y  # python3-pip is broken... python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...  python3-distutils-extra does not work either...
             # - run: python3 -m pip install virtualenv
             # - run: python3 -m virtualenv venv_test
+            # - run:
+            #     name: get pip  # python3 -m ensurepip --upgrade does not work
+            #     command: |
+            #         cd /tmp
+            #         wget https://bootstrap.pypa.io/get-pip.py
+            #         python3 get-pip.py
+            # - run: 
+            #     name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+            #     command: |
+            #         python3 -m pip install uv --break-system-packages --root-user-action=ignore
+            #         uv --version
+            # - run: 
+            #     name: Setup uv venv on python 3.11  # python 3.9 is installed by default which might cause some issues
+            #     command:
+            #         uv venv venv_test --python 3.11
+
+            # install python 3.11, see https://www.build-python-from-source.com/
+            - run: apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev liblzma-dev tk-dev
             - run:
-                name: get pip  # python3 -m ensurepip --upgrade does not work
+                name: Install python from source 
                 command: |
-                    cd /tmp
-                    wget https://bootstrap.pypa.io/get-pip.py
-                    python3 get-pip.py
-            - run: 
-                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
-                command: |
-                    python3 -m pip install uv --break-system-packages --root-user-action=ignore
-                    uv --version
+                    wget https://www.python.org/ftp/python/3.11.14/Python-3.11.14.tgz
+                    tar xzf Python-3.11.14.tgz
+                    cd Python-3.11.14
+                    ./configure --prefix=/opt/python/3.11.14/ --enable-optimizations --with-lto --with-computed-gotos --with-system-ffi --enable-shared --enable-loadable-sqlite-extensions --with-openssl=/usr/local/ssl
+                    make -j "$(grep -c ^processor /proc/cpuinfo)"
+                    make altinstall
+                    /opt/python/3.11.14/bin/python3.11 -m pip install --upgrade pip setuptools wheel
+                    /opt/python/3.11.14/bin/python3.11 -m pip install uv
+                    
             - run: 
                 name: Setup uv venv on python 3.11  # python 3.9 is installed by default which might cause some issues
                 command:
