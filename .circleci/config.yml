@@ -295,7 +295,7 @@ jobs:
             - run: cat /etc/os-release
             # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: echo "deb http://archive.debian.org/debian bulleye-security main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            # - run: echo "deb http://archive.debian.org/debian bulleye-security main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update
             - run: apt purge python3-pkg-resources libtinfo5 -y
             # - run: apt purge python3-* -y
