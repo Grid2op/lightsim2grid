@@ -297,6 +297,7 @@ jobs:
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update
+            - run: apt purge python3-pkg-resources
             - run: apt-get install python3-setuptools git -y  # python3-pip is broken... python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...  python3-distutils-extra does not work either...
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
