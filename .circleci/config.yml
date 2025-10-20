@@ -298,15 +298,15 @@ jobs:
             - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update
             - run: apt purge python3-pkg-resources -y
-            - run: apt-get install python3-setuptools git -y  # python3-pip is broken... python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...  python3-distutils-extra does not work either...
-            - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
-            - run:
-                name: get pip  # python3 -m ensurepip --upgrade does not work
-                command: |
-                    cd /tmp
-                    wget https://bootstrap.pypa.io/get-pip.py
-                    python3 get-pip.py
+            - run: apt-get install python3-setuptools git python3-pip -y  # python3-pip is broken... python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...  python3-distutils-extra does not work either...
+            # - run: python3 -m pip install virtualenv
+            # - run: python3 -m virtualenv venv_test
+            # - run:
+            #     name: get pip  # python3 -m ensurepip --upgrade does not work
+            #     command: |
+            #         cd /tmp
+            #         wget https://bootstrap.pypa.io/get-pip.py
+            #         python3 get-pip.py
             - run: 
                 name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
                 command: |
