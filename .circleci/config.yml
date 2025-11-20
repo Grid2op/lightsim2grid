@@ -139,7 +139,7 @@ jobs:
                 name: legacy test (grid2op ~1.9)
                 command: |
                       source venv_test/bin/activate
-                      uv pip uninstall gym -y
+                      uv pip uninstall gym
                       uv pip install "gymnasium<1"  # issue with OrderedDict otherwise
                       uv pip install "grid2op~=1.9.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -153,7 +153,7 @@ jobs:
                 name: legacy test (grid2op 0.9.1.post1 - l2rpn wcci 2020)
                 command: |
                       source venv_test/bin/activate
-                      uv pip uninstall gymnasium -y
+                      uv pip uninstall gymnasium
                       uv pip install gym
                       uv pip install grid2op==0.9.1.post1
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
@@ -187,7 +187,7 @@ jobs:
                 name: legacy test (grid2op 1.9.0 - l2rpn Delft 2023)
                 command: |
                       source venv_test/bin/activate
-                      uv pip uninstall gym -y
+                      uv pip uninstall gym
                       uv pip install "gymnasium<1"  # issue with OrderedDict otherwise
                       uv pip install grid2op==1.9.0
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -295,7 +295,7 @@ jobs:
             - run: cat /etc/os-release
             # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            # - run: echo "deb http://archive.debian.org/debian bulleye-security main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update
             - run: apt purge python3-pkg-resources libtinfo5 -y
             # - run: apt purge python3-* -y
