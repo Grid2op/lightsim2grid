@@ -50,7 +50,7 @@ class TestSADC_14(unittest.TestCase):
             else:
                 grid_model.deactivate_trafo(l_id - nb_powerline)
             grid_model.tell_solver_need_reset()
-            V = 1.0 * self.env.backend.V  # np.ones(2 * self.env.n_sub, dtype=np.complex_)
+            V = 1.0 * self.env.backend.V  # np.ones(2 * self.env.n_sub, dtype=complex)
             res = grid_model.dc_pf(V, 10, 1e-8)
             if len(res):
                 # model has converged, I check the results are the same

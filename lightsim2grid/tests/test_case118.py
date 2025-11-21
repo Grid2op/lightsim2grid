@@ -11,9 +11,6 @@ import pandapower as pp
 import numpy as np
 import pandapower.networks as pn
 import grid2op
-import pdb
-import copy
-import tempfile
 import unittest
 from lightsim2grid import LightSimBackend
 from lightsim2grid.gridmodel import init_from_pandapower
@@ -38,7 +35,7 @@ def make_grid_multiple_slack(case):
                 p_mw=case._ppc['gen'][slack_bus_gen_id_ppc, 1],
                 slack=True)
     # "deactivate" the "ext_grid" 
-    case.ext_grid["in_service"][0] = False
+    case.ext_grid.loc[0, "in_service"] = False
     pp.runpp(case)
 
     # now create a copy of it, by removing the ext_grid completely (to be sure)
@@ -85,8 +82,8 @@ def make_grid_multiple_slack(case):
         pp.create_gen(net, **case.gen[var_gen].iloc[i])
 
     id_ref_slack = net.gen.shape[0]-1  # initial generator added as the slack bus added
-    net.gen["min_p_mw"][[id_ref_slack]] = 0.
-    net.gen["max_p_mw"][[id_ref_slack]] = 300.
+    net.gen.loc[[id_ref_slack], "min_p_mw"] = 0.
+    net.gen.loc[[id_ref_slack], "max_p_mw"] = 300.
     assert (net.gen["min_p_mw"] >= 0.).all()
     assert (net.gen["min_p_mw"] <= 400.).all()
 
@@ -125,14 +122,14 @@ class TestMultipleL2RPN(unittest.TestCase):
                 warnings.warn("Unable to peform required tests because install pandapower version does not "
                               "allow multiple slack.")
                 return
-            self.pp_net.gen["slack_weight"][self.idx_slack] = 1.
+            self.pp_net.gen.loc[1, "slack_weight"] = 1.
             pp.rundcpp(self.pp_net)  # to forget the result
             pp.runpp(self.pp_net, distributed_slack=True, init_vm_pu="flat", init_va_degree="flat")
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
                 ls_grid = init_from_pandapower(self.pp_net)
             ls_grid.tell_solver_need_reset()
-            V = np.ones(2 * self.nb_bus_total, dtype=np.complex_)
+            V = np.ones(2 * self.nb_bus_total, dtype=complex)
             V = ls_grid.ac_pf(V, self.max_it, self.tol)
             self.check_results(V[:self.nb_bus_total], ls_grid, self.pp_net)
 
@@ -175,7 +172,7 @@ class TestMultipleSlack118(unittest.TestCase):
         self.net = make_grid_multiple_slack(self.case)
         if "slack_weight" in self.net.gen:
             id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
-            self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
+            self.net.gen.loc[id_ref_slack, "slack_weight"] = 0.5
 
         self.unable_to_run_due_to_pp = False
         if "slack_weight" not in self.net.gen:
@@ -195,7 +192,7 @@ class TestMultipleSlack118(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid_single = init_from_pandapower(self.net)
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid_single, self.net)
 
@@ -209,10 +206,10 @@ class TestMultipleSlack118(unittest.TestCase):
     def test_two_slacks_diff_bus(self):
         """test the results when there are two slacks, in most simple setting"""
         # now activate more slack bus
-        self.net.gen["slack"][[1]] = True
+        self.net.gen.loc[1, "slack"] = True
         id_ref_slack = self.net.gen.shape[0] - 1
         if "slack_weight" in self.net.gen:
-            self.net.gen["slack_weight"][[1, id_ref_slack]] = 0.5
+            self.net.gen.loc[[1, id_ref_slack], "slack_weight"] = 0.5
         
         # just to make sure pp forgot previous results
         pp.runpp(self.net,
@@ -222,7 +219,9 @@ class TestMultipleSlack118(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init_from_pandapower(self.net)
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+            
+        self.net._ppc["internal"]["Ybus"]
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
 

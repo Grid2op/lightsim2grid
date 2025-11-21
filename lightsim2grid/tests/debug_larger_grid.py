@@ -408,7 +408,7 @@ else:
 
 print("IV - Check for the initialization (dc powerflow)")
 print("1) check that the results are same for dc lightsim and dc pandapower")
-Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+Vinit = np.ones(backend.nb_bus_total, dtype=complex) * pp_net["_options"]["init_vm_pu"]
 backend._grid.deactivate_result_computation()
 Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
 backend._grid.reactivate_result_computation()
@@ -549,7 +549,7 @@ else:
 # np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub]))  # 0.061585492793420286
 
 print("3) check that lightsim ac pf init with pp dc pf give same results (than pp)")
-Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+Vinit = np.ones(backend.nb_bus_total, dtype=complex) * pp_net["_options"]["init_vm_pu"]
 Vinit[:nb_sub] = V_init_ref[pp_vect_converter]
 conv = backend._grid.ac_pf(Vinit, max_iter, tol_this)
 

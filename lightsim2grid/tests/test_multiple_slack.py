@@ -39,7 +39,7 @@ def make_grid_multiple_slack(case):
                     p_mw=case._ppc['gen'][slack_bus_gen_id_ppc, 1],
                     slack=True)
     # "deactivate" the "ext_grid" 
-    case.ext_grid["in_service"][0] = False
+    case.ext_grid.loc[0, "in_service"] = False
     
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
@@ -154,7 +154,7 @@ class TestMultipleSlack14(unittest.TestCase):
         self.net = make_grid_multiple_slack(self.case)
 
         id_ref_slack = self.net.gen.shape[0]-1  # initial generator added as the slack bus added
-        if not "slack_weight" in self.net.gen:
+        if "slack_weight" not in self.net.gen:
             self.net.gen["slack_weight"] = 0.
         self.net.gen["slack_weight"][[id_ref_slack]] = 0.5
     
@@ -171,7 +171,7 @@ class TestMultipleSlack14(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid_single = init_from_pandapower(self.net)
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid_single, self.net)
 
@@ -203,7 +203,7 @@ class TestMultipleSlack14(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init_from_pandapower(self.net)
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
 
@@ -229,7 +229,7 @@ class TestMultipleSlack14(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             ls_grid = init_from_pandapower(self.net)
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
 
@@ -262,7 +262,7 @@ class TestMultipleSlack14(unittest.TestCase):
             warnings.filterwarnings("ignore")
             ls_grid = init_from_pandapower(self.net)
         
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         assert len(V), "lightsim diverged !"
         # check that the losses have been properly split
@@ -309,7 +309,7 @@ class TestMultipleSlack14(unittest.TestCase):
             warnings.filterwarnings("ignore")
             ls_grid = init_from_pandapower(self.net)
         
-        V = np.ones(self.nb_bus_total, dtype=np.complex_)
+        V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid, self.net)
 

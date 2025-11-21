@@ -189,13 +189,13 @@ jobs:
                       source venv_test/bin/activate
                       uv pip uninstall gym
                       uv pip install "gymnasium<1"  # issue with OrderedDict otherwise
-                      uv pip install grid2op==1.9.0
+                      uv pip install grid2op==1.9.0 --no-deps   # "wrong" link (pointing to bdonnot/chronix2grid) specified in the setup.py of grid2op)
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 1.9.1 - l2rpn IDF 2023)
                 command: |
                       source venv_test/bin/activate
-                      uv pip install grid2op==1.9.1
+                      uv pip install grid2op==1.9.1 --no-deps   # "wrong" link (pointing to bdonnot/chronix2grid) specified in the setup.py of grid2op)
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
 
     compile_gcc_prev_latest:

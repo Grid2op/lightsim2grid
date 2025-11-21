@@ -38,10 +38,10 @@ class TestPickle(unittest.TestCase):
                 # TODO test in case the pickle file is corrupted...
 
                 # test dc_pf
-                V_0 = np.ones(nb_bus_total, dtype=np.complex_)
+                V_0 = np.ones(nb_bus_total, dtype=complex)
                 V_0 = self.env.backend._grid.dc_pf(V_0, max_it, tol)
 
-                V_1 = np.ones(nb_bus_total, dtype=np.complex_)
+                V_1 = np.ones(nb_bus_total, dtype=complex)
                 V_1 = backend_1._grid.dc_pf(V_1, max_it, tol)
 
                 assert np.all(np.abs(V_0 - V_1) <= 1e-7), "dc pf does not lead to same results"

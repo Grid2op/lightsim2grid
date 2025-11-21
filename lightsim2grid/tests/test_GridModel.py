@@ -94,7 +94,7 @@ class BaseTests:
     def make_v0(self, net):
         V0 = np.full(net.bus.shape[0],
                      fill_value=1.0,
-                     dtype=np.complex_)
+                     dtype=complex)
         all_gen_conn = net.gen["bus"].values
         g_is = net.gen["in_service"].values
         V0[all_gen_conn[g_is]] *= self.net_datamodel.gen.iloc[g_is]["vm_pu"].values
