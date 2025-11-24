@@ -8,12 +8,18 @@
 
 import time
 import re
+from xml.dom.minidom import parseString
 import numpy as np
-from tqdm import tqdm
 import argparse
 import datetime
 import importlib
-from grid2op.Environment import MultiMixEnvironment
+try:
+    from tqdm import tqdm
+    from grid2op.Environment import MultiMixEnvironment
+except ImportError:
+    # above packages not mandatory for compare_lightsim2grid_pypowsybl.py
+    pass
+
 import pdb
 
 
@@ -128,7 +134,10 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def print_configuration(pypow_error=True):
+def print_configuration(
+    pypowbk_error=True,
+    pypowsybl_error=True
+    ):
     res = []
     print()
     tmp = f"- date: {datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}"
@@ -174,29 +183,42 @@ def print_configuration(pypow_error=True):
         print(tmp)
 
     import pandas as pd
-    import pandapower as pp
     import lightsim2grid
-    import grid2op
     tmp = (f"- numpy version: {np.__version__}")
     res.append(tmp)
     print(tmp)
     tmp = (f"- pandas version: {pd.__version__}")
     res.append(tmp)
     print(tmp)
-    tmp = (f"- pandapower version: {pp.__version__}")
-    res.append(tmp)
-    print(tmp)
-    if pypow_error is None:
+    try:
+        import pandapower as pp
+        tmp = (f"- pandapower version: {pp.__version__}")
+        res.append(tmp)
+        print(tmp)
+    except ImportError:
+        # pandapower not used for compare_lightsim2grid_pypowsybl
+        pass
+    if pypowbk_error is None:
+        # print both pypowsybl and pypowsybl2grid info
         tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
         res.append(tmp)
         print(tmp)
         tmp = (f"- pypowsybl2grid version: {importlib.metadata.version('pypowsybl2grid')}")
         res.append(tmp)
         print(tmp)
-        
-    tmp = (f"- grid2op version: {grid2op.__version__}")
-    res.append(tmp)
-    print(tmp)
+    elif pypowsybl_error is None:
+        # print only pypowsybl info
+        tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
+        res.append(tmp)
+        print(tmp)
+    try:
+        import grid2op
+        tmp = (f"- grid2op version: {grid2op.__version__}")
+        res.append(tmp)
+        print(tmp)
+    except ImportError:
+        # grid2op not used for compare_lightsim2grid_pypowsybl
+        parseString
     tmp = (f"- lightsim2grid version: {lightsim2grid.__version__}")
     res.append(tmp)
     print(tmp)
