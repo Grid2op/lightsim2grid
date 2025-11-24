@@ -313,7 +313,6 @@ def init(net : pypo.network.Network,
         if is_or_disc or is_ex_disc:
             model.deactivate_powerline(line_id)
     model.set_line_names(df_line.index)   
-            
     # for trafo
     # I extract trafo with `all_attributes=True` so that I have access to the
     # `rho`
@@ -329,7 +328,7 @@ def init(net : pypo.network.Network,
     # phase_tap_changer = net_pu.get_phase_tap_changers()
     
     shift_ = np.zeros(df_trafo.shape[0])
-    tap_position = 1.0 * shift_
+    # tap_position = 1.0 * shift_
     is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO
     
     # per unit
@@ -356,13 +355,14 @@ def init(net : pypo.network.Network,
     # * (transfo.getRatioTapChanger() != null ? transfo.getRatioTapChanger().getCurrentStep().getRho() : 1);
     # * (transfo.getPhaseTapChanger() != null ? transfo.getPhaseTapChanger().getCurrentStep().getRho() : 1);
     ratio = 1. * (df_trafo_pu["rated_u2"].values / df_trafo_pu["rated_u1"].values)
+    ratio = 1. * df_trafo_pu["rho"].values
     has_r_tap_changer = np.isin(df_trafo_pu.index, ratio_tap_changer.index)
     
     if PYPOWSYBL_VER <= PP_BUG_RATIO_TAP_CHANGER:
         # bug in per unit view in both python and java
         ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
-    else:
-        ratio[has_r_tap_changer] = 1. * df_trafo_pu.loc[has_r_tap_changer, "rho"].values
+    # else:
+    #     ratio[has_r_tap_changer] = 1. * df_trafo_pu.loc[has_r_tap_changer, "rho"].values
     # no_tap = ratio == 1.
     # tap_neg = ratio < 1. 
     # tap_positive = ratio > 1. 
@@ -373,7 +373,6 @@ def init(net : pypo.network.Network,
     # tap_step_pct[no_tap] = 100.
     # tap_position[tap_positive] += 1
     # tap_position[tap_neg] += 1
-    
     tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
     model.init_trafo(trafo_r,
@@ -468,10 +467,10 @@ def init(net : pypo.network.Network,
             try:
                 gen_slack_id_int = int(gen_slack_id)
             except Exception as exc_:
-                raise RuntimeError("'slack_bus_id' should be either an int or "
+                raise RuntimeError("'gen_slack_id' should be either an int or "
                                    "a generator names") from exc_
             if gen_slack_id_int != gen_slack_id:
-                raise RuntimeError("'slack_bus_id' should be either an int or a "
+                raise RuntimeError("'gen_slack_id' should be either an int or a "
                                    "generator names")
         model.add_gen_slackbus(gen_slack_id_int, 1.)
     elif slack_bus_id is not None:
