@@ -323,11 +323,12 @@ def init(net : pypo.network.Network,
         
     df_trafo_pu = net_pu.get_2_windings_transformers(all_attributes=True).loc[df_trafo.index]
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
-    if net.get_phase_tap_changers().shape[0] > 0:
-        raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter (but they are by lightsim2grid)")
+    # if net.get_phase_tap_changers().shape[0] > 0:
+        # raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter (but they are by lightsim2grid)")
     # phase_tap_changer = net_pu.get_phase_tap_changers()
     
-    shift_ = np.zeros(df_trafo.shape[0])
+    # shift_ = np.zeros(df_trafo.shape[0])
+    shift_ = np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
     # tap_position = 1.0 * shift_
     is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO
     
@@ -379,7 +380,7 @@ def init(net : pypo.network.Network,
                      trafo_x,
                      trafo_h,
                      ratio,
-                     shift_,
+                     shift_,  # in degree !
                      is_tap_hv_side,
                      tor_bus, # TODO do I need to change hv / lv
                      tex_bus)    

@@ -27,7 +27,7 @@ def get_same_slack(case_name):
     if case_name == "ieee118":
         return "VL69_0", 68
     if case_name == "ieee300":
-        return "VL7049_0", 235
+        return "VL7049_0", 257
     
     raise RuntimeError(f"Unknown env {case_name}")
 
@@ -97,7 +97,6 @@ def main(case_name):
         pypow_grid.get_buses()["v_mag"].values / 
         pypow_grid.get_voltage_levels().loc[pypow_grid.get_buses()["voltage_level_id"], "nominal_v"].values
         )
-    
     print(f"For {case_name}: ")
     print("Average error (across all buses): ")
     print(f"\t- voltage angle: {np.abs(va_rad_ls - va_rad_pypow).mean():.2e} rad")
