@@ -1,3 +1,11 @@
+.. # with overline, for parts
+.. * with overline, for chapters
+.. = for sections
+.. - for subsections
+.. ^ for subsubsections
+.. " for paragraphs
+
+
 Comparison with pypowsybl default load-flow
 ============================================
 
@@ -74,6 +82,7 @@ For example:
     cd benchmarks
     python compare_lightsim2grid_pypowsybl.py --case ieee9
 
+
 Load-flow parameters
 **********************
 
@@ -116,8 +125,157 @@ The parameters used to compute the powerflow in these examples are:
 
 .. note::
     If you are interested in an "abalation study" on the impact of certain parameters
-    above, let us know, for example on github or on discord.
+    above, let us know, for example with a github issue or by reaching out on discord.
 
 Results
------------
+-----------------------------------
 
+The benchmarks were run on:
+
+- date: 2025-11-25 10:16  CET
+- system: Linux 6.8.0-60-generic
+- OS: ubuntu 22.04
+- processor: 13th Gen Intel(R) Core(TM) i7-13700H
+- python version: 3.13.5.final.0 (64 bit)
+- numpy version: 2.3.5
+- pandas version: 2.3.3
+- pypowsybl version: 1.13.0
+- lightsim2grid version: 0.10.4
+- lightsim2grid extra information: 
+
+	- klu_solver_available: True 
+	- nicslu_solver_available: False 
+	- cktso_solver_available: False 
+	- compiled_march_native: False 
+	- compiled_o3_optim: False 
+
+The results were obtained by launching:
+
+.. code-block:: bash
+    python compare_lightsim2grid_pypowsybl.py --case ieee9
+    python compare_lightsim2grid_pypowsybl.py --case ieee14
+    python compare_lightsim2grid_pypowsybl.py --case ieee57
+    python compare_lightsim2grid_pypowsybl.py --case ieee118
+    python compare_lightsim2grid_pypowsybl.py --case ieee300
+
+And formatting the results in the table below.
+
+
+Precision of lightsim2grid
+*****************************
+
+On average (across all buses) the errors were:
+
+========== ============= ===============
+case name   angle (rad)  magnitude (pu)
+========== ============= ===============
+ieee9       1.82e-08        1.15e-08
+ieee14      9.70e-10        1.27e-09 
+ieee57      1.63e-07        2.71e-07
+ieee118     1.06e-07        3.15e-09
+ieee300     3.10e-07        1.75e-08
+========== ============= ===============
+
+Maximum error, for all buses:
+
+========== ============= ===============
+case name   angle (rad)  magnitude (pu)
+========== ============= ===============
+ieee9       3.35e-08        2.65e-08
+ieee14      2.35e-09        2.92e-09 
+ieee57      9.54e-07        1.20e-06
+ieee118     2.54e-07        6.92e-08
+ieee300     3.80e-07        1.59e-07
+========== ============= ===============
+
+As we can notice in the tables above, the results match up to the 
+solver precisions (set to 1e-6 for lightsim2grid).
+
+On these grids, lightsim2grid and pypowsybl give the same exact results.
+
+Computation times (1 powerflow)
+********************************
+
+In this part, we report the time to compute the initial powerflow, right
+after the initialization of the grid for both lightsim2grid and pypowsybl.
+
+The timings reported here are measured from python using "time.perf_counter()"
+before and after the computation are performed.
+
+Only the time to perform the powerflow is measured. In particular, the time
+to read back the data is excluded.
+
+Times are expressed in ms
+
+========== =============== ===============
+case name   lightsim2grid    pypowsybl
+========== =============== ===============
+ieee9       1.04e-01         3.91e+00
+ieee14      1.35e-01         3.74e+00 
+ieee57      4.18e-01         4.14e+00
+ieee118     6.89e-01         5.77e+00
+ieee300     2.27e+00         1.78e+01
+========== =============== ===============
+
+For this initial computation, lightsim2grid seems to be between 30 and 5x faster 
+than pypowsybl.
+
+.. warning::
+    This is not fair for pypowsybl.
+
+    Pypowsybl is not optimized only for speed and can simulate 
+    much more complex grids with an higher fidelity, which is not 
+    reported here.
+
+
+Computation times (100 powerflows)
+************************************
+
+In this section, we compare the capacity of lightsim2grid and pypowsybl to 
+perform successive powerflow computation when only the loads are modified.
+
+This comparison is done when using "raw" lightsim2grid / pypowsybl code, without
+trying to achieve the "best performance". Some performance gain could
+be achieved with different optimizations, for example by recycling previous
+results (avoiding to allocate memory, preventing copy, re use of some matrix
+strucure, taking advantage of the linear solver and avoid costly
+call when performing some factorization etc.)
+
+The results in the table bellow are given in ms and report the average 
+time it took to perform the 100 powerflows.
+
+========== =============== ===============
+case name   lightsim2grid    pypowsybl
+========== =============== ===============
+ieee9       1.73e-02         7.26e-01
+ieee14      2.78e-02         8.89e-01 
+ieee57      1.36e-01         1.48e+00
+ieee118     2.96e-01         2.56e+00
+ieee300     1.74e+00         5.72e+00
+========== =============== ===============
+
+
+Computation times security analysis
+************************************
+
+In this setting, we compare the time it takes to run a "contingency analysis"
+by simulating, in turn, the disconnection of every lines or transformer on
+the grid.
+
+The table here is obtained by using `contingencyAnalysis` module of
+lightsim2grid and the `pypowsybl.security` module from pypowsybl.
+
+The table below provides the average time it takes to simulate the
+effect of 1 contingency in ms. We don't measure the time taken to 
+compute the flows from the resulting voltages.
+
+
+========== =============== ===============
+case name   lightsim2grid    pypowsybl
+========== =============== ===============
+ieee9       1.32e-02         3.47e-01
+ieee14      2.37e-02         1.74e-01
+ieee57      1.34e-01         1.88e-01
+ieee118     2.08e-01         3.41e-01
+ieee300     9.99e-01         1.32e+00
+========== =============== ===============

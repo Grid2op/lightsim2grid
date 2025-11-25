@@ -148,9 +148,12 @@ void TrafoContainer::_update_model_coeffs()
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
         const cplx_type ys = 1. / (r_(i) + my_i * x_(i));
         const cplx_type h = h_(i) * 0.5;
-        double tau = ratio_(i);
-        if(!is_tap_hv_side_[i]) tau = my_one_ / tau;
+        real_type tau = ratio_(i);
         real_type theta_shift = shift_(i);
+        if(!is_tap_hv_side_[i]){
+            tau = my_one_ / tau;
+            theta_shift = -theta_shift;
+        }
         cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
         if(theta_shift != 0.)

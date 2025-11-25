@@ -8,6 +8,7 @@ import pypowsybl as pypow
 import pypowsybl.loadflow as pypow_lf
 
 from lightsim2grid.gridmodel import init_from_pypowsybl
+from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
 
 from utils_benchmark import print_configuration
 
@@ -61,11 +62,11 @@ def get_pypowsybl_parameters(slack_voltage_level):
         )
     return params
 
-def main(case_name):
+
+def main(case_name, nb_extra_powerflow=100):
     slack_pypowysbl, slack_ls = get_same_slack(case_name)
     
     pypow_grid = getattr(pypow.network, f"create_{case_name}")()
-    res = pypow_lf.run_ac(pypow_grid)
     ls_grid = init_from_pypowsybl(
         pypow_grid,
         slack_bus_id=slack_ls,
@@ -80,18 +81,19 @@ def main(case_name):
     end_pypow = time.perf_counter()
     
     beg_ls = time.perf_counter()
-    res_ls = ls_grid.ac_pf(
+    v_res_ls = ls_grid.ac_pf(
         np.ones(ls_grid.get_bus_vn_kv().shape[0], dtype=complex),
         10,
         1e-6)
     end_ls = time.perf_counter()
+    ls_grid.unset_changes()
     
     print_configuration(
         pypowbk_error=True, 
         pypowsybl_error=None)
     
-    va_rad_ls = np.angle(res_ls)
-    vm_pu_ls = np.abs(res_ls)
+    va_rad_ls = np.angle(v_res_ls)
+    vm_pu_ls = np.abs(v_res_ls)
     va_rad_pypow = np.deg2rad(pypow_grid.get_buses()["v_angle"].values)
     vm_pu_pypow = (
         pypow_grid.get_buses()["v_mag"].values / 
@@ -106,11 +108,74 @@ def main(case_name):
     print(f"\t- voltage magnitude: {np.abs(vm_pu_ls - vm_pu_pypow).max():.2e} pu")
     
     print("For the initial powerflow: ")
-    print(f"Lightsim2grid computation time: {1000.*(end_ls - beg_ls):.2e} ms")
-    print(f"Pypowsybl computation time: {1000.*(end_pypow - beg_pypow):.2e} ms")
+    print(f"\tLightsim2grid computation time: {1000.*(end_ls - beg_ls):.2e} ms")
+    print(f"\tPypowsybl computation time: {1000.*(end_pypow - beg_pypow):.2e} ms")
+    
+    print(f"For {nb_extra_powerflow} extra powerflows: ")
+    
+    load_factor = np.linspace(1, 1.02, nb_extra_powerflow, endpoint=False)
+    init_loads = pypow_grid.get_loads().copy()
+    time_pypow = 0.
+    for i in range(nb_extra_powerflow):
+        # update the grid
+        pypow_grid.update_loads(init_loads[['p0', 'q0']] * load_factor[i])
+        # run the powerflow
+        beg_pypow = time.perf_counter()
+        pypow_lf.run_ac(pypow_grid, parameters=pypowsybl_parameters)
+        end_pypow = time.perf_counter()
+        time_pypow += end_pypow - beg_pypow
+    
+    load_p_init, load_q_init, *_ = ls_grid.get_loads_res()
+    load_p_init = load_p_init.copy()
+    load_q_init = load_q_init.copy()
+    v_init_ls = np.ones(ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
+    all_loads = np.ones(len(ls_grid.get_loads()), dtype=np.bool_)
+    time_ls = 0.
+    for i in range(nb_extra_powerflow):
+        # update the grid
+        new_p = (load_p_init * load_factor[i]).astype(np.float32)
+        new_q = (load_q_init * load_factor[i]).astype(np.float32)
+        ls_grid.update_loads_p(all_loads, new_p)
+        ls_grid.update_loads_q(all_loads, new_q)
+        # run the powerflow
+        beg_ls = time.perf_counter()
+        res_ls = ls_grid.ac_pf(
+            v_init_ls,
+            10,
+            1e-6)
+        end_ls = time.perf_counter()
+        ls_grid.unset_changes()
+        time_ls += end_ls - beg_ls
+    print(f"\tLightsim2grid computation time: {1000.*(time_ls / nb_extra_powerflow):.2e} ms / pf")
+    print(f"\tPypowsybl computation time: {1000.*(time_pypow / nb_extra_powerflow):.2e} ms / pf")
     
     print("For a contingency anaylisis (results might differ): ")
-    print("TODO")
+    # pypowsybl
+    analysis = pypow.security.create_analysis()
+    pypow_grid.update_loads(init_loads[['p0', 'q0']])
+    analysis.add_single_element_contingencies(pypow_grid.get_lines().index)
+    analysis.add_single_element_contingencies(pypow_grid.get_2_windings_transformers().index)
+    beg_pypow = time.perf_counter()
+    res_ca_pypow = analysis.run_ac(pypow_grid, parameters=pypowsybl_parameters)
+    end_pypow = time.perf_counter()
+    
+    # lightsim2grid
+    ls_grid.update_loads_p(all_loads, load_p_init.astype(np.float32))
+    ls_grid.update_loads_q(all_loads, load_q_init.astype(np.float32))
+    ca_ls = ContingencyAnalysisCPP(ls_grid)
+    ca_ls.add_all_n1()
+    beg_ls = time.perf_counter()
+    res_ca_ls = ca_ls.compute(
+        v_res_ls,
+        10,
+        1e-6)
+    end_ls = time.perf_counter()
+    
+    nb_branch = pypow_grid.get_lines().shape[0] + pypow_grid.get_2_windings_transformers().shape[0]
+        
+    print(f"\tLightsim2grid computation time: {1000.*((end_ls - beg_ls) / nb_branch):.2e} ms / cont")
+    print(f"\tPypowsybl computation time: {1000.*((end_pypow - beg_pypow) / nb_branch ):.2e} ms / cont")
+
 
 
 if __name__ == "__main__":

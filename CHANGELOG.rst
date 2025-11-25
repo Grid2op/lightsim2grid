@@ -33,9 +33,10 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 ----------------------
 - [DEPRECATED] python 3.7 builds will no longer be available
 - [FIXED] a bug in the import of the grid from pypowsybl
+- [FIXED] a bug with phase shifters in case the tap was on the low voltage side
 - [ADDED] compatibility with python 3.14
 - [IMPROVED] the way to initialize the transformers from pypowsybl
-- [IMPROVED] possibility to load grid with phase shifter in pypowsybl
+- [IMPROVED] possibility to load grid with phase shifters from pypowsybl
 
 [0.10.3] 2025-04-28
 ----------------------
