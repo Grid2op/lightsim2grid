@@ -8,6 +8,7 @@
 
 import warnings
 import numpy as np
+import unittest
 
 from lightsim2grid.gridmodel import init_from_pandapower
 
@@ -20,8 +21,7 @@ from pandapower.pf.ppci_variables import _get_pf_variables_from_ppci
 from pandapower.pd2ppc import _pd2ppc
 from pandapower.auxiliary import _init_runpp_options
 
-import unittest
-
+from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
 
 
 class BaseCase300Tester(unittest.TestCase):
@@ -60,6 +60,8 @@ class BaseCase300Tester(unittest.TestCase):
                     tdpf_delay_s=None)
         
     def setUp(self) -> None:
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net = self.get_network()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

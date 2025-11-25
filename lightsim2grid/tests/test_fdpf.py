@@ -20,6 +20,9 @@ from pandapower.pf.ppci_variables import _get_pf_variables_from_ppci
 from pandapower.pd2ppc import _pd2ppc
 from pandapower.auxiliary import _init_runpp_options
 
+from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+
+
 import unittest
 
 
@@ -55,6 +58,8 @@ class BaseFDPFTester:
                     tdpf_delay_s=None)
         
     def setUp(self) -> None:
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net = self.get_network()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
@@ -81,7 +86,7 @@ class BaseFDPFTester:
         # convert pandapower net to ppc
         ppc, ppci = _pd2ppc(self.net)
         self.net["_ppc"] = ppc
-        baseMVA, bus, gen, branch, svc, tcsc, ssc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+        baseMVA, bus, gen, branch, svc, tcsc, ssc, vsc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
         pp_Bp, pp_Bpp = makeB(baseMVA, bus, np.real(branch), self.alg)
         return pp_Bp, pp_Bpp, pv, pq, V0
         

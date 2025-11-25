@@ -771,7 +771,7 @@ class LightSimBackend(Backend):
         # buses_sub_id is the first element as returned by from_pypowsybl / init function
         # el_sub_df is an element dataframe returned by the same function
         tmp = pd.merge(el_sub_df.reset_index(), buses_sub_id, how="left", right_on="sub_id", left_on="sub_id")
-        res = tmp.drop_duplicates(subset='id').set_index("id").sort_index()["bus_id"].values
+        res = tmp.drop_duplicates(subset='id').set_index("id").sort_index()["bus_global_id"].values
         return res
     
     def _load_grid_pypowsybl(self, path=None, filename=None):

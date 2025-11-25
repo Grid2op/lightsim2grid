@@ -17,6 +17,9 @@ from lightsim2grid.gridmodel import init_from_pandapower
 from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 
 
+from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+
+
 VAR_GEN = ["bus", "p_mw", "vm_pu", "sn_mva", "name", "index", "max_q_mvar", "min_q_mvar", "min_p_mw",
             "max_p_mw", "scaling", "type", "slack", "controllable", "vn_kv", "xdss_pu", "rdss_pu",
             "cos_phi", "in_service"]
@@ -107,6 +110,8 @@ class TestMultipleL2RPN(unittest.TestCase):
         self.nb_bus_total = 118
 
     def test_neurips_track2(self):
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             env = grid2op.make("l2rpn_neurips_2020_track2",
@@ -186,6 +191,8 @@ class TestMultipleSlack118(unittest.TestCase):
         """check pandapower and lightsim get the same results when there is only one
            slack bus
         """
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         pp.runpp(self.net,
                  init_vm_pu="flat",
                  init_va_degree="flat")
@@ -205,6 +212,8 @@ class TestMultipleSlack118(unittest.TestCase):
 
     def test_two_slacks_diff_bus(self):
         """test the results when there are two slacks, in most simple setting"""
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         # now activate more slack bus
         self.net.gen.loc[1, "slack"] = True
         id_ref_slack = self.net.gen.shape[0] - 1
