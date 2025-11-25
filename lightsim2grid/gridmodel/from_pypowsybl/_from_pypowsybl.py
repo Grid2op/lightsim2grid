@@ -137,7 +137,7 @@ def init(net : pypo.network.Network,
                                        bus_df["local_id"],
                                        bus_df["voltage_level_id"]
                                    )]
-        nb_bus_per_vl_in_grid = nb_bus_per_vl.max()
+        nb_bus_per_vl_in_grid = nb_bus_per_vl.values.max()
         if n_busbar_per_sub is None:
             # setting automatically n_busbar_per_sub
             # to the value read from the grid

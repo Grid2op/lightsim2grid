@@ -276,6 +276,7 @@ class TestCase57FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.Te
     
     def get_tol_eq_kcl(self):
         return 1.53e-04
+    
     def get_tol_eq(self):
         return 5.47e-05
                     
