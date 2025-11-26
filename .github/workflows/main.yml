@@ -591,7 +591,7 @@ jobs:
           platforms: all
 
       - name: Compile with cibuildwheel
-        uses: pypa/cibuildwheel@v2.22.0
+        uses: pypa/cibuildwheel@v3.3.0
         env:
           CIBW_PLATFORM: "${{ matrix.runner.cibuildwheel}}"
           CIBW_BUILD: "${{ matrix.python.name}}-*"
@@ -600,7 +600,7 @@ jobs:
           CIBW_ARCHS_WINDOWS: ARM64 
           CIBW_ENVIRONMENT: __O3_OPTIM=1
           CIBW_BEFORE_ALL: python -m pip install --upgrade setuptools wheel pybind11 pip && python -m pip install "numpy>=2; python_version >= '3.9'"  "numpy; python_version < '3.9'"
-          CIBW_BEFORE_BUILD_MACOS: make clean && make CC=clang CXX=clang++  # no need to cross compile this because host is already arm64 based
+          CIBW_BEFORE_BUILD_MACOS: make clean && CC=clang CXX=clang++ make  # no need to cross compile this because host is already arm64 based
           CIBW_BEFORE_BUILD_LINUX: make clean && make  # maybe we need to cross compile this (host x64) but maybe not (qemu) ?
           CIBW_BEFORE_BUILD_WINDOWS: > 
             cd build_cmake &&
@@ -611,7 +611,7 @@ jobs:
             cmake --build . --config Release &&
             cmake --install . --prefix ..\built
           CIBW_TEST_REQUIRES: grid2op pandapower
-          CIBW_TEST_SKIP: "cp312-* *-macosx_arm64 *-win_arm64 cp313-*" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
+          CIBW_TEST_SKIP: "*-macosx_arm64 *-win_arm64" # to silence warning "While arm64 wheels can be built on x86_64, they cannot be tested."
           CIBW_TEST_COMMAND: >
             python -c "import lightsim2grid" &&
             python -c "from lightsim2grid import *" &&
