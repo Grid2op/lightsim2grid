@@ -365,7 +365,7 @@ jobs:
           }
         runner:
           - {
-            name: macos-15 intel,
+            name: macos-15-intel,
             arch: x86_64
           }
           - {
