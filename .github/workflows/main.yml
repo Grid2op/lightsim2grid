@@ -365,11 +365,11 @@ jobs:
           }
         runner:
           - {
-            name: macos-13,
+            name: macos-15 intel,
             arch: x86_64
           }
           - {
-            name: macos-14,
+            name: macos-14-arm64,
             arch: arm64
           }
         exclude:
