@@ -52,6 +52,11 @@ jobs:
             abi: cp313,
             version: '3.13',
           }
+          - {
+            name: cp314,
+            abi: cp314,
+            version: '3.14',
+          }
 
         cont:
           - {
@@ -216,6 +221,10 @@ jobs:
             name: cp313,
             version: '3.13',
           }
+          - {
+            name: cp314,
+            version: '3.14',
+          }
         win_arch:
           - {
             name: "AMD64",
@@ -363,13 +372,17 @@ jobs:
             name: cp313,
             version: '3.13',
           }
+          - {
+            name: cp314,
+            version: '3.14',
+          }
         runner:
           - {
             name: macos-15-intel,
             arch: x86_64
           }
           - {
-            name: macos-14-arm64,
+            name: macos-14,
             arch: arm64
           }
         exclude:
@@ -536,6 +549,10 @@ jobs:
             name: cp313,
             version: '3.13',
           }
+          - {
+            name: cp314,
+            version: '3.14',
+          }
         exclude:
           - python: 
               name: cp310  # because already done natively above
@@ -551,6 +568,10 @@ jobs:
               name: macos-14
           - python: 
               name: cp313  # because already done natively above
+            runner:
+              name: macos-14
+          - python: 
+              name: cp314  # because already done natively above
             runner:
               name: macos-14
           - python: 
