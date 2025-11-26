@@ -142,7 +142,7 @@ def init(net : pypo.network.Network,
             # setting automatically n_busbar_per_sub
             # to the value read from the grid
             # TODO logger here
-            n_busbar_per_sub = int(nb_bus_per_vl_in_grid.iloc[0])
+            n_busbar_per_sub = int(nb_bus_per_vl_in_grid)
         elif n_busbar_per_sub < nb_bus_per_vl_in_grid:
             raise RuntimeError(f"The input pypowsybl grid counts some voltage levels "
                                f"with {nb_bus_per_vl_in_grid} independant buses, "
