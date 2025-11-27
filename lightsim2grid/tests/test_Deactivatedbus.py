@@ -58,6 +58,8 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
 
 class MakeDCTestsDisco(BaseTests, unittest.TestCase):
     def setUp(self):
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net = pn.case118()
         self.last_real_bus = self.net.bus.shape[0]
         pp.create_bus(self.net, vn_kv=self.net.bus["vn_kv"][0])
