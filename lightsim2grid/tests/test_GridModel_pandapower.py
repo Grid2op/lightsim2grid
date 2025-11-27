@@ -8,16 +8,20 @@
 
 import unittest
 import numpy as np
+
 import pandapower.networks as pn
 import pandapower as pp
 
 from lightsim2grid.gridmodel import init_from_pandapower
 import warnings
+from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
 import pdb
 
 
 class BaseTests:
     def setUp(self):
+        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net_ref = pn.case118()
         self.net_datamodel = pn.case118()
 

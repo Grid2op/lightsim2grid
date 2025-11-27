@@ -37,7 +37,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = {p_mw_(shunt_id), -q_mvar_(shunt_id)};
+        tmp = {-p_mw_(shunt_id), -q_mvar_(shunt_id)};
 
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];

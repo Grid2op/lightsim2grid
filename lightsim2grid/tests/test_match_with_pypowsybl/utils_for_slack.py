@@ -42,9 +42,14 @@ def get_pypowsybl_parameters(slack_voltage_level=None):
             "voltagePerReactivePowerControl": "false",
             "generatorReactivePowerRemoteControl": "false",
             "secondaryVoltageControl": "false",
+            # see https://github.com/powsybl/pypowsybl/issues/1127#issuecomment-3581713875
+            'slackDistributionFailureBehavior' : 'LEAVE_ON_SLACK_BUS',
+            # 'transformerVoltageControlMode' : 'WITH_GENERATOR_VOLTAGE_CONTROL',
+            'plausibleActivePowerLimit': '5000'
             }
         )
     if slack_voltage_level is not None:
         params.provider_parameters["slackBusSelectionMode"] = "NAME"
         params.provider_parameters["slackBusesIds"] = f"{slack_voltage_level}"
     return params
+

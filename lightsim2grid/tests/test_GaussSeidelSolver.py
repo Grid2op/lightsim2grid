@@ -7,8 +7,10 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import os
+import sys
 import unittest
 import numpy as np
+from numpy import linalg, conj, r_
 import pdb
 import zipfile
 from scipy import sparse
@@ -23,11 +25,6 @@ try:
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
     pass
-
-
-import sys
-
-from numpy import linalg, conj, r_, Inf
 
 
 def gausspf(Ybus, Sbus, V0, ref, pv, pq, ppopt=None):
@@ -77,7 +74,7 @@ def gausspf(Ybus, Sbus, V0, ref, pv, pq, ppopt=None):
              mis[pq].imag   ]
 
     ## check tolerance
-    normF = linalg.norm(F, Inf)
+    normF = linalg.norm(F, np.inf)
     if verbose > 1:
         sys.stdout.write('\n it    max P & Q mismatch (p.u.)')
         sys.stdout.write('\n----  ---------------------------')
@@ -115,7 +112,7 @@ def gausspf(Ybus, Sbus, V0, ref, pv, pq, ppopt=None):
                  mis[pq].imag  ]
 
         ## check for convergence
-        normF = linalg.norm(F, Inf)
+        normF = linalg.norm(F, np.inf)
         if verbose > 1:
             sys.stdout.write('\n%3d        %10.3e' % (i, normF))
         if normF < tol:
@@ -169,7 +166,7 @@ class MakeTests(unittest.TestCase):
                 self.Ybus = self.load_array(myzip, "Ybus.npy")
                 self.Ybus = sparse.csc_matrix(self.Ybus)
             return True
-        except:
+        except Exception as exc_:
             return False
 
     def solver_aux(self):

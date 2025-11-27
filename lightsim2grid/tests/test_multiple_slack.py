@@ -346,7 +346,7 @@ class TestMultipleSlack14(unittest.TestCase):
         # print(f"{np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values).max() = }")
         
         assert np.abs(V_pp - V_ls).max() <= tol_v_pu, f"wrong voltages: {np.abs(V_pp - V_ls).max()}"
-        assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= tol_line), f"{np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values).max()}"
+        assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= tol_line), f"{np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line['p_from_mw'].values).max()}"
         assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= tol_line)
         assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= tol_gen_mw)
         assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= tol_gen_mvar)
