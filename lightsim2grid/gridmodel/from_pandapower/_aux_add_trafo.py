@@ -80,36 +80,41 @@ def _aux_add_trafo(converter, model, pp_net, pp_to_ls):
     tap_angles_[~np.isfinite(tap_angles_)] = 0.
     tap_angles_ = np.deg2rad(tap_angles_)
 
+    trafo_model_is_t = True
+    if "_options" in pp_net and "trafo_model" in pp_net._options:
+        trafo_model_is_t = pp_net._options["trafo_model"] == "t"
     # compute physical parameters
     if version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL:
-        # TODO
         trafo_r, trafo_x, trafo_b = \
-            converter.get_trafo_param(tap_step_pct,
-                                      tap_pos,
-                                      tap_angles_,  # in radian !
-                                      is_tap_hv_side,
-                                      pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
-                                      pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                                      pp_net.trafo["vk_percent"].values,
-                                      pp_net.trafo["vkr_percent"].values,
-                                      pp_net.trafo["sn_mva"].values,
-                                      pp_net.trafo["pfe_kw"].values,
-                                      pp_net.trafo["i0_percent"].values,
-                                      )
+            converter.get_trafo_param_pp3(tap_step_pct,
+                                          tap_pos,
+                                          tap_angles_,  # in radian !
+                                          is_tap_hv_side,
+                                          pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                          pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                          pp_net.trafo["vk_percent"].values,
+                                          pp_net.trafo["vkr_percent"].values,
+                                          pp_net.trafo["sn_mva"].values,
+                                          pp_net.trafo["pfe_kw"].values,
+                                          pp_net.trafo["i0_percent"].values,
+                                          trafo_model_is_t
+                                          )
     else:
+        if not trafo_model_is_t:
+            raise RuntimeError("Cannot convert a transformer with model 'pi' to LightSim2grid (using pandapower < 3)")
         trafo_r, trafo_x, trafo_b = \
-            converter.get_trafo_param_legacy(tap_step_pct,
-                                             tap_pos,
-                                             tap_angles_,  # in radian !
-                                             is_tap_hv_side,
-                                             pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
-                                             pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                                             pp_net.trafo["vk_percent"].values,
-                                             pp_net.trafo["vkr_percent"].values,
-                                             pp_net.trafo["sn_mva"].values,
-                                             pp_net.trafo["pfe_kw"].values,
-                                             pp_net.trafo["i0_percent"].values,
-                                             )
+            converter.get_trafo_param_pp2(tap_step_pct,
+                                          tap_pos,
+                                          tap_angles_,  # in radian !
+                                          is_tap_hv_side,
+                                          pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                          pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                          pp_net.trafo["vk_percent"].values,
+                                          pp_net.trafo["vkr_percent"].values,
+                                          pp_net.trafo["sn_mva"].values,
+                                          pp_net.trafo["pfe_kw"].values,
+                                          pp_net.trafo["i0_percent"].values,
+                                          )
 
     # initialize the grid
     model.init_trafo_pandapower(trafo_r,

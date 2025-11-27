@@ -22,17 +22,17 @@ void PandaPowerConverter::_check_init(){
 std::tuple<RealVect,
            RealVect,
            CplxVect>
-           PandaPowerConverter::get_trafo_param_legacy(const RealVect & tap_step_pct,
-                                                       const RealVect & tap_pos,
-                                                       const RealVect & tap_angles,
-                                                       const std::vector<bool> & is_tap_hv_side,
-                                                       const RealVect & vn_hv,  // nominal voltage of hv bus
-                                                       const RealVect & vn_lv,  // nominal voltage of lv bus
-                                                       const RealVect & trafo_vk_percent,
-                                                       const RealVect & trafo_vkr_percent,
-                                                       const RealVect & trafo_sn_trafo_mva,
-                                                       const RealVect & trafo_pfe_kw,
-                                                       const RealVect & trafo_i0_pct)
+           PandaPowerConverter::get_trafo_param_pp2(const RealVect & tap_step_pct,
+                                                    const RealVect & tap_pos,
+                                                    const RealVect & tap_angles,
+                                                    const std::vector<bool> & is_tap_hv_side,
+                                                    const RealVect & vn_hv,  // nominal voltage of hv bus
+                                                    const RealVect & vn_lv,  // nominal voltage of lv bus
+                                                    const RealVect & trafo_vk_percent,
+                                                    const RealVect & trafo_vkr_percent,
+                                                    const RealVect & trafo_sn_trafo_mva,
+                                                    const RealVect & trafo_pfe_kw,
+                                                    const RealVect & trafo_i0_pct)
 {
     //TODO consistency: move this class outside of here
     _check_init();
@@ -188,3 +188,114 @@ std::tuple<RealVect,
     return res;
 }
 
+std::tuple<RealVect,
+           RealVect,
+           CplxVect>
+           PandaPowerConverter::get_trafo_param_pp3(const RealVect & tap_step_pct,
+                                                    const RealVect & tap_pos,
+                                                    const RealVect & tap_angles,
+                                                    const std::vector<bool> & is_tap_hv_side,
+                                                    const RealVect & vn_hv,  // nominal voltage of hv bus
+                                                    const RealVect & vn_lv,  // nominal voltage of lv bus
+                                                    const RealVect & trafo_vk_percent,
+                                                    const RealVect & trafo_vkr_percent,
+                                                    const RealVect & trafo_sn_mva,
+                                                    const RealVect & trafo_pfe_kw,
+                                                    const RealVect & trafo_i0_pct,
+                                                    bool trafo_model_is_t)
+{
+    //TODO consistency: move this class outside of here
+    _check_init();
+    // see _calc_branch_values_from_trafo_df from pandapower.build_branch
+
+    const int nb_trafo = static_cast<int>(tap_step_pct.size());
+    // TODO check all vectors have the same size
+
+    // compute the adjusted for phase shifter and tap side
+    auto tap_steps = 0.01 * tap_step_pct.array() * tap_pos.array();
+    auto du_hv = vn_hv.array() * tap_steps.array();
+    auto du_lv = vn_lv.array() * tap_steps.array();
+    RealVect trafo_vn_hv = vn_hv;
+    RealVect trafo_vn_lv = vn_lv;
+    for(int i = 0; i < nb_trafo; ++i)
+    {
+        if(is_tap_hv_side[i]) {
+            // adjust the voltage hv side
+            double tmp_cos = vn_hv.coeff(i) + du_hv.coeff(i) * cos(tap_angles.coeff(i));
+            double tmp_sin = du_hv.coeff(i) * sin(tap_angles.coeff(i));
+            trafo_vn_hv.coeffRef(i) = sqrt(tmp_cos * tmp_cos + tmp_sin * tmp_sin);
+        }else{
+            // adjust the voltage lv side
+            double tmp_cos = vn_lv.coeff(i) + du_lv.coeff(i) * cos(tap_angles.coeff(i));
+            double tmp_sin = du_lv.coeff(i) * sin(tap_angles.coeff(i));
+            trafo_vn_lv.coeffRef(i) = sqrt(tmp_cos * tmp_cos + tmp_sin * tmp_sin);
+        }
+    }
+    const RealVect & vn_trafo_lv = trafo_vn_lv;
+
+    // compute r and x
+    // see _calc_r_x_y_from_dataframe from pandapower.build_branch
+
+    // tap_lv = np.square(vn_trafo_lv / vn_lv) * sn_mva  # adjust for low voltage side voltage converter
+    RealVect vn_trafo_lv_1_vn_lv_sq = vn_trafo_lv.array() / vn_lv.array();
+    vn_trafo_lv_1_vn_lv_sq = vn_trafo_lv_1_vn_lv_sq.array() * vn_trafo_lv_1_vn_lv_sq.array();
+    RealVect tap_lv = vn_trafo_lv_1_vn_lv_sq * sn_mva_; // tap_lv = np.square(vn_trafo_lv / vn_lv) * sn_mva
+
+    // z_sc = vk_percent / 100. / sn_trafo_mva * tap_lv
+    RealVect _1_sn_trafo_mva = my_one_ / trafo_sn_mva.array();
+    RealVect z_sc = 0.01 * trafo_vk_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
+    // r_sc = vkr_percent / 100. / sn_trafo_mva * tap_lv
+    RealVect r_sc = 0.01 * trafo_vkr_percent.array() * _1_sn_trafo_mva.array() * tap_lv.array();
+    // x_sc = np.sign(z_sc) * np.sqrt(z_sc ** 2 - r_sc ** 2)
+    RealVect tmp2 = z_sc.array()*z_sc.array() - r_sc.array() * r_sc.array();
+    RealVect x_sc = z_sc.cwiseSign().array() * tmp2.cwiseSqrt().array();
+
+    // compute h, the subsceptance
+    ///calcc_y_from_dataframe in pandapower.build_branch
+    // baseZ = np.square(vn_lv) / (3*net_sn_mva) if mode == 'pf_3ph' else np.square(vn_lv) / net_sn_mva
+    RealVect baseZ = vn_lv.array() * vn_lv.array();
+    baseZ.array() /= sn_mva_;
+    // pfe_mw = [...] get_trafo_values(trafo_df, "pfe_kw") * 1e-3
+    RealVect pfe_mw =  trafo_pfe_kw.array() * 1e-3;
+    // vnl_squared = [...] vn_lv_kv ** 2
+    RealVect vnl_squared = vn_lv.array() * vn_lv.array();
+    // g_mva = pfe_mw
+    RealVect g_mva = pfe_mw;
+    //  ym_mva = i0 / 100 * trafo_sn_mva
+    RealVect ym_mva = trafo_i0_pct.array() * 0.01 * trafo_sn_mva.array();
+    // b_mva_squared = np.square(ym_mva) - np.square(pfe_mw)
+    RealVect b_mva_squared = ym_mva.array() * ym_mva.array() - pfe_mw.array();
+    // b_mva_squared[b_mva_squared < 0] = 0
+    for(int i = 0; i<nb_trafo; ++i) {if (b_mva_squared(i) < 0.)  b_mva_squared(i) = 0.;}
+    // b_mva = -np.sqrt(b_mva_squared)
+    RealVect b_mva = b_mva_squared.cwiseSqrt();
+
+    // g_pu = g_mva / vnl_squared * baseZ * parallel / np.square(vn_trafo_lv / vn_lv_kv)
+    RealVect g_pu = g_mva.array() / vnl_squared.array() * baseZ.array() * vn_trafo_lv_1_vn_lv_sq.array();
+    // b_pu = b_mva / vnl_squared * baseZ * parallel / np.square(vn_trafo_lv / vn_lv_kv)
+    RealVect b_pu = b_mva.array() / vnl_squared.array() * baseZ.array() * vn_trafo_lv_1_vn_lv_sq.array();
+
+    //transform trafo from t model to pi model, of course...
+    // (remove that if trafo model is not t, but directly pi)
+    if(trafo_model_is_t){
+        for(int i = 0; i<nb_trafo; ++i){
+            if((std::abs(g_pu(i)) < 1e-7) && (std::abs(b_pu(i)) < 1e-7)) continue;
+
+            // cplx_type za_star = my_half_ * (r_sc(i) + my_i * x_sc(i));
+            // cplx_type zc_star = - my_i / b_sc(i);
+            // cplx_type zSum_triangle = za_star * za_star + my_two_ * za_star * zc_star;
+            // cplx_type zab_triangle = zSum_triangle / zc_star;
+            // cplx_type zbc_triangle = zSum_triangle / za_star;
+
+            // r_sc(i) = std::real(zab_triangle);
+            // x_sc(i) = std::imag(zab_triangle);
+            // b_sc(i) = -my_two_ * my_i / zbc_triangle;
+            // b_sc(i) = my_two_ / zbc_triangle;
+        }
+    }
+
+    std::tuple<RealVect, RealVect, CplxVect> res =
+        std::tuple<RealVect, RealVect, CplxVect>(std::move(r_sc), std::move(x_sc), g_pu.cast<cplx_type>() + my_i * b_pu.cast<cplx_type>());
+
+    return res;
+}

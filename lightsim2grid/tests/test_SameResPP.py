@@ -418,18 +418,18 @@ class MyTestCase(unittest.TestCase):
         tap_angles_[~np.isfinite(tap_angles_)] = 0.
         tap_angles_ = np.deg2rad(tap_angles_)
         trafo_r, trafo_x, trafo_b = \
-            converter.get_trafo_param(tap_step_pct,
-                                      tap_pos,
-                                      tap_angles_,  # in radian !
-                                      is_tap_hv_side,
-                                      pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
-                                      pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                                      pp_net.trafo["vk_percent"].values,
-                                      pp_net.trafo["vkr_percent"].values,
-                                      pp_net.trafo["sn_mva"].values,
-                                      pp_net.trafo["pfe_kw"].values,
-                                      pp_net.trafo["i0_percent"].values,
-                                      )
+            converter.get_trafo_param_pp2(tap_step_pct,
+                                          tap_pos,
+                                          tap_angles_,  # in radian !
+                                          is_tap_hv_side,
+                                          pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                          pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                          pp_net.trafo["vk_percent"].values,
+                                          pp_net.trafo["vkr_percent"].values,
+                                          pp_net.trafo["sn_mva"].values,
+                                          pp_net.trafo["pfe_kw"].values,
+                                          pp_net.trafo["i0_percent"].values,
+                                          )
         # pandapower trafo parameters
         ppc = copy.deepcopy(pp_net._ppc)
         bus_lookup = pp_net["_pd2ppc_lookups"]["bus"]
