@@ -29,13 +29,19 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.10.4] 2025-xx-yy
+[0.11.0] 2025-xx-yy
 ----------------------
 - [DEPRECATED] python 3.7 builds will no longer be available
 - [FIXED] a bug in the import of the grid from pypowsybl
 - [FIXED] a bug with phase shifters in case the tap was on the low voltage side
-- [FIXED] a bug with active shunt values (wrong sign in the cpp part)
+- [FIXED] a bug with active shunt values (wrong sign in the cpp part) and wrong Ybus diagonal coeff
+- [FIXED] a bug in DC computation with shunt active values (wrong sign)
+- [FIXED] a bug in DC computation with some phase shifters (when tap was not tagged on correct side)
+- [FIXED] a bug in FDPF when phase tap changer was not on high voltage side
 - [ADDED] compatibility with python 3.14 and python 3.14 build
+- [ADDED] compatibility with pandapower >= 3 version when loading a grid 
+  (pandapower changed the way it initilizes the transformers model parameters)
+- [ADDED] more kwargs arguments are possible in the LightSimBackend `loader_kwargs`
 - [IMPROVED] the way to initialize the transformers from pypowsybl
 - [IMPROVED] possibility to load grid with phase shifters from pypowsybl
 

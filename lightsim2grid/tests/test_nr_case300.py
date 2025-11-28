@@ -21,7 +21,7 @@ from pandapower.pf.ppci_variables import _get_pf_variables_from_ppci
 from pandapower.pd2ppc import _pd2ppc
 from pandapower.auxiliary import _init_runpp_options
 
-from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 
 class BaseCase300Tester(unittest.TestCase):
@@ -60,7 +60,7 @@ class BaseCase300Tester(unittest.TestCase):
                     tdpf_delay_s=None)
         
     def setUp(self) -> None:
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net = self.get_network()
         with warnings.catch_warnings():

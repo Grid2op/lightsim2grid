@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from re import M
 import unittest
 import tempfile
 import pandapower as pp
@@ -26,28 +27,26 @@ except ImportError as exc_:
     ClassSolver = SparseLUSolver
 
 
-from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 TIMER_INFO = False  # do i print information regarding computation time
 
 
 class TestDCPF(unittest.TestCase):
     def setUp(self) -> None:
-        self.tol = 1e-4  # results are equal if they match up to tol
-        self.tol_big = 0.01  # for P = C
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
+        self.tol = 3e-5  # results are equal if they match up to tol
+        self.tol_kcl = 1e-5 # for P = C
+        # if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+        #     self.skipTest("Test not correct: pp changed the way it computed trafo params")
 
     def test_case14(self):
         case = pn.case14()
         case.name = "case14"
-        self.tol = 2e-3
+        # self.tol = 2e-3
         self._aux_test(case)
 
     def test_case14_with_phaseshift(self):
-        case = pn.case14()
-        # case.trafo.iloc[[0]]["shift_degree"] = -5.0
-        
+        case = pn.case14()        
         hv_bus=0
         lv_bus=2
         pp.create_transformer_from_parameters(case,
@@ -67,96 +66,135 @@ class TestDCPF(unittest.TestCase):
                                             #   shift_degree=0.,
                                               pfe_kw=0.
                                               )
-        self.tol = 2e-3
+        # self.tol = 2e-3
         case.name = "case14_2"
         self._aux_test(case)
 
     def test_case39(self):
         case = pn.case39()
         case.name = "case39"
-        self.tol = 3e-4
+        self.tol = 4e-5
         self._aux_test(case)
 
     def test_case118(self):
         case = pn.case118()
         case.name = "case118"
+        self.tol = 4e-5
         self._aux_test(case)
 
     def test_case1888rte(self):
         case = pn.case1888rte()
         case.name = "case1888rte"
-        self.tol = 3e-4
+        self.tol_kcl = 2e-3
         self._aux_test(case)
 
-    # def test_case300(self):
-    #     # issue with Bbus / Ybus matrix
-    #     case = pn.case300()
-    #     self._aux_test(case)
-
-    # def test_case9241pegase(self):
-    # TODO make it work
-    #     case = pn.case9241pegase()
-    #     self._aux_test(case)
+    def test_case300(self):
+        case = pn.case300()
+        self._aux_test(case)
 
     def test_case2848rte(self):
         case = pn.case2848rte()
-        self.tol = 0.1  # yeah this one is a bit tough... # TODO
         case.name = "case2848rte"
+        self.tol = 4e-5
+        self.tol_kcl = 7e-4
         self._aux_test(case)
 
     def test_case6470rte(self):
         case = pn.case6470rte()
         case.name = "case6470rte"
-        self.tol_big = 0.1  # for P = C
-        self.tol = 1e-2
+        self.tol = 2e-4
+        self.tol_kcl = 7e-4
         self._aux_test(case)
 
     def test_case6495rte(self):
         case = pn.case6495rte()
         case.name = "case6495rte"
-        self.tol = 1e-2
+        self.tol = 2e-4
+        self.tol_kcl = 5e-3
         self._aux_test(case)
 
     def test_case6515rte(self):
         case = pn.case6515rte()
         case.name = "case6515rte"
-        self.tol_big = 0.1  # for P = C
-        self.tol = 1e-2
+        self.tol = 2e-4
+        self.tol_kcl = 9e-3
         self._aux_test(case)
 
     def test_case_illinois200(self):
         case = pn.case_illinois200()
         case.name = "case_illinois200"
-        self.tol = 3e-4
+        self.tol_kcl = 3e-4
+        self._aux_test(case)
+
+    def test_case9241pegase(self):
+        case = pn.case9241pegase()
+        self.tol = 4e-5
+        self.tol_kcl = 1.6e-2
         self._aux_test(case)
     
-    def _aux_make_grid(self, pn_net):
+    def _aux_make_grid(self, pp_net):
         with tempfile.TemporaryDirectory() as path:
             case_name = os.path.join(path, "this_case.json")
-            pp.to_json(pn_net, case_name)
+            pp.to_json(pp_net, case_name)
 
-            real_init_file = pp.from_json(case_name)
-            backend = LightSimBackend()
+            # real_init_file = pp.from_json(case_name)
+            if MAX_PP2_DATAREADER < CURRENT_PP_VERSION:
+                loader_kwargs = {"pp_orig_file": "pandapower_v3"}
+            else:
+                loader_kwargs = {"pp_orig_file": "pandapower_v2"}
+            backend = LightSimBackend(loader_kwargs=loader_kwargs)
+            
             type(backend)._clear_grid_dependant_class_attributes()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                type(backend).env_name = pn_net.name if pn_net.name != "" else "_test"
+                type(backend).env_name = pp_net.name if pp_net.name != "" else "_test"
                 backend.load_grid(case_name)
                 backend.assert_grid_correct()
                 # backend.init_pp_backend.assert_grid_correct()
+                
+        # first i deactivate all slack bus in pp that are connected but not handled in ls
+        backend.init_pp_backend._grid.ext_grid["in_service"] = False
+        backend.init_pp_backend._grid.ext_grid.loc[0, "in_service"] = True
+        backend.init_pp_backend._grid.gen["slack"] = False
         return backend
 
     def _aux_test(self, pn_net):
         backend = self._aux_make_grid(pn_net)
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
-        # first i deactivate all slack bus in pp that are connected but not handled in ls
-        pp_net.ext_grid["in_service"].loc[:] = False
-        pp_net.ext_grid["in_service"].iloc[0] = True
         conv, exc_ = backend.runpf(is_dc=True)
         conv_pp, exc_pp = backend.init_pp_backend.runpf(is_dc=True)
         assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
         assert conv, f"Error: lightsim do not converge with error: {exc_}"
+        
+        # check input data
+        Ybus =  backend._grid.get_dcYbus_solver()
+        Bbus = pp_net._ppc["internal"]["Bbus"]
+        assert np.abs(Ybus - Bbus).max() <= self.tol, f"max error for Ybus {np.abs(Ybus - Bbus).max()}"
+        
+        from pandapower.pf.run_dc_pf import (makeSbus, GS)
+        baseMVA = pp_net._ppc["internal"]['baseMVA']
+        bus = pp_net._ppc["internal"]['bus']
+        gen =  pp_net._ppc["internal"]['gen']
+        Pbusinj =  pp_net._ppc["internal"]['Pbusinj']
+        Sbus = backend._grid.get_dcSbus_solver()
+        Pbus = makeSbus(baseMVA, bus, gen) - Pbusinj - bus[:, GS] / baseMVA
+        slack_bus = pp_net.ext_grid.iloc[0]["bus"]
+        mask_not_slack = np.ones(Sbus.shape[0], dtype=bool)
+        mask_not_slack[slack_bus] = False
+        # python -m unittest test_DCPF.TestDCPF.test_case6495rte
+        # test_case6495rte
+        # diff > 1e-5
+        # (np.abs(Sbus.real - Pbus.real) >= 1e-5).nonzero()
+        # array([6077, 6161, 6305, 6306, 6307, 6308])
+        # 6077 is the slack so ok !
+        # large_error = np.array([6161, 6305, 6306, 6307, 6308], dtype=int)
+        # Pbusinj[large_error] => all 0
+        # (bus[:, GS] / baseMVA)[large_error] => all 0
+        # Sbus_tmp = makeSbus(baseMVA, bus, gen)
+        # pp_net.trafo["lv_bus"] == 6160
+        # pp_net.trafo.loc[pp_net.trafo["lv_bus"] == 6160]
+        assert np.abs(Sbus[mask_not_slack].real - Pbus[mask_not_slack].real).max() <= self.tol, f"max error in Sbus {np.abs(Sbus[mask_not_slack].real - Pbus[mask_not_slack].real).max()}"
 
         por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend.init_pp_backend.lines_or_info())
         pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend.init_pp_backend.lines_ex_info())
@@ -177,6 +215,10 @@ class TestDCPF(unittest.TestCase):
         # psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
         
         # check voltages
+        Va_pp = pp_net.res_bus["va_degree"].values[:nb_sub]
+        Va_ls = np.rad2deg(np.angle(backend.V[:nb_sub]))
+        assert np.abs(Va_pp - Va_ls).max() <= self.tol, f"max error for voltages {np.abs(Va_pp - Va_ls).max()}"
+        
         line_or_theta_pp, line_ex_theta_pp, *_ = backend.init_pp_backend.get_theta()
         line_or_theta_ls, line_ex_theta_ls, *_ = backend.get_theta()
         assert np.all(np.abs(line_or_theta_ls - line_or_theta_pp) <= self.tol), "error in voltage angles (theta_or)"
@@ -191,22 +233,16 @@ class TestDCPF(unittest.TestCase):
         # backend._grid.get_trafos()[trafo_id]
         # pp_net.trafo.iloc[trafo_id]
         # check the Ybus for DC
-        Ybus =  backend._grid.get_dcYbus_solver()
-        Bbus = pp_net._ppc["internal"]["Bbus"]
-        assert np.abs(Ybus - Bbus).max() <= self.tol
         # check the voltage angles
-        Va_pp = pp_net.res_bus["va_degree"].values[:nb_sub]
-        Va_ls = np.rad2deg(np.angle(backend.V[:nb_sub]))
 
         # check flows
-        assert np.abs(Va_pp - Va_ls).max() <= self.tol
         assert max_mis <= self.tol, f"Error: por do not match, maximum absolute error is {max_mis:.5f} MW"
         max_mis = np.max(np.abs(qor_ls - qor_pp))
         assert max_mis <= self.tol, f"Error: qor do not match, maximum absolute error is {max_mis:.5f} MVAr"
         max_mis = np.max(np.abs(vor_ls - vor_pp))
         assert max_mis <= self.tol, f"Error: vor do not match, maximum absolute error is {max_mis:.5f} kV"
         max_mis = np.max(np.abs(aor_ls - aor_pp))
-        assert max_mis <= 10. * self.tol, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} A"
+        assert max_mis <= self.tol * 1e3, f"Error: aor do not match, maximum absolute error is {max_mis:.5f} kA"
         
         load_p, load_q, load_v = backend.loads_info()
         max_mis = np.max(np.abs(load_p - load_p_pp))
@@ -222,7 +258,7 @@ class TestDCPF(unittest.TestCase):
         # pandapower is not correct on dc...
         # max_mis = np.max(np.abs(gen_p - gen_p_pp))
         # assert max_mis <= self.tol, f"Error: gen_p do not match, maximum absolute error is {max_mis:.5f} MW"
-        assert abs(np.sum(gen_p) + np.sum(sgen_p) - np.sum(load_p)) <= self.tol_big
+        
         # np.sum(gen_p_pp) + np.sum(sgen_p_pp) - np.sum(load_p_pp)
         # pandapower also does weird things in dc for gen_q... lightsim2grid puts everything at 0.
         # max_mis = np.max(np.abs(gen_q - gen_q_pp))
@@ -235,9 +271,11 @@ class TestDCPF(unittest.TestCase):
         assert max_mis <= self.tol, f"Error: gen_v do not match, maximum absolute error is {max_mis:.5f} kV"
 
         sh_p, sh_q, sh_v, *_ = backend.shunt_info()
-        if sh_p.size:
+        if sh_p.size > 0:
             max_mis = np.max(np.abs(sh_p - sh_p_pp))
             assert max_mis <= self.tol, f"Error: sh_p do not match, maximum absolute error is {max_mis:.5f} MW"
+        mismatch = np.sum(gen_p) + np.sum(sgen_p) - np.sum(load_p) - sh_p.sum()
+        assert abs(mismatch) <= self.tol_kcl, f"max sum P = sum C mismatch: {mismatch} MW"
         # max_mis = np.max(np.abs(sh_q - sh_q_pp))
         # assert max_mis <= self.tol, f"Error: sh_q do not match, maximum absolute error is {max_mis:.5f} MVAr"
         # again pandapower does weird stuff in dc...
@@ -312,9 +350,6 @@ class TestDCPF_LODF(TestDCPF):
         backend = self._aux_make_grid(pn_net)
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
-        # first i deactivate all slack bus in pp that are connected but not handled in ls
-        pp_net.ext_grid["in_service"].loc[:] = False
-        pp_net.ext_grid["in_service"].iloc[0] = True
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
         gridmodel = backend._grid

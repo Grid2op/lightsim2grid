@@ -15,7 +15,6 @@ void TrafoContainer::init(const RealVect & trafo_r,
                           const RealVect & trafo_x,
                           const CplxVect & trafo_b,
                           const RealVect & trafo_tap_step_pct,
-            //                       const RealVect & trafo_tap_step_degree,
                           const RealVect & trafo_tap_pos,
                           const RealVect & trafo_shift_degree,
                           const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
@@ -146,7 +145,7 @@ void TrafoContainer::_update_model_coeffs()
     {
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
-        const cplx_type ys = 1. / (r_(i) + my_i * x_(i));
+        const cplx_type ys = 1. / cplx_type(r_(i), x_(i));
         const cplx_type h = h_(i) * 0.5;
         real_type tau = ratio_(i);
         real_type theta_shift = shift_(i);
@@ -156,7 +155,7 @@ void TrafoContainer::_update_model_coeffs()
         }
         cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(theta_shift != 0.)
+        if(std::abs(theta_shift) > 1e-7)
         {
             real_type cos_theta = std::cos(theta_shift);
             real_type sin_theta = std::sin(theta_shift);
@@ -177,7 +176,8 @@ void TrafoContainer::_update_model_coeffs()
         ydc_tt_(i) = tmp;
         ydc_tf_(i) = -tmp;
         ydc_ft_(i) = -tmp;
-        dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
+        if(!is_tap_hv_side_[i]) dc_x_tau_shift_(i) = -std::real(tmp) * theta_shift;
+        else dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
     }
 }
 
@@ -409,7 +409,6 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
     real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
 
-    //diagonal coefficients
     for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
         // i only add this if the powerline is connected
         if(!status_[tr_id]) continue;
@@ -436,18 +435,23 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 
         // get the coefficients
         // tau is needed for Bpp
-        double tau_bpp = is_tap_hv_side_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
+        double tau_bpp = ratio_(tr_id);
         // for Bp we need shift
-        const real_type theta_shift = shift_(tr_id);
+        real_type theta_shift = shift_(tr_id);
+        if(!is_tap_hv_side_[tr_id]){
+            tau_bpp = 1. / ratio_(tr_id);
+            theta_shift = -shift_(tr_id); 
+        }
         cplx_type eitheta_shift_bp  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift_bp = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(theta_shift != 0.)
+        if(abs(theta_shift) >1e-7)
         {
             const real_type cos_theta = std::cos(theta_shift);
             const real_type sin_theta = std::sin(theta_shift);
             eitheta_shift_bp = {cos_theta, sin_theta};
             emitheta_shift_bp = {cos_theta, -sin_theta};
         }
+
         // depending on XB or BX we define the y differently
         cplx_type ys_bp, ys_bpp;
         if(xb_or_bx==FDPFMethod::XB){
@@ -458,7 +462,7 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
             ys_bpp = 1. / (0. + my_i * x_(tr_id));
         }else{
             std::ostringstream exc_;
-            exc_ << "TrafoContainer::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+            exc_ << "TrafoContainer::fillBp_Bpp: unknown method for the FDPF powerflow for trafo id ";
             exc_ << tr_id;
             throw std::runtime_error(exc_.str());            
         }

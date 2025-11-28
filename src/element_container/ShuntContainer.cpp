@@ -37,7 +37,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         if(!status_[shunt_id]) continue;
 
         // assign diagonal coefficient
-        tmp = {-p_mw_(shunt_id), -q_mvar_(shunt_id)};
+        tmp = {p_mw_(shunt_id), -q_mvar_(shunt_id)};  // TODO : check the sign here for p_mw, it is suspicious !
 
         bus_id_me = bus_id_(shunt_id);
         bus_id_solver = id_grid_to_solver[bus_id_me];
@@ -98,7 +98,7 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_
         if(bus_id_solver == _deactivated_bus_id){
             throw std::runtime_error("GridModel::fillSbus: A shunt is connected to a disconnected bus.");
         }
-        Sbus.coeffRef(bus_id_solver) -= p_mw_(shunt_id);
+        Sbus.coeffRef(bus_id_solver) -= p_mw_(shunt_id);  // TODO : check the - here, it is suspicious !
     }
 }
 
@@ -127,7 +127,7 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
         cplx_type I = y * E;
         I = std::conj(I);
         cplx_type s = E * I;
-        res_p_(shunt_id) = std::real(s) * sn_mva;
+        res_p_(shunt_id) = -std::real(s) * sn_mva;  // TODO : check the - here, it is suspicious !
         if(ac) res_q_(shunt_id) = std::imag(s) * sn_mva;
         else res_q_(shunt_id) = my_zero_;
     }

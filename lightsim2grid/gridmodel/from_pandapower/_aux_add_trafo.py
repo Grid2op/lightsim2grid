@@ -6,15 +6,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from typing import Literal
 import warnings
 import numpy as np
 import pandapower as pp
 from packaging import version
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
-from ._my_const import _MIN_PP_VERSION_ADV_GRID_MODEL
+from ._my_const import _MIN_PP_VERSION_ADV_GRID_MODEL, ALLOWED_PP_ORIG_FILE
 
-def _aux_add_trafo(converter, model, pp_net, pp_to_ls):
+
+def _aux_add_trafo(
+    converter,
+    model,
+    pp_net,
+    pp_to_ls,
+    pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2"
+    ):
     """
     Add the transformers of the pp_net into the lightsim2grid "model"
 
@@ -80,11 +88,18 @@ def _aux_add_trafo(converter, model, pp_net, pp_to_ls):
     tap_angles_[~np.isfinite(tap_angles_)] = 0.
     tap_angles_ = np.deg2rad(tap_angles_)
 
+    if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].values - 0.5) < 1e-7).any():
+        warnings.warn("leakage_resistance_ratio_hv != 0.5 is not supported by this converter at the moment. It will be replaced by 0.5")
+        
     trafo_model_is_t = True
     if "_options" in pp_net and "trafo_model" in pp_net._options:
         trafo_model_is_t = pp_net._options["trafo_model"] == "t"
     # compute physical parameters
-    if version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL:
+    if version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL and pp_orig_file == "pandapower_v3":
+        # use pandapower version 3 converter in this case.
+        # We use it because:
+        # - the grid comes from pandapower3 (eg pn.case118() with pandapower 3 installed)
+        # - AND the pandapower version is >= 3
         trafo_r, trafo_x, trafo_b = \
             converter.get_trafo_param_pp3(tap_step_pct,
                                           tap_pos,
@@ -100,6 +115,7 @@ def _aux_add_trafo(converter, model, pp_net, pp_to_ls):
                                           trafo_model_is_t
                                           )
     else:
+        # default legacy mode: use the pandapower 2 converter
         if not trafo_model_is_t:
             raise RuntimeError("Cannot convert a transformer with model 'pi' to LightSim2grid (using pandapower < 3)")
         trafo_r, trafo_x, trafo_b = \

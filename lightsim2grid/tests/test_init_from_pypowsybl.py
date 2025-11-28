@@ -24,16 +24,16 @@ except ImportError:
     PDP_AVAIL = False
 
 from global_var_tests import (
-    MAX_PP_DATAREADER_NOT_BROKEN,
+    MAX_PP2_DATAREADER,
     CURRENT_PP_VERSION,
-    MIN_PYPO_DC_NOT_WORKING,
+    MIN_PYPO_DC_NONDEF_PARAMS,
     CURRENT_PYPOW_VERSION)
 from test_match_with_pypowsybl.utils_for_slack import (
     get_pypowsybl_parameters,
     get_same_slack
 )
 
-if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
     # deactivate compat with recent pandapower version, for now
     PDP_AVAIL = False
 

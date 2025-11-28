@@ -26,7 +26,7 @@ except ImportError as exc_:
     ClassSolver = SparseLUSolver
 
 from global_var_tests import (
-    MAX_PP_DATAREADER_NOT_BROKEN,
+    MAX_PP2_DATAREADER,
     CURRENT_PP_VERSION,
 )
 
@@ -73,13 +73,13 @@ class MyTestCase(unittest.TestCase):
         self._aux_test(case)
 
     def test_case118(self):        
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         case = pn.case118()
         self._aux_test(case)
 
     def test_case1888rte(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         case = pn.case1888rte()
         self.tol = 3e-4
@@ -96,28 +96,28 @@ class MyTestCase(unittest.TestCase):
     #     self._aux_test(case)
 
     def test_case2848rte(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         case = pn.case2848rte()
         self.tol = 0.1  # yeah this one is a bit tough... # TODO
         self._aux_test(case)
 
     def test_case6470rte(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         case = pn.case6470rte()
         self.tol = 1e-2
         self._aux_test(case)
 
     def test_case6495rte(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         case = pn.case6495rte()
         self.tol = 1e-2
         self._aux_test(case)
 
     def test_case6515rte(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         case = pn.case6515rte()
         self.tol = 1e-2

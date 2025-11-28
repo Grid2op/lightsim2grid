@@ -143,7 +143,6 @@ class TrafoContainer : public GenericContainer
               const RealVect & trafo_x,
               const CplxVect & trafo_b,
               const RealVect & trafo_tap_step_pct,
-              //                      const RealVect & trafo_tap_step_degree,
               const RealVect & trafo_tap_pos,
               const RealVect & trafo_shift_degree,
               const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate

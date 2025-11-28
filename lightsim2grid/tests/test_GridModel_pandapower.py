@@ -14,13 +14,13 @@ import pandapower as pp
 
 from lightsim2grid.gridmodel import init_from_pandapower
 import warnings
-from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 import pdb
 
 
 class BaseTests:
     def setUp(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
             self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net_ref = pn.case118()
         self.net_datamodel = pn.case118()
@@ -44,8 +44,8 @@ class BaseTests:
 
     def assert_equal(self, tmp, ref, error=""):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
-        assert np.max(np.abs(tmp - ref)) <= self.tol_test, error
-        assert np.mean(np.abs(tmp - ref)) <= self.tol_test, error
+        assert np.max(np.abs(tmp - ref)) <= self.tol_test, f"{error}: {np.abs(tmp - ref).max()}"
+        assert np.mean(np.abs(tmp - ref)) <= self.tol_test, f"{error}: {np.abs(tmp - ref).max()}"
 
     def check_res(self, Vfinal, net):
         assert Vfinal.shape[0] > 0, "powerflow diverged !"
@@ -410,7 +410,6 @@ class MakeDCTests(BaseTests, unittest.TestCase):
         tmp_bus_ind = np.argsort(net.bus.index)
         va_deg = net.res_bus["va_degree"].values
         # vm_pu = net.res_bus["vm_pu"].values
-        # pdb.set_trace()
         self.assert_equal(np.angle(Vfinal), va_deg[tmp_bus_ind] / 180. * np.pi)
         # self.assert_equal(np.abs(Vfinal), vm_pu[tmp_bus_ind])
 

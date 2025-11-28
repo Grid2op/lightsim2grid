@@ -7,13 +7,21 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 from packaging import version
-import pandapower as pp
-import pypowsybl as pypow
 
-MAX_PP_DATAREADER_NOT_BROKEN = version.parse("2.16")  
-MIN_PYPO_DC_NOT_WORKING = version.parse("1.13.0")
 
-# minimum version of pandapower required to run the tests
-# pandapower version with more advanced grid modelling
-CURRENT_PP_VERSION = version.parse(pp.__version__)
-CURRENT_PYPOW_VERSION = version.parse(pypow.__version__)
+MAX_PP2_DATAREADER = version.parse("2.16")  
+try:
+    import pandapower as pp
+    # minimum version of pandapower required to run the tests
+    # pandapower version with more advanced grid modelling
+    CURRENT_PP_VERSION = version.parse(pp.__version__)
+except ImportError:
+    CURRENT_PP_VERSION = version.parse("9999999999999999999")
+    
+
+MIN_PYPO_DC_NONDEF_PARAMS = version.parse("1.13.0")
+try:
+    import pypowsybl as pypow
+    CURRENT_PYPOW_VERSION = version.parse(pypow.__version__)
+except ImportError:
+    CURRENT_PP_VERSION = version.parse("9999999999999999999")

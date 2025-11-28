@@ -17,7 +17,7 @@ from lightsim2grid.gridmodel import init_from_pandapower
 from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 
 
-from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 
 VAR_GEN = ["bus", "p_mw", "vm_pu", "sn_mva", "name", "index", "max_q_mvar", "min_q_mvar", "min_p_mw",
@@ -42,7 +42,7 @@ def make_grid_multiple_slack(case):
     pp.runpp(case)
 
     # now create a copy of it, by removing the ext_grid completely (to be sure)
-    net = pp.create_empty_network("case14_custom", sn_mva=1.0 * case.sn_mva, f_hz= 1.0 * case.f_hz)
+    net = pp.create_empty_network("case118_custom", sn_mva=1.0 * case.sn_mva, f_hz= 1.0 * case.f_hz)
     # create bus
     for i in range(case.bus.shape[0]):
         pp.create_bus(net, **case.bus.iloc[i])
@@ -56,10 +56,18 @@ def make_grid_multiple_slack(case):
         pp.create_line_from_parameters(net, **case.line[var_line].iloc[i])
 
     # create trafos
-    var_trafo = ["hv_bus", "lv_bus", "sn_mva", "vn_hv_kv", "vn_lv_kv", "vkr_percent", "vk_percent", "pfe_kw", "i0_percent", "shift_degree",
-                "tap_side", "tap_neutral", "tap_max", "tap_min", "tap_step_percent", "tap_step_degree", 
-                "tap_pos", "tap_phase_shifter", "in_service", "name", "index", "max_loading_percent",
-                "parallel", "df"]
+    if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+        var_trafo = ["hv_bus", "lv_bus", "sn_mva", "vn_hv_kv", "vn_lv_kv", "vkr_percent", "vk_percent", "pfe_kw", "i0_percent", "shift_degree",
+                    "tap_side", "tap_neutral", "tap_max", "tap_min", "tap_step_percent", "tap_step_degree", 
+                    "tap_pos", "tap_phase_shifter", "in_service", "name", "index", "max_loading_percent",
+                    "parallel", "df"]
+    else:
+        var_trafo = ['name', 'std_type', 'hv_bus', 'lv_bus', 'sn_mva', 'vn_hv_kv',
+        'vn_lv_kv', 'vk_percent', 'vkr_percent', 'pfe_kw', 'i0_percent',
+        'shift_degree', 'tap_side', 'tap_neutral', 'tap_min', 'tap_max',
+        'tap_step_percent', 'tap_step_degree', 'tap_pos', 'tap_changer_type',
+        'id_characteristic_table', 'tap_dependency_table', 'parallel', 'df',
+        'in_service', 'max_loading_percent', 'oltc']
     var_trafo = [el for el in var_trafo if el in case.trafo]
     for i in range(case.trafo.shape[0]):
         pp.create_transformer_from_parameters(net, **case.trafo[var_trafo].iloc[i])
@@ -105,13 +113,13 @@ def make_grid_multiple_slack(case):
 
 class TestMultipleL2RPN(unittest.TestCase):
     def setUp(self) -> None:
+        # if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+        #     self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.max_it = 10
         self.tol = 1e-8
         self.nb_bus_total = 118
 
     def test_neurips_track2(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             env = grid2op.make("l2rpn_neurips_2020_track2",
@@ -132,7 +140,7 @@ class TestMultipleL2RPN(unittest.TestCase):
             pp.runpp(self.pp_net, distributed_slack=True, init_vm_pu="flat", init_va_degree="flat")
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                ls_grid = init_from_pandapower(self.pp_net)
+                ls_grid = init_from_pandapower(self.pp_net, pp_orig_file="pandapower_v3")
             ls_grid.tell_solver_need_reset()
             V = np.ones(2 * self.nb_bus_total, dtype=complex)
             V = ls_grid.ac_pf(V, self.max_it, self.tol)
@@ -144,7 +152,11 @@ class TestMultipleL2RPN(unittest.TestCase):
         V_pp = pp_net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  pp_net.res_bus["va_degree"].values)
         V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
         V_pp = V_pp[:self.nb_bus_total]
-        assert np.abs(V_pp - V_ls).max() <= 1e-6, "wrong voltages"
+        
+        Ybus_pp = pp_net._ppc["internal"]["Ybus"]
+        Ybus_ls = ls_grid.get_Ybus_solver()
+        assert np.abs((Ybus_pp - Ybus_ls).toarray()).max() <= 1e-6, f"wrong Ybus {np.abs((Ybus_pp - Ybus_ls).toarray()).max()}"
+        assert np.abs(V_pp - V_ls).max() <= 1e-6, f"wrong voltages: {np.abs(V_pp - V_ls).max()}"
         assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_a_or_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
         assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
@@ -154,6 +166,8 @@ class TestMultipleL2RPN(unittest.TestCase):
 
 class Test118LightsimBackend(unittest.TestCase):
     def setUp(self) -> None:
+        # if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+            # self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.max_it = 10
         self.tol = 1e-8
         self.nb_bus_total = 118
@@ -167,6 +181,8 @@ class Test118LightsimBackend(unittest.TestCase):
 
 class TestMultipleSlack118(unittest.TestCase):
     def setUp(self) -> None:
+        # if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+            # self.skipTest("Test not correct: pp changed the way it computed trafo params")
         # LF PARAMETERS
         self.max_it = 10
         self.tol = 1e-8
@@ -191,14 +207,12 @@ class TestMultipleSlack118(unittest.TestCase):
         """check pandapower and lightsim get the same results when there is only one
            slack bus
         """
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         pp.runpp(self.net,
                  init_vm_pu="flat",
                  init_va_degree="flat")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid_single = init_from_pandapower(self.net)
+            ls_grid_single = init_from_pandapower(self.net, pp_orig_file="pandapower_v3")
         V = np.ones(self.nb_bus_total, dtype=complex)
         V = ls_grid_single.ac_pf(V, self.max_it, self.tol)
         self.check_results(V, ls_grid_single, self.net)
@@ -212,8 +226,6 @@ class TestMultipleSlack118(unittest.TestCase):
 
     def test_two_slacks_diff_bus(self):
         """test the results when there are two slacks, in most simple setting"""
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         # now activate more slack bus
         self.net.gen.loc[1, "slack"] = True
         id_ref_slack = self.net.gen.shape[0] - 1
@@ -227,7 +239,7 @@ class TestMultipleSlack118(unittest.TestCase):
                  init_va_degree="flat")  
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            ls_grid = init_from_pandapower(self.net)
+            ls_grid = init_from_pandapower(self.net, pp_orig_file="pandapower_v3")
             
         self.net._ppc["internal"]["Ybus"]
         V = np.ones(self.nb_bus_total, dtype=complex)
@@ -236,10 +248,16 @@ class TestMultipleSlack118(unittest.TestCase):
 
     def check_results(self, V_ls, ls_grid, pp_net):
         assert len(V_ls), "lightsim diverged !"
+        
+        Ybus_pp = pp_net._ppc["internal"]["Ybus"]
+        Ybus_ls = ls_grid.get_Ybus_solver()
+        # (np.abs((Ybus_pp - Ybus_ls).toarray())> 3.).nonzero()
+        assert np.abs((Ybus_pp - Ybus_ls).toarray()).max() <= 1e-6, f"wrong Ybus {np.abs((Ybus_pp - Ybus_ls).toarray()).max()}"
+        
         my_ref = np.where(np.angle(V_ls) == 0.)[0][0]
         V_pp = pp_net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  pp_net.res_bus["va_degree"].values)
         V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
-        assert np.abs(V_pp - V_ls).max() <= 1e-6, "wrong voltages"
+        assert np.abs(V_pp - V_ls).max() <= 1e-6, f"wrong voltages: {np.abs(V_pp - V_ls).max()}"
         assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_a_or_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
         assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)

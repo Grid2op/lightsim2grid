@@ -26,11 +26,13 @@ from ._aux_check_legit import _aux_check_legit
 from ._aux_add_slack import _aux_add_slack
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_dc_line import _aux_add_dc_line
+from ._my_const import ALLOWED_PP_ORIG_FILE
 
 
 def init(pp_net: "pandapower.auxiliary.pandapowerNet",
          n_sub: Optional[int]=None,  # number of voltage levels
          n_busbar_per_sub: Optional[int]=None,  # max number of buses allowed per substation / voltage level
+         pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2"
          ) -> GridModel:
     """
     Convert a pandapower network as input into a GridModel.
@@ -58,6 +60,17 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     ----------
     pp_net: :class:`pandapower.auxiliary.pandapowerNet`
         The initial pandapower network you want to convert
+        
+    pp_orig_file: 
+        Pandapower change the formula they used internally to compute the "equations" parameters
+        of the transformers between pandapower 2.xx and 3.xx.
+        
+        If you are using a recent (=> 3.xx) version of pandapower, you can pass use the
+        ad-hoc trafo converter of lightsim2grid. 
+        
+        For grid2op environment, we recommed **NOT** to use it if the environment has been released
+        before 2026 as the case files came from pandapower 2 (so it's better to use the pandapower 2 
+        converter).
 
     Returns
     -------
@@ -65,6 +78,9 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
         The initialize gridmodel
 
     """
+    if pp_orig_file not in ALLOWED_PP_ORIG_FILE.__args__:
+        raise RuntimeError(f"pp_orig_file argument should be one of {sorted(ALLOWED_PP_ORIG_FILE.__args__)}")
+    
     # check for things not supported and raise if needed
     _aux_check_legit(pp_net)
 
@@ -135,7 +151,7 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     _aux_add_shunt(model, pp_net, pp_to_ls)
 
     # handle the trafos
-    _aux_add_trafo(converter, model, pp_net, pp_to_ls)
+    _aux_add_trafo(converter, model, pp_net, pp_to_ls, pp_orig_file)
 
     # handle loads
     _aux_add_load(model, pp_net, pp_to_ls)
@@ -153,6 +169,6 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     _aux_add_dc_line(model, pp_net, pp_to_ls)
 
     # deal with slack bus
-    _aux_add_slack(model, pp_net, pp_to_ls)
+    _aux_add_slack(model, pp_net, pp_to_ls, pp_orig_file)
 
     return model

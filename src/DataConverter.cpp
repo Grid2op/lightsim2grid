@@ -268,34 +268,61 @@ std::tuple<RealVect,
     // b_mva_squared[b_mva_squared < 0] = 0
     for(int i = 0; i<nb_trafo; ++i) {if (b_mva_squared(i) < 0.)  b_mva_squared(i) = 0.;}
     // b_mva = -np.sqrt(b_mva_squared)
-    RealVect b_mva = b_mva_squared.cwiseSqrt();
+    RealVect b_mva = -b_mva_squared.cwiseSqrt();
 
     // g_pu = g_mva / vnl_squared * baseZ * parallel / np.square(vn_trafo_lv / vn_lv_kv)
     RealVect g_pu = g_mva.array() / vnl_squared.array() * baseZ.array() * vn_trafo_lv_1_vn_lv_sq.array();
     // b_pu = b_mva / vnl_squared * baseZ * parallel / np.square(vn_trafo_lv / vn_lv_kv)
     RealVect b_pu = b_mva.array() / vnl_squared.array() * baseZ.array() * vn_trafo_lv_1_vn_lv_sq.array();
 
-    //transform trafo from t model to pi model, of course...
-    // (remove that if trafo model is not t, but directly pi)
+    //transform trafo from t model to pi model
+    // adapted from _wye_delta in pandapower.build_branch
+    const real_type r_ratio = my_half_; // suppose no `leakage_resistance_ratio_hv`
+    const real_type x_ratio = my_half_; // suppose no `leakage_resistance_ratio_hv`
     if(trafo_model_is_t){
-        for(int i = 0; i<nb_trafo; ++i){
-            if((std::abs(g_pu(i)) < 1e-7) && (std::abs(b_pu(i)) < 1e-7)) continue;
+        for(int t_id = 0; t_id < nb_trafo; t_id++){
+            // tidx = (g != 0) | (b != 0)
+            if((std::abs(g_pu(t_id)) < 1e-7) && 
+               (std::abs(b_pu(t_id)) < 1e-7)) continue;
 
-            // cplx_type za_star = my_half_ * (r_sc(i) + my_i * x_sc(i));
-            // cplx_type zc_star = - my_i / b_sc(i);
-            // cplx_type zSum_triangle = za_star * za_star + my_two_ * za_star * zc_star;
-            // cplx_type zab_triangle = zSum_triangle / zc_star;
-            // cplx_type zbc_triangle = zSum_triangle / za_star;
-
-            // r_sc(i) = std::real(zab_triangle);
-            // x_sc(i) = std::imag(zab_triangle);
-            // b_sc(i) = -my_two_ * my_i / zbc_triangle;
-            // b_sc(i) = my_two_ / zbc_triangle;
+            // za_star = r[tidx] * r_ratio[tidx] + x[tidx] * x_ratio[tidx] * 1j
+            cplx_type za_star = {r_sc(t_id) * r_ratio, x_sc(t_id) * x_ratio};
+            // zb_star = r[tidx] * (1 - r_ratio[tidx]) + x[tidx] * (1 - x_ratio[tidx]) * 1j
+            cplx_type zb_star = {r_sc(t_id) * (1. - r_ratio), x_sc(t_id) * (1. - x_ratio)};
+            // zc_star = 1 / (g + 1j*b)[tidx]
+            cplx_type zc_star = 1. / cplx_type(g_pu(t_id), b_pu(t_id));
+            // zSum_triangle = za_star * zb_star + za_star * zc_star + zb_star * zc_star
+            cplx_type zSum_triangle = za_star * zb_star + za_star * zc_star + zb_star * zc_star;
+            // zab_triangle = zSum_triangle / zc_star
+            // zac_triangle = zSum_triangle / zb_star
+            // zbc_triangle = zSum_triangle / za_star
+            // std::cout << "za_star " << za_star << " , zb_star " << zb_star << " , zc_star " << zc_star << " , zSum_triangle" << zSum_triangle << std::endl;
+            cplx_type zab_triangle = zSum_triangle / zc_star;
+            cplx_type zac_triangle = zSum_triangle / zb_star;
+            cplx_type zbc_triangle = zSum_triangle / za_star;
+            // r[tidx] = zab_triangle.real
+            // x[tidx] = zab_triangle.imag
+            r_sc(t_id) = std::real(zab_triangle);
+            x_sc(t_id) = std::imag(zab_triangle);
+            // yf = 1 / zac_triangle
+            // yt = 1 / zbc_triangle
+            cplx_type yf = 1. / zac_triangle;
+            // pp comment: because in makeYbus Bcf, Bct are divided by 2:
+            // g[tidx] = yf.real * 2
+            // b[tidx] = yf.imag * 2
+            // 2 because it is the "total" h, and then h is divided by 2
+            // in h_or and h_ex
+            g_pu(t_id) = my_two_ * std::real(yf);
+            b_pu(t_id) = my_two_ * std::imag(yf);
         }
     }
 
     std::tuple<RealVect, RealVect, CplxVect> res =
-        std::tuple<RealVect, RealVect, CplxVect>(std::move(r_sc), std::move(x_sc), g_pu.cast<cplx_type>() + my_i * b_pu.cast<cplx_type>());
+        std::tuple<RealVect, RealVect, CplxVect>(
+            std::move(r_sc),
+            std::move(x_sc),
+            g_pu.cast<cplx_type>() + my_i * b_pu.cast<cplx_type>()  // - is put here for consistency with pypowsybl
+        );
 
     return res;
 }

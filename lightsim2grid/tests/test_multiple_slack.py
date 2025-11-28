@@ -15,7 +15,7 @@ import unittest
 from lightsim2grid.gridmodel import init_from_pandapower
 
 
-from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 
 VAR_GEN = ["bus", "p_mw", "vm_pu", "sn_mva", "name", "index", "max_q_mvar", "min_q_mvar", "min_p_mw",
@@ -320,7 +320,7 @@ class TestMultipleSlack14(unittest.TestCase):
         # bus in the same order !
         assert len(V_ls), "lightsim diverged !"
         
-        if CURRENT_PP_VERSION <= MAX_PP_DATAREADER_NOT_BROKEN:
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
             # recent pandapower grid import broken (waiting to clarify this)...
             Ybus_me = ls_grid.get_Ybus_solver()
             Ybus_ref = pp_net._ppc["internal"]["Ybus"]

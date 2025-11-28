@@ -15,25 +15,28 @@ import pandapower as pp
 import warnings
 from lightsim2grid.tests.test_GridModel_pandapower import BaseTests
 import pdb
-from global_var_tests import MAX_PP_DATAREADER_NOT_BROKEN, CURRENT_PP_VERSION
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 
 class MakeACTestsDisco(BaseTests, unittest.TestCase):
     def setUp(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
-        
         self.net = pn.case118()
         self.last_real_bus = self.net.bus.shape[0]
         pp.create_bus(self.net, vn_kv=self.net.bus["vn_kv"][0])
-        self.net.bus["in_service"][self.last_real_bus] = False
+        is_col_id = (self.net.bus.columns == "in_service").nonzero()[0][0]
+        self.net.bus.iloc[self.last_real_bus, is_col_id] = False
         self.net_ref = copy.deepcopy(self.net)
         self.net_datamodel = copy.deepcopy(self.net)
         self.n_bus = self.net.bus.shape[0]
 
+        if MAX_PP2_DATAREADER < CURRENT_PP_VERSION:
+            pp_orig_file = "pandapower_v3"
+        else:
+            pp_orig_file = "pandapower_v2"
+            
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init_from_pandapower(self.net)
+            self.model = init_from_pandapower(self.net, pp_orig_file=pp_orig_file)
 
         self.model.deactivate_bus(self.last_real_bus)
 
@@ -49,7 +52,7 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
             warnings.filterwarnings("ignore")
             pp.runpp(net, init="flat",
                      lightsim2grid=False,
-                     numba=True, 
+                     numba=False, 
                      distributed_slack=False)
 
     def do_i_skip(self, test_nm):
@@ -58,18 +61,22 @@ class MakeACTestsDisco(BaseTests, unittest.TestCase):
 
 class MakeDCTestsDisco(BaseTests, unittest.TestCase):
     def setUp(self):
-        if CURRENT_PP_VERSION > MAX_PP_DATAREADER_NOT_BROKEN:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net = pn.case118()
         self.last_real_bus = self.net.bus.shape[0]
         pp.create_bus(self.net, vn_kv=self.net.bus["vn_kv"][0])
-        self.net.bus["in_service"][self.last_real_bus] = False
+        is_col_id = (self.net.bus.columns == "in_service").nonzero()[0][0]
+        self.net.bus.iloc[self.last_real_bus, is_col_id] = False
         self.net_ref = copy.deepcopy(self.net)
         self.net_datamodel = copy.deepcopy(self.net)
         self.n_bus = self.net.bus.shape[0]
+        
+        if MAX_PP2_DATAREADER < CURRENT_PP_VERSION:
+            pp_orig_file = "pandapower_v3"
+        else:
+            pp_orig_file = "pandapower_v2"
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init_from_pandapower(self.net)
+            self.model = init_from_pandapower(self.net, pp_orig_file=pp_orig_file)
         self.model.deactivate_bus(self.last_real_bus)
 
         self.max_it = 10
@@ -85,7 +92,7 @@ class MakeDCTestsDisco(BaseTests, unittest.TestCase):
             pp.rundcpp(net,
                        init="flat",
                        lightsim2grid=False,
-                       numba=True, 
+                       numba=False, 
                        distributed_slack=False)
 
     def do_i_skip(self, test_nm):
