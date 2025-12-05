@@ -461,6 +461,52 @@ jobs:
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
                     python -m unittest discover -v
+                    
+    test_legacy_pandapower:
+        executor: gcc_latest  
+        resource_class: medium
+        steps:
+            - checkout
+            - run: cat /etc/os-release
+            - run: apt-get update
+            - run: apt install -y python3 python3-dev python3-venv python3-pip git
+            - run: 
+                  name: Get python version
+                  command: 
+                      python3 --version
+
+            # - python/install-packages:
+            #     pkg-manager: uv
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command: |
+                    python3 -m pip install uv --break-system-packages --root-user-action=ignore
+                    uv --version
+            - run: 
+                name: Setup uv venv on python 3.11
+                command:
+                    uv venv venv_test --python 3.11
+            - run:
+                  name: "Set up virtual environment"
+                  command: |
+                    source venv_test/bin/activate
+                    uv pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
+                    uv pip install "pandapower<3" grid2op==1.0.0
+                    git submodule init
+                    git submodule update
+                    make
+                    python setup.py build
+                    uv pip install -U .
+                    pip freeze
+                    
+            - run:
+                name: "Make pandapower < 3 tests"
+                command: | 
+                    source venv_test/bin/activate
+                    python -m unittest lightsim2grid/tests/test_DCPF.py
+                    python -m unittest lightsim2grid/tests/test_ACPF.py
+                    python -m unittest lightsim2grid/tests/test_GridModel_pandapower.py
+                    
 
 workflows:
     version: 2.1
@@ -471,6 +517,7 @@ workflows:
           - compile_clang_earliest
           - compile_clang_prev_latest
           - test_legacy_grid2op
+          - test_legacy_pandapower
           - compile_and_test_windows
           - compile_and_test_clang_latest
           - compile_and_test_gcc_latest

@@ -443,8 +443,15 @@ class MyTestCase(unittest.TestCase):
             
         # pandapower trafo parameters
         garbage_pp = copy.deepcopy(pp_net)
-        r_pu, x_pu, g_pu, b_pu, g_asym, b_asym, ratio, shift_xx = _calc_branch_values_from_trafo_df(
-                garbage_pp, garbage_pp._ppc)
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+            r_pu, x_pu, g_pu, b_pu, g_asym, b_asym, ratio, shift_xx = _calc_branch_values_from_trafo_df(
+                    garbage_pp, garbage_pp._ppc)
+        else:
+            r_pu, x_pu, y_tr_pp, ratio, shift_xx = _calc_branch_values_from_trafo_df(
+                    garbage_pp, garbage_pp._ppc)
+            g_pu = -y_tr_pp.imag # inverted (conjugate)
+            b_pu = y_tr_pp.real  # inverted (conjugate)
+            
         
         assert np.allclose(trafo_r, r_pu, atol=self.tol, rtol=self.tol)
         assert np.allclose(trafo_x, x_pu, atol=self.tol, rtol=self.tol)

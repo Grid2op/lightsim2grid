@@ -24,4 +24,4 @@ try:
     import pypowsybl as pypow
     CURRENT_PYPOW_VERSION = version.parse(pypow.__version__)
 except ImportError:
-    CURRENT_PP_VERSION = version.parse("9999999999999999999")
+    CURRENT_PYPOW_VERSION = version.parse("9999999999999999999")
