@@ -127,11 +127,12 @@ class TestDCPF(unittest.TestCase):
         self.tol_kcl = 3e-4
         self._aux_test(case)
 
-    def test_case9241pegase(self):
-        case = pn.case9241pegase()
-        self.tol = 4e-5
-        self.tol_kcl = 1.6e-2
-        self._aux_test(case)
+    # def test_case9241pegase(self):
+    #     # too large for CI
+    #     case = pn.case9241pegase()
+    #     self.tol = 4e-5
+    #     self.tol_kcl = 1.6e-2
+    #     self._aux_test(case)
     
     def _aux_make_grid(self, pp_net):
         with tempfile.TemporaryDirectory() as path:

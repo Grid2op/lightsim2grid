@@ -89,10 +89,11 @@ class MyTestCase(unittest.TestCase):
         self.tol = 4e-5  # results are equal if they match up to tol
         self._aux_test(case)
 
-    def test_case9241pegase(self):
-        case = pn.case9241pegase()
-        self.tol = 7e-5  # results are equal if they match up to tol
-        self._aux_test(case)
+    # def test_case9241pegase(self):
+    #     # too large for CI
+    #     case = pn.case9241pegase()
+    #     self.tol = 7e-5  # results are equal if they match up to tol
+    #     self._aux_test(case)
 
     def test_case2848rte(self):
         case = pn.case2848rte()
