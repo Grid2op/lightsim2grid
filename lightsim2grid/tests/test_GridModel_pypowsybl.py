@@ -463,7 +463,7 @@ class BaseTests:
         shunt_kv = self.net_ref.get_voltage_levels().loc[shunt_0.voltage_level_id, "nominal_v"]
         self.net_ref.update_linear_shunt_compensator_sections(
             id=section_shunt_0.name,
-            g_per_section=-p_mw / shunt_kv**2,
+            g_per_section=p_mw / shunt_kv**2,
         )
         self.model.change_p_shunt(0, p_mw)
         Vfinal = self._run_both_pf(self.net_ref)
