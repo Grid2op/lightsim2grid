@@ -490,13 +490,12 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                     source venv_test/bin/activate
-                    uv pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
-                    uv pip install "pandapower<3" grid2op==1.0.0
+                    uv pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy "pandapower<3" grid2op
                     git submodule init
                     git submodule update
                     make
                     python setup.py build
-                    uv pip install -U .
+                    uv pip install .
                     pip freeze
                     
             - run:
