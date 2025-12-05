@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from typing import Type
 import unittest
 import warnings
 import os
@@ -13,6 +14,7 @@ import numpy as np
 from lightsim2grid import LightSimBackend
 from lightsim2grid.gridmodel import init_from_pypowsybl
 import grid2op
+from grid2op.Backend import Backend
 from grid2op.Runner import Runner
 import pypowsybl.network as pypow_net
 
@@ -27,7 +29,7 @@ def _aux_get_loader_kwargs_storage():
     return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 5}
 
 def _aux_get_loader_kwargs():
-    return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 0}
+    return {"use_buses_for_sub": True, "double_bus_per_sub": False, "gen_slack_id": 0}
     
     
 class BackendTester(unittest.TestCase):
@@ -37,7 +39,8 @@ class BackendTester(unittest.TestCase):
         self.path = os.path.join(dir_path, "case_14_iidm")
         self.file_name = "grid.xiidm"
 
-    def _aux_prep_backend(self, backend):
+    def _aux_prep_backend(self, backend: Type[Backend]):
+        type(backend)._clear_grid_dependant_class_attributes()
         backend.set_env_name("case_14_iidm_BackendTester")
         backend.load_grid(self.path, self.file_name)
         backend.load_storage_data(self.path)
@@ -63,15 +66,16 @@ class BackendTester(unittest.TestCase):
         assert backend.nb_bus_total == 28
         
     def test_runpf(self):
-        backend = LightSimBackend(loader_method="pypowsybl", loader_kwargs=_aux_get_loader_kwargs())
+        backend = LightSimBackend(loader_method="pypowsybl",
+                                  loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
-        # AC powerflow
-        conv, exc_ = backend.runpf()
-        assert conv
         # DC powerflow
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
         assert backend.can_output_theta
+        # AC powerflow
+        conv, exc_ = backend.runpf()
+        assert conv
 
 class BackendTester2(unittest.TestCase):
     """issue is still not replicated and these tests pass"""
@@ -150,7 +154,6 @@ if CAN_DO_TEST_SUITE:
         
         def test_can_make(self):
             self.env.reset()
-            1 + 1
         
         def test_copy(self):
             obs = self.env.reset()

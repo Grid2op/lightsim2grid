@@ -44,8 +44,8 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
 def init(net : pypo.network.Network,
          gen_slack_id: Union[int, str] = None,
          slack_bus_id: int = None,
-         sn_mva = 100.,
-         sort_index=True,
+         sn_mva = 100.,  # only used if not present in the grid
+         sort_index=True, 
          f_hz = 50.,  # unused
          net_pu : Optional[pypo.network.Network] = None,
          only_main_component=True,
@@ -55,8 +55,11 @@ def init(net : pypo.network.Network,
          init_vm_pu=1.06,
          ):
     model = GridModel()
-    # model.set_f_hz(f_hz)
-    model.set_sn_mva(float(sn_mva))
+    if hasattr(net, "_nominal_apparent_power"):
+        sn_mva_used = getattr(net, "_nominal_apparent_power")
+    else:
+        sn_mva_used = float(sn_mva)
+    model.set_sn_mva(sn_mva_used)
     model.set_init_vm_pu(float(init_vm_pu))
     
     if gen_slack_id is not None and slack_bus_id is not None:
@@ -182,6 +185,7 @@ def init(net : pypo.network.Network,
         # ls_to_orig = np.concatenate((ls_to_orig, np.full((n_busbar_per_sub - 1) * n_sub, fill_value=-1, dtype=ls_to_orig.dtype)))
         # n_sub_ls = voltage_levels.shape[0]
         # n_busbar_per_sub_ls = n_busbar_per_sub
+        
     # all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
     model.init_bus(n_sub_ls,
                    n_busbar_per_sub_ls,
@@ -323,7 +327,6 @@ def init(net : pypo.network.Network,
         
     df_trafo_pu = net_pu.get_2_windings_transformers(all_attributes=True).loc[df_trafo.index]
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
-  # phase_tap_changer = net_pu.get_phase_tap_changers()
     
     # shift_ = np.zeros(df_trafo.shape[0])
     if 'alpha' in df_trafo_pu:
@@ -400,7 +403,7 @@ def init(net : pypo.network.Network,
         
     sh_bus, sh_disco = _aux_get_bus(bus_df, df_shunt)    
     shunt_kv = voltage_levels.loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
-    model.init_shunt(-df_shunt["g"].values * shunt_kv**2,
+    model.init_shunt(df_shunt["g"].values * shunt_kv**2,
                      -df_shunt["b"].values * shunt_kv**2,
                      sh_bus
                     )
@@ -487,10 +490,7 @@ def init(net : pypo.network.Network,
             if is_slack:
                 model.add_gen_slackbus(gen_id, 1. / nb_conn)    
     else:
-        raise RuntimeError("You need to provide at least one slack with `gen_slack_id` or `slack_bus_id`")
-    
-    # TODO
-    # sgen => regular gen (from net.get_generators()) with voltage_regulator off TODO 
+        raise RuntimeError("You need to provide at least one slack with `gen_slack_id` or `slack_bus_id`") 
     
     # TODO checks
     # no 3windings trafo and other exotic stuff
@@ -503,7 +503,9 @@ def init(net : pypo.network.Network,
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
         model.consider_only_main_component()
-    model.init_bus_status()  # automatically disconnect non connected buses
+    else:
+        # automatically disconnect non connected buses
+        model.init_bus_status()  
     if not return_sub_id:
         # for backward compatibility
         return model

@@ -76,7 +76,8 @@ class LightSimBackend(Backend):
         "use_buses_for_sub",
         "sort_index",
         "init_vm_pu",
-        "sn_mva"
+        "sn_mva",
+        "double_bus_per_sub"
     }
     
     KEYS_PANDAPOWER_LOADER = {
@@ -808,10 +809,10 @@ class LightSimBackend(Backend):
             gen_slack_id = loader_kwargs["gen_slack_id"]
         
         df = grid_tmp.get_substations()
-        buses_for_sub = True
+        buses_for_sub = False
         if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
             df = grid_tmp.get_buses()
-            buses_for_sub = False
+            buses_for_sub = True
             self.n_sub = df.shape[0]
             self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(df.iterrows())]
         
@@ -821,7 +822,7 @@ class LightSimBackend(Backend):
         init_vm_pu = 1.06
         if "init_vm_pu" in loader_kwargs and float(loader_kwargs["init_vm_pu"]) != loader_kwargs["init_vm_pu"]:
             init_vm_pu = float(loader_kwargs["init_vm_pu"])
-        sn_mva = 1.06
+        sn_mva = None
         if "sn_mva" in loader_kwargs and float(loader_kwargs["sn_mva"]) != loader_kwargs["sn_mva"]:
             sn_mva = float(loader_kwargs["sn_mva"])
             
