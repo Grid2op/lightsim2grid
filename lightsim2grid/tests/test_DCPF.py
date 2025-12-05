@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 from re import M
+import time
 import unittest
 import tempfile
 import pandapower as pp
@@ -163,6 +164,17 @@ class TestDCPF(unittest.TestCase):
         nb_sub = backend.n_sub
         pp_net = backend.init_pp_backend._grid
         conv, exc_ = backend.runpf(is_dc=True)
+        # print(f"{backend.n_sub}: {backend._timer_solver = }")
+        # PTDF = backend._grid.get_ptdf_solver()
+        # print(f"{backend.n_sub}: {backend._grid.get_dc_solver().get_timers_ptdf_lodf()[0] = }")
+        # nb_powerflow = 1_000
+        # Sbuses = np.vstack([backend._grid.get_dcSbus_solver().real for _ in range(nb_powerflow)]).T.copy()
+        # beg_ = time.perf_counter()
+        # PTDF @ Sbuses
+        # end_ = time.perf_counter()
+        # LODF = backend._grid.get_lodf()
+        # print(f"{backend.n_sub}: {backend._grid.get_dc_solver().get_timers_ptdf_lodf()[1] = }")
+        # print(f"time {nb_powerflow} powerflows: {end_-beg_:.2e}")
         conv_pp, exc_pp = backend.init_pp_backend.runpf(is_dc=True)
         assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
         assert conv, f"Error: lightsim do not converge with error: {exc_}"

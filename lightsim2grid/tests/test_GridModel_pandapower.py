@@ -20,8 +20,6 @@ import pdb
 
 class BaseTests:
     def setUp(self):
-        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net_ref = pn.case118()
         self.net_datamodel = pn.case118()
 
@@ -29,7 +27,7 @@ class BaseTests:
             warnings.filterwarnings("ignore")
             pp.runpp(self.net_datamodel,
                      lightsim2grid=False,
-                     numba=True, 
+                     numba=False, 
                      distributed_slack=False)
 
         # initialize constant stuff
@@ -37,10 +35,14 @@ class BaseTests:
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 1e-5  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
 
+        pp_orig_file = "pandapower_v3"
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+            pp_orig_file = "pandapower_v2"
         # initialize and use converters
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.model = init_from_pandapower(self.net_datamodel)
+            self.model = init_from_pandapower(self.net_datamodel,
+                                              pp_orig_file=pp_orig_file)
 
     def assert_equal(self, tmp, ref, error=""):
         assert np.all(tmp.shape == ref.shape), "vector does not have the same shape"
@@ -120,7 +122,6 @@ class BaseTests:
                      distributed_slack=False)
 
     def do_i_skip(self, func_name):
-        # self.skipTest("dev")
         pass
 
     def _run_both_pf(self, net):
@@ -226,35 +227,35 @@ class BaseTests:
 
     def test_pf_disco_gen(self):
         self.do_i_skip("test_pf_disco_gen")
-        self.net_ref.gen["in_service"][0] = False
+        self.net_ref.gen.loc[0, "in_service"] = False
         self.model.deactivate_gen(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_disco_load(self):
         self.do_i_skip("test_pf_disco_load")
-        self.net_ref.load["in_service"][0] = False
+        self.net_ref.load.loc[0, "in_service"] = False
         self.model.deactivate_load(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_disco_line(self):
         self.do_i_skip("test_pf_disco_line")
-        self.net_ref.line["in_service"][0] = False
+        self.net_ref.line.loc[0, "in_service"] = False
         self.model.deactivate_powerline(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_disco_shunt(self):
         self.do_i_skip("test_pf_disco_shunt")
-        self.net_ref.shunt["in_service"][0] = False
+        self.net_ref.shunt.loc[0, "in_service"] = False
         self.model.deactivate_shunt(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_disco_trafo(self):
         self.do_i_skip("test_pf_disco_trafo")
-        self.net_ref.trafo["in_service"][0] = False
+        self.net_ref.trafo.loc[0, "in_service"] = False
         self.model.deactivate_trafo(0)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
@@ -297,92 +298,91 @@ class BaseTests:
 
     def test_pf_changebus_gen(self):
         self.do_i_skip("test_pf_changebus_gen")
-        self.net_ref.gen["bus"][0] = 2
+        self.net_ref.gen.loc[0, "bus"] = 2
         self.model.change_bus_gen(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_load(self):
         self.do_i_skip("test_pf_changebus_load")
-        self.net_ref.load["bus"][0] = 2
+        self.net_ref.load.loc[0, "bus"] = 2
         self.model.change_bus_load(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_shunt(self):
         self.do_i_skip("test_pf_changebus_shunt")
-        self.net_ref.shunt["bus"][0] = 2
+        self.net_ref.shunt.loc[0, "bus"] = 2
         self.model.change_bus_shunt(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_lineor(self):
         self.do_i_skip("test_pf_changebus_lineor")
-        self.net_ref.line["from_bus"][0] = 2
+        self.net_ref.line.loc[0, "from_bus"] = 2
         self.model.change_bus_powerline_or(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_lineex(self):
         self.do_i_skip("test_pf_changebus_lineex")
-        self.net_ref.line["to_bus"][0] = 2
+        self.net_ref.line.loc[0, "to_bus"] = 2
         self.model.change_bus_powerline_ex(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_trafolv(self):
         self.do_i_skip("test_pf_changebus_trafolv")
-        self.net_ref.trafo["lv_bus"][0] = 5  # was 4 initially, and 4 is connected to 5
+        self.net_ref.trafo.loc[0, "lv_bus"] = 5  # was 4 initially, and 4 is connected to 5
         self.model.change_bus_trafo_lv(0, 5)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_trafohv(self):
         self.do_i_skip("test_pf_changebus_trafohv")
-        self.net_ref.trafo["hv_bus"][0] = 29  # was 7 initially, and 7 is connected to 29
+        self.net_ref.trafo.loc[0, "hv_bus"] = 29  # was 7 initially, and 7 is connected to 29
         self.model.change_bus_trafo_hv(0, 29)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changeloadp(self):
         self.do_i_skip("test_pf_changeloadp")
-        self.net_ref.load["p_mw"][0] = 50
+        self.net_ref.load.loc[0, "p_mw"] = 50
         self.model.change_p_load(0, 50)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changeloadq(self):
         self.do_i_skip("test_pf_changeloadq")
-        self.net_ref.load["q_mvar"][0] = 50
+        self.net_ref.load.loc[0, "q_mvar"] = 50
         self.model.change_q_load(0, 50)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changeprodp(self):
         self.do_i_skip("test_pf_changeprodp")
-        self.net_ref.gen["p_mw"][0] = 50
+        self.net_ref.gen.loc[0, "p_mw"] = 50
         self.model.change_p_gen(0, 50)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changeprodv(self):
         self.do_i_skip("test_pf_changeprodv")
-        self.net_ref.gen["vm_pu"][0] = 1.06
+        self.net_ref.gen.loc[0, "vm_pu"] = 1.06
         self.model.change_v_gen(0, 1.06)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changeshuntp(self):
-        self.skipTest("not usefull but not working at the moment")
         self.do_i_skip("test_pf_changeshuntp")
-        self.net_ref.shunt["p_mw"][0] = 10
+        self.net_ref.shunt.loc[0, "p_mw"] = 10
         self.model.change_p_shunt(0, 10)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changeshuntq(self):
         self.do_i_skip("test_pf_changeshuntq")
-        self.net_ref.shunt["q_mvar"][0] = 10
+        self.net_ref.shunt.loc[0, "q_mvar"] = 10
         self.model.change_q_shunt(0, 10)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
