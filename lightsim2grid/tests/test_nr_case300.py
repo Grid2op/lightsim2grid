@@ -60,12 +60,14 @@ class BaseCase300Tester(unittest.TestCase):
                     tdpf_delay_s=None)
         
     def setUp(self) -> None:
-        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
-            self.skipTest("Test not correct: pp changed the way it computed trafo params")
         self.net = self.get_network()
+        pp_orig_file = "pandapower_v3"
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+            pp_orig_file = "pandapower_v2"
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.gridmodel = init_from_pandapower(self.net)
+            self.gridmodel = init_from_pandapower(self.net,
+                                                  pp_orig_file=pp_orig_file)
         self.tol = 1e-7
         self.tol_solver = 1e-8
         

@@ -26,7 +26,9 @@ class _TestTrafoConverter:
     
     def setUp(self):
         if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
-            self.skipTest(f"This tests only pandapower3 data reader, which is not usable with the current pandapower version used {CURRENT_PP_VERSION}.")
+            self.skipTest("This tests only pandapower3 data reader, which is not "
+                          "usable with the current pandapower version used "
+                          f"{CURRENT_PP_VERSION}.")
         
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

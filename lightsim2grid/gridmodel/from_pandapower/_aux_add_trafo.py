@@ -6,7 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-from typing import Literal
 import warnings
 import numpy as np
 import pandapower as pp
@@ -94,6 +93,7 @@ def _aux_add_trafo(
     trafo_model_is_t = True
     if "_options" in pp_net and "trafo_model" in pp_net._options:
         trafo_model_is_t = pp_net._options["trafo_model"] == "t"
+        
     # compute physical parameters
     if version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL and pp_orig_file == "pandapower_v3":
         # use pandapower version 3 converter in this case.
