@@ -506,7 +506,9 @@ def init(net : pypo.network.Network,
         model.consider_only_main_component()
     else:
         # automatically disconnect non connected buses
+        # (this is automatically done by consider_only_main_component)
         model.init_bus_status()  
+        
     if not return_sub_id:
         # for backward compatibility
         return model

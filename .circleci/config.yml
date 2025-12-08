@@ -555,13 +555,13 @@ jobs:
                 name: "Make pypowsybl ~1.9.0 tests"  # bug in per unit
                 command: | 
                     source venv_test/bin/activate
-                    uv pip install "pypowsybl~=1.9.0"
+                    uv pip install "pypowsybl~=1.9.0" "numpy>2"
                     cd lightsim2grid/tests/
                     python -m unittest test_GridModel_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
 
             - run:
-                name: "Make pypowsybl ~1.10.0 tests"  # bug in per unit
+                name: "Make pypowsybl ~1.10.0 tests"  # bug in per unit fixed
                 command: | 
                     source venv_test/bin/activate
                     uv pip install "pypowsybl~=1.10.0"
@@ -573,7 +573,7 @@ jobs:
                 name: "Make pypowsybl ~1.13.0 tests"  # 'bug' in DC
                 command: | 
                     source venv_test/bin/activate
-                    uv pip install "pypowsybl~=1.13.0"
+                    uv pip install "pypowsybl~=1.13.0" "numpy>2"
                     cd lightsim2grid/tests/
                     python -m unittest test_GridModel_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
