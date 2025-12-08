@@ -140,7 +140,10 @@ def debug_with_olf_physical_params(
 
 if __name__ == "__main__":
     import tempfile
-    debug_dir = tempfile.TemporaryDirectory(dir="/tmp") # Compliant
+    root_tmp_dir = "/tmp/case300_subdir"
+    if not os.path.exists(root_tmp_dir):
+        os.mkdir(root_tmp_dir)
+    debug_dir = tempfile.TemporaryDirectory(dir=root_tmp_dir) # Compliant
 
     case_name = "ieee300"
     
