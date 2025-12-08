@@ -44,16 +44,98 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
 def init(net : pypo.network.Network,
          gen_slack_id: Union[int, str] = None,
          slack_bus_id: int = None,
-         sn_mva = 100.,  # only used if not present in the grid
-         sort_index=True, 
-         f_hz = 50.,  # unused
+         sn_mva : float = 100.,  # only used if not present in the grid
+         sort_index : bool =True, 
+         f_hz : float = 50.,  # unused
          net_pu : Optional[pypo.network.Network] = None,
-         only_main_component=True,
-         return_sub_id=False,
-         n_busbar_per_sub=None,  # new in 0.9.1
-         buses_for_sub=None,  # new in 0.9.1
-         init_vm_pu=1.06,
+         only_main_component : bool =True,
+         return_sub_id: bool=False,
+         n_busbar_per_sub: Optional[int]=None,  # new in 0.9.1
+         buses_for_sub:Optional[bool]=None,  # new in 0.9.1
+         init_vm_pu:float=1.06,
          ) -> GridModel:
+    """
+    This function is available under the `init_from_pypowsybl` in lightsim2grid
+    
+
+    .. code-block:: python
+    
+        from lightsim2grid.gridmodel import init_from_pypowsybl
+        
+    .. warning::
+        It is not available if the `pypowsybl` python package is not installed.
+    
+    :param net: The pypowsybl network
+    :type net: pypo.network.Network
+    
+    :param gen_slack_id: The id of the generator that should be used as the slack
+                         (either it's given by id (int) or by name (str))
+    :type gen_slack_id: Union[int, str]
+    
+    :param slack_bus_id: If you don't provide a generator ID as a slack bus, you can
+            provide a bus id (int). We do not recommend setting the slack this way.            
+    :type slack_bus_id: int
+    
+    :param sn_mva: The nominal apparent power used when converting the grid to 
+                   per unit. It is only used if the pypowsybl grid 
+                   has no `_nominal_apparent_power` attribute. 
+                   **Advanced usage**.            
+    :type sn_mva: float
+    
+    :param sort_index: Whether you want to sort the indexes of all the 
+                       pypowsybl tables (*eg* get_loads() or *get_buses()*) or not.
+                       Sorting the grid tables is preferable if you want to be 
+                       "future proof" and don't want to depend on pandas version
+                       (same order is guaranteed). Not sorting the grid will give
+                       easier comparison of results with pypowsybl.          
+    :type sn_mva: bool
+    
+    :param f_hz: Not used currently (frequency of the grid)
+    :type net_pu: float
+    
+    :param net_pu: If you have already converted the grid in "per unit" then
+                   you can pass it as the `net_pu` argument. Otherwise this 
+                   function will do it.
+                   **Advanced usage**.
+    :type net_pu: Optional[pypo.network.Network]
+    
+    :param only_main_component: If this is True, then only the main component (*ie*
+                                the one containing the slack bus) will be used. All
+                                equipments not part of this component will be
+                                deactivated (switched-off). **NB** currently
+                                lightsim2grid will diverge if the grid is not connected,
+                                this option might then "hide" some equipements from
+                                the grid (silently) but you have higher chances of
+                                convergence.
+    :type only_main_component: bool
+    
+    :param return_sub_id: **Advanced usage**. If you want to retrieve the id of the
+                          equipments as "tables". Used only for `LightSimBackend`
+    :type return_sub_id: bool
+                          
+    :param n_busbar_per_sub: Currently, lightsim2grid works well with a constant 
+                             number of independant buses that can be made at each 
+                             substations. It can be infered from the grid or 
+                             set with this attribute. We recommend to leave it 
+                             to `None` (which corresponds to the "infer it from 
+                             the grid" behaviour) in most cases.
+    :type n_busbar_per_sub: Opional[int]
+    
+    :param buses_for_sub: Whether the lightsim2grid substation will correspond to buses
+                          of the pypowsybl grid (if buses_for_sub is `True`).
+                          Alternatively, if buses_for_sub is `False`, the
+                          lightsim2grid susbtation will correspond to
+                          pypowsybl voltage level (read from net.get_voltage_levels()).
+                          buses_for_sub==`True` is a "legacy" behaviour.
+    :type buses_for_sub: bool
+    
+    :param init_vm_pu: The voltage magnitude with which the init vector of AC powerflow
+                       will be set.
+    :type init_vm_pu: float
+    
+    :return: The properly initialized gridmodel.
+    :rtype: :class:`GridModel`
+    """
     model = GridModel()
     if hasattr(net, "_nominal_apparent_power"):
         sn_mva_used = getattr(net, "_nominal_apparent_power")
