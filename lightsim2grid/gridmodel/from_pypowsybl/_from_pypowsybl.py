@@ -220,33 +220,6 @@ def init(net : pypo.network.Network,
         ls_to_orig = np.zeros(all_buses_vn_kv.shape[0], dtype=int) - 1
         ls_to_orig[bus_df["bus_global_id"].values] = np.arange(bus_df.shape[0])
         sub_names = voltage_levels.index.values.astype(str)
-        # all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
-        # # retrieve the labels from the buses in the original grid
-        # # bus_df["bus_id"] = -1
-        # # bus_df.loc[bus_df_orig.index, "bus_id"] = np.arange(bus_df.shape[0]) 
-        # # bus_df = bus_df.sort_values("bus_id")
-        # # ls_to_orig = 1 * bus_df["bus_id"].values
-        # ls_to_orig = np.arange(voltage_levels.shape[0])
-        
-        # n_sub = bus_df.shape[0]
-        # n_bb_per_sub = None
-        # nb_bus_per_vl_in_grid = bus_df.groupby("voltage_level_id").count()["name"].max()
-        # if n_busbar_per_sub is None:
-        #     # warnings.warn("You should avoid using this function without at least `buses_for_sub` or `n_busbar_per_sub`. "
-        #                 #   f"Setting automatically n_busbar_per_sub={nb_bus_per_vl_in_grid}")
-        #     n_busbar_per_sub = nb_bus_per_vl_in_grid
-        # elif n_busbar_per_sub < nb_bus_per_vl_in_grid:
-        #     raise ReferenceError(f"The input pypowsybl grid counts some voltage levels "
-        #                          f"with {nb_bus_per_vl_in_grid} independant buses, "
-        #                          f"which is not compatible with the {n_busbar_per_sub} "
-        #                          "given as input.")
-            
-        # # used to be done in the Backend previously, now we do it here instead
-        # bus_init = 1. * all_buses_vn_kv
-        # # TODO ls_to_orig
-        # ls_to_orig = np.concatenate((ls_to_orig, np.full((n_busbar_per_sub - 1) * n_sub, fill_value=-1, dtype=ls_to_orig.dtype)))
-        # n_sub_ls = voltage_levels.shape[0]
-        # n_busbar_per_sub_ls = n_busbar_per_sub
         
     # all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
     model.init_bus(n_sub_ls,
@@ -257,10 +230,6 @@ def init(net : pypo.network.Network,
     model._ls_to_orig = ls_to_orig
     model._max_nb_bus_per_sub = n_busbar_per_sub_ls
     model.init_substation_names(sub_names)
-    
-    # model.set_n_sub(n_sub)
-    # if n_bb_per_sub is not None:
-        # model._max_nb_bus_per_sub = n_busbar_per_sub
         
     # do the generators
     if sort_index:
@@ -286,6 +255,8 @@ def init(net : pypo.network.Network,
 
     # dirty fix for when regulating elements are not the same
     bus_reg = copy.deepcopy(df_gen["regulated_element_id"].values)
+    # for oldest pypowsybl version, we could have "" there
+    bus_reg = np.where(bus_reg == "", df_gen.index, bus_reg)
     vl_reg = copy.deepcopy(df_gen["voltage_level_id"].values)
     mask_ref_bbs = bus_reg != df_gen.index
     
@@ -329,41 +300,19 @@ def init(net : pypo.network.Network,
         df_line = net.get_lines().sort_index()
     else:
         df_line = net.get_lines()
+        
     # per unit
     if net_pu is None:
-        try:
+        if hasattr(net, "per_unit"):
             net_pu = copy.deepcopy(net)
             net_pu.per_unit = True
-        except Exception as exc_:
+        else:
+            # legacy pypowsybl mode: this did not exist
             from pypowsybl.network import PerUnitView
             net_pu = PerUnitView(net)
             warnings.warn("The `PerUnitView` (python side) is less efficient and less "
                         "tested that the equivalent java class. Please upgrade pypowsybl version")
     df_line_pu = net_pu.get_lines().loc[df_line.index]
-    # branch_from_kv = voltage_levels.loc[df_line["voltage_level1_id"].values]["nominal_v"].values
-    # branch_to_kv = voltage_levels.loc[df_line["voltage_level2_id"].values]["nominal_v"].values
-    
-    # only valid for lines with same voltages at both side...
-    # # branch_from_pu = branch_from_kv * branch_from_kv / sn_mva
-    # # line_r = df_line["r"].values / branch_from_pu
-    # # line_x = df_line["x"].values / branch_from_pu  
-    # # line_h_or = (1j*df_line["g1"].values + df_line["b1"].values) * branch_from_pu
-    # # line_h_ex = (1j*df_line["g2"].values + df_line["b2"].values) * branch_from_pu
-    # real per unit conversion 
-    # see https://github.com/powsybl/pypowsybl/issues/642
-    # see https://github.com/powsybl/powsybl-core/blob/266442cbbd84f630acf786018618eaa3d496c6ba/ieee-cdf/ieee-cdf-converter/src/main/java/com/powsybl/ieeecdf/converter/IeeeCdfImporter.java#L347
-    # for right formula
-    # v1 = branch_from_kv
-    # v2 = branch_to_kv
-    # line_r = sn_mva *  df_line["r"].values / v1 / v2
-    # line_x = sn_mva *  df_line["x"].values / v1 / v2
-    # tmp_ = np.reciprocal(df_line["r"].values + 1j*df_line["x"].values)
-    # b1 = df_line["b1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.imag*v1/sn_mva
-    # b2 = df_line["b2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.imag*v2/sn_mva
-    # g1 = df_line["g1"].values * v1*v1/sn_mva + (v1-v2)*tmp_.real*v1/sn_mva
-    # g2 = df_line["g2"].values * v2*v2/sn_mva + (v2-v1)*tmp_.real*v2/sn_mva
-    # line_h_or = (g1 + 1j * b1)
-    # line_h_ex = (g2 + 1j * b2)
     line_r = df_line_pu["r"].values
     line_x = df_line_pu["x"].values
     line_h_or = (df_line_pu["g1"].values + 1j * df_line_pu["b1"].values)
@@ -381,15 +330,25 @@ def init(net : pypo.network.Network,
         if is_or_disc or is_ex_disc:
             model.deactivate_powerline(line_id)
     model.set_line_names(df_line.index)   
+    
     # for trafo
-    # I extract trafo with `all_attributes=True` so that I have access to the
-    # `rho`
-    if sort_index:
-        df_trafo = net.get_2_windings_transformers(all_attributes=True).sort_index()
-    else:
-        df_trafo = net.get_2_windings_transformers(all_attributes=True)
+    # I extract trafo with `all_attributes=True` so that I have access to the `rho`
+    try:
+        df_trafo_not_sorted = net.get_2_windings_transformers(all_attributes=True)
+    except TypeError:
+        # not available in legacy pypowsybl version
+        df_trafo_not_sorted = net.get_2_windings_transformers()
         
-    df_trafo_pu = net_pu.get_2_windings_transformers(all_attributes=True).loc[df_trafo.index]
+    if sort_index:
+        df_trafo = df_trafo_not_sorted.sort_index()
+    else:
+        df_trafo = df_trafo_not_sorted
+    
+    try :
+        df_trafo_pu = net_pu.get_2_windings_transformers(all_attributes=True)
+    except TypeError:
+        df_trafo_pu = net_pu.get_2_windings_transformers()
+    df_trafo_pu = df_trafo_pu.loc[df_trafo.index]
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
     
     # shift_ = np.zeros(df_trafo.shape[0])
@@ -397,53 +356,33 @@ def init(net : pypo.network.Network,
         shift_ = np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
     else:
         if net.get_phase_tap_changers().shape[0] > 0:
-            raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter (but they are by lightsim2grid)")
+            raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter "
+                               "when not accessible using the 'alpha' columns "
+                               "of the net (once per unit). "
+                               "NB: phase tap change are handled by lightsim2grid)")
         shift_ = np.zeros(df_trafo.shape[0])
-    # tap_position = 1.0 * shift_
-    is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO
-    
-    # per unit
-    # trafo_from_kv = voltage_levels.loc[df_trafo["voltage_level1_id"].values]["nominal_v"].values
-    # trafo_to_kv = voltage_levels.loc[df_trafo["voltage_level2_id"].values]["nominal_v"].values
-    # trafo_to_pu = trafo_to_kv * trafo_to_kv / sn_mva
-    # tap
-    # tap_step_pct = (df_trafo["rated_u1"] / trafo_from_kv - 1.) * 100.
-    # has_tap = tap_step_pct != 0.
-    # tap_pos[has_tap] += 1
-    # tap_step_pct[~has_tap] = 1.0  # or any other values...
-    # trafo_r = df_trafo["r"].values / trafo_to_pu
-    # trafo_x = df_trafo["x"].values / trafo_to_pu
-    # trafo_h = (df_trafo["g"].values + 1j * df_trafo["b"].values) * trafo_to_pu
+    is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO    
     trafo_r = df_trafo_pu["r"].values
     trafo_x = df_trafo_pu["x"].values
     trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values)
     
     # now get the ratio    
     # in lightsim2grid (cpp)
-    # RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
-    # in powsybl (https://javadoc.io/doc/com.powsybl/powsybl-core/latest/com/powsybl/iidm/network/TwoWindingsTransformer.html)
-    #  rho = transfo.getRatedU2() / transfo.getRatedU1()
-    # * (transfo.getRatioTapChanger() != null ? transfo.getRatioTapChanger().getCurrentStep().getRho() : 1);
-    # * (transfo.getPhaseTapChanger() != null ? transfo.getPhaseTapChanger().getCurrentStep().getRho() : 1);
-    ratio = 1. * (df_trafo_pu["rated_u2"].values / df_trafo_pu["rated_u1"].values)
-    ratio = 1. * df_trafo_pu["rho"].values
-    has_r_tap_changer = np.isin(df_trafo_pu.index, ratio_tap_changer.index)
+    if "rho" in df_trafo_pu:
+        ratio = 1. * df_trafo_pu["rho"].values
+    else:
+        # in powsybl (https://javadoc.io/doc/com.powsybl/powsybl-core/latest/com/powsybl/iidm/network/TwoWindingsTransformer.html)
+        #  rho = transfo.getRatedU2() / transfo.getRatedU1()
+        # * (transfo.getRatioTapChanger() != null ? transfo.getRatioTapChanger().getCurrentStep().getRho() : 1);
+        # * (transfo.getPhaseTapChanger() != null ? transfo.getPhaseTapChanger().getCurrentStep().getRho() : 1);
+
+        ratio = 1. * (df_trafo_pu["rated_u2"].values / df_trafo_pu["rated_u1"].values)
+        has_r_tap_changer = np.isin(df_trafo_pu.index, ratio_tap_changer.index)
     
-    if PYPOWSYBL_VER <= PP_BUG_RATIO_TAP_CHANGER:
-        # bug in per unit view in both python and java
-        ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
-    # else:
-    #     ratio[has_r_tap_changer] = 1. * df_trafo_pu.loc[has_r_tap_changer, "rho"].values
-    # no_tap = ratio == 1.
-    # tap_neg = ratio < 1. 
-    # tap_positive = ratio > 1. 
-    # tap_step_pct = 1. * ratio
-    # tap_step_pct[tap_positive] -= 1.
-    # tap_step_pct[tap_positive] *= 100.
-    # tap_step_pct[tap_neg] = (ratio[tap_neg] - 1.)*100.
-    # tap_step_pct[no_tap] = 100.
-    # tap_position[tap_positive] += 1
-    # tap_position[tap_neg] += 1
+        if PYPOWSYBL_VER <= PP_BUG_RATIO_TAP_CHANGER:
+            # bug in per unit view in both python and java
+            ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
+
     tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
     tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
     model.init_trafo(trafo_r,
@@ -483,8 +422,6 @@ def init(net : pypo.network.Network,
     else:
         df_dc = net.get_hvdc_lines()
         df_sations = net.get_vsc_converter_stations()
-    # bus_from_id = df_sations.loc[df_dc["converter_station1_id"].values]["bus_id"].values
-    # bus_to_id = df_sations.loc[df_dc["converter_station2_id"].values]["bus_id"].values
     hvdc_bus_from_id, hvdc_from_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
     hvdc_bus_to_id, hvdc_to_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
     loss_percent = np.zeros(df_dc.shape[0])  # TODO 

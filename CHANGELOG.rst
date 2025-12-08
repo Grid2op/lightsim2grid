@@ -38,6 +38,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] a bug in DC computation with shunt active values (wrong sign)
 - [FIXED] a bug in DC computation with some phase shifters (when tap was not tagged on correct side)
 - [FIXED] a bug in FDPF when phase tap changer was not on high voltage side
+- [FIXED] a lots of bug in the conversion of pypowsybl grid when using 
+  "old" pypowysbl versions.
 - [ADDED] compatibility with python 3.14 and python 3.14 build
 - [ADDED] compatibility with pandapower >= 3 version when loading a grid 
   (pandapower changed the way it initilizes the transformers model parameters)

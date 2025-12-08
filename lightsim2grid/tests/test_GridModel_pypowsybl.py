@@ -518,9 +518,15 @@ class MakeACTests(BaseTests, unittest.TestCase):
         res_pypow = pp_lf.run_ac(net, params)
         
         # and update the slack...
+        try:
+            slack_abs = res_pypow[0].slack_bus_results[0].active_power_mismatch
+        except AttributeError:
+            # legacy pypowsybl version
+            slack_abs = res_pypow[0].slack_bus_active_power_mismatch
+            
         net.update_generators(
             id=net.get_generators().index[self.gen_slack_id],
-            p=net.get_generators().iloc[self.gen_slack_id]["p"]-res_pypow[0].slack_bus_results[0].active_power_mismatch)
+            p=net.get_generators().iloc[self.gen_slack_id]["p"]-slack_abs)
 
     def do_i_skip(self, test_nm):
         pass

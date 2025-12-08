@@ -6,7 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-import os
+
+import pdb
+from packaging import version
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
 import numpy as np
@@ -187,19 +189,7 @@ class AuxInitFromPyPowSyBlBusesForSub:
             v_ls_ref = self.ref_samecase.ac_pf(1.0 * self.V_init_ac, 10, self.tol)   
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for ac: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"
         
-        try:
-            param = get_pypowsybl_parameters(self.pypo_slack_name)
-        except TypeError:
-            param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-                                  transformer_voltage_control_on=False,
-                                  no_generator_reactive_limits=True,  # documented in the doc but apparently fails
-                                  phase_shifter_regulation_on=False,
-                                  simul_shunt=False,  # documented in the doc but apparently fails
-                                  distributed_slack=False,
-                                  provider_parameters={"slackBusSelectionMode": "NAME",
-                                                       "slackBusesIds": self.network_ref.get_buses().iloc[self.ls_slack_bus_id].name}
-                                  ) 
-
+        param = get_pypowsybl_parameters(self.pypo_slack_name)
         res_pypow = lf.run_ac(self.network_ref, parameters=param)
         bus_ref_kv = self.network_ref.get_voltage_levels().loc[self.network_ref.get_buses()["voltage_level_id"].values]["nominal_v"].values
         v_mag_pypo = self.network_ref.get_buses()["v_mag"].values / bus_ref_kv
@@ -356,15 +346,17 @@ class TestBusesForSub_dosort(unittest.TestCase):
     def get_sub_names_b4s(self):
         return np.asarray(
             ['VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0', 'VL1_0', 
-             'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 'VL7_0', 'VL8_0', 'VL9_0'],
+            'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 'VL7_0', 'VL8_0', 'VL9_0'],
             dtype=str
         )
         
     def setUp(self):
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        self.path = os.path.join(dir_path, "case_14_iidm")
-        self.file_name = "grid.xiidm"
-        self.pypow_grid = pp.network.load(os.path.join(self.path, self.file_name))
+        # dir_path = os.path.dirname(os.path.realpath(__file__))
+        # self.path = os.path.join(dir_path, "case_14_iidm")
+        # self.file_name = "grid.xiidm"
+        # self.pypow_grid = pp.network.load(os.path.join(self.path, self.file_name))
+        self.pypo_slack_name, _ = get_same_slack("ieee14")
+        self.pypow_grid = pp.network.create_ieee14()
         self.ls_grid_b4s : GridModel = init_from_pypowsybl(
             self.pypow_grid,
             buses_for_sub=True,
@@ -412,6 +404,8 @@ class TestBusesForSub_dosort(unittest.TestCase):
         v_init = np.ones(self.ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
         v_dc = self.ls_grid.dc_pf(v_init, 10, 1e-6)
         v_dc_b4s = self.ls_grid_b4s.dc_pf(v_init, 10, 1e-6)
+        assert v_dc.shape[0] > 0
+        assert v_dc_b4s.shape[0] > 0
         
         # test same Sbus
         sbus = self.ls_grid.get_dcSbus_solver()
@@ -425,11 +419,25 @@ class TestBusesForSub_dosort(unittest.TestCase):
         
         # test resulting vectors are the same
         assert (np.abs(v_dc_b4s[self.align_vect] - v_dc) < 1e-6).all()
-    
+        
+        # now test they both match pypowsybl results
+        param = get_pypowsybl_parameters(self.pypo_slack_name)
+        res_pypow = lf.run_dc(self.pypow_grid, parameters=param)
+        vl_pypow = self.pypow_grid.get_voltage_levels()
+        vl_pypow["order_pypo"] = np.arange(14)
+        
+        # voltage angle
+        v_ang_pypo = self.pypow_grid.get_buses()["v_angle"].values
+        v_ang_ls = np.rad2deg(np.angle(v_dc))
+        v_pypo_aligned = v_ang_pypo[vl_pypow.loc[self.ls_grid.get_substation_names(), "order_pypo"]]
+        assert (np.abs(v_pypo_aligned - v_ang_ls) < 1e-6).all()
+        
     def test_same_res_ac(self):
         v_init = np.ones(self.ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
-        v_dc = self.ls_grid.ac_pf(v_init, 10, 1e-6)
-        v_dc_b4s = self.ls_grid_b4s.ac_pf(v_init, 10, 1e-6)
+        v_ac = self.ls_grid.ac_pf(v_init, 10, 1e-6)
+        v_ac_b4s = self.ls_grid_b4s.ac_pf(v_init, 10, 1e-6)
+        assert v_ac.shape[0] > 0
+        assert v_ac_b4s.shape[0] > 0
         
         # test same Sbus
         sbus = self.ls_grid.get_Sbus_solver()
@@ -442,7 +450,25 @@ class TestBusesForSub_dosort(unittest.TestCase):
         assert (np.abs(Ybus_b4s[self.align_vect.reshape(-1,1), self.align_vect] - Ybus) > 1e-6).size == 0
         
         # test resulting vectors are the same
-        assert (np.abs(v_dc_b4s[self.align_vect] - v_dc) < 1e-6).all()
+        assert (np.abs(v_ac_b4s[self.align_vect] - v_ac) < 1e-6).all()
+        
+        # now test they both match pypowsybl results
+        param = get_pypowsybl_parameters(self.pypo_slack_name)
+        res_pypow = lf.run_ac(self.pypow_grid, parameters=param)
+        vl_pypow = self.pypow_grid.get_voltage_levels()
+        vl_pypow["order_pypo"] = np.arange(14)
+        
+        v_ang_pypo = self.pypow_grid.get_buses()["v_angle"].values
+        v_ang_ls = np.rad2deg(np.angle(v_ac))
+        v_pypo_aligned = v_ang_pypo[vl_pypow.loc[self.ls_grid.get_substation_names(), "order_pypo"]]
+        assert (np.abs(v_pypo_aligned - v_ang_ls) < 1e-6).all()
+        
+        # voltage angle
+        bus_df = self.pypow_grid.get_buses()
+        v_ang_pypo = bus_df["v_mag"].values / self.pypow_grid.get_voltage_levels().loc[bus_df["voltage_level_id"], "nominal_v"].values
+        v_ang_ls = np.abs(v_ac)
+        v_pypo_aligned = v_ang_pypo[vl_pypow.loc[self.ls_grid.get_substation_names(), "order_pypo"]]
+        assert (np.abs(v_pypo_aligned - v_ang_ls) < 1e-6).all()
         
         
 class TestBusesForSub_nosort(TestBusesForSub_dosort):   
@@ -460,18 +486,19 @@ class TestBusesForSub_nosort(TestBusesForSub_dosort):
     
     def get_sub_names(self):
         return np.asarray(
-            ['VL1', 'VL2', 'VL3', 'VL4', 'VL7', 'VL9', 'VL5', 
-             'VL6', 'VL8', 'VL10', 'VL11', 'VL12', 'VL13', 'VL14'],
+            ['VL1', 'VL2', 'VL3', 'VL4', 'VL5', 'VL6', 'VL7', 'VL8', 
+             'VL9', 'VL10', 'VL11', 'VL12', 'VL13', 'VL14'],
             dtype=str
         )
         
     def get_sub_names_b4s(self):
         return np.asarray(
-            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL7_0', 
-             'VL9_0', 'VL5_0', 'VL6_0', 'VL8_0', 'VL10_0', 'VL11_0', 
-             'VL12_0', 'VL13_0', 'VL14_0'],
+            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 
+             'VL7_0', 'VL8_0', 
+             'VL9_0', 'VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0'],
             dtype=str
         )
+        
     
     
 if __name__ == "__main__":
