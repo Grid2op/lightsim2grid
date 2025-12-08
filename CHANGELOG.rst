@@ -29,7 +29,7 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.11.0] 2025-xx-yy
+[0.11.0] 2025-12-08
 ----------------------
 - [DEPRECATED] python 3.7 builds will no longer be available
 - [FIXED] a bug in the import of the grid from pypowsybl
@@ -42,6 +42,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [ADDED] compatibility with pandapower >= 3 version when loading a grid 
   (pandapower changed the way it initilizes the transformers model parameters)
 - [ADDED] more kwargs arguments are possible in the LightSimBackend `loader_kwargs`
+- [ADDED] name of the substations are now read from the grid when initializing from 
+  pypowsybl.
 - [IMPROVED] the way to initialize the transformers from pypowsybl
 - [IMPROVED] possibility to load grid with phase shifters from pypowsybl
 

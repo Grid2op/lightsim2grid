@@ -13,10 +13,10 @@ import pandas as pd
 import pypowsybl as pypo
 from typing import Optional, Union
 from packaging import version
+from lightsim2grid_cpp import GridModel
 
 PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
-from lightsim2grid_cpp import GridModel
 
 
 def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
@@ -53,7 +53,7 @@ def init(net : pypo.network.Network,
          n_busbar_per_sub=None,  # new in 0.9.1
          buses_for_sub=None,  # new in 0.9.1
          init_vm_pu=1.06,
-         ):
+         ) -> GridModel:
     model = GridModel()
     if hasattr(net, "_nominal_apparent_power"):
         sn_mva_used = getattr(net, "_nominal_apparent_power")
@@ -88,34 +88,12 @@ def init(net : pypo.network.Network,
         # the "substation" in lightsim2grid will be read
         # from the buses in the original grid (and not from the
         # voltage levels)
-        
-        # bus_df = bus_df.sort_values("voltage_level_id", kind="stable")
-        # sub_unique = bus_df["voltage_level_id"].unique()
-        # nb_sub_unique = sub_unique.shape[0]
-        # sub_unique_id = np.arange(nb_sub_unique)
         if n_busbar_per_sub is None:
             # setting automatically n_busbar_per_sub
             # to 1
             # TODO logger here
             n_busbar_per_sub = 1
             
-        # if (nb_bus_per_vl["name"] > n_busbar_per_sub).any():
-        #     max_bb = nb_bus_per_vl["name"].max()
-        #     raise RuntimeError(f"Impossible configuration: we found a substation with {max_bb} "
-        #                        f"while asking for {n_busbar_per_sub}. We cannot load a grid with these "
-        #                        f"kwargs. If you use LightSimBackend, you need to change `loader_kwargs` "
-        #                        f"and especially the `n_busbar_per_sub` to be >= {max_bb}")
-        # bus_local_id = np.concatenate([np.arange(el) for el in nb_bus_per_vl.values])
-        # sub_id_duplicate = np.repeat(sub_unique_id, nb_bus_per_vl.values.ravel())
-        # bus_global_id = bus_local_id * nb_sub_unique + sub_id_duplicate
-        # bus_df["bus_global_id"] = bus_global_id
-        # all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
-        # ls_to_orig = np.zeros(n_busbar_per_sub * nb_sub_unique, dtype=int) - 1
-        # ls_to_orig[bus_df["bus_global_id"].values] = np.arange(bus_df.shape[0])
-        # n_sub = nb_sub_unique
-        # n_bb_per_sub = n_busbar_per_sub
-        # bus_df = bus_df.sort_index()
-        
         all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"], "nominal_v"].values
         if n_busbar_per_sub > 1:
             all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
@@ -124,6 +102,7 @@ def init(net : pypo.network.Network,
         ls_to_orig[:n_sub_ls] = np.arange(n_sub_ls)
         n_busbar_per_sub_ls = n_busbar_per_sub
         bus_df["bus_global_id"] = np.arange(n_sub_ls)
+        sub_names = bus_df.index.values.astype(str)
     else:        
         # the "substation" in lightsim2grid
         voltage_levels["nb_bus_per_vl"] = nb_bus_per_vl["name"]
@@ -158,6 +137,7 @@ def init(net : pypo.network.Network,
         n_busbar_per_sub_ls = n_busbar_per_sub
         ls_to_orig = np.zeros(all_buses_vn_kv.shape[0], dtype=int) - 1
         ls_to_orig[bus_df["bus_global_id"].values] = np.arange(bus_df.shape[0])
+        sub_names = voltage_levels.index.values.astype(str)
         # all_buses_vn_kv = 1. * voltage_levels["nominal_v"].values
         # # retrieve the labels from the buses in the original grid
         # # bus_df["bus_id"] = -1
@@ -194,10 +174,12 @@ def init(net : pypo.network.Network,
                    )
     model._ls_to_orig = ls_to_orig
     model._max_nb_bus_per_sub = n_busbar_per_sub_ls
+    model.init_substation_names(sub_names)
+    
     # model.set_n_sub(n_sub)
     # if n_bb_per_sub is not None:
         # model._max_nb_bus_per_sub = n_busbar_per_sub
-    
+        
     # do the generators
     if sort_index:
         df_gen = net.get_generators().sort_index()

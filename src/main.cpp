@@ -750,7 +750,9 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())
         .def("set_sn_mva", &GridModel::set_sn_mva, DocGridModel::_internal_do_not_use.c_str())   // TODO use python "property" for that
         .def("get_sn_mva", &GridModel::get_sn_mva, DocGridModel::_internal_do_not_use.c_str())
-
+        .def("init_substation_names", &GridModel::init_sub_names, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_substation_names", &GridModel::get_sub_names, DocGridModel::_internal_do_not_use.c_str())
+        
         // init its elements
         .def("init_powerlines", &GridModel::init_powerlines, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_powerlines_full", &GridModel::init_powerlines_full, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation

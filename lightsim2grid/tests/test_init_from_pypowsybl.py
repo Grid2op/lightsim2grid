@@ -6,13 +6,14 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import os
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
 import numpy as np
 import unittest
 import warnings
 
-from lightsim2grid.gridmodel import init_from_pypowsybl
+from lightsim2grid.gridmodel import init_from_pypowsybl, GridModel
 
 try:
     import pandapower.networks as pn
@@ -330,6 +331,149 @@ class TestCase300FromPypo(TestCase300FromPypoBusesForSub):
         return False
 
 
+class TestBusesForSub_dosort(unittest.TestCase):
+    def do_i_sort(self):
+        return True
+    
+    def get_align_vector(self):
+        return np.asarray(
+            [ 5,  0,  1,  2,  3,  4,  6,  7,  8,  9, 10, 11, 12, 13],
+            dtype=int)
+    
+    def get_ls_to_orig(self):
+        return self.get_align_vector()
+    
+    def get_gen_slack_bus_id(self):
+        return 5
+    
+    def get_sub_names(self):
+        return np.asarray(
+            ['VL1', 'VL10', 'VL11', 'VL12', 'VL13', 'VL14', 'VL2', 
+             'VL3', 'VL4', 'VL5', 'VL6', 'VL7', 'VL8', 'VL9'],
+            dtype=str
+        )
+        
+    def get_sub_names_b4s(self):
+        return np.asarray(
+            ['VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0', 'VL1_0', 
+             'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 'VL7_0', 'VL8_0', 'VL9_0'],
+            dtype=str
+        )
+        
+    def setUp(self):
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        self.path = os.path.join(dir_path, "case_14_iidm")
+        self.file_name = "grid.xiidm"
+        self.pypow_grid = pp.network.load(os.path.join(self.path, self.file_name))
+        self.ls_grid_b4s : GridModel = init_from_pypowsybl(
+            self.pypow_grid,
+            buses_for_sub=True,
+            sort_index=self.do_i_sort(), 
+            gen_slack_id=0)
+        self.ls_grid : GridModel = init_from_pypowsybl(
+            self.pypow_grid,
+            buses_for_sub=False,
+            sort_index=self.do_i_sort(), 
+            gen_slack_id=0)
+        self.align_vect = self.get_align_vector()
+        return super().setUp()
+    
+    def test_some_differences(self):
+        # correct generator is slack
+        assert self.ls_grid.get_generators()[0].is_slack
+        assert self.ls_grid_b4s.get_generators()[0].is_slack
+        # no other generators are slack
+        assert abs(self.ls_grid.get_generators()[0].slack_weight - 1.) < 1e-6
+        assert abs(self.ls_grid_b4s.get_generators()[0].slack_weight - 1.) < 1e-6
+        # generator is at the correct bus
+        assert self.ls_grid.get_generators()[0].bus_id == 0
+        assert self.ls_grid_b4s.get_generators()[0].bus_id == self.get_gen_slack_bus_id()
+        # 'correct' ls_to_orig vector
+        assert (
+            self.ls_grid._ls_to_orig ==
+            self.get_ls_to_orig()
+        ).all()
+        assert (
+            self.ls_grid_b4s._ls_to_orig ==
+            [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13]
+        ).all()      
+          
+        # correct substation names
+        assert (
+            self.ls_grid.get_substation_names() ==
+            self.get_sub_names()
+        ).all()
+        assert (
+            self.ls_grid_b4s.get_substation_names() ==
+            self.get_sub_names_b4s()
+        ).all()
+        
+    def test_same_res_dc(self):
+        v_init = np.ones(self.ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
+        v_dc = self.ls_grid.dc_pf(v_init, 10, 1e-6)
+        v_dc_b4s = self.ls_grid_b4s.dc_pf(v_init, 10, 1e-6)
+        
+        # test same Sbus
+        sbus = self.ls_grid.get_dcSbus_solver()
+        sbus_b4s = self.ls_grid_b4s.get_dcSbus_solver()
+        assert (np.abs(sbus_b4s[self.align_vect] - sbus) < 1e-6).all()
+        
+        # test same Ybus
+        Ybus = self.ls_grid.get_dcYbus_solver()
+        Ybus_b4s = self.ls_grid_b4s.get_dcYbus_solver()
+        assert (np.abs(Ybus_b4s[self.align_vect.reshape(-1,1), self.align_vect] - Ybus) > 1e-6).size == 0
+        
+        # test resulting vectors are the same
+        assert (np.abs(v_dc_b4s[self.align_vect] - v_dc) < 1e-6).all()
+    
+    def test_same_res_ac(self):
+        v_init = np.ones(self.ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
+        v_dc = self.ls_grid.ac_pf(v_init, 10, 1e-6)
+        v_dc_b4s = self.ls_grid_b4s.ac_pf(v_init, 10, 1e-6)
+        
+        # test same Sbus
+        sbus = self.ls_grid.get_Sbus_solver()
+        sbus_b4s = self.ls_grid_b4s.get_Sbus_solver()
+        assert (np.abs(sbus_b4s[self.align_vect] - sbus) < 1e-6).all()
+        
+        # test same Ybus
+        Ybus = self.ls_grid.get_Ybus_solver()
+        Ybus_b4s = self.ls_grid_b4s.get_Ybus_solver()
+        assert (np.abs(Ybus_b4s[self.align_vect.reshape(-1,1), self.align_vect] - Ybus) > 1e-6).size == 0
+        
+        # test resulting vectors are the same
+        assert (np.abs(v_dc_b4s[self.align_vect] - v_dc) < 1e-6).all()
+        
+        
+class TestBusesForSub_nosort(TestBusesForSub_dosort):   
+    def do_i_sort(self):
+        return False     
+    
+    def get_gen_slack_bus_id(self):
+        return 0
+    
+    def get_ls_to_orig(self):
+        return np.arange(14)
+    
+    def get_align_vector(self):
+        return np.arange(14)
+    
+    def get_sub_names(self):
+        return np.asarray(
+            ['VL1', 'VL2', 'VL3', 'VL4', 'VL7', 'VL9', 'VL5', 
+             'VL6', 'VL8', 'VL10', 'VL11', 'VL12', 'VL13', 'VL14'],
+            dtype=str
+        )
+        
+    def get_sub_names_b4s(self):
+        return np.asarray(
+            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL7_0', 
+             'VL9_0', 'VL5_0', 'VL6_0', 'VL8_0', 'VL10_0', 'VL11_0', 
+             'VL12_0', 'VL13_0', 'VL14_0'],
+            dtype=str
+        )
+    
+    
 if __name__ == "__main__":
     unittest.main()
     

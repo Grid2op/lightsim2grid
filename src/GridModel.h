@@ -291,6 +291,12 @@ class GridModel : public GenericContainer
             storages_.reconnect_connected_buses(substations_);
             dc_lines_.reconnect_connected_buses(substations_);
         }
+        void init_sub_names(const std::vector<std::string> & sub_names){
+            substations_.init_sub_names(sub_names);
+        }
+        const std::vector<std::string> & get_sub_names()const {
+            return substations_.get_sub_names();
+        }
 
         void add_gen_slackbus(int gen_id, real_type weight);
         void remove_gen_slackbus(int gen_id);

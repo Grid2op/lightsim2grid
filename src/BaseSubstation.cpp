@@ -19,7 +19,8 @@ Substation::StateRes Substation::get_state() const
         nmax_busbar_per_sub_,
         sub_vn_kv,
         bus_status_,
-        bus_vn_kv);
+        bus_vn_kv,
+        sub_names_);
      return res;
 }
 
@@ -46,4 +47,5 @@ void Substation::set_state(Substation::StateRes & my_state)
     sub_vn_kv_ = RealVect::Map(&sub_vn_kv[0], sub_vn_kv.size());
     bus_status_ = bus_status;
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
+    sub_names_ = std::get<5>(my_state);
 }

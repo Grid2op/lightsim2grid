@@ -35,7 +35,8 @@ class Substation
        int,  // nmax_busbar_per_sub
        std::vector<real_type>, // sub_vn_kv_;
        std::vector<bool>,  // bus_status_;
-       std::vector<real_type>  // bus_vn_kv_;
+       std::vector<real_type>,  // bus_vn_kv_;
+       std::vector<std::string>  // sub_names_
        > StateRes;
     
 
@@ -69,6 +70,16 @@ class Substation
             }
         }
 
+    }
+
+    void init_sub_names(const std::vector<std::string> & sub_names){
+        if(sub_names.size() != n_sub_){
+            throw std::runtime_error("Wrong number of substation when setting their names.");
+        }
+        sub_names_ = sub_names;
+    }
+    const std::vector<std::string> & get_sub_names() const {
+        return sub_names_;
     }
 
     // void from_agent_topology(int sub_id, int local_bus_id){
@@ -143,6 +154,7 @@ class Substation
         RealVect sub_vn_kv_;
         std::vector<bool> bus_status_;
         RealVect bus_vn_kv_;
+        std::vector<std::string> sub_names_;
 
 };
 
