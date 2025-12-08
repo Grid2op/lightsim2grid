@@ -77,7 +77,10 @@ class LightSimBackend(Backend):
         "sort_index",
         "init_vm_pu",
         "sn_mva",
-        "double_bus_per_sub"
+        "double_bus_per_sub",
+        "use_grid2op_default_names",
+        "reconnect_disco_gen",
+        "reconnect_disco_load"
     }
     
     KEYS_PANDAPOWER_LOADER = {
@@ -149,6 +152,9 @@ class LightSimBackend(Backend):
         #:   - `reconnect_disco_load` (``bool``): whether to reconnec the disconnected
         #:     load from in the iidm grid. If reconnected, load will have a target
         #:     p set to 0. and a target q set to 0.
+        #:   - `sort_index` 
+        #:   - `init_vm_pu` 
+        #:   - `sn_mva` 
         #: 
         self._loader_kwargs = loader_kwargs
 
