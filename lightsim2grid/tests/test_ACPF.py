@@ -243,12 +243,12 @@ class MyTestCase(unittest.TestCase):
         error_p = np.abs(np.real(Sbus_me[all_but_slack]) - np.real(Sbus_pp_right_order[all_but_slack]))
         assert np.max(error_p) <= self.tol, f"\t Error: P do not match for Sbus, maximum absolute error is " \
                                             f"{np.max(error_p):.5f} MW, \t Error: significative difference for bus " \
-                                            f"index (lightsim): {np.where(error_p > self.tol)[0]}"
+                                            f"index (lightsim): {(error_p > self.tol).nonzero()[0]}"
 
         error_q = np.abs(np.imag(Sbus_me[all_but_slack]) - np.imag(Sbus_pp_right_order[all_but_slack]))
         assert np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus, maximum absolute error is " \
                                             f"{np.max(error_q):.5f} MVAr, \t Error: significative difference for bus " \
-                                            f"index (lightsim): {np.where(error_q > self.tol)[0]}"
+                                            f"index (lightsim): {(error_q > self.tol).nonzero()[0]}"
 
         # 2)  Checking Ybus conversion"
         Y_me = backend._grid.get_Ybus_solver()
@@ -334,12 +334,12 @@ class MyTestCase(unittest.TestCase):
 
         self._assert_or_print(np.max(error_p) <= self.tol, f"\t Error: P do not match for Sbus (dc), maximum absolute error is " \
                                             f"{np.max(error_p):.5f} MW, \nError: significative difference for bus " \
-                                            f"index (lightsim): {np.where(error_p > self.tol)[0]}")
+                                            f"index (lightsim): {(error_p > self.tol).nonzero()[0]}")
 
         error_q = np.abs(np.imag(Sdc_me) - np.imag(Pbus_pp_ro))
         self._assert_or_print(np.max(error_q) <= self.tol, f"\t Error: Q do not match for Sbus (dc), maximum absolute error is " \
                                             f"{np.max(error_q):.5f} MVAr, \n\t Error: significative difference for " \
-                                            f"bus index (lightsim): {np.where(error_q > self.tol)[0]}")
+                                            f"bus index (lightsim): {(error_q > self.tol).nonzero()[0]}")
 
         # "3) check that the Ybus matrix is same for PP and lightisim in DC"
         with warnings.catch_warnings():
@@ -396,8 +396,8 @@ class MyTestCase(unittest.TestCase):
         converter.set_f_hz(pp_net.f_hz)
         tap_neutral = 1.0 * pp_net.trafo["tap_neutral"].values
         tap_neutral[~np.isfinite(tap_neutral)] = 0.
-        if np.any(tap_neutral != 0.):
-            raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
+        if (np.abs(tap_neutral) > 1e-6).any():
+            raise RuntimeError("lightsim converter supposes that tap_neutral is 0. for the transformers")
         tap_step_pct = 1.0 * pp_net.trafo["tap_step_percent"].values
         tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
         tap_pos = 1.0 * pp_net.trafo["tap_pos"].values

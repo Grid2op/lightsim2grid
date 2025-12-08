@@ -573,7 +573,7 @@ jobs:
                 name: "Make pypowsybl ~1.13.0 tests"  # 'bug' in DC
                 command: | 
                     source venv_test/bin/activate
-                    uv pip install "pypowsybl~=1.13.0" "numpy>2"
+                    uv pip install "pypowsybl~=1.13.0"
                     cd lightsim2grid/tests/
                     python -m unittest test_GridModel_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py

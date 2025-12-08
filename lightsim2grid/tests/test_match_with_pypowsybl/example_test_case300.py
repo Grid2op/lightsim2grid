@@ -9,7 +9,6 @@ import pypowsybl.loadflow as pypow_lf
 
 from lightsim2grid.gridmodel import init_from_pypowsybl
 from utils_for_slack import get_same_slack, get_pypowsybl_parameters
-debug_dir = "/tmp"
 
 
 def debug_with_olf_physical_params(
@@ -140,6 +139,8 @@ def debug_with_olf_physical_params(
 
 
 if __name__ == "__main__":
+    debug_dir = "/tmp"
+
     case_name = "ieee300"
     
     slack_pypowysbl, slack_ls = get_same_slack(case_name)

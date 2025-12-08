@@ -21,7 +21,7 @@ from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 
 class _TestTrafoConverter:
-    def get_pp_case():
+    def get_pp_case(self):
         return pn.case118()
     
     def setUp(self):
@@ -42,7 +42,7 @@ class _TestTrafoConverter:
         tap_neutral = 1.0 * pp_net.trafo["tap_neutral"].values
         tap_neutral[~np.isfinite(tap_neutral)] = 0.
 
-        if np.any(tap_neutral != 0.):
+        if (np.abs(tap_neutral) > 1e-6).any():
             raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
 
         tap_step_pct = 1.0 * pp_net.trafo["tap_step_percent"].values
@@ -168,23 +168,23 @@ class _TestTrafoConverter:
         
         
 class TestTrafoConverter_Case9(_TestTrafoConverter, unittest.TestCase):
-    def get_pp_case():
+    def get_pp_case(self):
         return pn.case9()
     
 class TestTrafoConverter_Case14(_TestTrafoConverter, unittest.TestCase):
-    def get_pp_case():
+    def get_pp_case(self):
         return pn.case14()
     
 class TestTrafoConverter_Case57(_TestTrafoConverter, unittest.TestCase):
-    def get_pp_case():
+    def get_pp_case(self):
         return pn.case57()
     
 class TestTrafoConverter_Case118(_TestTrafoConverter, unittest.TestCase):
-    def get_pp_case():
+    def get_pp_case(self):
         return pn.case118()
     
 class TestTrafoConverter_Case300(_TestTrafoConverter, unittest.TestCase):
-    def get_pp_case():
+    def get_pp_case(self):
         return pn.case300()
     
 if __name__ == "__main__":

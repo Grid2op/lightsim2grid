@@ -63,7 +63,9 @@ def get_pypowsybl_parameters(slack_voltage_level):
     return params
 
 
-def main(case_name, nb_extra_powerflow=100):
+def main(case_name,
+         nb_extra_powerflow=100,
+         verbose_lightsim2grid_timing=False):
     slack_pypowysbl, slack_ls = get_same_slack(case_name)
     
     pypow_grid = getattr(pypow.network, f"create_{case_name}")()
@@ -87,6 +89,24 @@ def main(case_name, nb_extra_powerflow=100):
         1e-6)
     end_ls = time.perf_counter()
     ls_grid.unset_changes()
+    if verbose_lightsim2grid_timing:
+        (timer_Fx_, timer_solve_, timer_initialize_, 
+         timer_check_, timer_dSbus_, timer_fillJ_, 
+         timer_Va_Vm_, timer_pre_proc_, timer_total_nr_
+         ) = ls_grid.get_solver().get_timers_jacobian()
+        tot_time = end_ls - beg_ls
+        print("--------------------------------------")
+        print("Detailed lightsim2grid timings: ")
+        print(f"Total time spent in the solver: {1e3 * timer_total_nr_:.2e} ms ({100. * timer_total_nr_ / tot_time:.0f} % of total)")
+        print(f"\t Time to pre process Ybus, Sbus etc.: {1e3 * timer_pre_proc_:.2e} ms ({100. * timer_pre_proc_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to initialize linear solver {1e3 * timer_initialize_:.2e} ms ({100. * timer_initialize_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to compute dS/dV {1e3 * timer_dSbus_ : .2e} ms ({100. * timer_dSbus_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to fill the Jacobian {1e3 * timer_fillJ_:.2e} ms ({100. * timer_fillJ_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to solve the Jacobian linear system: {1e3 * timer_solve_:.2e} ms ({100. * timer_solve_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to update Va and Vm {1e3*timer_Va_Vm_:.2e} ms ({100. * timer_Va_Vm_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*timer_Fx_:.2e} ms ({100. * timer_Fx_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to evaluate cvg criteria {1e3*timer_check_:.2e} ms ({100. * timer_check_ / timer_total_nr_:.0f} % of time in solver)")
+        print("--------------------------------------\n")
     
     print_configuration(
         pypowbk_error=True, 
@@ -131,6 +151,15 @@ def main(case_name, nb_extra_powerflow=100):
     v_init_ls = np.ones(ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
     all_loads = np.ones(len(ls_grid.get_loads()), dtype=np.bool_)
     time_ls = 0.
+    ls_timer_Fx = 0.
+    ls_timer_solve = 0.
+    ls_timer_initialize = 0.
+    ls_timer_check = 0.
+    ls_timer_dSbus = 0.
+    ls_timer_fillJ = 0.
+    ls_timer_Va_Vm = 0.
+    ls_timer_pre_proc = 0.
+    ls_timer_total_nr = 0.
     for i in range(nb_extra_powerflow):
         # update the grid
         new_p = (load_p_init * load_factor[i]).astype(np.float32)
@@ -144,10 +173,39 @@ def main(case_name, nb_extra_powerflow=100):
             10,
             1e-6)
         end_ls = time.perf_counter()
-        ls_grid.unset_changes()
         time_ls += end_ls - beg_ls
+        
+        (timer_Fx_, timer_solve_, timer_initialize_, 
+         timer_check_, timer_dSbus_, timer_fillJ_, 
+         timer_Va_Vm_, timer_pre_proc_, timer_total_nr_
+         ) = ls_grid.get_solver().get_timers_jacobian()
+        ls_grid.unset_changes()
+        ls_timer_Fx += timer_Fx_
+        ls_timer_solve += timer_solve_
+        ls_timer_initialize += timer_initialize_
+        ls_timer_check += timer_check_
+        ls_timer_dSbus += timer_dSbus_
+        ls_timer_fillJ += timer_fillJ_
+        ls_timer_Va_Vm += timer_Va_Vm_
+        ls_timer_pre_proc += timer_pre_proc_
+        ls_timer_total_nr += timer_total_nr_
+        
     print(f"\tLightsim2grid computation time: {1000.*(time_ls / nb_extra_powerflow):.2e} ms / pf")
     print(f"\tPypowsybl computation time: {1000.*(time_pypow / nb_extra_powerflow):.2e} ms / pf")
+    
+    if verbose_lightsim2grid_timing:
+        print("--------------------------------------")
+        print("Detailed lightsim2grid timings: ")
+        print(f"Total time spent in the solver: {1e3 * ls_timer_total_nr:.2e} ms ({100. * ls_timer_total_nr / time_ls:.0f}% of total time spent in lightsim2grid)")
+        print(f"\t Time to pre process Ybus, Sbus etc.: {1e3 * ls_timer_pre_proc:.2e} ms ({100. * ls_timer_pre_proc / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to initialize linear solver {1e3 * ls_timer_initialize:.2e} ms ({100. * ls_timer_initialize / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to compute dS/dV {1e3 * ls_timer_dSbus : .2e} ms ({100. * ls_timer_dSbus / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to fill the Jacobian {1e3 * ls_timer_fillJ:.2e} ms ({100. * ls_timer_fillJ / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to solve the Jacobian linear system: {1e3 * ls_timer_solve:.2e} ms ({100. * ls_timer_solve / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to update Va and Vm {1e3*ls_timer_Va_Vm:.2e} ms ({100. * ls_timer_Va_Vm / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*ls_timer_Fx:.2e} ms ({100. * ls_timer_Fx / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to evaluate cvg criteria {1e3*ls_timer_check:.2e} ms ({100. * ls_timer_check / ls_timer_total_nr:.0f} % of time in solver)")
+        print("--------------------------------------\n")
     
     print("For a contingency anaylisis (results might differ): ")
     # pypowsybl
@@ -183,8 +241,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Benchmark lightsim2grid with pypowsybl')
     parser.add_argument('--case_name', default=CASE_NAME, type=str,
                         help='ieee case used for the benchmark.')
+    parser.add_argument("--verbose_lightsim2grid_timing", 
+                        action=argparse.BooleanOptionalAction,
+                        default=False)
     args = parser.parse_args()
-    
-    main(case_name=args.case_name)
+    main(case_name=args.case_name,
+         verbose_lightsim2grid_timing=args.verbose_lightsim2grid_timing)
 
     

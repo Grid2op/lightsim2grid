@@ -132,22 +132,23 @@ Results
 
 The benchmarks were run on:
 
-- date: 2025-11-25 10:16  CET
+- date: 2025-12-08 14:24  CET
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.13.5.final.0 (64 bit)
+- python version: 3.12.8.final.0 (64 bit)
 - numpy version: 2.3.5
 - pandas version: 2.3.3
 - pypowsybl version: 1.13.0
-- lightsim2grid version: 0.10.4
+- lightsim2grid version: 0.11.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: False 
 	- cktso_solver_available: False 
-	- compiled_march_native: False 
-	- compiled_o3_optim: False 
+	- compiled_march_native: True 
+	- compiled_o3_optim: True 
+
 
 The results were obtained by launching:
 
@@ -205,12 +206,12 @@ before and after the computation are performed.
 Only the time to perform the powerflow is measured. In particular, the time
 to read back the data is excluded.
 
-Times are expressed in ms
+Times are expressed in ms.
 
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.04e-01         3.91e+00
+ieee9       1.32e-01         4.80e+00
 ieee14      1.35e-01         3.74e+00 
 ieee57      4.18e-01         4.14e+00
 ieee118     6.89e-01         5.77e+00
@@ -247,11 +248,11 @@ time it took to perform the 100 powerflows.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.73e-02         7.26e-01
-ieee14      2.78e-02         8.89e-01 
-ieee57      1.36e-01         1.48e+00
-ieee118     2.96e-01         2.56e+00
-ieee300     1.74e+00         5.72e+00
+ieee9       1.72e-02         6.75e-01
+ieee14      2.77e-02         8.38e-01 
+ieee57      1.38e-01         1.50e+00
+ieee118     2.90e-01         2.53e+00
+ieee300     1.74e+00         5.70e+00
 ========== =============== ===============
 
 
@@ -269,13 +270,12 @@ The table below provides the average time it takes to simulate the
 effect of 1 contingency in ms. We don't measure the time taken to 
 compute the flows from the resulting voltages.
 
-
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.32e-02         3.47e-01
-ieee14      2.37e-02         1.74e-01
-ieee57      1.34e-01         1.88e-01
-ieee118     2.08e-01         3.41e-01
-ieee300     9.99e-01         1.32e+00
+ieee9       1.55e-02         6.35e-01
+ieee14      2.28e-02         1.74e-01
+ieee57      1.36e-01         1.86e-01
+ieee118     2.04e-01         3.41e-01
+ieee300     9.99e-01         1.30e+00
 ========== =============== ===============
