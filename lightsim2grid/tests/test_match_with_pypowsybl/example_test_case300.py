@@ -61,8 +61,8 @@ def debug_with_olf_physical_params(
         lf_g1 = np.real(el.h_pu) * 0.5
         lf_g2 = np.real(el.h_pu) * 0.5
         if "a1" in olf_par:
-            import pdb
-            pdb.set_trace()
+            # TODO phase shifter here
+            pass
     
     ok_ = True
     tmp_ = {}
@@ -139,7 +139,8 @@ def debug_with_olf_physical_params(
 
 
 if __name__ == "__main__":
-    debug_dir = "/tmp"
+    import tempfile
+    debug_dir = tempfile.TemporaryDirectory(dir="/tmp") # Compliant
 
     case_name = "ieee300"
     
@@ -157,9 +158,9 @@ if __name__ == "__main__":
     
     pypowsybl_parameters = get_pypowsybl_parameters(slack_pypowysbl)
     if debug_dir is not None:
-        if not os.path.exists(debug_dir):
-            os.mkdir(debug_dir)
-        pypowsybl_parameters.provider_parameters["debugDir"] = str(debug_dir)  # os.path.abspath(os.path.join(".", "olf_debug"))
+        if not os.path.exists(debug_dir.name):
+            os.mkdir(debug_dir.name)
+        pypowsybl_parameters.provider_parameters["debugDir"] = str(debug_dir.name)  # os.path.abspath(os.path.join(".", "olf_debug"))
         pypowsybl_parameters.provider_parameters["reportedFeatures"] = "NEWTON_RAPHSON_LOAD_FLOW"
     
     pypow_lf.run_ac(pypow_grid, parameters=pypowsybl_parameters)
@@ -170,11 +171,11 @@ if __name__ == "__main__":
         1e-6)
     
     if debug_dir is not None:
-        fn_li = [el for el in sorted(os.listdir(debug_dir)) if el.endswith("json")]
+        fn_li = [el for el in sorted(os.listdir(debug_dir.name)) if el.endswith("json")]
         if len(fn_li) == 0:
             raise RuntimeError(f"OLF powerflow has not been run with debug dir {debug_dir}")
         fn = fn_li[-1]
-        with open(os.path.join(debug_dir, fn), "r", encoding="utf-8") as f:
+        with open(os.path.join(debug_dir.name, fn), "r", encoding="utf-8") as f:
             physical_params_olf = json.load(f)
         
         # check branches
@@ -216,3 +217,6 @@ if __name__ == "__main__":
         # TODO missing shunt in OLF this way !!!
         # shunts at bus : [ 0,  3,  7, 25, 34, 62, 75]
         Ybus_csr_ls = ls_grid.get_Ybus()
+        
+    if debug_dir is not None:    
+        debug_dir.cleanup()

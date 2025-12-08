@@ -311,7 +311,7 @@ def init(net : pypo.network.Network,
             from pypowsybl.network import PerUnitView
             net_pu = PerUnitView(net)
             warnings.warn("The `PerUnitView` (python side) is less efficient and less "
-                        "tested that the equivalent java class. Please upgrade pypowsybl version")
+                          "tested that the equivalent java class. Please upgrade pypowsybl version")
     df_line_pu = net_pu.get_lines().loc[df_line.index]
     line_r = df_line_pu["r"].values
     line_x = df_line_pu["x"].values
@@ -351,7 +351,6 @@ def init(net : pypo.network.Network,
     df_trafo_pu = df_trafo_pu.loc[df_trafo.index]
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
     
-    # shift_ = np.zeros(df_trafo.shape[0])
     if 'alpha' in df_trafo_pu:
         shift_ = np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
     else:
@@ -495,11 +494,6 @@ def init(net : pypo.network.Network,
     
     # TODO checks
     # no 3windings trafo and other exotic stuff
-    if net.get_phase_tap_changers().shape[0] > 0:
-        warnings.warn("There are tap changers in the iidm grid which are not taken "
-                      "into account in the lightsim2grid at the moment. "
-                      "NB: lightsim2grid gridmodel can handle tap changer, it is just not "
-                      "handled by the 'from_pypowsybl` function at the moment.")
         
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
