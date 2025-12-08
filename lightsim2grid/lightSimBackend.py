@@ -857,7 +857,7 @@ class LightSimBackend(Backend):
             self.__nb_bus_before = grid_tmp.get_buses().shape[0]
         self._aux_setup_right_after_grid_init()   
         
-        if "use_grid2op_default_names" and loader_kwargs["use_grid2op_default_names"]:
+        if "use_grid2op_default_names" in loader_kwargs and loader_kwargs["use_grid2op_default_names"]:
             self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(self.n_sub)]
         else:
             self.name_sub = self._grid.get_substation_names()
