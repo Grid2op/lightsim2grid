@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
+# Copyright (c) 2020-2025, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -142,13 +142,6 @@ def _aux_add_trafo(
                                 is_tap_hv_side,
                                 pp_bus_to_ls(pp_net.trafo["hv_bus"].values, pp_to_ls),
                                 pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls))
-    # pp_net._ppc["internal"]["Bbus"][64, 67]
-    # pp_net._ppc["internal"]["branch"][180]
-    # trafo_r[7]
-    # trafo_x[7]
-    # trafo_b[7]
-    # import pdb
-    # pdb.set_trace()
 
     for tr_id, is_connected in enumerate(pp_net.trafo["in_service"].values):
         if not is_connected:

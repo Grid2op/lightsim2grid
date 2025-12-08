@@ -8,19 +8,16 @@
 
 import time
 import re
-from xml.dom.minidom import parseString
 import numpy as np
 import argparse
 import datetime
 import importlib
 try:
     from tqdm import tqdm
-    from grid2op.Environment import MultiMixEnvironment
+    from grid2op.Environment import MultiMixEnvironment # type: ignore
 except ImportError:
     # above packages not mandatory for compare_lightsim2grid_pypowsybl.py
     pass
-
-import pdb
 
 
 def get_env_name_displayed(env_name):
@@ -117,7 +114,7 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
                 break
             # if np.sum(obs.line_status) < obs.n_line - 1 * (nb_ts % 2 == 1):
             #     print("There is a bug following action; {}".format(act))
-            prev_act = act
+            prev_act = act  # noqa: F841
     end_ = time.perf_counter()
     total_time = end_ - beg_
     return nb_ts, total_time, aor, gen_p, gen_q
@@ -149,7 +146,7 @@ def print_configuration(
         res.append(tmp)
         print(tmp)
     except ImportError:
-        tmp = f"- system: please install the `platform` to have this information"
+        tmp = "- system: please install the `platform` to have this information"
         res.append(tmp)
         print(tmp)
 
@@ -160,7 +157,7 @@ def print_configuration(
         res.append(tmp)
         print(tmp)
     except ImportError:
-        tmp = (f"- OS: please install the `distro` to have this information")
+        tmp = ("- OS: please install the `distro` to have this information")
         res.append(tmp)
         print(tmp)
 
@@ -175,10 +172,10 @@ def print_configuration(
         print(tmp)
 
     except ImportError:
-        tmp = (f"- processor: please install the `py-cpuinfo` to have this information")
+        tmp = ("- processor: please install the `py-cpuinfo` to have this information")
         res.append(tmp)
         print(tmp)
-        tmp = (f"- python version: please install the `py-cpuinfo` to have this information")
+        tmp = ("- python version: please install the `py-cpuinfo` to have this information")
         res.append(tmp)
         print(tmp)
 
@@ -212,35 +209,35 @@ def print_configuration(
         res.append(tmp)
         print(tmp)
     try:
-        import grid2op
+        import grid2op # type: ignore
         tmp = (f"- grid2op version: {grid2op.__version__}")
         res.append(tmp)
         print(tmp)
     except ImportError:
         # grid2op not used for compare_lightsim2grid_pypowsybl
-        parseString
+        pass
     tmp = (f"- lightsim2grid version: {lightsim2grid.__version__}")
     res.append(tmp)
     print(tmp)
     try:
         from lightsim2grid import compilation_options
-        tmp = (f"- lightsim2grid extra information: ")
+        tmp = ("- lightsim2grid extra information: ")
         res.append(tmp)
         print(tmp)
         print()
-        tmp = (f"\t- klu_solver_available: {lightsim2grid.compilation_options.klu_solver_available} ")
+        tmp = (f"\t- klu_solver_available: {compilation_options.klu_solver_available} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- nicslu_solver_available: {lightsim2grid.compilation_options.nicslu_solver_available} ")
+        tmp = (f"\t- nicslu_solver_available: {compilation_options.nicslu_solver_available} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- cktso_solver_available: {lightsim2grid.compilation_options.cktso_solver_available} ")
+        tmp = (f"\t- cktso_solver_available: {compilation_options.cktso_solver_available} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- compiled_march_native: {lightsim2grid.compilation_options.compiled_march_native} ")
+        tmp = (f"\t- compiled_march_native: {compilation_options.compiled_march_native} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- compiled_o3_optim: {lightsim2grid.compilation_options.compiled_o3_optim} ")
+        tmp = (f"\t- compiled_o3_optim: {compilation_options.compiled_o3_optim} ")
         res.append(tmp)
         print(tmp)
     except ImportError:
