@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, RTE (https://www.rte-france.com)
+# Copyright (c) 2023-2025, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -11,9 +11,12 @@ import copy
 import numpy as np
 import pandas as pd
 import pypowsybl as pypo
-from typing import Optional, Union
+from typing import Dict, Iterable, Optional, Union
 from packaging import version
 from lightsim2grid_cpp import GridModel
+
+
+from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
 
 PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
@@ -42,7 +45,7 @@ def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
 
 
 def init(net : pypo.network.Network,
-         gen_slack_id: Union[int, str] = None,
+         gen_slack_id: Union[int, str, Iterable[str], Dict[str, float]] = None,
          slack_bus_id: int = None,
          sn_mva : float = 100.,  # only used if not present in the grid
          sort_index : bool =True, 
@@ -467,19 +470,23 @@ def init(net : pypo.network.Network,
         if slack_bus_id is not None:
             raise RuntimeError("You provided both gen_slack_id and slack_bus_id "
                                "which is not possible.")
-        
-        if isinstance(gen_slack_id, str):
-            gen_slack_id_int = int((df_gen.index == gen_slack_id).nonzero()[0][0])
+        if isinstance(gen_slack_id, (str, int, np.int32, np.int64, np.str_, tuple)):
+            single_slack = True
+            fun_slack = handle_slack_one_el
         else:
-            try:
-                gen_slack_id_int = int(gen_slack_id)
-            except Exception as exc_:
-                raise RuntimeError("'gen_slack_id' should be either an int or "
-                                   "a generator names") from exc_
-            if gen_slack_id_int != gen_slack_id:
-                raise RuntimeError("'gen_slack_id' should be either an int or a "
-                                   "generator names")
-        model.add_gen_slackbus(gen_slack_id_int, 1.)
+            single_slack = False
+            fun_slack = handle_slack_iterable
+        gen_slack_ids_int, gen_slack_weights = fun_slack(df_gen, gen_slack_id)
+        if single_slack:
+            if gen_slack_ids_int is None or gen_slack_weights is None:
+                raise RuntimeError(f"The slack {gen_slack_id} is disconnected.")
+            gen_slack_ids_int = [gen_slack_ids_int]
+            gen_slack_weights = [1.]
+        else:
+            gen_slack_weights = np.asarray(gen_slack_weights)
+            gen_slack_weights /= gen_slack_weights.sum()
+        for gen_slack_id_int, gen_slack_weight in zip(gen_slack_ids_int, gen_slack_weights):
+            model.add_gen_slackbus(gen_slack_id_int, gen_slack_weight)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
         gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]

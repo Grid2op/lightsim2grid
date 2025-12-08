@@ -46,6 +46,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [ADDED] more kwargs arguments are possible in the LightSimBackend `loader_kwargs`
 - [ADDED] name of the substations are now read from the grid when initializing from 
   pypowsybl.
+- [ADDED] support for multiple slack when reading a grid from pypowsybl.
 - [IMPROVED] the way to initialize the transformers from pypowsybl
 - [IMPROVED] possibility to load grid with phase shifters from pypowsybl
 - [IMPROVED] function to initialize the grid from pypowsybl has now a 
