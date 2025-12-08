@@ -80,7 +80,8 @@ class LightSimBackend(Backend):
         "double_bus_per_sub",
         "use_grid2op_default_names",
         "reconnect_disco_gen",
-        "reconnect_disco_load"
+        "reconnect_disco_load",
+        "n_busbar_per_sub"
     }
     
     KEYS_PANDAPOWER_LOADER = {
