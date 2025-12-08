@@ -821,8 +821,10 @@ class LightSimBackend(Backend):
             df = grid_tmp.get_buses()
             buses_for_sub = True
             self.n_sub = df.shape[0]
-            self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(df.iterrows())]
-        
+        else:
+            df = grid_tmp.get_voltage_levels()
+            self.n_sub = df.shape[0]
+
         sort_index = True
         if "sort_index" in loader_kwargs and (bool(loader_kwargs["sort_index"]) == loader_kwargs["sort_index"]):
             sort_index = bool(loader_kwargs["sort_index"])
@@ -854,6 +856,14 @@ class LightSimBackend(Backend):
         else:
             self.__nb_bus_before = grid_tmp.get_buses().shape[0]
         self._aux_setup_right_after_grid_init()   
+        
+        if "use_grid2op_default_names" and loader_kwargs["use_grid2op_default_names"]:
+            self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(self.n_sub)]
+        else:
+            self.name_sub = self._grid.get_substation_names()
+        
+        if self.n_sub != len(self.name_sub):
+            raise RuntimeError("LightSimBackend failed to initialize the grid.")
         
         # mandatory for the backend
         self.n_line = len(self._grid.get_lines()) + len(self._grid.get_trafos())
