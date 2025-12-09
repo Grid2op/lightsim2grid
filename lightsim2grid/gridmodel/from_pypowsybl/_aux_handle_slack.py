@@ -47,7 +47,7 @@ def handle_slack_one_el(df_gen, gen_slack_id):
 def handle_slack_iterable(df_gen, gen_slack_id):
     res_ids = []
     res_ws = []
-    if isinstance(gen_slack_id, (list, tuple)):
+    if isinstance(gen_slack_id, (list, tuple, set)):
         for el in gen_slack_id:
             tmp_id, tmp_w = handle_slack_one_el(df_gen, el)
             if tmp_id is None or tmp_w is None:
@@ -57,7 +57,7 @@ def handle_slack_iterable(df_gen, gen_slack_id):
             res_ws.append(tmp_w)
     elif isinstance(gen_slack_id, (dict)):
         for k, v in gen_slack_id.items():
-            tmp_id, tmp_w = handle_slack_one_el(df_gen, el)
+            tmp_id, tmp_w = handle_slack_one_el(df_gen, (k, v))
             if tmp_id is None or tmp_w is None:
                 # gen is disconnected
                 continue
