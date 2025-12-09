@@ -2244,7 +2244,7 @@ const std::string DocGridModel::id_me_to_ac_solver = R"mydelimiter(
     -----
 
     For all steps, you have the propertie that, if `id_ac_solver_to_me = gridmodel.id_ac_solver_to_me()` and `id_me_to_ac_solver = gridmodel.id_me_to_ac_solver()`
-    and by denoting `gridmodel_bus_id = np.arange(gridmodel.total_bus())` and `solver_bus_id = np.arange(gridmodel.nb_bus())`:
+    and by denoting `gridmodel_bus_id = np.arange(gridmodel.total_bus())` and `solver_bus_id = np.arange(gridmodel.nb_connected_bus())`:
 
     - `solver_bus_id` and `id_ac_solver_to_me` have the same shape
     - `gridmodel_bus_id` and `id_me_to_ac_solver` have the same shape
@@ -2294,7 +2294,7 @@ const std::string DocGridModel::id_ac_solver_to_me = R"mydelimiter(
     -----
 
     For all steps, you have the propertie that, if `id_ac_solver_to_me = gridmodel.id_ac_solver_to_me()` and `id_me_to_ac_solver = gridmodel.id_me_to_ac_solver()`
-    and by denoting `gridmodel_bus_id = np.arange(gridmodel.total_bus())` and `solver_bus_id = np.arange(gridmodel.nb_bus())`:
+    and by denoting `gridmodel_bus_id = np.arange(gridmodel.total_bus())` and `solver_bus_id = np.arange(gridmodel.nb_connected_bus())`:
 
     - `solver_bus_id` and `id_ac_solver_to_me` have the same shape
     - `gridmodel_bus_id` and `id_me_to_ac_solver` have the same shape
@@ -2315,7 +2315,7 @@ const std::string DocGridModel::total_bus = R"mydelimiter(
     Returns (>0 integer) the total number of buses in the powergrid (both connected and disconnected)
 )mydelimiter";
 
-const std::string DocGridModel::nb_bus = R"mydelimiter(
+const std::string DocGridModel::nb_connected_bus = R"mydelimiter(
     Returns (>0 integer) the number of connected buses on the powergrid (ignores the disconnected bus).
 )mydelimiter";
 

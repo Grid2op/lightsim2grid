@@ -25,9 +25,9 @@ except ImportError:
 
 try:
     from pypowsybl2grid import PyPowSyBlBackend
-    pypow_error = None
+    pypowbk_error = None
 except ImportError as exc_:
-    pypow_error = exc_
+    pypowbk_error = exc_
     print("Backend based on pypowsybl will not be benchmarked")
  
 from grid2op.Parameters import Parameters
@@ -123,7 +123,7 @@ def main(max_ts,
                                    data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-            if pypow_error is None:
+            if pypowbk_error is None:
                 env_pypow = make(env_name_input, param=param, test=test,
                                  backend=PyPowSyBlBackend(),
                                  data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
@@ -144,7 +144,7 @@ def main(max_ts,
                                    grid_path=env_name_input,
                                    backend=PandaPowerBackend(lightsim2grid=True, with_numba=True)
                                    )
-            if pypow_error is None:
+            if pypowbk_error is None:
                 env_pypow = make("blank", param=param, test=True,
                                  data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                  grid_path=env_name_input,
@@ -181,7 +181,7 @@ def main(max_ts,
             # for oldest grid2op version where this was not stored
             time_pp_ls_numba = env_pp_ls_numba._time_step
 
-    if pypow_error is None:
+    if pypowbk_error is None:
         # also benchmark pypowsybl backend
         nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0)
         pypow_comp_time = env_pypow.backend.comp_time
@@ -226,7 +226,7 @@ def main(max_ts,
 
     # NOW PRINT THE RESULTS
     print("Configuration:")
-    config_str = print_configuration(pypow_error)
+    config_str = print_configuration(pypowbk_error)
     if save_results != DONT_SAVE:
         with open(save_results+"config_info.txt", "w", encoding="utf-8") as f:
             f.write(config_str)
@@ -246,7 +246,7 @@ def main(max_ts,
         tab.append(["PP (with lightsim)", f"{nb_ts_pp_ls_numba/time_pp_ls_numba:.2e}",
                     f"{1000.*pp_ls_numba_time_pf/nb_ts_pp_ls_numba:.2e}",
                     f"{1000.*pp_ls_numba_comp_time/nb_ts_pp_ls_numba:.2e}"])
-    if pypow_error is None:
+    if pypowbk_error is None:
         tab.append(["pypowsybl", f"{nb_ts_pypow/time_pypow:.2e}",
                     f"{1000.*pypow_time_pf/nb_ts_pypow:.2e}",
                     f"{1000.*pypow_comp_time/nb_ts_pypow:.2e}"])

@@ -22,9 +22,11 @@ GridModel::GridModel(const GridModel & other)
 
     // copy the powersystem representation
     // 1. bus
-    bus_vn_kv_ = other.bus_vn_kv_;
-    bus_status_ = other.bus_status_;
-    set_ls_to_orig(other._ls_to_orig);  // set also orig_to_ls
+    // bus_vn_kv_ = other.bus_vn_kv_;
+    // bus_status_ = other.bus_status_;
+    substations_ = other.substations_;
+
+    set_ls_to_orig(other._ls_to_orig);  // sets also orig_to_ls
 
     // 2. powerline
     powerlines_ = other.powerlines_;
@@ -84,11 +86,12 @@ GridModel::GridModel(const GridModel & other)
 //pickle
 GridModel::StateRes GridModel::get_state() const
 {
-    std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
+    // std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
     std::vector<int> ls_to_orig(_ls_to_orig.begin(), _ls_to_orig.end());
     int version_major = VERSION_MAJOR;
     int version_medium = VERSION_MEDIUM;
     int version_minor = VERSION_MINOR;
+    auto res_substation = substations_.get_state();
     auto res_line = powerlines_.get_state();
     auto res_shunt = shunts_.get_state();
     auto res_trafo = trafos_.get_state();
@@ -120,8 +123,9 @@ GridModel::StateRes GridModel::get_state() const
                             ls_to_orig,
                             init_vm_pu_,
                             sn_mva_,
-                            bus_vn_kv,
-                            bus_status_,
+                            // bus_vn_kv,
+                            // bus_status_,
+                            res_substation,
                             res_line,
                             res_shunt,
                             res_trafo,
@@ -175,43 +179,43 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     const std::vector<int> & ls_to_pp = std::get<3>(my_state);
     init_vm_pu_ = std::get<4>(my_state);
     sn_mva_ = std::get<5>(my_state);
-    const std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
-    const std::vector<bool> & bus_status = std::get<7>(my_state);
-
+    // const std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
+    // const std::vector<bool> & bus_status = std::get<7>(my_state);
+    Substation::StateRes & state_substations = std::get<6>(my_state);
     // powerlines
-    LineContainer::StateRes & state_lines = std::get<8>(my_state);
+    LineContainer::StateRes & state_lines = std::get<7>(my_state);
     // shunts
-    ShuntContainer::StateRes & state_shunts = std::get<9>(my_state);
+    ShuntContainer::StateRes & state_shunts = std::get<8>(my_state);
     // trafos
-    TrafoContainer::StateRes & state_trafos = std::get<10>(my_state);
+    TrafoContainer::StateRes & state_trafos = std::get<9>(my_state);
     // generators
-    GeneratorContainer::StateRes & state_gens = std::get<11>(my_state);
+    GeneratorContainer::StateRes & state_gens = std::get<10>(my_state);
     // loads
-    LoadContainer::StateRes & state_loads = std::get<12>(my_state);
+    LoadContainer::StateRes & state_loads = std::get<11>(my_state);
     // static gen
-    SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
+    SGenContainer::StateRes & state_sgens= std::get<12>(my_state);
     // storage units
-    LoadContainer::StateRes & state_storages = std::get<14>(my_state);
+    LoadContainer::StateRes & state_storages = std::get<13>(my_state);
     // dc lines
-    DCLineContainer::StateRes & state_dc_lines = std::get<15>(my_state);
+    DCLineContainer::StateRes & state_dc_lines = std::get<14>(my_state);
 
     // grid2op specific
-    n_sub_ = std::get<16>(my_state);
-    max_nb_bus_per_sub_ = std::get<17>(my_state);
-    const std::vector<int> & load_pos_topo_vect = std::get<18>(my_state);
-    const std::vector<int> & gen_pos_topo_vect = std::get<19>(my_state);
-    const std::vector<int> & line_or_pos_topo_vect = std::get<20>(my_state);
-    const std::vector<int> & line_ex_pos_topo_vect = std::get<21>(my_state);
-    const std::vector<int> & trafo_hv_pos_topo_vect = std::get<22>(my_state);
-    const std::vector<int> & trafo_lv_pos_topo_vect = std::get<23>(my_state);
-    const std::vector<int> & storage_pos_topo_vect = std::get<24>(my_state);
-    const std::vector<int> & load_to_subid = std::get<25>(my_state);
-    const std::vector<int> & gen_to_subid = std::get<26>(my_state);
-    const std::vector<int> & line_or_to_subid = std::get<27>(my_state);
-    const std::vector<int> & line_ex_to_subid = std::get<28>(my_state);
-    const std::vector<int> & trafo_hv_to_subid = std::get<29>(my_state);
-    const std::vector<int> & trafo_lv_to_subid = std::get<30>(my_state);
-    const std::vector<int> & storage_to_subid = std::get<31>(my_state);
+    n_sub_ = std::get<15>(my_state);
+    max_nb_bus_per_sub_ = std::get<16>(my_state);
+    const std::vector<int> & load_pos_topo_vect = std::get<17>(my_state);
+    const std::vector<int> & gen_pos_topo_vect = std::get<18>(my_state);
+    const std::vector<int> & line_or_pos_topo_vect = std::get<19>(my_state);
+    const std::vector<int> & line_ex_pos_topo_vect = std::get<20>(my_state);
+    const std::vector<int> & trafo_hv_pos_topo_vect = std::get<21>(my_state);
+    const std::vector<int> & trafo_lv_pos_topo_vect = std::get<22>(my_state);
+    const std::vector<int> & storage_pos_topo_vect = std::get<23>(my_state);
+    const std::vector<int> & load_to_subid = std::get<24>(my_state);
+    const std::vector<int> & gen_to_subid = std::get<25>(my_state);
+    const std::vector<int> & line_or_to_subid = std::get<26>(my_state);
+    const std::vector<int> & line_ex_to_subid = std::get<27>(my_state);
+    const std::vector<int> & trafo_hv_to_subid = std::get<28>(my_state);
+    const std::vector<int> & trafo_lv_to_subid = std::get<29>(my_state);
+    const std::vector<int> & storage_to_subid = std::get<30>(my_state);
 
     load_pos_topo_vect_ = IntVectRowMaj::Map(load_pos_topo_vect.data(), load_pos_topo_vect.size());
     gen_pos_topo_vect_ = IntVectRowMaj::Map(gen_pos_topo_vect.data(), gen_pos_topo_vect.size());
@@ -232,10 +236,11 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
 
     // buses
-    // 1. bus_vn_kv_
-    bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
-    // 2. bus status
-    bus_status_ = bus_status;
+    // // 1. bus_vn_kv_
+    // bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
+    // // 2. bus status
+    // bus_status_ = bus_status;
+    substations_.set_state(state_substations);
 
     // elements
     // 1. powerlines
@@ -263,7 +268,7 @@ void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
         return;
     }
 
-    if(ls_to_orig.size() != bus_vn_kv_.size()) 
+    if(ls_to_orig.size() != substations_.nb_bus()) 
         throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
     _ls_to_orig = ls_to_orig;
     const auto size = ls_to_orig.lpNorm<Eigen::Infinity>();
@@ -286,7 +291,7 @@ void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
     for(const auto el : orig_to_ls){
         if (el != -1) nb_bus_ls += 1;
     }
-    if(nb_bus_ls != bus_vn_kv_.size()) 
+    if(nb_bus_ls != substations_.nb_bus()) 
         throw std::runtime_error("Impossible to set the converter orig_to_ls: the number of 'non -1' component in the provided vector does not match the number of buses on the grid.");
     _ls_to_orig = IntVect::Constant(nb_bus_ls, -1);
     Eigen::Index ls2or_ind = 0;
@@ -300,17 +305,24 @@ void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
 }
 
 //init
-void GridModel::init_bus(const RealVect & bus_vn_kv, int nb_line, int nb_trafo){
+void GridModel::init_bus(unsigned int n_sub,
+                         unsigned int n_busbar_per_sub,
+                         const RealVect & bus_vn_kv,
+                         int nb_line,
+                         int nb_trafo){
     /**
     initialize the bus_vn_kv_ member
     and
     initialize the Ybus_ matrix at the proper shape
     **/
-    const int nb_bus = static_cast<int>(bus_vn_kv.size());  // size of buses are checked in set_max_nb_bus_per_sub
+    // const int nb_bus = static_cast<int>(bus_vn_kv.size());  // size of buses are checked in set_max_nb_bus_per_sub
 
-    bus_vn_kv_ = bus_vn_kv;  // base_kv
+    // bus_vn_kv_ = bus_vn_kv;  // base_kv
 
-    bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
+    // bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
+    n_sub_ = n_sub;
+    max_nb_bus_per_sub_ = n_busbar_per_sub;
+    substations_.init_bus(n_sub_, max_nb_bus_per_sub_,  bus_vn_kv);
     _orig_to_ls = IntVect();
     _ls_to_orig = IntVect();
 }
@@ -361,7 +373,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                           real_type tol)
 {
     auto timer = CustTimer();
-    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
+    const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
         exc_ << "GridModel::ac_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
@@ -507,7 +519,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     // set to 0 the error on the disconnected bus (it is not initialized at 0.0 in _get_results_back_to_orig_nodes)
     for(int bus_id = 0; bus_id < nb_bus; ++bus_id)
     {
-        if(bus_status_[bus_id]) continue;
+        if(substations_.is_bus_connected(bus_id)) continue;
         res.coeffRef(bus_id) = my_zero_;
     }
     return res;
@@ -577,7 +589,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                   solver_control.need_recompute_sbus() ||  // TODO do we need it ?
                   solver_control.has_pq_changed())  // TODO do we need it ?
         ){
-        int nb_bus_total = static_cast<int>(bus_vn_kv_.size());
+        int nb_bus_total = static_cast<int>(substations_.nb_bus());
         total_q_min_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
@@ -609,9 +621,9 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                     int size)
 {
     CplxVect res = CplxVect::Constant(size, {init_vm_pu_, my_zero_});
-    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
+    const int nb_bus = static_cast<int>(substations_.nb_bus());
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
-        if(!bus_status_[bus_id_me]) continue;  // nothing is done if the bus is connected
+        if(!substations_.is_bus_connected(bus_id_me)) continue;  // nothing is done if the bus is connected
         int bus_id_solver = id_me_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
@@ -657,13 +669,13 @@ void GridModel::init_converter_bus_id(std::vector<int>& id_me_to_solver,
 
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
-    const int nb_bus_init = static_cast<int>(bus_vn_kv_.size());
+    const int nb_bus_init = static_cast<int>(substations_.nb_bus());
     id_me_to_solver = std::vector<int>(nb_bus_init, _deactivated_bus_id);  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = std::vector<int>();
     id_solver_to_me.reserve(nb_bus_init);
     int bus_id_solver = 0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
-        if(bus_status_[bus_id_me]){
+        if(substations_.is_bus_connected(bus_id_me)){
             // bus is connected
             id_solver_to_me.push_back(bus_id_me);
             id_me_to_solver[bus_id_me] = bus_id_solver;
@@ -732,7 +744,7 @@ void GridModel::fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const st
     // init the Ybus matrix
     res.setZero();  // it should not be needed but might not hurt too much either.
     std::vector<Eigen::Triplet<cplx_type> > tripletList;
-    tripletList.reserve(bus_vn_kv_.size() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
+    tripletList.reserve(substations_.nb_bus() + 4*powerlines_.nb() + 4*trafos_.nb() + shunts_.nb());
     powerlines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     trafos_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
@@ -807,21 +819,21 @@ void GridModel::compute_results(bool ac){
 
     const std::vector<int> & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
     // for powerlines
-    powerlines_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);  // TODO have a function to dispatch that to all type of elements
+    powerlines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);  // TODO have a function to dispatch that to all type of elements
     // for trafo
-    trafos_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    trafos_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for loads
-    loads_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    loads_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for static gen
-    sgens_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    sgens_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for storage units
-    storages_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    storages_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for shunts
-    shunts_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    shunts_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for prods
-    generators_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    generators_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for dclines
-    dc_lines_.compute_results(Va, Vm, V, id_me_to_solver, bus_vn_kv_, sn_mva_, ac);
+    dc_lines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
 
     //handle_slack_bus active power
     CplxVect mismatch;  // power mismatch at each bus (SOLVER BUS !!!)
@@ -876,7 +888,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     // and the slack contribution factors are met.
     auto timer = CustTimer();
 
-    const int nb_bus = static_cast<int>(bus_vn_kv_.size());
+    const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){
         //TODO DEBUG MODE: 
         std::ostringstream exc_;
@@ -991,19 +1003,6 @@ Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
     }
     Eigen::SparseMatrix<real_type> Bf_solver = get_Bf_solver();
     return _relabel_matrix(Bf_solver, id_dc_solver_to_me_, false);
-}
-
-/**
-Retrieve the number of connected buses
-**/
-int GridModel::nb_bus() const
-{
-    int res = 0;
-    for(const auto & el : bus_status_)
-    {
-        if(el) ++res;
-    }
-    return res;
 }
 
 void GridModel::add_gen_slackbus(int gen_id, real_type weight){
@@ -1136,17 +1135,18 @@ void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen:
                         );
 
     // update the bus status
-    const int nb_bus = static_cast<int>(bus_status_.size());
-    for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
+    substations_.disconnect_all_buses();
+    // const int nb_bus = static_cast<int>(bus_status_.size());
+    // for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
 
-    powerlines_.update_bus_status(bus_status_);  // TODO have a function to dispatch that to all type of elements
-    shunts_.update_bus_status(bus_status_);
-    trafos_.update_bus_status(bus_status_);
-    loads_.update_bus_status(bus_status_);
-    sgens_.update_bus_status(bus_status_);
-    storages_.update_bus_status(bus_status_);
-    generators_.update_bus_status(bus_status_);
-    dc_lines_.update_bus_status(bus_status_);
+    powerlines_.update_bus_status(substations_);  // TODO have a function to dispatch that to all type of elements
+    shunts_.update_bus_status(substations_);
+    trafos_.update_bus_status(substations_);
+    loads_.update_bus_status(substations_);
+    sgens_.update_bus_status(substations_);
+    storages_.update_bus_status(substations_);
+    generators_.update_bus_status(substations_);
+    dc_lines_.update_bus_status(substations_);
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
@@ -1162,8 +1162,8 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
     // init the Bp and Bpp matrices for Fast Decoupled Powerflow  (TODO FDPF: optim when it's NOT needed just like for Ybus)
     std::vector<Eigen::Triplet<real_type> > tripletList_Bp;
     std::vector<Eigen::Triplet<real_type> > tripletList_Bpp;
-    tripletList_Bp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
-    tripletList_Bpp.reserve(bus_vn_kv_.size() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
+    tripletList_Bp.reserve(substations_.nb_bus() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
+    tripletList_Bpp.reserve(substations_.nb_bus() + 4 * powerlines_.nb() + 4 * trafos_.nb() + shunts_.nb());
     // run through the grid and get the parameters to fill them
     powerlines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
@@ -1193,7 +1193,7 @@ void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transp
         Bf = Eigen::SparseMatrix<real_type>(powerlines_.nb() + trafos_.nb(), nb_bus_solver);
     }
     std::vector<Eigen::Triplet<real_type> > tripletList;
-    tripletList.reserve(bus_vn_kv_.size() + 2 * powerlines_.nb() + 2 * trafos_.nb());
+    tripletList.reserve(substations_.nb_bus() + 2 * powerlines_.nb() + 2 * trafos_.nb());
     
     powerlines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
@@ -1215,7 +1215,7 @@ std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
     int res_bus_id = -1;
     int res_gen_id = -1;
     int max_line = -1;
-    const auto nb_busbars = bus_status_.size();
+    const unsigned int nb_busbars = substations_.nb_bus();
     std::vector<real_type> gen_p_per_bus(nb_busbars, 0.);
     std::vector<int> nb_line_end_per_bus(nb_busbars, 0);
 
@@ -1271,7 +1271,7 @@ void GridModel::consider_only_main_component(){
     if(slack_buses_id.size() == 0) throw std::runtime_error("GridModel::consider_only_main_component: no slack is defined on your grid. This function cannot be used.");
     
     // build the graph
-    const auto nb_busbars = bus_status_.size();
+    const auto nb_busbars = substations_.nb_bus();
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(2 * powerlines_.nb() + 2 * trafos_.nb());
     powerlines_.get_graph(tripletList);  // TODO have a function to dispatch that to all type of elements
@@ -1348,7 +1348,7 @@ void GridModel::consider_only_main_component(){
 
     // mark as visited the element in this cc
     std::vector<bool> bus_in_main_cc(nb_busbars, false);
-    for(int bus_id = 0; bus_id < nb_busbars; ++bus_id){
+    for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
 

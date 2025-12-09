@@ -17,6 +17,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
+#include "BaseSubstation.h"
 #include "BaseConstants.h"
 
 // iterator type
@@ -93,12 +94,12 @@ class GenericContainer : public BaseConstants
                             const std::vector<int> & id_grid_to_solver) const {};
         
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
-        virtual void update_bus_status(std::vector<bool> & bus_status) const {};
+        virtual void update_bus_status(Substation & substation) const {};
         
         void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver) {};
     
         static const int _deactivated_bus_id;
-        virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const {};
+        virtual void reconnect_connected_buses(Substation & substation) const {};
 
         /**computes the total amount of power for each bus (for generator only)**/
         virtual void gen_p_per_bus(std::vector<real_type> & res) const {};
@@ -119,7 +120,7 @@ class GenericContainer : public BaseConstants
         template<typename Cont, typename FunName, typename IntType>
         // todo automatically "unwrap" IntType to be either cont::size_type for stl container and
         // Eigen::Index for Eigen containers
-        void _check_in_range(IntType el_id, const Cont& cont, FunName fun_name="") const
+        void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="") const
         {
             // TODO debug mode: only in debug mode
             if(el_id >= cont.size())
@@ -149,6 +150,9 @@ class GenericContainer : public BaseConstants
         **/
         void _generic_reactivate(int el_id, std::vector<bool> & status);
         void _generic_deactivate(int el_id, std::vector<bool> & status);
+        void _generic_reactivate(int el_id, Substation & substation);
+        void _generic_deactivate(int el_id, Substation & substation);
+        
         void _generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus);
         int _get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const;
 

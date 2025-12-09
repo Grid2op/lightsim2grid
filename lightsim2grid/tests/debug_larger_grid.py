@@ -408,7 +408,7 @@ else:
 
 print("IV - Check for the initialization (dc powerflow)")
 print("1) check that the results are same for dc lightsim and dc pandapower")
-Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+Vinit = np.ones(backend.nb_bus_total, dtype=complex) * pp_net["_options"]["init_vm_pu"]
 backend._grid.deactivate_result_computation()
 Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
 backend._grid.reactivate_result_computation()
@@ -549,7 +549,7 @@ else:
 # np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub]))  # 0.061585492793420286
 
 print("3) check that lightsim ac pf init with pp dc pf give same results (than pp)")
-Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+Vinit = np.ones(backend.nb_bus_total, dtype=complex) * pp_net["_options"]["init_vm_pu"]
 Vinit[:nb_sub] = V_init_ref[pp_vect_converter]
 conv = backend._grid.ac_pf(Vinit, max_iter, tol_this)
 
@@ -666,18 +666,18 @@ if np.any(~np.isfinite(tap_pos)):
 tap_angles_[~np.isfinite(tap_angles_)] = 0.
 tap_angles_ = np.deg2rad(tap_angles_)
 trafo_r, trafo_x, trafo_b = \
-    converter.get_trafo_param(tap_step_pct,
-                              tap_pos,
-                              tap_angles_,  # in radian !
-                              is_tap_hv_side,
-                              pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
-                              pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                              pp_net.trafo["vk_percent"].values,
-                              pp_net.trafo["vkr_percent"].values,
-                              pp_net.trafo["sn_mva"].values,
-                              pp_net.trafo["pfe_kw"].values,
-                              pp_net.trafo["i0_percent"].values,
-                              )
+    converter.get_trafo_param_pp2(tap_step_pct,
+                                  tap_pos,
+                                  tap_angles_,  # in radian !
+                                  is_tap_hv_side,
+                                  pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                  pp_net.trafo["vk_percent"].values,
+                                  pp_net.trafo["vkr_percent"].values,
+                                  pp_net.trafo["sn_mva"].values,
+                                  pp_net.trafo["pfe_kw"].values,
+                                  pp_net.trafo["i0_percent"].values,
+                                  )
 
 # todo remove
 tap_steps = tap_step_pct * (tap_pos - tap_neutral) / 100.

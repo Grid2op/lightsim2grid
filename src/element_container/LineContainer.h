@@ -176,17 +176,17 @@ class LineContainer : public GenericContainer
         }
         return LineInfo(*this, id);
     }
-    virtual void reconnect_connected_buses(std::vector<bool> & bus_status) const;
+    virtual void reconnect_connected_buses(Substation & substation) const;
     virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
     virtual void nb_line_end(std::vector<int> & res) const;
     virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
-    virtual void update_bus_status(std::vector<bool> & bus_status) const {
+    virtual void update_bus_status(Substation & substation) const {
         const int nb_ = nb();
         for(int el_id = 0; el_id < nb_; ++el_id)
         {
             if(!status_[el_id]) continue;
-            bus_status[bus_or_id_[el_id]] = true;
-            bus_status[bus_ex_id_[el_id]] = true;
+            substation.reconnect_bus(bus_or_id_[el_id]);
+            substation.reconnect_bus(bus_ex_id_[el_id]);
         }
     }    
 

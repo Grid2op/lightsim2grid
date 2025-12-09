@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.10.3"
+__version__ = "0.11.0"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -149,6 +149,7 @@ src_files = ['src/main.cpp',
              "src/Solvers.cpp",
              "src/Utils.cpp",
              "src/DataConverter.cpp",
+             "src/BaseSubstation.cpp",
              "src/batch_algorithm/BaseBatchSolverSynch.cpp",
              "src/batch_algorithm/TimeSeries.cpp",
              "src/batch_algorithm/ContingencyAnalysis.cpp",
@@ -401,6 +402,8 @@ setup(name='LightSim2Grid',
             'Programming Language :: Python :: 3.10',
             'Programming Language :: Python :: 3.11',
             'Programming Language :: Python :: 3.12',
+            'Programming Language :: Python :: 3.13',
+            'Programming Language :: Python :: 3.14',
             "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
             "Intended Audience :: Developers",
             "Intended Audience :: Education",

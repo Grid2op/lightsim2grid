@@ -8,7 +8,7 @@
 
 import os
 import copy
-from typing import Tuple, Optional, Any, Dict, Union
+from typing import Tuple, Optional, Union
 from packaging import version
 try:
     from typing import Self
@@ -70,7 +70,25 @@ class LightSimBackend(Backend):
     if not hasattr(Backend, "detachment_is_allowed"):
         # for legacy grid2op (< 1.11.0)
         detachment_is_allowed = DEFAULT_ALLOW_DETACHMENT
-        
+    
+    KEYS_PYPOWSYBL_LOADER = {
+        "gen_slack_id",
+        "use_buses_for_sub",
+        "sort_index",
+        "init_vm_pu",
+        "sn_mva",
+        "double_bus_per_sub",
+        "use_grid2op_default_names",
+        "reconnect_disco_gen",
+        "reconnect_disco_load",
+        "n_busbar_per_sub"
+    }
+    
+    KEYS_PANDAPOWER_LOADER = {
+        "pp_orig_file"
+    }
+    
+    
     def __init__(self,
                  detailed_infos_for_cascading_failures: bool=False,
                  can_be_copied: bool=True,
@@ -135,6 +153,9 @@ class LightSimBackend(Backend):
         #:   - `reconnect_disco_load` (``bool``): whether to reconnec the disconnected
         #:     load from in the iidm grid. If reconnected, load will have a target
         #:     p set to 0. and a target q set to 0.
+        #:   - `sort_index` 
+        #:   - `init_vm_pu` 
+        #:   - `sn_mva` 
         #: 
         self._loader_kwargs = loader_kwargs
 
@@ -771,7 +792,7 @@ class LightSimBackend(Backend):
         # buses_sub_id is the first element as returned by from_pypowsybl / init function
         # el_sub_df is an element dataframe returned by the same function
         tmp = pd.merge(el_sub_df.reset_index(), buses_sub_id, how="left", right_on="sub_id", left_on="sub_id")
-        res = tmp.drop_duplicates(subset='id').set_index("id").sort_index()["bus_id"].values
+        res = tmp.drop_duplicates(subset='id').set_index("id").sort_index()["bus_global_id"].values
         return res
     
     def _load_grid_pypowsybl(self, path=None, filename=None):
@@ -780,10 +801,11 @@ class LightSimBackend(Backend):
         loader_kwargs = {}
         if self._loader_kwargs is not None:
             loader_kwargs = self._loader_kwargs
-        
+        self._aux_check_loader_kwargs(loader_kwargs, "pypowsybl", type(self).KEYS_PYPOWSYBL_LOADER)
+                
         try:
             full_path = self.make_complete_path(path, filename)
-        except AttributeError as exc_:
+        except AttributeError as _:
             warnings.warn("Please upgrade your grid2op version")
             full_path = self._should_not_have_to_do_this(path, filename)
             
@@ -794,22 +816,38 @@ class LightSimBackend(Backend):
             gen_slack_id = loader_kwargs["gen_slack_id"]
         
         df = grid_tmp.get_substations()
-        buses_for_sub = True
+        buses_for_sub = False
         if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
             df = grid_tmp.get_buses()
-            buses_for_sub = False
+            buses_for_sub = True
             self.n_sub = df.shape[0]
-            self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(df.iterrows())]
+        else:
+            df = grid_tmp.get_voltage_levels()
+            self.n_sub = df.shape[0]
+
+        sort_index = True
+        if "sort_index" in loader_kwargs and (bool(loader_kwargs["sort_index"]) == loader_kwargs["sort_index"]):
+            sort_index = bool(loader_kwargs["sort_index"])
+        init_vm_pu = 1.06
+        if "init_vm_pu" in loader_kwargs and float(loader_kwargs["init_vm_pu"]) != loader_kwargs["init_vm_pu"]:
+            init_vm_pu = float(loader_kwargs["init_vm_pu"])
+        sn_mva = None
+        if "sn_mva" in loader_kwargs and float(loader_kwargs["sn_mva"]) != loader_kwargs["sn_mva"]:
+            sn_mva = float(loader_kwargs["sn_mva"])
             
         n_busbar_per_sub = self._aux_get_substation_handling_from_loader_kwargs(loader_kwargs)
         if n_busbar_per_sub is None:
             n_busbar_per_sub = self.n_busbar_per_sub
         self._grid, subs_id = init_pypow(grid_tmp,
                                          gen_slack_id=gen_slack_id,
-                                         sort_index=True,
+                                         slack_bus_id=None,
+                                         sn_mva=sn_mva,
+                                         sort_index=sort_index,
+                                         only_main_component=self._automatically_disconnect,
                                          return_sub_id=True,
                                          n_busbar_per_sub=n_busbar_per_sub,
                                          buses_for_sub=buses_for_sub,
+                                         init_vm_pu=init_vm_pu,
                                          )
         (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
          batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
@@ -818,6 +856,14 @@ class LightSimBackend(Backend):
         else:
             self.__nb_bus_before = grid_tmp.get_buses().shape[0]
         self._aux_setup_right_after_grid_init()   
+        
+        if "use_grid2op_default_names" in loader_kwargs and loader_kwargs["use_grid2op_default_names"]:
+            self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(self.n_sub)]
+        else:
+            self.name_sub = self._grid.get_substation_names()
+        
+        if self.n_sub != len(self.name_sub):
+            raise RuntimeError("LightSimBackend failed to initialize the grid.")
         
         # mandatory for the backend
         self.n_line = len(self._grid.get_lines()) + len(self._grid.get_trafos())
@@ -1004,9 +1050,33 @@ class LightSimBackend(Backend):
         self.init_pp_backend.load_grid(path, filename)
         self._aux_init_pandapower()
     
+    def _aux_check_loader_kwargs(
+        self,
+        loader_kwargs,
+        loader_name,
+        allowed_loader_kwargs):
+        for el in loader_kwargs:
+            if el not in allowed_loader_kwargs:
+                raise RuntimeError(f"Invalid 'loader_kwargs' {el} provided when loading a "
+                                   f"LightSimBackend with {loader_name} grids. Supported keys are: "
+                                   f"{sorted(allowed_loader_kwargs)}.")
+        
     def _aux_init_pandapower(self):
         from lightsim2grid.gridmodel import init_from_pandapower
-        self._grid = init_from_pandapower(self.init_pp_backend._grid)    
+        pp_orig_file = "pandapower_v2"
+        loader_kwargs = {}
+        if self._loader_kwargs is not None:
+            loader_kwargs = self._loader_kwargs
+            
+        self._aux_check_loader_kwargs(loader_kwargs, "pandapower", type(self).KEYS_PANDAPOWER_LOADER)
+                
+        if "pp_orig_file" in loader_kwargs and str(loader_kwargs["pp_orig_file"]) == loader_kwargs["pp_orig_file"]:
+            pp_orig_file = str(loader_kwargs["pp_orig_file"])
+            
+        self._grid = init_from_pandapower(self.init_pp_backend._grid,
+                                          self.init_pp_backend.n_sub,
+                                          self.n_busbar_per_sub,
+                                          pp_orig_file=pp_orig_file)    
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()        
         
@@ -1554,7 +1624,7 @@ class LightSimBackend(Backend):
                 self._set_shunt_info()
 
             if (np.abs(self.line_or_theta) >= 1e6).any() or (np.abs(self.line_ex_theta) >= 1e6).any():
-                raise BackendError(f"Some theta are above 1e6 which should not be happening !")
+                raise BackendError("Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_changes()
             

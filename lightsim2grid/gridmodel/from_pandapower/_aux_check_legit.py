@@ -7,7 +7,6 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import warnings
-import numpy as np
 
 
 def _aux_check_legit(pp_net):

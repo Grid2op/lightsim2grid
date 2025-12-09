@@ -20,6 +20,9 @@ from pandapower.pf.ppci_variables import _get_pf_variables_from_ppci
 from pandapower.pd2ppc import _pd2ppc
 from pandapower.auxiliary import _init_runpp_options
 
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
+
+
 import unittest
 
 
@@ -34,8 +37,6 @@ class BaseFDPFTester:
     
     def get_network(self):
         return pn.case14()
-        # self.net = pn.case118()
-        # self.net = pn.case300()
     
     def get_pp_options(self):
         return dict(algorithm=self.get_algo_pp(),
@@ -56,18 +57,21 @@ class BaseFDPFTester:
         
     def setUp(self) -> None:
         self.net = self.get_network()
+        if MAX_PP2_DATAREADER < CURRENT_PP_VERSION:
+            pp_orig_file = "pandapower_v3"
+        else:
+            pp_orig_file = "pandapower_v2"
+            
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.gridmodel = init_from_pandapower(self.net)
+            self.gridmodel = init_from_pandapower(self.net, pp_orig_file=pp_orig_file)
+            
         self.tol = 1e-7
         self.tol_solver = 1e-8
         
         # XB
         self.fdpf_meth = self.get_solving_method()
         self.alg = 2 if self.fdpf_meth == FDPFMethod.XB else 3
-        
-        # alg = 3  # BX  # TODO later
-        # self.fdpf_meth = FDPFMethod.BX  # TODO later
         return super().setUp()
     
     def _aux_get_Bp_Bpp(self):
@@ -81,7 +85,7 @@ class BaseFDPFTester:
         # convert pandapower net to ppc
         ppc, ppci = _pd2ppc(self.net)
         self.net["_ppc"] = ppc
-        baseMVA, bus, gen, branch, svc, tcsc, ssc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
+        baseMVA, bus, gen, branch, svc, tcsc, ssc, vsc, ref, pv, pq, on, gbus, V0, ref_gens = _get_pf_variables_from_ppci(ppci)
         pp_Bp, pp_Bpp = makeB(baseMVA, bus, np.real(branch), self.alg)
         return pp_Bp, pp_Bpp, pv, pq, V0
         
@@ -96,6 +100,18 @@ class BaseFDPFTester:
         
         assert np.abs(pp_Bp - ls_Bp).max() <= self.tol, f"error in Bp: max {np.abs(pp_Bp - ls_Bp).max():.2e}"
         assert np.abs(pp_Bpp - ls_Bpp).max() <= self.tol, f"error in Bpp: max {np.abs(pp_Bpp - ls_Bpp).max():.2e}"
+        
+    def test_ybus(self):
+        """test that both ybus matches"""
+        # now get the matrices 
+        self.gridmodel.ac_pf(1.04 * np.ones(self.net.bus.shape[0], dtype=complex), 10, 1e-7)  # need to init the "model bus id" id_grid_to_solver
+        pp.runpp(self.net, algorithm="nr", tol=self.tol_solver, init="flat") 
+        
+        Ybus_pp = self.net._ppc["internal"]["Ybus"]
+        Ybus_ls = self.gridmodel.get_Ybus_solver()
+        abs_diff_ = np.abs((Ybus_pp - Ybus_ls).toarray())
+        (abs_diff_ >= 1e-2).nonzero()
+        assert np.abs(Ybus_pp - Ybus_ls).max() <= self.tol, f"error in Bp: max {np.abs(Ybus_pp - Ybus_ls).max():.2e}"
 
     def test_Bp_Bpp_solver(self):
         """test that Bp and Bpp are correct (from the solver: where only some indices are used)"""
@@ -125,7 +141,7 @@ class BaseFDPFTester:
         assert V_ls.size > 0, f"lightsim2grid powerflow has diverged {self.gridmodel.get_solver().get_error()}"
         nb_iter_ls = self.gridmodel.get_solver().get_nb_iter()
         nb_iter_pp = self.net._ppc['iterations']
-        assert nb_iter_pp == nb_iter_ls, f"mismatch nb_iter {nb_iter_pp} vs {nb_iter_ls} maybe https://github.com/e2nIEE/pandapower/issues/2142 has been fixed ?"
+        assert nb_iter_pp == nb_iter_ls, f"mismatch nb_iter {nb_iter_pp} vs {nb_iter_ls}"
         V_pp = self.net.res_bus["vm_pu"].values * np.exp(1j * np.deg2rad(self.net.res_bus["va_degree"].values))
         assert np.abs(V_ls - V_pp).max() <= self.tol, f"mismatch in V: {np.abs(V_ls - V_pp).max():.2e}"
 

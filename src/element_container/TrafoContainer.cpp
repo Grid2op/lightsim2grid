@@ -15,7 +15,6 @@ void TrafoContainer::init(const RealVect & trafo_r,
                           const RealVect & trafo_x,
                           const CplxVect & trafo_b,
                           const RealVect & trafo_tap_step_pct,
-            //                       const RealVect & trafo_tap_step_degree,
                           const RealVect & trafo_tap_pos,
                           const RealVect & trafo_shift_degree,
                           const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
@@ -28,24 +27,39 @@ void TrafoContainer::init(const RealVect & trafo_r,
     DOES NOT WORK WITH POWERLINES
     **/
     const int size = static_cast<int>(trafo_r.size());
+    GenericContainer::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
+    GenericContainer::check_size(trafo_tap_pos, size, "trafo_tap_pos");
+    //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
+
+    RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
+
+
+    init(trafo_r, trafo_x, trafo_b, ratio, trafo_shift_degree, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+}
+void TrafoContainer::init(const RealVect & trafo_r,
+                          const RealVect & trafo_x,
+                          const CplxVect & trafo_b,
+                          const RealVect & trafo_ratio,
+                          const RealVect & trafo_shift_degree,
+                          const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+                          const Eigen::VectorXi & trafo_hv_id,
+                          const Eigen::VectorXi & trafo_lv_id
+                          )
+{
+    const int size = static_cast<int>(trafo_r.size());
     GenericContainer::check_size(trafo_r, size, "trafo_r");
     GenericContainer::check_size(trafo_x, size, "trafo_x");
     GenericContainer::check_size(trafo_b, size, "trafo_b");
-    GenericContainer::check_size(trafo_tap_step_pct, size, "trafo_tap_step_pct");
-    GenericContainer::check_size(trafo_tap_pos, size, "trafo_tap_pos");
+    GenericContainer::check_size(trafo_ratio, size, "trafo_ratio");
     GenericContainer::check_size(trafo_shift_degree, size, "trafo_shift_degree");
     GenericContainer::check_size(trafo_tap_hv, static_cast<std::vector<bool>::size_type>(size), "trafo_tap_hv");
     GenericContainer::check_size(trafo_hv_id, size, "trafo_hv_id");
     GenericContainer::check_size(trafo_lv_id, size, "trafo_lv_id");
 
-    //TODO "parrallel" in the pandapower dataframe, like for lines, are not handled. Handle it python side!
-
-    RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
-
     r_ = trafo_r;
     x_ = trafo_x;
     h_ = trafo_b;
-    ratio_ = ratio;
+    ratio_ = trafo_ratio;
     shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
     bus_hv_id_ = trafo_hv_id;
     bus_lv_id_ = trafo_lv_id;
@@ -53,7 +67,6 @@ void TrafoContainer::init(const RealVect & trafo_r,
     status_ = std::vector<bool>(trafo_r.size(), true);
     _update_model_coeffs();
     reset_results();
-
 }
 
 
@@ -132,14 +145,17 @@ void TrafoContainer::_update_model_coeffs()
     {
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
-        const cplx_type ys = 1. / (r_(i) + my_i * x_(i));
+        const cplx_type ys = 1. / cplx_type(r_(i), x_(i));
         const cplx_type h = h_(i) * 0.5;
-        double tau = ratio_(i);
-        if(!is_tap_hv_side_[i]) tau = my_one_ / tau;
+        real_type tau = ratio_(i);
         real_type theta_shift = shift_(i);
+        if(!is_tap_hv_side_[i]){
+            tau = my_one_ / tau;
+            theta_shift = -theta_shift;
+        }
         cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(theta_shift != 0.)
+        if(std::abs(theta_shift) > 1e-7)
         {
             real_type cos_theta = std::cos(theta_shift);
             real_type sin_theta = std::sin(theta_shift);
@@ -160,7 +176,8 @@ void TrafoContainer::_update_model_coeffs()
         ydc_tt_(i) = tmp;
         ydc_tf_(i) = -tmp;
         ydc_ft_(i) = -tmp;
-        dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
+        if(!is_tap_hv_side_[i]) dc_x_tau_shift_(i) = -std::real(tmp) * theta_shift;
+        else dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
     }
 }
 
@@ -392,7 +409,6 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     real_type yft_bp, ytf_bp, yff_bp, ytt_bp;
     real_type yft_bpp, ytf_bpp, yff_bpp, ytt_bpp;
 
-    //diagonal coefficients
     for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
         // i only add this if the powerline is connected
         if(!status_[tr_id]) continue;
@@ -419,18 +435,23 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
 
         // get the coefficients
         // tau is needed for Bpp
-        double tau_bpp = is_tap_hv_side_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
+        double tau_bpp = ratio_(tr_id);
         // for Bp we need shift
-        const real_type theta_shift = shift_(tr_id);
+        real_type theta_shift = shift_(tr_id);
+        if(!is_tap_hv_side_[tr_id]){
+            tau_bpp = 1. / ratio_(tr_id);
+            theta_shift = -shift_(tr_id); 
+        }
         cplx_type eitheta_shift_bp  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift_bp = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(theta_shift != 0.)
+        if(abs(theta_shift) >1e-7)
         {
             const real_type cos_theta = std::cos(theta_shift);
             const real_type sin_theta = std::sin(theta_shift);
             eitheta_shift_bp = {cos_theta, sin_theta};
             emitheta_shift_bp = {cos_theta, -sin_theta};
         }
+
         // depending on XB or BX we define the y differently
         cplx_type ys_bp, ys_bpp;
         if(xb_or_bx==FDPFMethod::XB){
@@ -441,7 +462,7 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
             ys_bpp = 1. / (0. + my_i * x_(tr_id));
         }else{
             std::ostringstream exc_;
-            exc_ << "TrafoContainer::fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+            exc_ << "TrafoContainer::fillBp_Bpp: unknown method for the FDPF powerflow for trafo id ";
             exc_ << tr_id;
             throw std::runtime_error(exc_.str());            
         }
@@ -521,7 +542,7 @@ void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & B
 }
 
 
-void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) const{
+void TrafoContainer::reconnect_connected_buses(Substation & substation) const{
 
     const Eigen::Index nb_trafo = nb();
     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
@@ -537,7 +558,8 @@ void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) c
             exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
             throw std::runtime_error(exc_.str());
         }
-        bus_status[bus_or_id_me] = true;
+        // bus_status[bus_or_id_me] = true;
+        substation.reconnect_bus(bus_or_id_me);
 
         const auto bus_ex_id_me = bus_lv_id_(trafo_id);        
         if(bus_ex_id_me == _deactivated_bus_id){
@@ -548,7 +570,8 @@ void TrafoContainer::reconnect_connected_buses(std::vector<bool> & bus_status) c
             exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
             throw std::runtime_error(exc_.str());
         }
-        bus_status[bus_ex_id_me] = true;
+        // bus_status[bus_ex_id_me] = true;
+        substation.reconnect_bus(bus_ex_id_me);
     }
 }
 

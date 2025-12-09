@@ -204,7 +204,7 @@ struct DocGridModel
     static const std::string id_me_to_dc_solver;
     static const std::string id_dc_solver_to_me;
     static const std::string total_bus;
-    static const std::string nb_bus;
+    static const std::string nb_connected_bus;
 
     // TODO doc: make more precise when things are copied and when things are not
     static const std::string get_pv;

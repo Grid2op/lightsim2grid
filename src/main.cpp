@@ -661,8 +661,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("set_sn_mva", &PandaPowerConverter::set_sn_mva)
         .def("get_line_param_legacy", &PandaPowerConverter::get_line_param_legacy)
         .def("get_line_param", &PandaPowerConverter::get_line_param)
-        .def("get_trafo_param", &PandaPowerConverter::get_trafo_param)
-        .def("get_trafo_param_legacy", &PandaPowerConverter::get_trafo_param_legacy);
+        .def("get_trafo_param_pp3", &PandaPowerConverter::get_trafo_param_pp3)
+        .def("get_trafo_param_pp2", &PandaPowerConverter::get_trafo_param_pp2);
 
     py::class_<SolverControl>(m, "SolverControl", "TODO")
         .def(py::init<>())
@@ -682,8 +682,28 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy)
-        .def_property("_ls_to_orig", &GridModel::get_ls_to_orig, &GridModel::set_ls_to_orig, "remember the conversion from bus index in lightsim2grid to bus index in original file format (*eg* pandapower of pypowsybl).")
-        .def_property("_orig_to_ls", &GridModel::get_orig_to_ls, &GridModel::set_orig_to_ls, "remember the conversion from bus index in original file format (*eg* pandapower of pypowsybl) to bus index in lightsim2grid.")
+        .def_property("_ls_to_orig",
+                      &GridModel::get_ls_to_orig,
+                      &GridModel::set_ls_to_orig,
+                      R"mydelimiter(
+_ls_to_orig: has the size of the number of possible buses in lightsim2grid 
+(*ie* `n_sub_ * max_nb_bus_per_sub_` ) and gives the id of the corresponding
+bus in the original grid (pandapower or pypowsybl).
+
+If a "-1" is present, then this bus does not exist in the original grid, 
+it is only present in the lightsim2grid gridmodel.
+)mydelimiter")
+        .def_property("_orig_to_ls",
+                      &GridModel::get_orig_to_ls,
+                      &GridModel::set_orig_to_ls,
+                      R"mydelimiter(
+Opposite to _ls_to_orig. The vector _orig_to_ls has the size of the number
+of buses in the original grid (pandapower or pypowsybl) and tells 
+to which bus of lightsim2grid it corresponds. It should be a >= integer
+between 0 and `n_sub_ * max_nb_bus_per_sub_`
+
+)mydelimiter"
+                    )
         .def_property("_max_nb_bus_per_sub",
                       &GridModel::get_max_nb_bus_per_sub,
                       &GridModel::set_max_nb_bus_per_sub,
@@ -730,11 +750,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())
         .def("set_sn_mva", &GridModel::set_sn_mva, DocGridModel::_internal_do_not_use.c_str())   // TODO use python "property" for that
         .def("get_sn_mva", &GridModel::get_sn_mva, DocGridModel::_internal_do_not_use.c_str())
-
+        .def("init_substation_names", &GridModel::init_sub_names, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_substation_names", &GridModel::get_sub_names, DocGridModel::_internal_do_not_use.c_str())
+        
         // init its elements
         .def("init_powerlines", &GridModel::init_powerlines, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_powerlines_full", &GridModel::init_powerlines_full, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
         .def("init_shunt", &GridModel::init_shunt, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("init_trafo_pandapower", &GridModel::init_trafo_pandapower, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_trafo", &GridModel::init_trafo, DocGridModel::_internal_do_not_use.c_str())  // same 
         .def("init_generators", &GridModel::init_generators, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("init_generators_full", &GridModel::init_generators_full, DocGridModel::_internal_do_not_use.c_str())  // same
@@ -852,7 +875,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("id_me_to_dc_solver", &GridModel::id_me_to_dc_solver, DocGridModel::id_me_to_dc_solver.c_str())
         .def("id_dc_solver_to_me", &GridModel::id_dc_solver_to_me, DocGridModel::id_dc_solver_to_me.c_str())
         .def("total_bus", &GridModel::total_bus, DocGridModel::total_bus.c_str())
-        .def("nb_bus", &GridModel::nb_bus, DocGridModel::nb_bus.c_str())
+        .def("nb_connected_bus", &GridModel::nb_connected_bus, DocGridModel::nb_connected_bus.c_str())
 
 
         .def("get_pv", &GridModel::get_pv, DocGridModel::get_pv.c_str())

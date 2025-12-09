@@ -28,18 +28,34 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
-void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & status){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
-                    status,
+void GenericContainer::_generic_reactivate(int global_bus_id, Substation & substation){
+    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
+                    substation.get_bus_status(),
                     "_generic_reactivate");
-    status[el_id] = true;  //TODO why it's needed to do that again
+    substation.reconnect_bus(global_bus_id);
+    // status[el_id] = true;  //TODO why it's needed to do that again
 }
 
-void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & status){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+void GenericContainer::_generic_deactivate(int global_bus_id, Substation & substation){
+    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
+                    substation.get_bus_status(),
+                    "_generic_deactivate");
+    substation.disconnect_bus(global_bus_id);
+    // status[el_id] = false;
+}
+
+void GenericContainer::_generic_reactivate(int global_bus_id, std::vector<bool> & status){
+    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
+                    status,
+                    "_generic_reactivate");
+    status[global_bus_id] = true;  //TODO why it's needed to do that again
+}
+
+void GenericContainer::_generic_deactivate(int global_bus_id, std::vector<bool> & status){
+    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
                     status,
                     "_generic_deactivate");
-    status[el_id] = false;
+    status[global_bus_id] = false;   //TODO why it's needed to do that again
 }
 
 void GenericContainer::_generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){

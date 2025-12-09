@@ -43,6 +43,7 @@ Benchmarkings
    benchmarks_dc
    benchmarks_grid_sizes
    benchmarks_dive
+   comparison_with_pypowsybl
 
 Technical Documentation (work in progress)
 -------------------------------------------

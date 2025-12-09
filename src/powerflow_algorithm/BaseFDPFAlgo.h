@@ -79,9 +79,9 @@ class BaseFDPFAlgo: public BaseAlgo
                                    real_type slack_absorbed,
                                    const RealVect & slack_weights)
         {
-            CplxVect tmp = Ybus * V;  // this is a vector
-            tmp = tmp.array().conjugate();  // i take the conjugate
-            auto mis = V.array() * tmp.array() - Sbus.array() + slack_absorbed * slack_weights.array();
+            // CplxVect tmp = Ybus * V;  // this is a vector
+            // tmp = tmp.array().conjugate();  // i take the conjugate
+            auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
             return mis;
         }
         
@@ -120,10 +120,8 @@ class BaseFDPFAlgo: public BaseAlgo
         virtual
         void solve(LinearSolver& linear_solver,
                    Eigen::SparseMatrix<real_type>& mat,
-                   RealVect & b,
-                   bool has_just_been_inialized){
+                   RealVect & b){
             auto timer = CustTimer();
-            // const ErrorType solve_status = linear_solver.solve(mat, b, has_just_been_inialized);
             const ErrorType solve_status = linear_solver.solve(mat, b, true);  // true because i don't need to refactorize the matrix
             if(solve_status != ErrorType::NoError){
                 // std::cout << "solve error: " << solve_status << std::endl;

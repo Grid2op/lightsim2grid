@@ -26,24 +26,35 @@ executors:
 
 jobs:
     test_legacy_grid2op:
-        executor: gcc_latest
-        resource_class: small
+        executor: gcc_latest  
+        resource_class: medium
         steps:
             - checkout
             - run: cat /etc/os-release
-            - run: apt update
+            - run: apt-get update
             - run: apt install -y python3 python3-dev python3-venv python3-pip git
             - run: 
                   name: Get python version
                   command: 
                       python3 --version
-            - run: python3 -m venv venv_test
+
+            # - python/install-packages:
+            #     pkg-manager: uv
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command: |
+                    python3 -m pip install uv --break-system-packages --root-user-action=ignore
+                    uv --version
+            - run: 
+                name: Setup uv venv on python 3.11
+                command:
+                    uv venv venv_test --python 3.11
             - run:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
-                      pip install "pandapower<3" grid2op==1.0.0
+                      uv pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
+                      uv pip install "pandapower<3" grid2op==1.0.0
                       git submodule init
                       git submodule update
                       make
@@ -53,7 +64,7 @@ jobs:
                   command: |
                       source venv_test/bin/activate
                       CC=gcc python setup.py build
-                      python -m pip install -e .
+                      CC=gcc uv pip install -e .
                       pip freeze
             - run:
                 name: legacy test (grid2op 1.0.0)
@@ -66,7 +77,7 @@ jobs:
                 name: legacy test (grid2op ~1.1)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.1.0"
+                      uv pip install "grid2op~=1.1.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -74,7 +85,7 @@ jobs:
                 name: legacy test (grid2op ~1.2)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.2.0"
+                      uv pip install "grid2op~=1.2.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -82,7 +93,7 @@ jobs:
                 name: legacy test (grid2op ~1.3)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.3.0"
+                      uv pip install "grid2op~=1.3.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -90,7 +101,7 @@ jobs:
                 name: legacy test (grid2op ~1.4)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.4.0"
+                      uv pip install "grid2op~=1.4.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -98,7 +109,7 @@ jobs:
                 name: legacy test (grid2op ~1.5)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.5.0"
+                      uv pip install "grid2op~=1.5.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -114,7 +125,7 @@ jobs:
                 name: legacy test (grid2op ~1.7)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.7.0"
+                      uv pip install "grid2op~=1.7.0"
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -122,29 +133,29 @@ jobs:
                 name: legacy test (grid2op ~1.8)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.8.0"
+                      uv pip install "grid2op~=1.8.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op ~1.9)
                 command: |
                       source venv_test/bin/activate
-                      pip uninstall gym -y
-                      pip install "gymnasium<1"  # issue with OrderedDict otherwise
-                      pip install "grid2op~=1.9.0"
+                      uv pip uninstall gym
+                      uv pip install "gymnasium<1"  # issue with OrderedDict otherwise
+                      uv pip install "grid2op~=1.9.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op ~1.10)
                 command: |
                       source venv_test/bin/activate
-                      pip install "grid2op~=1.10.0"
+                      uv pip install "grid2op~=1.10.0"
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 0.9.1.post1 - l2rpn wcci 2020)
                 command: |
                       source venv_test/bin/activate
-                      pip uninstall gymnasium -y
-                      pip install gym
-                      pip install grid2op==0.9.1.post1
+                      uv pip uninstall gymnasium
+                      uv pip install gym
+                      uv pip install grid2op==0.9.1.post1
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -152,7 +163,7 @@ jobs:
                 name: legacy test (grid2op 1.2.2 - l2rpn neurips 2020)
                 command: |
                       source venv_test/bin/activate
-                      pip install grid2op==1.2.2
+                      uv pip install grid2op==1.2.2
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -168,7 +179,7 @@ jobs:
                 name: legacy test (grid2op 1.7.2 - l2rpn wcci 2022)
                 command: |
                       source venv_test/bin/activate
-                      pip install grid2op==1.7.2
+                      uv pip install grid2op==1.7.2
                       sed -i -e 's/np.int)/np.int32)/g' venv_test/lib/python3.*/site-packages/grid2op/Backend/PandaPowerBackend.py
                       sed -i -e 's/np.bool/np.bool_/g' venv_test/lib/python3.*/site-packages/grid2op/dtypes.py
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
@@ -176,20 +187,20 @@ jobs:
                 name: legacy test (grid2op 1.9.0 - l2rpn Delft 2023)
                 command: |
                       source venv_test/bin/activate
-                      pip uninstall gym -y
-                      pip install "gymnasium<1"  # issue with OrderedDict otherwise
-                      pip install grid2op==1.9.0
+                      uv pip uninstall gym
+                      uv pip install "gymnasium<1"  # issue with OrderedDict otherwise
+                      python -m pip install grid2op==1.9.0 --no-deps   # "wrong" link (pointing to bdonnot/chronix2grid) specified in the setup.py of grid2op) hence the use of `python -m pip` intead of `uv pip` and `--no-deps`
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
             - run:
                 name: legacy test (grid2op 1.9.1 - l2rpn IDF 2023)
                 command: |
                       source venv_test/bin/activate
-                      pip install grid2op==1.9.1
+                      python -m pip install grid2op==1.9.1 --no-deps   # "wrong" link (pointing to bdonnot/chronix2grid) specified in the setup.py of grid2op)  hence the use of `python -m pip` intead of `uv pip` and `--no-deps`
                       python -m unittest lightsim2grid/tests/test_compat_legacy_grid2op.py
 
     compile_gcc_prev_latest:
         executor: gcc_prev_latest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
@@ -208,9 +219,11 @@ jobs:
 
     compile_gcc_earliest:
         executor: gcc_earliest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
+            - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update && apt-get install python3-pip -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
@@ -230,6 +243,7 @@ jobs:
         resource_class: medium
         steps:
             - checkout
+            - run: cat /etc/os-release
             - run: apt-get update
             - run: apt install -y python3 python3-dev python3-venv python3-pip git
             - run: 
@@ -264,7 +278,7 @@ jobs:
                 name: "Show package versions"
                 command: |
                     source venv_test/bin/activate
-                    pip install pypowsybl
+                    pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
                 name: "make tests"
@@ -275,27 +289,69 @@ jobs:
 
     compile_clang_earliest:
         executor: clang_earliest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
-            - run: apt-get update && apt-get install python3-pip python3-full git -y
-            - run: python3 -m pip install virtualenv
-            - run: python3 -m virtualenv venv_test
+            - run: cat /etc/os-release
+            # - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
+            - run: apt-get update
+            - run: apt purge python3-pkg-resources libtinfo5 -y
+            # - run: apt purge python3-* -y
+            - run: apt autoremove -y && apt-get update -y
+            - run: apt-get install python3 python3-setuptools git python3-pip python3-distutils-extra -y  # python3-pip is broken... python3-full does not exists, python3-dev cannot be installed... python3.9-distutils  does not exist and without it no pip...  python3-distutils-extra does not work either...
+            # - run: python3 -m pip install virtualenv
+            # - run: python3 -m virtualenv venv_test
+            # - run:
+            #     name: get pip  # python3 -m ensurepip --upgrade does not work
+            #     command: |
+            #         cd /tmp
+            #         wget https://bootstrap.pypa.io/get-pip.py
+            #         python3 get-pip.py
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command: |  # python3 -m pip install uv --break-system-packages --root-user-action=ignore
+                    python3 -m pip install uv
+                    uv --version
+            - run: 
+                name: Setup uv venv on python 3.11  # python 3.9 is installed by default which might cause some issues
+                command:
+                    uv venv venv_test --python 3.11
+
+            # install python 3.11, see https://www.build-python-from-source.com/
+            # - run: apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev liblzma-dev tk-dev
+            # - run: apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev tk-dev liblzma-dev tk-dev
+            # - run:
+            #     name: Install python from source 
+            #     command: |
+            #         wget https://www.python.org/ftp/python/3.11.14/Python-3.11.14.tgz
+            #         tar xzf Python-3.11.14.tgz
+            #         cd Python-3.11.14
+            #         ./configure --prefix=/opt/python/3.11.14/ --enable-optimizations --with-lto --with-computed-gotos --with-system-ffi --enable-shared --enable-loadable-sqlite-extensions --with-openssl=/usr/local/ssl
+            #         make -j "$(grep -c ^processor /proc/cpuinfo)"
+            #         make altinstall
+            #         /opt/python/3.11.14/bin/python3.11 -m pip install --upgrade pip setuptools wheel
+            #         /opt/python/3.11.14/bin/python3.11 -m pip install uv
+            # - run: 
+            #     name: Setup uv venv on python 3.11  # python 3.9 is installed by default which might cause some issues
+            #     command:
+            #         uv venv venv_test --python 3.11
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install --upgrade pip setuptools wheel
-                    pip install -U grid2op
-                    pip install -U pybind11
+                    uv pip install --upgrade pip setuptools wheel
+                    uv pip install -U grid2op
+                    uv pip install -U pybind11
                     git submodule init
                     git submodule update
                     make
                     CC=clang python setup.py build
-                    CC=clang python -m pip install -U .
+                    CC=clang uv pip install -U .
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
-        resource_class: small
+        resource_class: medium
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
@@ -352,7 +408,7 @@ jobs:
                 name: "Show package versions"
                 command: |
                     source venv_test/bin/activate
-                    pip install pypowsybl
+                    pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
                 name: "make tests"
@@ -394,11 +450,133 @@ jobs:
                     python -m pip install -e .[test]
                     pip freeze
             - run:
+                name: "Show package versions"
+                command: |
+                    .\venv_test\Scripts\activate
+                    pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
+                    pip freeze
+            - run:
                 name: "make tests"
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
                     python -m unittest discover -v
+                    
+    test_legacy_pandapower:
+        executor: gcc_latest  
+        resource_class: medium
+        steps:
+            - checkout
+            - run: cat /etc/os-release
+            - run: apt-get update
+            - run: apt install -y python3 python3-dev python3-venv python3-pip git
+            - run: 
+                  name: Get python version
+                  command: 
+                      python3 --version
+
+            # - python/install-packages:
+            #     pkg-manager: uv
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command: |
+                    python3 -m pip install uv --break-system-packages --root-user-action=ignore
+                    uv --version
+            - run: 
+                name: Setup uv venv on python 3.11
+                command:
+                    uv venv venv_test --python 3.11
+            - run:
+                  name: "Set up virtual environment"
+                  command: |
+                    source venv_test/bin/activate
+                    uv pip install --upgrade pip setuptools wheel "numpy<2" pybind11 scipy "pandapower<3" grid2op
+                    git submodule init
+                    git submodule update
+                    make
+                    python setup.py build
+                    uv pip install .
+                    pip freeze
+                    
+            - run:
+                name: "Make pandapower < 3 tests"
+                command: | 
+                    source venv_test/bin/activate
+                    cd lightsim2grid/tests/
+                    python -m unittest test_DCPF.py
+                    python -m unittest test_ACPF.py
+                    python -m unittest test_GridModel_pandapower.py
+
+    test_legacy_pypowsybl:
+        executor: gcc_latest  
+        resource_class: medium
+        steps:
+            - checkout
+            - run: cat /etc/os-release
+            - run: apt-get update
+            - run: apt install -y python3 python3-dev python3-venv python3-pip git
+            - run: 
+                  name: Get python version
+                  command: 
+                      python3 --version
+
+            # - python/install-packages:
+            #     pkg-manager: uv
+            - run: 
+                name: Install uv # gcc 14 docker images uses python 3.13 which does not have scipy 1.13 wheel, which are need for numpy <2, needed for legacy pandapower...
+                command: |
+                    python3 -m pip install uv --break-system-packages --root-user-action=ignore
+                    uv --version
+            - run: 
+                name: Setup uv venv on python 3.11
+                command:
+                    uv venv venv_test --python 3.11
+            - run:
+                  name: "Set up virtual environment"
+                  command: |
+                    source venv_test/bin/activate
+                    uv pip install --upgrade pip setuptools wheel "numpy<2" pybind11 scipy "pypowsybl~=1.0.0" grid2op
+                    git submodule init
+                    git submodule update
+                    make
+                    python setup.py build
+                    uv pip install .
+                    pip freeze
+                    
+            - run:
+                name: "Make pypowsybl ~1.0.0 tests"  # first supported version
+                command: | 
+                    source venv_test/bin/activate
+                    cd lightsim2grid/tests/
+                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_init_from_pypowsybl.py
+
+            - run:
+                name: "Make pypowsybl ~1.9.0 tests"  # bug in per unit
+                command: | 
+                    source venv_test/bin/activate
+                    uv pip install "pypowsybl~=1.9.0" "numpy>2"
+                    cd lightsim2grid/tests/
+                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_init_from_pypowsybl.py
+
+            - run:
+                name: "Make pypowsybl ~1.10.0 tests"  # bug in per unit fixed
+                command: | 
+                    source venv_test/bin/activate
+                    uv pip install "pypowsybl~=1.10.0"
+                    cd lightsim2grid/tests/
+                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_init_from_pypowsybl.py
+
+            - run:
+                name: "Make pypowsybl ~1.13.0 tests"  # 'bug' in DC
+                command: | 
+                    source venv_test/bin/activate
+                    uv pip install "pypowsybl~=1.13.0"
+                    cd lightsim2grid/tests/
+                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_init_from_pypowsybl.py
 
 workflows:
     version: 2.1
@@ -409,6 +587,8 @@ workflows:
           - compile_clang_earliest
           - compile_clang_prev_latest
           - test_legacy_grid2op
+          - test_legacy_pandapower
+          - test_legacy_pypowsybl
           - compile_and_test_windows
           - compile_and_test_clang_latest
           - compile_and_test_gcc_latest
