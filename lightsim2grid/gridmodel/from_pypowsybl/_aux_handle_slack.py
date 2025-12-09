@@ -37,7 +37,6 @@ def handle_slack_one_el(df_gen, gen_slack_id):
         if gen_slack_id_int != gen_slack_id:
             raise RuntimeError("'gen_slack_id' should be either an int or a "
                                 "generator names")
-        gen_slack_id_int = gen_slack_id_int
         gen_slack_weight = 1.
     if not df_gen.iloc[gen_slack_id_int]["connected"] or abs(gen_slack_weight) < 1e-5:
         return None, None
@@ -67,4 +66,3 @@ def handle_slack_iterable(df_gen, gen_slack_id):
         raise RuntimeError("when intializing the slack with an iterable, make sure to "
                            "provide either a python list or a python dict.")
     return res_ids, res_ws
-            
