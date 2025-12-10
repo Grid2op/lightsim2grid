@@ -29,7 +29,11 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.11.0] 2025-12-xx
+[0.11.1] 202x-yy-zz
+--------------------
+- [IMPROVED] Eigen to version 5.0.1 (2025/11/11)
+
+[0.11.0] 2025-12-09
 ----------------------
 - [DEPRECATED] python 3.7 builds will no longer be available
 - [FIXED] a bug in the import of the grid from pypowsybl

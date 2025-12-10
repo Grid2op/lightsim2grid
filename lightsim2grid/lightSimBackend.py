@@ -611,7 +611,7 @@ class LightSimBackend(Backend):
     
     def _assign_right_solver(self):
         slack_weights = np.array([el.slack_weight for el in self._grid.get_generators()])
-        nb_slack_nonzero = (np.abs(slack_weights) > 0.).sum()
+        nb_slack_nonzero = (np.abs(slack_weights) > 1e-5).sum()
         has_single_slack = nb_slack_nonzero == 1
         if has_single_slack and not self._dist_slack_non_renew:
             if SolverType.KLUSingleSlack in self.available_solvers:
@@ -620,7 +620,7 @@ class LightSimBackend(Backend):
             else:
                 self._grid.change_solver(SolverType.SparseLUSingleSlack)
         else:
-            # grid has multiple slack      
+            # grid has multiple slacks      
             if SolverType.KLU in self.available_solvers:
                 # use the faster KLU if available
                 self._grid.change_solver(SolverType.KLU)
