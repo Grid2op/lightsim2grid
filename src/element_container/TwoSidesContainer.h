@@ -167,11 +167,8 @@ class TwoSidesContainer : public GenericContainer
                 if(!status_global_[i]) continue;
                 auto bus_side_1 = bus_side_1_id_(i);
                 auto bus_side_2 = bus_side_2_id_(i);
-                if(!busbar_in_main_component[bus_side_1] || !busbar_in_main_component[bus_side_2]){
-                    // deactivate(i, unused_solver_control);  // TODO (when it compiles)
-                    side_1_.deactivate(i, unused_solver_control);
-                    side_2_.deactivate(i, unused_solver_control);
-                }
+                if(!busbar_in_main_component[bus_side_1]) side_1_.deactivate(i, unused_solver_control);
+                if(!busbar_in_main_component[bus_side_2]) side_2_.deactivate(i, unused_solver_control);
             }
         }
 

@@ -461,13 +461,13 @@ void GridModel::check_solution_q_values(CplxVect & res, bool check_q_limits) con
     // then do the same for dc powerlines
     for(const auto & dcline: dc_lines_)
     {
-        if(!dcline.connected)
+        if(!dcline.connected_global)
         {
             // the generator is disconnected, I do nothing
             continue;
         }
-        check_solution_q_values_onegen(res, dcline.gen_or, check_q_limits);
-        check_solution_q_values_onegen(res, dcline.gen_ex, check_q_limits);
+        check_solution_q_values_onegen(res, dcline.gen_side_1, check_q_limits);
+        check_solution_q_values_onegen(res, dcline.gen_side_2, check_q_limits);
     }
 }
 

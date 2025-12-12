@@ -525,12 +525,12 @@ class GridModel : public GenericContainer
         void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, solver_control_); }
         void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, solver_control_); }
         void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, solver_control_); }
-        void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_or(dcline_id, new_v_pu, solver_control_); }
-        void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_ex(dcline_id, new_v_pu, solver_control_); }
-        void change_bus_dcline_or(int dcline_id, int new_bus_id) {dc_lines_.change_bus_or(dcline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        void change_bus_dcline_ex(int dcline_id, int new_bus_id) {dc_lines_.change_bus_ex(dcline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        int get_bus_dcline_or(int dcline_id) {return dc_lines_.get_bus_or(dcline_id);}
-        int get_bus_dcline_ex(int dcline_id) {return dc_lines_.get_bus_ex(dcline_id);}
+        void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, solver_control_); }
+        void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, solver_control_); }
+        void change_bus_dcline_or(int dcline_id, int new_bus_id) {dc_lines_.change_bus_side_1(dcline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_dcline_ex(int dcline_id, int new_bus_id) {dc_lines_.change_bus_side_2(dcline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
+        int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
@@ -549,9 +549,9 @@ class GridModel : public GenericContainer
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
         tuple3d get_sgens_res() const {return sgens_.get_res();}
         const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
-        tuple3d get_dclineor_res() const {return dc_lines_.get_or_res();}
-        tuple3d get_dclineex_res() const {return dc_lines_.get_ex_res();}
-        const std::vector<bool>& get_dclines_status() const { return dc_lines_.get_status();}
+        tuple3d get_dclineor_res() const {return dc_lines_.get_res_side_1();}
+        tuple3d get_dclineex_res() const {return dc_lines_.get_res_side_2();}
+        const std::vector<bool>& get_dclines_status() const { return dc_lines_.get_status_global();}
 
         Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
         Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
@@ -561,8 +561,8 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_ex();}
         Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_side_1();}
         Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_side_2();}
-        Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_or();}
-        Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_ex();}
+        Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_side_2();}
 
         Eigen::Ref<const IntVect> get_all_shunt_buses() const {return shunts_.get_buses();}
 
@@ -582,8 +582,8 @@ class GridModel : public GenericContainer
         tuple5d get_trafolv_res_full() const {return trafos_.get_res_lv_full();}
         tuple4d get_storages_res_full() const {return storages_.get_res_full();}
         tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
-        tuple4d get_dclineor_res_full() const {return dc_lines_.get_res_or_full();}
-        tuple4d get_dclineex_res_full() const {return dc_lines_.get_res_ex_full();}
+        tuple4d get_dclineor_res_full() const {return dc_lines_.get_res_full_side_1();}
+        tuple4d get_dclineex_res_full() const {return dc_lines_.get_res_full_side_2();}
 
         /**
          * @brief Get the Ybus solver object (AC)
