@@ -73,7 +73,7 @@ class Substation
     }
 
     void init_sub_names(const std::vector<std::string> & sub_names){
-        if(sub_names.size() != n_sub_){
+        if(sub_names.size() != static_cast<size_t>(n_sub_)){
             throw std::runtime_error("Wrong number of substation when setting their names.");
         }
         sub_names_ = sub_names;
@@ -87,8 +87,13 @@ class Substation
 
     // }
 
+    // return the number of substations on the grid
     int nb_sub() const {return n_sub_;}
+
+    // return the maximum number of possible buses on the grid
     unsigned int nb_bus() const {return bus_vn_kv_.size();}
+    int nmax_busbar_per_sub() const {return nmax_busbar_per_sub_;}
+
     Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
     bool is_bus_connected(int global_bus_id) const {return bus_status_[global_bus_id];}
     bool is_bus_connected(int sub_id, int local_bus_id) const {return bus_status_[local_to_global(sub_id, local_bus_id)];}

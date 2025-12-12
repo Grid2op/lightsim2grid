@@ -72,7 +72,7 @@ class LightSimBackend(Backend):
         detachment_is_allowed = DEFAULT_ALLOW_DETACHMENT
     
     KEYS_PYPOWSYBL_LOADER = {
-        "gen_slack_id",
+        # "gen_slack_id",
         "use_buses_for_sub",
         "sort_index",
         "init_vm_pu",
@@ -104,6 +104,7 @@ class LightSimBackend(Backend):
                  stop_if_gen_disco : Optional[bool] = None,
                  stop_if_storage_disco : Optional[bool] = None,
                  automatically_disconnect : bool = False, 
+                 gen_slack_id=None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
         #: if the solver has not converge after this, it will 
@@ -144,7 +145,6 @@ class LightSimBackend(Backend):
         #:     pypowsybl Network) to initialize the "substation" in the lightsim2grid
         #:     Gridmodel (if ``True``). If ``False`` it will use the `voltage_levels`
         #:     of the pypowsybl Network.
-        #:   - `gen_slack_id` (``int``): which generator will be used for the slack
         #:   - `use_grid2op_default_names` (``bool``): whether to use the "default names"
         #:     assigne by grid2op or to read them from the the iidm grid.
         #:   - `reconnect_disco_gen` (``bool``): whether to reconnect the disconnected 
@@ -213,7 +213,8 @@ class LightSimBackend(Backend):
                              stop_if_load_disco,
                              stop_if_gen_disco,
                              stop_if_storage_disco,
-                             automatically_disconnect)
+                             automatically_disconnect,
+                             gen_slack_id)
         
         #: whether or not to run a routine to detect the islanding
         #: before computing the powerflow (this routine should
@@ -376,6 +377,20 @@ class LightSimBackend(Backend):
         #: this flags remembers it
         self._next_pf_fails : Optional[BackendError] = None
         
+        #: .. versionadded:: 0.11.1
+        #: generator to assign to the slack
+        #: for now only used for pypowsybl
+        self._gen_slack_id = gen_slack_id
+        if self._gen_slack_id is not None and self._dist_slack_non_renew:
+            raise RuntimeError("You choose the generators participating to the slack (using `gen_slack_id` kwargs), "
+                               "and at the same time you told lightsim2grid that slack is on "
+                               "on non-renewable generators (using `dist_slack_non_renew` kwargs). "
+                               "Chose one or the other, but not both.")
+        if self._gen_slack_id is not None and self._loader_method != "pypowsybl":
+            raise RuntimeError("Choosing the generators in the slak is only possible when "
+                               "loading a grid from pypowsybl at the moment. Please fill a feature request "
+                               "(github issue) if this feature interest you.")
+        
         # issue if dc then ac powerflow
         self._last_dc = True
         
@@ -406,7 +421,8 @@ class LightSimBackend(Backend):
                         stop_if_load_disco,
                         stop_if_gen_disco,
                         stop_if_storage_disco,
-                        automatically_disconnect):
+                        automatically_disconnect,
+                        gen_slack_id):
         try:
             # for grid2Op >= 1.7.1
             Backend.__init__(self,
@@ -423,7 +439,8 @@ class LightSimBackend(Backend):
                              stop_if_load_disco=stop_if_load_disco,
                              stop_if_gen_disco=stop_if_gen_disco,
                              stop_if_storage_disco=stop_if_storage_disco,
-                             automatically_disconnect=automatically_disconnect
+                             automatically_disconnect=automatically_disconnect,
+                             gen_slack_id=gen_slack_id,
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
@@ -796,7 +813,7 @@ class LightSimBackend(Backend):
         return res
     
     def _load_grid_pypowsybl(self, path=None, filename=None):
-        from lightsim2grid.gridmodel.from_pypowsybl import init as init_pypow
+        from lightsim2grid.gridmodel.from_pypowsybl import init as init_from_pypowsybl
         import pypowsybl.network as pypow_net
         loader_kwargs = {}
         if self._loader_kwargs is not None:
@@ -811,9 +828,6 @@ class LightSimBackend(Backend):
             
         grid_tmp = pypow_net.load(full_path)
         self._orig_grid_pypowsybl = grid_tmp
-        gen_slack_id = None
-        if "gen_slack_id" in loader_kwargs:
-            gen_slack_id = loader_kwargs["gen_slack_id"]
         
         df = grid_tmp.get_substations()
         buses_for_sub = False
@@ -838,8 +852,8 @@ class LightSimBackend(Backend):
         n_busbar_per_sub = self._aux_get_substation_handling_from_loader_kwargs(loader_kwargs)
         if n_busbar_per_sub is None:
             n_busbar_per_sub = self.n_busbar_per_sub
-        self._grid, subs_id = init_pypow(grid_tmp,
-                                         gen_slack_id=gen_slack_id,
+        self._grid, subs_id = init_from_pypowsybl(grid_tmp,
+                                         gen_slack_id=self._gen_slack_id,
                                          slack_bus_id=None,
                                          sn_mva=sn_mva,
                                          sort_index=sort_index,
@@ -851,6 +865,9 @@ class LightSimBackend(Backend):
                                          )
         (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
          batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
+        if self._gen_slack_id is not None:
+            self._gen_slack_id = gen_sub["desired_slack"].values.nonzero()[0]
+            
         if not buses_for_sub: 
             self.__nb_bus_before = self._grid.get_n_sub()
         else:
@@ -875,7 +892,7 @@ class LightSimBackend(Backend):
         else:
             self.n_shunt = None
         
-        if not buses_for_sub:
+        if buses_for_sub:
             # consider that each "bus" in the powsybl grid is a substation
             # this is the "standard" behaviour for IEEE grid in grid2op
             # but can be considered "legacy" behaviour for more realistic grid
@@ -902,16 +919,15 @@ class LightSimBackend(Backend):
             
             # TODO get back the sub id from the grid_tmp.get_voltage_levels()
             # need to work on that grid2op side: different make sure the labelling of the buses are correct !
- 
             self.load_to_subid = np.array(load_sub.values.ravel(), dtype=dt_int)
-            self.gen_to_subid = np.array(gen_sub.values.ravel(), dtype=dt_int)
+            self.gen_to_subid = np.array(gen_sub["sub_id"].values.ravel(), dtype=dt_int)
             self.line_or_to_subid = np.concatenate((lor_sub.values.ravel(), tor_sub.values.ravel())).astype(dt_int)
             self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
             if self.__has_storage:
                 self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
-            self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
+            self.n_sub = grid_tmp.get_voltage_levels().shape[0]
             if self.n_shunt is not None:
-                self.n_sub = grid_tmp.get_voltage_levels().shape[0]
+                self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
         
         # the names
         use_grid2op_default_names = True
@@ -1462,7 +1478,14 @@ class LightSimBackend(Backend):
         
     def _handle_dist_slack(self):
         if self._dist_slack_non_renew:
+            # tell lightsim2grid to distribute the slack on non renewable generators
+            # for this step
             self._grid.update_slack_weights(type(self).gen_redispatchable)
+        if self._gen_slack_id is not None:
+            # tell lightsim2grid to distribute the slack on all connected generators
+            # that are tagged as "possible slack" by the user input
+            # (set when creating the LightSimBackend through `gen_slack_id=XXX`)
+            self._grid.update_slack_weights_by_id(self._gen_slack_id)
 
     def _fetch_grid_data(self):
         beg_test = time.perf_counter()
@@ -1636,7 +1659,7 @@ class LightSimBackend(Backend):
             self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
-            self._grid.unset_changes()
+            self._grid.tell_solver_need_reset()
             self._fill_nans()
             res = False
             my_exc_ = exc_
@@ -1744,7 +1767,8 @@ class LightSimBackend(Backend):
                             self._stop_if_load_disco,
                             self._stop_if_gen_disco,
                             self._stop_if_storage_disco,
-                            self._automatically_disconnect)
+                            self._automatically_disconnect,
+                            self._gen_slack_id)
         
         # for backward compat (attribute was not necessarily present in early grid2op)
         if not hasattr(res, "_can_be_copied"):
@@ -1919,9 +1943,10 @@ class LightSimBackend(Backend):
               grid_filename : Optional[Union[os.PathLike, str]]=None) -> None:
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
-        self._grid.unset_changes()
+        # self._grid.unset_changes()
         self._grid.change_solver(self.__current_solver_type)
         self._handle_turnedoff_pv()
+        self._grid.tell_solver_need_reset()
         self.comp_time = 0.
         self.timer_gridmodel_xx_pf = 0.
         self._timer_postproc = 0.
@@ -1930,7 +1955,6 @@ class LightSimBackend(Backend):
         self._timer_read_data_back = 0.
         self._timer_fetch_data_cpp = 0.
         self._timer_apply_act = 0.
-        self._grid.tell_solver_need_reset()
         self._reset_res_pointers()
         if type(self).shunts_data_available:
             self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
@@ -1938,7 +1962,6 @@ class LightSimBackend(Backend):
         if self._automatically_disconnect:
             # automatically disconnect things if needed (and if the option is properly set)
             self._need_islanding_detection = True
-
 
 def _dont_use_global_bus_to_local_legacy(cls, global_bus: np.ndarray, to_sub_id: np.ndarray) -> np.ndarray:
     res = (1 * global_bus).astype(dt_int)  # make a copy

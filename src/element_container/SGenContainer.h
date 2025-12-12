@@ -16,7 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-#include "OneSideContainer.h"
+#include "OneSideContainer_PQ.h"
 
 /**
 This class is a container for all static generator (PQ generators) on the grid.
@@ -28,7 +28,7 @@ https://pandapower.readthedocs.io/en/latest/elements/sgen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/sgen.html#electric-model
 **/
-class SGenContainer: public OneSideContainer
+class SGenContainer: public OneSideContainer_PQ
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
@@ -36,72 +36,28 @@ class SGenContainer: public OneSideContainer
 
     // iterators part
     public:
-        class SGenInfo
+        class SGenInfo  : public OneSidePQInfo
         {
             public:
                 // members
-                // TODO add some const here (value should not be changed !) !!!
-                int id;  // id of the generator
-                std::string name;
-                bool connected;
-                int bus_id;
-
                 real_type min_q_mvar;
                 real_type max_q_mvar;
                 real_type min_p_mw;
                 real_type max_p_mw;
 
-                real_type target_p_mw;
-                real_type target_q_mvar;
-
-                bool has_res;
-                real_type res_p_mw;
-                real_type res_q_mvar;
-                real_type res_v_kv;
-                real_type res_theta_deg;
-
                 SGenInfo(const SGenContainer & r_data_sgen, int my_id):
-                id(-1),
-                name(""),
-                connected(false),
-                bus_id(_deactivated_bus_id),
+                OneSidePQInfo(r_data_sgen, my_id),
                 min_q_mvar(0.),
                 max_q_mvar(0.),
                 min_p_mw(0.),
-                max_p_mw(0.),
-                target_p_mw(0.),
-                target_q_mvar(0.),
-                has_res(false),
-                res_p_mw(0.),
-                res_q_mvar(0.),
-                res_v_kv(0.),
-                res_theta_deg(0.)
+                max_p_mw(0.)
                 {
                     if((my_id >= 0) & (my_id < r_data_sgen.nb()))
                     {
-                        id = my_id;
-                        if(r_data_sgen.names_.size()){
-                            name = r_data_sgen.names_[my_id];
-                        }
-                        connected = r_data_sgen.status_[my_id];
-                        if(connected)  bus_id = r_data_sgen.bus_id_[my_id];
-
                         min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
                         max_q_mvar = r_data_sgen.q_max_mvar_(my_id);
                         min_p_mw = r_data_sgen.p_min_mw_(my_id);
                         max_p_mw = r_data_sgen.p_max_mw_(my_id);
-
-                        target_p_mw = r_data_sgen.p_mw_.coeff(my_id);
-                        target_q_mvar = r_data_sgen.q_mvar_.coeff(my_id);
-
-                        has_res = r_data_sgen.res_p_.size() > 0;
-                        if(has_res)
-                        {
-                            res_p_mw = r_data_sgen.res_p_.coeff(my_id);
-                            res_q_mvar = r_data_sgen.res_q_.coeff(my_id);
-                            res_v_kv = r_data_sgen.res_v_.coeff(my_id);
-                            res_theta_deg = r_data_sgen.res_theta_.coeff(my_id);
-                        }
                     }
                 }
         };
@@ -129,14 +85,14 @@ class SGenContainer: public OneSideContainer
 
     public:
     typedef std::tuple<
-       OneSideContainer::StateRes,
+       OneSideContainer_PQ::StateRes,
        std::vector<real_type>, // p_min
        std::vector<real_type>, //  p_max
        std::vector<real_type>, //  q_min
        std::vector<real_type> //  q_max
        >  StateRes;
 
-    SGenContainer():OneSideContainer() {};
+    SGenContainer():OneSideContainer_PQ() {};
 
     // pickle (python)
     SGenContainer::StateRes get_state() const;
@@ -164,8 +120,8 @@ class SGenContainer: public OneSideContainer
                                   bool ac)
                                   {
 
-                                        set_osc_res_p();
-                                        set_osc_res_q(ac);
+                                        set_osc_pq_res_p();
+                                        set_osc_pq_res_q(ac);
                                   }
 
     protected:

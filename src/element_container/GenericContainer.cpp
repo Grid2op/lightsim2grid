@@ -58,7 +58,12 @@ void GenericContainer::_generic_deactivate(int global_bus_id, std::vector<bool> 
     status[global_bus_id] = false;   //TODO why it's needed to do that again
 }
 
-void GenericContainer::_generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus){
+void GenericContainer::_generic_change_bus(
+    int el_id,
+    int new_bus_me_id,
+    Eigen::VectorXi & el_bus_ids,
+    SolverControl & solver_control,
+    int nb_max_bus){
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
     _check_in_range(static_cast<Eigen::Index>(el_id),
@@ -66,14 +71,14 @@ void GenericContainer::_generic_change_bus(int el_id, int new_bus_me_id, Eigen::
                     "_change_bus");
 
     // throw error: bus id does not exist
-    if(new_bus_me_id >= nb_bus)
+    if(new_bus_me_id >= nb_max_bus)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
         exc_ << new_bus_me_id;
         exc_ << " There are only ";
-        exc_ << nb_bus;
+        exc_ << nb_max_bus;
         exc_ << " distinct buses on this grid.";
         throw std::out_of_range(exc_.str());
     }

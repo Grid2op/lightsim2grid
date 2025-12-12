@@ -730,6 +730,22 @@ const std::string DocIterator::name = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocIterator::sub_id = R"mydelimiter(
+    Get the substation id of the element.
+
+    .. warning::
+        Substation ids are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
+
+)mydelimiter";
+
+const std::string DocIterator::pos_topo_vect = R"mydelimiter(
+    Get the position of the element in the grid2op "topo_vect" vector.
+
+    .. warning::
+        Position in the "topo vector" are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
+
+)mydelimiter";
+
 const std::string DocIterator::connected = R"mydelimiter(
     Get the status (True = connected, False = disconnected) of each element of a :class:`lightsim2grid.gridmodel.GridModel`
 

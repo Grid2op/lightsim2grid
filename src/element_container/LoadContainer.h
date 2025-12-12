@@ -16,7 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-#include "OneSideContainer.h"
+#include "OneSideContainer_PQ.h"
 
 /**
 This class is a container for all loads on the grid.
@@ -31,63 +31,15 @@ NOTE: this class is also used for the storage units! So storage units are modele
 which entails that negative storage: the unit is discharging, power is injected in the grid,
 positive storage: the unit is charging, power is taken from the grid.
 **/
-class LoadContainer : public OneSideContainer
+class LoadContainer : public OneSideContainer_PQ
 {
     // iterators part
     public:
-        class LoadInfo
+        class LoadInfo : public OneSidePQInfo
         {
             public:
-                // members
-                // TODO add some const here (value should not be changed !) !!!
-                int id;  // id of the generator
-                std::string name;
-                bool connected;
-                int bus_id;
-
-                real_type target_p_mw;
-                real_type target_q_mvar;
-                bool has_res;
-                real_type res_p_mw;
-                real_type res_q_mvar;
-                real_type res_v_kv;
-                real_type res_theta_deg;
-
-                LoadInfo(const LoadContainer & r_data_load, int my_id):
-                id(-1),
-                name(""),
-                connected(false),
-                bus_id(_deactivated_bus_id),
-                target_p_mw(0.),
-                target_q_mvar(0.),
-                has_res(false),
-                res_p_mw(0.),
-                res_q_mvar(0.),
-                res_v_kv(0.),
-                res_theta_deg(0.)
-                {
-                    if((my_id >= 0) & (my_id < r_data_load.nb()))
-                    {
-                        id = my_id;
-                        if(r_data_load.names_.size()){
-                            name = r_data_load.names_[my_id];
-                        }
-                        connected = r_data_load.status_[my_id];
-                        if(connected) bus_id = r_data_load.bus_id_[my_id];
-
-                        target_p_mw = r_data_load.p_mw_.coeff(my_id);
-                        target_q_mvar = r_data_load.q_mvar_.coeff(my_id);
-
-                        has_res = r_data_load.res_p_.size() > 0;
-                        if(has_res)
-                        {
-                            res_p_mw = r_data_load.res_p_.coeff(my_id);
-                            res_q_mvar = r_data_load.res_q_.coeff(my_id);
-                            res_v_kv = r_data_load.res_v_.coeff(my_id);
-                            res_theta_deg = r_data_load.res_theta_.coeff(my_id);
-                        }
-                    }
-                }
+                LoadInfo(const LoadContainer & r_data_load, int my_id): 
+                    OneSidePQInfo(r_data_load, my_id) {}
         };
         typedef LoadInfo DataInfo;
 
@@ -106,7 +58,7 @@ class LoadContainer : public OneSideContainer
             }
             if(id >= nb())
             {
-                throw std::range_error("Generator out of bound. Not enough loads on the grid.");
+                throw std::range_error("Load out of bound. Not enough loads on the grid.");
             }
             return LoadInfo(*this, id);
         }
@@ -114,10 +66,10 @@ class LoadContainer : public OneSideContainer
     // regular implementation
     public:
     typedef std::tuple<
-       OneSideContainer::StateRes  // state of the base class 
+       OneSideContainer_PQ::StateRes  // state of the base class 
        >  StateRes;
 
-    LoadContainer():OneSideContainer(){};
+    LoadContainer():OneSideContainer_PQ(){};
 
     // pickle (python)
     LoadContainer::StateRes get_state() const;
@@ -128,10 +80,10 @@ class LoadContainer : public OneSideContainer
               const Eigen::VectorXi & load_bus_id
               )
     {
-        init_osc(load_p_mw,
-                 load_q_mvar,
-                 load_bus_id,
-                 "loads");
+        init_osc_pq(load_p_mw,
+                    load_q_mvar,
+                    load_bus_id,
+                    "loads");
         reset_results();
     }
 
@@ -147,8 +99,8 @@ class LoadContainer : public OneSideContainer
                                   bool ac)
                                   {
 
-                                        set_osc_res_p();
-                                        set_osc_res_q(ac);
+                                        set_osc_pq_res_p();
+                                        set_osc_pq_res_q(ac);
                                   }
 };
 

@@ -70,6 +70,8 @@ struct DocIterator
     static const std::string only_avail_res;
     static const std::string id;
     static const std::string name;
+    static const std::string sub_id;
+    static const std::string pos_topo_vect;
     static const std::string connected;
     static const std::string bus_id;
     static const std::string target_p_mw;

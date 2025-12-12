@@ -268,6 +268,24 @@ class LineContainer : public GenericContainer
     // for consistency with trafo, when used for example in BaseMultiplePowerflow...
     Eigen::Ref<const RealVect> dc_x_tau_shift() const {return RealVect();}
 
+    void set_or_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        or_pos_topo_vect_.array() = pos_topo_vect;
+    }
+    void set_ex_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        ex_pos_topo_vect_.array() = pos_topo_vect;
+    }
+    
+    void set_or_subid(Eigen::Ref<const IntVect> subid)
+    {
+        or_to_subid_.array() = subid;
+    }
+    void set_ex_subid(Eigen::Ref<const IntVect> subid)
+    {
+        ex_to_subid_.array() = subid;
+    }
+
     protected:
         void _update_model_coeffs();
 
@@ -277,6 +295,12 @@ class LineContainer : public GenericContainer
         RealVect powerlines_x_;
         CplxVect powerlines_h_or_;
         CplxVect powerlines_h_ex_;
+
+        // specific grid2op
+        IntVect or_pos_topo_vect_;
+        IntVect ex_pos_topo_vect_;
+        IntVect or_to_subid_;
+        IntVect ex_to_subid_;
 
         // input data
         Eigen::VectorXi bus_or_id_;

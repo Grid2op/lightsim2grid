@@ -52,15 +52,98 @@ class OneSideContainer : public GenericContainer
     // TODO powerflow equations are located (when i update the Y matrix)
 
     // regular implementation
+    protected:
+
+        class OneSideInfo
+        {
+            public:
+                // members
+                // TODO add some const here (value should not be changed !) !!!
+                int id;  // id of the generator
+                std::string name;
+                int sub_id;
+                int pos_topo_vect;
+
+                bool connected;
+                int bus_id;
+
+                bool has_res;
+                real_type res_p_mw;
+                real_type res_q_mvar;
+                real_type res_v_kv;
+                real_type res_theta_deg;
+
+                OneSideInfo(const OneSideContainer & r_data_one_side, int my_id):
+                id(-1),
+                name(""),
+                sub_id(-1),
+                pos_topo_vect(-1),
+                connected(false),
+                bus_id(_deactivated_bus_id),
+                has_res(false),
+                res_p_mw(0.),
+                res_q_mvar(0.),
+                res_v_kv(0.),
+                res_theta_deg(0.)
+                {
+                    if((my_id >= 0) & (my_id < r_data_one_side.nb()))
+                    {
+                        id = my_id;
+                        if(r_data_one_side.names_.size()){
+                            name = r_data_one_side.names_[my_id];
+                        }
+                        if(r_data_one_side.subid_.size()){
+                            sub_id = r_data_one_side.subid_(my_id);
+                        }
+                        if(r_data_one_side.pos_topo_vect_.size()){
+                            pos_topo_vect = r_data_one_side.pos_topo_vect_(my_id);
+                        }
+                        connected = r_data_one_side.status_[my_id];
+                        if(connected) bus_id = r_data_one_side.bus_id_[my_id];
+
+                        has_res = r_data_one_side.res_p_.size() > 0;
+                        if(has_res)
+                        {
+                            res_p_mw = r_data_one_side.res_p_.coeff(my_id);
+                            res_q_mvar = r_data_one_side.res_q_.coeff(my_id);
+                            res_v_kv = r_data_one_side.res_v_.coeff(my_id);
+                            res_theta_deg = r_data_one_side.res_theta_.coeff(my_id);
+                        }
+                    }
+                }
+        };
+
+    //////////////////////
+    // // iterator
+    // private:
+    //     typedef GenericContainerConstIterator<LoadContainer> LoadContainerConstIterator;
+
+    // public:
+    //     typedef LoadContainerConstIterator const_iterator_type;
+    //     const_iterator_type begin() const {return LoadContainerConstIterator(this, 0); }
+    //     const_iterator_type end() const {return LoadContainerConstIterator(this, nb()); }
+    //     LoadInfo operator[](int id) const
+    //     {
+    //         if(id < 0)
+    //         {
+    //             throw std::range_error("You cannot ask for a negative load id.");
+    //         }
+    //         if(id >= nb())
+    //         {
+    //             throw std::range_error("Load out of bound. Not enough loads on the grid.");
+    //         }
+    //         return LoadInfo(*this, id);
+    //     }
+    ////////////////////////
+
     public:
     OneSideContainer() {};
 
     // public generic API
-    int nb() const { return static_cast<int>(p_mw_.size()); }
+    int nb() const { return static_cast<int>(bus_id_.size()); }
     int get_bus(int el_id) {return _get_bus(el_id, status_, bus_id_);}
     Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
 
-    Eigen::Ref<const RealVect> get_target_p() const {return p_mw_;}
     tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
     tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
     
@@ -106,18 +189,6 @@ class OneSideContainer : public GenericContainer
         }
     }    
 
-    // base function that can be called
-    void gen_p_per_bus(std::vector<real_type> & res) const
-    {
-        const int nb_gen = nb();
-        for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
-        {
-            if(!status_[sgen_id]) continue;
-            const auto my_bus = bus_id_(sgen_id);
-            res[my_bus] += p_mw_(sgen_id);
-        }
-    }
-
     void deactivate(int el_id, SolverControl & solver_control) {
         if(status_[el_id]){
             solver_control.tell_recompute_sbus();
@@ -132,52 +203,9 @@ class OneSideContainer : public GenericContainer
         this->_reactivate(el_id, solver_control);
         _generic_reactivate(el_id, status_);
     }
-    void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-        this->_change_bus(load_id, new_bus_id, solver_control, nb_bus);
-        _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_bus);
-    }
-    void change_p(int el_id, real_type new_p, SolverControl & solver_control){
-        bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-        if(!my_status)
-        {
-            std::ostringstream exc_;
-            exc_ << "OneSideContainer::change_p: Impossible to change the active value of a disconnected element (check load id ";
-            exc_ << el_id;
-            exc_ << ")";
-            throw std::runtime_error(exc_.str());
-        }
-        change_p_nothrow(el_id, new_p, solver_control);
-    }
-    void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
-    {
-        bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
-        this->_change_p(load_id, new_p, my_status, solver_control);
-        if (p_mw_(load_id) != new_p) {
-            solver_control.tell_recompute_sbus();
-            p_mw_(load_id) = new_p;
-        }
-    }
-    void change_q(int el_id, real_type new_q, SolverControl & solver_control)
-    {
-        bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-        if(!my_status)
-        {
-            std::ostringstream exc_;
-            exc_ << "OneSideContainer::change_q: Impossible to change the reactive value of a disconnected element (check load id ";
-            exc_ << el_id;
-            exc_ << ")";
-            throw std::runtime_error(exc_.str());
-        }
-        change_q_nothrow(el_id, new_q, solver_control);
-    }
-    void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
-    {
-        bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
-        this->_change_q(load_id, new_q, my_status, solver_control);
-        if (q_mvar_(load_id) != new_q) {
-            solver_control.tell_recompute_sbus();
-            q_mvar_(load_id) = new_q;
-        }
+    void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_max_bus) {
+        this->_change_bus(load_id, new_bus_id, solver_control, nb_max_bus);
+        _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_max_bus);
     }
 
     void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -186,30 +214,108 @@ class OneSideContainer : public GenericContainer
                          const std::vector<int> & id_grid_to_solver,
                          const RealVect & bus_vn_kv,
                          real_type sn_mva,
-                         bool ac);
+                         bool ac)
+    {
+        const int nb_els = nb();
+        v_kv_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
+        v_deg_from_va(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
+        this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+    }
 
     // can be overriden, but has a default behaviour
     virtual void reset_results(){
         reset_osc_results();
     }
 
+    void set_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        pos_topo_vect_.array() = pos_topo_vect;
+    }
+    
+    void set_subid(Eigen::Ref<const IntVect> subid)
+    {
+        subid_.array() = subid;
+    }
+
+    void update_topo(
+        Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+        Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+        SolverControl & solver_control,
+        Substation & substations
+    )
+    {
+        for(int el_id = 0; el_id < pos_topo_vect_.rows(); ++el_id)
+        {
+            int el_pos = pos_topo_vect_(el_id);
+            if(! has_changed(el_pos)) continue;
+            int new_bus = new_values(el_pos);
+            if(new_bus < -2){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
+                exc_ << substations.nmax_busbar_per_sub();
+                exc_ << " you provided ";
+                exc_ << new_bus;
+                exc_ << ".";
+                throw std::out_of_range(exc_.str());
+            }
+            if(new_bus > substations.nmax_busbar_per_sub()){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
+                exc_ << substations.nmax_busbar_per_sub();
+                exc_ << " you provided ";
+                exc_ << new_bus;
+                exc_ << ".";
+                throw std::out_of_range(exc_.str());
+            }
+            
+            if(new_bus > 0){
+                // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                int sub_id = subid_(el_id);
+                int new_bus_backend = sub_id + (new_bus - 1) * substations.nb_sub();
+                // bus_status_[new_bus_backend] = true;
+                substations.reconnect_bus(new_bus_backend);
+                reactivate(el_id, solver_control); // eg reactivate_load(load_id);
+                change_bus(el_id, new_bus_backend, solver_control, substations.nb_bus()); // eg change_bus_load(load_id, new_bus_backend);
+            } else{
+                // new bus is negative, we deactivate it
+                deactivate(el_id, solver_control);// eg deactivate_load(load_id);
+                // bus_status_ is set to "false" in GridModel.update_topo
+                // and a bus is activated if (and only if) one element is connected to it.
+                // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+            }
+        }
+    }
+
     protected:
 
         typedef std::tuple<
         std::vector<std::string>,
-        std::vector<real_type>, // p_mw
-        std::vector<real_type>, // q_mvar
         std::vector<int>, // bus_id
-        std::vector<bool> // status
+        std::vector<bool>, // status
+        bool,  // has subid info
+        std::vector<int>,  // sub_id
+        bool,  // has pos_topo_vect info
+        std::vector<int>  // pos_topo_vect
         >  StateRes;
 
         OneSideContainer::StateRes get_osc_state() const  // osc: one side element
         {
-            std::vector<real_type> p_mw(p_mw_.begin(), p_mw_.end());
-            std::vector<real_type> q_mvar(q_mvar_.begin(), q_mvar_.end());
             std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
             std::vector<bool> status = status_;
-            OneSideContainer::StateRes res(names_, p_mw, q_mvar, bus_id, status);
+            bool has_subid_info = subid_.size();
+            std::vector<int> subid(subid_.begin(), subid_.end());
+            bool has_topo_vect_info = pos_topo_vect_.size();
+            std::vector<int> pos_topo_vect(pos_topo_vect_.begin(), pos_topo_vect_.end());
+            OneSideContainer::StateRes res(
+                names_,
+                bus_id,
+                status,
+                has_subid_info,
+                subid,
+                has_topo_vect_info,
+                pos_topo_vect);
             return res;
         }
 
@@ -217,46 +323,45 @@ class OneSideContainer : public GenericContainer
         {
             // read data
             names_ = std::get<0>(my_state);
-            std::vector<real_type> & p_mw = std::get<1>(my_state);
-            std::vector<real_type> & q_mvar = std::get<2>(my_state);
-            std::vector<int> & bus_id = std::get<3>(my_state);
-            std::vector<bool> & status = std::get<4>(my_state);
+            std::vector<int> & bus_id = std::get<1>(my_state);
+            std::vector<bool> & status = std::get<2>(my_state);
+            bool has_subid_info = std::get<3>(my_state);
+            bool has_topo_vect_info = std::get<5>(my_state);
 
             // check sizes
-            const auto size = p_mw.size();
+            size_t size = bus_id.size();
             if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
-            check_size(p_mw, size, "p_mw");
-            check_size(q_mvar, size, "q_mvar");
             check_size(bus_id, size, "bus_id");
             check_size(status, size, "status");
+            if(has_subid_info)
+            {
+                const std::vector<int> & subid = std::get<4>(my_state);
+                check_size(subid, size, "subid");
+                subid_ = IntVect::Map(&subid[0], subid.size());
+            }
+            if(has_topo_vect_info)
+            {
+                const std::vector<int> & topo_vect = std::get<6>(my_state);
+                check_size(topo_vect, size, "topo_vect");
+                pos_topo_vect_ = IntVect::Map(&topo_vect[0], topo_vect.size());
+            }
 
             // input data
-            p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
-            q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
             bus_id_ = Eigen::VectorXi::Map(&bus_id[0], bus_id.size());
             status_ = status;
         }
         
-        void init_osc(const RealVect & els_p,
-                    const RealVect & els_q,
-                    const Eigen::VectorXi & els_bus_id,
-                    const std::string & name_el
-                    )  // osc: one side element
+        void init_osc(
+            const Eigen::VectorXi & els_bus_id,
+            const std::string & name_el
+        )  // osc: one side element
         {
-            int size = static_cast<int>(els_p.size());
-            check_size(els_p, size, name_el + "_p");
-            check_size(els_q, size, name_el + "_q");
-            check_size(els_bus_id, size, name_el + "_bus_id");
-
-            p_mw_ = els_p;
-            q_mvar_ = els_q;
             bus_id_ = els_bus_id;
-            status_ = std::vector<bool>(els_p.size(), true);
+            status_ = std::vector<bool>(els_bus_id.size(), true);
         }
 
         void set_osc_res_p(){
             const int nb_els = nb();
-            res_p_ = p_mw_;
             for(int el_id = 0; el_id < nb_els; ++el_id){
                 if(!status_[el_id]) res_p_[el_id] = 0.;
             }
@@ -265,7 +370,6 @@ class OneSideContainer : public GenericContainer
         void set_osc_res_q(bool ac){
             const int nb_els = nb();
             if(ac){
-                res_q_ = q_mvar_;
                 for(int el_id = 0; el_id < nb_els; ++el_id){
                     if(!status_[el_id]) res_q_[el_id] = 0.;
                 }
@@ -276,7 +380,14 @@ class OneSideContainer : public GenericContainer
             }
         }
 
-        void reset_osc_results();
+        void reset_osc_results()
+        {
+            res_p_ = RealVect(nb());  // in MW
+            res_q_ =  RealVect(nb());  // in MVar
+            res_v_ = RealVect(nb());  // in kV
+            res_theta_ = RealVect(nb());  // in deg
+            this->_reset_results();
+        }
 
     protected:
         virtual void _reset_results() {};
@@ -297,9 +408,11 @@ class OneSideContainer : public GenericContainer
     protected:
         // physical properties
 
+        // data for grid2op compat
+        IntVect subid_;
+        IntVect pos_topo_vect_;
+
         // input data
-        RealVect p_mw_;
-        RealVect q_mvar_;
         Eigen::VectorXi bus_id_;
         std::vector<bool> status_;
 

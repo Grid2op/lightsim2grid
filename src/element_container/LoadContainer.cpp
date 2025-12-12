@@ -12,14 +12,14 @@
 
 LoadContainer::StateRes LoadContainer::get_state() const
 {
-    const auto tmp = OneSideContainer::get_osc_state();  // osc : one side container
+    const auto tmp = get_osc_pq_state();  // osc : one side container
     LoadContainer::StateRes res(tmp);
     return res;
 }
 
 void LoadContainer::set_state(LoadContainer::StateRes & my_state)
 {
-    OneSideContainer::set_osc_state(std::get<0>(my_state));  // osc : one side container
+    set_osc_pq_state(std::get<0>(my_state));  // osc : one side container
     reset_results();
 }
 
@@ -43,8 +43,8 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-        tmp = static_cast<cplx_type>(p_mw_(load_id));
-        tmp += my_i * q_mvar_(load_id);
+        tmp = static_cast<cplx_type>(target_p_mw_(load_id));
+        tmp += my_i * target_q_mvar_(load_id);
         Sbus.coeffRef(bus_id_solver) -= tmp;
     }
 }

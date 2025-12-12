@@ -56,21 +56,7 @@ GridModel::GridModel(const GridModel & other)
 
     // copy the attributes specific grid2op (speed optimization)
     n_sub_ = other.n_sub_;
-    load_pos_topo_vect_ = other.load_pos_topo_vect_;
-    gen_pos_topo_vect_ = other.gen_pos_topo_vect_;
-    line_or_pos_topo_vect_ = other.line_or_pos_topo_vect_;
-    line_ex_pos_topo_vect_ = other.line_ex_pos_topo_vect_;
-    trafo_hv_pos_topo_vect_ = other.trafo_hv_pos_topo_vect_;
-    trafo_lv_pos_topo_vect_ = other.trafo_lv_pos_topo_vect_;
-    storage_pos_topo_vect_ = other.storage_pos_topo_vect_;
-
-    load_to_subid_ = other.load_to_subid_;
-    gen_to_subid_ = other.gen_to_subid_;
-    line_or_to_subid_ = other.line_or_to_subid_;
-    line_ex_to_subid_ = other.line_ex_to_subid_;
-    trafo_hv_to_subid_ = other.trafo_hv_to_subid_;
-    trafo_lv_to_subid_ = other.trafo_lv_to_subid_;
-    storage_to_subid_ = other.storage_to_subid_;
+    max_nb_bus_per_sub_ = other.max_nb_bus_per_sub_;
 
     // assign the right solver
     _solver.change_solver(other._solver.get_type());
@@ -101,21 +87,21 @@ GridModel::StateRes GridModel::get_state() const
     auto res_storage = storages_.get_state();
     auto res_dc_line = dc_lines_.get_state();
 
-    std::vector<int> load_pos_topo_vect(load_pos_topo_vect_.begin(), load_pos_topo_vect_.end());
-    std::vector<int> gen_pos_topo_vect(gen_pos_topo_vect_.begin(), gen_pos_topo_vect_.end());
-    std::vector<int> line_or_pos_topo_vect(line_or_pos_topo_vect_.begin(), line_or_pos_topo_vect_.end());
-    std::vector<int> line_ex_pos_topo_vect(line_ex_pos_topo_vect_.begin(), line_ex_pos_topo_vect_.end());
-    std::vector<int> trafo_hv_pos_topo_vect(trafo_hv_pos_topo_vect_.begin(), trafo_hv_pos_topo_vect_.end());
-    std::vector<int> trafo_lv_pos_topo_vect(trafo_lv_pos_topo_vect_.begin(), trafo_lv_pos_topo_vect_.end());
-    std::vector<int> storage_pos_topo_vect(storage_pos_topo_vect_.begin(), storage_pos_topo_vect_.end());
+    // std::vector<int> load_pos_topo_vect(load_pos_topo_vect_.begin(), load_pos_topo_vect_.end());
+    // std::vector<int> gen_pos_topo_vect(gen_pos_topo_vect_.begin(), gen_pos_topo_vect_.end());
+    // std::vector<int> line_or_pos_topo_vect(line_or_pos_topo_vect_.begin(), line_or_pos_topo_vect_.end());
+    // std::vector<int> line_ex_pos_topo_vect(line_ex_pos_topo_vect_.begin(), line_ex_pos_topo_vect_.end());
+    // std::vector<int> trafo_hv_pos_topo_vect(trafo_hv_pos_topo_vect_.begin(), trafo_hv_pos_topo_vect_.end());
+    // std::vector<int> trafo_lv_pos_topo_vect(trafo_lv_pos_topo_vect_.begin(), trafo_lv_pos_topo_vect_.end());
+    // std::vector<int> storage_pos_topo_vect(storage_pos_topo_vect_.begin(), storage_pos_topo_vect_.end());
 
-    std::vector<int> load_to_subid(load_to_subid_.begin(), load_to_subid_.end());
-    std::vector<int> gen_to_subid(gen_to_subid_.begin(), gen_to_subid_.end());
-    std::vector<int> line_or_to_subid(line_or_to_subid_.begin(), line_or_to_subid_.end());
-    std::vector<int> line_ex_to_subid(line_ex_to_subid_.begin(), line_ex_to_subid_.end());
-    std::vector<int> trafo_hv_to_subid(trafo_hv_to_subid_.begin(), trafo_hv_to_subid_.end());
-    std::vector<int> trafo_lv_to_subid(trafo_lv_to_subid_.begin(), trafo_lv_to_subid_.end());
-    std::vector<int> storage_to_subid(storage_to_subid_.begin(), storage_to_subid_.end());
+    // std::vector<int> load_to_subid(load_to_subid_.begin(), load_to_subid_.end());
+    // std::vector<int> gen_to_subid(gen_to_subid_.begin(), gen_to_subid_.end());
+    // std::vector<int> line_or_to_subid(line_or_to_subid_.begin(), line_or_to_subid_.end());
+    // std::vector<int> line_ex_to_subid(line_ex_to_subid_.begin(), line_ex_to_subid_.end());
+    // std::vector<int> trafo_hv_to_subid(trafo_hv_to_subid_.begin(), trafo_hv_to_subid_.end());
+    // std::vector<int> trafo_lv_to_subid(trafo_lv_to_subid_.begin(), trafo_lv_to_subid_.end());
+    // std::vector<int> storage_to_subid(storage_to_subid_.begin(), storage_to_subid_.end());
 
     GridModel::StateRes res(version_major,
                             version_medium,
@@ -135,21 +121,21 @@ GridModel::StateRes GridModel::get_state() const
                             res_storage,
                             res_dc_line,
                             n_sub_,
-                            max_nb_bus_per_sub_,
-                            load_pos_topo_vect,
-                            gen_pos_topo_vect,
-                            line_or_pos_topo_vect,
-                            line_ex_pos_topo_vect,
-                            trafo_hv_pos_topo_vect,
-                            trafo_lv_pos_topo_vect,
-                            storage_pos_topo_vect,
-                            load_to_subid,
-                            gen_to_subid,
-                            line_or_to_subid,
-                            line_ex_to_subid,
-                            trafo_hv_to_subid,
-                            trafo_lv_to_subid,
-                            storage_to_subid
+                            max_nb_bus_per_sub_ // ,
+                            // load_pos_topo_vect,
+                            // gen_pos_topo_vect,
+                            // line_or_pos_topo_vect,
+                            // line_ex_pos_topo_vect,
+                            // trafo_hv_pos_topo_vect,
+                            // trafo_lv_pos_topo_vect,
+                            // storage_pos_topo_vect,
+                            // load_to_subid,
+                            // gen_to_subid,
+                            // line_or_to_subid,
+                            // line_ex_to_subid,
+                            // trafo_hv_to_subid,
+                            // trafo_lv_to_subid,
+                            // storage_to_subid
                             );
     return res;
 };
@@ -202,35 +188,35 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // grid2op specific
     n_sub_ = std::get<15>(my_state);
     max_nb_bus_per_sub_ = std::get<16>(my_state);
-    const std::vector<int> & load_pos_topo_vect = std::get<17>(my_state);
-    const std::vector<int> & gen_pos_topo_vect = std::get<18>(my_state);
-    const std::vector<int> & line_or_pos_topo_vect = std::get<19>(my_state);
-    const std::vector<int> & line_ex_pos_topo_vect = std::get<20>(my_state);
-    const std::vector<int> & trafo_hv_pos_topo_vect = std::get<21>(my_state);
-    const std::vector<int> & trafo_lv_pos_topo_vect = std::get<22>(my_state);
-    const std::vector<int> & storage_pos_topo_vect = std::get<23>(my_state);
-    const std::vector<int> & load_to_subid = std::get<24>(my_state);
-    const std::vector<int> & gen_to_subid = std::get<25>(my_state);
-    const std::vector<int> & line_or_to_subid = std::get<26>(my_state);
-    const std::vector<int> & line_ex_to_subid = std::get<27>(my_state);
-    const std::vector<int> & trafo_hv_to_subid = std::get<28>(my_state);
-    const std::vector<int> & trafo_lv_to_subid = std::get<29>(my_state);
-    const std::vector<int> & storage_to_subid = std::get<30>(my_state);
+    // const std::vector<int> & load_pos_topo_vect = std::get<17>(my_state);
+    // const std::vector<int> & gen_pos_topo_vect = std::get<18>(my_state);
+    // const std::vector<int> & line_or_pos_topo_vect = std::get<19>(my_state);
+    // const std::vector<int> & line_ex_pos_topo_vect = std::get<20>(my_state);
+    // const std::vector<int> & trafo_hv_pos_topo_vect = std::get<21>(my_state);
+    // const std::vector<int> & trafo_lv_pos_topo_vect = std::get<22>(my_state);
+    // const std::vector<int> & storage_pos_topo_vect = std::get<23>(my_state);
+    // const std::vector<int> & load_to_subid = std::get<24>(my_state);
+    // const std::vector<int> & gen_to_subid = std::get<25>(my_state);
+    // const std::vector<int> & line_or_to_subid = std::get<26>(my_state);
+    // const std::vector<int> & line_ex_to_subid = std::get<27>(my_state);
+    // const std::vector<int> & trafo_hv_to_subid = std::get<28>(my_state);
+    // const std::vector<int> & trafo_lv_to_subid = std::get<29>(my_state);
+    // const std::vector<int> & storage_to_subid = std::get<30>(my_state);
 
-    load_pos_topo_vect_ = IntVectRowMaj::Map(load_pos_topo_vect.data(), load_pos_topo_vect.size());
-    gen_pos_topo_vect_ = IntVectRowMaj::Map(gen_pos_topo_vect.data(), gen_pos_topo_vect.size());
-    line_or_pos_topo_vect_ = IntVectRowMaj::Map(line_or_pos_topo_vect.data(), line_or_pos_topo_vect.size());
-    line_ex_pos_topo_vect_ = IntVectRowMaj::Map(line_ex_pos_topo_vect.data(), line_ex_pos_topo_vect.size());
-    trafo_hv_pos_topo_vect_ = IntVectRowMaj::Map(trafo_hv_pos_topo_vect.data(), trafo_hv_pos_topo_vect.size());
-    trafo_lv_pos_topo_vect_ = IntVectRowMaj::Map(trafo_lv_pos_topo_vect.data(), trafo_lv_pos_topo_vect.size());
-    storage_pos_topo_vect_ = IntVectRowMaj::Map(storage_pos_topo_vect.data(), storage_pos_topo_vect.size());
-    load_to_subid_ = IntVectRowMaj::Map(load_to_subid.data(), load_to_subid.size());
-    gen_to_subid_ = IntVectRowMaj::Map(gen_to_subid.data(), gen_to_subid.size());
-    line_or_to_subid_ = IntVectRowMaj::Map(line_or_to_subid.data(), line_or_to_subid.size());
-    line_ex_to_subid_ = IntVectRowMaj::Map(line_ex_to_subid.data(), line_ex_to_subid.size());
-    trafo_hv_to_subid_ = IntVectRowMaj::Map(trafo_hv_to_subid.data(), trafo_hv_to_subid.size());
-    trafo_lv_to_subid_ = IntVectRowMaj::Map(trafo_lv_to_subid.data(), trafo_lv_to_subid.size());
-    storage_to_subid_ = IntVectRowMaj::Map(storage_to_subid.data(), storage_to_subid.size());
+    // load_pos_topo_vect_ = IntVectRowMaj::Map(load_pos_topo_vect.data(), load_pos_topo_vect.size());
+    // gen_pos_topo_vect_ = IntVectRowMaj::Map(gen_pos_topo_vect.data(), gen_pos_topo_vect.size());
+    // line_or_pos_topo_vect_ = IntVectRowMaj::Map(line_or_pos_topo_vect.data(), line_or_pos_topo_vect.size());
+    // line_ex_pos_topo_vect_ = IntVectRowMaj::Map(line_ex_pos_topo_vect.data(), line_ex_pos_topo_vect.size());
+    // trafo_hv_pos_topo_vect_ = IntVectRowMaj::Map(trafo_hv_pos_topo_vect.data(), trafo_hv_pos_topo_vect.size());
+    // trafo_lv_pos_topo_vect_ = IntVectRowMaj::Map(trafo_lv_pos_topo_vect.data(), trafo_lv_pos_topo_vect.size());
+    // storage_pos_topo_vect_ = IntVectRowMaj::Map(storage_pos_topo_vect.data(), storage_pos_topo_vect.size());
+    // load_to_subid_ = IntVectRowMaj::Map(load_to_subid.data(), load_to_subid.size());
+    // gen_to_subid_ = IntVectRowMaj::Map(gen_to_subid.data(), gen_to_subid.size());
+    // line_or_to_subid_ = IntVectRowMaj::Map(line_or_to_subid.data(), line_or_to_subid.size());
+    // line_ex_to_subid_ = IntVectRowMaj::Map(line_ex_to_subid.data(), line_ex_to_subid.size());
+    // trafo_hv_to_subid_ = IntVectRowMaj::Map(trafo_hv_to_subid.data(), trafo_hv_to_subid.size());
+    // trafo_lv_to_subid_ = IntVectRowMaj::Map(trafo_lv_to_subid.data(), trafo_lv_to_subid.size());
+    // storage_to_subid_ = IntVectRowMaj::Map(storage_to_subid.data(), storage_to_subid.size());
 
     // assign it to this instance
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
@@ -587,6 +573,8 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (is_ac && (solver_control.need_reset_solver() || 
                   solver_control.has_dimension_changed() || 
                   solver_control.need_recompute_sbus() ||  // TODO do we need it ?
+                  solver_control.has_slack_participate_changed() || 
+                  solver_control.has_pv_changed() || 
                   solver_control.has_pq_changed())  // TODO do we need it ?
         ){
         int nb_bus_total = static_cast<int>(substations_.nb_bus());
@@ -600,6 +588,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
     if (solver_control.need_reset_solver() || 
         solver_control.has_dimension_changed() ||
         solver_control.has_slack_participate_changed() || 
+        solver_control.has_pv_changed() || 
         solver_control.has_pq_changed() ||
         solver_control.need_recompute_sbus()) {
             fillSbus_me(Sbus, is_ac, id_me_to_solver);
@@ -1085,54 +1074,51 @@ void GridModel::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 
     update_continuous_values(has_changed, new_values, &GridModel::change_p_storage);
 }
 
-void GridModel::update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                            Eigen::Ref<Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
+void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                            Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_topo_generic(has_changed, new_values,
-                        load_pos_topo_vect_, load_to_subid_,
-                        &GridModel::reactivate_load,
-                        &GridModel::change_bus_load,
-                        &GridModel::deactivate_load
-                        );
-    update_topo_generic(has_changed, new_values,
-                        gen_pos_topo_vect_, gen_to_subid_,
-                        &GridModel::reactivate_gen,
-                        &GridModel::change_bus_gen,
-                        &GridModel::deactivate_gen
-                        );
-    update_topo_generic(has_changed, new_values,
-                        storage_pos_topo_vect_, storage_to_subid_,
-                        &GridModel::reactivate_storage,
-                        &GridModel::change_bus_storage,
-                        &GridModel::deactivate_storage
-                        );
+    loads_.update_topo(has_changed, new_values, solver_control_, substations_);
+    generators_.update_topo(has_changed, new_values, solver_control_, substations_);
+    storages_.update_topo(has_changed, new_values, solver_control_, substations_);
+    
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_load,
+    //                     &GridModel::change_bus_load,
+    //                     &GridModel::deactivate_load
+    //                     );
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_gen,
+    //                     &GridModel::change_bus_gen,
+    //                     &GridModel::deactivate_gen
+    //                     );
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_storage,
+    //                     &GridModel::change_bus_storage,
+    //                     &GridModel::deactivate_storage
+    //                     );
 
     // NB we suppose that if a powerline (or a trafo) is disconnected, then both its ends are
     // and same for trafo, obviously
-    update_topo_generic(has_changed, new_values,
-                        line_or_pos_topo_vect_, line_or_to_subid_,
-                        &GridModel::reactivate_powerline,
-                        &GridModel::change_bus_powerline_or,
-                        &GridModel::deactivate_powerline
-                        );
-    update_topo_generic(has_changed, new_values,
-                        line_ex_pos_topo_vect_, line_ex_to_subid_,
-                        &GridModel::reactivate_powerline,
-                        &GridModel::change_bus_powerline_ex,
-                        &GridModel::deactivate_powerline
-                        );
-    update_topo_generic(has_changed, new_values,
-                        trafo_hv_pos_topo_vect_, trafo_hv_to_subid_,
-                        &GridModel::reactivate_trafo,
-                        &GridModel::change_bus_trafo_hv,
-                        &GridModel::deactivate_trafo
-                        );
-    update_topo_generic(has_changed, new_values,
-                        trafo_lv_pos_topo_vect_, trafo_lv_to_subid_,
-                        &GridModel::reactivate_trafo,
-                        &GridModel::change_bus_trafo_lv,
-                        &GridModel::deactivate_trafo
-                        );
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_powerline,
+    //                     &GridModel::change_bus_powerline_or,
+    //                     &GridModel::deactivate_powerline
+    //                     );
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_powerline,
+    //                     &GridModel::change_bus_powerline_ex,
+    //                     &GridModel::deactivate_powerline
+    //                     );
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_trafo,
+    //                     &GridModel::change_bus_trafo_hv,
+    //                     &GridModel::deactivate_trafo
+    //                     );
+    // update_topo_generic(has_changed, new_values,
+    //                     &GridModel::reactivate_trafo,
+    //                     &GridModel::change_bus_trafo_lv,
+    //                     &GridModel::deactivate_trafo
+    //                     );
 
     // update the bus status
     substations_.disconnect_all_buses();

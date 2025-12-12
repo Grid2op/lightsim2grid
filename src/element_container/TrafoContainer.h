@@ -18,6 +18,7 @@
 #include "Utils.h"
 #include "BaseSubstation.h"
 #include "GenericContainer.h"
+#include "TwoSidesContainer.h"
 
 /**
 This class is a container for all transformers on the grid.
@@ -271,6 +272,24 @@ class TrafoContainer : public GenericContainer
     
     const std::vector<bool>& get_status() const {return status_;}
 
+    void set_or_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        or_pos_topo_vect_.array() = pos_topo_vect;
+    }
+    void set_ex_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        ex_pos_topo_vect_.array() = pos_topo_vect;
+    }
+    
+    void set_or_subid(Eigen::Ref<const IntVect> subid)
+    {
+        or_to_subid_.array() = subid;
+    }
+    void set_ex_subid(Eigen::Ref<const IntVect> subid)
+    {
+        ex_to_subid_.array() = subid;
+    }
+
     protected:
         void _update_model_coeffs();
         
@@ -280,6 +299,12 @@ class TrafoContainer : public GenericContainer
         RealVect x_;
         CplxVect h_;
         std::vector<bool> is_tap_hv_side_;  // whether the tap is hav side or not
+
+        // specific grid2op
+        IntVect or_pos_topo_vect_;
+        IntVect ex_pos_topo_vect_;
+        IntVect or_to_subid_;
+        IntVect ex_to_subid_;
 
         // input data
         Eigen::VectorXi bus_hv_id_;

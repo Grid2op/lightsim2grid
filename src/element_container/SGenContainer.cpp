@@ -18,13 +18,13 @@ void SGenContainer::init(const RealVect & sgen_p,
                          const RealVect & sgen_qmax,
                          const Eigen::VectorXi & sgen_bus_id)
 {
-    int size = static_cast<int>(sgen_p.size());
-    OneSideContainer::init_osc(sgen_p, sgen_q, sgen_bus_id, "static_generators");
+    init_osc_pq(sgen_p, sgen_q, sgen_bus_id, "static_generators");
     
-    GenericContainer::check_size(sgen_pmin, size, "sgen_pmin");
-    GenericContainer::check_size(sgen_pmax, size, "sgen_pmax");
-    GenericContainer::check_size(sgen_qmin, size, "sgen_qmin");
-    GenericContainer::check_size(sgen_qmax, size, "sgen_qmax");
+    int size = nb();
+    check_size(sgen_pmin, size, "sgen_pmin");
+    check_size(sgen_pmax, size, "sgen_pmax");
+    check_size(sgen_qmin, size, "sgen_qmin");
+    check_size(sgen_qmax, size, "sgen_qmax");
 
     p_min_mw_ = sgen_pmin;
     p_max_mw_ = sgen_pmax;
@@ -39,13 +39,13 @@ SGenContainer::StateRes SGenContainer::get_state() const
      std::vector<real_type> p_max(p_max_mw_.begin(), p_max_mw_.end());
      std::vector<real_type> q_min(q_min_mvar_.begin(), q_min_mvar_.end());
      std::vector<real_type> q_max(q_max_mvar_.begin(), q_max_mvar_.end());
-     SGenContainer::StateRes res(OneSideContainer::get_osc_state(), p_min, p_max, q_min, q_max);
+     SGenContainer::StateRes res(get_osc_pq_state(), p_min, p_max, q_min, q_max);
      return res;
 }
 
 void SGenContainer::set_state(SGenContainer::StateRes & my_state )
 {    
-    OneSideContainer::set_osc_state(std::get<0>(my_state));
+    set_osc_pq_state(std::get<0>(my_state));
 
     std::vector<real_type> & p_min = std::get<1>(my_state);
     std::vector<real_type> & p_max = std::get<2>(my_state);
@@ -82,7 +82,7 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_t
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        tmp = {p_mw_(sgen_id), q_mvar_(sgen_id)};
+        tmp = {target_p_mw_(sgen_id), target_q_mvar_(sgen_id)};
         Sbus.coeffRef(bus_id_solver) += tmp;
     }
 }

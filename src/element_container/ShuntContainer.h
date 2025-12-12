@@ -15,7 +15,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.h"
-#include "OneSideContainer.h"
+#include "OneSideContainer_PQ.h"
 
 /**
 This class is a container for all shunts on the grid.
@@ -26,63 +26,16 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
-class ShuntContainer : public OneSideContainer
+class ShuntContainer : public OneSideContainer_PQ
 {
     // iterators part
     public:
-        class ShuntInfo
+        class ShuntInfo : public OneSidePQInfo
         {
             public:
-                // members
-                // TODO add some const here (value should not be changed !) !!!
-                int id;  // id of the generator
-                std::string name;
-                bool connected;
-                int bus_id;
-
-                real_type target_p_mw;
-                real_type target_q_mvar;
-                bool has_res;
-                real_type res_p_mw;
-                real_type res_q_mvar;
-                real_type res_v_kv;
-                real_type res_theta_deg;
-
+                // no members
                 ShuntInfo(const ShuntContainer & r_data_shunt, int my_id):
-                id(-1),
-                name(""),
-                connected(false),
-                bus_id(_deactivated_bus_id),
-                target_p_mw(0.),
-                target_q_mvar(0.),
-                has_res(false),
-                res_p_mw(0.),
-                res_q_mvar(0.),
-                res_v_kv(0.),
-                res_theta_deg(0.)
-                {
-                    if((my_id >= 0) & (my_id < r_data_shunt.nb()))
-                    {
-                        id = my_id;
-                        if(r_data_shunt.names_.size()){
-                            name = r_data_shunt.names_[my_id];
-                        }
-                        connected = r_data_shunt.status_[my_id];
-                        if(connected)  bus_id = r_data_shunt.bus_id_[my_id];
-
-                        target_p_mw = r_data_shunt.p_mw_.coeff(my_id);
-                        target_q_mvar = r_data_shunt.q_mvar_.coeff(my_id);
-
-                        has_res = r_data_shunt.res_p_.size() > 0;
-                        if(has_res)
-                        {
-                            res_p_mw = r_data_shunt.res_p_.coeff(my_id);
-                            res_q_mvar = r_data_shunt.res_q_.coeff(my_id);
-                            res_v_kv = r_data_shunt.res_v_.coeff(my_id);
-                            res_theta_deg = r_data_shunt.res_theta_.coeff(my_id);
-                        }
-                    }
-                }
+                OneSidePQInfo(r_data_shunt, my_id){}
         };
         typedef ShuntInfo DataInfo;
 
@@ -107,9 +60,9 @@ class ShuntContainer : public OneSideContainer
         }
 
     public:
-    typedef std::tuple<OneSideContainer::StateRes >  StateRes;
+    typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;
 
-    ShuntContainer():OneSideContainer() {};
+    ShuntContainer():OneSideContainer_PQ() {};
 
 
     void init(const RealVect & shunt_p_mw,
@@ -117,10 +70,10 @@ class ShuntContainer : public OneSideContainer
               const Eigen::VectorXi & shunt_bus_id
               )
     {
-        init_osc(shunt_p_mw,
-                 shunt_q_mvar,
-                 shunt_bus_id,
-                 "shunts");
+        init_osc_pq(shunt_p_mw,
+                    shunt_q_mvar,
+                    shunt_bus_id,
+                    "shunts");
         reset_results();
     }
 
@@ -142,14 +95,14 @@ class ShuntContainer : public OneSideContainer
     protected:
         virtual void _change_p(int shunt_id, real_type new_p, bool my_status, SolverControl & solver_control)
         {
-            if(p_mw_(shunt_id) != new_p){
+            if(target_p_mw_(shunt_id) != new_p){
                 solver_control.tell_recompute_ybus();
             }
         }
 
         virtual void _change_q(int shunt_id, real_type new_q, bool my_status, SolverControl & solver_control)
         {
-            if(q_mvar_(shunt_id) != new_q){
+            if(target_q_mvar_(shunt_id) != new_q){
                 solver_control.tell_recompute_ybus();
             }
         }

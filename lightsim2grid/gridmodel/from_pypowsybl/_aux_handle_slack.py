@@ -39,7 +39,7 @@ def handle_slack_one_el(df_gen, gen_slack_id):
                                 "generator names")
         gen_slack_weight = 1.
     if not df_gen.iloc[gen_slack_id_int]["connected"] or abs(gen_slack_weight) < 1e-5:
-        return None, None
+        return gen_slack_id_int, None
     return gen_slack_id_int, gen_slack_weight
 
 
@@ -49,17 +49,11 @@ def handle_slack_iterable(df_gen, gen_slack_id):
     if isinstance(gen_slack_id, (list, tuple, set)):
         for el in gen_slack_id:
             tmp_id, tmp_w = handle_slack_one_el(df_gen, el)
-            if tmp_id is None or tmp_w is None:
-                # gen is disconnected
-                continue
             res_ids.append(tmp_id)
             res_ws.append(tmp_w)
     elif isinstance(gen_slack_id, (dict)):
         for k, v in gen_slack_id.items():
             tmp_id, tmp_w = handle_slack_one_el(df_gen, (k, v))
-            if tmp_id is None or tmp_w is None:
-                # gen is disconnected
-                continue
             res_ids.append(tmp_id)
             res_ws.append(tmp_w)
     else:

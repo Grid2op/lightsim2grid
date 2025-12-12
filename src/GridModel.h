@@ -76,21 +76,7 @@ class GridModel : public GenericContainer
                 DCLineContainer::StateRes,
                 // grid2op specific
                 int, // n_sub
-                int, // max_nb_bus_per_sub
-                std::vector<int>,  // load_pos_topo_vect_
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,  
-                std::vector<int>,  // load_to_subid_
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>,
-                std::vector<int>
+                int // max_nb_bus_per_sub
                 >  StateRes;
 
         GridModel():
@@ -136,11 +122,22 @@ class GridModel : public GenericContainer
 
         // retrieve the underlying data (raw class)
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
-        void turnedoff_no_pv(){generators_.turnedoff_no_pv(solver_control_);}  // turned off generators are not pv
-        void turnedoff_pv(){generators_.turnedoff_pv(solver_control_);}  // turned off generators are pv
+        // turned off generators are not pv
+        void turnedoff_no_pv(){
+            solver_control_.has_pv_changed();
+            generators_.turnedoff_no_pv(solver_control_);
+        }  
+        // turned off generators are pv
+        void turnedoff_pv(){
+            solver_control_.has_pv_changed();
+            generators_.turnedoff_pv(solver_control_);
+        }  
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
         void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
             generators_.update_slack_weights(could_be_slack, solver_control_);
+        }
+        void update_slack_weights_by_id(Eigen::Ref<const IntVect> slack_ids){
+            generators_.update_slack_weights_by_id(slack_ids, solver_control_);
         }
 
         const SGenContainer & get_static_generators_as_data() const {return sgens_;}
@@ -937,67 +934,67 @@ class GridModel : public GenericContainer
                             Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         void update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                             Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
-        void update_topo(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
-                         Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
+        void update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+                         Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > new_values);
         void update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                                Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values);
 
-        void set_load_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > load_pos_topo_vect)
+        void set_load_pos_topo_vect(Eigen::Ref<const IntVect> load_pos_topo_vect)
         {
-            load_pos_topo_vect_.array() = load_pos_topo_vect;
+            loads_.set_pos_topo_vect(load_pos_topo_vect);
         }
-        void set_gen_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > gen_pos_topo_vect)
+        void set_gen_pos_topo_vect(Eigen::Ref<const IntVect> gen_pos_topo_vect)
         {
-            gen_pos_topo_vect_.array() = gen_pos_topo_vect;
+            generators_.set_pos_topo_vect(gen_pos_topo_vect);
         }
-        void set_line_or_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_or_pos_topo_vect)
+        void set_storage_pos_topo_vect(Eigen::Ref<const IntVect> sto_pos_topo_vect)
         {
-            line_or_pos_topo_vect_.array() = line_or_pos_topo_vect;
+            storages_.set_pos_topo_vect(sto_pos_topo_vect);
         }
-        void set_line_ex_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_ex_pos_topo_vect)
+        void set_line_or_pos_topo_vect(Eigen::Ref<const IntVect> line_or_pos_topo_vect)
         {
-            line_ex_pos_topo_vect_.array() = line_ex_pos_topo_vect;
+            powerlines_.set_or_pos_topo_vect(line_or_pos_topo_vect);
         }
-        void set_trafo_hv_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_hv_pos_topo_vect)
+        void set_line_ex_pos_topo_vect(Eigen::Ref<const IntVect> line_ex_pos_topo_vect)
         {
-            trafo_hv_pos_topo_vect_.array() = trafo_hv_pos_topo_vect;
+            powerlines_.set_ex_pos_topo_vect(line_ex_pos_topo_vect);
         }
-        void set_trafo_lv_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_lv_pos_topo_vect)
+        void set_trafo_hv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_hv_pos_topo_vect)
         {
-            trafo_lv_pos_topo_vect_.array() = trafo_lv_pos_topo_vect;
+            powerlines_.set_or_pos_topo_vect(trafo_hv_pos_topo_vect);
         }
-        void set_storage_pos_topo_vect(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > storage_pos_topo_vect)
+        void set_trafo_lv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_lv_pos_topo_vect)
         {
-            storage_pos_topo_vect_.array() = storage_pos_topo_vect;
+            powerlines_.set_ex_pos_topo_vect(trafo_lv_pos_topo_vect);
         }
 
-        void set_load_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > load_to_subid)
+        void set_load_to_subid(Eigen::Ref<const IntVect> load_to_subid)
         {
-            load_to_subid_.array() = load_to_subid;
+            loads_.set_subid(load_to_subid);
         }
-        void set_gen_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > gen_to_subid)
+        void set_gen_to_subid(Eigen::Ref<const IntVect> gen_to_subid)
         {
-            gen_to_subid_.array() = gen_to_subid;
+            generators_.set_subid(gen_to_subid);
         }
-        void set_line_or_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_or_to_subid)
+        void set_storage_to_subid(Eigen::Ref<const IntVect> storage_to_subid)
         {
-            line_or_to_subid_.array() = line_or_to_subid;
+            storages_.set_subid(storage_to_subid);
         }
-        void set_line_ex_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > line_ex_to_subid)
+        void set_line_or_to_subid(Eigen::Ref<const IntVect> line_or_to_subid)
         {
-            line_ex_to_subid_.array() = line_ex_to_subid;
+            powerlines_.set_or_subid(line_or_to_subid);
         }
-        void set_trafo_hv_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_hv_to_subid)
+        void set_line_ex_to_subid(Eigen::Ref<const IntVect> line_ex_to_subid)
         {
-            trafo_hv_to_subid_.array() = trafo_hv_to_subid;
+            powerlines_.set_ex_subid(line_ex_to_subid);
         }
-        void set_trafo_lv_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > trafo_lv_to_subid)
+        void set_trafo_hv_to_subid(Eigen::Ref<const IntVect> trafo_hv_to_subid)
         {
-            trafo_lv_to_subid_.array() = trafo_lv_to_subid;
+            trafos_.set_or_subid(trafo_hv_to_subid);
         }
-        void set_storage_to_subid(Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > storage_to_subid)
+        void set_trafo_lv_to_subid(Eigen::Ref<const IntVect> trafo_lv_to_subid)
         {
-            storage_to_subid_.array() = storage_to_subid;
+            trafos_.set_ex_subid(trafo_lv_to_subid);
         }
         void set_n_sub(int n_sub)
         {
@@ -1273,38 +1270,38 @@ class GridModel : public GenericContainer
                 }
             }
         }
-        template<class CReac, class CChange, class CDeact>
-        void update_topo_generic(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-                                 Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
-                                 const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_pos,
-                                 const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_subid,
-                                 CReac fun_react,
-                                 CChange fun_change,
-                                 CDeact fun_deact)
-        {
-            for(int el_id = 0; el_id < vect_pos.rows(); ++el_id)
-            {
+        // template<class CReac, class CChange, class CDeact>
+        // void update_topo_generic(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+        //                          Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+        //                          const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_pos,
+        //                          const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_subid,
+        //                          CReac fun_react,
+        //                          CChange fun_change,
+        //                          CDeact fun_deact)
+        // {
+        //     for(int el_id = 0; el_id < vect_pos.rows(); ++el_id)
+        //     {
 
-                int el_pos = vect_pos(el_id);
-                if(! has_changed(el_pos)) continue;
-                int new_bus = new_values(el_pos);
-                if(new_bus > 0){
-                    // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
-                    int sub_id = vect_subid(el_id);
-                    int new_bus_backend = sub_id + (new_bus - 1) * n_sub_;
-                    // bus_status_[new_bus_backend] = true;
-                    substations_.reconnect_bus(new_bus_backend);
-                    (this->*fun_react)(el_id); // eg reactivate_load(load_id);
-                    (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
-                } else{
-                    // new bus is negative, we deactivate it
-                    (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
-                    // bus_status_ is set to "false" in GridModel.update_topo
-                    // and a bus is activated if (and only if) one element is connected to it.
-                    // I must not set `bus_status_[new_bus_backend] = false;` in this case !
-                }
-            }
-        }
+        //         int el_pos = vect_pos(el_id);
+        //         if(! has_changed(el_pos)) continue;
+        //         int new_bus = new_values(el_pos);
+        //         if(new_bus > 0){
+        //             // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+        //             int sub_id = vect_subid(el_id);
+        //             int new_bus_backend = sub_id + (new_bus - 1) * n_sub_;
+        //             // bus_status_[new_bus_backend] = true;
+        //             substations_.reconnect_bus(new_bus_backend);
+        //             (this->*fun_react)(el_id); // eg reactivate_load(load_id);
+        //             (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
+        //         } else{
+        //             // new bus is negative, we deactivate it
+        //             (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
+        //             // bus_status_ is set to "false" in GridModel.update_topo
+        //             // and a bus is activated if (and only if) one element is connected to it.
+        //             // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+        //         }
+        //     }
+        // }
 
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                  std::vector<int> & id_me_to_solver,
@@ -1416,22 +1413,22 @@ class GridModel : public GenericContainer
         ChooseSolver _solver;
         ChooseSolver _dc_solver;
 
-        // specific grid2op
-        IntVectRowMaj load_pos_topo_vect_;
-        IntVectRowMaj gen_pos_topo_vect_;
-        IntVectRowMaj line_or_pos_topo_vect_;
-        IntVectRowMaj line_ex_pos_topo_vect_;
-        IntVectRowMaj trafo_hv_pos_topo_vect_;
-        IntVectRowMaj trafo_lv_pos_topo_vect_;
-        IntVectRowMaj storage_pos_topo_vect_;
+        // // specific grid2op
+        // IntVectRowMaj load_pos_topo_vect_;
+        // IntVectRowMaj gen_pos_topo_vect_;
+        // IntVectRowMaj line_or_pos_topo_vect_;
+        // IntVectRowMaj line_ex_pos_topo_vect_;
+        // IntVectRowMaj trafo_hv_pos_topo_vect_;
+        // IntVectRowMaj trafo_lv_pos_topo_vect_;
+        // IntVectRowMaj storage_pos_topo_vect_;
 
-        IntVectRowMaj load_to_subid_;
-        IntVectRowMaj gen_to_subid_;
-        IntVectRowMaj line_or_to_subid_;
-        IntVectRowMaj line_ex_to_subid_;
-        IntVectRowMaj trafo_hv_to_subid_;
-        IntVectRowMaj trafo_lv_to_subid_;
-        IntVectRowMaj storage_to_subid_;
+        // IntVectRowMaj load_to_subid_;
+        // IntVectRowMaj gen_to_subid_;
+        // IntVectRowMaj line_or_to_subid_;
+        // IntVectRowMaj line_ex_to_subid_;
+        // IntVectRowMaj trafo_hv_to_subid_;
+        // IntVectRowMaj trafo_lv_to_subid_;
+        // IntVectRowMaj storage_to_subid_;
 
 };
 

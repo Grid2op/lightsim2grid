@@ -301,6 +301,24 @@ class DCLineContainer : public GenericContainer
     Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return from_gen_.get_bus_id();}
     Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return to_gen_.get_bus_id();}
 
+    void set_or_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        from_gen_.set_pos_topo_vect(pos_topo_vect);
+    }
+    void set_ex_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+    {
+        to_gen_.set_pos_topo_vect(pos_topo_vect);
+    }
+    
+    void set_or_subid(Eigen::Ref<const IntVect> subid)
+    {
+        from_gen_.set_subid(subid);
+    }
+    void set_ex_subid(Eigen::Ref<const IntVect> subid)
+    {
+        to_gen_.set_subid(subid);
+    }
+
     protected:
         // it is modeled as 2 generators that are "linked" together
         // see https://pandapower.readthedocs.io/en/v2.0.1/elements/dcline.html#electric-model

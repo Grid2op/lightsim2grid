@@ -33,17 +33,17 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
                                    const Eigen::VectorXi & generators_bus_id
                                    )
 {
-    init_osc(generators_p, generators_q, generators_bus_id, "generators");
+    init_osc_pq(generators_p, generators_q, generators_bus_id, "generators");
 
     // check the sizes
-    int size = static_cast<int>(generators_p.size());
+    int size = nb();
     check_size(generators_v, size, "generators_v");
     check_size(generators_min_q, size, "generators_min_q");
     check_size(generators_max_q, size, "generators_max_q");
     check_size(voltage_regulator_on, size, "voltage_regulator_on");
 
     // fill the data
-    vm_pu_ = generators_v;
+    target_vm_pu_ = generators_v;
     min_q_ = generators_min_q;
     max_q_ = generators_max_q;
     for(int gen_id = 0; gen_id < size; ++gen_id){
@@ -64,26 +64,23 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
 
 GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one side container
 {
-     std::vector<real_type> vm_pu(vm_pu_.begin(), vm_pu_.end());
+     std::vector<real_type> vm_pu(target_vm_pu_.begin(), target_vm_pu_.end());
      std::vector<real_type> min_q(min_q_.begin(), min_q_.end());
      std::vector<real_type> max_q(max_q_.begin(), max_q_.end());
-     std::vector<bool> slack_bus = gen_slackbus_;
-     std::vector<bool> voltage_regulator_on = voltage_regulator_on_;
-     std::vector<real_type> slack_weight = gen_slack_weight_;
-     GeneratorContainer::StateRes res(get_osc_state(),  // osc : one side container
+     GeneratorContainer::StateRes res(get_osc_pq_state(),  // osc : one side container
                                       turnedoff_gen_pv_,
-                                      voltage_regulator_on,
+                                      voltage_regulator_on_,
                                       vm_pu,
                                       min_q,
                                       max_q,
-                                      slack_bus,
-                                      slack_weight);
+                                      gen_slackbus_,
+                                      gen_slack_weight_);
      return res;
 }
 
 void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 {
-    OneSideContainer::set_osc_state(std::get<0>(my_state));
+    set_osc_pq_state(std::get<0>(my_state));
     turnedoff_gen_pv_ = std::get<1>(my_state);
 
     // the generators themelves
@@ -105,7 +102,7 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
-    vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
+    target_vm_pu_ = RealVect::Map(&vm_pu[0], vm_pu.size());
     min_q_ = RealVect::Map(&min_q[0], min_q.size());
     max_q_ = RealVect::Map(&max_q[0], max_q.size());
     gen_slackbus_ = slack_bus;
@@ -156,10 +153,10 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_g
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        tmp = {p_mw_(gen_id), 0.};
+        tmp = {target_p_mw_(gen_id), 0.};
         if(!voltage_regulator_on_[gen_id]){
             // gen is pq if voltage regulaton is off
-            tmp += my_i * q_mvar_(gen_id);
+            tmp += my_i * target_q_mvar_(gen_id);
         }
         Sbus.coeffRef(bus_id_solver) += tmp;
     }
@@ -182,7 +179,7 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
         // in this case turned off generators are not pv
         // except the slack that can have a target of 0MW but is still "on"
         // no matter what
-        bool gen_pseudo_off = p_mw_(gen_id) == 0.;
+        bool gen_pseudo_off = abs(target_p_mw_(gen_id)) < 1e-6;
         // if (gen_slack_weight_[gen_id] != 0.) gen_pseudo_off = false;  // useless: slack is not PV anyway
         if ((!turnedoff_gen_pv_) && gen_pseudo_off) continue;  
         bus_id_me = bus_id_(gen_id);
@@ -211,10 +208,10 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
         if(!status_[gen_id]) continue;
 
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+        if ((!turnedoff_gen_pv_) && target_p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
-        real_type tmp = vm_pu_(gen_id);
+        real_type tmp = target_vm_pu_(gen_id);
         if(tmp != 0.) Vm(bus_id_me) = tmp;
     }
 }
@@ -226,11 +223,12 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, 
         // are not pv, if we change the active generation, it changes
         // the list of pv buses, so I need to refactorize the solver
         // on the other hand, if all generators are pv then I do not need to refactorize in this case
-        if((p_mw_(gen_id) == 0. && new_p != 0.) || 
-           (p_mw_(gen_id) != 0. && new_p == 0.)){
+        if((target_p_mw_(gen_id) == 0. && new_p != 0.) || 
+           (target_p_mw_(gen_id) != 0. && new_p == 0.)){
             solver_control.tell_pv_changed();
            }
     }
+    // TODO IF SLACK !!! (and p close to 0., slack weight can be updated)
 }
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
@@ -251,8 +249,8 @@ void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl 
 void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control)
 {
     [[maybe_unused]] bool my_status = status_.at(gen_id); // and this check that gen_id is not out of bound [[maybe_unused]] 
-    if (vm_pu_(gen_id) != new_v_pu) solver_control.tell_v_changed();
-    vm_pu_(gen_id) = new_v_pu;
+    if (target_vm_pu_(gen_id) != new_v_pu) solver_control.tell_v_changed();
+    target_vm_pu_(gen_id) = new_v_pu;
 }
 
 void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const
@@ -266,7 +264,7 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_t
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
 
         // pseudo off generator (with p == 0)
-        bool pseudo_off = p_mw_(gen_id) == 0.;
+        bool pseudo_off = target_p_mw_(gen_id) == 0.;
         // though "pseudo off" a slack is still "PV"
         if(gen_slack_weight_[gen_id] != 0.) pseudo_off = false;  
         if ((!turnedoff_gen_pv_) && pseudo_off) continue;  // in this case turned off generators are not pv
@@ -296,7 +294,7 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_t
             tmp = 1.0;
         }
         tmp = 1.0 / tmp;
-        tmp *= vm_pu_(gen_id);
+        tmp *= target_vm_pu_(gen_id);
         V(bus_id_solver) *= tmp;
     }
 }
@@ -351,7 +349,7 @@ void GeneratorContainer::init_q_vector(int nb_bus,
         if(!status_[gen_id]) continue;
 
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
+        if ((!turnedoff_gen_pv_) && target_p_mw_(gen_id) == 0.) continue;  // in this case turned off generators are not pv
         
         int bus_id = bus_id_(gen_id);
         total_q_min_per_bus(bus_id) += min_q_(gen_id);
@@ -388,7 +386,7 @@ void GeneratorContainer::set_q(const RealVect & reactive_mismatch,
             res_q_(gen_id) = 0.;
             continue;
         } 
-        if ((!turnedoff_gen_pv_) && p_mw_(gen_id) == 0.) {
+        if ((!turnedoff_gen_pv_) && target_p_mw_(gen_id) == 0.) {
             // in this case turned off generators are not pv
             res_q_(gen_id) = 0.;
             continue;
@@ -421,10 +419,36 @@ void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eige
     {
         if(could_be_slack(gen_id) && status_[gen_id]){
             // gen is connected and participate to the slack
-            if(p_mw_(gen_id) > 0.){
+            if(abs(target_p_mw_(gen_id)) > 1e-6){
                 // gen is properly connected
                 if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed(); // it was not in the slack before, so I need to reset the solver
-                add_slackbus(gen_id, p_mw_(gen_id), solver_control);
+                add_slackbus(gen_id, target_p_mw_(gen_id), solver_control);
+
+            }else{
+                // gen is now "turned off" (p_mw=0.)
+                if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, so I need to reset the solver
+                remove_slackbus(gen_id, solver_control);
+            }
+        }else{
+            if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, I need to reset the solver
+            remove_slackbus(gen_id, solver_control);
+        }
+    }
+}
+
+// TODO copy paste from update_slack_weights ...
+void GeneratorContainer::update_slack_weights_by_id(
+    Eigen::Ref<const IntVect> gen_slack_id,
+    SolverControl & solver_control)
+{
+    for(int gen_id : gen_slack_id)
+    {
+        if(status_[gen_id]){
+            // gen is connected and participate to the slack
+            if(abs(target_p_mw_(gen_id)) > 1e-6){
+                // gen is properly connected
+                if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed(); // it was not in the slack before, so I need to reset the solver
+                add_slackbus(gen_id, target_p_mw_(gen_id), solver_control);
 
             }else{
                 // gen is now "turned off" (p_mw=0.)

@@ -466,6 +466,7 @@ def init(net : pypo.network.Network,
         # if nothing is given, by default I assign a slack bus to a bus where a lot of lines are connected
         # quite central in the grid
         bus_id, gen_id = model.assign_slack_to_most_connected()
+        gen_slack_ids_int = [gen_id]
     elif gen_slack_id is not None:
         if slack_bus_id is not None:
             raise RuntimeError("You provided both gen_slack_id and slack_bus_id "
@@ -478,23 +479,29 @@ def init(net : pypo.network.Network,
             fun_slack = handle_slack_iterable
         gen_slack_ids_int, gen_slack_weights = fun_slack(df_gen, gen_slack_id)
         if single_slack:
-            if gen_slack_ids_int is None or gen_slack_weights is None:
+            if gen_slack_weights is None:
                 raise RuntimeError(f"The slack {gen_slack_id} is disconnected.")
             gen_slack_ids_int = [gen_slack_ids_int]
-            gen_slack_weights = [1.]
+            gen_slack_weights_fixed = [1.]
         else:
-            gen_slack_weights = np.asarray(gen_slack_weights)
-            gen_slack_weights /= gen_slack_weights.sum()
-        for gen_slack_id_int, gen_slack_weight in zip(gen_slack_ids_int, gen_slack_weights):
-            model.add_gen_slackbus(gen_slack_id_int, gen_slack_weight)
+            gen_slack_weights_fixed = np.asarray([el if el is not None else np.nan for el in gen_slack_weights])
+            mask_finite = np.isfinite(gen_slack_weights_fixed)
+            if not mask_finite.any():
+                raise RuntimeError(f"No connected generators match the slack {gen_slack_id}")
+            gen_slack_weights_fixed[mask_finite] /= gen_slack_weights_fixed[mask_finite].sum()
+        for gen_slack_id_int, gen_slack_weight in zip(gen_slack_ids_int, gen_slack_weights_fixed):
+            if np.isfinite(gen_slack_weight):
+                model.add_gen_slackbus(gen_slack_id_int, gen_slack_weight)
     elif slack_bus_id is not None:
         gen_bus = np.array([el.bus_id for el in model.get_generators()])
         gen_is_conn_slack = gen_bus == model._orig_to_ls[slack_bus_id]
         nb_conn = gen_is_conn_slack.sum()
         if nb_conn == 0:
             raise RuntimeError(f"There is no generator connected to bus {slack_bus_id}. It cannot be the slack")
+        gen_slack_ids_int = []
         for gen_id, is_slack in enumerate(gen_is_conn_slack):
             if is_slack:
+                gen_slack_ids_int.append(gen_id)
                 model.add_gen_slackbus(gen_id, 1. / nb_conn)    
     else:
         raise RuntimeError("You need to provide at least one slack with `gen_slack_id` or `slack_bus_id`") 
@@ -524,6 +531,8 @@ def init(net : pypo.network.Network,
             sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
         buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_global_id", "sub_id"]]
         gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+        gen_sub["desired_slack"] = False
+        gen_sub.loc[gen_sub.index[gen_slack_ids_int], "desired_slack"] = True
         load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
         lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
         lex_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]

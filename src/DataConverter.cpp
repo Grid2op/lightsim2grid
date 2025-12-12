@@ -299,7 +299,7 @@ std::tuple<RealVect,
             // std::cout << "za_star " << za_star << " , zb_star " << zb_star << " , zc_star " << zc_star << " , zSum_triangle" << zSum_triangle << std::endl;
             cplx_type zab_triangle = zSum_triangle / zc_star;
             cplx_type zac_triangle = zSum_triangle / zb_star;
-            cplx_type zbc_triangle = zSum_triangle / za_star;
+            // cplx_type zbc_triangle = zSum_triangle / za_star;
             // r[tidx] = zab_triangle.real
             // x[tidx] = zab_triangle.imag
             r_sc(t_id) = std::real(zab_triangle);
