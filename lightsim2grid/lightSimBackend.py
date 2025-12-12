@@ -1401,7 +1401,9 @@ class LightSimBackend(Backend):
             self.nb_obj_per_bus[arr_] += 1
 
     def close(self) -> None:
-        self.init_pp_backend.close()
+        if self.init_pp_backend is not None:
+            self.init_pp_backend.close()
+            self.init_pp_backend = None
         self._grid = None
 
     def apply_action(self, backendAction: Union["grid2op.Action._backendAction._BackendAction", None]) -> None:
@@ -1795,7 +1797,7 @@ class LightSimBackend(Backend):
                            "_stop_if_load_disco", "_stop_if_gen_disco", "_stop_if_storage_disco",
                            "_timer_fetch_data_cpp", "_next_pf_fails", "_automatically_disconnect",
                            "_need_islanding_detection",
-                           "_last_dc"
+                           "_last_dc", "_gen_slack_id"
                            ]
         for attr_nm in li_regular_attr:
             if hasattr(self, attr_nm):

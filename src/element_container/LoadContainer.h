@@ -65,43 +65,43 @@ class LoadContainer : public OneSideContainer_PQ
 
     // regular implementation
     public:
-    typedef std::tuple<
-       OneSideContainer_PQ::StateRes  // state of the base class 
-       >  StateRes;
-
-    LoadContainer():OneSideContainer_PQ(){};
-
-    // pickle (python)
-    LoadContainer::StateRes get_state() const;
-    void set_state(LoadContainer::StateRes & my_state);
-
-    void init(const RealVect & load_p_mw,
-              const RealVect & load_q_mvar,
-              const Eigen::VectorXi & load_bus_id
-              )
-    {
-        init_osc_pq(load_p_mw,
-                    load_q_mvar,
-                    load_bus_id,
-                    "loads");
-        reset_results();
-    }
-
-    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
+        typedef std::tuple<
+           OneSideContainer_PQ::StateRes  // state of the base class 
+           >  StateRes;
+        
+        LoadContainer():OneSideContainer_PQ(){};
+        
+        // pickle (python)
+        LoadContainer::StateRes get_state() const;
+        void set_state(LoadContainer::StateRes & my_state);
+        
+        void init(const RealVect & load_p_mw,
+                  const RealVect & load_q_mvar,
+                  const Eigen::VectorXi & load_bus_id
+                  )
+        {
+            init_osc_pq(load_p_mw,
+                        load_q_mvar,
+                        load_bus_id,
+                        "loads");
+            reset_results();
+        }
+    
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
 
     protected:
-    virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
-                                  const Eigen::Ref<const RealVect> & Vm,
-                                  const Eigen::Ref<const CplxVect> & V,
-                                  const std::vector<int> & id_grid_to_solver,
-                                  const RealVect & bus_vn_kv,
-                                  real_type sn_mva,
-                                  bool ac)
-                                  {
+        virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
+                                    const Eigen::Ref<const RealVect> & Vm,
+                                    const Eigen::Ref<const CplxVect> & V,
+                                    const std::vector<int> & id_grid_to_solver,
+                                    const RealVect & bus_vn_kv,
+                                    real_type sn_mva,
+                                    bool ac)
+                                    {
 
-                                        set_osc_pq_res_p();
-                                        set_osc_pq_res_q(ac);
-                                  }
+                                            set_osc_pq_res_p();
+                                            set_osc_pq_res_q(ac);
+                                    }
 };
 
 #endif  //LOAD_CONTAINER_H

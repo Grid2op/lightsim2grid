@@ -84,31 +84,31 @@ class SGenContainer: public OneSideContainer_PQ
         }
 
     public:
-    typedef std::tuple<
-       OneSideContainer_PQ::StateRes,
-       std::vector<real_type>, // p_min
-       std::vector<real_type>, //  p_max
-       std::vector<real_type>, //  q_min
-       std::vector<real_type> //  q_max
-       >  StateRes;
-
-    SGenContainer():OneSideContainer_PQ() {};
-
-    // pickle (python)
-    SGenContainer::StateRes get_state() const;
-    void set_state(SGenContainer::StateRes & my_state );
-
-
-    void init(const RealVect & sgen_p,
-              const RealVect & sgen_q,
-              const RealVect & sgen_pmin,
-              const RealVect & sgen_pmax,
-              const RealVect & sgen_qmin,
-              const RealVect & sgen_qmax,
-              const Eigen::VectorXi & sgen_bus_id
-              );
-    
-    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const ;
+        typedef std::tuple<
+           OneSideContainer_PQ::StateRes,
+           std::vector<real_type>, // p_min
+           std::vector<real_type>, //  p_max
+           std::vector<real_type>, //  q_min
+           std::vector<real_type> //  q_max
+           >  StateRes;
+        
+        SGenContainer():OneSideContainer_PQ() {};
+        
+        // pickle (python)
+        SGenContainer::StateRes get_state() const;
+        void set_state(SGenContainer::StateRes & my_state );
+        
+        
+        void init(const RealVect & sgen_p,
+                  const RealVect & sgen_q,
+                  const RealVect & sgen_pmin,
+                  const RealVect & sgen_pmax,
+                  const RealVect & sgen_qmin,
+                  const RealVect & sgen_qmax,
+                  const Eigen::VectorXi & sgen_bus_id
+                  );
+              
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const ;
 
     protected:
     virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,

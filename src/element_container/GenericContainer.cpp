@@ -61,9 +61,9 @@ void GenericContainer::_generic_deactivate(int global_bus_id, std::vector<bool> 
 void GenericContainer::_generic_change_bus(
     int el_id,
     int new_bus_me_id,
-    Eigen::VectorXi & el_bus_ids,
+    Eigen::Ref<Eigen::VectorXi> el_bus_ids,
     SolverControl & solver_control,
-    int nb_max_bus){
+    int nb_max_bus) const{
     // bus id here "me_id" and NOT "solver_id"
     // throw error: object id does not exist
     _check_in_range(static_cast<Eigen::Index>(el_id),

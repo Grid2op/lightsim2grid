@@ -52,69 +52,67 @@ class OneSideContainer_PQ : public OneSideContainer
     
     // regular implementation
     public:
-    OneSideContainer_PQ() {};
+        OneSideContainer_PQ() {};
 
-    // public generic API
+        // public generic API
 
-    Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
+        Eigen::Ref<const RealVect> get_target_p() const {return target_p_mw_;}
 
-    // base function that can be called
-    void gen_p_per_bus(std::vector<real_type> & res) const
-    {
-        const int nb_gen = nb();
-        for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
+        // base function that can be called
+        void gen_p_per_bus(std::vector<real_type> & res) const
         {
-            if(!status_[sgen_id]) continue;
-            const auto my_bus = bus_id_(sgen_id);
-            res[my_bus] += target_p_mw_(sgen_id);
+            const int nb_gen = nb();
+            for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
+            {
+                if(!status_[sgen_id]) continue;
+                const auto my_bus = bus_id_(sgen_id);
+                res[my_bus] += target_p_mw_(sgen_id);
+            }
         }
-    }
 
-    void change_p(int el_id, real_type new_p, SolverControl & solver_control){
-        bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-        if(!my_status)
+        void change_p(int el_id, real_type new_p, SolverControl & solver_control){
+            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
+            if(!my_status)
+            {
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::change_p: Impossible to change the active value of a disconnected element (check load id ";
+                exc_ << el_id;
+                exc_ << ")";
+                throw std::runtime_error(exc_.str());
+            }
+            change_p_nothrow(el_id, new_p, solver_control);
+        }
+        void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
         {
-            std::ostringstream exc_;
-            exc_ << "OneSideContainer::change_p: Impossible to change the active value of a disconnected element (check load id ";
-            exc_ << el_id;
-            exc_ << ")";
-            throw std::runtime_error(exc_.str());
+            bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
+            this->_change_p(load_id, new_p, my_status, solver_control);
+            if (target_p_mw_(load_id) != new_p) {
+                solver_control.tell_recompute_sbus();
+                target_p_mw_(load_id) = new_p;
+            }
         }
-        change_p_nothrow(el_id, new_p, solver_control);
-    }
-    void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
-    {
-        bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
-        this->_change_p(load_id, new_p, my_status, solver_control);
-        if (target_p_mw_(load_id) != new_p) {
-            solver_control.tell_recompute_sbus();
-            target_p_mw_(load_id) = new_p;
-        }
-    }
-    void change_q(int el_id, real_type new_q, SolverControl & solver_control)
-    {
-        bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
-        if(!my_status)
+        void change_q(int el_id, real_type new_q, SolverControl & solver_control)
         {
-            std::ostringstream exc_;
-            exc_ << "OneSideContainer::change_q: Impossible to change the reactive value of a disconnected element (check load id ";
-            exc_ << el_id;
-            exc_ << ")";
-            throw std::runtime_error(exc_.str());
+            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
+            if(!my_status)
+            {
+                std::ostringstream exc_;
+                exc_ << "OneSideContainer::change_q: Impossible to change the reactive value of a disconnected element (check load id ";
+                exc_ << el_id;
+                exc_ << ")";
+                throw std::runtime_error(exc_.str());
+            }
+            change_q_nothrow(el_id, new_q, solver_control);
         }
-        change_q_nothrow(el_id, new_q, solver_control);
-    }
-    void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
-    {
-        bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
-        this->_change_q(load_id, new_q, my_status, solver_control);
-        if (target_q_mvar_(load_id) != new_q) {
-            solver_control.tell_recompute_sbus();
-            target_q_mvar_(load_id) = new_q;
+        void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
+        {
+            bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
+            this->_change_q(load_id, new_q, my_status, solver_control);
+            if (target_q_mvar_(load_id) != new_q) {
+                solver_control.tell_recompute_sbus();
+                target_q_mvar_(load_id) = new_q;
+            }
         }
-    }
-
-    protected:
 
         typedef std::tuple<
             OneSideContainer::StateRes,
@@ -122,6 +120,7 @@ class OneSideContainer_PQ : public OneSideContainer
             std::vector<real_type> // q_mvar
             >  StateRes;
 
+    protected:
         OneSideContainer_PQ::StateRes get_osc_pq_state() const  // osc: one side element
         {
             std::vector<real_type> target_p_mw(target_p_mw_.begin(), target_p_mw_.end());
@@ -158,7 +157,7 @@ class OneSideContainer_PQ : public OneSideContainer
                          const std::string & name_el
                          )  // osc: one side element
         {
-            init_osc(els_bus_id, name_el);
+            init_osc(els_bus_id);
             int size = nb();
             check_size(els_p, size, name_el + "_p");
             check_size(els_q, size, name_el + "_q");

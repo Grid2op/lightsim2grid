@@ -112,7 +112,7 @@ class GenericContainer : public BaseConstants
         }
         
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
-        virtual ~GenericContainer() {};
+        virtual ~GenericContainer() noexcept = default;
     protected:
         std::vector<std::string> names_;
 
@@ -153,7 +153,12 @@ class GenericContainer : public BaseConstants
         void _generic_reactivate(int el_id, Substation & substation);
         void _generic_deactivate(int el_id, Substation & substation);
         
-        void _generic_change_bus(int el_id, int new_bus_me_id, Eigen::VectorXi & el_bus_ids, SolverControl & solver_control, int nb_bus);
+        void _generic_change_bus(
+            int el_id,
+            int new_bus_me_id,
+            Eigen::Ref<Eigen::VectorXi>  el_bus_ids,
+            SolverControl & solver_control,
+            int nb_bus) const;
         int _get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const;
 
         /**

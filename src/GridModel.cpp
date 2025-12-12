@@ -959,8 +959,8 @@ RealMat GridModel::get_lodf(){
     IntVect from_bus(nb_el);
     IntVect to_bus(nb_el);
     // retrieve the from_bus / to_bus from the grid
-    from_bus << powerlines_.get_bus_from(), trafos_.get_bus_from();
-    to_bus << powerlines_.get_bus_to(), trafos_.get_bus_to();
+    from_bus << powerlines_.get_bus_from(), trafos_.get_bus_id_side_1();
+    to_bus << powerlines_.get_bus_to(), trafos_.get_bus_id_side_2();
     // convert it to solver bus id
     IntVect from_bus_solver(nb_el);
     IntVect to_bus_solver(nb_el);

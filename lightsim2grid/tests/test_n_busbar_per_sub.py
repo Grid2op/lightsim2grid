@@ -299,11 +299,14 @@ class TestLightSimBackend_3busbars_iidm(TestLightSimBackend_3busbars):
     def get_env_nm(self):
         return "./case_14_storage_iidm"
     
+    def get_gen_slack_id(self):
+        return 5
+    
     def get_backend_kwargs(self):
         return dict(loader_method="pypowsybl",
+                    gen_slack_id=self.get_gen_slack_id(),
                     loader_kwargs={"use_buses_for_sub": True,
-                                   "double_bus_per_sub": True,
-                                   "gen_slack_id": 5}
+                                   "double_bus_per_sub": True}
                     )
     
     

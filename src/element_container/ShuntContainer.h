@@ -60,38 +60,38 @@ class ShuntContainer : public OneSideContainer_PQ
         }
 
     public:
-    typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;
-
-    ShuntContainer():OneSideContainer_PQ() {};
-
-
-    void init(const RealVect & shunt_p_mw,
-              const RealVect & shunt_q_mvar,
-              const Eigen::VectorXi & shunt_bus_id
-              )
-    {
-        init_osc_pq(shunt_p_mw,
-                    shunt_q_mvar,
-                    shunt_bus_id,
-                    "shunts");
-        reset_results();
-    }
-
-    // pickle (python)
-    ShuntContainer::StateRes get_state() const;
-    void set_state(ShuntContainer::StateRes & my_state );
+        typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;
+        
+        ShuntContainer():OneSideContainer_PQ() {};
+        
+        
+        void init(const RealVect & shunt_p_mw,
+                  const RealVect & shunt_q_mvar,
+                  const Eigen::VectorXi & shunt_bus_id
+                  )
+        {
+            init_osc_pq(shunt_p_mw,
+                        shunt_q_mvar,
+                        shunt_bus_id,
+                        "shunts");
+            reset_results();
+        }
     
-    virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                          bool ac,
-                          const std::vector<int> & id_grid_to_solver,
-                          real_type sn_mva) const;
-    virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                            std::vector<Eigen::Triplet<real_type> > & Bpp,
-                            const std::vector<int> & id_grid_to_solver,
-                            real_type sn_mva,
-                            FDPFMethod xb_or_bx) const;
-    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
-
+        // pickle (python)
+        ShuntContainer::StateRes get_state() const;
+        void set_state(ShuntContainer::StateRes & my_state );
+        
+        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                              bool ac,
+                              const std::vector<int> & id_grid_to_solver,
+                              real_type sn_mva) const;
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                                std::vector<Eigen::Triplet<real_type> > & Bpp,
+                                const std::vector<int> & id_grid_to_solver,
+                                real_type sn_mva,
+                                FDPFMethod xb_or_bx) const;
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;  // in DC i need that
+        
     protected:
         virtual void _change_p(int shunt_id, real_type new_p, bool my_status, SolverControl & solver_control)
         {

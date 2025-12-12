@@ -45,14 +45,30 @@
 // - set_state
 // - init
 
+template<class OneSideType>
+class TwoSidesContainer;
 
+/**
+ * This is the most generic part of the "one side container".
+ * 
+ * It can be used to represent side of "multi sided elements" 
+ * (such as Lines or Transformers) or element directly connected
+ * to one bus (such as Loads or Generators).
+ *
+ * It is not meant to be used directly.
+ */
 class OneSideContainer : public GenericContainer
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
 
+    // provide access to all instanciation of "TwoSidesContainer" class 
+    // to protected members of "OneSideContainer" (eg set_osc_state)
+    template<class T>
+    friend class TwoSidesContainer;
+
     // regular implementation
-    protected:
+    public:
 
         class OneSideInfo
         {
@@ -112,193 +128,194 @@ class OneSideContainer : public GenericContainer
                     }
                 }
         };
+        typedef OneSideInfo DataInfo;
 
-    //////////////////////
-    // // iterator
-    // private:
-    //     typedef GenericContainerConstIterator<LoadContainer> LoadContainerConstIterator;
-
-    // public:
-    //     typedef LoadContainerConstIterator const_iterator_type;
-    //     const_iterator_type begin() const {return LoadContainerConstIterator(this, 0); }
-    //     const_iterator_type end() const {return LoadContainerConstIterator(this, nb()); }
-    //     LoadInfo operator[](int id) const
-    //     {
-    //         if(id < 0)
-    //         {
-    //             throw std::range_error("You cannot ask for a negative load id.");
-    //         }
-    //         if(id >= nb())
-    //         {
-    //             throw std::range_error("Load out of bound. Not enough loads on the grid.");
-    //         }
-    //         return LoadInfo(*this, id);
-    //     }
-    ////////////////////////
+    /////////////////////////////////////
+    // iterator
+    private:
+        typedef GenericContainerConstIterator<OneSideContainer> OSCConstIterator;
 
     public:
-    OneSideContainer() {};
-
-    // public generic API
-    int nb() const { return static_cast<int>(bus_id_.size()); }
-    int get_bus(int el_id) {return _get_bus(el_id, status_, bus_id_);}
-    Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
-
-    tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
-    tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
-    
-    Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
-    const std::vector<bool>& get_status() const {return status_;}
-    Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
-    void reconnect_connected_buses(Substation & substation) const{
-        const int nb_els = nb();
-        for(int el_id = 0; el_id < nb_els; ++el_id)
+        OSCConstIterator begin() const {return OSCConstIterator(this, 0); }
+        OSCConstIterator end() const {return OSCConstIterator(this, nb()); }
+        OneSideInfo operator[](int id) const
         {
-            if(!status_[el_id]) continue;
-            const auto my_bus = bus_id_(el_id);
-            if(my_bus == _deactivated_bus_id){
-                // TODO DEBUG MODE only this in debug mode
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::reconnect_connected_buses: element with id ";
-                exc_ << el_id;
-                exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx(...)` ?.";
-                throw std::runtime_error(exc_.str());
+            if(id < 0)
+            {
+                throw std::range_error("You cannot ask for a negative load id.");
             }
-            substation.reconnect_bus(my_bus);  // this bus is connected
+            if(id >= nb())
+            {
+                throw std::range_error("Load out of bound. Not enough loads on the grid.");
+            }
+            return OneSideInfo(*this, id);
         }
-    }
-    
-    void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
-        const int nb_el = nb();
-        SolverControl unused_solver_control;
-        for(int el_id = 0; el_id < nb_el; ++el_id)
-        {
-            if(!status_[el_id]) continue;
-            const auto my_bus = bus_id_(el_id);
-            if(!busbar_in_main_component[my_bus]){
-                deactivate(el_id, unused_solver_control);
+    /////////////////////////////////////
+
+    public:
+        OneSideContainer() {};
+        // OneSideInfo get_osc_info(int id_) {return OneSideInfo(*this, id_);}
+
+        // public generic API
+        int nb() const { return static_cast<int>(bus_id_.size()); }
+        int get_bus(int el_id) const {return _get_bus(el_id, status_, bus_id_);}
+        Eigen::Ref<const IntVect> get_buses() const {return bus_id_;}
+
+        tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
+        tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
+        
+        Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
+        const std::vector<bool>& get_status() const {return status_;}
+        Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
+        void reconnect_connected_buses(Substation & substation) const{
+            const int nb_els = nb();
+            for(int el_id = 0; el_id < nb_els; ++el_id)
+            {
+                if(!status_[el_id]) continue;
+                const auto my_bus = bus_id_(el_id);
+                if(my_bus == _deactivated_bus_id){
+                    // TODO DEBUG MODE only this in debug mode
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::reconnect_connected_buses: element with id ";
+                    exc_ << el_id;
+                    exc_ << " is connected to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx(...)` ?.";
+                    throw std::runtime_error(exc_.str());
+                }
+                substation.reconnect_bus(my_bus);  // this bus is connected
+            }
+        }
+
+        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+            const int nb_el = nb();
+            SolverControl unused_solver_control;
+            for(int el_id = 0; el_id < nb_el; ++el_id)
+            {
+                if(!status_[el_id]) continue;
+                const auto my_bus = bus_id_(el_id);
+                if(!busbar_in_main_component[my_bus]){
+                    deactivate(el_id, unused_solver_control);
+                }
+            }    
+        }
+        void update_bus_status(Substation & substation) const {
+            const int nb_ = nb();
+            for(int el_id = 0; el_id < nb_; ++el_id)
+            {
+                if(!status_[el_id]) continue;
+                substation.reconnect_bus(bus_id_[el_id]);
             }
         }    
-    }
-    void update_bus_status(Substation & substation) const {
-        const int nb_ = nb();
-        for(int el_id = 0; el_id < nb_; ++el_id)
+
+        void deactivate(int el_id, SolverControl & solver_control) {
+            if(status_[el_id]){
+                solver_control.tell_recompute_sbus();
+            }
+            this->_deactivate(el_id, solver_control);
+            _generic_deactivate(el_id, status_);
+        }
+        void reactivate(int el_id, SolverControl & solver_control) {
+            if(!status_[el_id]){
+                solver_control.tell_recompute_sbus();
+            }
+            this->_reactivate(el_id, solver_control);
+            _generic_reactivate(el_id, status_);
+        }
+        void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_max_bus) {
+            this->_change_bus(load_id, new_bus_id, solver_control, nb_max_bus);
+            _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_max_bus);
+        }
+
+        void compute_results(const Eigen::Ref<const RealVect> & Va,
+                             const Eigen::Ref<const RealVect> & Vm,
+                             const Eigen::Ref<const CplxVect> & V,
+                             const std::vector<int> & id_grid_to_solver,
+                             const RealVect & bus_vn_kv,
+                             real_type sn_mva,
+                             bool ac)
         {
-            if(!status_[el_id]) continue;
-            substation.reconnect_bus(bus_id_[el_id]);
+            const int nb_els = nb();
+            v_kv_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
+            v_deg_from_va(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
+            this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
         }
-    }    
 
-    void deactivate(int el_id, SolverControl & solver_control) {
-        if(status_[el_id]){
-            solver_control.tell_recompute_sbus();
+        // can be overriden, but has a default behaviour
+        virtual void reset_results(){
+            reset_osc_results();
         }
-        this->_deactivate(el_id, solver_control);
-        _generic_deactivate(el_id, status_);
-    }
-    void reactivate(int el_id, SolverControl & solver_control) {
-        if(!status_[el_id]){
-            solver_control.tell_recompute_sbus();
-        }
-        this->_reactivate(el_id, solver_control);
-        _generic_reactivate(el_id, status_);
-    }
-    void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_max_bus) {
-        this->_change_bus(load_id, new_bus_id, solver_control, nb_max_bus);
-        _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_max_bus);
-    }
 
-    void compute_results(const Eigen::Ref<const RealVect> & Va,
-                         const Eigen::Ref<const RealVect> & Vm,
-                         const Eigen::Ref<const CplxVect> & V,
-                         const std::vector<int> & id_grid_to_solver,
-                         const RealVect & bus_vn_kv,
-                         real_type sn_mva,
-                         bool ac)
-    {
-        const int nb_els = nb();
-        v_kv_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
-        v_deg_from_va(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_theta_);
-        this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-    }
-
-    // can be overriden, but has a default behaviour
-    virtual void reset_results(){
-        reset_osc_results();
-    }
-
-    void set_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
-    {
-        pos_topo_vect_.array() = pos_topo_vect;
-    }
-    
-    void set_subid(Eigen::Ref<const IntVect> subid)
-    {
-        subid_.array() = subid;
-    }
-
-    void update_topo(
-        Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-        Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
-        SolverControl & solver_control,
-        Substation & substations
-    )
-    {
-        for(int el_id = 0; el_id < pos_topo_vect_.rows(); ++el_id)
+        void set_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
         {
-            int el_pos = pos_topo_vect_(el_id);
-            if(! has_changed(el_pos)) continue;
-            int new_bus = new_values(el_pos);
-            if(new_bus < -2){
-                // TODO DEBUG MODE: only check in debug mode
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
-                exc_ << substations.nmax_busbar_per_sub();
-                exc_ << " you provided ";
-                exc_ << new_bus;
-                exc_ << ".";
-                throw std::out_of_range(exc_.str());
-            }
-            if(new_bus > substations.nmax_busbar_per_sub()){
-                // TODO DEBUG MODE: only check in debug mode
-                std::ostringstream exc_;
-                exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
-                exc_ << substations.nmax_busbar_per_sub();
-                exc_ << " you provided ";
-                exc_ << new_bus;
-                exc_ << ".";
-                throw std::out_of_range(exc_.str());
-            }
-            
-            if(new_bus > 0){
-                // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
-                int sub_id = subid_(el_id);
-                int new_bus_backend = sub_id + (new_bus - 1) * substations.nb_sub();
-                // bus_status_[new_bus_backend] = true;
-                substations.reconnect_bus(new_bus_backend);
-                reactivate(el_id, solver_control); // eg reactivate_load(load_id);
-                change_bus(el_id, new_bus_backend, solver_control, substations.nb_bus()); // eg change_bus_load(load_id, new_bus_backend);
-            } else{
-                // new bus is negative, we deactivate it
-                deactivate(el_id, solver_control);// eg deactivate_load(load_id);
-                // bus_status_ is set to "false" in GridModel.update_topo
-                // and a bus is activated if (and only if) one element is connected to it.
-                // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+            pos_topo_vect_.array() = pos_topo_vect;
+        }
+
+        void set_subid(Eigen::Ref<const IntVect> subid)
+        {
+            subid_.array() = subid;
+        }
+
+        void update_topo(
+            Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            SolverControl & solver_control,
+            Substation & substations
+        )
+        {
+            for(int el_id = 0; el_id < pos_topo_vect_.rows(); ++el_id)
+            {
+                int el_pos = pos_topo_vect_(el_id);
+                if(! has_changed(el_pos)) continue;
+                int new_bus = new_values(el_pos);
+                if(new_bus < -2){
+                    // TODO DEBUG MODE: only check in debug mode
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
+                    exc_ << substations.nmax_busbar_per_sub();
+                    exc_ << " you provided ";
+                    exc_ << new_bus;
+                    exc_ << ".";
+                    throw std::out_of_range(exc_.str());
+                }
+                if(new_bus > substations.nmax_busbar_per_sub()){
+                    // TODO DEBUG MODE: only check in debug mode
+                    std::ostringstream exc_;
+                    exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
+                    exc_ << substations.nmax_busbar_per_sub();
+                    exc_ << " you provided ";
+                    exc_ << new_bus;
+                    exc_ << ".";
+                    throw std::out_of_range(exc_.str());
+                }
+
+                if(new_bus > 0){
+                    // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
+                    int sub_id = subid_(el_id);
+                    int new_bus_backend = sub_id + (new_bus - 1) * substations.nb_sub();
+                    // bus_status_[new_bus_backend] = true;
+                    substations.reconnect_bus(new_bus_backend);
+                    reactivate(el_id, solver_control); // eg reactivate_load(load_id);
+                    change_bus(el_id, new_bus_backend, solver_control, substations.nb_bus()); // eg change_bus_load(load_id, new_bus_backend);
+                } else{
+                    // new bus is negative, we deactivate it
+                    deactivate(el_id, solver_control);// eg deactivate_load(load_id);
+                    // bus_status_ is set to "false" in GridModel.update_topo
+                    // and a bus is activated if (and only if) one element is connected to it.
+                    // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+                }
             }
         }
-    }
-
-    protected:
 
         typedef std::tuple<
-        std::vector<std::string>,
-        std::vector<int>, // bus_id
-        std::vector<bool>, // status
-        bool,  // has subid info
-        std::vector<int>,  // sub_id
-        bool,  // has pos_topo_vect info
-        std::vector<int>  // pos_topo_vect
-        >  StateRes;
+            std::vector<std::string>,
+            std::vector<int>, // bus_id
+            std::vector<bool>, // status
+            bool,  // has subid info
+            std::vector<int>,  // sub_id
+            bool,  // has pos_topo_vect info
+            std::vector<int>  // pos_topo_vect
+            >  StateRes;
+
+    protected:
 
         OneSideContainer::StateRes get_osc_state() const  // osc: one side element
         {
@@ -352,9 +369,8 @@ class OneSideContainer : public GenericContainer
         }
         
         void init_osc(
-            const Eigen::VectorXi & els_bus_id,
-            const std::string & name_el
-        )  // osc: one side element
+            const Eigen::VectorXi & els_bus_id
+        )  // osc: one side container
         {
             bus_id_ = els_bus_id;
             status_ = std::vector<bool>(els_bus_id.size(), true);
@@ -404,6 +420,18 @@ class OneSideContainer : public GenericContainer
         virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
         virtual void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {};
         // virtual void _change_v(int el_id, real_type new_p, SolverControl & solver_control) {};
+
+    protected:
+        // used for example when trafo.change_bus_hv need to access 
+        // side_1_.get_buses_not_const_side_1()
+        Eigen::Ref<IntVect> get_buses_not_const() {return bus_id_;}
+
+        // DANGER zone, neede for trafoContainer and lineContainer
+        // because TwoSidesContainer is not fully made
+        Eigen::Ref<RealVect> get_res_theta() {return res_theta_;}
+        Eigen::Ref<RealVect> get_res_p() {return res_p_;}
+        Eigen::Ref<RealVect> get_res_q() {return res_q_;}
+        Eigen::Ref<RealVect> get_res_v() {return res_v_;}
 
     protected:
         // physical properties

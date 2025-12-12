@@ -170,153 +170,153 @@ class GeneratorContainer: public OneSideContainer_PQ
         }
 
     public:
-    typedef std::tuple<
-       OneSideContainer_PQ::StateRes,
-       bool,                    // turnedoff_gen_pv_
-       std::vector<bool>,       // voltage_regulator_on
-       std::vector<real_type>,  // target_vm_pu_
-       std::vector<real_type>,  // min_q_
-       std::vector<real_type>,  // max_q_
-       std::vector<bool>,       // gen_slackbus
-       std::vector<real_type>   // gen_slack_weight_
-    >  StateRes;
-
-    GeneratorContainer():OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
-    GeneratorContainer(bool turnedoff_gen_pv):OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
-
-    // TODO add pmin and pmax here !
-    void init(const RealVect & generators_p,
-              const RealVect & generators_v,
-              const RealVect & generators_min_q,
-              const RealVect & generators_max_q,
-              const Eigen::VectorXi & generators_bus_id
-              );
-
-    void init_full(const RealVect & generators_p,
-                   const RealVect & generators_v,
-                   const RealVect & generators_q,
-                   const std::vector<bool> & voltage_regulator_on,
-                   const RealVect & generators_min_q,
-                   const RealVect & generators_max_q,
-                   const Eigen::VectorXi & generators_bus_id
-                   );
-
-    // pickle
-    StateRes get_state() const;
-    void set_state(StateRes & my_state );
-
-    // slack handling
-    /**
-    we suppose that the data are correct (ie gen_id in the proper range, and weight > 0.)
-    This is checked in GridModel, and not at this stage
-    **/
-    void add_slackbus(int gen_id, real_type weight, SolverControl & solver_control){
-        // TODO DEBUG MODE
-        if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
-        if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
-        gen_slackbus_[gen_id] = true;
-        if(gen_slack_weight_[gen_id] != weight) solver_control.tell_slack_weight_changed();
-        gen_slack_weight_[gen_id] = weight;
-    }
-    void remove_slackbus(int gen_id, SolverControl & solver_control){
-        if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
-        if(gen_slack_weight_[gen_id] != 0.) solver_control.tell_slack_weight_changed();
-        gen_slackbus_[gen_id] = false;
-        gen_slack_weight_[gen_id] = 0.;
-    }
-    void remove_all_slackbus(){
-        const int nb_gen = nb();
-        SolverControl unused_solver_control;
-        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-        {
-            remove_slackbus(gen_id, unused_solver_control);
+        typedef std::tuple<
+           OneSideContainer_PQ::StateRes,
+           bool,                    // turnedoff_gen_pv_
+           std::vector<bool>,       // voltage_regulator_on
+           std::vector<real_type>,  // target_vm_pu_
+           std::vector<real_type>,  // min_q_
+           std::vector<real_type>,  // max_q_
+           std::vector<bool>,       // gen_slackbus
+           std::vector<real_type>   // gen_slack_weight_
+        >  StateRes;
+        
+        GeneratorContainer():OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
+        GeneratorContainer(bool turnedoff_gen_pv):OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
+        
+        // TODO add pmin and pmax here !
+        void init(const RealVect & generators_p,
+                  const RealVect & generators_v,
+                  const RealVect & generators_min_q,
+                  const RealVect & generators_max_q,
+                  const Eigen::VectorXi & generators_bus_id
+                  );
+              
+        void init_full(const RealVect & generators_p,
+                       const RealVect & generators_v,
+                       const RealVect & generators_q,
+                       const std::vector<bool> & voltage_regulator_on,
+                       const RealVect & generators_min_q,
+                       const RealVect & generators_max_q,
+                       const Eigen::VectorXi & generators_bus_id
+                       );
+                   
+        // pickle
+        StateRes get_state() const;
+        void set_state(StateRes & my_state );
+                   
+        // slack handling
+        /**
+        we suppose that the data are correct (ie gen_id in the proper range, and weight > 0.)
+        This is checked in GridModel, and not at this stage
+        **/
+        void add_slackbus(int gen_id, real_type weight, SolverControl & solver_control){
+            // TODO DEBUG MODE
+            if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
+            if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
+            gen_slackbus_[gen_id] = true;
+            if(gen_slack_weight_[gen_id] != weight) solver_control.tell_slack_weight_changed();
+            gen_slack_weight_[gen_id] = weight;
         }
-    }
-
-    // returns only the gen_id with the highest p that is connected to this bus !
-    int assign_slack_bus(int slack_bus_id,
-                         const std::vector<real_type> & gen_p_per_bus,
-                         SolverControl & solver_control){
-        const int nb_gen = nb();
-        int res_gen_id = -1;
-        real_type max_p = -1.;
-        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
-        {
-            if(!status_[gen_id]) continue;
-            if(bus_id_(gen_id) != slack_bus_id) continue;
-            const real_type p_mw = target_p_mw_(gen_id);
-            if (p_mw > 0.) add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id], solver_control);
-            if((p_mw > max_p) || (res_gen_id == -1) ){
-                res_gen_id = gen_id;
-                max_p = p_mw;
+        void remove_slackbus(int gen_id, SolverControl & solver_control){
+            if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
+            if(gen_slack_weight_[gen_id] != 0.) solver_control.tell_slack_weight_changed();
+            gen_slackbus_[gen_id] = false;
+            gen_slack_weight_[gen_id] = 0.;
+        }
+        void remove_all_slackbus(){
+            const int nb_gen = nb();
+            SolverControl unused_solver_control;
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+            {
+                remove_slackbus(gen_id, unused_solver_control);
             }
         }
-        // TODO DEBUG MODE
-        if(res_gen_id == -1) throw std::runtime_error("GeneratorContainer::assign_slack_bus No generator connected to the desired buses");
-        return res_gen_id;
-    }
-
-    /**
-    Retrieve the normalized (=sum to 1.000) slack weights for all the buses
-    **/
-    RealVect get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
-
-    Eigen::VectorXi get_slack_bus_id() const;
-    void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
-
-    // modification
-    void turnedoff_no_pv(SolverControl & solver_control){
-        solver_control.tell_slack_participate_changed();
-        solver_control.tell_slack_weight_changed();
-        turnedoff_gen_pv_=false;  // turned off generators are not pv. This is NOT the default.
-        }  
-    void turnedoff_pv(SolverControl & solver_control){
-        solver_control.tell_slack_participate_changed();
-        solver_control.tell_slack_weight_changed();
-        turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
-        }  
-    bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
-    void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-                              SolverControl & solver_control);
-    void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, SolverControl & solver_control);
-
-
-    real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
-    real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
-
-    void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
-    void change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control);
-
-    virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
-    virtual void fillpv(std::vector<int>& bus_pv,
-                        std::vector<bool> & has_bus_been_added,
-                        const Eigen::VectorXi & slack_bus_id_solver,
-                        const std::vector<int> & id_grid_to_solver) const;
-    void init_q_vector(int nb_bus,
-                       Eigen::VectorXi & total_gen_per_bus,
-                       RealVect & total_q_min_per_bus,
-                       RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
-
-    void set_q(const RealVect & reactive_mismatch,
-               const std::vector<int> & id_grid_to_solver,
-               bool ac,
-               const Eigen::VectorXi & total_gen_per_bus,
-               const RealVect & total_q_min_per_bus,
-               const RealVect & total_q_max_per_bus);
-
-    void get_vm_for_dc(RealVect & Vm);
-
-    /**
-    this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
-    the ac powerflow
-    **/
-    void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
-
-    void cout_v(){
-        for(const auto & el : target_vm_pu_){
-            std::cout << "V " << el << std::endl;
+    
+        // returns only the gen_id with the highest p that is connected to this bus !
+        int assign_slack_bus(int slack_bus_id,
+                             const std::vector<real_type> & gen_p_per_bus,
+                             SolverControl & solver_control){
+            const int nb_gen = nb();
+            int res_gen_id = -1;
+            real_type max_p = -1.;
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+            {
+                if(!status_[gen_id]) continue;
+                if(bus_id_(gen_id) != slack_bus_id) continue;
+                const real_type p_mw = target_p_mw_(gen_id);
+                if (p_mw > 0.) add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id], solver_control);
+                if((p_mw > max_p) || (res_gen_id == -1) ){
+                    res_gen_id = gen_id;
+                    max_p = p_mw;
+                }
+            }
+            // TODO DEBUG MODE
+            if(res_gen_id == -1) throw std::runtime_error("GeneratorContainer::assign_slack_bus No generator connected to the desired buses");
+            return res_gen_id;
         }
-    }
+    
+        /**
+        Retrieve the normalized (=sum to 1.000) slack weights for all the buses
+        **/
+        RealVect get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver);
+    
+        Eigen::VectorXi get_slack_bus_id() const;
+        void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver);
+    
+        // modification
+        void turnedoff_no_pv(SolverControl & solver_control){
+            solver_control.tell_slack_participate_changed();
+            solver_control.tell_slack_weight_changed();
+            turnedoff_gen_pv_=false;  // turned off generators are not pv. This is NOT the default.
+            }  
+        void turnedoff_pv(SolverControl & solver_control){
+            solver_control.tell_slack_participate_changed();
+            solver_control.tell_slack_weight_changed();
+            turnedoff_gen_pv_=true;  // turned off generators are pv. This is the default.
+            }  
+        bool get_turnedoff_gen_pv() const {return turnedoff_gen_pv_;}
+        void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+                                  SolverControl & solver_control);
+        void update_slack_weights_by_id(Eigen::Ref<const IntVect> gen_slack_id, SolverControl & solver_control);
+        
+        
+        real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
+        real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
+        
+        void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
+        void change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control);
+        
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const;
+        virtual void fillpv(std::vector<int>& bus_pv,
+                            std::vector<bool> & has_bus_been_added,
+                            const Eigen::VectorXi & slack_bus_id_solver,
+                            const std::vector<int> & id_grid_to_solver) const;
+        void init_q_vector(int nb_bus,
+                           Eigen::VectorXi & total_gen_per_bus,
+                           RealVect & total_q_min_per_bus,
+                           RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
+        
+        void set_q(const RealVect & reactive_mismatch,
+                   const std::vector<int> & id_grid_to_solver,
+                   bool ac,
+                   const Eigen::VectorXi & total_gen_per_bus,
+                   const RealVect & total_q_min_per_bus,
+                   const RealVect & total_q_max_per_bus);
+        
+        void get_vm_for_dc(RealVect & Vm);
+        
+        /**
+        this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
+        the ac powerflow
+        **/
+        void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const;
+        
+        void cout_v(){
+            for(const auto & el : target_vm_pu_){
+                std::cout << "V " << el << std::endl;
+            }
+        }
 
     protected:
         // physical properties

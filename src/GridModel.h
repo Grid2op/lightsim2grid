@@ -466,8 +466,8 @@ class GridModel : public GenericContainer
         void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, solver_control_); }
         void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_hv(trafo_id);}
-        int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_lv(trafo_id);}
+        int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_side_1(trafo_id);}
+        int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_side_2(trafo_id);}
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
@@ -544,7 +544,7 @@ class GridModel : public GenericContainer
         const std::vector<bool>& get_lines_status() const { return powerlines_.get_status();}
         tuple4d get_trafohv_res() const {return trafos_.get_res_hv();}
         tuple4d get_trafolv_res() const {return trafos_.get_res_lv();}
-        const std::vector<bool>& get_trafo_status() const { return trafos_.get_status();}
+        const std::vector<bool>& get_trafo_status() const { return trafos_.get_status_global();}
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
         tuple3d get_sgens_res() const {return sgens_.get_res();}
@@ -559,8 +559,8 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_storage_theta() const  {return storages_.get_theta();}
         Eigen::Ref<const RealVect> get_lineor_theta() const {return powerlines_.get_theta_or();}
         Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_ex();}
-        Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_hv();}
-        Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_lv();}
+        Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_side_2();}
         Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_or();}
         Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_ex();}
 
@@ -990,11 +990,11 @@ class GridModel : public GenericContainer
         }
         void set_trafo_hv_to_subid(Eigen::Ref<const IntVect> trafo_hv_to_subid)
         {
-            trafos_.set_or_subid(trafo_hv_to_subid);
+            trafos_.set_subid_side_1(trafo_hv_to_subid);
         }
         void set_trafo_lv_to_subid(Eigen::Ref<const IntVect> trafo_lv_to_subid)
         {
-            trafos_.set_ex_subid(trafo_lv_to_subid);
+            trafos_.set_subid_side_2(trafo_lv_to_subid);
         }
         void set_n_sub(int n_sub)
         {
