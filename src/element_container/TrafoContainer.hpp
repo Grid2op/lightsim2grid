@@ -197,7 +197,9 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
                              real_type sn_mva,
                              bool ac)
         {
-            compute_results_tsc_rxha(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+            // compute base values
+            compute_results_tsc_rxha_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+            // adjust for phase shifters
             if(!ac){
                 Eigen::Ref<RealVect> res_p_side_1 = get_res_p_side_1();
                 Eigen::Ref<RealVect> res_p_side_2 = get_res_p_side_2();
@@ -208,7 +210,10 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
                     res_p_side_2(el_id) += dc_x_tau_shift_(el_id) * sn_mva;
                 }
             }
+            // compute amps flow
+            compute_amps_after_all_set();
         }
+        
         void reset_results(){
             reset_results_tsc_rxha();
         }

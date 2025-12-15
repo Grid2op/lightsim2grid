@@ -31,6 +31,13 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 
 [0.11.1] 202x-yy-zz
 --------------------
+- [BREAKING] for better consistency, and following pypowsybl convention, trafo and lines "side"
+  are now called "_1" and "_2" instead of "hv" / "lv" (for trafo) or "or" / "ex" for powerlines.
+  For example, what used to be accessible with `gridmodel.change_bus_powerline_or(...)` is now called
+  `gridmodel.change_bus_1_powerline()`. This affects powerlines, transformers and dc powerlines but also
+  "LineInfo", "TrafoInfo" and "DCPowerlineInfo".
+- [ADDED] in all "xxxInfo"  (*eg* "LoadInfo") information about subtation and position in the topology
+  vector.
 - [IMPROVED] Eigen to version 5.0.1 (2025/11/11)
 - [IMPROVED] rename all ".h" file to ".hpp" for cpp headers (cpp side). 
 

@@ -852,17 +852,19 @@ class LightSimBackend(Backend):
         n_busbar_per_sub = self._aux_get_substation_handling_from_loader_kwargs(loader_kwargs)
         if n_busbar_per_sub is None:
             n_busbar_per_sub = self.n_busbar_per_sub
-        self._grid, subs_id = init_from_pypowsybl(grid_tmp,
-                                         gen_slack_id=self._gen_slack_id,
-                                         slack_bus_id=None,
-                                         sn_mva=sn_mva,
-                                         sort_index=sort_index,
-                                         only_main_component=self._automatically_disconnect,
-                                         return_sub_id=True,
-                                         n_busbar_per_sub=n_busbar_per_sub,
-                                         buses_for_sub=buses_for_sub,
-                                         init_vm_pu=init_vm_pu,
-                                         )
+        self._grid, subs_id = init_from_pypowsybl(
+            grid_tmp,
+            gen_slack_id=self._gen_slack_id,
+            slack_bus_id=None,
+            sn_mva=sn_mva,
+            sort_index=sort_index,
+            only_main_component=self._automatically_disconnect,
+            return_sub_id=True,
+            n_busbar_per_sub=n_busbar_per_sub,
+            buses_for_sub=buses_for_sub,
+            init_vm_pu=init_vm_pu,
+        )
+        
         (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
          batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
         if self._gen_slack_id is not None:
@@ -891,7 +893,7 @@ class LightSimBackend(Backend):
             self.n_shunt = len(self._grid.get_shunts())
         else:
             self.n_shunt = None
-        
+            
         if buses_for_sub:
             # consider that each "bus" in the powsybl grid is a substation
             # this is the "standard" behaviour for IEEE grid in grid2op
@@ -935,12 +937,13 @@ class LightSimBackend(Backend):
             use_grid2op_default_names = False
             
         if use_grid2op_default_names:
-            self.name_load = np.array([f"load_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
-            self.name_gen = np.array([f"gen_{el.bus_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())]).astype(str)
-            self.name_line = np.array([f"{el.bus_or_id}_{el.bus_ex_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
-                                    [f"{el.bus_hv_id}_{el.bus_lv_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
-            self.name_storage = np.array([f"storage_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())]).astype(str)
-            self.name_shunt = np.array([f"shunt_{el.bus_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())]).astype(str)
+            self.name_load = np.array([f"load_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
+            self.name_gen = np.array([f"gen_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())]).astype(str)
+            self.name_line = np.array(
+                [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
+                [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
+            self.name_storage = np.array([f"storage_{el.sub_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())]).astype(str)
+            self.name_shunt = np.array([f"shunt_{el.sub_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())]).astype(str)
         else:
             self.name_load = np.array(load_sub.index.astype(str))
             self.name_gen = np.array(gen_sub.index.astype(str))
@@ -953,7 +956,7 @@ class LightSimBackend(Backend):
                 self.name_sub = np.array(grid_tmp.get_buses().loc[buses_sub_id.drop_duplicates("sub_id").index, "voltage_level_id"].values)
 
         # and now things needed by the backend (legacy)
-        self.prod_pu_to_kv = 1.0 * self._grid.get_bus_vn_kv()[[el.bus_id for el in self._grid.get_generators()]]
+        self.prod_pu_to_kv = 1.0 * self._grid.get_bus_vn_kv()[[el.sub_id for el in self._grid.get_generators()]]
         self.prod_pu_to_kv = self.prod_pu_to_kv.astype(dt_float)
         
         if "reconnect_disco_gen" in loader_kwargs and loader_kwargs["reconnect_disco_gen"]:
@@ -1059,7 +1062,12 @@ class LightSimBackend(Backend):
         from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
         _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
-            type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
+            type(self.init_pp_backend).n_busbar_per_sub = type(self).n_busbar_per_sub
+        if hasattr(type(self), "detachment_is_allowed"):
+            type(self.init_pp_backend).detachment_is_allowed = type(self).detachment_is_allowed
+        if hasattr(type(self), "shunts_data_available"):
+            type(self.init_pp_backend).shunts_data_available = type(self).shunts_data_available
+            
         type(self.init_pp_backend).set_env_name(type(self).env_name)
         if type(self).glop_version is not None:
             type(self.init_pp_backend).glop_version = type(self).glop_version
@@ -1092,7 +1100,7 @@ class LightSimBackend(Backend):
         self._grid = init_from_pandapower(self.init_pp_backend._grid,
                                           self.init_pp_backend.n_sub,
                                           self.n_busbar_per_sub,
-                                          pp_orig_file=pp_orig_file)    
+                                          pp_orig_file=pp_orig_file)
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()        
         
@@ -1328,11 +1336,11 @@ class LightSimBackend(Backend):
         if self.__has_storage:
             res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
                                                                                 cls.storage_to_subid)
-        lor_glob_bus = np.concatenate((np.array([el.bus_or_id for el in self._grid.get_lines()]),
-                                        np.array([el.bus_hv_id for el in self._grid.get_trafos()])))
+        lor_glob_bus = np.concatenate((np.array([el.bus_1_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus_1_id for el in self._grid.get_trafos()])))
         res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus, cls.line_or_to_subid)
-        lex_glob_bus = np.concatenate((np.array([el.bus_ex_id for el in self._grid.get_lines()]),
-                                        np.array([el.bus_lv_id for el in self._grid.get_trafos()])))
+        lex_glob_bus = np.concatenate((np.array([el.bus_2_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus_2_id for el in self._grid.get_trafos()])))
         res[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus, cls.line_ex_to_subid)
         
     def assert_grid_correct_after_powerflow(self) -> None:
@@ -1343,11 +1351,12 @@ class LightSimBackend(Backend):
         :return: ``None``
         :raise: :class:`grid2op.Exceptions.EnvError` and possibly all of its derived class.
         """
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend  # lazy import
+        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
+        
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
         self.init_pp_backend.__class__ = type(self.init_pp_backend).init_grid(type(self))
-        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend  # lazy import
-        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
         self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:
@@ -1614,6 +1623,9 @@ class LightSimBackend(Backend):
 
             self.load_p[:], self.load_q[:], self.load_v[:], self.load_theta[:] = self._load_res
             self.prod_p[:], self.prod_q[:], self.prod_v[:], self.gen_theta[:] = self._gen_res
+            # print(self.prod_p)
+            # import pdb
+            # pdb.set_trace()
 
             if self.__has_storage:
                 self.storage_p[:], self.storage_q[:], self.storage_v[:], self.storage_theta[:] = self._storage_res
@@ -1957,13 +1969,13 @@ class LightSimBackend(Backend):
         self._timer_read_data_back = 0.
         self._timer_fetch_data_cpp = 0.
         self._timer_apply_act = 0.
-        self._reset_res_pointers()
         if type(self).shunts_data_available:
             self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
         self.topo_vect[:] = self.__init_topo_vect  # TODO#
         if self._automatically_disconnect:
             # automatically disconnect things if needed (and if the option is properly set)
             self._need_islanding_detection = True
+        self._reset_res_pointers()
 
 def _dont_use_global_bus_to_local_legacy(cls, global_bus: np.ndarray, to_sub_id: np.ndarray) -> np.ndarray:
     res = (1 * global_bus).astype(dt_int)  # make a copy

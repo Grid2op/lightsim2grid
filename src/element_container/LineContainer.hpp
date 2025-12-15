@@ -42,8 +42,8 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
     public:
         // make it iterable
         typedef LineConstIterator const_iterator_type;
-        const_iterator_type begin() const {return LineConstIterator(this, 0); }
-        const_iterator_type end() const {return LineConstIterator(this, nb()); }
+        LineConstIterator begin() const {return LineConstIterator(this, 0); }
+        LineConstIterator end() const {return LineConstIterator(this, nb()); }
         LineInfo operator[](int id) const
         {
             if(id < 0)
@@ -236,15 +236,15 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
         // CplxVect powerlines_h_ex_;
 
         // specific grid2op
-        IntVect or_pos_topo_vect_;
-        IntVect ex_pos_topo_vect_;
-        IntVect or_to_subid_;
-        IntVect ex_to_subid_;
+        // IntVect or_pos_topo_vect_;
+        // IntVect ex_pos_topo_vect_;
+        // IntVect or_to_subid_;
+        // IntVect ex_to_subid_;
 
         // input data
-        Eigen::VectorXi bus_or_id_;
-        Eigen::VectorXi bus_ex_id_;
-        std::vector<bool> status_;
+        // Eigen::VectorXi bus_or_id_;
+        // Eigen::VectorXi bus_ex_id_;
+        // std::vector<bool> status_;
 
         //output data
         // RealVect res_powerline_por_;  // in MW
@@ -259,15 +259,15 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
         // RealVect res_powerline_thetaex_; // in degree
 
         // model coefficients
-        CplxVect yac_ff_;
-        CplxVect yac_ft_;
-        CplxVect yac_tf_;
-        CplxVect yac_tt_;
+        // CplxVect yac_ff_;
+        // CplxVect yac_ft_;
+        // CplxVect yac_tf_;
+        // CplxVect yac_tt_;
 
-        CplxVect ydc_ff_;
-        CplxVect ydc_ft_;
-        CplxVect ydc_tf_;
-        CplxVect ydc_tt_;
+        // CplxVect ydc_ff_;
+        // CplxVect ydc_ft_;
+        // CplxVect ydc_tf_;
+        // CplxVect ydc_tt_;
 };
 
 #endif  //LINE_CONTAINER_H

@@ -255,7 +255,28 @@ class GeneratorContainer: public OneSideContainer_PQ
             if(res_gen_id == -1) throw std::runtime_error("GeneratorContainer::assign_slack_bus No generator connected to the desired buses");
             return res_gen_id;
         }
-    
+
+        virtual void _compute_results(
+            const Eigen::Ref<const RealVect> & Va,
+            const Eigen::Ref<const RealVect> & Vm,
+            const Eigen::Ref<const CplxVect> & V,
+            const std::vector<int> & id_grid_to_solver,
+            const RealVect & bus_vn_kv,
+            real_type sn_mva,
+            bool ac){
+              set_osc_pq_res_p();
+              if(ac){
+                int nb_gen = nb();
+                for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+                {
+                    if(!status_[gen_id]) continue;
+                    if(voltage_regulator_on_[gen_id]) continue;
+                    res_q_(gen_id) = target_q_mvar_(gen_id);
+                        
+              }
+            }
+        }
+
         /**
         Retrieve the normalized (=sum to 1.000) slack weights for all the buses
         **/
@@ -339,7 +360,7 @@ class GeneratorContainer: public OneSideContainer_PQ
         bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?
 
     protected:
-    virtual void _change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control);
+        virtual void _change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control);
 
 };
 

@@ -212,14 +212,15 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 std::get<3>(side_2_res));
         }
 
-        void compute_results_tsc_rxha(const Eigen::Ref<const RealVect> & Va,
-                                      const Eigen::Ref<const RealVect> & Vm,
-                                      const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<int> & id_grid_to_solver,
-                                      const RealVect & bus_vn_kv,
-                                      real_type sn_mva,
-                                      bool ac
-                                      )
+        void compute_results_tsc_rxha_no_amps(
+            const Eigen::Ref<const RealVect> & Va,
+            const Eigen::Ref<const RealVect> & Vm,
+            const Eigen::Ref<const CplxVect> & V,
+            const std::vector<int> & id_grid_to_solver,
+            const RealVect & bus_vn_kv,
+            real_type sn_mva,
+            bool ac
+            )
         {
             // it needs to be initialized at 0.
             const int nb_element = nb();
@@ -315,10 +316,29 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }
 
             }
+        }
+        
+        // computes the flows (in A) after p_1, q_1, v_1, p_2, q_2 and v_2 have been computed
+        // for example with compute_results_tsc_rxha_no_amps
+        void compute_amps_after_all_set(){
             const auto & res_side1 = side_1_.get_res();
             _get_amps(res_a_side_1_, std::get<0>(res_side1), std::get<1>(res_side1), std::get<2>(res_side1));
             const auto & res_side2 = side_2_.get_res();
             _get_amps(res_a_side_2_, std::get<0>(res_side2), std::get<1>(res_side2), std::get<2>(res_side2));
+
+        }
+        void compute_results_tsc_rxha(const Eigen::Ref<const RealVect> & Va,
+                                      const Eigen::Ref<const RealVect> & Vm,
+                                      const Eigen::Ref<const CplxVect> & V,
+                                      const std::vector<int> & id_grid_to_solver,
+                                      const RealVect & bus_vn_kv,
+                                      real_type sn_mva,
+                                      bool ac
+                                      )
+        {
+            // it needs to be initialized at 0.
+            compute_results_tsc_rxha_no_amps(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
+            compute_amps_after_all_set();
         }
         
         virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
