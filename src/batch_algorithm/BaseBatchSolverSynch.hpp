@@ -103,13 +103,13 @@ class BaseBatchSolverSynch
                                 bool is_trafo) 
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
-            const auto & el_status = structure_data.get_status();
-            const auto & bus_from = structure_data.get_bus_from();
-            const auto & bus_to = structure_data.get_bus_to();
+            const auto & el_status = structure_data.get_status_global();
+            const auto & bus_from = structure_data.get_bus_id_side_1();
+            const auto & bus_to = structure_data.get_bus_id_side_2();
             bool is_ac = _solver.ac_solver_used();
 
-            const auto & vect_y_ff = is_ac ? structure_data.yac_ff() : structure_data.ydc_ff();
-            const auto & vect_y_ft = is_ac ? structure_data.yac_ft() : structure_data.ydc_ft();
+            const auto & vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
+            const auto & vect_y_ft = is_ac ? structure_data.yac_12() : structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             Eigen::Index nb_el = structure_data.nb();
@@ -158,13 +158,13 @@ class BaseBatchSolverSynch
                                         bool is_trafo) 
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
-            const auto & el_status = structure_data.get_status();
-            const auto & bus_from = structure_data.get_bus_from();
-            const auto & bus_to = structure_data.get_bus_to();
+            const auto & el_status = structure_data.get_status_global();
+            const auto & bus_from = structure_data.get_bus_id_side_1();
+            const auto & bus_to = structure_data.get_bus_id_side_1();
             const bool is_ac = _solver.ac_solver_used();
 
-            Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_ff() : structure_data.ydc_ff();
-            Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_ft() : structure_data.ydc_ft();
+            Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
+            Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_12() : structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             Eigen::Index nb_el = structure_data.nb();

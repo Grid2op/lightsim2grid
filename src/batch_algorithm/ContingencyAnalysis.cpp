@@ -57,40 +57,32 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
         std::vector<Coeff> this_cont_coeffs;
         this_cont_coeffs.reserve(this_cont_id.size() * 4);  // usually there are 4 coeffs per powerlines / trafos
         for(auto line_id : this_cont_id){
+            int el_id;
+            const TwoSidesContainer_rxh_A<OneSideContainer> *p_branch;
             if(line_id < n_line_)
             {
                 // this is a powerline
-                bus_1_id = id_me_to_solver[powerlines.get_bus_from()[line_id]];
-                bus_2_id = id_me_to_solver[powerlines.get_bus_to()[line_id]];
-                status = powerlines.get_status()[line_id];
-                if(ac_solver_used){
-                    y_ff = powerlines.yac_ff()[line_id];
-                    y_ft = powerlines.yac_ft()[line_id];
-                    y_tf = powerlines.yac_tf()[line_id];
-                    y_tt = powerlines.yac_tt()[line_id];
-                }else{
-                    y_ff = powerlines.ydc_ff()[line_id];
-                    y_ft = powerlines.ydc_ft()[line_id];
-                    y_tf = powerlines.ydc_tf()[line_id];
-                    y_tt = powerlines.ydc_tt()[line_id];
-                }
+                el_id = line_id;
+                p_branch = & powerlines;
             }else{
                 // this is a trafo
-                const auto trafo_id = line_id - n_line_;
-                status = trafos.get_status()[trafo_id];
-                bus_1_id = id_me_to_solver[trafos.get_bus_from()[trafo_id]];
-                bus_2_id = id_me_to_solver[trafos.get_bus_to()[trafo_id]];
-                if(ac_solver_used){
-                    y_ff = trafos.yac_ff()[trafo_id];
-                    y_ft = trafos.yac_ft()[trafo_id];
-                    y_tf = trafos.yac_tf()[trafo_id];
-                    y_tt = trafos.yac_tt()[trafo_id];
-                }else{
-                    y_ff = trafos.ydc_ff()[trafo_id];
-                    y_ft = trafos.ydc_ft()[trafo_id];
-                    y_tf = trafos.ydc_tf()[trafo_id];
-                    y_tt = trafos.ydc_tt()[trafo_id];
-                }
+                el_id = line_id - n_line_;
+                p_branch = & trafos;
+            }
+
+            bus_1_id = id_me_to_solver[p_branch->get_bus_id_side_1()[el_id]];
+            bus_2_id = id_me_to_solver[p_branch->get_bus_id_side_2()[el_id]];
+            status = p_branch->get_status_global()[el_id];
+            if(ac_solver_used){
+                y_ff = p_branch->yac_11()[line_id];
+                y_ft = p_branch->yac_12()[line_id];
+                y_tf = p_branch->yac_21()[line_id];
+                y_tt = p_branch->yac_22()[line_id];
+            }else{
+                y_ff = p_branch->ydc_11()[line_id];
+                y_ft = p_branch->ydc_12()[line_id];
+                y_tf = p_branch->ydc_21()[line_id];
+                y_tt = p_branch->ydc_22()[line_id];
             }
 
             if(status && bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)

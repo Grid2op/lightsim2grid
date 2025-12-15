@@ -59,43 +59,46 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // members
                 real_type r_pu;
                 real_type x_pu;
-                cplx_type h_pu;
+                cplx_type h1_pu;
+                cplx_type h2_pu;
 
                 bool has_res;
                 real_type res_a1_ka;
                 real_type res_a2_ka;
 
-                cplx_type yac_ff;
-                cplx_type yac_ft;
-                cplx_type yac_tf;
-                cplx_type yac_tt;
-                cplx_type ydc_ff;
-                cplx_type ydc_ft;
-                cplx_type ydc_tf;
-                cplx_type ydc_tt;
+                cplx_type yac_11;
+                cplx_type yac_12;
+                cplx_type yac_21;
+                cplx_type yac_22;
+                cplx_type ydc_11;
+                cplx_type ydc_12;
+                cplx_type ydc_21;
+                cplx_type ydc_22;
 
                 TwoSidesContainer_rxh_AInfo(const TwoSidesContainer_rxh_A & r_data, int my_id):
                 TwoSidesContainer<OneSideContainer>::TwoSidesInfo(r_data, my_id),
                 r_pu(-1.0),
                 x_pu(-1.0),
-                h_pu(0., 0.),
+                h1_pu(0., 0.),
+                h2_pu(0., 0.),
                 has_res(false),
                 res_a1_ka(0.),
                 res_a2_ka(0.),
-                yac_ff(0., 0.),
-                yac_ft(0., 0.),
-                yac_tf(0., 0.),
-                yac_tt(0., 0.),
-                ydc_ff(0., 0.),
-                ydc_ft(0., 0.),
-                ydc_tf(0., 0.),
-                ydc_tt(0., 0.)
+                yac_11(0., 0.),
+                yac_12(0., 0.),
+                yac_21(0., 0.),
+                yac_22(0., 0.),
+                ydc_11(0., 0.),
+                ydc_12(0., 0.),
+                ydc_21(0., 0.),
+                ydc_22(0., 0.)
                 {
                     if(my_id < 0) return;
                     if(my_id >= r_data.nb()) return;
                     r_pu = r_data.r_.coeff(my_id);
                     x_pu = r_data.x_.coeff(my_id);
-                    h_pu = r_data.h_.coeff(my_id);
+                    h1_pu = r_data.h_side_1_.coeff(my_id);
+                    h2_pu = r_data.h_side_2_.coeff(my_id);
 
                     has_res = r_data.side_1_[my_id].has_res;
                     if(has_res)
@@ -105,14 +108,14 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     }
 
                     // coeffs
-                    yac_ff = r_data.yac_ff_.coeff(my_id);
-                    yac_ft = r_data.yac_ft_.coeff(my_id);
-                    yac_tf = r_data.yac_tf_.coeff(my_id);
-                    yac_tt = r_data.yac_tt_.coeff(my_id);
-                    ydc_ff = r_data.ydc_ff_.coeff(my_id);
-                    ydc_ft = r_data.ydc_ft_.coeff(my_id);
-                    ydc_tf = r_data.ydc_tf_.coeff(my_id);
-                    ydc_tt = r_data.ydc_tt_.coeff(my_id);
+                    yac_11 = r_data.yac_11_.coeff(my_id);
+                    yac_12 = r_data.yac_12_.coeff(my_id);
+                    yac_21 = r_data.yac_21_.coeff(my_id);
+                    yac_22 = r_data.yac_22_.coeff(my_id);
+                    ydc_11 = r_data.ydc_11_.coeff(my_id);
+                    ydc_12 = r_data.ydc_12_.coeff(my_id);
+                    ydc_21 = r_data.ydc_21_.coeff(my_id);
+                    ydc_22 = r_data.ydc_22_.coeff(my_id);
 
                 }
         };
@@ -145,7 +148,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                    TwoSidesContainer<OneSideContainer>::StateRes,
                    std::vector<real_type>,  // branch_r
                    std::vector<real_type>,  // branch_x
-                   std::vector<cplx_type>   // branch_h
+                   std::vector<cplx_type>,   // branch_h1
+                   std::vector<cplx_type>   // branch_h2
                >  StateRes;
 
         // setter (states)
@@ -171,16 +175,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             side_1_.reactivate(el_id, solver_control);
             side_2_.reactivate(el_id, solver_control);
         }
-        void change_bus_side_1(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-            // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
-            if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
-            side_1_.change_bus(el_id, new_bus_id, solver_control, nb_bus);
-        }
-        void change_bus_side_2(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-            // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
-            if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
-            side_2_.change_bus(el_id, new_bus_id, solver_control, nb_bus);
-        }
 
         // getter (results)
         tuple4d get_res_side_1() const {
@@ -199,7 +193,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 std::get<2>(side_2_res),
                 res_a_side_2_);
         }
-        tuple5d get_res_side_1_full() const {
+        tuple5d get_res_full_side_1() const {
             const tuple4d & side_1_res = TwoSidesContainer<OneSideContainer>::get_res_full_side_1();
             return tuple5d(
                 std::get<0>(side_1_res),
@@ -208,7 +202,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 res_a_side_1_,
                 std::get<3>(side_1_res));
         }
-        tuple5d get_res_side_2_full() const {
+        tuple5d get_res_full_side_2() const {
             const tuple4d & side_2_res = TwoSidesContainer<OneSideContainer>::get_res_full_side_2();
             return tuple5d(
                 std::get<0>(side_2_res),
@@ -295,8 +289,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                     // TODO for DC with yff, ...
                     // trafo equations
-                    cplx_type I_hvlv =  yac_ff_(el_id) * Ehv + yac_ft_(el_id) * Elv;
-                    cplx_type I_lvhv =  yac_tt_(el_id) * Elv + yac_tf_(el_id) * Ehv;
+                    cplx_type I_hvlv =  yac_11_(el_id) * Ehv + yac_12_(el_id) * Elv;
+                    cplx_type I_lvhv =  yac_22_(el_id) * Elv + yac_21_(el_id) * Ehv;
 
                     I_hvlv = std::conj(I_hvlv);
                     I_lvhv = std::conj(I_lvhv);
@@ -309,8 +303,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     res_q_lv_(el_id) = std::imag(s_lvhv) * sn_mva;
                 }else{
                     // result of the dc powerflow
-                    res_p_side_1(el_id) = (std::real(ydc_ff_(el_id)) * Va(bus_hv_solver_id) + std::real(ydc_ft_(el_id)) * Va(bus_lv_solver_id)) * sn_mva; // - dc_x_tau_shift_(el_id) ) * sn_mva;
-                    res_p_lv_(el_id) = (std::real(ydc_tt_(el_id)) * Va(bus_lv_solver_id) + std::real(ydc_tf_(el_id)) * Va(bus_hv_solver_id)) * sn_mva; // + dc_x_tau_shift_(el_id) ) * sn_mva; 
+                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va(bus_hv_solver_id) + std::real(ydc_12_(el_id)) * Va(bus_lv_solver_id)) * sn_mva; // - dc_x_tau_shift_(el_id) ) * sn_mva;
+                    res_p_lv_(el_id) = (std::real(ydc_22_(el_id)) * Va(bus_lv_solver_id) + std::real(ydc_21_(el_id)) * Va(bus_hv_solver_id)) * sn_mva; // + dc_x_tau_shift_(el_id) ) * sn_mva; 
                 
                     res_q_side_1(el_id) = 0.;
                     res_q_lv_(el_id) = 0.;
@@ -326,19 +320,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             const auto & res_side2 = side_2_.get_res();
             _get_amps(res_a_side_2_, std::get<0>(res_side2), std::get<1>(res_side2), std::get<2>(res_side2));
         }
-        // virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
-        // {
-        //     const Eigen::Index nb_el = nb();
-        //     SolverControl unused_solver_control;
-        //     for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
-        //         if(!status_global_[i]) continue;
-        //         auto bus_or = get_bus_side_1(el_id);
-        //         auto bus_ex = get_bus_side_2(el_id);
-        //         if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
-        //             deactivate(el_id, unused_solver_control);
-        //         }
-        //     }            
-        // }
         
         virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
         {
@@ -354,15 +335,15 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         // model paramters
-        Eigen::Ref<const CplxVect> yac_ff() const {return yac_ff_;}
-        Eigen::Ref<const CplxVect> yac_ft() const {return yac_ft_;}
-        Eigen::Ref<const CplxVect> yac_tf() const {return yac_tf_;}
-        Eigen::Ref<const CplxVect> yac_tt() const {return yac_tt_;}
+        Eigen::Ref<const CplxVect> yac_11() const {return yac_11_;}
+        Eigen::Ref<const CplxVect> yac_12() const {return yac_12_;}
+        Eigen::Ref<const CplxVect> yac_21() const {return yac_21_;}
+        Eigen::Ref<const CplxVect> yac_22() const {return yac_22_;}
 
-        Eigen::Ref<const CplxVect> ydc_ff() const {return ydc_ff_;}
-        Eigen::Ref<const CplxVect> ydc_ft() const {return ydc_ft_;}
-        Eigen::Ref<const CplxVect> ydc_tf() const {return ydc_tf_;}
-        Eigen::Ref<const CplxVect> ydc_tt() const {return ydc_tt_;}
+        Eigen::Ref<const CplxVect> ydc_11() const {return ydc_11_;}
+        Eigen::Ref<const CplxVect> ydc_12() const {return ydc_12_;}
+        Eigen::Ref<const CplxVect> ydc_21() const {return ydc_21_;}
+        Eigen::Ref<const CplxVect> ydc_22() const {return ydc_22_;}
 
         // solver interface
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
@@ -398,16 +379,16 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 
                 if(ac){
                     // ac mode
-                    yft = yac_ft_(el_id);
-                    ytf = yac_tf_(el_id);
-                    yff = yac_ff_(el_id);
-                    ytt = yac_tt_(el_id);
+                    yft = yac_12_(el_id);
+                    ytf = yac_21_(el_id);
+                    yff = yac_11_(el_id);
+                    ytt = yac_22_(el_id);
                 }else{
                     // dc mode
-                    yft = ydc_ft_(el_id);
-                    ytf = ydc_tf_(el_id);
-                    yff = ydc_ff_(el_id);
-                    ytt = ydc_tt_(el_id);
+                    yft = ydc_12_(el_id);
+                    ytf = ydc_21_(el_id);
+                    yff = ydc_11_(el_id);
+                    ytt = ydc_22_(el_id);
                 }
                 res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side2_solver_id, yft));
                 res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side1_solver_id, ytf));
@@ -454,12 +435,14 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         {
             std::vector<real_type> branch_r(r_.begin(), r_.end());
             std::vector<real_type> branch_x(x_.begin(), x_.end());
-            std::vector<cplx_type> branch_h(h_.begin(), h_.end());
+            std::vector<cplx_type> branch_h1(h_side_1_.begin(), h_side_1_.end());
+            std::vector<cplx_type> branch_h2(h_side_2_.begin(), h_side_2_.end());
             StateRes res(
                 get_tsc_state(),
                 branch_r,
                 branch_x,
-                branch_h
+                branch_h1,
+                branch_h2
             );
             return res;
         }
@@ -471,14 +454,17 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
             const std::vector<real_type> & branch_r = std::get<1>(my_state);
             const std::vector<real_type> & branch_x = std::get<2>(my_state);
-            const std::vector<cplx_type> & branch_h = std::get<3>(my_state);
+            const std::vector<cplx_type> & branch_h1 = std::get<3>(my_state);
+            const std::vector<cplx_type> & branch_h2 = std::get<4>(my_state);
             check_size(branch_r, size, "branch r");
             check_size(branch_x, size, "branch x");
-            check_size(branch_h, size, "branch h (=g+j.b)");
+            check_size(branch_h1, size, "branch h (=g+j.b), side 1");
+            check_size(branch_h2, size, "branch h (=g+j.b), side 2");
 
             r_ = RealVect::Map(&branch_r[0], size);
             x_ = RealVect::Map(&branch_x[0], size);
-            h_ = CplxVect::Map(&branch_h[0], size);
+            h_side_1_ = CplxVect::Map(&branch_h1[0], size);
+            h_side_2_ = CplxVect::Map(&branch_h2[0], size);
         }
 
         void reset_results_tsc_rxha(){
@@ -492,21 +478,22 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         // physical properties
         RealVect r_;  // in pu
         RealVect x_;  // in pu
-        CplxVect h_;  // in pu
+        CplxVect h_side_1_;  // in pu
+        CplxVect h_side_2_;  // in pu
 
         //output data
         RealVect res_a_side_1_;  // in kA
         RealVect res_a_side_2_;  // in kA
 
         // model coefficients
-        CplxVect yac_ff_;
-        CplxVect yac_ft_;
-        CplxVect yac_tf_;
-        CplxVect yac_tt_;
+        CplxVect yac_11_;
+        CplxVect yac_12_;
+        CplxVect yac_21_;
+        CplxVect yac_22_;
 
-        CplxVect ydc_ff_;
-        CplxVect ydc_ft_;
-        CplxVect ydc_tf_;
-        CplxVect ydc_tt_;
+        CplxVect ydc_11_;
+        CplxVect ydc_12_;
+        CplxVect ydc_21_;
+        CplxVect ydc_22_;
 };
 #endif  // TWO_SIDES_CONTAINER_RXH_A_H

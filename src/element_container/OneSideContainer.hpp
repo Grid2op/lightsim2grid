@@ -315,6 +315,16 @@ class OneSideContainer : public GenericContainer
             std::vector<int>  // pos_topo_vect
             >  StateRes;
 
+        StateRes get_state() const
+        {
+            return get_osc_state();
+        }
+
+        void set_state(StateRes & state)
+        {
+            set_osc_state(state);
+        }
+
     protected:
 
         OneSideContainer::StateRes get_osc_state() const  // osc: one side element

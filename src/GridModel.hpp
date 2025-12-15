@@ -454,10 +454,10 @@ class GridModel : public GenericContainer
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, solver_control_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, solver_control_); }
-        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_or(powerline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_ex(powerline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_or(powerline_id);}
-        int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_ex(powerline_id);}
+        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_side_1(powerline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_side_2(powerline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id);}
+        int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id);}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
@@ -537,11 +537,11 @@ class GridModel : public GenericContainer
         const std::vector<bool>& get_shunts_status() const { return shunts_.get_status();}
         tuple3d get_gen_res() const {return generators_.get_res();}
         const std::vector<bool>& get_gen_status() const { return generators_.get_status();}
-        tuple4d get_lineor_res() const {return powerlines_.get_lineor_res();}
-        tuple4d get_lineex_res() const {return powerlines_.get_lineex_res();}
-        const std::vector<bool>& get_lines_status() const { return powerlines_.get_status();}
-        tuple4d get_trafohv_res() const {return trafos_.get_res_hv();}
-        tuple4d get_trafolv_res() const {return trafos_.get_res_lv();}
+        tuple4d get_lineor_res() const {return powerlines_.get_res_side_1();}
+        tuple4d get_lineex_res() const {return powerlines_.get_res_side_2();}
+        const std::vector<bool>& get_lines_status() const { return powerlines_.get_status_global();}
+        tuple4d get_trafohv_res() const {return trafos_.get_res_side_1();}
+        tuple4d get_trafolv_res() const {return trafos_.get_res_side_2();}
         const std::vector<bool>& get_trafo_status() const { return trafos_.get_status_global();}
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
@@ -555,8 +555,8 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
         Eigen::Ref<const RealVect> get_shunt_theta() const  {return shunts_.get_theta();}
         Eigen::Ref<const RealVect> get_storage_theta() const  {return storages_.get_theta();}
-        Eigen::Ref<const RealVect> get_lineor_theta() const {return powerlines_.get_theta_or();}
-        Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_ex();}
+        Eigen::Ref<const RealVect> get_lineor_theta() const {return powerlines_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_side_2();}
         Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_side_1();}
         Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_side_2();}
         Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_side_1();}
@@ -574,10 +574,10 @@ class GridModel : public GenericContainer
         tuple4d get_loads_res_full() const {return loads_.get_res_full();}
         tuple4d get_shunts_res_full() const {return shunts_.get_res_full();}
         tuple4d get_gen_res_full() const {return generators_.get_res_full();}
-        tuple5d get_lineor_res_full() const {return powerlines_.get_res_or_full();}
-        tuple5d get_lineex_res_full() const {return powerlines_.get_res_ex_full();}
-        tuple5d get_trafohv_res_full() const {return trafos_.get_res_hv_full();}
-        tuple5d get_trafolv_res_full() const {return trafos_.get_res_lv_full();}
+        tuple5d get_lineor_res_full() const {return powerlines_.get_res_full_side_1();}
+        tuple5d get_lineex_res_full() const {return powerlines_.get_res_full_side_2();}
+        tuple5d get_trafohv_res_full() const {return trafos_.get_res_full_side_1();}
+        tuple5d get_trafolv_res_full() const {return trafos_.get_res_full_side_2();}
         tuple4d get_storages_res_full() const {return storages_.get_res_full();}
         tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
         tuple4d get_dclineor_res_full() const {return dc_lines_.get_res_full_side_1();}
@@ -951,19 +951,19 @@ class GridModel : public GenericContainer
         }
         void set_line_or_pos_topo_vect(Eigen::Ref<const IntVect> line_or_pos_topo_vect)
         {
-            powerlines_.set_or_pos_topo_vect(line_or_pos_topo_vect);
+            powerlines_.set_pos_topo_vect_side_1(line_or_pos_topo_vect);
         }
         void set_line_ex_pos_topo_vect(Eigen::Ref<const IntVect> line_ex_pos_topo_vect)
         {
-            powerlines_.set_ex_pos_topo_vect(line_ex_pos_topo_vect);
+            powerlines_.set_pos_topo_vect_side_2(line_ex_pos_topo_vect);
         }
         void set_trafo_hv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_hv_pos_topo_vect)
         {
-            powerlines_.set_or_pos_topo_vect(trafo_hv_pos_topo_vect);
+            powerlines_.set_pos_topo_vect_side_1(trafo_hv_pos_topo_vect);
         }
         void set_trafo_lv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_lv_pos_topo_vect)
         {
-            powerlines_.set_ex_pos_topo_vect(trafo_lv_pos_topo_vect);
+            powerlines_.set_pos_topo_vect_side_2(trafo_lv_pos_topo_vect);
         }
 
         void set_load_to_subid(Eigen::Ref<const IntVect> load_to_subid)
@@ -980,11 +980,11 @@ class GridModel : public GenericContainer
         }
         void set_line_or_to_subid(Eigen::Ref<const IntVect> line_or_to_subid)
         {
-            powerlines_.set_or_subid(line_or_to_subid);
+            powerlines_.set_subid_side_1(line_or_to_subid);
         }
         void set_line_ex_to_subid(Eigen::Ref<const IntVect> line_ex_to_subid)
         {
-            powerlines_.set_ex_subid(line_ex_to_subid);
+            powerlines_.set_subid_side_2(line_ex_to_subid);
         }
         void set_trafo_hv_to_subid(Eigen::Ref<const IntVect> trafo_hv_to_subid)
         {

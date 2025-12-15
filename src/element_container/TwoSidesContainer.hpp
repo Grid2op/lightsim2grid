@@ -16,7 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
-#include "OneSideContainer.hpp"
+#include "GenericContainer.hpp"
 
 // TODO other part of the API, like deactivate, reactivate etc.
 template<class OneSideType>
@@ -201,7 +201,7 @@ class TwoSidesContainer : public GenericContainer
         {
             side_1_.set_pos_topo_vect(pos_topo_vect);
         }
-        void set_ex_pos_topo_vect(Eigen::Ref<const IntVect> pos_topo_vect)
+        void set_pos_topo_vect_side_2(Eigen::Ref<const IntVect> pos_topo_vect)
         {
             side_2_.set_pos_topo_vect(pos_topo_vect);
         }
@@ -228,26 +228,26 @@ class TwoSidesContainer : public GenericContainer
 
         virtual ~TwoSidesContainer() noexcept = default;
 
-        // void compute_results_tsc(const Eigen::Ref<const RealVect> & Va,
-        //                          const Eigen::Ref<const RealVect> & Vm,
-        //                          const Eigen::Ref<const CplxVect> & V,
-        //                          const std::vector<int> & id_grid_to_solver,
-        //                          const RealVect & bus_vn_kv,
-        //                          real_type sn_mva,
-        //                          bool ac)
-        // {
-        //     side_1_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-        //     side_2_.compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
-        // }
         void reset_results_tsc(){
             side_1_.reset_results();
             side_2_.reset_results();
         };
 
+        void change_bus_side_1(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+            // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
+            if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
+            side_1_.change_bus(el_id, new_bus_id, solver_control, nb_bus);
+        }
+        void change_bus_side_2(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+            // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
+            if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
+            side_2_.change_bus(el_id, new_bus_id, solver_control, nb_bus);
+        }
+
         typedef std::tuple<
             std::vector<bool>,          // status_global
-            typename OneSideContainer::StateRes, // side_1
-            typename OneSideContainer::StateRes  // side_2
+            typename OneSideType::StateRes, // side_1
+            typename OneSideType::StateRes  // side_2
             >  StateRes;
 
     protected:
@@ -261,17 +261,17 @@ class TwoSidesContainer : public GenericContainer
         {
             StateRes res(
                 status_global_,
-                side_1_.get_osc_state(),
-                side_2_.get_osc_state()
+                side_1_.get_state(),
+                side_2_.get_state()
             );
             return res;
         }
 
-        void set_tsc_state(StateRes & my_state)  // tsc: two sides container
+        void set_tsc_state(TwoSidesContainer::StateRes & my_state)  // tsc: two sides container
         {
             status_global_ = std::get<0>(my_state);
-            side_1_.set_osc_state(std::get<1>(my_state));
-            side_2_.set_osc_state(std::get<2>(my_state));
+            side_1_.set_state(std::get<1>(my_state));
+            side_2_.set_state(std::get<2>(my_state));
             auto size = nb();
             if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");
             if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");

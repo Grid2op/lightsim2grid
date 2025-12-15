@@ -59,7 +59,8 @@ void TrafoContainer::init(const RealVect & trafo_r,
 
     r_ = trafo_r;
     x_ = trafo_x;
-    h_ = trafo_b;
+    h_side_1_ = 0.5 * trafo_b;
+    h_side_2_ = 0.5 * trafo_b;
     ratio_ = trafo_ratio;
     shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
     is_tap_hv_side_ = trafo_tap_hv;
@@ -111,22 +112,22 @@ void TrafoContainer::_update_model_coeffs()
 {
     const Eigen::Index my_size = r_.size();
 
-    yac_ff_ = CplxVect::Zero(my_size);
-    yac_ft_ = CplxVect::Zero(my_size);
-    yac_tf_ = CplxVect::Zero(my_size);
-    yac_tt_ = CplxVect::Zero(my_size);
+    yac_11_ = CplxVect::Zero(my_size);
+    yac_12_ = CplxVect::Zero(my_size);
+    yac_21_ = CplxVect::Zero(my_size);
+    yac_22_ = CplxVect::Zero(my_size);
 
-    ydc_ff_ = CplxVect::Zero(my_size);
-    ydc_ft_ = CplxVect::Zero(my_size);
-    ydc_tf_ = CplxVect::Zero(my_size);
-    ydc_tt_ = CplxVect::Zero(my_size);
+    ydc_11_ = CplxVect::Zero(my_size);
+    ydc_12_ = CplxVect::Zero(my_size);
+    ydc_21_ = CplxVect::Zero(my_size);
+    ydc_22_ = CplxVect::Zero(my_size);
     dc_x_tau_shift_ = RealVect::Zero(my_size);
     for(Eigen::Index i = 0; i < my_size; ++i)
     {
         // for AC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
         const cplx_type ys = 1. / cplx_type(r_(i), x_(i));
-        const cplx_type h = h_(i) * 0.5;
+        // const cplx_type h = h_side_1_(i);
         real_type tau = ratio_(i);
         real_type theta_shift = shift_(i);
         if(!is_tap_hv_side_[i]){
@@ -143,19 +144,19 @@ void TrafoContainer::_update_model_coeffs()
             emitheta_shift = {cos_theta, -sin_theta};
         }
 
-        yac_ff_(i) = (ys + h) / (tau * tau);
-        yac_tt_(i) = (ys + h);
-        yac_tf_(i) = -ys / tau * emitheta_shift ;
-        yac_ft_(i) = -ys / tau * eitheta_shift;
+        yac_11_(i) = (ys + h_side_1_(i)) / (tau * tau);
+        yac_22_(i) = (ys + h_side_2_(i));
+        yac_21_(i) = -ys / tau * emitheta_shift ;
+        yac_12_(i) = -ys / tau * eitheta_shift;
 
         // for DC
         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
         // except here I only care about the real part, so I remove the "1/j"
         cplx_type tmp = 1. / (tau * x_(i));
-        ydc_ff_(i) = tmp;
-        ydc_tt_(i) = tmp;
-        ydc_tf_(i) = -tmp;
-        ydc_ft_(i) = -tmp;
+        ydc_11_(i) = tmp;
+        ydc_22_(i) = tmp;
+        ydc_21_(i) = -tmp;
+        ydc_12_(i) = -tmp;
         if(!is_tap_hv_side_[i]) dc_x_tau_shift_(i) = -std::real(tmp) * theta_shift;
         else dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
     }
@@ -449,8 +450,8 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         ytf_bp = -std::imag(ys_bp * emitheta_shift_bp);
         yft_bp = -std::imag(ys_bp * eitheta_shift_bp);
         const real_type ys_bpp_r = std::imag(ys_bpp); 
-        yff_bpp = (ys_bpp_r + std::imag(0.5 * h_(tr_id))) / (tau_bpp * tau_bpp);
-        ytt_bpp = ys_bpp_r + std::imag(0.5 * h_(tr_id));
+        yff_bpp = (ys_bpp_r + std::imag(h_side_1_(tr_id))) / (tau_bpp * tau_bpp);
+        ytt_bpp = ys_bpp_r + std::imag(h_side_2_(tr_id));
         ytf_bpp = -ys_bpp_r / tau_bpp;
         yft_bpp = -ys_bpp_r / tau_bpp;
 

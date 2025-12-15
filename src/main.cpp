@@ -567,8 +567,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const TrafoContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_from", &TrafoContainer::get_bus_from, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_to", &TrafoContainer::get_bus_to, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2, "TODO doc", py::keep_alive<0, 1>())
         ; 
 
     py::class_<TrafoContainer::TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
@@ -588,7 +588,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
 
         .def_readonly("r_pu", &TrafoContainer::TrafoInfo::r_pu, DocIterator::r_pu.c_str())
         .def_readonly("x_pu", &TrafoContainer::TrafoInfo::x_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_pu", &TrafoContainer::TrafoInfo::h_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h1_pu", &TrafoContainer::TrafoInfo::h1_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h2_pu", &TrafoContainer::TrafoInfo::h2_pu, DocIterator::h_pu.c_str())
         .def_readonly("is_tap_hv_side", &TrafoContainer::TrafoInfo::is_tap_hv_side, DocIterator::is_tap_hv_side.c_str())
         .def_readonly("ratio", &TrafoContainer::TrafoInfo::ratio, DocIterator::ratio.c_str())
         .def_readonly("shift_rad", &TrafoContainer::TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
@@ -602,7 +603,17 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_v1_kv", &TrafoContainer::TrafoInfo::res_v1_kv, DocIterator::res_v_lv_kv.c_str())
         .def_readonly("res_a2_ka", &TrafoContainer::TrafoInfo::res_a2_ka, DocIterator::res_a_lv_ka.c_str())
         .def_readonly("res_theta1_deg", &TrafoContainer::TrafoInfo::res_theta1_deg, DocIterator::res_theta_hv_deg.c_str())
-        .def_readonly("res_theta2_deg", &TrafoContainer::TrafoInfo::res_theta2_deg, DocIterator::res_theta_lv_deg.c_str());
+        .def_readonly("res_theta2_deg", &TrafoContainer::TrafoInfo::res_theta2_deg, DocIterator::res_theta_lv_deg.c_str())
+
+        .def_readonly("yac_11", &TrafoContainer::TrafoInfo::yac_11, "TODO doc")
+        .def_readonly("yac_12", &TrafoContainer::TrafoInfo::yac_12, "TODO doc")
+        .def_readonly("yac_21", &TrafoContainer::TrafoInfo::yac_21, "TODO doc")
+        .def_readonly("yac_22", &TrafoContainer::TrafoInfo::yac_22, "TODO doc")
+        .def_readonly("ydc_11", &TrafoContainer::TrafoInfo::ydc_11, "TODO doc")
+        .def_readonly("ydc_12", &TrafoContainer::TrafoInfo::ydc_12, "TODO doc")
+        .def_readonly("ydc_21", &TrafoContainer::TrafoInfo::ydc_21, "TODO doc")
+        .def_readonly("ydc_22", &TrafoContainer::TrafoInfo::ydc_22, "TODO doc")
+        ;
 
     // iterator for trafos
     py::class_<LineContainer>(m, "LineContainer", DocIterator::LineContainer.c_str())
@@ -611,31 +622,50 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const LineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_from", &LineContainer::get_bus_from, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_to", &LineContainer::get_bus_to, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2, "TODO doc", py::keep_alive<0, 1>());
 
     py::class_<LineContainer::LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineContainer::LineInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &LineContainer::LineInfo::name, DocIterator::name.c_str())
-        .def_readonly("connected", &LineContainer::LineInfo::connected, DocIterator::connected.c_str())
-        .def_readonly("bus_or_id", &LineContainer::LineInfo::bus_or_id, DocIterator::bus_or_id.c_str())
-        .def_readonly("bus_ex_id", &LineContainer::LineInfo::bus_ex_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("sub_1_id", &LineContainer::LineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("sub_2_id", &LineContainer::LineInfo::sub_2_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos_1_topo_vect", &LineContainer::LineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("pos_2_topo_vect", &LineContainer::LineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
+
+        .def_readonly("connected_global", &LineContainer::LineInfo::connected_global, DocIterator::connected.c_str())
+        .def_readonly("connected_1", &LineContainer::LineInfo::connected_1, DocIterator::connected.c_str())
+        .def_readonly("connected_2", &LineContainer::LineInfo::connected_2, DocIterator::connected.c_str())
+
+        .def_readonly("bus_1_id", &LineContainer::LineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus_2_id", &LineContainer::LineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
+
         .def_readonly("r_pu", &LineContainer::LineInfo::r_pu, DocIterator::r_pu.c_str())
         .def_readonly("x_pu", &LineContainer::LineInfo::x_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_pu", &LineContainer::LineInfo::h_pu, DocIterator::x_pu.c_str())
-        .def_readonly("h_or_pu", &LineContainer::LineInfo::h_or_pu, DocIterator::h_pu.c_str())
-        .def_readonly("h_ex_pu", &LineContainer::LineInfo::h_ex_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h1_pu", &LineContainer::LineInfo::h1_pu, DocIterator::h_pu.c_str())
+        .def_readonly("h2_pu", &LineContainer::LineInfo::h2_pu, DocIterator::h_pu.c_str())
         .def_readonly("has_res", &LineContainer::LineInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p_or_mw", &LineContainer::LineInfo::res_p_or_mw, DocIterator::res_p_or_mw.c_str())
-        .def_readonly("res_q_or_mvar", &LineContainer::LineInfo::res_q_or_mvar, DocIterator::res_q_or_mvar.c_str())
-        .def_readonly("res_v_or_kv", &LineContainer::LineInfo::res_v_or_kv, DocIterator::res_v_or_kv.c_str())
-        .def_readonly("res_a_or_ka", &LineContainer::LineInfo::res_a_or_ka, DocIterator::res_a_or_ka.c_str())
-        .def_readonly("res_p_ex_mw", &LineContainer::LineInfo::res_p_ex_mw, DocIterator::res_p_ex_mw.c_str())
-        .def_readonly("res_q_ex_mvar", &LineContainer::LineInfo::res_q_ex_mvar, DocIterator::res_q_ex_mvar.c_str())
-        .def_readonly("res_v_ex_kv", &LineContainer::LineInfo::res_v_ex_kv, DocIterator::res_v_ex_kv.c_str())
-        .def_readonly("res_a_ex_ka", &LineContainer::LineInfo::res_a_ex_ka, DocIterator::res_a_ex_ka.c_str())
-        .def_readonly("res_theta_or_deg", &LineContainer::LineInfo::res_theta_or_deg, DocIterator::res_theta_or_deg.c_str())
-        .def_readonly("res_theta_ex_deg", &LineContainer::LineInfo::res_theta_ex_deg, DocIterator::res_theta_ex_deg.c_str());
+
+        .def_readonly("res_p1_mw", &LineContainer::LineInfo::res_p1_mw, DocIterator::res_p_or_mw.c_str())
+        .def_readonly("res_q1_mvar", &LineContainer::LineInfo::res_q1_mvar, DocIterator::res_q_or_mvar.c_str())
+        .def_readonly("res_v1_kv", &LineContainer::LineInfo::res_v1_kv, DocIterator::res_v_or_kv.c_str())
+        .def_readonly("res_a1_ka", &LineContainer::LineInfo::res_a1_ka, DocIterator::res_a_or_ka.c_str())
+        .def_readonly("res_p2_mw", &LineContainer::LineInfo::res_p2_mw, DocIterator::res_p_ex_mw.c_str())
+        .def_readonly("res_q2_mvar", &LineContainer::LineInfo::res_q2_mvar, DocIterator::res_q_ex_mvar.c_str())
+        .def_readonly("res_v2_kv", &LineContainer::LineInfo::res_v2_kv, DocIterator::res_v_ex_kv.c_str())
+        .def_readonly("res_a2_ka", &LineContainer::LineInfo::res_a2_ka, DocIterator::res_a_ex_ka.c_str())
+        .def_readonly("res_theta1_deg", &LineContainer::LineInfo::res_theta1_deg, DocIterator::res_theta_or_deg.c_str())
+        .def_readonly("res_theta2_deg", &LineContainer::LineInfo::res_theta2_deg, DocIterator::res_theta_ex_deg.c_str())
+
+        .def_readonly("yac_11", &LineContainer::LineInfo::yac_11, "TODO doc")
+        .def_readonly("yac_12", &LineContainer::LineInfo::yac_12, "TODO doc")
+        .def_readonly("yac_21", &LineContainer::LineInfo::yac_21, "TODO doc")
+        .def_readonly("yac_22", &LineContainer::LineInfo::yac_22, "TODO doc")
+        .def_readonly("ydc_11", &LineContainer::LineInfo::ydc_11, "TODO doc")
+        .def_readonly("ydc_12", &LineContainer::LineInfo::ydc_12, "TODO doc")
+        .def_readonly("ydc_21", &LineContainer::LineInfo::ydc_21, "TODO doc")
+        .def_readonly("ydc_22", &LineContainer::LineInfo::ydc_22, "TODO doc")
+        ;
 
     // iterator for dc lines
     py::class_<DCLineContainer>(m, "DCLineContainer", DocIterator::DCLineContainer.c_str())

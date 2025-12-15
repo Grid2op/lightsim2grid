@@ -202,8 +202,8 @@ class GeneratorContainer: public OneSideContainer_PQ
                        );
                    
         // pickle
-        StateRes get_state() const;
-        void set_state(StateRes & my_state );
+        GeneratorContainer::StateRes get_state() const;
+        void set_state(GeneratorContainer::StateRes & my_state );
                    
         // slack handling
         /**

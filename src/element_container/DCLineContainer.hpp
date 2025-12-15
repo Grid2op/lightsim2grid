@@ -24,6 +24,15 @@
 
 class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
 {
+
+    //////////////////////////////
+    // access data from base class
+    // public:
+    //     using TwoSidesContainer<GeneratorContainer>::check_size;
+
+    // protected:
+    //////////////////////////////
+
     public:
         class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
         {
@@ -51,11 +60,6 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
                 {
                     if (my_id < 0) return;
                     if (my_id >= r_data_dcline.nb()) return;
-
-                    id = my_id;
-                    if(r_data_dcline.names_.size()){
-                        name = r_data_dcline.names_[my_id];
-                    }
                     loss_pct = r_data_dcline.loss_percent_(my_id);
                     loss_mw = r_data_dcline.loss_mw_(my_id);
 
@@ -72,28 +76,21 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
         typedef GenericContainerConstIterator<DCLineContainer> DCLineConstIterator;
 
     public:
-    typedef std::tuple<
-                TwoSidesContainer<GeneratorContainer>::StateRes,
-               std::vector<double>, // loss_percent
-               std::vector<double> // loss_mw
-               >  StateRes;
-
-    // iterator
-    typedef DCLineConstIterator const_iterator_type;
-    const_iterator_type begin() const {return DCLineConstIterator(this, 0); }
-    const_iterator_type end() const {return DCLineConstIterator(this, nb()); }
-    DCLineInfo operator[](int id) const
-    {
-        if(id < 0)
+        // iterator
+        DCLineConstIterator begin() const {return DCLineConstIterator(this, 0); }
+        DCLineConstIterator end() const {return DCLineConstIterator(this, nb()); }
+        DCLineInfo operator[](int id) const
         {
-            throw std::range_error("You cannot ask for a negative dc line");
+            if(id < 0)
+            {
+                throw std::range_error("You cannot ask for a negative dc line");
+            }
+            if(id >= nb())
+            {
+                throw std::range_error("DCLine out of bound. Not enough dc line on the grid.");
+            }
+            return DCLineInfo(*this, id);
         }
-        if(id >= nb())
-        {
-            throw std::range_error("DCLine out of bound. Not enough dc line on the grid.");
-        }
-        return DCLineInfo(*this, id);
-    }
 
     // underlying generators are not pv when powerline is off
     DCLineContainer(){
@@ -103,8 +100,14 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
     };
 
     // pickle
-    StateRes get_state() const;
-    void set_state(StateRes & my_state);
+
+    typedef std::tuple<
+               TwoSidesContainer<GeneratorContainer>::StateRes,
+               std::vector<double>, // loss_percent
+               std::vector<double> // loss_mw
+               >  StateRes;
+    DCLineContainer::StateRes get_state() const;
+    void set_state(DCLineContainer::StateRes & my_state);
 
     // TODO min_p, max_p
     void init(const Eigen::VectorXi & branch_from_id,
@@ -121,22 +124,23 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
               );
 
     // accessor / modifiers
-    void deactivate(int dcline_id, SolverControl & solver_control) {
+    void deactivate(int dcline_id, SolverControl & solver_control) {  // TODO this in TwoSidesCOntainer !
         _generic_deactivate(dcline_id, status_global_);
         side_1_.deactivate(dcline_id, solver_control);
         side_2_.deactivate(dcline_id, solver_control);
-        }
-    void reactivate(int dcline_id, SolverControl & solver_control) {
+    }
+    void reactivate(int dcline_id, SolverControl & solver_control) {  // TODO this in TwoSidesCOntainer !
         _generic_reactivate(dcline_id, status_global_);
         side_1_.reactivate(dcline_id, solver_control);
         side_2_.reactivate(dcline_id, solver_control);
-        }
-    void change_bus_side_1(int dcline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-        side_1_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);
     }
-    void change_bus_side_2(int dcline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-        side_2_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);
-    }
+    
+    // void change_bus_side_1(int dcline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+    //     side_1_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);
+    // }
+    // void change_bus_side_2(int dcline_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+    //     side_2_.change_bus(dcline_id, new_bus_id, solver_control, nb_bus);
+    // }
 
     // for buses only connected through dc line, i don't add them
     // they are not in the same "connected component"

@@ -17,7 +17,7 @@
 
 #include "Utils.hpp"
 #include "BaseSubstation.hpp"
-#include "GenericContainer.hpp"
+#include "OneSideContainer.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
 /**
@@ -213,18 +213,18 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
             reset_results_tsc_rxha();
         }
 
-        tuple4d get_res_hv() const {
-            return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_1();
-        }
-        tuple4d get_res_lv() const {
-            return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_2();
-        }
-        tuple5d get_res_hv_full() const {
-            return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_1_full();
-        }
-        tuple5d get_res_lv_full() const {
-            return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_2_full();
-        }
+        // tuple4d get_res_hv() const {
+        //     return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_1();
+        // }
+        // tuple4d get_res_lv() const {
+        //     return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_2();
+        // }
+        // tuple5d get_res_hv_full() const {
+        //     return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_1_full();
+        // }
+        // tuple5d get_res_lv_full() const {
+        //     return TwoSidesContainer_rxh_A<OneSideContainer>::get_res_side_2_full();
+        // }
 
         // model paramters
         // Eigen::Ref<const CplxVect> yac_ff() const {return yac_ff_;}
@@ -240,9 +240,9 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
 
         // TODO !
         // for batched algorithm (need to be removed when powerlines will accept same API)
-        const std::vector<bool>& get_status() const {return get_status_global();}
-        Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return get_bus_id_side_1();}
-        Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return get_bus_id_side_2();}
+        // const std::vector<bool>& get_status() const {return get_status_global();}
+        // Eigen::Ref<const Eigen::VectorXi> get_bus_from() const {return get_bus_id_side_1();}
+        // Eigen::Ref<const Eigen::VectorXi> get_bus_to() const {return get_bus_id_side_2();}
         
     protected:
         void _update_model_coeffs();
