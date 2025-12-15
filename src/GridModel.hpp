@@ -462,8 +462,8 @@ class GridModel : public GenericContainer
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
         void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, solver_control_); }
-        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_hv(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_lv(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_side_1(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_side_2(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_side_1(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_side_2(trafo_id);}
 

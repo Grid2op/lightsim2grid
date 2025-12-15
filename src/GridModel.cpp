@@ -1100,6 +1100,8 @@ void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, 
 
     // NB we suppose that if a powerline (or a trafo) is disconnected, then both its ends are
     // and same for trafo, obviously
+    powerlines_.update_topo(has_changed, new_values, solver_control_, substations_);
+    trafos_.update_topo(has_changed, new_values, solver_control_, substations_);
     // update_topo_generic(has_changed, new_values,
     //                     &GridModel::reactivate_powerline,
     //                     &GridModel::change_bus_powerline_or,

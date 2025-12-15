@@ -73,17 +73,11 @@ void TrafoContainer::init(const RealVect & trafo_r,
 
 TrafoContainer::StateRes TrafoContainer::get_state() const
 {
-     std::vector<real_type> branch_r(r_.begin(), r_.end());
-     std::vector<real_type> branch_x(x_.begin(), x_.end());
-     std::vector<cplx_type> branch_h(h_.begin(), h_.end());
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
      std::vector<real_type> shift(shift_.begin(), shift_.end());
      std::vector<bool> is_tap_hv_side = is_tap_hv_side_;
      TrafoContainer::StateRes res(
-        get_tsc_state(),
-        branch_r,
-        branch_x,
-        branch_h,
+        get_tsc_rxha_state(),
         ratio,
         is_tap_hv_side,
         shift);
@@ -93,26 +87,16 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
 
 void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
 {
-    set_tsc_state(std::get<0>(my_state));
-    std::vector<real_type> & branch_r = std::get<1>(my_state);
-    std::vector<real_type> & branch_x = std::get<2>(my_state);
-    std::vector<cplx_type> & branch_h = std::get<3>(my_state);
-    std::vector<real_type> & ratio = std::get<4>(my_state);
-    std::vector<bool> & is_tap_hv_side = std::get<5>(my_state);
-    std::vector<real_type> & shift = std::get<6>(my_state);
+    set_tsc_rxha_state(std::get<0>(my_state));
+
+    std::vector<real_type> & ratio = std::get<1>(my_state);
+    std::vector<bool> & is_tap_hv_side = std::get<2>(my_state);
+    std::vector<real_type> & shift = std::get<3>(my_state);
 
     auto size = nb();
-    GenericContainer::check_size(branch_r, size, "branch_r");
-    GenericContainer::check_size(branch_x, size, "branch_x");
-    GenericContainer::check_size(branch_h, size, "branch_h");
     GenericContainer::check_size(ratio, size, "ratio");
     GenericContainer::check_size(is_tap_hv_side, size, "is_tap_hv_side");
     GenericContainer::check_size(shift, size, "shift");
-
-    // now assign the values
-    r_ = RealVect::Map(&branch_r[0], size);
-    x_ = RealVect::Map(&branch_x[0], size);
-    h_ = CplxVect::Map(&branch_h[0], size);
 
     // input data
     ratio_  = RealVect::Map(&ratio[0], size);
@@ -177,58 +161,58 @@ void TrafoContainer::_update_model_coeffs()
     }
 }
 
-void TrafoContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
-                              bool ac,
-                              const std::vector<int> & id_grid_to_solver,
-                              real_type sn_mva) const
-{
-    //TODO merge that with fillYbusBranch!
-    //TODO template here instead of "if" for ac / dc
-    const Eigen::Index nb_trafo = nb();
-    cplx_type yft, ytf, yff, ytt;
-    for(Eigen::Index trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
-        // i don't do anything if the trafo is disconnected
-        if(!status_global_[trafo_id]) continue;
+// void TrafoContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+//                               bool ac,
+//                               const std::vector<int> & id_grid_to_solver,
+//                               real_type sn_mva) const
+// {
+//     //TODO merge that with fillYbusBranch!
+//     //TODO template here instead of "if" for ac / dc
+//     const Eigen::Index nb_trafo = nb();
+//     cplx_type yft, ytf, yff, ytt;
+//     for(Eigen::Index trafo_id =0; trafo_id < nb_trafo; ++trafo_id){
+//         // i don't do anything if the trafo is disconnected
+//         if(!status_global_[trafo_id]) continue;
 
-        // compute from / to
-        int bus_hv_id_me = get_bus_side_1(trafo_id);
-        int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
-        if(bus_hv_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::fillYbus: the trafo with id ";
-            exc_ << trafo_id;
-            exc_ << " is connected (hv side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        int bus_lv_id_me = get_bus_side_2(trafo_id);
-        int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
-        if(bus_lv_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::fillYbus: the trafo with id ";
-            exc_ << trafo_id;
-            exc_ << " is connected (lv side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
+//         // compute from / to
+//         int bus_hv_id_me = get_bus_side_1(trafo_id);
+//         int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
+//         if(bus_hv_solver_id == _deactivated_bus_id){
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::fillYbus: the trafo with id ";
+//             exc_ << trafo_id;
+//             exc_ << " is connected (hv side) to a disconnected bus while being connected";
+//             throw std::runtime_error(exc_.str());
+//         }
+//         int bus_lv_id_me = get_bus_side_2(trafo_id);
+//         int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
+//         if(bus_lv_solver_id == _deactivated_bus_id){
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::fillYbus: the trafo with id ";
+//             exc_ << trafo_id;
+//             exc_ << " is connected (lv side) to a disconnected bus while being connected";
+//             throw std::runtime_error(exc_.str());
+//         }
         
-        if(ac){
-            // ac mode
-            yft = yac_ft_(trafo_id);
-            ytf = yac_tf_(trafo_id);
-            yff = yac_ff_(trafo_id);
-            ytt = yac_tt_(trafo_id);
-        }else{
-            // dc mode
-            yft = ydc_ft_(trafo_id);
-            ytf = ydc_tf_(trafo_id);
-            yff = ydc_ff_(trafo_id);
-            ytt = ydc_tt_(trafo_id);
-        }
-        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_lv_solver_id, yft));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_hv_solver_id, ytf));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_hv_solver_id, yff));
-        res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_lv_solver_id, ytt));
-    }
-}
+//         if(ac){
+//             // ac mode
+//             yft = yac_ft_(trafo_id);
+//             ytf = yac_tf_(trafo_id);
+//             yff = yac_ff_(trafo_id);
+//             ytt = yac_tt_(trafo_id);
+//         }else{
+//             // dc mode
+//             yft = ydc_ft_(trafo_id);
+//             ytf = ydc_tf_(trafo_id);
+//             yff = ydc_ff_(trafo_id);
+//             ytt = ydc_tt_(trafo_id);
+//         }
+//         res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_lv_solver_id, yft));
+//         res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_hv_solver_id, ytf));
+//         res.push_back(Eigen::Triplet<cplx_type> (bus_hv_solver_id, bus_hv_solver_id, yff));
+//         res.push_back(Eigen::Triplet<cplx_type> (bus_lv_solver_id, bus_lv_solver_id, ytt));
+//     }
+// }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
                                                     bool ac,
@@ -266,120 +250,118 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
     }
 }
 
-void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
-                                     const Eigen::Ref<const RealVect> & Vm,
-                                     const Eigen::Ref<const CplxVect> & V,
-                                     const std::vector<int> & id_grid_to_solver,
-                                     const RealVect & bus_vn_kv,
-                                     real_type sn_mva,
-                                     bool ac
-                                     )
-{
-    // it needs to be initialized at 0.
-    const int nb_element = nb();
-    Eigen::Ref<RealVect> res_p_hv_ = get_res_p_side_1();
-    Eigen::Ref<RealVect> res_q_hv_ = get_res_q_side_1();
-    Eigen::Ref<RealVect> res_v_hv_ = get_res_v_side_1();
-    Eigen::Ref<RealVect> res_theta_hv_ = get_res_theta_side_1();
+// void TrafoContainer::compute_results(const Eigen::Ref<const RealVect> & Va,
+//                                      const Eigen::Ref<const RealVect> & Vm,
+//                                      const Eigen::Ref<const CplxVect> & V,
+//                                      const std::vector<int> & id_grid_to_solver,
+//                                      const RealVect & bus_vn_kv,
+//                                      real_type sn_mva,
+//                                      bool ac
+//                                      )
+// {
+//     // it needs to be initialized at 0.
+//     const int nb_element = nb();
+//     Eigen::Ref<RealVect> res_p_hv_ = get_res_p_side_1();
+//     Eigen::Ref<RealVect> res_q_hv_ = get_res_q_side_1();
+//     Eigen::Ref<RealVect> res_v_hv_ = get_res_v_side_1();
+//     Eigen::Ref<RealVect> res_theta_hv_ = get_res_theta_side_1();
 
-    Eigen::Ref<RealVect> res_p_lv_ = get_res_p_side_2();
-    Eigen::Ref<RealVect> res_q_lv_ = get_res_q_side_2();
-    Eigen::Ref<RealVect> res_v_lv_ = get_res_v_side_2();
-    Eigen::Ref<RealVect> res_theta_lv_ = get_res_theta_side_2();
+//     Eigen::Ref<RealVect> res_p_lv_ = get_res_p_side_2();
+//     Eigen::Ref<RealVect> res_q_lv_ = get_res_q_side_2();
+//     Eigen::Ref<RealVect> res_v_lv_ = get_res_v_side_2();
+//     Eigen::Ref<RealVect> res_theta_lv_ = get_res_theta_side_2();
 
-    for(int trafo_id = 0; trafo_id < nb_element; ++trafo_id){
-        // don't do anything if the element is disconnected
-        if(!status_global_[trafo_id]) {
-            res_p_hv_(trafo_id) = 0.0;  // in MW
-            res_q_hv_(trafo_id) = 0.0;  // in MVar
-            res_v_hv_(trafo_id) = v_disco_el_;  // in kV
-            res_a_hv_(trafo_id) = 0.0;  // in kA
-            res_p_lv_(trafo_id) = 0.0;  // in MW
-            res_q_lv_(trafo_id) = 0.0;  // in MVar
-            res_v_lv_(trafo_id) = v_disco_el_;  // in kV
-            res_a_lv_(trafo_id) = 0.0;  // in kA
-            res_theta_hv_(trafo_id) = theta_disco_el_;  // in degree
-            res_theta_lv_(trafo_id) = theta_disco_el_;  // in degree            
-            continue;
-        }
+//     for(int trafo_id = 0; trafo_id < nb_element; ++trafo_id){
+//         // don't do anything if the element is disconnected
+//         if(!status_global_[trafo_id]) {
+//             res_p_hv_(trafo_id) = 0.0;  // in MW
+//             res_q_hv_(trafo_id) = 0.0;  // in MVar
+//             res_v_hv_(trafo_id) = v_disco_el_;  // in kV
+//             res_a_hv_(trafo_id) = 0.0;  // in kA
+//             res_p_lv_(trafo_id) = 0.0;  // in MW
+//             res_q_lv_(trafo_id) = 0.0;  // in MVar
+//             res_v_lv_(trafo_id) = v_disco_el_;  // in kV
+//             res_a_lv_(trafo_id) = 0.0;  // in kA
+//             res_theta_hv_(trafo_id) = theta_disco_el_;  // in degree
+//             res_theta_lv_(trafo_id) = theta_disco_el_;  // in degree            
+//             continue;
+//         }
 
-        // connectivity
-        int bus_hv_id_me = get_bus_side_1(trafo_id);
-        int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
-        if(bus_hv_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::compute_results: the trafo with id ";
-            exc_ << trafo_id;
-            exc_ << " is connected (hv side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        int bus_lv_id_me = get_bus_side_2(trafo_id);
-        int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
-        if(bus_lv_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::compute_results: the trafo with id ";
-            exc_ << trafo_id;
-            exc_ << " is connected (lv side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
+//         // connectivity
+//         int bus_hv_id_me = get_bus_side_1(trafo_id);
+//         int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
+//         if(bus_hv_solver_id == _deactivated_bus_id){
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::compute_results: the trafo with id ";
+//             exc_ << trafo_id;
+//             exc_ << " is connected (hv side) to a disconnected bus while being connected";
+//             throw std::runtime_error(exc_.str());
+//         }
+//         int bus_lv_id_me = get_bus_side_2(trafo_id);
+//         int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
+//         if(bus_lv_solver_id == _deactivated_bus_id){
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::compute_results: the trafo with id ";
+//             exc_ << trafo_id;
+//             exc_ << " is connected (lv side) to a disconnected bus while being connected";
+//             throw std::runtime_error(exc_.str());
+//         }
 
-        // retrieve voltages magnitude in kv instead of pu
-        real_type v_hv = Vm(bus_hv_solver_id);
-        real_type v_lv = Vm(bus_lv_solver_id);
-        real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me);
-        real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);           
+//         // retrieve voltages magnitude in kv instead of pu
+//         real_type v_hv = Vm(bus_hv_solver_id);
+//         real_type v_lv = Vm(bus_lv_solver_id);
+//         real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me);
+//         real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);           
 
-        // for voltages
-        res_v_hv_(trafo_id) = v_hv * bus_vn_kv_hv;
-        res_v_lv_(trafo_id) = v_lv * bus_vn_kv_lv;
+//         // for voltages
+//         res_v_hv_(trafo_id) = v_hv * bus_vn_kv_hv;
+//         res_v_lv_(trafo_id) = v_lv * bus_vn_kv_lv;
 
-        res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * my_180_pi_;
-        res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * my_180_pi_;
+//         res_theta_hv_(trafo_id) = Va(bus_hv_solver_id) * my_180_pi_;
+//         res_theta_lv_(trafo_id) = Va(bus_lv_solver_id) * my_180_pi_;
 
-        if(ac){
-            // results of the ac powerflow
-            cplx_type Ehv = V(bus_hv_solver_id);
-            cplx_type Elv = V(bus_lv_solver_id);
+//         if(ac){
+//             // results of the ac powerflow
+//             cplx_type Ehv = V(bus_hv_solver_id);
+//             cplx_type Elv = V(bus_lv_solver_id);
 
-            // TODO for DC with yff, ...
-            // trafo equations
-            cplx_type I_hvlv =  yac_ff_(trafo_id) * Ehv + yac_ft_(trafo_id) * Elv;
-            cplx_type I_lvhv =  yac_tt_(trafo_id) * Elv + yac_tf_(trafo_id) * Ehv;
+//             // TODO for DC with yff, ...
+//             // trafo equations
+//             cplx_type I_hvlv =  yac_ff_(trafo_id) * Ehv + yac_ft_(trafo_id) * Elv;
+//             cplx_type I_lvhv =  yac_tt_(trafo_id) * Elv + yac_tf_(trafo_id) * Ehv;
 
-            I_hvlv = std::conj(I_hvlv);
-            I_lvhv = std::conj(I_lvhv);
-            cplx_type s_hvlv = Ehv * I_hvlv;
-            cplx_type s_lvhv = Elv * I_lvhv;
+//             I_hvlv = std::conj(I_hvlv);
+//             I_lvhv = std::conj(I_lvhv);
+//             cplx_type s_hvlv = Ehv * I_hvlv;
+//             cplx_type s_lvhv = Elv * I_lvhv;
 
-            res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
-            res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
-            res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
-            res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
-        }else{
-            // result of the dc powerflow
-            res_p_hv_(trafo_id) = (std::real(ydc_ff_(trafo_id)) * Va(bus_hv_solver_id) + std::real(ydc_ft_(trafo_id)) * Va(bus_lv_solver_id) - dc_x_tau_shift_(trafo_id) ) * sn_mva;
-            res_p_lv_(trafo_id) = (std::real(ydc_tt_(trafo_id)) * Va(bus_lv_solver_id) + std::real(ydc_tf_(trafo_id)) * Va(bus_hv_solver_id) + dc_x_tau_shift_(trafo_id) ) * sn_mva; 
+//             res_p_hv_(trafo_id) = std::real(s_hvlv) * sn_mva;
+//             res_q_hv_(trafo_id) = std::imag(s_hvlv) * sn_mva;
+//             res_p_lv_(trafo_id) = std::real(s_lvhv) * sn_mva;
+//             res_q_lv_(trafo_id) = std::imag(s_lvhv) * sn_mva;
+//         }else{
+//             // result of the dc powerflow
+//             res_p_hv_(trafo_id) = (std::real(ydc_ff_(trafo_id)) * Va(bus_hv_solver_id) + std::real(ydc_ft_(trafo_id)) * Va(bus_lv_solver_id) - dc_x_tau_shift_(trafo_id) ) * sn_mva;
+//             res_p_lv_(trafo_id) = (std::real(ydc_tt_(trafo_id)) * Va(bus_lv_solver_id) + std::real(ydc_tf_(trafo_id)) * Va(bus_hv_solver_id) + dc_x_tau_shift_(trafo_id) ) * sn_mva; 
            
-            res_q_hv_(trafo_id) = 0.;
-            res_q_lv_(trafo_id) = 0.;
+//             res_q_hv_(trafo_id) = 0.;
+//             res_q_lv_(trafo_id) = 0.;
             
-            // for voltages, because vm = 1. pu by hypothesis
-            // res_v_hv_(trafo_id) = bus_vn_kv_hv;
-            // res_v_lv_(trafo_id) = bus_vn_kv_lv;
-        }
+//             // for voltages, because vm = 1. pu by hypothesis
+//             // res_v_hv_(trafo_id) = bus_vn_kv_hv;
+//             // res_v_lv_(trafo_id) = bus_vn_kv_lv;
+//         }
 
-    }
-    const auto & res_side1 = side_1_.get_res();
-    _get_amps(res_a_hv_, std::get<0>(res_side1), std::get<1>(res_side1), std::get<2>(res_side1));
-    const auto & res_side2 = side_2_.get_res();
-    _get_amps(res_a_lv_, std::get<0>(res_side2), std::get<1>(res_side2), std::get<2>(res_side2));
-}
+//     }
+//     const auto & res_side1 = side_1_.get_res();
+//     _get_amps(res_a_hv_, std::get<0>(res_side1), std::get<1>(res_side1), std::get<2>(res_side1));
+//     const auto & res_side2 = side_2_.get_res();
+//     _get_amps(res_a_lv_, std::get<0>(res_side2), std::get<1>(res_side2), std::get<2>(res_side2));
+// }
 
-void TrafoContainer::reset_results(){
-    reset_results_tsc();
-    res_a_hv_ = RealVect(nb());  // in kA
-    res_a_lv_ = RealVect(nb());  // in kA
-}
+// void TrafoContainer::reset_results(){
+//     reset_results_tsc_rxha();
+// }
 
 
 void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
@@ -534,75 +516,75 @@ void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & B
 
 }
 
-void TrafoContainer::reconnect_connected_buses(Substation & substation) const{
+// void TrafoContainer::reconnect_connected_buses(Substation & substation) const{
 
-    const Eigen::Index nb_trafo = nb();
-    for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
-        // don't do anything if the element is disconnected
-        if(!status_global_[trafo_id]) continue;
+//     const Eigen::Index nb_trafo = nb();
+//     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
+//         // don't do anything if the element is disconnected
+//         if(!status_global_[trafo_id]) continue;
         
-        const auto bus_or_id_me = get_bus_side_1(trafo_id);        
-        if(bus_or_id_me == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
-            exc_ << trafo_id;
-            exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
-            throw std::runtime_error(exc_.str());
-        }
-        // bus_status[bus_or_id_me] = true;
-        substation.reconnect_bus(bus_or_id_me);
+//         const auto bus_or_id_me = get_bus_side_1(trafo_id);        
+//         if(bus_or_id_me == _deactivated_bus_id){
+//             // TODO DEBUG MODE only this in debug mode
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
+//             exc_ << trafo_id;
+//             exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+//             throw std::runtime_error(exc_.str());
+//         }
+//         // bus_status[bus_or_id_me] = true;
+//         substation.reconnect_bus(bus_or_id_me);
 
-        const auto bus_ex_id_me = get_bus_side_2(trafo_id);        
-        if(bus_ex_id_me == _deactivated_bus_id){
-            // TODO DEBUG MODE only this in debug mode
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
-            exc_ << trafo_id;
-            exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
-            throw std::runtime_error(exc_.str());
-        }
-        // bus_status[bus_ex_id_me] = true;
-        substation.reconnect_bus(bus_ex_id_me);
-    }
-}
+//         const auto bus_ex_id_me = get_bus_side_2(trafo_id);        
+//         if(bus_ex_id_me == _deactivated_bus_id){
+//             // TODO DEBUG MODE only this in debug mode
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
+//             exc_ << trafo_id;
+//             exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+//             throw std::runtime_error(exc_.str());
+//         }
+//         // bus_status[bus_ex_id_me] = true;
+//         substation.reconnect_bus(bus_ex_id_me);
+//     }
+// }
 
-void TrafoContainer::nb_line_end(std::vector<int> & res) const{
+// void TrafoContainer::nb_line_end(std::vector<int> & res) const{
 
-    const Eigen::Index nb_trafo = nb();
-    for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
-        // don't do anything if the element is disconnected
-        if(!status_global_[trafo_id]) continue;
-        const auto bus_or = get_bus_side_1(trafo_id);
-        const auto bus_ex = get_bus_side_2(trafo_id);
-        res[bus_or] += 1;
-        res[bus_ex] += 1;
-    }
-}
+//     const Eigen::Index nb_trafo = nb();
+//     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
+//         // don't do anything if the element is disconnected
+//         if(!status_global_[trafo_id]) continue;
+//         const auto bus_or = get_bus_side_1(trafo_id);
+//         const auto bus_ex = get_bus_side_2(trafo_id);
+//         res[bus_or] += 1;
+//         res[bus_ex] += 1;
+//     }
+// }
 
-void TrafoContainer::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
-{
-    const auto my_size = nb();
-    for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
-        // don't do anything if the element is disconnected
-        if(!status_global_[line_id]) continue;
-        const auto bus_or = get_bus_side_1(line_id);
-        const auto bus_ex = get_bus_side_2(line_id);
-        res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
-        res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
-    }
-}
+// void TrafoContainer::get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
+// {
+//     const auto my_size = nb();
+//     for(Eigen::Index line_id = 0; line_id < my_size; ++line_id){
+//         // don't do anything if the element is disconnected
+//         if(!status_global_[line_id]) continue;
+//         const auto bus_or = get_bus_side_1(line_id);
+//         const auto bus_ex = get_bus_side_2(line_id);
+//         res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
+//         res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
+//     }
+// }
 
-void TrafoContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
-{
-    const Eigen::Index nb_line = nb();
-    SolverControl unused_solver_control;
-    for(Eigen::Index i = 0; i < nb_line; ++i){
-        if(!status_global_[i]) continue;
-        auto bus_or = get_bus_side_1(i);
-        auto bus_ex = get_bus_side_2(i);
-        if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
-            deactivate(i, unused_solver_control);
-        }
-    }
-}
+// void TrafoContainer::disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component)
+// {
+//     const Eigen::Index nb_line = nb();
+//     SolverControl unused_solver_control;
+//     for(Eigen::Index i = 0; i < nb_line; ++i){
+//         if(!status_global_[i]) continue;
+//         auto bus_or = get_bus_side_1(i);
+//         auto bus_ex = get_bus_side_2(i);
+//         if(!busbar_in_main_component[bus_or] || !busbar_in_main_component[bus_ex]){
+//             deactivate(i, unused_solver_control);
+//         }
+//     }
+// }

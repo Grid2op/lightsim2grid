@@ -149,7 +149,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
     // they are not in the same "connected component"
     virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
 
-    virtual void nb_line_end(std::vector<int> & res) const;
+    // virtual void nb_line_end(std::vector<int> & res) const;
     
     real_type get_qmin_or(int dcline_id) {return side_1_.get_qmin(dcline_id);}
     real_type get_qmax_or(int dcline_id) {return  side_1_.get_qmax(dcline_id);}

@@ -54,16 +54,16 @@ void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
     side_2_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);
 }
 
-void DCLineContainer::nb_line_end(std::vector<int> & res) const
-{
-    const Eigen::Index nb = side_1_.nb();
-    const auto & bus_or_id = get_buses_side_1();
-    const auto & bus_ex_id = get_buses_side_2();
-    for(Eigen::Index i = 0; i < nb; ++i){
-        if(!status_global_[i]) continue;
-        auto bus_or = bus_or_id(i);
-        auto bus_ex = bus_ex_id(i);
-        res[bus_or] += 1;
-        res[bus_ex] += 1;
-    }
-}
+// void DCLineContainer::nb_line_end(std::vector<int> & res) const
+// {
+//     const Eigen::Index nb = side_1_.nb();
+//     const auto & bus_or_id = get_buses_side_1();
+//     const auto & bus_ex_id = get_buses_side_2();
+//     for(Eigen::Index i = 0; i < nb; ++i){
+//         if(!status_global_[i]) continue;
+//         auto bus_or = bus_or_id(i);
+//         auto bus_ex = bus_ex_id(i);
+//         res[bus_or] += 1;
+//         res[bus_ex] += 1;
+//     }
+// }

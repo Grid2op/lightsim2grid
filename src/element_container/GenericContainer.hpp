@@ -113,6 +113,7 @@ class GenericContainer : public BaseConstants
         
         /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
         virtual ~GenericContainer() noexcept = default;
+        
     protected:
         std::vector<std::string> names_;
 

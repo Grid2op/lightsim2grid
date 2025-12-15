@@ -158,7 +158,7 @@ class TwoSidesContainer : public GenericContainer
             // (in this case this can do nothing if side_1 or side_2 is not connected)
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
             const Eigen::Index nb_el = nb();
             SolverControl unused_solver_control;
             Eigen::Ref<const IntVect> bus_side_1_id_ = get_buses_side_1();
@@ -169,6 +169,17 @@ class TwoSidesContainer : public GenericContainer
                 auto bus_side_2 = bus_side_2_id_(i);
                 if(!busbar_in_main_component[bus_side_1]) side_1_.deactivate(i, unused_solver_control);
                 if(!busbar_in_main_component[bus_side_2]) side_2_.deactivate(i, unused_solver_control);
+            }
+        }
+        virtual void nb_line_end(std::vector<int> & res) const{
+            const Eigen::Index nb_el = nb();
+            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+                // don't do anything if the element is disconnected
+                if(!status_global_[el_id]) continue;
+                const auto bus_or = get_bus_side_1(el_id);
+                const auto bus_ex = get_bus_side_2(el_id);
+                res[bus_or] += 1;
+                res[bus_ex] += 1;
             }
         }
 
@@ -202,6 +213,17 @@ class TwoSidesContainer : public GenericContainer
         void set_subid_side_2(Eigen::Ref<const IntVect> subid)
         {
             side_2_.set_subid(subid);
+        }
+
+        void update_topo(
+            Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            SolverControl & solver_control,
+            Substation & substations
+        )
+        {
+            side_1_.update_topo(has_changed, new_values, solver_control, substations);
+            side_2_.update_topo(has_changed, new_values, solver_control, substations);
         }
 
         virtual ~TwoSidesContainer() noexcept = default;

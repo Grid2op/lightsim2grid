@@ -190,6 +190,12 @@ class LineContainer : public GenericContainer
             }
         }    
     
+        void update_topo(
+            Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
+            Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
+            SolverControl & solver_control,
+            Substation & substations
+        ) {}
         void deactivate(int powerline_id, SolverControl & solver_control) {
             // std::cout << "line: deactivate called\n";
             if(status_[powerline_id]){
