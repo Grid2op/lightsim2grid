@@ -8,7 +8,8 @@
 
 
 // This file has been inspired from https://github.com/chenxm1986/cktso/blob/master/demo/demo.cpp
-#include "CKTSOSolver.h"
+#include "CKTSOSolver.hpp"
+
 #include <iostream>
 
 const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;

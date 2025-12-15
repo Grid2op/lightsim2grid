@@ -32,6 +32,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 [0.11.1] 202x-yy-zz
 --------------------
 - [IMPROVED] Eigen to version 5.0.1 (2025/11/11)
+- [IMPROVED] rename all ".h" file to ".hpp" for cpp headers (cpp side). 
 
 [0.11.0] 2025-12-09
 ----------------------

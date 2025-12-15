@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseAlgo.h"
-#include "GridModel.h"  // needs to be included here because of the forward declaration
+#include "BaseAlgo.hpp"
+#include "GridModel.hpp"  // needs to be included here because of the forward declaration
 
 
 void BaseAlgo::reset(){

@@ -7,7 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include <unordered_map>
-#include "IIDMConverter.h"
+#include "IIDMConverter.hpp"
 
 #include "powsybl/iidm/Substation.hpp"
 #include "powsybl/iidm/Bus.hpp"

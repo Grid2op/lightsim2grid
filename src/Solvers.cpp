@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "Solvers.h"
-#include "GridModel.h"
+#include "Solvers.hpp"
+#include "GridModel.hpp"
 
 // these functions use the _gridmodel that is a not a real type in the template class declaration.
 // this is why i need to define them here for every specialization.

@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "Utils.h"
+#include "Utils.hpp"
 
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type){
     switch (error_type)

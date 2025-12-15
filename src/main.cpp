@@ -10,14 +10,14 @@
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 
-#include "ChooseSolver.h"
-#include "DataConverter.h"
-#include "GridModel.h"
+#include "ChooseSolver.hpp"
+#include "DataConverter.hpp"
+#include "GridModel.hpp"
 
-#include "batch_algorithm/TimeSeries.h"
-#include "batch_algorithm/ContingencyAnalysis.h"
+#include "batch_algorithm/TimeSeries.hpp"
+#include "batch_algorithm/ContingencyAnalysis.hpp"
 
-#include "help_fun_msg.h"
+#include "help_fun_msg.hpp"
 
 #ifndef KLU_SOLVER_AVAILABLE
 #define this_KLU_SOLVER_AVAILABLE 0

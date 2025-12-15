@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseConstants.h"
+#include "BaseConstants.hpp"
 
 const cplx_type BaseConstants::my_i = {0., 1.};
 const real_type BaseConstants::my_pi = M_PI;

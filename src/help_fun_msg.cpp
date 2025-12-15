@@ -8,7 +8,7 @@
 
 // containst he help message of some common functions (not to write them dozens of time)
 
-#include "help_fun_msg.h"
+#include "help_fun_msg.hpp"
 
 const std::string DocSolver::get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
