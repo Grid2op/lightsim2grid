@@ -268,10 +268,16 @@ class TestDCSecurityAnalysis(unittest.TestCase):
                 act_dict = {"set_line_status": [(l_id, -1) for l_id in cont]}
             else:
                 act_dict = {"set_line_status": [(cont, -1)]}
-            sim_obs1 = self.obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
-            sim_obs2 = obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
+            sim_obs1, reward1, done1, info1 = self.obs.simulate(self.env.action_space(act_dict), time_step=0)
+            assert not done1
+            assert not info1["is_illegal"]
+            sim_obs2, reward2, done2, info2 = obs.simulate(self.env.action_space(act_dict), time_step=0)
+            assert not done2
+            assert not info2["is_illegal"]
             assert np.abs(sim_obs1.q_or).max() <= 1e-6, "In DC there should not be any reactive !"
             assert np.abs(sim_obs2.q_or).max() <= 1e-6, "In DC there should not be any reactive !"
+            assert np.allclose(np.abs(sim_obs1.p_or[cont]), 0.), "there should not be any power flow on disconnected lines"
+            assert np.allclose(np.abs(sim_obs2.p_or[cont]), 0.), "there should not be any power flow on disconnected lines"
             assert (np.abs(res_p1[cont_id, :] - sim_obs1.p_or) <= 1e-5).all(), f"{res_p1[cont_id, :] - sim_obs1.p_or}"
             assert (np.abs(res_p2[cont_id, :] - sim_obs2.p_or) <= 1e-5).all(), f"{res_p2[cont_id, :] - sim_obs2.p_or}"
             # below: does not pass because the voltages are not the same. Vm are init with results of AC PF for 
@@ -316,8 +322,8 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         # debug lodf
         nb = gridmodel.total_bus()  # number of buses
         nbr = len(gridmodel.get_lineor_res()[0]) + len(gridmodel.get_trafohv_res()[0])
-        f_ = np.concatenate((1 * gridmodel.get_lines().get_bus_from(), 1 * gridmodel.get_trafos().get_bus_from()))
-        t_ = np.concatenate((1 * gridmodel.get_lines().get_bus_to(), 1 * gridmodel.get_trafos().get_bus_to()))
+        f_ = np.concatenate((1 * gridmodel.get_lines().get_bus_id_side_1(), 1 * gridmodel.get_trafos().get_bus_id_side_1()))
+        t_ = np.concatenate((1 * gridmodel.get_lines().get_bus_id_side_2(), 1 * gridmodel.get_trafos().get_bus_id_side_2()))
         Cft = scipy.sparse.csr_matrix((np.r_[np.ones(nbr), -np.ones(nbr)],
                                         (np.r_[f_, t_], np.r_[np.arange(nbr), np.arange(nbr)])),
                                         (nb, nbr))

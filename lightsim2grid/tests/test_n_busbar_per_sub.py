@@ -118,16 +118,16 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             if new_bus >= 1:
                 assert self.env.backend._grid.get_loads()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_loads()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
-                    assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
-                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_ex_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_loads()[el_id].connected
                 if line_or_id is not None:
-                    assert not self.env.backend._grid.get_lines()[line_or_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_or_id].connected_global
                 else:
-                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected_global
             topo_vect = 1 * self.env.backend.get_topo_vect()
             assert topo_vect[cls.load_pos_topo_vect[el_id]] == new_bus, f"{topo_vect[cls.load_pos_topo_vect[el_id]]} vs {new_bus}"
         
@@ -135,8 +135,8 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
         cls = type(self.env)            
         res = self._aux_find_sub(self.env, cls.GEN_COL)
         if res is None:
-            raise RuntimeError(f"Cannot carry the test 'test_move_gen' as "
-                               "there are no suitable subastation in your grid.")
+            raise RuntimeError("Cannot carry the test 'test_move_gen' as "
+                               "there are no suitable subastation in your grid (>= 4 elements with 2 lines and a gen).")
         (sub_id, el_id, line_or_id, line_ex_id) = res
         for new_bus in self.list_loc_bus:
             if line_or_id is not None:
@@ -150,16 +150,16 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             if new_bus >= 1:
                 assert self.env.backend._grid.get_generators()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_generators()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
-                    assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
-                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_ex_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_generators()[el_id].connected
                 if line_or_id is not None:
-                    assert not self.env.backend._grid.get_lines()[line_or_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_or_id].connected_global
                 else:
-                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected_global
             topo_vect = 1 * self.env.backend.get_topo_vect()
             assert topo_vect[cls.gen_pos_topo_vect[el_id]] == new_bus, f"{topo_vect[cls.gen_pos_topo_vect[el_id]]} vs {new_bus}"
         
@@ -167,7 +167,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
         cls = type(self.env)            
         res = self._aux_find_sub(self.env, cls.STORAGE_COL)
         if res is None:
-            raise RuntimeError(f"Cannot carry the test 'test_move_storage' as "
+            raise RuntimeError("Cannot carry the test 'test_move_storage' as "
                                "there are no suitable subastation in your grid.")
         (sub_id, el_id, line_or_id, line_ex_id) = res
         for new_bus in self.list_loc_bus:
@@ -182,50 +182,55 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             if new_bus >= 1:
                 assert self.env.backend._grid.get_storages()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_sotrages()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
-                    assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
-                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_ex_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_storages()[el_id].connected
                 if line_or_id is not None:
-                    assert not self.env.backend._grid.get_lines()[line_or_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_or_id].connected_global
                 else:
-                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected_global
             topo_vect = 1 * self.env.backend.get_topo_vect()
             assert topo_vect[cls.storage_pos_topo_vect[el_id]] == new_bus, f"{topo_vect[cls.storage_pos_topo_vect[el_id]]} vs {new_bus}"
     
     def test_move_line_or(self):
         cls = type(self.env)            
         line_id = 0
+        bk_act = self.env._backend_action_class()   # TODO: this should be init with the state of the gridmodel (especially topology)
         for new_bus in self.list_loc_bus:
             act = self.env.action_space({"set_bus": {"lines_or_id": [(line_id, new_bus)]}})
-            bk_act = self.env._backend_action_class()
             bk_act += act
             self.env.backend.apply_action(bk_act)
             global_bus = cls.line_or_to_subid[line_id] + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
-                assert self.env.backend._grid.get_lines()[line_id].bus_or_id == global_bus
+                assert self.env.backend._grid.get_lines()[line_id].bus_1_id == global_bus
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
-                assert not self.env.backend._grid.get_lines()[line_id].connected
+                assert not self.env.backend._grid.get_lines()[line_id].connected_global
             topo_vect = 1 * self.env.backend.get_topo_vect()
             assert topo_vect[cls.line_or_pos_topo_vect[line_id]] == new_bus, f"{topo_vect[cls.line_or_pos_topo_vect[line_id]]} vs {new_bus}"
                 
     def test_move_line_ex(self):
         cls = type(self.env)            
         line_id = 0
+        bk_act = self.env._backend_action_class()   # TODO: this should be init with the state of the gridmodel (especially topology)
         for new_bus in self.list_loc_bus:
             act = self.env.action_space({"set_bus": {"lines_ex_id": [(line_id, new_bus)]}})
-            bk_act = self.env._backend_action_class()
             bk_act += act
             self.env.backend.apply_action(bk_act)
             global_bus = cls.line_ex_to_subid[line_id] + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
-                assert self.env.backend._grid.get_lines()[line_id].bus_ex_id == global_bus
-                assert self.env.backend._grid.get_bus_status()[global_bus]
+                assert self.env.backend._grid.get_lines()[line_id].bus_2_id == global_bus
+                assert self.env.backend._grid.get_lines()[line_id].connected_global
+                assert self.env.backend._grid.get_lines()[line_id].connected_1
+                assert self.env.backend._grid.get_lines()[line_id].connected_2
+                assert self.env.backend._grid.get_bus_status()[global_bus], f"for new_bus = {new_bus} and line_id={line_id}"
             else:
-                assert not self.env.backend._grid.get_lines()[line_id].connected
+                assert not self.env.backend._grid.get_lines()[line_id].connected_global
+                assert not self.env.backend._grid.get_lines()[line_id].connected_1
+                assert not self.env.backend._grid.get_lines()[line_id].connected_2
             topo_vect = 1 * self.env.backend.get_topo_vect()
             assert topo_vect[cls.line_ex_pos_topo_vect[line_id]] == new_bus, f"{topo_vect[cls.line_ex_pos_topo_vect[line_id]]} vs {new_bus}"
             
@@ -233,17 +238,19 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
         cls = type(self.env)            
         res = self._aux_find_sub_shunt(self.env)
         if res is None:
-            raise RuntimeError("Cannot carry the test 'test_move_load' as "
-                               "there are no suitable subastation in your grid.")
+            raise RuntimeError("Cannot carry the test 'test_move_shunt' as "
+                               "there are no suitable subastation in your grid (>= 4 elements with a shunt).")
         (sub_id, el_id, line_or_id, line_ex_id) = res
+        assert self.env.backend._grid.get_shunts()[el_id].sub_id == sub_id, f"{self.env.backend._grid.get_shunts()[el_id].sub_id} vs {sub_id}"
+        bk_act = self.env._backend_action_class()  # TODO: this should be init with the state of the gridmodel (especially topology)
         for new_bus in self.list_loc_bus:
             if line_or_id is not None:
                 act = self.env.action_space({"shunt": {"set_bus": [(el_id, new_bus)]}, "set_bus": {"lines_or_id": [(line_or_id, new_bus)]}})
             else:
                 act = self.env.action_space({"shunt": {"set_bus": [(el_id, new_bus)]}, "set_bus": {"lines_ex_id": [(line_ex_id, new_bus)]}})
-            bk_act = self.env._backend_action_class()
             bk_act += act
             self.env.backend.apply_action(bk_act)
+            bk_act.reset()
             self.env.backend._set_shunt_info()
             sh_p, sh_q, sh_v, sh_bus = self.env.backend.shunt_info()
             assert sh_bus[el_id] == new_bus, f"{sh_bus[el_id]} vs {new_bus}"
@@ -251,16 +258,16 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             if new_bus >= 1:
                 assert self.env.backend._grid.get_shunts()[el_id].bus_id == global_bus, f"error for new_bus {new_bus}: {self.env.backend._grid.get_shunts()[el_id].bus_id} vs {global_bus}"
                 if line_or_id is not None:
-                    assert self.env.backend._grid.get_lines()[line_or_id].bus_or_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
-                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_ex_id == global_bus
+                    assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_shunts()[el_id].connected
                 if line_or_id is not None:
-                    assert not self.env.backend._grid.get_lines()[line_or_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_or_id].connected_global
                 else:
-                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected
+                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected_global
     
     def test_check_kirchoff(self):
         cls = type(self.env)            
@@ -281,7 +288,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             self.env.backend.apply_action(bk_act)
             conv, maybe_exc = self.env.backend.runpf()
             assert conv, f"error : {maybe_exc}"
-            p_subs, q_subs, p_bus, q_bus, diff_v_bus = self.env.backend.check_kirchoff()
+            p_subs, q_subs, p_bus, q_bus, diff_v_bus = self.env.backend.check_kirchhoff()
             # assert laws are met
             assert np.abs(p_subs).max() <= 1e-5, f"error for busbar {new_bus}: {np.abs(p_subs).max():.2e}"
             assert np.abs(q_subs).max() <= 1e-5, f"error for busbar {new_bus}: {np.abs(q_subs).max():.2e}"

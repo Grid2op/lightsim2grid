@@ -58,7 +58,7 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
         this_cont_coeffs.reserve(this_cont_id.size() * 4);  // usually there are 4 coeffs per powerlines / trafos
         for(auto line_id : this_cont_id){
             int el_id;
-            const TwoSidesContainer_rxh_A<OneSideContainer> *p_branch;
+            const TwoSidesContainer_rxh_A<OneSideContainer_ForBranch> *p_branch;
             if(line_id < n_line_)
             {
                 // this is a powerline
@@ -74,15 +74,15 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
             bus_2_id = id_me_to_solver[p_branch->get_bus_id_side_2()[el_id]];
             status = p_branch->get_status_global()[el_id];
             if(ac_solver_used){
-                y_ff = p_branch->yac_11()[line_id];
-                y_ft = p_branch->yac_12()[line_id];
-                y_tf = p_branch->yac_21()[line_id];
-                y_tt = p_branch->yac_22()[line_id];
+                y_ff = p_branch->yac_11()[el_id];
+                y_ft = p_branch->yac_12()[el_id];
+                y_tf = p_branch->yac_21()[el_id];
+                y_tt = p_branch->yac_22()[el_id];
             }else{
-                y_ff = p_branch->ydc_11()[line_id];
-                y_ft = p_branch->ydc_12()[line_id];
-                y_tf = p_branch->ydc_21()[line_id];
-                y_tt = p_branch->ydc_22()[line_id];
+                y_ff = p_branch->ydc_11()[el_id];
+                y_ft = p_branch->ydc_12()[el_id];
+                y_tf = p_branch->ydc_21()[el_id];
+                y_tt = p_branch->ydc_22()[el_id];
             }
 
             if(status && bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)

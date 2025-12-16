@@ -17,7 +17,7 @@
 
 #include "Utils.hpp"
 #include "BaseSubstation.hpp"
-#include "OneSideContainer.hpp"
+#include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
 /**
@@ -31,22 +31,22 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 **/
-class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
+class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
 {
     //////////////////////////////
     // access data from base class
     public:
-        using TwoSidesContainer_rxh_A<OneSideContainer>::get_buses_side_1;
-        using TwoSidesContainer_rxh_A<OneSideContainer>::get_buses_side_2;
+        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::get_buses_side_1;
+        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::get_buses_side_2;
 
     protected:
-        using TwoSidesContainer_rxh_A<OneSideContainer>::side_1_;
-        using TwoSidesContainer_rxh_A<OneSideContainer>::side_2_;
-        using TwoSidesContainer_rxh_A<OneSideContainer>::status_global_;
+        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::side_1_;
+        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::side_2_;
+        using TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::status_global_;
     //////////////////////////////
 
     public:
-        class TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer>::TwoSidesContainer_rxh_AInfo
+        class TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
         {
             public:
                 // members
@@ -106,7 +106,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
 
     public:
         typedef std::tuple<
-                   TwoSidesContainer_rxh_A<OneSideContainer>::StateRes,
+                   TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes,
                 //    std::vector<real_type>, // branch_r
                 //    std::vector<real_type>, // branch_x
                 //    std::vector<cplx_type >, // branch_h

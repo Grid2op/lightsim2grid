@@ -57,8 +57,8 @@ class TestLODFCase14SLU(unittest.TestCase):
         PTDF = 1.0 * self.gridmodel.get_ptdf_solver()
         
         # pypower implementation
-        f_ = np.concatenate((1 * self.gridmodel.get_lines().get_bus_from(), 1 * self.gridmodel.get_trafos().get_bus_from()))
-        t_ = np.concatenate((1 * self.gridmodel.get_lines().get_bus_to(), 1 * self.gridmodel.get_trafos().get_bus_to()))
+        f_ = np.concatenate((1 * self.gridmodel.get_lines().get_bus_id_side_1(), 1 * self.gridmodel.get_trafos().get_bus_id_side_1()))
+        t_ = np.concatenate((1 * self.gridmodel.get_lines().get_bus_id_side_2(), 1 * self.gridmodel.get_trafos().get_bus_id_side_2()))
         Cft = scipy.sparse.csr_matrix((np.r_[np.ones(self.nbr), -np.ones(self.nbr)],
                                        (np.r_[f_, t_], np.r_[np.arange(self.nbr), np.arange(self.nbr)])),
                                       (self.nb, self.nbr))

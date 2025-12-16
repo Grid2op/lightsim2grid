@@ -43,8 +43,8 @@ class BaseBatchSolverSynch
                 // const auto & Vtmp = init_grid_model.get_V_solver();
                 // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
                 _grid_model.tell_solver_need_reset();
-                _grid_model.dc_pf(V, 10, 1e-5);
-                _grid_model.ac_pf(V, 10, 1e-5);
+                CplxVect Vdc = _grid_model.dc_pf(V, 10, 1e-5);
+                _grid_model.ac_pf(Vdc, 10, 1e-5);
                 
                 // assign the right solver type
                 _solver_control.tell_none_changed();
@@ -53,7 +53,7 @@ class BaseBatchSolverSynch
             }
 
         BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
-        virtual ~BaseBatchSolverSynch() = default;  // to avoid warning about overload virtual
+        virtual ~BaseBatchSolverSynch() noexcept = default;  // to avoid warning about overload virtual
     
         // solver "control"
         virtual void change_solver(const SolverType & type){
@@ -160,7 +160,7 @@ class BaseBatchSolverSynch
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
             const auto & bus_from = structure_data.get_bus_id_side_1();
-            const auto & bus_to = structure_data.get_bus_id_side_1();
+            const auto & bus_to = structure_data.get_bus_id_side_2();
             const bool is_ac = _solver.ac_solver_used();
 
             Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();

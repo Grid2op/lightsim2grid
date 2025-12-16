@@ -41,7 +41,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // init the computations
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
-    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
+    const Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
     const Eigen::Index nb_buses_solver = Ybus.cols();
 
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();

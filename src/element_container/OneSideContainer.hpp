@@ -207,19 +207,19 @@ class OneSideContainer : public GenericContainer
         }    
 
         void deactivate(int el_id, SolverControl & solver_control) {
-            if(status_[el_id]){
-                solver_control.tell_recompute_sbus();
-            }
             this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
         }
         void reactivate(int el_id, SolverControl & solver_control) {
-            if(!status_[el_id]){
-                solver_control.tell_recompute_sbus();
-            }
             this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
         }
+        /**
+         * This function changes the bus. The bus_id is here given in the
+         * "gridmodel" bus.
+         * 
+         * Not the "solver" bus, nor the "substation" / "local" bus.
+         */
         void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_max_bus) {
             this->_change_bus(load_id, new_bus_id, solver_control, nb_max_bus);
             _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_max_bus);
@@ -314,16 +314,6 @@ class OneSideContainer : public GenericContainer
             bool,  // has pos_topo_vect info
             std::vector<int>  // pos_topo_vect
             >  StateRes;
-
-        StateRes get_state() const
-        {
-            return get_osc_state();
-        }
-
-        void set_state(StateRes & state)
-        {
-            set_osc_state(state);
-        }
 
     protected:
 

@@ -864,6 +864,7 @@ class LightSimBackend(Backend):
             buses_for_sub=buses_for_sub,
             init_vm_pu=init_vm_pu,
         )
+        self.__nb_powerline = len(self._grid.get_lines())
         
         (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
          batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
@@ -876,8 +877,14 @@ class LightSimBackend(Backend):
             self.__nb_bus_before = grid_tmp.get_buses().shape[0]
         self._aux_setup_right_after_grid_init()   
         
-        if "use_grid2op_default_names" in loader_kwargs and loader_kwargs["use_grid2op_default_names"]:
-            self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(self.n_sub)]
+        # the names
+        use_grid2op_default_names = True
+        if "use_grid2op_default_names" in loader_kwargs and not loader_kwargs["use_grid2op_default_names"]:
+            use_grid2op_default_names = False
+        
+        if use_grid2op_default_names:
+            self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(range(self.n_sub))]
+            self._grid.init_substation_names(self.name_sub)
         else:
             self.name_sub = self._grid.get_substation_names()
         
@@ -930,20 +937,23 @@ class LightSimBackend(Backend):
             self.n_sub = grid_tmp.get_voltage_levels().shape[0]
             if self.n_shunt is not None:
                 self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
-        
-        # the names
-        use_grid2op_default_names = True
-        if "use_grid2op_default_names" in loader_kwargs and not loader_kwargs["use_grid2op_default_names"]:
-            use_grid2op_default_names = False
             
         if use_grid2op_default_names:
             self.name_load = np.array([f"load_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
             self.name_gen = np.array([f"gen_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())]).astype(str)
             self.name_line = np.array(
                 [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
-                [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
+                [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj + self.__nb_powerline}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
             self.name_storage = np.array([f"storage_{el.sub_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())]).astype(str)
             self.name_shunt = np.array([f"shunt_{el.sub_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())]).astype(str)
+            
+            # synch name of the grid model
+            self._grid.set_gen_names(self.name_gen)
+            self._grid.set_load_names(self.name_load)
+            self._grid.set_line_names(self.name_line[:self.__nb_powerline])
+            self._grid.set_trafo_names(self.name_line[self.__nb_powerline:])
+            self._grid.set_storage_names(self.name_storage)
+            self._grid.set_shunt_names(self.name_shunt)
         else:
             self.name_load = np.array(load_sub.index.astype(str))
             self.name_gen = np.array(gen_sub.index.astype(str))
@@ -1102,7 +1112,9 @@ class LightSimBackend(Backend):
                                           self.n_busbar_per_sub,
                                           pp_orig_file=pp_orig_file)
         self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
-        self._aux_setup_right_after_grid_init()        
+        self._aux_setup_right_after_grid_init()   
+        self.__nb_powerline = self.init_pp_backend._grid.line.shape[0]
+        self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()     
         
         # deactive the buses that have been added
         for bus_id, bus_status in enumerate(self.init_pp_backend._grid.bus["in_service"].values):
@@ -1130,10 +1142,16 @@ class LightSimBackend(Backend):
         self.line_or_to_sub_pos = pp_cls.line_or_to_sub_pos
         self.line_ex_to_sub_pos = pp_cls.line_ex_to_sub_pos
         
+        # synch names with pandapower ones
         self.name_gen = pp_cls.name_gen
+        self._grid.set_gen_names(self.name_gen)
         self.name_load = pp_cls.name_load
+        self._grid.set_load_names(self.name_load)
         self.name_line = pp_cls.name_line
+        self._grid.set_line_names(self.name_line[:self.__nb_powerline])
+        self._grid.set_trafo_names(self.name_line[self.__nb_powerline:])
         self.name_sub = pp_cls.name_sub
+        self._grid.init_substation_names(self.name_sub)
 
         self.prod_pu_to_kv = self.init_pp_backend.prod_pu_to_kv
         self.load_pu_to_kv = self.init_pp_backend.load_pu_to_kv
@@ -1146,6 +1164,7 @@ class LightSimBackend(Backend):
             self.storage_to_subid = pp_cls.storage_to_subid
             self.storage_pu_to_kv = self.init_pp_backend.storage_pu_to_kv
             self.name_storage = pp_cls.name_storage
+            self._grid.set_storage_names(self.name_storage)
             self.storage_to_sub_pos = pp_cls.storage_to_sub_pos
             self.storage_type = pp_cls.storage_type
             self.storage_Emin = pp_cls.storage_Emin
@@ -1161,8 +1180,6 @@ class LightSimBackend(Backend):
 
         self.thermal_limit_a = copy.deepcopy(self.init_pp_backend.thermal_limit_a)
 
-        self.__nb_powerline = self.init_pp_backend._grid.line.shape[0]
-        self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()
         self._init_bus_load = 1.0 * self.init_pp_backend._grid.load["bus"].values
         self._init_bus_gen = 1.0 * self.init_pp_backend._grid.gen["bus"].values
         self._init_bus_lor = 1.0 * self.init_pp_backend._grid.line["from_bus"].values
@@ -1210,7 +1227,7 @@ class LightSimBackend(Backend):
         if hasattr(self.init_pp_backend, "_sh_vnkv"):
             # attribute has been added in grid2op ~1.3 or 1.4
             self._sh_vnkv = self.init_pp_backend._sh_vnkv
-        
+            
         self._aux_finish_setup_after_reading()
 
     def _aux_finish_setup_after_reading(self):
@@ -1234,11 +1251,13 @@ class LightSimBackend(Backend):
         self._grid.set_line_ex_to_subid(cls.line_ex_to_subid[:self.__nb_powerline])
         self._grid.set_trafo_hv_to_subid(cls.line_or_to_subid[self.__nb_powerline:])
         self._grid.set_trafo_lv_to_subid(cls.line_ex_to_subid[self.__nb_powerline:])
-
+        
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
             self._grid.set_storage_to_subid(cls.storage_to_subid)
             self._grid.set_storage_pos_topo_vect(cls.storage_pos_topo_vect)
+        if type(self).shunts_data_available:
+            self._grid.set_shunt_to_subid(cls.shunt_to_subid)
 
         nm_ = "load"
         for load_id, pos_big_topo  in enumerate(cls.load_pos_topo_vect):

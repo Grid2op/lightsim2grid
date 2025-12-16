@@ -92,15 +92,15 @@ void GenericContainer::_generic_change_bus(
     }
     int & bus_me_id = el_bus_ids(el_id);
     
-    if(bus_me_id != new_bus_me_id) {
-        // TODO speed: here the dimension changed only if nothing was connected before
-        solver_control.tell_dimension_changed();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+    // if(bus_me_id != new_bus_me_id) {
+    //     // TODO speed: here the dimension changed only if nothing was connected before
+    //     solver_control.tell_dimension_changed();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
         
-        // TODO speed: sparsity pattern might not change if something is already there  
-        solver_control.tell_ybus_change_sparsity_pattern();
-        solver_control.tell_recompute_sbus();  // if a bus changed for load / generator
-        solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
-    }
+    //     // TODO speed: sparsity pattern might not change if something is already there  
+    //     solver_control.tell_ybus_change_sparsity_pattern();
+    //     solver_control.tell_recompute_sbus();  // if a bus changed for load / generator
+    //     solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
+    // }
     bus_me_id = new_bus_me_id;
 }
 

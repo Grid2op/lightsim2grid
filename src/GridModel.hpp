@@ -959,11 +959,11 @@ class GridModel : public GenericContainer
         }
         void set_trafo_hv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_hv_pos_topo_vect)
         {
-            powerlines_.set_pos_topo_vect_side_1(trafo_hv_pos_topo_vect);
+            trafos_.set_pos_topo_vect_side_1(trafo_hv_pos_topo_vect);
         }
         void set_trafo_lv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_lv_pos_topo_vect)
         {
-            powerlines_.set_pos_topo_vect_side_2(trafo_lv_pos_topo_vect);
+            trafos_.set_pos_topo_vect_side_2(trafo_lv_pos_topo_vect);
         }
 
         void set_load_to_subid(Eigen::Ref<const IntVect> load_to_subid)
@@ -977,6 +977,10 @@ class GridModel : public GenericContainer
         void set_storage_to_subid(Eigen::Ref<const IntVect> storage_to_subid)
         {
             storages_.set_subid(storage_to_subid);
+        }
+        void set_shunt_to_subid(Eigen::Ref<const IntVect> shunt_to_subid)
+        {
+            shunts_.set_subid(shunt_to_subid);
         }
         void set_line_or_to_subid(Eigen::Ref<const IntVect> line_or_to_subid)
         {

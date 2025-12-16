@@ -87,7 +87,6 @@ class OneSideContainer_PQ : public OneSideContainer
             bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
             this->_change_p(load_id, new_p, my_status, solver_control);
             if (target_p_mw_(load_id) != new_p) {
-                solver_control.tell_recompute_sbus();
                 target_p_mw_(load_id) = new_p;
             }
         }
@@ -109,7 +108,6 @@ class OneSideContainer_PQ : public OneSideContainer
             bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
             this->_change_q(load_id, new_q, my_status, solver_control);
             if (target_q_mvar_(load_id) != new_q) {
-                solver_control.tell_recompute_sbus();
                 target_q_mvar_(load_id) = new_q;
             }
         }
@@ -185,11 +183,31 @@ class OneSideContainer_PQ : public OneSideContainer
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac) {};
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {};
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {};
-        virtual void _change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {};
-        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
-        virtual void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {};
+        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+            if(status_[el_id]){
+                solver_control.tell_recompute_sbus();
+            }
+        };
+        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+            if(!status_[el_id]){
+                solver_control.tell_recompute_sbus();
+            }
+        };
+        virtual void _change_bus(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+            if(bus_id_(el_id) != new_bus_id){
+                solver_control.tell_recompute_sbus();
+            }
+        };
+        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {
+            if (target_p_mw_(el_id) != new_p) {
+                solver_control.tell_recompute_sbus();
+            }
+        };
+        virtual void _change_q(int el_id, real_type new_q, bool my_status,SolverControl & solver_control) {
+            if (target_q_mvar_(el_id) != new_q) {
+                solver_control.tell_recompute_sbus();
+            }
+        };
         // virtual void _change_v(int el_id, real_type new_p, SolverControl & solver_control) {};
 
     protected:

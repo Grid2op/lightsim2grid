@@ -21,39 +21,41 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
     //////////////////////////////
     // access data from base class
     public:
-        using TwoSidesContainer<OneSideContainer>::_deactivated_bus_id;
-        using TwoSidesContainer<OneSideContainer>::v_disco_el_;
-        using TwoSidesContainer<OneSideContainer>::theta_disco_el_;
-        using TwoSidesContainer<OneSideContainer>::my_180_pi_;
-        using TwoSidesContainer<OneSideContainer>::_generic_deactivate;
-        using TwoSidesContainer<OneSideContainer>::_generic_reactivate;
+        using TwoSidesContainer<OneSideType>::_deactivated_bus_id;
+        using TwoSidesContainer<OneSideType>::v_disco_el_;
+        using TwoSidesContainer<OneSideType>::theta_disco_el_;
+        using TwoSidesContainer<OneSideType>::my_180_pi_;
+        using TwoSidesContainer<OneSideType>::_generic_deactivate;
+        using TwoSidesContainer<OneSideType>::_generic_reactivate;
 
-        using TwoSidesContainer<OneSideContainer>::nb;
-        using TwoSidesContainer<OneSideContainer>::reset_results_tsc;
-        using TwoSidesContainer<OneSideContainer>::check_size;
-        using TwoSidesContainer<OneSideContainer>::get_bus_side_1;
-        using TwoSidesContainer<OneSideContainer>::get_bus_side_2;
+        using TwoSidesContainer<OneSideType>::nb;
+        using TwoSidesContainer<OneSideType>::reset_results_tsc;
+        using TwoSidesContainer<OneSideType>::check_size;
+        using TwoSidesContainer<OneSideType>::get_bus_side_1;
+        using TwoSidesContainer<OneSideType>::get_bus_side_2;
 
     protected:
-        using TwoSidesContainer<OneSideContainer>::_get_amps;
+        using TwoSidesContainer<OneSideType>::_get_amps;
 
-        using TwoSidesContainer<OneSideContainer>::get_tsc_state;
-        using TwoSidesContainer<OneSideContainer>::set_tsc_state;
-        using TwoSidesContainer<OneSideContainer>::status_global_;
-        using TwoSidesContainer<OneSideContainer>::side_1_;
-        using TwoSidesContainer<OneSideContainer>::side_2_;
-        using TwoSidesContainer<OneSideContainer>::get_res_p_side_1;
-        using TwoSidesContainer<OneSideContainer>::get_res_p_side_2;
-        using TwoSidesContainer<OneSideContainer>::get_res_q_side_1;
-        using TwoSidesContainer<OneSideContainer>::get_res_q_side_2;
-        using TwoSidesContainer<OneSideContainer>::get_res_v_side_1;
-        using TwoSidesContainer<OneSideContainer>::get_res_v_side_2;
-        using TwoSidesContainer<OneSideContainer>::get_res_theta_side_1;
-        using TwoSidesContainer<OneSideContainer>::get_res_theta_side_2;
+        using TwoSidesContainer<OneSideType>::get_tsc_state;
+        using TwoSidesContainer<OneSideType>::set_tsc_state;
+        using TwoSidesContainer<OneSideType>::status_global_;
+        using TwoSidesContainer<OneSideType>::side_1_;
+        using TwoSidesContainer<OneSideType>::side_2_;
+        using TwoSidesContainer<OneSideType>::get_res_p_side_1;
+        using TwoSidesContainer<OneSideType>::get_res_p_side_2;
+        using TwoSidesContainer<OneSideType>::get_res_q_side_1;
+        using TwoSidesContainer<OneSideType>::get_res_q_side_2;
+        using TwoSidesContainer<OneSideType>::get_res_v_side_1;
+        using TwoSidesContainer<OneSideType>::get_res_v_side_2;
+        using TwoSidesContainer<OneSideType>::get_res_theta_side_1;
+        using TwoSidesContainer<OneSideType>::get_res_theta_side_2;
+
+    typedef typename TwoSidesContainer<OneSideType>::StateRes StateResSuper;
     //////////////////////////////
 
     public:
-        class TwoSidesContainer_rxh_AInfo : public TwoSidesContainer<OneSideContainer>::TwoSidesInfo
+        class TwoSidesContainer_rxh_AInfo : public TwoSidesContainer<OneSideType>::TwoSidesInfo
         {
             public:
                 // members
@@ -76,7 +78,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 cplx_type ydc_22;
 
                 TwoSidesContainer_rxh_AInfo(const TwoSidesContainer_rxh_A & r_data, int my_id):
-                TwoSidesContainer<OneSideContainer>::TwoSidesInfo(r_data, my_id),
+                TwoSidesContainer<OneSideType>::TwoSidesInfo(r_data, my_id),
                 r_pu(-1.0),
                 x_pu(-1.0),
                 h1_pu(0., 0.),
@@ -145,40 +147,16 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
     public:
         // pickle
         typedef std::tuple<
-                   TwoSidesContainer<OneSideContainer>::StateRes,
+                   StateResSuper,
                    std::vector<real_type>,  // branch_r
                    std::vector<real_type>,  // branch_x
                    std::vector<cplx_type>,   // branch_h1
                    std::vector<cplx_type>   // branch_h2
                >  StateRes;
 
-        // setter (states)
-        // methods used within lightsim
-        void deactivate(int el_id, SolverControl & solver_control) {
-            if(status_global_[el_id]){
-                solver_control.tell_recompute_ybus();
-                // but sparsity pattern do not change here (possibly one more coeff at 0.)
-                solver_control.tell_ybus_some_coeffs_zero();
-                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
-            }
-            _generic_deactivate(el_id, status_global_);
-            side_1_.deactivate(el_id, solver_control);
-            side_2_.deactivate(el_id, solver_control);
-        }
-        void reactivate(int el_id, SolverControl & solver_control) {
-            if(!status_global_[el_id]){
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_ybus_change_sparsity_pattern();  // this might change
-                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
-            }
-            _generic_reactivate(el_id, status_global_);
-            side_1_.reactivate(el_id, solver_control);
-            side_2_.reactivate(el_id, solver_control);
-        }
-
         // getter (results)
         tuple4d get_res_side_1() const {
-            const tuple3d & side_1_res = TwoSidesContainer<OneSideContainer>::get_res_side_1();
+            const tuple3d & side_1_res = TwoSidesContainer<OneSideType>::get_res_side_1();
             return tuple4d(
                 std::get<0>(side_1_res),
                 std::get<1>(side_1_res),
@@ -186,7 +164,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 res_a_side_1_);
         }
         tuple4d get_res_side_2() const {
-            const tuple3d & side_2_res = TwoSidesContainer<OneSideContainer>::get_res_side_2();
+            const tuple3d & side_2_res = TwoSidesContainer<OneSideType>::get_res_side_2();
             return tuple4d(
                 std::get<0>(side_2_res),
                 std::get<1>(side_2_res),
@@ -194,7 +172,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 res_a_side_2_);
         }
         tuple5d get_res_full_side_1() const {
-            const tuple4d & side_1_res = TwoSidesContainer<OneSideContainer>::get_res_full_side_1();
+            const tuple4d & side_1_res = TwoSidesContainer<OneSideType>::get_res_full_side_1();
             return tuple5d(
                 std::get<0>(side_1_res),
                 std::get<1>(side_1_res),
@@ -203,7 +181,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 std::get<3>(side_1_res));
         }
         tuple5d get_res_full_side_2() const {
-            const tuple4d & side_2_res = TwoSidesContainer<OneSideContainer>::get_res_full_side_2();
+            const tuple4d & side_2_res = TwoSidesContainer<OneSideType>::get_res_full_side_2();
             return tuple5d(
                 std::get<0>(side_2_res),
                 std::get<1>(side_2_res),
@@ -234,7 +212,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             Eigen::Ref<RealVect> res_v_lv_ = get_res_v_side_2();
             Eigen::Ref<RealVect> res_theta_lv_ = get_res_theta_side_2();
 
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
             for(int el_id = 0; el_id < nb_element; ++el_id){
+
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) {
                     res_p_side_1(el_id) = 0.0;  // in MW
@@ -255,20 +236,22 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
                 if(bus_hv_solver_id == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TrafoContainer::compute_results: the trafo with id ";
+                    exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
                     exc_ << el_id;
-                    exc_ << " is connected (hv side) to a disconnected bus while being connected";
+                    exc_ << " is connected (side 1) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
                 int bus_lv_id_me = get_bus_side_2(el_id);
                 int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
                 if(bus_lv_solver_id == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TrafoContainer::compute_results: the trafo with id ";
+                    exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
                     exc_ << el_id;
-                    exc_ << " is connected (lv side) to a disconnected bus while being connected";
+                    exc_ << " is connected (side 2) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
+                cplx_type is_1_conn = {status1[el_id] ? 1. : 0., 0.};
+                cplx_type is_2_conn = {status2[el_id] ? 1. : 0., 0.};
 
                 // retrieve voltages magnitude in kv instead of pu
                 real_type v_hv = Vm(bus_hv_solver_id);
@@ -290,8 +273,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                     // TODO for DC with yff, ...
                     // trafo equations
-                    cplx_type I_hvlv =  yac_11_(el_id) * Ehv + yac_12_(el_id) * Elv;
-                    cplx_type I_lvhv =  yac_22_(el_id) * Elv + yac_21_(el_id) * Ehv;
+                    cplx_type I_hvlv =  (yac_11_(el_id) * Ehv + yac_12_(el_id) * Elv) * is_1_conn;
+                    cplx_type I_lvhv =  (yac_22_(el_id) * Elv + yac_21_(el_id) * Ehv) * is_2_conn;
 
                     I_hvlv = std::conj(I_hvlv);
                     I_lvhv = std::conj(I_lvhv);
@@ -304,8 +287,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     res_q_lv_(el_id) = std::imag(s_lvhv) * sn_mva;
                 }else{
                     // result of the dc powerflow
-                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va(bus_hv_solver_id) + std::real(ydc_12_(el_id)) * Va(bus_lv_solver_id)) * sn_mva; // - dc_x_tau_shift_(el_id) ) * sn_mva;
-                    res_p_lv_(el_id) = (std::real(ydc_22_(el_id)) * Va(bus_lv_solver_id) + std::real(ydc_21_(el_id)) * Va(bus_hv_solver_id)) * sn_mva; // + dc_x_tau_shift_(el_id) ) * sn_mva; 
+                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va(bus_hv_solver_id) + std::real(ydc_12_(el_id)) * Va(bus_lv_solver_id)) * sn_mva * std::real(is_1_conn); // - dc_x_tau_shift_(el_id) ) * sn_mva;
+                    res_p_lv_(el_id) = (std::real(ydc_22_(el_id)) * Va(bus_lv_solver_id) + std::real(ydc_21_(el_id)) * Va(bus_hv_solver_id)) * sn_mva * std::real(is_2_conn); // + dc_x_tau_shift_(el_id) ) * sn_mva; 
                 
                     res_q_side_1(el_id) = 0.;
                     res_q_lv_(el_id) = 0.;
@@ -325,7 +308,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             _get_amps(res_a_side_1_, std::get<0>(res_side1), std::get<1>(res_side1), std::get<2>(res_side1));
             const auto & res_side2 = side_2_.get_res();
             _get_amps(res_a_side_2_, std::get<0>(res_side2), std::get<1>(res_side2), std::get<2>(res_side2));
-
         }
         void compute_results_tsc_rxha(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
@@ -372,6 +354,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                         real_type sn_mva) const
         {
             const Eigen::Index nb_els = nb();
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+
             cplx_type yft, ytf, yff, ytt;
             for(Eigen::Index el_id =0; el_id < nb_els; ++el_id){
                 // i don't do anything if the trafo is disconnected
@@ -397,6 +382,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     throw std::runtime_error(exc_.str());
                 }
                 
+                cplx_type is_1_conn = {status1[el_id] ? 1. : 0., 0.};
+                cplx_type is_2_conn = {status2[el_id] ? 1. : 0., 0.};
                 if(ac){
                     // ac mode
                     yft = yac_12_(el_id);
@@ -410,10 +397,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     yff = ydc_11_(el_id);
                     ytt = ydc_22_(el_id);
                 }
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side2_solver_id, yft));
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side1_solver_id, ytf));
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side1_solver_id, yff));
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side2_solver_id, ytt));
+                res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side2_solver_id, yft * is_1_conn));
+                res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side1_solver_id, ytf * is_2_conn));
+                res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side1_solver_id, yff * is_1_conn));
+                res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side2_solver_id, ytt * is_2_conn));
             }
         }
 
@@ -491,6 +478,22 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             reset_results_tsc();
             res_a_side_1_ = RealVect(nb());  // in kA
             res_a_side_2_ = RealVect(nb());  // in kA
+        }
+
+        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+            if(status_global_[el_id]){
+                solver_control.tell_recompute_ybus();
+                // but sparsity pattern do not change here (possibly one more coeff at 0.)
+                solver_control.tell_ybus_some_coeffs_zero();
+                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
+            }
+        }
+        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+            if(!status_global_[el_id]){
+                solver_control.tell_recompute_ybus();
+                solver_control.tell_ybus_change_sparsity_pattern();  // this might change
+                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
+            }
         }
 
 

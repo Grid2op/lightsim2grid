@@ -12,7 +12,6 @@ import grid2op
 import warnings
 import pdb
 import numpy as np
-from scipy.sparse import data
 from lightsim2grid import LightSimBackend
 
 SparseLUSolver_AVAILBLE = False
@@ -35,6 +34,7 @@ class MakeTests(unittest.TestCase):
 
     def aux_gen_ok(self, el, gen_id, tol, gen_p, gen_q, gen_v):
         assert el.connected is True, f"gen {gen_id} is not connected"
+        assert el.sub_id == self.env.backend.gen_to_subid[gen_id], f"gen {gen_id} is connected to wrong substation"
         assert el.bus_id == self.env.backend.gen_to_subid[gen_id], f"gen {gen_id} is connected to wrong bus"
         # assert np.abs(el.target_p_mw - gen_p[gen_id]) <= tol  # do not work on the slack bus
         assert np.abs(el.target_vm_pu - gen_v[gen_id] / self.env.backend.prod_pu_to_kv[gen_id]) <= tol, \
@@ -73,15 +73,19 @@ class MakeTests(unittest.TestCase):
     def aux_trafo_ok(self, el, trafo_id, tol, data_ref):
         """trafo_id: id for the trafo in grid2Op"""
         p_or, q_or, v_or, a_or = data_ref
-        assert el.connected is True, f"gen {trafo_id} is not connected"
-        assert el.bus_hv_id == self.env.backend.line_or_to_subid[trafo_id], \
+        assert el.connected_global is True, f"gen {trafo_id} is not connected"
+        assert el.sub_1_id == self.env.backend.line_or_to_subid[trafo_id], \
             f"trafo {trafo_id} is connected to wrong bus (hv side)"
-        assert el.bus_lv_id == self.env.backend.line_ex_to_subid[trafo_id], \
+        assert el.sub_2_id == self.env.backend.line_ex_to_subid[trafo_id], \
+            f"trafo {trafo_id} is connected to wrong bus (lv side)"
+        assert el.bus_1_id == self.env.backend.line_or_to_subid[trafo_id], \
+            f"trafo {trafo_id} is connected to wrong bus (hv side)"
+        assert el.bus_2_id == self.env.backend.line_ex_to_subid[trafo_id], \
             f"trafo {trafo_id} is connected to wrong bus (lv side)"
         assert el.has_res, f"trafo {trafo_id} don't have any results"
-        assert np.abs(el.res_p_hv_mw - p_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong p_hv"
-        assert np.abs(el.res_q_hv_mvar - q_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong q_hv"
-        assert np.abs(el.res_a_hv_ka - 0.001 * a_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong a_hv"
+        assert np.abs(el.res_p1_mw - p_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong p_hv"
+        assert np.abs(el.res_q1_mvar - q_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong q_hv"
+        assert np.abs(el.res_a1_ka - 0.001 * a_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong a_hv"
 
     def test_getters_trafo(self):
         """test that the trafo getter return the right values"""
@@ -111,15 +115,19 @@ class MakeTests(unittest.TestCase):
     def aux_line_ok(self, el, line_id, tol, data_ref):
         """trafo_id: id for the trafo in grid2Op"""
         p_or, q_or, v_or, a_or = data_ref
-        assert el.connected is True, f"line {line_id} is not connected"
-        assert el.bus_or_id == self.env.backend.line_or_to_subid[line_id], \
+        assert el.connected_global, f"line {line_id} is not connected"
+        assert el.sub_1_id == self.env.backend.line_or_to_subid[line_id], \
+            f"line {line_id} is connected to wrong substation (or side)"
+        assert el.sub_2_id == self.env.backend.line_ex_to_subid[line_id], \
+            f"line {line_id} is connected to wrong substation (ex side)"
+        assert el.bus_1_id == self.env.backend.line_or_to_subid[line_id], \
             f"line {line_id} is connected to wrong bus (or side)"
-        assert el.bus_ex_id == self.env.backend.line_ex_to_subid[line_id], \
+        assert el.bus_2_id == self.env.backend.line_ex_to_subid[line_id], \
             f"line {line_id} is connected to wrong bus (ex side)"
         assert el.has_res, f"line {line_id} don't have any results"
-        assert np.abs(el.res_p_or_mw - p_or[line_id]) <= tol, f"line {line_id} has wrong p_or"
-        assert np.abs(el.res_q_or_mvar - q_or[line_id]) <= tol, f"line {line_id} has wrong q_or"
-        assert np.abs(el.res_a_or_ka - 0.001 * a_or[line_id]) <= tol, f"line {line_id} has wrong a_or"
+        assert np.abs(el.res_p1_mw - p_or[line_id]) <= tol, f"line {line_id} has wrong p_or"
+        assert np.abs(el.res_q1_mvar - q_or[line_id]) <= tol, f"line {line_id} has wrong q_or"
+        assert np.abs(el.res_a1_ka - 0.001 * a_or[line_id]) <= tol, f"line {line_id} has wrong a_or"
 
     def test_getters_line(self):
         """test that the line getter return the right values"""

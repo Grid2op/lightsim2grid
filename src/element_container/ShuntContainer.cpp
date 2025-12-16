@@ -27,7 +27,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               const std::vector<int> & id_grid_to_solver,
                               real_type sn_mva) const
 {
-    if(!ac) return; // no shunt in DC
+    if(!ac) return; // no shunt in DC in Ybus
 
     const Eigen::Index nb_shunt = static_cast<int>(target_q_mvar_.size());
     cplx_type tmp;

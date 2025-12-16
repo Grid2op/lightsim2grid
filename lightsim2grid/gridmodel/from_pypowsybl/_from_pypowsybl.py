@@ -517,33 +517,44 @@ def init(net : pypo.network.Network,
         # (this is automatically done by consider_only_main_component)
         model.init_bus_status()  
         
+
+    # voltage_level_id is kind of what I call "substation" in grid2op
+    if sub_unique is None:
+        vl_unique = bus_df["voltage_level_id"].unique()
+        sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
+    else:
+        # already computed before when innitializing the buses and substations
+        # I don't do it again to ensure consistency
+        sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
+    buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_global_id", "sub_id"]]
+    gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    gen_sub["desired_slack"] = False
+    gen_sub.loc[gen_sub.index[gen_slack_ids_int], "desired_slack"] = True
+    load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+    lex_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    tor_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+    tex_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    batt_sub = pd.merge(left=df_batt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    sh_sub = pd.merge(left=df_shunt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    hvdc_vl_info = pd.DataFrame(index=df_dc.index,
+                                data={"voltage_level1_id": df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values,
+                                        "voltage_level2_id": df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values
+                                        })
+    hvdc_sub_from_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+    hvdc_sub_to_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    
+    # set the substation ID to which each object belong
+    model.set_gen_to_subid(gen_sub["sub_id"].values)
+    model.set_load_to_subid(load_sub["sub_id"].values)
+    model.set_storage_to_subid(batt_sub["sub_id"].values)
+    model.set_shunt_to_subid(sh_sub["sub_id"].values)
+    model.set_line_or_to_subid(lor_sub["sub_id"].values)
+    model.set_line_ex_to_subid(lex_sub["sub_id"].values)
+    model.set_trafo_hv_to_subid(tor_sub["sub_id"].values)
+    model.set_trafo_lv_to_subid(tex_sub["sub_id"].values)
+    
     if not return_sub_id:
-        # for backward compatibility
         return model
     else:
-        # voltage_level_id is kind of what I call "substation" in grid2op
-        if sub_unique is None:
-            vl_unique = bus_df["voltage_level_id"].unique()
-            sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
-        else:
-            # already computed before when innitializing the buses and substations
-            # I don't do it again to ensure consistency
-            sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
-        buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_global_id", "sub_id"]]
-        gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-        gen_sub["desired_slack"] = False
-        gen_sub.loc[gen_sub.index[gen_slack_ids_int], "desired_slack"] = True
-        load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-        lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
-        lex_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
-        tor_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
-        tex_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
-        batt_sub = pd.merge(left=df_batt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-        sh_sub = pd.merge(left=df_shunt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-        hvdc_vl_info = pd.DataFrame(index=df_dc.index,
-                                    data={"voltage_level1_id": df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values,
-                                          "voltage_level2_id": df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values
-                                          })
-        hvdc_sub_from_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
-        hvdc_sub_to_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
         return model, (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id)

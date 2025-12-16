@@ -164,7 +164,11 @@ class TwoSidesContainer : public GenericContainer
             Eigen::Ref<const IntVect> bus_side_1_id_ = get_buses_side_1();
             Eigen::Ref<const IntVect> bus_side_2_id_ = get_buses_side_2();
             for(Eigen::Index i = 0; i < nb_el; ++i){
-                if(!status_global_[i]) continue;
+                if(!status_global_[i]){
+                    side_1_.deactivate(i, unused_solver_control);
+                    side_2_.deactivate(i, unused_solver_control);
+                    continue;
+                }
                 auto bus_side_1 = bus_side_1_id_(i);
                 auto bus_side_2 = bus_side_2_id_(i);
                 if(!busbar_in_main_component[bus_side_1]) side_1_.deactivate(i, unused_solver_control);
@@ -176,10 +180,11 @@ class TwoSidesContainer : public GenericContainer
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
-                const auto bus_or = get_bus_side_1(el_id);
-                const auto bus_ex = get_bus_side_2(el_id);
-                res[bus_or] += 1;
-                res[bus_ex] += 1;
+
+                const int bus_or = get_bus_side_1(el_id);
+                if(bus_or != _deactivated_bus_id) res[bus_or] += 1;
+                const int bus_ex = get_bus_side_2(el_id);
+                if(bus_ex != _deactivated_bus_id) res[bus_ex] += 1;
             }
         }
 
@@ -224,6 +229,33 @@ class TwoSidesContainer : public GenericContainer
         {
             side_1_.update_topo(has_changed, new_values, solver_control, substations);
             side_2_.update_topo(has_changed, new_values, solver_control, substations);
+
+            // set the global status
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+            int nb_el = nb();
+            for(int el_id=0; el_id<nb_el; ++el_id)
+            {
+                // both side are disconnected, global element is disconnected
+                if((!status1[el_id]) && (!status2[el_id])) deactivate(el_id, solver_control);
+                // both side are connected, global element is connected
+                if((status1[el_id]) && (status2[el_id])) reactivate(el_id, solver_control);
+            }
+        }
+
+        // setter (states)
+        // methods used within lightsim
+        void deactivate(int el_id, SolverControl & solver_control) {
+            this->_deactivate(el_id, solver_control);
+            _generic_deactivate(el_id, status_global_);
+            side_1_.deactivate(el_id, solver_control);
+            side_2_.deactivate(el_id, solver_control);
+        }
+        void reactivate(int el_id, SolverControl & solver_control) {
+            this->_reactivate(el_id, solver_control);
+            _generic_reactivate(el_id, status_global_);
+            side_1_.reactivate(el_id, solver_control);
+            side_2_.reactivate(el_id, solver_control);
         }
 
         virtual ~TwoSidesContainer() noexcept = default;
@@ -245,6 +277,7 @@ class TwoSidesContainer : public GenericContainer
         }
 
         typedef std::tuple<
+            std::vector<std::string>,
             std::vector<bool>,          // status_global
             typename OneSideType::StateRes, // side_1
             typename OneSideType::StateRes  // side_2
@@ -260,6 +293,7 @@ class TwoSidesContainer : public GenericContainer
         StateRes get_tsc_state() const  // tsc: two sides container
         {
             StateRes res(
+                names_,
                 status_global_,
                 side_1_.get_state(),
                 side_2_.get_state()
@@ -269,13 +303,17 @@ class TwoSidesContainer : public GenericContainer
 
         void set_tsc_state(TwoSidesContainer::StateRes & my_state)  // tsc: two sides container
         {
-            status_global_ = std::get<0>(my_state);
-            side_1_.set_state(std::get<1>(my_state));
-            side_2_.set_state(std::get<2>(my_state));
+            names_ = std::get<0>(my_state);
+            status_global_ = std::get<1>(my_state);
+            side_1_.set_state(std::get<2>(my_state));
+            side_2_.set_state(std::get<3>(my_state));
             auto size = nb();
+            check_size(std::get<0>(my_state), size, "names");
             if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");
             if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
         }
+        virtual void _deactivate(int el_id, SolverControl & solver_control) {}
+        virtual void _reactivate(int el_id, SolverControl & solver_control) {}
 
         // used for example in change_bus_lv(int, int solver_control, int)
         Eigen::Ref<IntVect> get_buses_not_const_side_1() {return side_1_.get_buses_not_const();}

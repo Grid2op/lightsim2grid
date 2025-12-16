@@ -18,21 +18,21 @@
 
 #include "Utils.hpp"
 #include "BaseSubstation.hpp"
-#include "OneSideContainer.hpp"
+#include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
 /**
 This class is a container for all the powerlines on the grid.
 
 **/
-class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
+class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
 {
     public:
-        class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer>::TwoSidesContainer_rxh_AInfo
+        class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
         {
             public:
                 LineInfo(const LineContainer & r_data, int my_id):
-                TwoSidesContainer_rxh_A<OneSideContainer>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
+                TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
         };
         typedef LineInfo DataInfo;
 
@@ -59,7 +59,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer>
 
     public:
         typedef std::tuple<
-                   TwoSidesContainer_rxh_A<OneSideContainer>::StateRes
+                   TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
                    >  StateRes;
         
         LineContainer() {};
