@@ -361,6 +361,8 @@ class GeneratorContainer: public OneSideContainer_PQ
 
     protected:
         virtual void _change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control);
+        virtual void _deactivate(int gen_id, SolverControl & solver_control);
+        virtual void _reactivate(int gen_id, SolverControl & solver_control);
 
 };
 

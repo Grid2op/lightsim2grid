@@ -219,6 +219,9 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
 
 void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control)
 {
+    if (target_p_mw_(gen_id) != new_p) {
+        solver_control.tell_recompute_sbus();
+    }
     if(!turnedoff_gen_pv_){
         // if turned off generators (including these with p==0)
         // are not pv, if we change the active generation, it changes
@@ -229,8 +232,23 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, 
             solver_control.tell_pv_changed();
            }
     }
-    // TODO IF SLACK !!! (and p close to 0., slack weight can be updated)
 }
+
+void GeneratorContainer::_deactivate(int el_id, SolverControl & solver_control) {
+    if(!status_[el_id]) return;  // nothing to do if it was already deactivated
+    solver_control.tell_recompute_sbus();
+    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
+    if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
+    if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+};
+
+void GeneratorContainer::_reactivate(int el_id, SolverControl & solver_control) {
+    if(status_[el_id]) return;  // nothing to do if gen already connected
+    solver_control.tell_recompute_sbus();
+    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
+    if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
+    if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+};
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
 {

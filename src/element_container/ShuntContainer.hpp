@@ -97,6 +97,7 @@ class ShuntContainer : public OneSideContainer_PQ
         {
             if(target_p_mw_(shunt_id) != new_p){
                 solver_control.tell_recompute_ybus();
+                solver_control.tell_recompute_sbus();  // needed for DC
             }
         }
 

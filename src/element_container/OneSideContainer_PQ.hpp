@@ -82,12 +82,12 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             change_p_nothrow(el_id, new_p, solver_control);
         }
-        void change_p_nothrow(int load_id, real_type new_p, SolverControl & solver_control)
+        void change_p_nothrow(int el_id, real_type new_p, SolverControl & solver_control)
         {
-            bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
-            this->_change_p(load_id, new_p, my_status, solver_control);
-            if (target_p_mw_(load_id) != new_p) {
-                target_p_mw_(load_id) = new_p;
+            bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
+            this->_change_p(el_id, new_p, my_status, solver_control);
+            if (target_p_mw_(el_id) != new_p) {
+                target_p_mw_(el_id) = new_p;
             }
         }
         void change_q(int el_id, real_type new_q, SolverControl & solver_control)
