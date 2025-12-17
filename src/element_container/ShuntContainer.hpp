@@ -17,6 +17,15 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+class ShuntContainer;
+class ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
+{
+    public:
+        // no members
+        ShuntInfo(const ShuntContainer & r_data_shunt, int my_id);
+};
+typedef ShuntInfo DataInfo;
+
 /**
 This class is a container for all shunts on the grid.
 
@@ -26,38 +35,11 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
-class ShuntContainer : public OneSideContainer_PQ
+class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntContainer, ShuntInfo>
 {
-    // iterators part
+    friend class ShuntInfo;
     public:
-        class ShuntInfo : public OneSidePQInfo
-        {
-            public:
-                // no members
-                ShuntInfo(const ShuntContainer & r_data_shunt, int my_id):
-                OneSidePQInfo(r_data_shunt, my_id){}
-        };
         typedef ShuntInfo DataInfo;
-
-    private:
-        typedef GenericContainerConstIterator<ShuntContainer> ShuntContainerConstIterator;
-
-    public:
-        typedef ShuntContainerConstIterator const_iterator_type;
-        const_iterator_type begin() const {return ShuntContainerConstIterator(this, 0); }
-        const_iterator_type end() const {return ShuntContainerConstIterator(this, nb()); }
-        ShuntInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("You cannot ask for a negative load id.");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Generator out of bound. Not enough loads on the grid.");
-            }
-            return ShuntInfo(*this, id);
-        }
 
     public:
         typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;

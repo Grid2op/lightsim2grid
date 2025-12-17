@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+ShuntInfo::ShuntInfo(const ShuntContainer & r_data_shunt, int my_id):OneSidePQInfo(r_data_shunt, my_id){}
+
 ShuntContainer::StateRes ShuntContainer::get_state() const
 {
      ShuntContainer::StateRes res(get_osc_pq_state());
