@@ -155,15 +155,15 @@ class TestDCPF(unittest.TestCase):
                 # backend.init_pp_backend.assert_grid_correct()
                 
         # first i deactivate all slack bus in pp that are connected but not handled in ls
-        backend.init_pp_backend._grid.ext_grid["in_service"] = False
-        backend.init_pp_backend._grid.ext_grid.loc[0, "in_service"] = True
-        backend.init_pp_backend._grid.gen["slack"] = False
+        backend._init_pp_backend._grid.ext_grid["in_service"] = False
+        backend._init_pp_backend._grid.ext_grid.loc[0, "in_service"] = True
+        backend._init_pp_backend._grid.gen["slack"] = False
         return backend
 
     def _aux_test(self, pn_net):
         backend = self._aux_make_grid(pn_net)
         nb_sub = backend.n_sub
-        pp_net = backend.init_pp_backend._grid
+        pp_net = backend._init_pp_backend._grid
         conv, exc_ = backend.runpf(is_dc=True)
         # print(f"{backend.n_sub}: {backend._timer_solver = }")
         # PTDF = backend._grid.get_ptdf_solver()
@@ -176,7 +176,7 @@ class TestDCPF(unittest.TestCase):
         # LODF = backend._grid.get_lodf()
         # print(f"{backend.n_sub}: {backend._grid.get_dc_solver().get_timers_ptdf_lodf()[1] = }")
         # print(f"time {nb_powerflow} powerflows: {end_-beg_:.2e}")
-        conv_pp, exc_pp = backend.init_pp_backend.runpf(is_dc=True)
+        conv_pp, exc_pp = backend._init_pp_backend.runpf(is_dc=True)
         assert conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks"
         assert conv, f"Error: lightsim do not converge with error: {exc_}"
         
@@ -209,15 +209,15 @@ class TestDCPF(unittest.TestCase):
         # pp_net.trafo.loc[pp_net.trafo["lv_bus"] == 6160]
         assert np.abs(Sbus[mask_not_slack].real - Pbus[mask_not_slack].real).max() <= self.tol, f"max error in Sbus {np.abs(Sbus[mask_not_slack].real - Pbus[mask_not_slack].real).max()}"
 
-        por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend.init_pp_backend.lines_or_info())
-        pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend.init_pp_backend.lines_ex_info())
-        load_p_pp, load_q_pp, load_v_pp = copy.deepcopy(backend.init_pp_backend.loads_info())
-        gen_p_pp, gen_q_pp, gen_v_pp = copy.deepcopy(backend.init_pp_backend.generators_info())
-        sh_p_pp, sh_q_pp, sh_v_pp, *_ = copy.deepcopy(backend.init_pp_backend.shunt_info())
-        sgen_p_pp = copy.deepcopy(backend.init_pp_backend._grid.res_sgen["p_mw"].values)
-        init_gen_p = copy.deepcopy(backend.init_pp_backend._grid.gen["p_mw"].values)
-        init_load_p = copy.deepcopy(backend.init_pp_backend._grid.load["p_mw"].values)
-        init_sgen_p = copy.deepcopy(backend.init_pp_backend._grid.sgen["p_mw"].values)
+        por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend._init_pp_backend.lines_or_info())
+        pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend._init_pp_backend.lines_ex_info())
+        load_p_pp, load_q_pp, load_v_pp = copy.deepcopy(backend._init_pp_backend.loads_info())
+        gen_p_pp, gen_q_pp, gen_v_pp = copy.deepcopy(backend._init_pp_backend.generators_info())
+        sh_p_pp, sh_q_pp, sh_v_pp, *_ = copy.deepcopy(backend._init_pp_backend.shunt_info())
+        sgen_p_pp = copy.deepcopy(backend._init_pp_backend._grid.res_sgen["p_mw"].values)
+        init_gen_p = copy.deepcopy(backend._init_pp_backend._grid.gen["p_mw"].values)
+        init_load_p = copy.deepcopy(backend._init_pp_backend._grid.load["p_mw"].values)
+        init_sgen_p = copy.deepcopy(backend._init_pp_backend._grid.sgen["p_mw"].values)
 
         # I- Check for divergence and equality of flows"
         por_ls, qor_ls, vor_ls, aor_ls = backend.lines_or_info()
@@ -232,7 +232,7 @@ class TestDCPF(unittest.TestCase):
         Va_ls = np.rad2deg(np.angle(backend.V[:nb_sub]))
         assert np.abs(Va_pp - Va_ls).max() <= self.tol, f"max error for voltages {np.abs(Va_pp - Va_ls).max()}"
         
-        line_or_theta_pp, line_ex_theta_pp, *_ = backend.init_pp_backend.get_theta()
+        line_or_theta_pp, line_ex_theta_pp, *_ = backend._init_pp_backend.get_theta()
         line_or_theta_ls, line_ex_theta_ls, *_ = backend.get_theta()
         assert np.all(np.abs(line_or_theta_ls - line_or_theta_pp) <= self.tol), "error in voltage angles (theta_or)"
         assert np.all(np.abs(line_ex_theta_ls - line_ex_theta_pp) <= self.tol), "error in voltage angles (theta_ex)"
@@ -362,7 +362,7 @@ class TestDCPF_LODF(TestDCPF):
     def _aux_test(self, pn_net):
         backend = self._aux_make_grid(pn_net)
         nb_sub = backend.n_sub
-        pp_net = backend.init_pp_backend._grid
+        pp_net = backend._init_pp_backend._grid
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
         gridmodel = backend._grid

@@ -147,11 +147,11 @@ class MyTestCase(unittest.TestCase):
             backend.assert_grid_correct()
 
         nb_sub = backend.n_sub
-        pp_net = backend.init_pp_backend._grid
+        pp_net = backend._init_pp_backend._grid
         # first i deactivate all slack bus in pp that are connected but not handled in ls
         pp_net.ext_grid["in_service"] = False
         pp_net.ext_grid.loc[pp_net.ext_grid.index[0], "in_service"] = True
-        conv_pp, exc_pp = backend.init_pp_backend.runpf()
+        conv_pp, exc_pp = backend._init_pp_backend.runpf()
         conv, exc_ = backend.runpf()
         
         # backend._debug_Vdc
@@ -160,8 +160,8 @@ class MyTestCase(unittest.TestCase):
         self._assert_or_print(conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks")
         self._assert_or_print(conv, "Error: lightsim do not converge")
 
-        por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend.init_pp_backend.lines_or_info())
-        pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend.init_pp_backend.lines_ex_info())
+        por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend._init_pp_backend.lines_or_info())
+        pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend._init_pp_backend.lines_ex_info())
 
         # I- Check for divergence and equality of flows"
         por_ls, qor_ls, vor_ls, aor_ls = backend.lines_or_info()
@@ -177,23 +177,23 @@ class MyTestCase(unittest.TestCase):
         # "II - Check for possible solver issues"
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            pp.runpp(backend.init_pp_backend._grid, v_debug=True, lightsim2grid=False)
-        v_tmp = backend.init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
-        v_tmp *= np.exp(1j * np.pi / 180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
+            pp.runpp(backend._init_pp_backend._grid, v_debug=True, lightsim2grid=False)
+        v_tmp = backend._init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
+        v_tmp *= np.exp(1j * np.pi / 180. * backend._init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
         v_tmp = np.concatenate((v_tmp, v_tmp))
 
         V = backend._grid.ac_pf(v_tmp, 10, 1e-5)
         assert V.shape[0], "? lightsim diverge when initialized with pp final voltage ?"
         backend._grid.tell_solver_need_reset()
 
-        Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
-        Sbus = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
-        pv_ = backend.init_pp_backend._grid._ppc["internal"]["pv"]
-        pq_ = backend.init_pp_backend._grid._ppc["internal"]["pq"]
+        Y_pp = backend._init_pp_backend._grid._ppc["internal"]["Ybus"]
+        Sbus = backend._init_pp_backend._grid._ppc["internal"]["Sbus"]
+        pv_ = backend._init_pp_backend._grid._ppc["internal"]["pv"]
+        pq_ = backend._init_pp_backend._grid._ppc["internal"]["pq"]
         max_iter = 10
         tol_this = 1e-8
-        All_Vms = backend.init_pp_backend._grid._ppc["internal"]["Vm_it"]
-        AllVas = backend.init_pp_backend._grid._ppc["internal"]["Va_it"]
+        All_Vms = backend._init_pp_backend._grid._ppc["internal"]["Vm_it"]
+        AllVas = backend._init_pp_backend._grid._ppc["internal"]["Va_it"]
 
         for index_V in range(All_Vms.shape[1] - 1, -1, -1):
             nb_iter = All_Vms.shape[1] - 1
@@ -217,11 +217,11 @@ class MyTestCase(unittest.TestCase):
             if TIMER_INFO:
                 print(f"\t Info: Time to perform {nb_iter - index_V} NR iterations for a grid with {nb_sub} "
                       f"buses: {1000. * time_for_nr:.2f}ms")
-            error_va = np.abs(solver.get_Va() - np.angle(backend.init_pp_backend._grid._ppc["internal"]["V"]))
+            error_va = np.abs(solver.get_Va() - np.angle(backend._init_pp_backend._grid._ppc["internal"]["V"]))
             self._assert_or_print(np.max(error_va) <= self.tol, f"Error: VA do not match for iteration {index_V}, maximum absolute " \
                                                  f"error is {np.max(error_va):.5f} rad")
 
-            error_vm = np.abs(np.abs(solver.get_Vm() - np.abs(backend.init_pp_backend._grid._ppc["internal"]["V"])))
+            error_vm = np.abs(np.abs(solver.get_Vm() - np.abs(backend._init_pp_backend._grid._ppc["internal"]["V"])))
             self._assert_or_print(np.max(error_vm) <= self.tol, f"\t Error: VM do not match for iteration {index_V}, maximum absolute " \
                                                  f"error  is {np.max(error_vm):.5f} pu")
             solver.reset()
@@ -230,11 +230,11 @@ class MyTestCase(unittest.TestCase):
         #     print("")
 
         # 'III - Check the data conversion'
-        pp_vect_converter = backend.init_pp_backend._grid._pd2ppc_lookups["bus"][:nb_sub]
-        pp_net = backend.init_pp_backend._grid
+        pp_vect_converter = backend._init_pp_backend._grid._pd2ppc_lookups["bus"][:nb_sub]
+        pp_net = backend._init_pp_backend._grid
 
         # 1) Checking Sbus conversion
-        Sbus_pp = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
+        Sbus_pp = backend._init_pp_backend._grid._ppc["internal"]["Sbus"]
         Sbus_pp_right_order = Sbus_pp[pp_vect_converter]
         Sbus_me = backend._grid.get_Sbus_solver()
 
@@ -252,7 +252,7 @@ class MyTestCase(unittest.TestCase):
 
         # 2)  Checking Ybus conversion"
         Y_me = backend._grid.get_Ybus_solver()
-        Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
+        Y_pp = backend._init_pp_backend._grid._ppc["internal"]["Ybus"]
         Y_pp_right_order = Y_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
         error_p = np.abs(np.real(Y_me) - np.real(Y_pp_right_order))
         # arr_ = error_p.toarray()
@@ -345,7 +345,7 @@ class MyTestCase(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             pp.rundcpp(pp_net)
-        Ydc_pp = backend.init_pp_backend._grid._ppc["internal"]["Bbus"]
+        Ydc_pp = backend._init_pp_backend._grid._ppc["internal"]["Bbus"]
         Ydc_pp_right_order = Ydc_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
         if False:
             # The way i handle DC PF is different than pandapower

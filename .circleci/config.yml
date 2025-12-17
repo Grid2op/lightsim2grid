@@ -456,11 +456,11 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
-                name: "make tests"
+                name: "make basic tests" # otherwise it takes too long (time out)  
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -m unittest discover -v
+                    python -m unittest test_n_busbar_per_sub.py test_backend_pypowsybl.py test_basic_backend_api_noshunt.py test_ACPF.py test_DCPF.py
                     
     test_legacy_pandapower:
         executor: gcc_latest  

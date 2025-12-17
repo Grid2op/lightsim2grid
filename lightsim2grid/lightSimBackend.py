@@ -8,7 +8,7 @@
 
 import os
 import copy
-from typing import Tuple, Optional, Union
+from typing import Any, Dict, Tuple, Optional, Union
 from packaging import version
 try:
     from typing import Self
@@ -50,7 +50,7 @@ except ImportError:
     
 from lightsim2grid.solver import SolverType
 
-
+LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
 grid2op_min_shunt_cls_properly_handled = version.parse("1.9.7")
 
@@ -73,6 +73,8 @@ class LightSimBackend(Backend):
     
     KEYS_PYPOWSYBL_LOADER = {
         # "gen_slack_id",
+        "pypowsybl_load_kwargs",
+        "grid",
         "use_buses_for_sub",
         "sort_index",
         "init_vm_pu",
@@ -85,7 +87,8 @@ class LightSimBackend(Backend):
     }
     
     KEYS_PANDAPOWER_LOADER = {
-        "pp_orig_file"
+        "pp_orig_file",
+        "grid"
     }
     
     
@@ -99,7 +102,7 @@ class LightSimBackend(Backend):
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
                  loader_method: Literal["pandapower", "pypowsybl"] = "pandapower",
-                 loader_kwargs : Optional[dict] = None,
+                 loader_kwargs : LOADER_KWARGS_TYPING= None,
                  stop_if_load_disco : Optional[bool] = None,
                  stop_if_gen_disco : Optional[bool] = None,
                  stop_if_storage_disco : Optional[bool] = None,
@@ -139,6 +142,13 @@ class LightSimBackend(Backend):
         #:
         #: For pypowsybl it can contain the following keys:
         #: 
+        #:   - `grid` (``pypowsybl.network.Network``): the pypowsybl
+        #:      grid that will be used (thus skipping the call to pypowsybl.network.load).
+        #:      So the "path", "filename" of grid2op.make and "pypowsybl_load_kwargs"
+        #:      will be ignored if this is set.
+        #:   - `pypowsybl_load_kwargs` (``dict``): addition keywords arguments
+        #:      passed to "pypowsybl.network.load(grid, **pypowsybl_load_kwargs)"
+        #:      Not used when grid is provided.
         #:   - `n_busbar_per_sub` (``int``): number of independant buses for
         #:     each substation in the GridModel.
         #:   - `use_buses_for_sub` (``bool``): whether to use the buses (in the 
@@ -157,7 +167,7 @@ class LightSimBackend(Backend):
         #:   - `init_vm_pu` 
         #:   - `sn_mva` 
         #: 
-        self._loader_kwargs = loader_kwargs
+        self._loader_kwargs :LOADER_KWARGS_TYPING = loader_kwargs
 
         #: .. versionadded:: 0.8.0
         #:
@@ -246,7 +256,6 @@ class LightSimBackend(Backend):
             raise BackendError(f"Uknown loader_method : '{loader_method}'")
         
         # lazy loading because it crashes...
-        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
         from grid2op.Space import GridObjects  # lazy import
         self.__has_storage = hasattr(GridObjects, "n_storage")
         if not self.__has_storage:
@@ -280,12 +289,11 @@ class LightSimBackend(Backend):
 
         self.topo_vect = None
         self.shunt_topo_vect = None
-        try:
-            self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend(with_numba=False)
-        except TypeError as exc_:
-            # oldest version of grid2op do not support the kwargs "with_numba"
-            # (before 1.9.1)
-            self.init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
+
+        #: the initial pandapower backend (if loaded from pandapower)
+        self._init_pp_backend = None
+        #: the initial pypowsybl grid (if loaded from pypowsybl)
+        self._orig_grid_pypowsybl = None
         
         self.V = None
 
@@ -405,7 +413,16 @@ class LightSimBackend(Backend):
         self._storage_res = None
         self._reset_res_pointers()
         self._debug_Vdc = None   # use only for debug !
-        self._orig_grid_pypowsybl = None
+    
+    def _aux_assign_init_pp_backend(self):
+        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
+        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
+        try:
+            self._init_pp_backend = _DoNotUseAnywherePandaPowerBackend(with_numba=False)
+        except TypeError as exc_:
+            # oldest version of grid2op do not support the kwargs "with_numba"
+            # (before 1.9.1)
+            self._init_pp_backend = _DoNotUseAnywherePandaPowerBackend()
         
     def _aux_init_super(self, 
                         detailed_infos_for_cascading_failures,
@@ -825,11 +842,23 @@ class LightSimBackend(Backend):
         except AttributeError as _:
             warnings.warn("Please upgrade your grid2op version")
             full_path = self._should_not_have_to_do_this(path, filename)
-            
-        grid_tmp = pypow_net.load(full_path)
+        
+        if "grid" in loader_kwargs:
+            if not isinstance(loader_kwargs["grid"], pypow_net.Network):
+                raise Grid2OpException("The grid you provided in the 'grid' loader_kwargs "
+                                       "is not a valid pypowsybl grid. It is of type "
+                                       f"{type(loader_kwargs["grid"])}")
+                
+            # use the grid provided as input
+            grid_tmp = loader_kwargs["grid"]
+        else:
+            if "pypowsybl_load_kwargs" in loader_kwargs:
+                pypowsybl_load_kwargs = loader_kwargs["pypowsybl_load_kwargs"]
+            else:
+                pypowsybl_load_kwargs = {}
+            grid_tmp = pypow_net.load(full_path, **pypowsybl_load_kwargs)
         self._orig_grid_pypowsybl = grid_tmp
         
-        df = grid_tmp.get_substations()
         buses_for_sub = False
         if "use_buses_for_sub" in loader_kwargs and loader_kwargs["use_buses_for_sub"]:
             df = grid_tmp.get_buses()
@@ -842,9 +871,11 @@ class LightSimBackend(Backend):
         sort_index = True
         if "sort_index" in loader_kwargs and (bool(loader_kwargs["sort_index"]) == loader_kwargs["sort_index"]):
             sort_index = bool(loader_kwargs["sort_index"])
+            
         init_vm_pu = 1.06
         if "init_vm_pu" in loader_kwargs and float(loader_kwargs["init_vm_pu"]) != loader_kwargs["init_vm_pu"]:
             init_vm_pu = float(loader_kwargs["init_vm_pu"])
+            
         sn_mva = None
         if "sn_mva" in loader_kwargs and float(loader_kwargs["sn_mva"]) != loader_kwargs["sn_mva"]:
             sn_mva = float(loader_kwargs["sn_mva"])
@@ -1039,8 +1070,8 @@ class LightSimBackend(Backend):
     
     def init_from_loaded_pandapower(self, pp_net):
         if hasattr(type(self), "can_handle_more_than_2_busbar"):
-            type(self.init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
-        self.init_pp_backend = pp_net.copy()
+            type(self._init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
+        self._init_pp_backend = pp_net.copy()
         self._aux_init_pandapower()
         
         # handles redispatching
@@ -1069,19 +1100,18 @@ class LightSimBackend(Backend):
             setattr(self, attr_nm, copy.deepcopy(getattr( type(pp_net), attr_nm)))
         
     def _load_grid_pandapower(self, path=None, filename=None):
-        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
-        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
+        self._aux_assign_init_pp_backend()
         if hasattr(Backend, "can_handle_more_than_2_busbar"):
-            type(self.init_pp_backend).n_busbar_per_sub = type(self).n_busbar_per_sub
+            type(self._init_pp_backend).n_busbar_per_sub = type(self).n_busbar_per_sub
         if hasattr(Backend, "detachment_is_allowed"):
-            type(self.init_pp_backend).detachment_is_allowed = type(self).detachment_is_allowed
+            type(self._init_pp_backend).detachment_is_allowed = type(self).detachment_is_allowed
         if hasattr(Backend, "shunts_data_available"):
-            type(self.init_pp_backend).shunts_data_available = type(self).shunts_data_available
+            type(self._init_pp_backend).shunts_data_available = type(self).shunts_data_available
             
-        type(self.init_pp_backend).set_env_name(type(self).env_name)
+        type(self._init_pp_backend).set_env_name(type(self).env_name)
         if type(self).glop_version is not None:
-            type(self.init_pp_backend).glop_version = type(self).glop_version
-        self.init_pp_backend.load_grid(path, filename)
+            type(self._init_pp_backend).glop_version = type(self).glop_version
+        self._init_pp_backend.load_grid(path, filename)
         self._aux_init_pandapower()
     
     def _aux_check_loader_kwargs(
@@ -1107,26 +1137,26 @@ class LightSimBackend(Backend):
         if "pp_orig_file" in loader_kwargs and str(loader_kwargs["pp_orig_file"]) == loader_kwargs["pp_orig_file"]:
             pp_orig_file = str(loader_kwargs["pp_orig_file"])
             
-        self._grid = init_from_pandapower(self.init_pp_backend._grid,
-                                          self.init_pp_backend.n_sub,
+        self._grid = init_from_pandapower(self._init_pp_backend._grid,
+                                          self._init_pp_backend.n_sub,
                                           self.n_busbar_per_sub,
                                           pp_orig_file=pp_orig_file)
-        self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()  
+        self.__nb_bus_before = self._init_pp_backend.get_nb_active_bus()  
         self._aux_setup_right_after_grid_init()   
-        self.__nb_powerline = self.init_pp_backend._grid.line.shape[0]
-        self.__nb_bus_before = self.init_pp_backend.get_nb_active_bus()     
+        self.__nb_powerline = self._init_pp_backend._grid.line.shape[0]
+        self.__nb_bus_before = self._init_pp_backend.get_nb_active_bus()     
         
         # deactive the buses that have been added
-        for bus_id, bus_status in enumerate(self.init_pp_backend._grid.bus["in_service"].values):
+        for bus_id, bus_status in enumerate(self._init_pp_backend._grid.bus["in_service"].values):
             if bus_status:
                 self._grid.reactivate_bus(bus_id)
             else:
                 self._grid.deactivate_bus(bus_id)
 
-        pp_cls = type(self.init_pp_backend)
+        pp_cls = type(self._init_pp_backend)
         if pp_cls.n_line <= -1:
             warnings.warn("You are using a legacy (quite old now) grid2op version. Please upgrade it.")
-            pp_cls = self.init_pp_backend
+            pp_cls = self._init_pp_backend
         self.n_line = pp_cls.n_line
         self.n_gen = pp_cls.n_gen
         self.n_load = pp_cls.n_load
@@ -1153,16 +1183,16 @@ class LightSimBackend(Backend):
         self.name_sub = pp_cls.name_sub
         self._grid.init_substation_names(self.name_sub)
 
-        self.prod_pu_to_kv = self.init_pp_backend.prod_pu_to_kv
-        self.load_pu_to_kv = self.init_pp_backend.load_pu_to_kv
-        self.lines_or_pu_to_kv = self.init_pp_backend.lines_or_pu_to_kv
-        self.lines_ex_pu_to_kv = self.init_pp_backend.lines_ex_pu_to_kv
+        self.prod_pu_to_kv = self._init_pp_backend.prod_pu_to_kv
+        self.load_pu_to_kv = self._init_pp_backend.load_pu_to_kv
+        self.lines_or_pu_to_kv = self._init_pp_backend.lines_or_pu_to_kv
+        self.lines_ex_pu_to_kv = self._init_pp_backend.lines_ex_pu_to_kv
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
             self.n_storage = pp_cls.n_storage
             self.storage_to_subid = pp_cls.storage_to_subid
-            self.storage_pu_to_kv = self.init_pp_backend.storage_pu_to_kv
+            self.storage_pu_to_kv = self._init_pp_backend.storage_pu_to_kv
             self.name_storage = pp_cls.name_storage
             self._grid.set_storage_names(self.name_storage)
             self.storage_to_sub_pos = pp_cls.storage_to_sub_pos
@@ -1176,17 +1206,17 @@ class LightSimBackend(Backend):
             self.storage_discharging_efficiency = pp_cls.storage_discharging_efficiency
             self.storage_charging_efficiency = pp_cls.storage_charging_efficiency
         
-        self.nb_bus_total = self.init_pp_backend._grid.bus.shape[0]
+        self.nb_bus_total = self._init_pp_backend._grid.bus.shape[0]
 
-        self.thermal_limit_a = copy.deepcopy(self.init_pp_backend.thermal_limit_a)
+        self.thermal_limit_a = copy.deepcopy(self._init_pp_backend.thermal_limit_a)
 
-        self._init_bus_load = 1.0 * self.init_pp_backend._grid.load["bus"].values
-        self._init_bus_gen = 1.0 * self.init_pp_backend._grid.gen["bus"].values
-        self._init_bus_lor = 1.0 * self.init_pp_backend._grid.line["from_bus"].values
-        self._init_bus_lex = 1.0 * self.init_pp_backend._grid.line["to_bus"].values
+        self._init_bus_load = 1.0 * self._init_pp_backend._grid.load["bus"].values
+        self._init_bus_gen = 1.0 * self._init_pp_backend._grid.gen["bus"].values
+        self._init_bus_lor = 1.0 * self._init_pp_backend._grid.line["from_bus"].values
+        self._init_bus_lex = 1.0 * self._init_pp_backend._grid.line["to_bus"].values
 
-        t_for = 1.0 * self.init_pp_backend._grid.trafo["hv_bus"].values
-        t_fex = 1.0 * self.init_pp_backend._grid.trafo["lv_bus"].values
+        t_for = 1.0 * self._init_pp_backend._grid.trafo["hv_bus"].values
+        t_fex = 1.0 * self._init_pp_backend._grid.trafo["lv_bus"].values
         self._init_bus_lor = np.concatenate((self._init_bus_lor, t_for)).astype(int)
         self._init_bus_lex = np.concatenate((self._init_bus_lex, t_fex)).astype(int)
         self._init_bus_load = self._init_bus_load.astype(int)
@@ -1206,8 +1236,8 @@ class LightSimBackend(Backend):
                                              tmp.reshape(-1, 1)), axis=-1)
 
         self._big_topo_to_obj = [(None, None) for _ in range(self.dim_topo)]
-        self.prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
-        self.next_prod_p = 1.0 * self.init_pp_backend._grid.gen["p_mw"].values
+        self.prod_p = 1.0 * self._init_pp_backend._grid.gen["p_mw"].values
+        self.next_prod_p = 1.0 * self._init_pp_backend._grid.gen["p_mw"].values
         
         if type(self).shunts_data_available:
             if pp_cls.n_shunt is not None:
@@ -1218,15 +1248,15 @@ class LightSimBackend(Backend):
             else:
                 # legacy grid2op version...
                 warnings.warn("You are using a legacy grid2op version, please upgrade grid2op.")
-                self.n_shunt = self.init_pp_backend.n_shunt
-                self.shunt_to_subid = self.init_pp_backend.shunt_to_subid
-                self.name_shunt = self.init_pp_backend.name_shunt
+                self.n_shunt = self._init_pp_backend.n_shunt
+                self.shunt_to_subid = self._init_pp_backend.shunt_to_subid
+                self.name_shunt = self._init_pp_backend.name_shunt
         else:
             self.n_shunt = None
         self._compute_pos_big_topo()
-        if hasattr(self.init_pp_backend, "_sh_vnkv"):
+        if hasattr(self._init_pp_backend, "_sh_vnkv"):
             # attribute has been added in grid2op ~1.3 or 1.4
-            self._sh_vnkv = self.init_pp_backend._sh_vnkv
+            self._sh_vnkv = self._init_pp_backend._sh_vnkv
             
         self._aux_finish_setup_after_reading()
 
@@ -1370,12 +1400,12 @@ class LightSimBackend(Backend):
         :return: ``None``
         :raise: :class:`grid2op.Exceptions.EnvError` and possibly all of its derived class.
         """
-        from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend  # lazy import
-        _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
-        
         # test the results gives the proper size
         super().assert_grid_correct_after_powerflow()
-        self.init_pp_backend.__class__ = type(self.init_pp_backend).init_grid(type(self))
+        if self._init_pp_backend is not None:
+            from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend  # lazy import
+            _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
+            self._init_pp_backend.__class__ = type(self._init_pp_backend).init_grid(type(self))
         self._backend_action_class = _BackendAction.init_grid(type(self))
         self._init_action_to_set = self._backend_action_class()
         try:
@@ -1429,9 +1459,9 @@ class LightSimBackend(Backend):
             self.nb_obj_per_bus[arr_] += 1
 
     def close(self) -> None:
-        if self.init_pp_backend is not None:
+        if self._init_pp_backend is not None:
             # self.init_pp_backend.close()  # should not close it, the same init_pp_backend is used when copied
-            self.init_pp_backend = None
+            self._init_pp_backend = None
         self._grid = None
 
     def apply_action(self, backendAction: Union["grid2op.Action._backendAction._BackendAction", None]) -> None:
@@ -1642,9 +1672,6 @@ class LightSimBackend(Backend):
 
             self.load_p[:], self.load_q[:], self.load_v[:], self.load_theta[:] = self._load_res
             self.prod_p[:], self.prod_q[:], self.prod_v[:], self.gen_theta[:] = self._gen_res
-            # print(self.prod_p)
-            # import pdb
-            # pdb.set_trace()
 
             if self.__has_storage:
                 self.storage_p[:], self.storage_q[:], self.storage_v[:], self.storage_theta[:] = self._storage_res
@@ -1772,7 +1799,7 @@ class LightSimBackend(Backend):
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
         __me_at_init = self.__me_at_init
-        inippbackend = self.init_pp_backend
+        inippbackend = self._init_pp_backend
         if __me_at_init is None:
             # __me_at_init is defined as being the copy of the grid,
             # if it's not defined then i can define it here.
@@ -1780,7 +1807,7 @@ class LightSimBackend(Backend):
 
         self._grid = None
         self.__me_at_init = None
-        self.init_pp_backend = None
+        self._init_pp_backend = None
 
         ####################
         # res = copy.deepcopy(self)  # super slow
@@ -1892,7 +1919,7 @@ class LightSimBackend(Backend):
         else:
             res._grid = None
         res.__me_at_init = __me_at_init.copy()  # this is const
-        res.init_pp_backend = inippbackend  # this is const
+        res._init_pp_backend = inippbackend  # this is const
         res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
         res._backend_action_class = self._backend_action_class  # this is const
         res.__init_topo_vect = 1 * self.__init_topo_vect
@@ -1901,7 +1928,7 @@ class LightSimBackend(Backend):
         
         # assign back "self" attributes
         self._grid = mygrid
-        self.init_pp_backend = inippbackend
+        self._init_pp_backend = inippbackend
         self.__me_at_init = __me_at_init
         return res
 

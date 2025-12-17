@@ -36,8 +36,14 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   For example, what used to be accessible with `gridmodel.change_bus_powerline_or(...)` is now called
   `gridmodel.change_bus_1_powerline()`. This affects powerlines, transformers and dc powerlines but also
   "LineInfo", "TrafoInfo" and "DCPowerlineInfo".
+- [BREAKING] the `init_pp_backend` public attribute is now private (called now `_init_pp_backend`) and 
+  optional, meaning it's None when the grid is initialized from pypowsybl.
 - [ADDED] in all "xxxInfo"  (*eg* "LoadInfo") information about subtation and position in the topology
   vector.
+- [ADDED] possibility to load the pypowsybl grid with extra key-words arguments (by using `pypowsybl_load_kwargs` in the 
+  `loader_kwargs` of LightSimBackend)
+- [ADDED] possibility to initialize LightSimBackend with an already loaded grid (by using the `grid` key of the
+  `loader_kwargs` of LightSimBackend when loading it with pypowsybl)
 - [IMPROVED] Eigen to version 5.0.1 (2025/11/11)
 - [IMPROVED] rename all ".h" file to ".hpp" for cpp headers (cpp side). 
 
