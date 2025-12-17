@@ -36,7 +36,7 @@ class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
         GenInfo gen_side_1;
         GenInfo gen_side_2;
 
-        DCLineInfo(const DCLineContainer & r_data_dcline, int my_id);
+       inline DCLineInfo(const DCLineContainer & r_data_dcline, int my_id);
 };
 
 
@@ -203,5 +203,28 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         RealVect loss_mw_;
 
 };
+
+inline DCLineInfo::DCLineInfo(const DCLineContainer & r_data_dcline, int my_id):
+    TwoSidesContainer<GeneratorContainer>::TwoSidesInfo(r_data_dcline, my_id),
+    target_p_1_mw(0.),
+    p_2_mw(0.),
+    target_vm_1_pu(0.),
+    target_vm_2_pu(0.),
+    loss_pct(0.),
+    loss_mw(0.),
+    gen_side_1(r_data_dcline.side_1_, my_id),
+    gen_side_2(r_data_dcline.side_2_, my_id)
+{
+    if (my_id < 0) return;
+    if (my_id >= r_data_dcline.nb()) return;
+    loss_pct = r_data_dcline.loss_percent_(my_id);
+    loss_mw = r_data_dcline.loss_mw_(my_id);
+
+    target_p_1_mw = gen_side_1.target_p_mw;
+    p_2_mw = gen_side_2.target_p_mw;
+
+    target_vm_1_pu = gen_side_1.target_vm_pu;
+    target_vm_2_pu = gen_side_2.target_vm_pu;
+}
 
 #endif  //DCLINECONTAINER_H

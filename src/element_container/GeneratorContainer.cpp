@@ -11,28 +11,6 @@
 #include <iostream>
 #include <sstream>
 
-
-GenInfo::GenInfo(const GeneratorContainer & r_data_gen, int my_id):
-OneSidePQInfo(r_data_gen, my_id),
-is_slack(false),
-slack_weight(-1.0),
-voltage_regulator_on(false),
-target_vm_pu(0.),
-min_q_mvar(0.),
-max_q_mvar(0.)
-{
-    if((my_id >= 0) & (my_id < r_data_gen.nb()))
-    {
-        is_slack = r_data_gen.gen_slackbus_[my_id];
-        slack_weight = r_data_gen.gen_slack_weight_[my_id];
-
-        voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];
-        target_vm_pu = r_data_gen.target_vm_pu_.coeff(my_id);
-        min_q_mvar = r_data_gen.min_q_.coeff(my_id);
-        max_q_mvar = r_data_gen.max_q_.coeff(my_id);
-    }
-}
-
 void GeneratorContainer::init(const RealVect & generators_p,
                               const RealVect & generators_v,
                               const RealVect & generators_min_q,

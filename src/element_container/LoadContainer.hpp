@@ -23,7 +23,7 @@ class LoadContainer;
 class LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
-        LoadInfo(const LoadContainer & r_data_load, int my_id);
+        inline LoadInfo(const LoadContainer & r_data_load, int my_id);
 };
 
 
@@ -87,5 +87,8 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
                                             set_osc_pq_res_q(ac);
                                     }
 };
+
+inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id): 
+        OneSidePQInfo(r_data_load, my_id) {}
 
 #endif  //LOAD_CONTAINER_H

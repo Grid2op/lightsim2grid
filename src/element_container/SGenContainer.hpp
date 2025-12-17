@@ -29,7 +29,7 @@ class SGenInfo  : public OneSideContainer_PQ::OneSidePQInfo
         real_type min_p_mw;
         real_type max_p_mw;
 
-        SGenInfo(const SGenContainer & r_data_sgen, int my_id);
+        inline SGenInfo(const SGenContainer & r_data_sgen, int my_id);
 };
 
 /**
@@ -104,5 +104,21 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
 
         //output data
 };
+
+inline  SGenInfo::SGenInfo(const SGenContainer & r_data_sgen, int my_id):
+OneSidePQInfo(r_data_sgen, my_id),
+min_q_mvar(0.),
+max_q_mvar(0.),
+min_p_mw(0.),
+max_p_mw(0.)
+{
+    if((my_id >= 0) & (my_id < r_data_sgen.nb()))
+    {
+        min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
+        max_q_mvar = r_data_sgen.q_max_mvar_(my_id);
+        min_p_mw = r_data_sgen.p_min_mw_(my_id);
+        max_p_mw = r_data_sgen.p_max_mw_(my_id);
+    }
+}
 
 #endif  //SGEN_CONTAINER_H

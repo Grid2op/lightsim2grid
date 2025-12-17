@@ -10,9 +10,6 @@
 
 #include <sstream>
 
-LineInfo::LineInfo(const LineContainer & r_data, int my_id):
-TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
-
 void LineContainer::init(
     const RealVect & branch_r,
     const RealVect & branch_x,
