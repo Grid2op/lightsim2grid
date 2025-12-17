@@ -847,7 +847,7 @@ class LightSimBackend(Backend):
             if not isinstance(loader_kwargs["grid"], pypow_net.Network):
                 raise Grid2OpException("The grid you provided in the 'grid' loader_kwargs "
                                        "is not a valid pypowsybl grid. It is of type "
-                                       f"{type(loader_kwargs["grid"])}")
+                                       f"{type(loader_kwargs['grid'])}.")
                 
             # use the grid provided as input
             grid_tmp = loader_kwargs["grid"]
