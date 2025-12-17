@@ -39,7 +39,7 @@ class SubstationInfo
         int nb_max_busbars;
         real_type vn_kv;
 
-        SubstationInfo(const SubstationContainer & r_data, int my_id);
+        inline SubstationInfo(const SubstationContainer & r_data, int my_id);
 };
 
 class SubstationContainer : public IteratorAdder<SubstationContainer, SubstationInfo>
@@ -52,13 +52,13 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
     public:
 
         typedef std::tuple<
-        int,  // n_sub_
-        int,  // nmax_busbar_per_sub
-        std::vector<real_type>, // sub_vn_kv_;
-        std::vector<bool>,  // bus_status_;
-        std::vector<real_type>,  // bus_vn_kv_;
-        std::vector<std::string>  // sub_names_
-        > StateRes;
+            int,  // n_sub_
+            int,  // nmax_busbar_per_sub
+            std::vector<real_type>, // sub_vn_kv_;
+            std::vector<bool>,  // bus_status_;
+            std::vector<real_type>,  // bus_vn_kv_;
+            std::vector<std::string>  // sub_names_
+            > StateRes;
         
         int nb() const {return n_sub_;}
 
@@ -202,5 +202,18 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
         std::vector<std::string> sub_names_;
 
 };
+
+inline SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my_id):
+    id(my_id),
+    name(""),
+    nb_max_busbars(-1),
+    vn_kv(-1.)
+{
+    if(my_id < 0) return;
+    if(my_id >= r_data.nb()) return;
+    name = r_data.sub_names_[my_id];
+    nb_max_busbars = r_data.nmax_busbar_per_sub_;
+    vn_kv = r_data.bus_vn_kv_[my_id];
+}
 
 #endif // SUBSTATIONCONTAINER_H

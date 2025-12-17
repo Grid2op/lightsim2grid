@@ -22,26 +22,28 @@ PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
 
 
-def _aux_get_bus(bus_df, df, conn_key="connected", bus_key="bus_id"):
+def _aux_get_bus(vl_df, bus_df, df, conn_key="connected", bus_key="bus_id", vl_key="voltage_level_id"):
     if df.shape[0] == 0:
         # no element of this type so no problem
-        return np.zeros(0, dtype=int), np.ones(0, dtype=bool)
+        return np.zeros(0, dtype=int), np.ones(0, dtype=bool), np.zeros(0, dtype=int)
     # retrieve which elements are disconnected 
     mask_disco = ~df[conn_key]
-    if mask_disco.all():
-        raise RuntimeError("All element of the same type are disconnected, the init will not work.")
-    first_el_co = (~mask_disco.values).nonzero()[0][0]
+    
     # retrieve the bus where the element are
     tmp_bus_id = df[bus_key].copy()
-    tmp_bus_id[mask_disco] = df.iloc[first_el_co][bus_key]  # assign a "random" bus to disco element
+    # element disconnected are, by default assigned to first bus of their substation
+    tmp_disco = vl_df.loc[df.loc[mask_disco, vl_key], "vl_id"].values
+    bus_el_disco = bus_df.iloc[tmp_disco]
+    tmp_bus_id[mask_disco] = bus_el_disco.index
     bus_id = bus_df.loc[tmp_bus_id.values]["bus_global_id"].values
-
     # deactivate the element not on the main component
     # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
     # mask_disco[wrong_component] = True
     # assign bus -1 to disconnected elements
     bus_id[mask_disco] = -1
-    return bus_id, mask_disco.values
+    
+    sub_id = bus_df.loc[tmp_bus_id.values]["glop_sub_id"].values
+    return bus_id, mask_disco.values, sub_id
 
 
 def init(net : pypo.network.Network,
@@ -187,10 +189,12 @@ def init(net : pypo.network.Network,
         ls_to_orig[:n_sub_ls] = np.arange(n_sub_ls)
         n_busbar_per_sub_ls = n_busbar_per_sub
         bus_df["bus_global_id"] = np.arange(n_sub_ls)
+        bus_df["glop_sub_id"] = np.concatenate([np.arange(n_sub_ls) for _ in range(n_busbar_per_sub)])
         sub_names = bus_df.index.values.astype(str)
+        voltage_levels["vl_id"] = bus_df[["voltage_level_id", "bus_global_id"]].groupby("voltage_level_id").min()
     else:        
         # the "substation" in lightsim2grid
-        voltage_levels["nb_bus_per_vl"] = nb_bus_per_vl["name"]
+        voltage_levels["nb_bus_per_vl"] = nb_bus_per_vl["name"]        
         bus_df["name"] = [[el] for el in bus_df.index]
         voltage_levels["bus_names"] = bus_df[["name", "voltage_level_id"]].groupby("voltage_level_id").sum()   
 
@@ -219,10 +223,12 @@ def init(net : pypo.network.Network,
         if n_busbar_per_sub > 1:
             all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
         n_sub_ls = voltage_levels.shape[0]
+        voltage_levels["glop_sub_id"] = np.arange(voltage_levels.shape[0])
         n_busbar_per_sub_ls = n_busbar_per_sub
         ls_to_orig = np.zeros(all_buses_vn_kv.shape[0], dtype=int) - 1
         ls_to_orig[bus_df["bus_global_id"].values] = np.arange(bus_df.shape[0])
         sub_names = voltage_levels.index.values.astype(str)
+        bus_df["glop_sub_id"] = voltage_levels.loc[bus_df["voltage_level_id"].values, "glop_sub_id"].values
         
     # all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
     model.init_bus(n_sub_ls,
@@ -254,7 +260,7 @@ def init(net : pypo.network.Network,
     max_q = max_q_aux.astype(np.float32)
     min_q[~np.isfinite(min_q)] = min_float_value
     max_q[~np.isfinite(max_q)] = max_float_value
-    gen_bus, gen_disco = _aux_get_bus(bus_df, df_gen)
+    gen_bus, gen_disco, gen_sub = _aux_get_bus(voltage_levels, bus_df, df_gen)
 
     # dirty fix for when regulating elements are not the same
     bus_reg = copy.deepcopy(df_gen["regulated_element_id"].values)
@@ -288,7 +294,7 @@ def init(net : pypo.network.Network,
         df_load = net.get_loads().sort_index()
     else:
         df_load = net.get_loads()
-    load_bus, load_disco = _aux_get_bus(bus_df, df_load)
+    load_bus, load_disco, load_sub = _aux_get_bus(voltage_levels, bus_df, df_load)
     model.init_loads(df_load["p0"].values,
                      df_load["q0"].values,
                      load_bus
@@ -320,8 +326,8 @@ def init(net : pypo.network.Network,
     line_x = df_line_pu["x"].values
     line_h_or = (df_line_pu["g1"].values + 1j * df_line_pu["b1"].values)
     line_h_ex = (df_line_pu["g2"].values + 1j * df_line_pu["b2"].values)
-    lor_bus, lor_disco = _aux_get_bus(bus_df, df_line, conn_key="connected1", bus_key="bus1_id")
-    lex_bus, lex_disco = _aux_get_bus(bus_df, df_line, conn_key="connected2", bus_key="bus2_id")
+    lor_bus, lor_disco, lor_sub = _aux_get_bus(voltage_levels, bus_df, df_line, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
+    lex_bus, lex_disco, lex_sub = _aux_get_bus(voltage_levels, bus_df, df_line, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
     model.init_powerlines_full(line_r,
                                line_x,
                                line_h_or,
@@ -332,7 +338,7 @@ def init(net : pypo.network.Network,
     for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_powerline(line_id)
-    model.set_line_names(df_line.index)   
+    model.set_line_names(df_line.index) 
     
     # for trafo
     # I extract trafo with `all_attributes=True` so that I have access to the `rho`
@@ -385,8 +391,8 @@ def init(net : pypo.network.Network,
             # bug in per unit view in both python and java
             ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
 
-    tor_bus, tor_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id")
-    tex_bus, tex_disco = _aux_get_bus(bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id")
+    tor_bus, tor_disco, tor_sub = _aux_get_bus(voltage_levels, bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
+    tex_bus, tex_disco, tex_sub = _aux_get_bus(voltage_levels, bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
     model.init_trafo(trafo_r,
                      trafo_x,
                      trafo_h,
@@ -406,7 +412,7 @@ def init(net : pypo.network.Network,
     else:
         df_shunt = net.get_shunt_compensators()
         
-    sh_bus, sh_disco = _aux_get_bus(bus_df, df_shunt)    
+    sh_bus, sh_disco, sh_sub = _aux_get_bus(voltage_levels, bus_df, df_shunt)    
     shunt_kv = voltage_levels.loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
     model.init_shunt(df_shunt["g"].values * shunt_kv**2,
                      -df_shunt["b"].values * shunt_kv**2,
@@ -424,8 +430,8 @@ def init(net : pypo.network.Network,
     else:
         df_dc = net.get_hvdc_lines()
         df_sations = net.get_vsc_converter_stations()
-    hvdc_bus_from_id, hvdc_from_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
-    hvdc_bus_to_id, hvdc_to_disco = _aux_get_bus(bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
+    hvdc_bus_from_id, hvdc_from_disco, hvdc_sub_from_id  = _aux_get_bus(voltage_levels, bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
+    hvdc_bus_to_id, hvdc_to_disco, hvdc_sub_to_id = _aux_get_bus(voltage_levels, bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
     loss_percent = np.zeros(df_dc.shape[0])  # TODO 
     loss_mw = np.zeros(df_dc.shape[0])  # TODO
     model.init_dclines(hvdc_bus_from_id,
@@ -451,7 +457,7 @@ def init(net : pypo.network.Network,
         df_batt = net.get_batteries().sort_index()
     else:
         df_batt = net.get_batteries()
-    batt_bus, batt_disco = _aux_get_bus(bus_df, df_batt)
+    batt_bus, batt_disco, batt_sub = _aux_get_bus(voltage_levels, bus_df, df_batt)
     model.init_storages(df_batt["target_p"].values,
                         df_batt["target_q"].values,
                         batt_bus
@@ -519,30 +525,42 @@ def init(net : pypo.network.Network,
         
 
     # voltage_level_id is kind of what I call "substation" in grid2op
-    if sub_unique is None:
-        vl_unique = bus_df["voltage_level_id"].unique()
-        sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
-    else:
-        # already computed before when innitializing the buses and substations
-        # I don't do it again to ensure consistency
-        sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
-    buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_global_id", "sub_id"]]
-    gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    # if sub_unique is None:
+    #     vl_unique = bus_df["voltage_level_id"].unique()
+    #     sub_df = pd.DataFrame(index=np.sort(vl_unique), data={"sub_id": np.arange(vl_unique.size)})
+    # else:
+    #     # already computed before when innitializing the buses and substations
+    #     # I don't do it again to ensure consistency
+    #     sub_df = pd.DataFrame(index=sub_unique, data={"sub_id": sub_unique_id})
+    # buses_sub_id = pd.merge(left=bus_df, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["bus_global_id", "sub_id"]]
+    # gen_sub = pd.merge(left=df_gen, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    # gen_sub["desired_slack"] = False
+    # gen_sub.loc[gen_sub.index[gen_slack_ids_int], "desired_slack"] = True
+    # load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    # lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+    # lex_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    # tor_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+    # tex_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    # batt_sub = pd.merge(left=df_batt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    # sh_sub = pd.merge(left=df_shunt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
+    # hvdc_vl_info = pd.DataFrame(index=df_dc.index,
+    #                             data={"voltage_level1_id": df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values,
+    #                                     "voltage_level2_id": df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values
+    #                                     })
+    # hvdc_sub_from_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
+    # hvdc_sub_to_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    gen_sub = pd.DataFrame(index=df_gen.index, data={"sub_id": gen_sub})
     gen_sub["desired_slack"] = False
     gen_sub.loc[gen_sub.index[gen_slack_ids_int], "desired_slack"] = True
-    load_sub = pd.merge(left=df_load, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-    lor_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
-    lex_sub = pd.merge(left=df_line, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
-    tor_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
-    tex_sub = pd.merge(left=df_trafo, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
-    batt_sub = pd.merge(left=df_batt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-    sh_sub = pd.merge(left=df_shunt, right=sub_df, how="left", left_on="voltage_level_id", right_index=True)[["sub_id"]]
-    hvdc_vl_info = pd.DataFrame(index=df_dc.index,
-                                data={"voltage_level1_id": df_sations.loc[df_dc["converter_station1_id"].values]["voltage_level_id"].values,
-                                        "voltage_level2_id": df_sations.loc[df_dc["converter_station2_id"].values]["voltage_level_id"].values
-                                        })
-    hvdc_sub_from_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level1_id", right_index=True)[["sub_id"]]
-    hvdc_sub_to_id = pd.merge(left=hvdc_vl_info, right=sub_df, how="left", left_on="voltage_level2_id", right_index=True)[["sub_id"]]
+    load_sub = pd.DataFrame(index=df_load.index, data={"sub_id": load_sub})
+    lor_sub = pd.DataFrame(index=df_line.index, data={"sub_id": lor_sub})
+    lex_sub = pd.DataFrame(index=df_line.index, data={"sub_id": lex_sub})
+    tor_sub = pd.DataFrame(index=df_trafo.index, data={"sub_id": tor_sub})
+    tex_sub = pd.DataFrame(index=df_trafo.index, data={"sub_id": tex_sub})
+    batt_sub = pd.DataFrame(index=df_batt.index, data={"sub_id": batt_sub})
+    sh_sub = pd.DataFrame(index=df_shunt.index, data={"sub_id": sh_sub})
+    hvdc_sub_from_id = pd.DataFrame(index=df_dc.index, data={"sub_id": hvdc_sub_from_id})
+    hvdc_sub_to_id = pd.DataFrame(index=df_dc.index, data={"sub_id": hvdc_sub_to_id})
     
     # set the substation ID to which each object belong
     model.set_gen_to_subid(gen_sub["sub_id"].values)
@@ -557,4 +575,4 @@ def init(net : pypo.network.Network,
     if not return_sub_id:
         return model
     else:
-        return model, (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id)
+        return model, (gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id)

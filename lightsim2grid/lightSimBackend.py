@@ -897,7 +897,7 @@ class LightSimBackend(Backend):
         )
         self.__nb_powerline = len(self._grid.get_lines())
         
-        (buses_sub_id, gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
+        (gen_sub, load_sub, (lor_sub, tor_sub), (lex_sub, tex_sub), 
          batt_sub, sh_sub, hvdc_sub_from_id, hvdc_sub_to_id) = subs_id
         if self._gen_slack_id is not None:
             self._gen_slack_id = gen_sub["desired_slack"].values.nonzero()[0]
@@ -932,43 +932,18 @@ class LightSimBackend(Backend):
         else:
             self.n_shunt = None
             
-        if buses_for_sub:
-            # consider that each "bus" in the powsybl grid is a substation
-            # this is the "standard" behaviour for IEEE grid in grid2op
-            # but can be considered "legacy" behaviour for more realistic grid
-            this_load_sub = self._get_subid_from_buses_legacy(buses_sub_id, load_sub)
-            this_gen_sub = self._get_subid_from_buses_legacy(buses_sub_id, gen_sub)
-            this_lor_sub = self._get_subid_from_buses_legacy(buses_sub_id, lor_sub)
-            this_tor_sub = self._get_subid_from_buses_legacy(buses_sub_id, tor_sub)
-            this_lex_sub = self._get_subid_from_buses_legacy(buses_sub_id, lex_sub)
-            this_tex_sub = self._get_subid_from_buses_legacy(buses_sub_id, tex_sub)
-            this_batt_sub = self._get_subid_from_buses_legacy(buses_sub_id, batt_sub)
-            this_sh_sub = self._get_subid_from_buses_legacy(buses_sub_id, sh_sub)
+        # assign substation to each element (grid2op side)
+        self.load_to_subid = np.array(load_sub.values.ravel(), dtype=dt_int)
+        self.gen_to_subid = np.array(gen_sub["sub_id"].values.ravel(), dtype=dt_int)
+        self.line_or_to_subid = np.concatenate((lor_sub.values.ravel(), tor_sub.values.ravel())).astype(dt_int)
+        self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
+        if self.__has_storage:
+            self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
+        self.n_sub = grid_tmp.get_voltage_levels().shape[0]
+        if self.n_shunt is not None:
+            self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
             
-            self.load_to_subid = np.array(this_load_sub, dtype=dt_int)
-            self.gen_to_subid = np.array(this_gen_sub, dtype=dt_int)
-            self.line_or_to_subid = np.concatenate((this_lor_sub, this_tor_sub)).astype(dt_int)
-            self.line_ex_to_subid = np.concatenate((this_lex_sub, this_tex_sub)).astype(dt_int)
-            if self.__has_storage:
-                self.storage_to_subid = np.array(this_batt_sub, dtype=dt_int)
-            if self.n_shunt is not None:
-                self.shunt_to_subid = np.array(this_sh_sub, dtype=dt_int)
-        else:
-            # consider effectively that each "voltage_levels" in powsybl grid
-            # is a substation (in the underlying gridmodel)
-            
-            # TODO get back the sub id from the grid_tmp.get_voltage_levels()
-            # need to work on that grid2op side: different make sure the labelling of the buses are correct !
-            self.load_to_subid = np.array(load_sub.values.ravel(), dtype=dt_int)
-            self.gen_to_subid = np.array(gen_sub["sub_id"].values.ravel(), dtype=dt_int)
-            self.line_or_to_subid = np.concatenate((lor_sub.values.ravel(), tor_sub.values.ravel())).astype(dt_int)
-            self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
-            if self.__has_storage:
-                self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
-            self.n_sub = grid_tmp.get_voltage_levels().shape[0]
-            if self.n_shunt is not None:
-                self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
-            
+        # handle the names
         if use_grid2op_default_names:
             self.name_load = np.array([f"load_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
             self.name_gen = np.array([f"gen_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())]).astype(str)
@@ -991,10 +966,7 @@ class LightSimBackend(Backend):
             self.name_line = np.concatenate((lor_sub.index.astype(str), tor_sub.index.astype(str)))
             self.name_storage = np.array(batt_sub.index.astype(str))
             self.name_shunt = np.array(sh_sub.index.astype(str))
-            if not buses_for_sub:
-                self.name_sub = np.array(buses_sub_id.index.astype(str))
-            else:
-                self.name_sub = np.array(grid_tmp.get_buses().loc[buses_sub_id.drop_duplicates("sub_id").index, "voltage_level_id"].values)
+            self.name_sub = self._grid.get_substation_names().copy()
 
         # and now things needed by the backend (legacy)
         self.prod_pu_to_kv = 1.0 * self._grid.get_bus_vn_kv()[[el.sub_id for el in self._grid.get_generators()]]

@@ -11,19 +11,6 @@
 #include <iostream>
 #include <sstream>
 
-SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my_id):
-    id(my_id),
-    name(""),
-    nb_max_busbars(-1),
-    vn_kv(-1.)
-{
-    if(my_id < 0) return;
-    if(my_id > r_data.nb()) return;
-    name = r_data.sub_names_[my_id];
-    nb_max_busbars = r_data.nmax_busbar_per_sub_;
-    vn_kv = r_data.bus_vn_kv_[my_id];
-}
-
 SubstationContainer::StateRes SubstationContainer::get_state() const
 {
      std::vector<real_type> sub_vn_kv(sub_vn_kv_.begin(), sub_vn_kv_.end());
