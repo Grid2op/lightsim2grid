@@ -1311,7 +1311,7 @@ class GridModel : public GenericContainer
                                                  int size);
 
         void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
-        void check_solution_q_values_onegen(CplxVect & res, const GeneratorContainer::GenInfo& gen, bool check_q_limits) const;
+        void check_solution_q_values_onegen(CplxVect & res, const GenInfo& gen, bool check_q_limits) const;
 
     protected:
         // memory for the import

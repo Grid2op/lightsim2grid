@@ -33,8 +33,8 @@ class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
         real_type target_vm_2_pu;
         real_type loss_pct;
         real_type loss_mw;
-        GeneratorContainer::GenInfo gen_side_1;
-        GeneratorContainer::GenInfo gen_side_2;
+        GenInfo gen_side_1;
+        GenInfo gen_side_2;
 
         DCLineInfo(const DCLineContainer & r_data_dcline, int my_id);
 };

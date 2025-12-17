@@ -35,6 +35,28 @@ class OneSideContainer_ForBranch : public OneSideContainer
                 OneSideInfo(r_data_pq, my_id) {}
         };
     
+    /////////////////////////////
+    // iterator
+    private:
+        typedef GenericContainerConstIterator<OneSideContainer_ForBranch> OSCC4BonstIterator;
+
+    public:
+        OSCC4BonstIterator begin() const {return OSCC4BonstIterator(this, 0); }
+        OSCC4BonstIterator end() const {return OSCC4BonstIterator(this, nb()); }
+        OneSideForBranchInfo operator[](int id) const
+        {
+            if(id < 0)
+            {
+                throw std::range_error("You cannot ask for a negative load id.");
+            }
+            if(id >= nb())
+            {
+                throw std::range_error("Load out of bound. Not enough loads on the grid.");
+            }
+            return OneSideForBranchInfo(*this, id);
+        }
+    ////////////////////////////
+
     // regular implementation
     public:
         OneSideContainer_ForBranch() {};

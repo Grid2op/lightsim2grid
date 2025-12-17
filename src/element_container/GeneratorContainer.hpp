@@ -20,84 +20,20 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+class GeneratorContainer;
+class GenInfo : public OneSideContainer_PQ::OneSidePQInfo
+{
+    public:
+        bool is_slack;
+        real_type slack_weight;
 
-// class _GeneratorImpl
-// {
-//     // implementation of the interface
-//     protected:
-//         void _deactivate(int gen_id, SolverControl & solver_control) {};
-//         void _reactivate(int gen_id, SolverControl & solver_control) {};
-//         void _change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {};
-//         void _compute_results(const Eigen::Ref<const RealVect> & Va,
-//                                     const Eigen::Ref<const RealVect> & Vm,
-//                                     const Eigen::Ref<const CplxVect> & V,
-//                                     const std::vector<int> & id_grid_to_solver,
-//                                     const RealVect & bus_vn_kv,
-//                                     real_type sn_mva,
-//                                     bool ac){};
-//         void _change_p(int load_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
-//         void _reset_results() {};
-//         void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
-//         void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {};
+        bool voltage_regulator_on;
+        real_type target_vm_pu;
+        real_type min_q_mvar;
+        real_type max_q_mvar;
 
-//         // void _deactivate(int gen_id, SolverControl & solver_control) {
-//         //     if (status_[gen_id]){
-//         //         solver_control.tell_recompute_sbus();
-//         //         solver_control.tell_pq_changed();  // bus might now be pq
-//         //         if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-//         //         solver_control.tell_pv_changed();
-//         //         if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
-//         //             solver_control.tell_slack_participate_changed();
-//         //             solver_control.tell_slack_weight_changed();
-//         //         }
-//         //     }
-//         //     gen_slackbus_[gen_id] = false;
-//         // }
-
-//         // void _reactivate(int gen_id, SolverControl & solver_control) {
-//         //     if(!status_[gen_id]){
-//         //         solver_control.tell_recompute_sbus();
-//         //         // bus might change between pv / pq depending on the state of the generator
-//         //         // TODO speed optim here
-//         //         solver_control.tell_pq_changed();
-//         //         solver_control.tell_pv_changed(); 
-
-//         //         if(voltage_regulator_on_[gen_id]) solver_control.tell_v_changed();
-//         //         if(gen_slack_weight_[gen_id] != 0. || gen_slackbus_[gen_id]){
-//         //             solver_control.tell_slack_participate_changed();
-//         //             solver_control.tell_slack_weight_changed();
-//         //         }
-//         //         if(gen_slack_weight_[gen_id] != 0.){
-//         //             gen_slackbus_[gen_id] = true;
-//         //         }
-//         //     }
-//         // }
-
-//         // void _change_bus(int gen_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-//         //     if (new_bus_id != bus_id_[gen_id]){
-//         //         if (abs(gen_slack_weight_[gen_id]) > 1e-6 || gen_slackbus_[gen_id]) solver_control.has_slack_participate_changed();
-//         //         // bus might change between pv / pq depending on the state of the generator
-//         //         // TODO speed optim here
-//         //         solver_control.tell_pq_changed();
-//         //         solver_control.tell_pv_changed(); 
-//         //     }
-//         // }
-
-//         // void _compute_results(const Eigen::Ref<const RealVect> & Va,
-//         //                             const Eigen::Ref<const RealVect> & Vm,
-//         //                             const Eigen::Ref<const CplxVect> & V,
-//         //                             const std::vector<int> & id_grid_to_solver,
-//         //                             const RealVect & bus_vn_kv,
-//         //                             real_type sn_mva,
-//         //                             bool ac){
-//         //                                 OneSideContainer_PQ<GeneratorContainer>::set_osc_pq_res_p();
-//         //                             }
-
-//         // void _change_p(int load_id, real_type new_p, bool my_status, SolverControl & solver_control);
-//         // void _reset_results() {};
-//         // void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
-//         // void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {};
-// };
+        GenInfo(const GeneratorContainer & r_data_gen, int my_id);
+};
 
 // typedef OneSideContainer_PQ<_GeneratorImpl> _BaseGenClass;
 
@@ -110,64 +46,33 @@ https://pandapower.readthedocs.io/en/latest/elements/gen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model
 **/
-class GeneratorContainer: public OneSideContainer_PQ
+class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<GeneratorContainer, GenInfo>
 {
+    friend class GenInfo;
 
     public:
-        class GenInfo : public OneSidePQInfo
-        {
-            public:
-                bool is_slack;
-                real_type slack_weight;
-
-                bool voltage_regulator_on;
-                real_type target_vm_pu;
-                real_type min_q_mvar;
-                real_type max_q_mvar;
-
-                GenInfo(const GeneratorContainer & r_data_gen, int my_id):
-                OneSidePQInfo(r_data_gen, my_id),
-                is_slack(false),
-                slack_weight(-1.0),
-                voltage_regulator_on(false),
-                target_vm_pu(0.),
-                min_q_mvar(0.),
-                max_q_mvar(0.)
-                {
-                    if((my_id >= 0) & (my_id < r_data_gen.nb()))
-                    {
-                        is_slack = r_data_gen.gen_slackbus_[my_id];
-                        slack_weight = r_data_gen.gen_slack_weight_[my_id];
-
-                        voltage_regulator_on = r_data_gen.voltage_regulator_on_[my_id];
-                        target_vm_pu = r_data_gen.target_vm_pu_.coeff(my_id);
-                        min_q_mvar = r_data_gen.min_q_.coeff(my_id);
-                        max_q_mvar = r_data_gen.max_q_.coeff(my_id);
-                    }
-                }
-        };
         typedef GenInfo DataInfo;
 
-    private:
-    typedef GenericContainerConstIterator<GeneratorContainer> GeneratorConstIterator;
+    // private:
+    // typedef GenericContainerConstIterator<GeneratorContainer> GeneratorConstIterator;
 
 
-    // iterator
-    public:
-        GeneratorConstIterator begin() const {return GeneratorConstIterator(this, 0); }
-        GeneratorConstIterator end() const {return GeneratorConstIterator(this, nb()); }
-        GenInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("You cannot ask for a negative load id.");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Load out of bound. Not enough loads on the grid.");
-            }
-            return GenInfo(*this, id);
-        }
+    // // iterator
+    // public:
+    //     GeneratorConstIterator begin() const {return GeneratorConstIterator(this, 0); }
+    //     GeneratorConstIterator end() const {return GeneratorConstIterator(this, nb()); }
+    //     GenInfo operator[](int id) const
+    //     {
+    //         if(id < 0)
+    //         {
+    //             throw std::range_error("You cannot ask for a negative load id.");
+    //         }
+    //         if(id >= nb())
+    //         {
+    //             throw std::range_error("Load out of bound. Not enough loads on the grid.");
+    //         }
+    //         return GenInfo(*this, id);
+    //     }
 
     public:
         typedef std::tuple<

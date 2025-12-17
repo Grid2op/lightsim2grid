@@ -414,7 +414,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 };
 
 void GridModel::check_solution_q_values_onegen(CplxVect & res,
-                                               const GeneratorContainer::GenInfo& gen,
+                                               const GenInfo& gen,
                                                bool check_q_limits) const{
     if(check_q_limits)
     {

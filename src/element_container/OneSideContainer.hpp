@@ -133,24 +133,24 @@ class OneSideContainer : public GenericContainer
 
     /////////////////////////////////////
     // iterator
-    private:
-        typedef GenericContainerConstIterator<OneSideContainer> OSCConstIterator;
+    // private:
+    //     typedef GenericContainerConstIterator<OneSideContainer> OSCConstIterator;
 
-    public:
-        OSCConstIterator begin() const {return OSCConstIterator(this, 0); }
-        OSCConstIterator end() const {return OSCConstIterator(this, nb()); }
-        OneSideInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("You cannot ask for a negative load id.");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Load out of bound. Not enough loads on the grid.");
-            }
-            return OneSideInfo(*this, id);
-        }
+    // public:
+    //     OSCConstIterator begin() const {return OSCConstIterator(this, 0); }
+    //     OSCConstIterator end() const {return OSCConstIterator(this, nb()); }
+    //     OneSideInfo operator[](int id) const
+    //     {
+    //         if(id < 0)
+    //         {
+    //             throw std::range_error("You cannot ask for a negative load id.");
+    //         }
+    //         if(id >= nb())
+    //         {
+    //             throw std::range_error("Load out of bound. Not enough loads on the grid.");
+    //         }
+    //         return OneSideInfo(*this, id);
+    //     }
     /////////////////////////////////////
 
     public:

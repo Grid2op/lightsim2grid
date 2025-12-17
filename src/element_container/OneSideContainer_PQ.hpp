@@ -30,7 +30,7 @@ class OneSideContainer_PQ : public OneSideContainer
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
 
-    protected:
+    public:
         class OneSidePQInfo: public OneSideContainer::OneSideInfo
         {
             public:
