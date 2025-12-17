@@ -11,6 +11,29 @@
 #include <iostream>
 #include <sstream>
 
+DCLineInfo::DCLineInfo(const DCLineContainer & r_data_dcline, int my_id):
+    TwoSidesContainer<GeneratorContainer>::TwoSidesInfo(r_data_dcline, my_id),
+    target_p_1_mw(0.),
+    p_2_mw(0.),
+    target_vm_1_pu(0.),
+    target_vm_2_pu(0.),
+    loss_pct(0.),
+    loss_mw(0.),
+    gen_side_1(r_data_dcline.side_1_, my_id),
+    gen_side_2(r_data_dcline.side_2_, my_id)
+{
+    if (my_id < 0) return;
+    if (my_id >= r_data_dcline.nb()) return;
+    loss_pct = r_data_dcline.loss_percent_(my_id);
+    loss_mw = r_data_dcline.loss_mw_(my_id);
+
+    target_p_1_mw = gen_side_1.target_p_mw;
+    p_2_mw = gen_side_2.target_p_mw;
+
+    target_vm_1_pu = gen_side_1.target_vm_pu;
+    target_vm_2_pu = gen_side_2.target_vm_pu;
+}
+
 DCLineContainer::StateRes DCLineContainer::get_state() const
 {
     std::vector<real_type> loss_percent(loss_percent_.begin(), loss_percent_.end());
@@ -53,17 +76,3 @@ void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
     }
     side_2_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);
 }
-
-// void DCLineContainer::nb_line_end(std::vector<int> & res) const
-// {
-//     const Eigen::Index nb = side_1_.nb();
-//     const auto & bus_or_id = get_buses_side_1();
-//     const auto & bus_ex_id = get_buses_side_2();
-//     for(Eigen::Index i = 0; i < nb; ++i){
-//         if(!status_global_[i]) continue;
-//         auto bus_or = bus_or_id(i);
-//         auto bus_ex = bus_ex_id(i);
-//         res[bus_or] += 1;
-//         res[bus_ex] += 1;
-//     }
-// }

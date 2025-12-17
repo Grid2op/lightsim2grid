@@ -295,7 +295,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
     auto timer = CustTimer();
     const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
-    const real_type tol_equal_float = 1e-3 * _tol_equal_float;  // we need a finer "tol_equal" here than _tol_equal_float
+    const real_type tol_equal_float = _tol_equal_float;
     for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
         auto f_bus = from_bus(line_id);
         auto t_bus = to_bus(line_id);

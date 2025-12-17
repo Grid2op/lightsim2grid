@@ -22,7 +22,7 @@
 template<class OneSideType>
 class TwoSidesContainer : public GenericContainer
 {
-    protected:
+    public:
         class TwoSidesInfo
         {
             public:
