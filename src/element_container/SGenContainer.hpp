@@ -18,6 +18,20 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+
+class SGenContainer;
+class SGenInfo  : public OneSideContainer_PQ::OneSidePQInfo
+{
+    public:
+        // members
+        real_type min_q_mvar;
+        real_type max_q_mvar;
+        real_type min_p_mw;
+        real_type max_p_mw;
+
+        SGenInfo(const SGenContainer & r_data_sgen, int my_id);
+};
+
 /**
 This class is a container for all static generator (PQ generators) on the grid.
 They are given in the generator convention: positive sign for P,Q => the power is produced.
@@ -28,60 +42,15 @@ https://pandapower.readthedocs.io/en/latest/elements/sgen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/sgen.html#electric-model
 **/
-class SGenContainer: public OneSideContainer_PQ
+class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContainer, SGenInfo>
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
 
+    friend class SGenInfo;
 
-    // iterators part
     public:
-        class SGenInfo  : public OneSidePQInfo
-        {
-            public:
-                // members
-                real_type min_q_mvar;
-                real_type max_q_mvar;
-                real_type min_p_mw;
-                real_type max_p_mw;
-
-                SGenInfo(const SGenContainer & r_data_sgen, int my_id):
-                OneSidePQInfo(r_data_sgen, my_id),
-                min_q_mvar(0.),
-                max_q_mvar(0.),
-                min_p_mw(0.),
-                max_p_mw(0.)
-                {
-                    if((my_id >= 0) & (my_id < r_data_sgen.nb()))
-                    {
-                        min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
-                        max_q_mvar = r_data_sgen.q_max_mvar_(my_id);
-                        min_p_mw = r_data_sgen.p_min_mw_(my_id);
-                        max_p_mw = r_data_sgen.p_max_mw_(my_id);
-                    }
-                }
-        };
         typedef SGenInfo DataInfo;
-
-    private:
-        typedef GenericContainerConstIterator<SGenContainer> SGenContainerConstIterator;
-
-    public:
-        typedef SGenContainerConstIterator const_iterator_type;
-        const_iterator_type begin() const {return SGenContainerConstIterator(this, 0); }
-        const_iterator_type end() const {return SGenContainerConstIterator(this, nb()); }
-        SGenInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("You cannot ask for a negative static generator");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Generator out of bound. Not enough static generators on the grid.");
-            }
-            return SGenInfo(*this, id);
-        }
 
     public:
         typedef std::tuple<
