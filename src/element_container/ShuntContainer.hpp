@@ -22,9 +22,8 @@ class ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         // no members
-        ShuntInfo(const ShuntContainer & r_data_shunt, int my_id);
+        inline ShuntInfo(const ShuntContainer & r_data_shunt, int my_id);
 };
-typedef ShuntInfo DataInfo;
 
 /**
 This class is a container for all shunts on the grid.
@@ -122,5 +121,7 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
         //output data
 
 };
+
+inline ShuntInfo::ShuntInfo(const ShuntContainer & r_data_shunt, int my_id):OneSidePQInfo(r_data_shunt, my_id){}
 
 #endif  //SHUNT_CONTAINER_H
