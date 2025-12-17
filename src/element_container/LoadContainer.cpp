@@ -11,6 +11,9 @@
 #include <sstream>
 #include <iostream>
 
+LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id): 
+        OneSidePQInfo(r_data_load, my_id) {}
+
 LoadContainer::StateRes LoadContainer::get_state() const
 {
     const auto tmp = get_osc_pq_state();  // osc : one side container

@@ -18,6 +18,15 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+
+class LoadContainer;
+class LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
+{
+    public:
+        LoadInfo(const LoadContainer & r_data_load, int my_id);
+};
+
+
 /**
 This class is a container for all loads on the grid.
 
@@ -31,37 +40,12 @@ NOTE: this class is also used for the storage units! So storage units are modele
 which entails that negative storage: the unit is discharging, power is injected in the grid,
 positive storage: the unit is charging, power is taken from the grid.
 **/
-class LoadContainer : public OneSideContainer_PQ
+class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadContainer, LoadInfo>
 {
-    // iterators part
+    friend class LoadInfo;
+
     public:
-        class LoadInfo : public OneSidePQInfo
-        {
-            public:
-                LoadInfo(const LoadContainer & r_data_load, int my_id): 
-                    OneSidePQInfo(r_data_load, my_id) {}
-        };
         typedef LoadInfo DataInfo;
-
-    private:
-        typedef GenericContainerConstIterator<LoadContainer> LoadContainerConstIterator;
-
-    public:
-        typedef LoadContainerConstIterator const_iterator_type;
-        const_iterator_type begin() const {return LoadContainerConstIterator(this, 0); }
-        const_iterator_type end() const {return LoadContainerConstIterator(this, nb()); }
-        LoadInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("You cannot ask for a negative load id.");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Load out of bound. Not enough loads on the grid.");
-            }
-            return LoadInfo(*this, id);
-        }
 
     // regular implementation
     public:
