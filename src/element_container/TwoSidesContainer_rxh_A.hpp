@@ -127,22 +127,22 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         typedef GenericContainerConstIterator<TwoSidesContainer_rxh_A> TwoSidesContainer_rxh_AInfoConstIterator;
 
     // make it iterable
-    public:
-        TwoSidesContainer_rxh_AInfoConstIterator begin() const {return TwoSidesContainer_rxh_AInfoConstIterator(this, 0); }
-        TwoSidesContainer_rxh_AInfoConstIterator end() const {return TwoSidesContainer_rxh_AInfoConstIterator(this, nb()); }
-        TwoSidesContainer_rxh_AInfo operator[](int id) const
-        {
-            if(id < 0)
-            {
-                throw std::range_error("id should be >= 0");
-            }
-            if(id >= nb())
-            {
-                throw std::range_error("Out of bound error.");
-            }
-            return TwoSidesContainer_rxh_AInfo(*this, id);
-        }
-        /////////////////////////
+    // public:
+    //     TwoSidesContainer_rxh_AInfoConstIterator begin() const {return TwoSidesContainer_rxh_AInfoConstIterator(this, 0); }
+    //     TwoSidesContainer_rxh_AInfoConstIterator end() const {return TwoSidesContainer_rxh_AInfoConstIterator(this, nb()); }
+    //     TwoSidesContainer_rxh_AInfo operator[](int id) const
+    //     {
+    //         if(id < 0)
+    //         {
+    //             throw std::range_error("id should be >= 0");
+    //         }
+    //         if(id >= nb())
+    //         {
+    //             throw std::range_error("Out of bound error.");
+    //         }
+    //         return TwoSidesContainer_rxh_AInfo(*this, id);
+    //     }
+    /////////////////////////
 
     public:
         // pickle

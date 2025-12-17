@@ -53,27 +53,6 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
     public:
         typedef GenInfo DataInfo;
 
-    // private:
-    // typedef GenericContainerConstIterator<GeneratorContainer> GeneratorConstIterator;
-
-
-    // // iterator
-    // public:
-    //     GeneratorConstIterator begin() const {return GeneratorConstIterator(this, 0); }
-    //     GeneratorConstIterator end() const {return GeneratorConstIterator(this, nb()); }
-    //     GenInfo operator[](int id) const
-    //     {
-    //         if(id < 0)
-    //         {
-    //             throw std::range_error("You cannot ask for a negative load id.");
-    //         }
-    //         if(id >= nb())
-    //         {
-    //             throw std::range_error("Load out of bound. Not enough loads on the grid.");
-    //         }
-    //         return GenInfo(*this, id);
-    //     }
-
     public:
         typedef std::tuple<
            OneSideContainer_PQ::StateRes,
