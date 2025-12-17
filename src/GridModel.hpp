@@ -27,7 +27,7 @@
 #include "Eigen/SparseLU"
 
 // import data classes
-#include "BaseSubstation.hpp"
+#include "SubstationContainer.hpp"
 #include "element_container/GenericContainer.hpp"
 #include "element_container/LineContainer.hpp"
 #include "element_container/ShuntContainer.hpp"
@@ -55,7 +55,7 @@ class GridModel : public GenericContainer
                 real_type, //sn_mva
                 // std::vector<real_type>,  // bus_vn_kv
                 // std::vector<bool>,  // bus_status
-                Substation::StateRes,
+                SubstationContainer::StateRes,
                 // powerlines
                 LineContainer::StateRes ,
                 // shunts
@@ -408,6 +408,7 @@ class GridModel : public GenericContainer
         Eigen::Index nb_trafo() const {return trafos_.nb();}
 
         // read only data accessor
+        const SubstationContainer & get_substations() const {return substations_;}
         const LineContainer & get_lines() const {return powerlines_;}
         const DCLineContainer & get_dclines() const {return dc_lines_;}
         const TrafoContainer & get_trafos() const {return trafos_;}
@@ -1349,7 +1350,7 @@ class GridModel : public GenericContainer
         // 1. bus
         int n_sub_;
         int max_nb_bus_per_sub_;
-        Substation substations_;
+        SubstationContainer substations_;
         // RealVect bus_vn_kv_;
         // std::vector<bool> bus_status_;  // for each bus, gives its status. true if connected, false otherwise
 

@@ -333,7 +333,10 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         with np.errstate(divide='ignore', invalid='ignore'):
             LODF_pypower = (H / den)
         update_LODF_diag(LODF_pypower)  
-        isfinite = np.isfinite(LODF_pypower)
+        # nan and inf etc are handled below
+        isfinite_pypower = np.isfinite(LODF_pypower)
+        isfinite_ls = np.isfinite(LODF_mat)
+        isfinite = isfinite_pypower & isfinite_ls
         assert np.abs(LODF_pypower[isfinite] - LODF_mat[isfinite]).max() <= 1e-6, (f"problem with lodf computation: "
                                                                                     f"{np.abs(LODF_pypower - LODF_mat).max():.2e}")
 
@@ -341,18 +344,23 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         nb_real_line = len(gridmodel.get_lineor_res()[0])
         has_conv = np.any(res_v1 != 0., axis=1)
         for l_id in range(type(self.env).n_line):
-            if not has_conv[l_id]:
-                # nothing to check in this case
-                continue
             gridmodel_tmp = gridmodel.copy()
             if l_id < nb_real_line:
                 gridmodel_tmp.deactivate_powerline(l_id)
             else:
                 t_id = l_id - nb_real_line
                 gridmodel_tmp.deactivate_trafo(t_id)
+                
+            if not has_conv[l_id]:
+                # check the divergence / nan
+                res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)
+                assert res_tmp.shape[0] == 0, "it should have converged for contingency anlysis"
+                assert (~np.isfinite(LODF_mat[:, l_id])).all(), "LODF should be NAN in this case"
+                continue
+            
             res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
             if res_tmp.shape[0] == 0:
-                continue
+                raise AssertionError("Security analisys converges, powerflow should converge too")
             lor_tmp, *_ = gridmodel_tmp.get_lineor_res()
             tor_tmpp, *_ = gridmodel_tmp.get_trafohv_res()
             powerflow_tmp = np.concatenate((lor_tmp, tor_tmpp))

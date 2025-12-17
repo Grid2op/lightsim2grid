@@ -17,49 +17,10 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
-#include "BaseSubstation.hpp"
 #include "BaseConstants.hpp"
+#include "Container_IteratorUtils.hpp"
+#include "SubstationContainer.hpp"
 
-// iterator type
-template<class DataType>
-class GenericContainerConstIterator
-{
-    protected:
-        typedef typename DataType::DataInfo DataInfo;
-
-        const DataType * const _p_data_;
-        int my_id;
-
-    public:
-        DataInfo my_info;
-
-        // functions
-        GenericContainerConstIterator(const DataType * const data_, int id):
-            _p_data_(data_),
-            my_id(id),
-            my_info(*data_, id)
-            {};
-
-        const DataInfo& operator*() const { return my_info; }
-        bool operator==(const GenericContainerConstIterator<DataType> & other) const { return (my_id == other.my_id) && (_p_data_ == other._p_data_); }
-        bool operator!=(const GenericContainerConstIterator<DataType> & other) const { return !(*this == other); }
-        GenericContainerConstIterator<DataType> & operator++()
-        {
-            ++my_id;
-            my_info = DataInfo(*_p_data_, my_id);
-            return *this;
-        }
-        GenericContainerConstIterator<DataType> & operator--()
-        {
-            --my_id;
-            my_info = DataInfo(*_p_data_, my_id);
-            return *this;
-        }
-        int size() const { return _p_data_->nb(); }
-};
-// end iterator type
-
-// TODO make this class iterable ! with operator begin, end and an iterator
 /**
 Base class for every object that can be manipulated
 **/
@@ -94,12 +55,12 @@ class GenericContainer : public BaseConstants
                             const std::vector<int> & id_grid_to_solver) const {};
         
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
-        virtual void update_bus_status(Substation & substation) const {};
+        virtual void update_bus_status(SubstationContainer & substation) const {};
         
         void set_p_slack(const RealVect& node_mismatch, const std::vector<int> & id_grid_to_solver) {};
     
         static const int _deactivated_bus_id;
-        virtual void reconnect_connected_buses(Substation & substation) const {};
+        virtual void reconnect_connected_buses(SubstationContainer & substation) const {};
 
         /**computes the total amount of power for each bus (for generator only)**/
         virtual void gen_p_per_bus(std::vector<real_type> & res) const {};
@@ -151,8 +112,8 @@ class GenericContainer : public BaseConstants
         **/
         void _generic_reactivate(int el_id, std::vector<bool> & status);
         void _generic_deactivate(int el_id, std::vector<bool> & status);
-        void _generic_reactivate(int el_id, Substation & substation);
-        void _generic_deactivate(int el_id, Substation & substation);
+        void _generic_reactivate(int el_id, SubstationContainer & substation);
+        void _generic_deactivate(int el_id, SubstationContainer & substation);
         
         void _generic_change_bus(
             int el_id,

@@ -27,7 +27,7 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
-void GenericContainer::_generic_reactivate(int global_bus_id, Substation & substation){
+void GenericContainer::_generic_reactivate(int global_bus_id, SubstationContainer & substation){
     _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
                     substation.get_bus_status(),
                     "_generic_reactivate");
@@ -35,7 +35,7 @@ void GenericContainer::_generic_reactivate(int global_bus_id, Substation & subst
     // status[el_id] = true;  //TODO why it's needed to do that again
 }
 
-void GenericContainer::_generic_deactivate(int global_bus_id, Substation & substation){
+void GenericContainer::_generic_deactivate(int global_bus_id, SubstationContainer & substation){
     _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
                     substation.get_bus_status(),
                     "_generic_deactivate");
@@ -43,18 +43,18 @@ void GenericContainer::_generic_deactivate(int global_bus_id, Substation & subst
     // status[el_id] = false;
 }
 
-void GenericContainer::_generic_reactivate(int global_bus_id, std::vector<bool> & status){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
-                    status,
+void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & eltype_status){
+    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+                    eltype_status,
                     "_generic_reactivate");
-    status[global_bus_id] = true;  //TODO why it's needed to do that again
+    eltype_status[el_id] = true;  //TODO why it's needed to do that again
 }
 
-void GenericContainer::_generic_deactivate(int global_bus_id, std::vector<bool> & status){
-    _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
-                    status,
+void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype_status){
+    _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
+                    eltype_status,
                     "_generic_deactivate");
-    status[global_bus_id] = false;   //TODO why it's needed to do that again
+    eltype_status[el_id] = false;   //TODO why it's needed to do that again
 }
 
 void GenericContainer::_generic_change_bus(

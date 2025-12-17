@@ -17,7 +17,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
-#include "BaseSubstation.hpp"
+#include "SubstationContainer.hpp"
 #include "TwoSidesContainer.hpp"
 #include "GeneratorContainer.hpp"
 
@@ -144,7 +144,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>
 
     // for buses only connected through dc line, i don't add them
     // they are not in the same "connected component"
-    virtual void reconnect_connected_buses(Substation & Substation) const {
+    virtual void reconnect_connected_buses(SubstationContainer & Substation) const {
         // from_gen_.reconnect_connected_buses(bus_status);
         // to_gen_.reconnect_connected_buses(bus_status);
     }

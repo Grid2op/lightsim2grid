@@ -6,16 +6,29 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseSubstation.hpp"
+#include "SubstationContainer.hpp"
 
 #include <iostream>
 #include <sstream>
 
-Substation::StateRes Substation::get_state() const
+SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my_id):
+    id(my_id),
+    name(""),
+    nb_max_busbars(-1),
+    vn_kv(-1.)
+{
+    if(my_id < 0) return;
+    if(my_id > r_data.nb()) return;
+    name = r_data.sub_names_[my_id];
+    nb_max_busbars = r_data.nmax_busbar_per_sub_;
+    vn_kv = r_data.bus_vn_kv_[my_id];
+}
+
+SubstationContainer::StateRes SubstationContainer::get_state() const
 {
      std::vector<real_type> sub_vn_kv(sub_vn_kv_.begin(), sub_vn_kv_.end());
      std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
-     Substation::StateRes res(
+     SubstationContainer::StateRes res(
         n_sub_,
         nmax_busbar_per_sub_,
         sub_vn_kv,
@@ -25,16 +38,11 @@ Substation::StateRes Substation::get_state() const
      return res;
 }
 
-void Substation::set_state(Substation::StateRes & my_state)
+void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
 {
     n_sub_ = std::get<0>(my_state);
     nmax_busbar_per_sub_ = std::get<1>(my_state);
     n_bus_max_ = n_sub_ * nmax_busbar_per_sub_;
-
-    // sub_vn_kv_ = RealVect::Zero(n_sub);
-    // bus_status_ = std::vector<bool>(n_bus_max_, false);
-    // bus_vn_kv_ = RealVect::Zero(n_bus_max_);
-
 
     // the generators themelves
     std::vector<real_type> & sub_vn_kv = std::get<2>(my_state);

@@ -469,55 +469,55 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     }
 }
 
-void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                                     const std::vector<int> & id_grid_to_solver,
-                                     real_type sn_mva,
-                                     int nb_powerline,
-                                     bool transpose) const
-{
-    const Eigen::Index nb_trafo = r_.size();
+// void TrafoContainer::fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+//                                      const std::vector<int> & id_grid_to_solver,
+//                                      real_type sn_mva,
+//                                      int nb_powerline,
+//                                      bool transpose) const
+// {
+//     const Eigen::Index nb_trafo = r_.size();
 
-    for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
-        // i only add this if the powerline is connected
-        if(!status_global_[tr_id]) continue;
+//     for(Eigen::Index tr_id=0; tr_id < nb_trafo; ++tr_id){
+//         // i only add this if the powerline is connected
+//         if(!status_global_[tr_id]) continue;
 
-        // get the from / to bus id
-        int bus_or_id_me = get_bus_side_1(tr_id);
-        int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
-        if(bus_or_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "TrafoContainer::fillBf_for_PTDF: the line with id ";
-            exc_ << tr_id;
-            exc_ << " is connected (hv side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        int bus_ex_id_me = get_bus_side_2(tr_id);
-        int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
-        if(bus_ex_solver_id == _deactivated_bus_id){
-            std::ostringstream exc_;
-            exc_ << "tr_id::fillBf_for_PTDF: the line with id ";
-            exc_ << tr_id;
-            exc_ << " is connected (lv side) to a disconnected bus while being connected";
-            throw std::runtime_error(exc_.str());
-        }
-        real_type x = x_(tr_id);
-        real_type _1_tau = is_tap_hv_side_[tr_id] ? 1. / ratio_(tr_id) : ratio_(tr_id); // 1. / tau
+//         // get the from / to bus id
+//         int bus_or_id_me = get_bus_side_1(tr_id);
+//         int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+//         if(bus_or_solver_id == _deactivated_bus_id){
+//             std::ostringstream exc_;
+//             exc_ << "TrafoContainer::fillBf_for_PTDF: the line with id ";
+//             exc_ << tr_id;
+//             exc_ << " is connected (hv side) to a disconnected bus while being connected";
+//             throw std::runtime_error(exc_.str());
+//         }
+//         int bus_ex_id_me = get_bus_side_2(tr_id);
+//         int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+//         if(bus_ex_solver_id == _deactivated_bus_id){
+//             std::ostringstream exc_;
+//             exc_ << "tr_id::fillBf_for_PTDF: the line with id ";
+//             exc_ << tr_id;
+//             exc_ << " is connected (lv side) to a disconnected bus while being connected";
+//             throw std::runtime_error(exc_.str());
+//         }
+//         real_type x = x_(tr_id);
+//         real_type _1_tau = is_tap_hv_side_[tr_id] ? 1. / ratio_(tr_id) : ratio_(tr_id); // 1. / tau
 
-        // TODO
-        // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
-        // and -1. / x / tap for (1..nb_branch, to_bus) 
-        if(transpose){
-            Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, tr_id + nb_powerline, 1. / x * _1_tau));
-            Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, tr_id + nb_powerline, -1. / x * _1_tau));
-        }else{
-            Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_or_solver_id, 1. / x * _1_tau));
-            Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_ex_solver_id, -1. / x * _1_tau));
-        }
-    }
+//         // TODO
+//         // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+//         // and -1. / x / tap for (1..nb_branch, to_bus) 
+//         if(transpose){
+//             Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, tr_id + nb_powerline, 1. / x * _1_tau));
+//             Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, tr_id + nb_powerline, -1. / x * _1_tau));
+//         }else{
+//             Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_or_solver_id, 1. / x * _1_tau));
+//             Bf.push_back(Eigen::Triplet<real_type> (tr_id + nb_powerline, bus_ex_solver_id, -1. / x * _1_tau));
+//         }
+//     }
 
-}
+// }
 
-// void TrafoContainer::reconnect_connected_buses(Substation & substation) const{
+// void TrafoContainer::reconnect_connected_buses(SubstationContainer & substation) const{
 
 //     const Eigen::Index nb_trafo = nb();
 //     for(Eigen::Index trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){

@@ -404,8 +404,59 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
+        void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                             const std::vector<int> & id_grid_to_solver,
+                             real_type sn_mva,
+                             int nb_powerline,
+                             bool transpose) const
+        {
+            const Eigen::Index nb_line = nb();
+            const std::vector<bool> side1_conn = side_1_.get_status();
+            const std::vector<bool> side2_conn = side_2_.get_status();
+            for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
+                // i only add this if the powerline is connected
+                if(!status_global_[line_id]) continue;
+                if(!side1_conn[line_id]) continue;
+                if(!side2_conn[line_id]) continue;
+                
+                // get the from / to bus id
+                int bus_or_id_me = get_bus_side_1(line_id);
+                int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+                if(bus_or_solver_id == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << line_id;
+                    exc_ << " is connected (or side) to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                int bus_ex_id_me = get_bus_side_2(line_id);
+                int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+                if(bus_ex_solver_id == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << line_id;
+                    exc_ << " is connected (ex side) to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                real_type x = this->fillBf_for_PTDF_coeff(line_id);
+                real_type id_ = this->fillBf_for_PTDF_id(line_id, nb_powerline);
+                
+                // TODO
+                // Bf (nb_branch, nb_bus) : en dc un truc du genre 1 / x / tap for (1..nb_branch, from_bus)
+                // and -1. / x / tap for (1..nb_branch, to_bus) 
+                if(transpose){
+                    Bf.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, id_, 1. / x));
+                    Bf.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, id_, -1. / x));
+                }else{
+                    Bf.push_back(Eigen::Triplet<real_type> (id_, bus_or_solver_id, 1. / x));
+                    Bf.push_back(Eigen::Triplet<real_type> (id_, bus_ex_solver_id, -1. / x));
+                }
+            }
+
+        }
+
         // gridmodel utilities
-        void reconnect_connected_buses(Substation & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const{
             const Eigen::Index nb_els = nb();
             for(Eigen::Index el_id = 0; el_id < nb_els; ++el_id){
                 // don't do anything if the element is disconnected
@@ -494,6 +545,14 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 solver_control.tell_ybus_change_sparsity_pattern();  // this might change
                 solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
             }
+        }
+
+        virtual real_type fillBf_for_PTDF_coeff(int el_id) const{
+            return x_(el_id);
+        }
+
+        virtual int fillBf_for_PTDF_id(int el_id, int nb_powerline) const{
+            return el_id;
         }
 
 

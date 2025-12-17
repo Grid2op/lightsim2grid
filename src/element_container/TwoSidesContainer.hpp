@@ -150,7 +150,7 @@ class TwoSidesContainer : public GenericContainer
         Eigen::Ref<const Eigen::VectorXi> get_bus_id_side_1() const {return side_1_.get_bus_id();}
         Eigen::Ref<const Eigen::VectorXi> get_bus_id_side_2() const {return side_2_.get_bus_id();}
 
-        void reconnect_connected_buses(Substation & substation) const{
+        void reconnect_connected_buses(SubstationContainer & substation) const{
             side_1_.reconnect_connected_buses(substation);
             side_2_.reconnect_connected_buses(substation);
             // TODO think about status here !
@@ -188,7 +188,7 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
-        void update_bus_status(Substation & substation) const {
+        void update_bus_status(SubstationContainer & substation) const {
             const int nb_ = nb();
             Eigen::Ref<const IntVect> bus_side_1_id_ = get_buses_side_1();
             Eigen::Ref<const IntVect> bus_side_2_id_ = get_buses_side_2();
@@ -224,7 +224,7 @@ class TwoSidesContainer : public GenericContainer
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             SolverControl & solver_control,
-            Substation & substations
+            SubstationContainer & substations
         )
         {
             side_1_.update_topo(has_changed, new_values, solver_control, substations);

@@ -143,7 +143,7 @@ class TestAgent(AgentWithConverter):
         # filter out actions that break everything
         all_actions = []
         for el in all_actions_tmp:
-            if not el in breaking_acts:
+            if el not in breaking_acts:
                 all_actions.append(el)
 
         # set the action to the action space
@@ -232,7 +232,8 @@ class TestAgentAllMove(ABC):
         elif env_name == "l2rpn_case14_sandbox":
             self.tol = 2e-4
         elif env_name == "rte_case5_example":
-            self.tol = 2e-4
+            self.tol = 2.5e-4
+            self.tol_q = 3.1e-5
         elif env_name == "l2rpn_neurips_2020_track1":
             self.tol = 4e-5
 

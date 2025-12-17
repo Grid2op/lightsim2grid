@@ -168,7 +168,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     sn_mva_ = std::get<5>(my_state);
     // const std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
     // const std::vector<bool> & bus_status = std::get<7>(my_state);
-    Substation::StateRes & state_substations = std::get<6>(my_state);
+    SubstationContainer::StateRes & state_substations = std::get<6>(my_state);
     // powerlines
     LineContainer::StateRes & state_lines = std::get<7>(my_state);
     // shunts

@@ -708,6 +708,21 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_theta2_deg", &DCLineContainer::DCLineInfo::res_theta2_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
         ;
 
+    py::class_<SubstationContainer>(m, "SubstationContainer", "TODO")
+        .def("__len__", [](const SubstationContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const SubstationContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const SubstationContainer & data) {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        ;
+
+    py::class_<SubstationInfo>(m, "SubstationInfo", "TODO")
+        .def_readonly("id", &SubstationInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &SubstationInfo::name, DocIterator::name.c_str())
+        .def_readonly("nb_max_busbars", &SubstationInfo::nb_max_busbars, DocIterator::name.c_str())
+        .def_readonly("vn_kv", &SubstationInfo::vn_kv, DocIterator::name.c_str())
+        ;
+
     // converters
     py::class_<PandaPowerConverter>(m, "PandaPowerConverter")
         .def(py::init<>())
@@ -823,6 +838,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus, DocGridModel::_internal_do_not_use.c_str())  // same
 
         // inspect the grid
+        .def("get_substations", &GridModel::get_substations, "TODO")
         .def("get_lines", &GridModel::get_lines, DocGridModel::get_lines.c_str())
         .def("get_dclines", &GridModel::get_dclines, DocGridModel::get_dclines.c_str())
         .def("get_trafos", &GridModel::get_trafos, DocGridModel::get_trafos.c_str())

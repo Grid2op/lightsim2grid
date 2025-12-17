@@ -16,7 +16,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
-#include "BaseSubstation.hpp"
+#include "SubstationContainer.hpp"
 #include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
@@ -167,7 +167,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         // void change_bus_lv(int trafo_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
         //     _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_2(), solver_control, nb_bus);
         // }
-        // void reconnect_connected_buses(Substation & substation) const;
+        // void reconnect_connected_buses(SubstationContainer & substation) const;
         // virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
         
         // virtual void nb_line_end(std::vector<int> & res) const;
@@ -182,11 +182,11 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                                 const std::vector<int> & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const;
-        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                                     const std::vector<int> & id_grid_to_solver,
-                                     real_type sn_mva,
-                                     int nb_powerline,
-                                     bool transpose) const;
+        // virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+        //                              const std::vector<int> & id_grid_to_solver,
+        //                              real_type sn_mva,
+        //                              int nb_powerline,
+        //                              bool transpose) const;
         virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode  
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -278,6 +278,18 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         // CplxVect ydc_tf_;
         // CplxVect ydc_tt_;
         RealVect dc_x_tau_shift_;
+
+    protected:
+
+        virtual real_type fillBf_for_PTDF_coeff(int el_id) const{
+            real_type res = x_(el_id);
+            real_type tau = is_tap_hv_side_[el_id] ? ratio_(el_id) : 1. / ratio_(el_id);
+            return res * tau;
+        }
+
+        virtual int fillBf_for_PTDF_id(int el_id, int nb_powerline) const{
+            return el_id + nb_powerline;
+        }
 };
 
 #endif  //TRAFO_CONTAINER_H

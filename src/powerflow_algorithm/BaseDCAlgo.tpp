@@ -258,7 +258,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
     std::vector<int> ind_no_slack_;
     ind_no_slack_.reserve(nb_bus);
     for(int bus_id = 0; bus_id < nb_bus; ++bus_id){
-        if(mat_bus_id_(bus_id) == -1) continue;
+        if(mat_bus_id_(bus_id) == BaseConstants::_deactivated_bus_id) continue;
         ind_no_slack_.push_back(bus_id);
     }
     const Eigen::VectorXi ind_no_slack = Eigen::VectorXi::Map(&ind_no_slack_[0], ind_no_slack_.size());
@@ -270,7 +270,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
         for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, row_id); it; ++it)
         {
             const auto bus_id = it.row();
-            if(mat_bus_id_(bus_id) == -1) continue;  // I don't add anything if it's the slack
+            if(mat_bus_id_(bus_id) == BaseConstants::_deactivated_bus_id) continue;  // I don't add anything if it's the slack
             const auto col_res = mat_bus_id_(bus_id);
             rhs[col_res] = it.value();
         }
@@ -295,19 +295,22 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
     auto timer = CustTimer();
     const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
+    const real_type tol_equal_float = 1e-3 * _tol_equal_float;  // we need a finer "tol_equal" here than _tol_equal_float
     for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
         auto f_bus = from_bus(line_id);
         auto t_bus = to_bus(line_id);
         if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
             // element is disconnected
+            // std::cout << "line_id " << line_id << "is disconnected" << std::endl;
             LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
         }
         LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);
-        if (abs(diag_coeff - 1.) > _tol_equal_float){
+        if (abs(diag_coeff - 1.) > tol_equal_float){
             LODF.col(line_id).array() /= (1. - diag_coeff);
             LODF(line_id, line_id) = -1.;
         }else{
+            // std::cout << "line_id " << line_id << ", diag_coeff " << diag_coeff << ", " <<abs(diag_coeff - 1.) << ", " << (diag_coeff==1.) << std::endl;
             LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
         }
     }

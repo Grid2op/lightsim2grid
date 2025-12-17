@@ -17,7 +17,7 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
-#include "BaseSubstation.hpp"
+#include "SubstationContainer.hpp"
 #include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
@@ -106,11 +106,11 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
     
         // int nb() const { return static_cast<int>(powerlines_r_.size()); }
     
-        // virtual void reconnect_connected_buses(Substation & substation) const;
+        // virtual void reconnect_connected_buses(SubstationContainer & substation) const;
         // virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component);
         // virtual void nb_line_end(std::vector<int> & res) const;
         // virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const;
-        // virtual void update_bus_status(Substation & substation) const {
+        // virtual void update_bus_status(SubstationContainer & substation) const {
         //     const int nb_ = nb();
         //     for(int el_id = 0; el_id < nb_; ++el_id)
         //     {
@@ -124,7 +124,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
         //     Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
         //     Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
         //     SolverControl & solver_control,
-        //     Substation & substations
+        //     SubstationContainer & substations
         // ) {}
         // void deactivate(int powerline_id, SolverControl & solver_control) {
         //     // std::cout << "line: deactivate called\n";
@@ -164,11 +164,11 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
                                 const std::vector<int> & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const;
-        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                                     const std::vector<int> & id_grid_to_solver,
-                                     real_type sn_mva,
-                                     int nb_powerline,
-                                     bool transpose) const;
+        // virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+        //                              const std::vector<int> & id_grid_to_solver,
+        //                              real_type sn_mva,
+        //                              int nb_powerline,
+        //                              bool transpose) const;
                                      
         // virtual void fillYbus_spmat(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int> & id_grid_to_solver);
         

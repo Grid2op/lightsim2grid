@@ -17,6 +17,7 @@
 
 #include "Utils.hpp"
 #include "GenericContainer.hpp"
+#include "SubstationContainer.hpp"
 
 // same for all
 // - X nb 
@@ -167,7 +168,8 @@ class OneSideContainer : public GenericContainer
         Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
         const std::vector<bool>& get_status() const {return status_;}
         Eigen::Ref<const Eigen::VectorXi> get_bus_id() const {return bus_id_;}
-        void reconnect_connected_buses(Substation & substation) const{
+
+        void reconnect_connected_buses(SubstationContainer & substation) const{
             const int nb_els = nb();
             for(int el_id = 0; el_id < nb_els; ++el_id)
             {
@@ -197,7 +199,7 @@ class OneSideContainer : public GenericContainer
                 }
             }    
         }
-        void update_bus_status(Substation & substation) const {
+        void update_bus_status(SubstationContainer & substation) const {
             const int nb_ = nb();
             for(int el_id = 0; el_id < nb_; ++el_id)
             {
@@ -258,7 +260,7 @@ class OneSideContainer : public GenericContainer
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             SolverControl & solver_control,
-            Substation & substations
+            SubstationContainer & substations
         )
         {
             for(int el_id = 0; el_id < pos_topo_vect_.rows(); ++el_id)
