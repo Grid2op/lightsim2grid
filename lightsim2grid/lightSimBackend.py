@@ -1069,7 +1069,9 @@ class LightSimBackend(Backend):
         self._grid.tell_solver_need_reset()
     
     def init_from_loaded_pandapower(self, pp_net):
-        if hasattr(type(self), "can_handle_more_than_2_busbar"):
+        if hasattr(type(self), "can_handle_more_than_2_busbar") and self._init_pp_backend is not None:
+            # TODO I don't really understand why I need the check "self._init_pp_backend is not None"
+            # it's needed at least for `test_n1contingencyrewards.py`
             type(self._init_pp_backend).n_busbar_per_sub = self.n_busbar_per_sub
         self._init_pp_backend = pp_net.copy()
         self._aux_init_pandapower()

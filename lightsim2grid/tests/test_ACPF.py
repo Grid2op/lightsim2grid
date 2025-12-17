@@ -155,8 +155,8 @@ class MyTestCase(unittest.TestCase):
         conv, exc_ = backend.runpf()
         
         # backend._debug_Vdc
-        # backend.init_pp_backend._grid._ppc["internal"]["Va_it"][0]
-        # np.abs(backend._grid.check_solution(backend.init_pp_backend._grid["_ppc"]["internal"]["V"], False)).max()
+        # backend._init_pp_backend._grid._ppc["internal"]["Va_it"][0]
+        # np.abs(backend._grid.check_solution(backend._init_pp_backend._grid["_ppc"]["internal"]["V"], False)).max()
         self._assert_or_print(conv_pp, "Error: pandapower do not converge, impossible to perform the necessary checks")
         self._assert_or_print(conv, "Error: lightsim do not converge")
 

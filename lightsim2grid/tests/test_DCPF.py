@@ -152,7 +152,7 @@ class TestDCPF(unittest.TestCase):
                 type(backend).env_name = pp_net.name if pp_net.name != "" else "_test"
                 backend.load_grid(case_name)
                 backend.assert_grid_correct()
-                # backend.init_pp_backend.assert_grid_correct()
+                # backend._init_pp_backend.assert_grid_correct()
                 
         # first i deactivate all slack bus in pp that are connected but not handled in ls
         backend._init_pp_backend._grid.ext_grid["in_service"] = False
@@ -225,7 +225,7 @@ class TestDCPF(unittest.TestCase):
         backend.line_ex_to_subid[big_err_lid]
         psub_ls, qsub_ls, pbus_ls, qbus_ls, diff_v_bus_ls = backend.check_kirchhoff()
         # below it does not work due to a bug fixed in dev_1.8.2 (after 1.8.2.dev4)
-        # psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend.init_pp_backend.check_kirchoff()
+        # psub_pp, qsub_pp, pbus_pp, qbus_pp, diff_v_bus_pp = backend._init_pp_backend.check_kirchoff()
         
         # check voltages
         Va_pp = pp_net.res_bus["va_degree"].values[:nb_sub]

@@ -69,11 +69,11 @@ class MakeTestsCase14(unittest.TestCase):
         qlim = True
         mismatch = self.env.backend._grid.check_solution(self.env.backend.V, qlim)
         _, q_gen_tmp, _ = self.env.backend.generators_info()
-        # gen_qmin = self.env.backend.init_pp_backend._grid.gen["min_q_mvar"].values
-        # gen_qmax = self.env.backend.init_pp_backend._grid.gen["max_q_mvar"].values
-        gen_qmin = self.env.backend.init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().values[:, 0]
-        gen_qmax = self.env.backend.init_pp_backend._grid.gen[["bus", "max_q_mvar"]].groupby("bus").sum().values[:, 0]
-        gen_bus = self.env.backend.init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().index.values
+        # gen_qmin = self.env.backend._init_pp_backend._grid.gen["min_q_mvar"].values
+        # gen_qmax = self.env.backend._init_pp_backend._grid.gen["max_q_mvar"].values
+        gen_qmin = self.env.backend._init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().values[:, 0]
+        gen_qmax = self.env.backend._init_pp_backend._grid.gen[["bus", "max_q_mvar"]].groupby("bus").sum().values[:, 0]
+        gen_bus = self.env.backend._init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().index.values
 
         dt = pd.DataFrame({"bus":  self.env.gen_to_subid, "gen_q": q_gen_tmp})
         q_gen = dt.groupby("bus").sum().values[:, 0]

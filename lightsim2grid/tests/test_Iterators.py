@@ -39,9 +39,9 @@ class MakeTests(unittest.TestCase):
         # assert np.abs(el.target_p_mw - gen_p[gen_id]) <= tol  # do not work on the slack bus
         assert np.abs(el.target_vm_pu - gen_v[gen_id] / self.env.backend.prod_pu_to_kv[gen_id]) <= tol, \
             f"gen {gen_id} has wrong voltage setpoint"
-        q_min_ref = self.env.backend.init_pp_backend._grid.gen["min_q_mvar"].values[gen_id]
+        q_min_ref = self.env.backend._init_pp_backend._grid.gen["min_q_mvar"].values[gen_id]
         assert np.abs(el.min_q_mvar - q_min_ref) <= tol, f"gen {gen_id} has wrong qmin"
-        q_max_ref = self.env.backend.init_pp_backend._grid.gen["max_q_mvar"].values[gen_id]
+        q_max_ref = self.env.backend._init_pp_backend._grid.gen["max_q_mvar"].values[gen_id]
         assert np.abs(el.max_q_mvar - q_max_ref) <= tol, f"gen {gen_id} has wrong qmax"
         assert el.has_res is True, f"gen {gen_id} has no results available"
         assert np.abs(el.res_p_mw - gen_p[gen_id]) <= tol, f"gen {gen_id} has wrong res_p"
