@@ -95,7 +95,7 @@ class ShuntContainer : public OneSideContainer_PQ
     protected:
         virtual void _change_p(int shunt_id, real_type new_p, bool my_status, SolverControl & solver_control)
         {
-            if(target_p_mw_(shunt_id) != new_p){
+            if(abs(target_p_mw_(shunt_id) - new_p) > _tol_equal_float){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_recompute_sbus();  // needed for DC
             }
@@ -103,7 +103,7 @@ class ShuntContainer : public OneSideContainer_PQ
 
         virtual void _change_q(int shunt_id, real_type new_q, bool my_status, SolverControl & solver_control)
         {
-            if(target_q_mvar_(shunt_id) != new_q){
+            if(abs(target_q_mvar_(shunt_id) - new_q) > _tol_equal_float){
                 solver_control.tell_recompute_ybus();
             }
         }

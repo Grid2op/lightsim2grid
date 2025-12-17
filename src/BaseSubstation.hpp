@@ -18,7 +18,7 @@
 #include <cmath>  // for PI
 
 #include "Utils.hpp"
-
+#include "BaseConstants.hpp"
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
 #include "Eigen/Core"
@@ -26,7 +26,8 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
-class Substation
+
+class Substation : protected BaseConstants
 {
     public:
 
@@ -116,6 +117,24 @@ class Substation
         bus_vn_kv_ = bus_vn_kv;  // base_kv
 
         bus_status_ = std::vector<bool>(nb_bus(), true); // by default everything is connected
+
+        // check that a "substation" always has the same vn_kv for all of its buses
+        for(int sub_id=0; sub_id < n_sub; sub_id++){
+            real_type ref_vn_kv = bus_vn_kv(sub_id);
+            for(int bus_id=1; bus_id < nmax_busbar_per_sub; bus_id++)
+            {
+                if(abs(bus_vn_kv(local_to_global(sub_id, bus_id)) - ref_vn_kv) > _tol_equal_float){
+                    const std::string msg = R"mydelimiter(
+                    Each bus of each substation must have the same nominal voltage. 
+                    Check substation )mydelimiter" + 
+                    std::to_string(sub_id) + 
+                    " and buses 0 and " + 
+                    std::to_string(bus_id)+".";
+
+                    throw std::runtime_error(msg);
+                }
+            }
+        }
     }
     const std::vector<bool> & get_bus_status() const {return bus_status_;}
     /**

@@ -304,7 +304,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
         }
         LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);
-        if (diag_coeff != 1.){
+        if (abs(diag_coeff - 1.) > _tol_equal_float){
             LODF.col(line_id).array() /= (1. - diag_coeff);
             LODF(line_id, line_id) = -1.;
         }else{

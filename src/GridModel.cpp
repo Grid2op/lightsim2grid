@@ -498,7 +498,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
                                                    id_me_to_ac_solver_,
                                                    static_cast<int>(V_proposed.size())
                                                    );
-    if(sn_mva_ != 1.) res *= sn_mva_;
+    if(abs(sn_mva_- 1.) > _tol_equal_float) res *= sn_mva_;
 
     // now check reactive values for buses where there are generators and active values of slack bus
     check_solution_q_values(res, check_q_limits);
@@ -759,7 +759,7 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<int>& id
     storages_.fillSbus(Sbus, id_me_to_solver, ac);
     generators_.fillSbus(Sbus, id_me_to_solver, ac);
     dc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
-    if (sn_mva_ != 1.0) Sbus /= sn_mva_;
+    if (abs(sn_mva_ - 1.0) > _tol_equal_float) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
 }

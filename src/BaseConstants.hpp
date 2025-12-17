@@ -28,6 +28,8 @@ class BaseConstants
         static const real_type v_disco_el_;
         static const real_type theta_disco_el_;
         static const int _deactivated_bus_id;
+        static const real_type _tol_equal_float;
+        static const real_type _1_sqrt_3;
 };
 
 enum class FDPFMethod {XB, BX};  // Different type of FDPF powerflow

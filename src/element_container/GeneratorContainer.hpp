@@ -215,12 +215,14 @@ class GeneratorContainer: public OneSideContainer_PQ
             if(weight <= 0.) throw std::runtime_error("GeneratorContainer::add_slackbus Cannot assign a negative (<=0) weight to the slack bus.");
             if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
             gen_slackbus_[gen_id] = true;
-            if(gen_slack_weight_[gen_id] != weight) solver_control.tell_slack_weight_changed();
-            gen_slack_weight_[gen_id] = weight;
+            if(abs(gen_slack_weight_[gen_id] - weight) > _tol_equal_float){
+                solver_control.tell_slack_weight_changed();
+                gen_slack_weight_[gen_id] = weight;
+            }
         }
         void remove_slackbus(int gen_id, SolverControl & solver_control){
             if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();
-            if(gen_slack_weight_[gen_id] != 0.) solver_control.tell_slack_weight_changed();
+            if(abs(gen_slack_weight_[gen_id]) > _tol_equal_float) solver_control.tell_slack_weight_changed();
             gen_slackbus_[gen_id] = false;
             gen_slack_weight_[gen_id] = 0.;
         }
@@ -363,6 +365,15 @@ class GeneratorContainer: public OneSideContainer_PQ
         virtual void _change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control);
         virtual void _deactivate(int gen_id, SolverControl & solver_control);
         virtual void _reactivate(int gen_id, SolverControl & solver_control);
+
+        // usefull things
+
+        /**
+         * pseudo off generator (with p == 0) and with no contribution to the the slack bus
+         */
+        bool is_pseudo_off(int gen_id) const{
+            return (abs(target_p_mw_(gen_id)) < _tol_equal_float) && (!gen_slackbus_[gen_id] || (abs(gen_slack_weight_[gen_id]) < _tol_equal_float));
+        }
 
 };
 

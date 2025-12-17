@@ -18,3 +18,5 @@ const real_type BaseConstants::my_180_pi_ = 180. / M_PI;
 const real_type BaseConstants::v_disco_el_ = 0.0;
 const real_type BaseConstants::theta_disco_el_ = 0.0;
 const int BaseConstants::_deactivated_bus_id = -1;
+const real_type BaseConstants::_tol_equal_float = 1e-7;  // two floats with a difference less than this are equal
+const real_type BaseConstants::_1_sqrt_3 = 1.0 / std::sqrt((real_type) 3.); 

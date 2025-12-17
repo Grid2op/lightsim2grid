@@ -15,7 +15,6 @@ const int GenericContainer::_deactivated_bus_id = BaseConstants::_deactivated_bu
 
 // TODO all functions bellow are generic ! Make a base class for that
 void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const {
-    const real_type _1_sqrt_3 = 1.0 / std::sqrt(3.);
     RealVect p2q2 = p.array() * p.array() + q.array() * q.array();
     p2q2 = p2q2.array().cwiseSqrt();
 
@@ -23,7 +22,7 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     // because i don't want to divide by 0. below
     RealVect v_tmp = v;
     for(auto & el: v_tmp){
-        if(el == 0.) el = 1.0;
+        if(abs(el) < _tol_equal_float) el = 1.0;
     }
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }

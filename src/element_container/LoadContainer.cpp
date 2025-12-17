@@ -44,8 +44,7 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
             exc_ << " is connected to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-        tmp = static_cast<cplx_type>(target_p_mw_(load_id));
-        tmp += my_i * target_q_mvar_(load_id);
+        tmp = {target_p_mw_(load_id), target_q_mvar_(load_id)};
         Sbus.coeffRef(bus_id_solver) -= tmp;
     }
 }

@@ -554,7 +554,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
     auto row_j = 1;
     for(auto ind: pvpq){
         auto sl_w  = slack_weights(ind);
-        if(sl_w != 0.) coeffs.push_back(Eigen::Triplet<double>(row_j, last_col, sl_w));   // HERE FOR PERF OPTIM (3)
+        if(abs(sl_w) > _tol_equal_float) coeffs.push_back(Eigen::Triplet<double>(row_j, last_col, sl_w));   // HERE FOR PERF OPTIM (3)
         ++row_j;
     }
     J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)

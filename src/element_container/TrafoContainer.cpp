@@ -136,7 +136,7 @@ void TrafoContainer::_update_model_coeffs()
         }
         cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(std::abs(theta_shift) > 1e-7)
+        if(std::abs(theta_shift) > _tol_equal_float)
         {
             real_type cos_theta = std::cos(theta_shift);
             real_type sin_theta = std::sin(theta_shift);
@@ -227,7 +227,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
         //  i don't do anything if the load is disconnected
         if(!status_global_[trafo_id]) continue;
-        if(dc_x_tau_shift_[trafo_id] == 0.) continue; // nothing to do if the trafo is not concerned (no phase shifter)
+        if(abs(dc_x_tau_shift_[trafo_id]) < _tol_equal_float) continue; // nothing to do if the trafo is not concerned (no phase shifter)
         bus_id_me = get_bus_side_2(trafo_id);
         bus_id_solver_lv = id_grid_to_solver[bus_id_me];
         if(bus_id_solver_lv == _deactivated_bus_id){
@@ -421,7 +421,7 @@ void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         }
         cplx_type eitheta_shift_bp  = {my_one_, my_zero_};  // exp(j  * alpha)
         cplx_type emitheta_shift_bp = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(abs(theta_shift) >1e-7)
+        if(abs(theta_shift) > _tol_equal_float)
         {
             const real_type cos_theta = std::cos(theta_shift);
             const real_type sin_theta = std::sin(theta_shift);

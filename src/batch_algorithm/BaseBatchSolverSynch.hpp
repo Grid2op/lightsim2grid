@@ -17,7 +17,7 @@ the same solver is re used multiple times.
 
 It allows to perform "batch" powerflow one a time in a synchronous manner
 **/
-class BaseBatchSolverSynch
+class BaseBatchSolverSynch : protected BaseConstants
 {
     public:
         typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
