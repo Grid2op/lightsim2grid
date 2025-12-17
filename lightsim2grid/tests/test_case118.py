@@ -157,9 +157,9 @@ class TestMultipleL2RPN(unittest.TestCase):
         Ybus_ls = ls_grid.get_Ybus_solver()
         assert np.abs((Ybus_pp - Ybus_ls).toarray()).max() <= 1e-6, f"wrong Ybus {np.abs((Ybus_pp - Ybus_ls).toarray()).max()}"
         assert np.abs(V_pp - V_ls).max() <= 1e-6, f"wrong voltages: {np.abs(V_pp - V_ls).max()}"
-        assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
-        assert np.all(np.abs([el.res_a_or_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
-        assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_p1_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_a1_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_p1_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= 1e-6)
         
@@ -258,9 +258,9 @@ class TestMultipleSlack118(unittest.TestCase):
         V_pp = pp_net.res_bus["vm_pu"].values * np.exp(1j*np.pi / 180. *  pp_net.res_bus["va_degree"].values)
         V_pp *= np.exp(-1j * np.angle(V_pp)[my_ref])
         assert np.abs(V_pp - V_ls).max() <= 1e-6, f"wrong voltages: {np.abs(V_pp - V_ls).max()}"
-        assert np.all(np.abs([el.res_p_or_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
-        assert np.all(np.abs([el.res_a_or_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
-        assert np.all(np.abs([el.res_p_hv_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_p1_mw for el in ls_grid.get_lines()] - pp_net.res_line["p_from_mw"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_a1_ka for el in ls_grid.get_lines()] - pp_net.res_line["i_from_ka"].values) <= 1e-6)
+        assert np.all(np.abs([el.res_p1_mw for el in ls_grid.get_trafos()] - pp_net.res_trafo["p_hv_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_p_mw for el in ls_grid.get_generators()] - pp_net.res_gen["p_mw"].values) <= 1e-6)
         assert np.all(np.abs([el.res_q_mvar for el in ls_grid.get_generators()] - pp_net.res_gen["q_mvar"].values) <= 1e-6)
         

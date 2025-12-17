@@ -63,6 +63,7 @@ class TestEnvironmentBasic(unittest.TestCase):
                 self.legacy = False
                 self.issue_cooldown = False
             except Grid2OpException as exc_:
+                # for oldes grid2op version
                 self.env = grid2op.make("rte_case14_realistic",
                                         test=True,
                                         action_class=PlayableAction,
@@ -117,7 +118,6 @@ class TestEnvironmentBasicCpy(TestEnvironmentBasic):
         self.env = self.env.copy()
         init_int.close()
         
-
 class TestBasicEnvironmentRunner(unittest.TestCase):    
     def setUp(self) -> None:
         TestEnvironmentBasic.setUp(self)

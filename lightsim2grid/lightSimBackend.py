@@ -1071,11 +1071,11 @@ class LightSimBackend(Backend):
     def _load_grid_pandapower(self, path=None, filename=None):
         from lightsim2grid._utils import _DoNotUseAnywherePandaPowerBackend
         _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
-        if hasattr(type(self), "can_handle_more_than_2_busbar"):
+        if hasattr(Backend, "can_handle_more_than_2_busbar"):
             type(self.init_pp_backend).n_busbar_per_sub = type(self).n_busbar_per_sub
-        if hasattr(type(self), "detachment_is_allowed"):
+        if hasattr(Backend, "detachment_is_allowed"):
             type(self.init_pp_backend).detachment_is_allowed = type(self).detachment_is_allowed
-        if hasattr(type(self), "shunts_data_available"):
+        if hasattr(Backend, "shunts_data_available"):
             type(self.init_pp_backend).shunts_data_available = type(self).shunts_data_available
             
         type(self.init_pp_backend).set_env_name(type(self).env_name)
@@ -1430,7 +1430,7 @@ class LightSimBackend(Backend):
 
     def close(self) -> None:
         if self.init_pp_backend is not None:
-            self.init_pp_backend.close()
+            # self.init_pp_backend.close()  # should not close it, the same init_pp_backend is used when copied
             self.init_pp_backend = None
         self._grid = None
 

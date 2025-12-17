@@ -675,7 +675,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_side_1", &DCLineContainer::get_bus_side_1)
-        .def("get_bus_side_1", &DCLineContainer::get_bus_side_2);
+        .def("get_bus_side_2", &DCLineContainer::get_bus_side_2);
 
     py::class_<DCLineContainer::DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DCLineContainer::DCLineInfo::id, DocIterator::id.c_str())
@@ -689,10 +689,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("connected_2", &DCLineContainer::DCLineInfo::connected_2, DocIterator::connected.c_str())
         .def_readonly("bus_1_id", &DCLineContainer::DCLineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
         .def_readonly("bus_2_id", &DCLineContainer::DCLineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
-        .def_readonly("target_p_1_mw", &DCLineContainer::DCLineInfo::target_p_1_mw, DocIterator::target_p_or_mw.c_str())
-        .def_readonly("p_2_mw", &DCLineContainer::DCLineInfo::p_2_mw, DocIterator::target_p_or_mw.c_str())
-        .def_readonly("target_vm_1_pu", &DCLineContainer::DCLineInfo::target_vm_1_pu, DocIterator::target_vm_or_pu.c_str())
-        .def_readonly("target_vm_2_pu", &DCLineContainer::DCLineInfo::target_vm_2_pu, DocIterator::target_vm_ex_pu.c_str())
+        .def_readonly("target_p1_mw", &DCLineContainer::DCLineInfo::target_p_1_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("p2_mw", &DCLineContainer::DCLineInfo::p_2_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("target_vm1_pu", &DCLineContainer::DCLineInfo::target_vm_1_pu, DocIterator::target_vm_or_pu.c_str())
+        .def_readonly("target_vm2_pu", &DCLineContainer::DCLineInfo::target_vm_2_pu, DocIterator::target_vm_ex_pu.c_str())
         .def_readonly("loss_pct", &DCLineContainer::DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
         .def_readonly("loss_mw", &DCLineContainer::DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
         .def_readonly("gen_side_1", &DCLineContainer::DCLineInfo::gen_side_1, DocIterator::gen_or.c_str())
