@@ -50,7 +50,7 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
     const auto & powerlines = _grid_model.get_powerlines_as_data();
     const auto & trafos = _grid_model.get_trafos_as_data();
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver(): _grid_model.id_me_to_dc_solver();
-    Eigen::Index bus_1_id, bus_2_id;
+    int bus_1_id, bus_2_id;
     cplx_type y_ff, y_ft, y_tf, y_tt;
     bool status;
     for(const auto & this_cont_id: _li_defaults){
@@ -69,9 +69,15 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
                 el_id = line_id - n_line_;
                 p_branch = & trafos;
             }
-
-            bus_1_id = id_me_to_solver[p_branch->get_bus_id_side_1()[el_id]];
-            bus_2_id = id_me_to_solver[p_branch->get_bus_id_side_2()[el_id]];
+            
+            GlobalBusId glob_bus_1 = p_branch->get_bus_side_1(el_id);
+            GlobalBusId glob_bus_2 = p_branch->get_bus_side_1(el_id);
+            bus_1_id = glob_bus_1 == GenericContainer::_deactivated_bus_id ? 
+                GenericContainer::_deactivated_bus_id : 
+                static_cast<int>(id_me_to_solver[static_cast<int>(glob_bus_1)]);
+            bus_2_id = glob_bus_2 == GenericContainer::_deactivated_bus_id ? 
+                GenericContainer::_deactivated_bus_id : 
+                static_cast<int>(id_me_to_solver[static_cast<int>(glob_bus_2)]);
             status = p_branch->get_status_global()[el_id];
             if(ac_solver_used){
                 y_ff = p_branch->yac_11()[el_id];

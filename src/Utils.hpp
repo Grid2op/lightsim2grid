@@ -171,4 +171,80 @@ class SolverControl
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
 };
 
+template<int U>
+class IntClass
+{
+    protected:
+        int m_bus_id;
+
+    public:
+        IntClass(int bus_id) : m_bus_id(bus_id){}
+        IntClass() : m_bus_id(0) {}
+
+        // rule of 5 for the same IntClass
+        IntClass(const IntClass & oth): m_bus_id(oth.m_bus_id){};
+        IntClass(IntClass && oth): m_bus_id(std::move(oth.m_bus_id)){};
+        IntClass& operator=(const IntClass & oth){
+            m_bus_id = oth.m_bus_id;
+            return *this;
+        }
+        IntClass& operator=(IntClass && oth){
+            m_bus_id = std::move(oth.m_bus_id);
+            return *this;
+        }
+        // accessor (if needed)
+        int bus_id() const {return m_bus_id;}
+        // automatic conversion to int
+        operator int() const {return m_bus_id;}
+
+        IntClass operator=(int bus_id){
+            return IntClass(bus_id);
+        }
+
+        // prevent conversion between the different IntClass
+        template<int V>
+        IntClass(const IntClass<V> &) = delete;
+        template<int V>
+        IntClass(IntClass<V> &&) = delete;
+        template<int V>
+        IntClass& operator=(const IntClass<V> &) = delete;
+        template<int V>
+        IntClass& operator=(IntClass<V> &&) = delete;
+
+};
+        
+/**
+ * This class is used to store the id of a bus in the local "convention".
+ * 
+ * This means that this number is dependant of the substation.
+ * 
+ * It is typically between -1 (for disconnected) or between 1 and "n_max_busbar_per_sub"
+ */
+typedef IntClass<0> LocalBusId;
+static_assert(sizeof(LocalBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" LocalBusId to int and vice versa
+
+/**
+ * The classes GridModelBusId and GlobalBusId (both are the same type in cpp) denotes
+ * buses number expressed in "GridModel bus" or in "GlobalBus".
+ * 
+ * GlobalBus / GridModelBus are typically between 0 and `n_sub * n_max_busbar_per_sub`
+ */
+typedef IntClass<1> GridModelBusId;
+typedef IntClass<1> GlobalBusId;
+static_assert(sizeof(GlobalBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" GlobalBusId to int and vice versa
+
+typedef Eigen::Matrix<GlobalBusId, Eigen::Dynamic, 1> GlobalBusIdVect;
+typedef GlobalBusIdVect GridModelBusIdVect;
+
+/**
+ * These are "solver bus id". They depends on the actuall topolgy of the grid.
+ * 
+ * They are used to pass information from the gridmodel to the solver and should not be 
+ * used anywhere else.
+ */
+typedef IntClass<2> SolverBusId;
+static_assert(sizeof(SolverBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" SolverBusId to int and vice versa
+
+typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
+
 #endif // UTILS_H

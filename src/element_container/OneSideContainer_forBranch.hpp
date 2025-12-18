@@ -106,7 +106,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<int> & id_grid_to_solver,
+                                      const std::vector<SolverBusId> & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac) {};
@@ -124,8 +124,8 @@ class OneSideContainer_ForBranch : public OneSideContainer
                 solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
             }
         };
-        virtual void _change_bus(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
-            int & bus_me_id = bus_id_(el_id);
+        virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+            GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
                 // TODO speed: here the dimension changed only if nothing was connected before

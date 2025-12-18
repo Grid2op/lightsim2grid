@@ -111,7 +111,7 @@ void LineContainer::_update_model_coeffs()
 
 void LineContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                               const std::vector<int> & id_grid_to_solver,
+                               const std::vector<SolverBusId> & id_grid_to_solver,
                                real_type sn_mva,
                                FDPFMethod xb_or_bx) const
 {

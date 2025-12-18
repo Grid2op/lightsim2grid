@@ -162,7 +162,7 @@ void TrafoContainer::_update_model_coeffs()
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
                                                     bool ac,
-                                                    const std::vector<int> & id_grid_to_solver)
+                                                    const std::vector<SolverBusId> & id_grid_to_solver)
 {
     if(ac) return;
     // return;
@@ -198,7 +198,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
 
 void TrafoContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<int> & id_grid_to_solver,
+                                const std::vector<SolverBusId> & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const
 {

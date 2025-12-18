@@ -59,51 +59,43 @@ void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype
 
 void GenericContainer::_generic_change_bus(
     int el_id,
-    int new_gridmodel_bus_id,
-    Eigen::Ref<Eigen::VectorXi> el_bus_ids,
+    GridModelBusId new_gridmodel_bus_id,
+    Eigen::Ref<GlobalBusIdVect> el_bus_ids,
     SolverControl & solver_control,
-    int nb_max_bus) const{
+    int nb_max_bus) const {
     // bus id here "me_id" and NOT "solver_id"
+
     // throw error: object id does not exist
     _check_in_range(static_cast<Eigen::Index>(el_id),
                     el_bus_ids,
                     "_change_bus");
 
+    int bus_id_int = new_gridmodel_bus_id;
     // throw error: bus id does not exist
-    if(new_gridmodel_bus_id >= nb_max_bus)
+    if(bus_id_int >= nb_max_bus)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
-        exc_ << new_gridmodel_bus_id;
+        exc_ << bus_id_int;
         exc_ << " There are only ";
         exc_ << nb_max_bus;
         exc_ << " distinct buses on this grid.";
         throw std::out_of_range(exc_.str());
     }
-    if(new_gridmodel_bus_id < 0)
+    if(bus_id_int < 0)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
-        exc_ << new_gridmodel_bus_id;
+        exc_ << bus_id_int;
         throw std::out_of_range(exc_.str());
     }
-    int & bus_me_id = el_bus_ids(el_id);
-    
-    // if(bus_me_id != new_bus_me_id) {
-    //     // TODO speed: here the dimension changed only if nothing was connected before
-    //     solver_control.tell_dimension_changed();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
-        
-    //     // TODO speed: sparsity pattern might not change if something is already there  
-    //     solver_control.tell_ybus_change_sparsity_pattern();
-    //     solver_control.tell_recompute_sbus();  // if a bus changed for load / generator
-    //     solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
-    // }
+    GlobalBusId & bus_me_id = el_bus_ids(el_id);
     bus_me_id = new_gridmodel_bus_id;
 }
 
-int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const
+GridModelBusId GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const
 {
     _check_in_range(static_cast<std::vector<bool>::size_type>(el_id),
                     status_,
@@ -121,8 +113,8 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
                                      const Eigen::Ref<const RealVect> & Vm,
                                      const std::vector<bool> & status,
                                      int nb_element,
-                                     const Eigen::VectorXi & bus_me_id,
-                                     const std::vector<int> & id_grid_to_solver,
+                                     const GlobalBusIdVect & bus_me_id,
+                                     const std::vector<SolverBusId> & id_grid_to_solver,
                                      const RealVect & bus_vn_kv,
                                      RealVect & v) const
 {
@@ -151,8 +143,8 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
                                      const Eigen::Ref<const RealVect> & Vm,
                                      const std::vector<bool> & status,
                                      int nb_element,
-                                     const Eigen::VectorXi & bus_me_id,
-                                     const std::vector<int> & id_grid_to_solver,
+                                     const GlobalBusIdVect & bus_me_id,
+                                     const std::vector<SolverBusId> & id_grid_to_solver,
                                      const RealVect & bus_vn_kv,
                                      RealVect & theta) const
 {

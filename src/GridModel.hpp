@@ -113,10 +113,10 @@ class GridModel : public GenericContainer
          */
         Eigen::Index total_bus() const {return substations_.nb_bus();}
 
-        const std::vector<int> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
-        const std::vector<int> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
-        const std::vector<int> & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
-        const std::vector<int> & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
+        const std::vector<SolverBusId> & id_me_to_ac_solver() const {return id_me_to_ac_solver_;}
+        const std::vector<GlobalBusId> & id_ac_solver_to_me() const {return id_ac_solver_to_me_;}
+        const std::vector<SolverBusId> & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
+        const std::vector<GlobalBusId> & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
 
         // retrieve the underlying data (raw class)
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
@@ -461,13 +461,17 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id". **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_powerline_or(int powerline_id, int new_gridmodel_bus_id) {powerlines_.change_bus_side_1(powerline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_powerline_or(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
+            powerlines_.change_bus_side_1(powerline_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         /**
          * Change the bus on the "side 2" of the powerline powerline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_powerline_ex(int powerline_id, int new_gridmodel_bus_id) {powerlines_.change_bus_side_2(powerline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_powerline_ex(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
+            powerlines_.change_bus_side_2(powerline_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id);}
 
@@ -480,13 +484,17 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_trafo_hv(int trafo_id, int new_gridmodel_bus_id) {trafos_.change_bus_side_1(trafo_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_trafo_hv(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
+            trafos_.change_bus_side_1(trafo_id, new_gridmodel_bus_id, solver_control_, substations_); 
+        }
         /**
          * Change the bus on the "side 2" of the trafo trafo_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_trafo_lv(int trafo_id, int new_gridmodel_bus_id) {trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_trafo_lv(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
+            trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_side_1(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_side_2(trafo_id);}
 
@@ -499,7 +507,9 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_load(int load_id, int new_gridmodel_bus_id) {loads_.change_bus(load_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_load(int load_id, GridModelBusId new_gridmodel_bus_id) {
+            loads_.change_bus(load_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
@@ -513,7 +523,9 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_gen(int gen_id, int new_gridmodel_bus_id) {generators_.change_bus(gen_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_gen(int gen_id, GridModelBusId new_gridmodel_bus_id) {
+            generators_.change_bus(gen_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, solver_control_); }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, solver_control_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, solver_control_); }
@@ -527,7 +539,9 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_shunt(int shunt_id, int new_gridmodel_bus_id) {shunts_.change_bus(shunt_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus()));  }
+        void change_bus_shunt(int shunt_id, GridModelBusId new_gridmodel_bus_id) {
+            shunts_.change_bus(shunt_id, new_gridmodel_bus_id, solver_control_, substations_);  
+        }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
@@ -540,7 +554,9 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_sgen(int sgen_id, int new_gridmodel_bus_id) {sgens_.change_bus(sgen_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_sgen(int sgen_id, GridModelBusId new_gridmodel_bus_id) {
+            sgens_.change_bus(sgen_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
@@ -553,7 +569,9 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_storage(int storage_id, int new_gridmodel_bus_id) {storages_.change_bus(storage_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_storage(int storage_id, GridModelBusId new_gridmodel_bus_id) {
+            storages_.change_bus(storage_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
         void change_p_storage(int storage_id, real_type new_p) {
                storages_.change_p_nothrow(storage_id, new_p, solver_control_);
             }
@@ -571,13 +589,16 @@ class GridModel : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_dcline_or(int dcline_id, int new_gridmodel_bus_id) {dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_dcline_or(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
+            dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); }
         /**
          * Change the bus on the dc line "side 2" dcline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_dcline_ex(int dcline_id, int new_gridmodel_bus_id) {dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        void change_bus_dcline_ex(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
+            dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
+        }
         int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
         int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
 
@@ -613,7 +634,8 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_side_1();}
         Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_side_2();}
 
-        Eigen::Ref<const IntVect> get_all_shunt_buses() const {return shunts_.get_buses();}
+        Eigen::Ref<const GlobalBusIdVect> get_all_shunt_buses() const {return shunts_.get_buses();}
+        Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
 
         Eigen::Ref<const RealVect>  get_shunt_target_p() const {return shunts_.get_target_p();}
         Eigen::Ref<const RealVect>  get_load_target_p() const {return loads_.get_target_p();}
@@ -1073,7 +1095,7 @@ class GridModel : public GenericContainer
         }
         int get_max_nb_bus_per_sub() const { return max_nb_bus_per_sub_;}
         
-        void fillSbus_other(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver){
+        void fillSbus_other(CplxVect & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver){
             fillSbus_me(res, ac, id_me_to_solver);
         }
 
@@ -1119,8 +1141,8 @@ class GridModel : public GenericContainer
         CplxVect pre_process_solver(const CplxVect & Vinit,
                                     CplxVect & Sbus,
                                     Eigen::SparseMatrix<cplx_type> & Ybus,
-                                    std::vector<int> & id_me_to_solver,
-                                    std::vector<int> & id_solver_to_me,
+                                    std::vector<SolverBusId> & id_me_to_solver,
+                                    std::vector<GlobalBusId> & id_solver_to_me,
                                     Eigen::VectorXi & slack_bus_id_me,
                                     Eigen::VectorXi & slack_bus_id_solver,
                                     bool is_ac,
@@ -1130,13 +1152,13 @@ class GridModel : public GenericContainer
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        int nb_bus_solver);
-        void init_converter_bus_id(std::vector<int>& id_me_to_solver,
-                                   std::vector<int>& id_solver_to_me);
+        void init_converter_bus_id(std::vector<SolverBusId>& id_me_to_solver,
+                                   std::vector<GlobalBusId>& id_solver_to_me);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
         void init_slack_bus(const CplxVect & Sbus,
-                            const std::vector<int> & id_me_to_solver,
-                            const std::vector<int>& id_solver_to_me,
+                            const std::vector<SolverBusId> & id_me_to_solver,
+                            const std::vector<GlobalBusId>& id_solver_to_me,
                             const Eigen::VectorXi & slack_bus_id_me,
                             Eigen::VectorXi & slack_bus_id_solver
                         );
@@ -1152,7 +1174,7 @@ class GridModel : public GenericContainer
          */
         template<typename T>    
         Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
-                                               const std::vector<int> & id_solver_to_me,
+                                               const std::vector<GlobalBusId> & id_solver_to_me,
                                                bool relabel_row=true) const {
             // TODO optim : if relabel_row is false, then we can just copy
             // paste the columns easily in the target matrix, which should be
@@ -1195,7 +1217,7 @@ class GridModel : public GenericContainer
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & Sbus,
-                                                            const std::vector<int> & id_solver_to_me) const
+                                                            const std::vector<GlobalBusId> & id_solver_to_me) const
         {
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             if(Sbus.size() != nb_connected_bus()) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
@@ -1218,12 +1240,13 @@ class GridModel : public GenericContainer
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Matrix<T, Eigen::Dynamic, 1> & Sbus,
-                                                            const std::vector<int> & id_solver_to_me) const
+                                                            const std::vector<GlobalBusId> & id_solver_to_me) const
         {
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             if(Sbus.size() != nb_connected_bus()) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
-            for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
+            for(int solver_id = 0; solver_id < Sbus.size(); ++solver_id){
+                
                 res[id_solver_to_me[solver_id]] = Sbus[solver_id];
             }
             return res;
@@ -1241,7 +1264,7 @@ class GridModel : public GenericContainer
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const Eigen::Matrix<T, Eigen::Dynamic, 1> & pv_pq_ref_bus,
-                                                             const std::vector<int> & id_solver_to_me) const
+                                                             const std::vector<GlobalBusId> & id_solver_to_me) const
         {
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
@@ -1265,7 +1288,7 @@ class GridModel : public GenericContainer
          */
         template<class T>
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & pv_pq_ref_bus,
-                                                             const std::vector<int> & id_solver_to_me) const
+                                                             const std::vector<GlobalBusId> & id_solver_to_me) const
         {
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
@@ -1280,10 +1303,10 @@ class GridModel : public GenericContainer
     private:
         using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
     protected:
-        void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillSbus_me(CplxVect & res, bool ac, const std::vector<int>& id_me_to_solver);
-        void fillpv_pq(const std::vector<int>& id_me_to_solver,
-                       const std::vector<int>& id_solver_to_me,
+        void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver);
+        void fillSbus_me(CplxVect & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver);
+        void fillpv_pq(const std::vector<SolverBusId>& id_me_to_solver,
+                       const std::vector<GlobalBusId>& id_solver_to_me,
                        const Eigen::VectorXi & slack_bus_id_solver,
                        const SolverControl & solver_control);
 
@@ -1291,7 +1314,7 @@ class GridModel : public GenericContainer
         /**process the results from the solver to this instance
         **/
         void process_results(bool conv, CplxVect & res, const CplxVect & Vinit, bool ac,
-                             std::vector<int> & id_me_to_solver);
+                             std::vector<SolverBusId> & id_me_to_solver);
 
         /**
         Compute the results vector from the Va, Vm post powerflow
@@ -1357,7 +1380,7 @@ class GridModel : public GenericContainer
         // }
 
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
-                                                 std::vector<int> & id_me_to_solver,
+                                                 std::vector<SolverBusId> & id_me_to_solver,
                                                  int size);
 
         void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
@@ -1406,14 +1429,14 @@ class GridModel : public GenericContainer
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.
-        std::vector<int> id_me_to_ac_solver_;
+        std::vector<SolverBusId> id_me_to_ac_solver_;
         // convert the bus id from the model to the bus id of me.
         // it has a variable size, that depends on the number of connected bus. if "id_model" is an id of a bus
         // sent to the solver, then id_model_to_me_[id_model] is the bus id of this model of the grid.
-        std::vector<int> id_ac_solver_to_me_;
+        std::vector<GlobalBusId> id_ac_solver_to_me_;
 
-        std::vector<int> id_me_to_dc_solver_;
-        std::vector<int> id_dc_solver_to_me_;
+        std::vector<SolverBusId> id_me_to_dc_solver_;
+        std::vector<GlobalBusId> id_dc_solver_to_me_;
 
         // 2. powerline
         LineContainer powerlines_;

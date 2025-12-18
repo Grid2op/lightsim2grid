@@ -65,7 +65,7 @@ void SGenContainer::set_state(SGenContainer::StateRes & my_state )
     reset_results();
 }
 
-void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
+void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
     const int nb_sgen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;

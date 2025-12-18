@@ -220,12 +220,12 @@ class BaseBatchSolverSynch : protected BaseConstants
         CplxVect extract_Vsolver_from_Vinit(const CplxVect& Vinit,
                                             Eigen::Index nb_buses_solver,
                                             Eigen::Index nb_total_bus,
-                                            const std::vector<int> & id_me_to_ac_solver){
+                                            const std::vector<SolverBusId> & id_me_to_ac_solver){
             // extract V solver from the given V
             CplxVect Vinit_solver = CplxVect::Constant(nb_buses_solver, {_grid_model.get_init_vm_pu(), 0.});
-            Eigen::Index tmp;
+            int tmp;
             for(Eigen::Index bus_id_grid = 0; bus_id_grid < nb_total_bus; ++bus_id_grid){
-                tmp = id_me_to_ac_solver[bus_id_grid];
+                tmp = static_cast<int>(id_me_to_ac_solver[bus_id_grid]);
                 if(tmp == GridModel::_deactivated_bus_id) continue;
                 Vinit_solver[tmp] = Vinit[bus_id_grid];
             }

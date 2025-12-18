@@ -25,7 +25,7 @@ void LoadContainer::set_state(LoadContainer::StateRes & my_state)
 }
 
 void LoadContainer::fillSbus(CplxVect & Sbus,
-                             const std::vector<int> & id_grid_to_solver,
+                             const std::vector<SolverBusId> & id_grid_to_solver,
                              bool ac) const
 {
     int nb_load = nb();

@@ -111,15 +111,18 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     reset_results();
 }
 
-RealVect GeneratorContainer::get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<int> & id_grid_to_solver){
+RealVect GeneratorContainer::get_slack_weights_solver(
+    Eigen::Index nb_bus_solver,
+    const std::vector<SolverBusId> & id_grid_to_solver){
     const int nb_gen = nb();
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     RealVect res = RealVect::Zero(nb_bus_solver);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the load is disconnected
         if(!status_[gen_id]) continue;
         bus_id_me = bus_id_(gen_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        bus_id_solver = id_grid_to_solver[static_cast<int>(bus_id_me)];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
@@ -136,7 +139,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(Eigen::Index nb_bus_solver
     return res;
 }
 
-void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const {
+void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
     cplx_type tmp;
@@ -166,7 +169,7 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_g
 void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
                                 std::vector<bool> & has_bus_been_added,
                                 const Eigen::VectorXi & slack_bus_id_solver,
-                                const std::vector<int> & id_grid_to_solver) const
+                                const std::vector<SolverBusId> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
@@ -277,7 +280,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
     }
 }
 
-void GeneratorContainer::set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const
+void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     int bus_id_me, bus_id_solver;
@@ -339,7 +342,7 @@ Eigen::VectorXi GeneratorContainer::get_slack_bus_id() const{
 }
 
 void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
-                                     const std::vector<int> & id_grid_to_solver)
+                                     const std::vector<SolverBusId> & id_grid_to_solver)
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
@@ -350,13 +353,13 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
         if(!status_[gen_id]) continue;  // nothing to do if gen is disconnected
         if(!gen_slackbus_[gen_id]) continue;  // nothing to do if it's not a slack
         if(abs(gen_slack_weight_[gen_id]) < _tol_equal_float) continue; // nothing to do if no weights are associated to it
-        const auto bus_id_me = bus_id_(gen_id);
-        const auto bus_id_solver = id_grid_to_solver[bus_id_me];
+        const GlobalBusId bus_id_me = bus_id_(gen_id);
+        const SolverBusId bus_id_solver = id_grid_to_solver[bus_id_me];
         // TODO DEBUG MODE: check bus_id_solver >= 0
         // TODO DEBUG MODE: check bus_slack_weight_[bus_id_solver] > 0
-        const auto total_contrib_slack = bus_slack_weight_(bus_id_solver);
-        const auto my_contrib_slack = gen_slack_weight_[gen_id];
-        res_p_(gen_id) += node_mismatch(bus_id_solver) * my_contrib_slack / total_contrib_slack;
+        const real_type total_contrib_slack = bus_slack_weight_(static_cast<int>(bus_id_solver));
+        const real_type my_contrib_slack = gen_slack_weight_[gen_id];
+        res_p_(gen_id) += node_mismatch(static_cast<int>(bus_id_solver)) * my_contrib_slack / total_contrib_slack;
     }
 }
 
@@ -382,7 +385,7 @@ void GeneratorContainer::init_q_vector(int nb_bus,
 
 void GeneratorContainer::set_q(
     const RealVect & reactive_mismatch,
-    const std::vector<int> & id_grid_to_solver,
+    const std::vector<SolverBusId> & id_grid_to_solver,
     bool ac,
     const Eigen::VectorXi & total_gen_per_bus,
     const RealVect & total_q_min_per_bus,

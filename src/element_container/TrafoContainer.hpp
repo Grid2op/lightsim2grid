@@ -101,16 +101,16 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
 
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<int> & id_grid_to_solver,
+                                const std::vector<SolverBusId> & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const;
 
-        virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<int> & id_grid_to_solver);  // needed for dc mode  
+        virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<SolverBusId> & id_grid_to_solver);  // needed for dc mode  
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
-                             const std::vector<int> & id_grid_to_solver,
+                             const std::vector<SolverBusId> & id_grid_to_solver,
                              const RealVect & bus_vn_kv,
                              real_type sn_mva,
                              bool ac)

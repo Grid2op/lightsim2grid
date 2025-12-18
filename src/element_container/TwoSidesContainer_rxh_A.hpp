@@ -194,7 +194,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
-            const std::vector<int> & id_grid_to_solver,
+            const std::vector<SolverBusId> & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
             bool ac
@@ -312,7 +312,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         void compute_results_tsc_rxha(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<int> & id_grid_to_solver,
+                                      const std::vector<SolverBusId> & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac
@@ -350,7 +350,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         // solver interface
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                         bool ac,
-                        const std::vector<int> & id_grid_to_solver,
+                        const std::vector<SolverBusId> & id_grid_to_solver,
                         real_type sn_mva) const
         {
             const Eigen::Index nb_els = nb();
@@ -405,7 +405,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                             const std::vector<int> & id_grid_to_solver,
+                             const std::vector<SolverBusId> & id_grid_to_solver,
                              real_type sn_mva,
                              int nb_powerline,
                              bool transpose) const

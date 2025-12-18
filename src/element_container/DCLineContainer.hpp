@@ -128,7 +128,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         }
 
         // solver stuff
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const{
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const{
             side_1_.fillSbus(Sbus, id_grid_to_solver, ac);   
             side_2_.fillSbus(Sbus, id_grid_to_solver, ac);   
         } 
@@ -136,7 +136,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const Eigen::VectorXi & slack_bus_id_solver,
-                            const std::vector<int> & id_grid_to_solver) const {
+                            const std::vector<SolverBusId> & id_grid_to_solver) const {
             side_1_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   
         }
@@ -150,7 +150,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                             const Eigen::Ref<const RealVect> & Vm,
                             const Eigen::Ref<const CplxVect> & V,
-                            const std::vector<int> & id_grid_to_solver,
+                            const std::vector<SolverBusId> & id_grid_to_solver,
                             const RealVect & bus_vn_kv,
                             real_type sn_mva,
                             bool ac){
@@ -167,7 +167,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         }
 
         void set_q(const RealVect & reactive_mismatch,
-                const std::vector<int> & id_grid_to_solver,
+                const std::vector<SolverBusId> & id_grid_to_solver,
                 bool ac,
                 const Eigen::VectorXi & total_gen_per_bus,
                 const RealVect & total_q_min_per_bus,
@@ -180,10 +180,10 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
             side_1_.get_vm_for_dc(Vm);
             side_2_.get_vm_for_dc(Vm);
         }
-        void set_vm_or(CplxVect & V, const std::vector<int> & id_grid_to_solver) const{
+        void set_vm_or(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
         }
-        void set_vm_ex(CplxVect & V, const std::vector<int> & id_grid_to_solver) const{
+        void set_vm_ex(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const{
             side_2_.set_vm(V, id_grid_to_solver);
         }
 
@@ -191,7 +191,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
         **/
-        void set_vm(CplxVect & V, const std::vector<int> & id_grid_to_solver) const{
+        void set_vm(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const{
             side_1_.set_vm(V, id_grid_to_solver);
             side_2_.set_vm(V, id_grid_to_solver);
         }

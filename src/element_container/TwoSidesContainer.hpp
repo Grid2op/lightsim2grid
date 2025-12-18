@@ -131,8 +131,8 @@ class TwoSidesContainer : public GenericContainer
             status_global_ = std::vector<bool>(els_bus1_id.size(), true);
         }
 
-        Eigen::Ref<const IntVect> get_buses_side_1() const {return side_1_.get_buses();}
-        Eigen::Ref<const IntVect> get_buses_side_2() const {return side_2_.get_buses();}
+        Eigen::Ref<const GlobalBusIdVect> get_buses_side_1() const {return side_1_.get_buses();}
+        Eigen::Ref<const GlobalBusIdVect> get_buses_side_2() const {return side_2_.get_buses();}
 
         tuple3d get_res_side_1() const {return side_1_.get_res();}
         tuple3d get_res_side_2() const {return side_2_.get_res();}
@@ -147,8 +147,11 @@ class TwoSidesContainer : public GenericContainer
         const std::vector<bool>& get_status_side_1() const {return side_1_.get_status();}
         const std::vector<bool>& get_status_side_2() const {return side_2_.get_status();}
 
-        Eigen::Ref<const Eigen::VectorXi> get_bus_id_side_1() const {return side_1_.get_bus_id();}
-        Eigen::Ref<const Eigen::VectorXi> get_bus_id_side_2() const {return side_2_.get_bus_id();}
+        Eigen::Ref<const GlobalBusIdVect> get_bus_id_side_1() const {return side_1_.get_bus_id();}
+        Eigen::Ref<const GlobalBusIdVect> get_bus_id_side_2() const {return side_2_.get_bus_id();}
+
+        Eigen::Ref<const IntVect> get_bus_id_side_1_numpy() const {return side_1_.get_bus_id_numpy();}
+        Eigen::Ref<const IntVect> get_bus_id_side_2_numpy() const {return side_2_.get_bus_id_numpy();}
 
         void reconnect_connected_buses(SubstationContainer & substation) const{
             side_1_.reconnect_connected_buses(substation);
@@ -161,16 +164,16 @@ class TwoSidesContainer : public GenericContainer
         virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
             const Eigen::Index nb_el = nb();
             SolverControl unused_solver_control;
-            Eigen::Ref<const IntVect> bus_side_1_id_ = get_buses_side_1();
-            Eigen::Ref<const IntVect> bus_side_2_id_ = get_buses_side_2();
+            Eigen::Ref<const GlobalBusIdVect> bus_side_1_id_ = get_buses_side_1();
+            Eigen::Ref<const GlobalBusIdVect> bus_side_2_id_ = get_buses_side_2();
             for(Eigen::Index i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
                     side_1_.deactivate(i, unused_solver_control);
                     side_2_.deactivate(i, unused_solver_control);
                     continue;
                 }
-                auto bus_side_1 = bus_side_1_id_(i);
-                auto bus_side_2 = bus_side_2_id_(i);
+                GlobalBusId bus_side_1 = bus_side_1_id_(i);
+                GlobalBusId bus_side_2 = bus_side_2_id_(i);
                 if(!busbar_in_main_component[bus_side_1]) side_1_.deactivate(i, unused_solver_control);
                 if(!busbar_in_main_component[bus_side_2]) side_2_.deactivate(i, unused_solver_control);
             }
@@ -190,8 +193,8 @@ class TwoSidesContainer : public GenericContainer
 
         void update_bus_status(SubstationContainer & substation) const {
             const int nb_ = nb();
-            Eigen::Ref<const IntVect> bus_side_1_id_ = get_buses_side_1();
-            Eigen::Ref<const IntVect> bus_side_2_id_ = get_buses_side_2();
+            Eigen::Ref<const GlobalBusIdVect> bus_side_1_id_ = get_buses_side_1();
+            Eigen::Ref<const GlobalBusIdVect> bus_side_2_id_ = get_buses_side_2();
             const std::vector<bool>& status_side_1_ = get_status_side_1();
             const std::vector<bool>& status_side_2_ = get_status_side_2();
             for(int el_id = 0; el_id < nb_; ++el_id)
@@ -270,20 +273,20 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */        
-        void change_bus_side_1(int el_id, int new_gridmodel_bus_id, SolverControl & solver_control, int nb_bus) {
+        void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
             // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
             if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
-            side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, nb_bus);
+            side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
         }
         /**
          * Change the bus on "side 2" of the element el_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */  
-        void change_bus_side_2(int el_id, int new_gridmodel_bus_id, SolverControl & solver_control, int nb_bus) {
+        void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
             // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
             if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
-            side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, nb_bus);
+            side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
         }
 
         typedef std::tuple<

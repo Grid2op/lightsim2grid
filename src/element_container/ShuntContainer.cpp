@@ -24,7 +24,7 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
 
 void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,
-                              const std::vector<int> & id_grid_to_solver,
+                              const std::vector<SolverBusId> & id_grid_to_solver,
                               real_type sn_mva) const
 {
     if(!ac) return; // no shunt in DC in Ybus
@@ -55,7 +55,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 
 void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<int> & id_grid_to_solver,
+                                const std::vector<SolverBusId> & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const
 {
@@ -83,7 +83,7 @@ void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
     }
 }
 
-void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<int> & id_grid_to_solver, bool ac) const  // in DC i need that
+void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const  // in DC i need that
 {
     if(ac) return;  // in AC I do not do that
     // std::cout << " ok i use this function" << std::endl;

@@ -457,7 +457,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const GeneratorContainer & data)  {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &GeneratorContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
         ; 
 
     py::class_<GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
@@ -488,7 +488,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const SGenContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &SGenContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
         ; 
 
     py::class_<SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
@@ -517,7 +517,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const LoadContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &LoadContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
         ; 
 
     py::class_<LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
@@ -542,7 +542,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const ShuntContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &ShuntContainer::get_bus_id, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
         ; 
 
     py::class_<ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
@@ -567,8 +567,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const TrafoContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
         ; 
 
     py::class_<TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
@@ -622,8 +622,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const LineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>());
 
     py::class_<LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineInfo::id, DocIterator::id.c_str())
@@ -674,8 +674,8 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const DCLineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_side_1", &DCLineContainer::get_bus_side_1)
-        .def("get_bus_side_2", &DCLineContainer::get_bus_side_2);
+        .def("get_bus_id_side_1", &DCLineContainer::get_bus_id_side_1_numpy)
+        .def("get_bus_id_side_2", &DCLineContainer::get_bus_id_side_2_numpy);
 
     py::class_<DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DCLineInfo::id, DocIterator::id.c_str())
@@ -998,7 +998,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_trafohv_theta", &GridModel::get_trafohv_theta, DocGridModel::_internal_do_not_use.c_str())
         .def("get_trafolv_theta", &GridModel::get_trafolv_theta, DocGridModel::_internal_do_not_use.c_str())
 
-        .def("get_all_shunt_buses", &GridModel::get_all_shunt_buses, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_all_shunt_buses", &GridModel::get_all_shunt_buses_numpy, DocGridModel::_internal_do_not_use.c_str())
         .def("get_loads_res_full", &GridModel::get_loads_res_full, DocGridModel::_internal_do_not_use.c_str())
         .def("get_shunts_res_full", &GridModel::get_shunts_res_full, DocGridModel::_internal_do_not_use.c_str())
         .def("get_gen_res_full", &GridModel::get_gen_res_full, DocGridModel::_internal_do_not_use.c_str())
