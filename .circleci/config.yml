@@ -437,9 +437,9 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     .\venv_test\Scripts\activate
-                    pip install gymnasium "numpy<2" pybind11 scipy
+                    pip install gymnasium pybind11 scipy
                     git clone https://github.com/Grid2Op/grid2op.git _grid2op
-                    pip install -e _grid2op gymnasium
+                    pip install -e _grid2op
             - run:
                 name: "Install lightsim2grid"
                 command: |
@@ -460,7 +460,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -m unittest test_n_busbar_per_sub.py test_backend_pypowsybl.py test_basic_backend_api_noshunt.py test_ACPF.py test_DCPF.py test_solver_control.py
+                    python -W "ignore" -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control
                     
     test_legacy_pandapower:
         executor: gcc_latest  

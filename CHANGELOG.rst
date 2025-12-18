@@ -38,6 +38,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   "LineInfo", "TrafoInfo" and "DCPowerlineInfo".
 - [BREAKING] the `init_pp_backend` public attribute is now private (called now `_init_pp_backend`) and 
   optional, meaning it's None when the grid is initialized from pypowsybl.
+- [FIXED] some issues with the "load_grid_from_pypowsybl" function (and making sure the graph of the structure
+  of the lightsim2grid gridmodel matches the one of the pypowsybl grid).
 - [ADDED] in all "xxxInfo"  (*eg* "LoadInfo") information about subtation and position in the topology
   vector.
 - [ADDED] possibility to load the pypowsybl grid with extra key-words arguments (by using `pypowsybl_load_kwargs` in the 

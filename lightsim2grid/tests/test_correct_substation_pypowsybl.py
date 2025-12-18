@@ -7,11 +7,11 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 
-from sqlite3 import connect
 import pypowsybl as pp
 import unittest
 
 from lightsim2grid.gridmodel import init_from_pypowsybl
+
 
 # TODO test when an element is disconnected too
 class _AuxCorrectGraph:    
@@ -357,4 +357,3 @@ class Test_CorrectGraph_FF_mult_busbar(Test_CorrectGraph_TT_mult_busbar):
 
 if __name__ == "__main__":
     unittest.main()
-

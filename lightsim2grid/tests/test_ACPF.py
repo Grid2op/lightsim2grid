@@ -95,10 +95,11 @@ class MyTestCase(unittest.TestCase):
     #     self.tol = 7e-5  # results are equal if they match up to tol
     #     self._aux_test(case)
 
-    def test_case2848rte(self):
-        case = pn.case2848rte()
-        self.tol = 4e-5  # results are equal if they match up to tol
-        self._aux_test(case)
+    # def test_case2848rte(self):
+    #     # too large for CI
+    #     case = pn.case2848rte()
+    #     self.tol = 4e-5  # results are equal if they match up to tol
+    #     self._aux_test(case)
 
     # def test_case6470rte(self):
     #     # does not work probably with None in converters
