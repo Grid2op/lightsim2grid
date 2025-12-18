@@ -216,15 +216,16 @@ class OneSideContainer : public GenericContainer
             this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
         }
+
         /**
          * This function changes the bus. The bus_id is here given in the
          * "gridmodel" bus.
          * 
          * Not the "solver" bus, nor the "substation" / "local" bus.
          */
-        void change_bus(int load_id, int new_bus_id, SolverControl & solver_control, int nb_max_bus) {
-            this->_change_bus(load_id, new_bus_id, solver_control, nb_max_bus);
-            _generic_change_bus(load_id, new_bus_id, bus_id_, solver_control, nb_max_bus);
+        void change_bus(int load_id, int new_gridmodel_bus_id, SolverControl & solver_control, int nb_max_bus) {
+            this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, nb_max_bus);
+            _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, nb_max_bus);
         }
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,

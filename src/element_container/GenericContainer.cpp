@@ -59,7 +59,7 @@ void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype
 
 void GenericContainer::_generic_change_bus(
     int el_id,
-    int new_bus_me_id,
+    int new_gridmodel_bus_id,
     Eigen::Ref<Eigen::VectorXi> el_bus_ids,
     SolverControl & solver_control,
     int nb_max_bus) const{
@@ -70,23 +70,23 @@ void GenericContainer::_generic_change_bus(
                     "_change_bus");
 
     // throw error: bus id does not exist
-    if(new_bus_me_id >= nb_max_bus)
+    if(new_gridmodel_bus_id >= nb_max_bus)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
-        exc_ << new_bus_me_id;
+        exc_ << new_gridmodel_bus_id;
         exc_ << " There are only ";
         exc_ << nb_max_bus;
         exc_ << " distinct buses on this grid.";
         throw std::out_of_range(exc_.str());
     }
-    if(new_bus_me_id < 0)
+    if(new_gridmodel_bus_id < 0)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
-        exc_ << new_bus_me_id;
+        exc_ << new_gridmodel_bus_id;
         throw std::out_of_range(exc_.str());
     }
     int & bus_me_id = el_bus_ids(el_id);
@@ -100,7 +100,7 @@ void GenericContainer::_generic_change_bus(
     //     solver_control.tell_recompute_sbus();  // if a bus changed for load / generator
     //     solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
     // }
-    bus_me_id = new_bus_me_id;
+    bus_me_id = new_gridmodel_bus_id;
 }
 
 int GenericContainer::_get_bus(int el_id, const std::vector<bool> & status_, const Eigen::VectorXi & bus_id_) const

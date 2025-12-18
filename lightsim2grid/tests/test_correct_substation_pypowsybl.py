@@ -28,6 +28,9 @@ class _AuxCorrectGraph:
     def fetch_network_ref(self):
         self.network_ref = getattr(pp.network, f"create_{self.pypo_grid_name}")()
     
+    def get_n_busbar_per_sub(self):
+        return None
+    
     def setUp(self) -> None:
         self.pypo_grid_name = self.get_pypo_grid_name()
         self.fetch_network_ref()
@@ -37,7 +40,8 @@ class _AuxCorrectGraph:
                                                           gen_slack_id=0,  # we don't really care here
                                                           sort_index=self.sort_index(),
                                                           return_sub_id=True,
-                                                          buses_for_sub=self.use_buses_for_sub())
+                                                          buses_for_sub=self.use_buses_for_sub(),
+                                                          n_busbar_per_sub=self.get_n_busbar_per_sub())
         
         # use some data
         if self.use_buses_for_sub():
@@ -94,7 +98,6 @@ class _AuxCorrectGraph:
                 assert sub1.name == df_els.loc[line.name, "voltage_level1_id"]
                 assert sub2.name == df_els.loc[line.name, "voltage_level2_id"]
                 
-            
         if not self.sort_index():
             assert ([el.name for el in self.gridmodel.get_lines()] == df_els.index).all()
         else:
@@ -275,19 +278,81 @@ class Test_CorrectGraph_FT_disco(_AuxCorrectGraph, unittest.TestCase):
 
 
 class Test_CorrectGraph_FF_disco(_AuxCorrectGraph, unittest.TestCase):
-    def fetch_network_ref(self):
-        self.network_ref = getattr(pp.network, f"create_{self.pypo_grid_name}")()
-        # disconnect a load
-        df = self.network_ref.get_generators()
-        # I disconnect gen 1, gen 0 is the slack
-        self.network_ref.update_generators(id=df.index[1], connected=False)
+    def get_n_busbar_per_sub(self):
+        return 3
     
     def use_buses_for_sub(self):
         return False
     
     def sort_index(self):
         return False
+        
+        
+class Test_CorrectGraph_TT_mult_busbar(_AuxCorrectGraph, unittest.TestCase):
+    def get_n_busbar_per_sub(self):
+        return 3
+            
+    def test_line_change_bus(self):
+        el_id = 0
+        el = self.gridmodel.get_lines()[el_id]
+        n_sub = len(self.gridmodel.get_substations())
+        self.gridmodel.change_bus_powerline_or(el_id, el.sub_1_id + n_sub)
+        self.test_correct_lines()
+        
+    def test_trafo_change_bus(self):
+        el_id = 0
+        el = self.gridmodel.get_trafos()[el_id]
+        n_sub = len(self.gridmodel.get_substations())
+        self.gridmodel.change_bus_trafo_hv(el_id, el.sub_1_id + n_sub)
+        self.test_correct_trafos()
+        
+    def test_load_change_bus(self):
+        el_id = 0
+        el = self.gridmodel.get_loads()[el_id]
+        n_sub = len(self.gridmodel.get_substations())
+        self.gridmodel.change_bus_load(el_id, el.sub_id + n_sub)
+        self.test_correct_loads()
+        
+    def test_gen_change_bus(self):
+        el_id = 0
+        el = self.gridmodel.get_generators()[el_id]
+        n_sub = len(self.gridmodel.get_substations())
+        self.gridmodel.change_bus_gen(el_id, el.sub_id + n_sub)
+        self.test_correct_gens()
+        
+    def test_shunt_change_bus(self):
+        el_id = 0
+        el = self.gridmodel.get_shunts()[el_id]
+        n_sub = len(self.gridmodel.get_substations())
+        self.gridmodel.change_bus_shunt(el_id, el.sub_id + n_sub)
+        self.test_correct_shunts()
 
+
+class Test_CorrectGraph_TF_mult_busbar(Test_CorrectGraph_TT_mult_busbar):
+    def get_n_busbar_per_sub(self):
+        return 3
+    
+    def sort_index(self):
+        return False
+    
+    
+class Test_CorrectGraph_FT_mult_busbar(Test_CorrectGraph_TT_mult_busbar):
+    def get_n_busbar_per_sub(self):
+        return 3
+    
+    def use_buses_for_sub(self):
+        return False
+
+
+class Test_CorrectGraph_FF_mult_busbar(Test_CorrectGraph_TT_mult_busbar):
+    def get_n_busbar_per_sub(self):
+        return 3
+    
+    def use_buses_for_sub(self):
+        return False
+    
+    def sort_index(self):
+        return False
 
 
 if __name__ == "__main__":

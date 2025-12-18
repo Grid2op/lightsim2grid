@@ -265,15 +265,25 @@ class TwoSidesContainer : public GenericContainer
             side_2_.reset_results();
         };
 
-        void change_bus_side_1(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        /**
+         * Change the bus on "side 1" of the element el_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */        
+        void change_bus_side_1(int el_id, int new_gridmodel_bus_id, SolverControl & solver_control, int nb_bus) {
             // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
             if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
-            side_1_.change_bus(el_id, new_bus_id, solver_control, nb_bus);
+            side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, nb_bus);
         }
-        void change_bus_side_2(int el_id, int new_bus_id, SolverControl & solver_control, int nb_bus) {
+        /**
+         * Change the bus on "side 2" of the element el_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */  
+        void change_bus_side_2(int el_id, int new_gridmodel_bus_id, SolverControl & solver_control, int nb_bus) {
             // _generic_change_bus(trafo_id, new_bus_id, get_buses_not_const_side_1(), solver_control, nb_bus);
             if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
-            side_2_.change_bus(el_id, new_bus_id, solver_control, nb_bus);
+            side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, nb_bus);
         }
 
         typedef std::tuple<

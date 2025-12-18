@@ -455,23 +455,51 @@ class GridModel : public GenericContainer
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, solver_control_); }
         void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, solver_control_); }
-        void change_bus_powerline_or(int powerline_id, int new_bus_id) {powerlines_.change_bus_side_1(powerline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        void change_bus_powerline_ex(int powerline_id, int new_bus_id) {powerlines_.change_bus_side_2(powerline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+
+        /**
+         * Change the bus on the "side 1" of the powerline powerline_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id". **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_powerline_or(int powerline_id, int new_gridmodel_bus_id) {powerlines_.change_bus_side_1(powerline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        /**
+         * Change the bus on the "side 2" of the powerline powerline_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_powerline_ex(int powerline_id, int new_gridmodel_bus_id) {powerlines_.change_bus_side_2(powerline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id);}
         int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id);}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
         void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, solver_control_); }
-        void change_bus_trafo_hv(int trafo_id, int new_bus_id) {trafos_.change_bus_side_1(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        void change_bus_trafo_lv(int trafo_id, int new_bus_id) {trafos_.change_bus_side_2(trafo_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+
+        /**
+         * Change the bus on the "side 1" of the trafo trafo_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_trafo_hv(int trafo_id, int new_gridmodel_bus_id) {trafos_.change_bus_side_1(trafo_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        /**
+         * Change the bus on the "side 2" of the trafo trafo_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_trafo_lv(int trafo_id, int new_gridmodel_bus_id) {trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_side_1(trafo_id);}
         int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_side_2(trafo_id);}
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
         void reactivate_load(int load_id) {loads_.reactivate(load_id, solver_control_); }
-        void change_bus_load(int load_id, int new_bus_id) {loads_.change_bus(load_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+
+        /**
+         * Change the bus on the load load_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_load(int load_id, int new_gridmodel_bus_id) {loads_.change_bus(load_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
@@ -479,7 +507,13 @@ class GridModel : public GenericContainer
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, solver_control_); }
         void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, solver_control_); }
-        void change_bus_gen(int gen_id, int new_bus_id) {generators_.change_bus(gen_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+
+        /**
+         * Change the bus on the generator generator_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_gen(int gen_id, int new_gridmodel_bus_id) {generators_.change_bus(gen_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, solver_control_); }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, solver_control_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, solver_control_); }
@@ -488,7 +522,12 @@ class GridModel : public GenericContainer
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, solver_control_); }
         void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, solver_control_); }
-        void change_bus_shunt(int shunt_id, int new_bus_id) {shunts_.change_bus(shunt_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus()));  }
+        /**
+         * Change the bus on the shunt shunt_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_shunt(int shunt_id, int new_gridmodel_bus_id) {shunts_.change_bus(shunt_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus()));  }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
@@ -496,7 +535,12 @@ class GridModel : public GenericContainer
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, solver_control_); }
         void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, solver_control_); }
-        void change_bus_sgen(int sgen_id, int new_bus_id) {sgens_.change_bus(sgen_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        /**
+         * Change the bus on the static generator sgen_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_sgen(int sgen_id, int new_gridmodel_bus_id) {sgens_.change_bus(sgen_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
@@ -504,17 +548,13 @@ class GridModel : public GenericContainer
         //storage units
         void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, solver_control_); }
         void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, solver_control_); }
-        void change_bus_storage(int storage_id, int new_bus_id) {storages_.change_bus(storage_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        /**
+         * Change the bus on the storage storage_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_storage(int storage_id, int new_gridmodel_bus_id) {storages_.change_bus(storage_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         void change_p_storage(int storage_id, real_type new_p) {
-//            if(new_p == 0.)
-//            {
-//                std::cout << " i deactivated storage with ID " << storage_id << std::endl;
-//                storages_.change_p(storage_id, new_p, need_reset_);
-//                deactivate_storage(storage_id);  // requirement from grid2op, might be discussed
-//            }else{
-//                reactivate_storage(storage_id);  // requirement from grid2op, might be discussed
-//                storages_.change_p(storage_id, new_p, need_reset_);
-//            }
                storages_.change_p_nothrow(storage_id, new_p, solver_control_);
             }
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, solver_control_); }
@@ -526,8 +566,18 @@ class GridModel : public GenericContainer
         void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, solver_control_); }
         void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, solver_control_); }
         void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, solver_control_); }
-        void change_bus_dcline_or(int dcline_id, int new_bus_id) {dc_lines_.change_bus_side_1(dcline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
-        void change_bus_dcline_ex(int dcline_id, int new_bus_id) {dc_lines_.change_bus_side_2(dcline_id, new_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        /**
+         * Change the bus on the dc line "side 1" dcline_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_dcline_or(int dcline_id, int new_gridmodel_bus_id) {dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
+        /**
+         * Change the bus on the dc line "side 2" dcline_id.
+         * 
+         * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
+         */
+        void change_bus_dcline_ex(int dcline_id, int new_gridmodel_bus_id) {dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, solver_control_, static_cast<int>(substations_.nb_bus())); }
         int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
         int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
 

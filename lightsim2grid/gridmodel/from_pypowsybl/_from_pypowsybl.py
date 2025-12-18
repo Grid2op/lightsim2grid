@@ -189,7 +189,7 @@ def init(net : pypo.network.Network,
         ls_to_orig[:n_sub_ls] = np.arange(n_sub_ls)
         n_busbar_per_sub_ls = n_busbar_per_sub
         bus_df["bus_global_id"] = np.arange(n_sub_ls)
-        bus_df["glop_sub_id"] = np.concatenate([np.arange(n_sub_ls) for _ in range(n_busbar_per_sub)])
+        bus_df["glop_sub_id"] = np.arange(n_sub_ls)  # np.concatenate([np.arange(n_sub_ls) for _ in range(n_busbar_per_sub)])
         sub_names = bus_df.index.values.astype(str)
         voltage_levels["vl_id"] = bus_df[["voltage_level_id", "bus_global_id"]].groupby("voltage_level_id").min()
     else:        

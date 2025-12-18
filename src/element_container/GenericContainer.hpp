@@ -115,9 +115,14 @@ class GenericContainer : public BaseConstants
         void _generic_reactivate(int el_id, SubstationContainer & substation);
         void _generic_deactivate(int el_id, SubstationContainer & substation);
         
+        /**
+         * Change the bus of the element "el_id" and performs some basic check that the new bus is valid.
+         * 
+         * The new_gridmodel_bus_id is given in the gridmodel convention, between 0 and `n_sub * n_busbar_per_sub` 
+         */
         void _generic_change_bus(
             int el_id,
-            int new_bus_me_id,
+            int new_gridmodel_bus_id,
             Eigen::Ref<Eigen::VectorXi>  el_bus_ids,
             SolverControl & solver_control,
             int nb_bus) const;
