@@ -949,15 +949,15 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("nb_connected_bus", &GridModel::nb_connected_bus, DocGridModel::nb_connected_bus.c_str())
 
 
-        .def("get_pv", &GridModel::get_pv, DocGridModel::get_pv.c_str())
-        .def("get_pq", &GridModel::get_pq, DocGridModel::get_pq.c_str())
-        .def("get_slack_ids", &GridModel::get_slack_ids, DocGridModel::get_slack_ids.c_str())
-        .def("get_slack_ids_dc", &GridModel::get_slack_ids_dc, DocGridModel::get_slack_ids_dc.c_str())
+        .def("get_pv", &GridModel::get_pv_numpy, DocGridModel::get_pv.c_str())
+        .def("get_pq", &GridModel::get_pq_numpy, DocGridModel::get_pq.c_str())
+        .def("get_slack_ids", &GridModel::get_slack_ids_numpy, DocGridModel::get_slack_ids.c_str())
+        .def("get_slack_ids_dc", &GridModel::get_slack_ids_dc_numpy, DocGridModel::get_slack_ids_dc.c_str())
         .def("get_slack_weights", &GridModel::get_slack_weights, DocGridModel::get_slack_weights.c_str())
-        .def("get_pv_solver", &GridModel::get_pv_solver, DocGridModel::get_pv_solver.c_str())
-        .def("get_pq_solver", &GridModel::get_pq_solver, DocGridModel::get_pq_solver.c_str())
-        .def("get_slack_ids_solver", &GridModel::get_slack_ids_solver, DocGridModel::get_slack_ids_solver.c_str())
-        .def("get_slack_ids_dc_solver", &GridModel::get_slack_ids_dc_solver, DocGridModel::get_slack_ids_dc_solver.c_str())
+        .def("get_pv_solver", &GridModel::get_pv_solver_numpy, DocGridModel::get_pv_solver.c_str())
+        .def("get_pq_solver", &GridModel::get_pq_solver_numpy, DocGridModel::get_pq_solver.c_str())
+        .def("get_slack_ids_solver", &GridModel::get_slack_ids_solver_numpy, DocGridModel::get_slack_ids_solver.c_str())
+        .def("get_slack_ids_dc_solver", &GridModel::get_slack_ids_dc_solver_numpy, DocGridModel::get_slack_ids_dc_solver.c_str())
         .def("get_slack_weights_solver", &GridModel::get_slack_weights_solver, DocGridModel::get_slack_weights_solver.c_str())
 
         .def("get_Ybus", &GridModel::get_Ybus, DocGridModel::get_Ybus.c_str())

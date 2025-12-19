@@ -51,7 +51,7 @@ class GenericContainer : public BaseConstants
         virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {};
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
-                            const Eigen::VectorXi & slack_bus_id_solver,
+                            const SolverBusIdVect& slack_bus_id_solver,
                             const std::vector<SolverBusId> & id_grid_to_solver) const {};
         
         virtual void get_q(std::vector<real_type>& q_by_bus) {};

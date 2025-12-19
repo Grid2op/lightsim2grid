@@ -169,7 +169,7 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId
 
 void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
                                 std::vector<bool> & has_bus_been_added,
-                                const Eigen::VectorXi & slack_bus_id_solver,
+                                const SolverBusIdVect & slack_bus_id_solver,
                                 const std::vector<SolverBusId> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
@@ -326,10 +326,10 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & i
     }
 }
 
-Eigen::VectorXi GeneratorContainer::get_slack_bus_id() const{
+GlobalBusIdVect GeneratorContainer::get_slack_bus_id() const{
     std::vector<int> tmp;
     tmp.reserve(gen_slackbus_.size());
-    Eigen::VectorXi res;
+    GlobalBusIdVect res;
     const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(gen_slackbus_[gen_id]){
@@ -339,7 +339,9 @@ Eigen::VectorXi GeneratorContainer::get_slack_bus_id() const{
         }
     }
     if(tmp.empty()) throw std::runtime_error("GeneratorContainer::get_slack_bus_id: no generator are tagged slack bus for this grid.");
-    res = Eigen::VectorXi::Map(tmp.data(), tmp.size());  // force the copy of the data apparently
+    res = GlobalBusIdVect::Map(
+        reinterpret_cast<GlobalBusId *>(tmp.data()),
+        tmp.size());  // force the copy of the data apparently
     return res;
 }
 

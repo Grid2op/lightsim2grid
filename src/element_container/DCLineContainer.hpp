@@ -135,7 +135,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
 
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
-                            const Eigen::VectorXi & slack_bus_id_solver,
+                            const SolverBusIdVect & slack_bus_id_solver,
                             const std::vector<SolverBusId> & id_grid_to_solver) const {
             side_1_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   

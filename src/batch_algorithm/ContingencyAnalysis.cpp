@@ -175,9 +175,9 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
     const Eigen::Index nb_buses_solver = Ybus.cols();
     const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
-    const Eigen::VectorXi & bus_pv = _grid_model.get_pv_solver();
-    const Eigen::VectorXi & bus_pq = _grid_model.get_pq_solver();
-    const Eigen::VectorXi & slack_ids = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
+    const SolverBusIdVect & bus_pv = _grid_model.get_pv_solver();
+    const SolverBusIdVect & bus_pq = _grid_model.get_pq_solver();
+    const SolverBusIdVect & slack_ids = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
     const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
     
@@ -204,7 +204,15 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // perform the initial powerflow
     _solver_control.tell_all_changed();
     _solver.tell_solver_control(_solver_control);
-    bool conv = _solver.compute_pf(Ybus, Vinit_solver, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
+    bool conv = _solver.compute_pf(Ybus,
+        Vinit_solver,
+        Sbus,
+        slack_ids,
+        slack_weights,
+        bus_pv,
+        bus_pq,
+        max_iter,
+        tol);
 
     // end of pre processing
     _timer_pre_proc = timer_preproc.duration();

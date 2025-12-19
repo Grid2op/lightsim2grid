@@ -193,6 +193,26 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
             disconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
         }
         GridModelBusId local_to_gridmodel(int sub_id, const LocalBusId & local_bus_id) const{
+            if(local_bus_id.cast_int() == BaseConstants::_deactivated_bus_id){
+                return GlobalBusId(BaseConstants::_deactivated_bus_id);
+            }
+            if(local_bus_id.cast_int() == 0){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "SubstationContainer::local_to_gridmodel at this stage, local_bus_id should not be 0.";
+                exc_ << " A local_bus_id should be either -1 (for disconnected) or between 1 and n_bus_max_per_sub";
+                throw std::runtime_error(exc_.str());
+            }
+            if(local_bus_id.cast_int() > nmax_busbar_per_sub_){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "SubstationContainer::local_to_gridmodel at this stage, ";
+                exc_ << "local_bus_id should be < ";
+                exc_ << nmax_busbar_per_sub_ << "(nmax_busbar_per_sub, max number of buses per substations) ";
+                exc_ << "But you provided " << local_bus_id.cast_int();
+                throw std::runtime_error(exc_.str());
+            }
+
             return sub_id + (local_bus_id.cast_int() - 1) * n_sub_;
         }
 

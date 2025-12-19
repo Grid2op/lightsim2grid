@@ -168,7 +168,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         **/
         RealVect get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<SolverBusId> & id_grid_to_solver);
     
-        Eigen::VectorXi get_slack_bus_id() const;
+        GlobalBusIdVect get_slack_bus_id() const;
         void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver);
     
         // modification
@@ -197,7 +197,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const;
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
-                            const Eigen::VectorXi & slack_bus_id_solver,
+                            const SolverBusIdVect & slack_bus_id_solver,
                             const std::vector<SolverBusId> & id_grid_to_solver) const;
         void init_q_vector(int nb_bus,
                            Eigen::VectorXi & total_gen_per_bus,

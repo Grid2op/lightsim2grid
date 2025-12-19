@@ -88,22 +88,6 @@ GridModel::StateRes GridModel::get_state() const
     auto res_storage = storages_.get_state();
     auto res_dc_line = dc_lines_.get_state();
 
-    // std::vector<int> load_pos_topo_vect(load_pos_topo_vect_.begin(), load_pos_topo_vect_.end());
-    // std::vector<int> gen_pos_topo_vect(gen_pos_topo_vect_.begin(), gen_pos_topo_vect_.end());
-    // std::vector<int> line_or_pos_topo_vect(line_or_pos_topo_vect_.begin(), line_or_pos_topo_vect_.end());
-    // std::vector<int> line_ex_pos_topo_vect(line_ex_pos_topo_vect_.begin(), line_ex_pos_topo_vect_.end());
-    // std::vector<int> trafo_hv_pos_topo_vect(trafo_hv_pos_topo_vect_.begin(), trafo_hv_pos_topo_vect_.end());
-    // std::vector<int> trafo_lv_pos_topo_vect(trafo_lv_pos_topo_vect_.begin(), trafo_lv_pos_topo_vect_.end());
-    // std::vector<int> storage_pos_topo_vect(storage_pos_topo_vect_.begin(), storage_pos_topo_vect_.end());
-
-    // std::vector<int> load_to_subid(load_to_subid_.begin(), load_to_subid_.end());
-    // std::vector<int> gen_to_subid(gen_to_subid_.begin(), gen_to_subid_.end());
-    // std::vector<int> line_or_to_subid(line_or_to_subid_.begin(), line_or_to_subid_.end());
-    // std::vector<int> line_ex_to_subid(line_ex_to_subid_.begin(), line_ex_to_subid_.end());
-    // std::vector<int> trafo_hv_to_subid(trafo_hv_to_subid_.begin(), trafo_hv_to_subid_.end());
-    // std::vector<int> trafo_lv_to_subid(trafo_lv_to_subid_.begin(), trafo_lv_to_subid_.end());
-    // std::vector<int> storage_to_subid(storage_to_subid_.begin(), storage_to_subid_.end());
-
     GridModel::StateRes res(version_major,
                             version_medium,
                             version_minor,
@@ -122,21 +106,7 @@ GridModel::StateRes GridModel::get_state() const
                             res_storage,
                             res_dc_line,
                             n_sub_,
-                            max_nb_bus_per_sub_ // ,
-                            // load_pos_topo_vect,
-                            // gen_pos_topo_vect,
-                            // line_or_pos_topo_vect,
-                            // line_ex_pos_topo_vect,
-                            // trafo_hv_pos_topo_vect,
-                            // trafo_lv_pos_topo_vect,
-                            // storage_pos_topo_vect,
-                            // load_to_subid,
-                            // gen_to_subid,
-                            // line_or_to_subid,
-                            // line_ex_to_subid,
-                            // trafo_hv_to_subid,
-                            // trafo_lv_to_subid,
-                            // storage_to_subid
+                            max_nb_bus_per_sub_
                             );
     return res;
 };
@@ -189,35 +159,6 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // grid2op specific
     n_sub_ = std::get<15>(my_state);
     max_nb_bus_per_sub_ = std::get<16>(my_state);
-    // const std::vector<int> & load_pos_topo_vect = std::get<17>(my_state);
-    // const std::vector<int> & gen_pos_topo_vect = std::get<18>(my_state);
-    // const std::vector<int> & line_or_pos_topo_vect = std::get<19>(my_state);
-    // const std::vector<int> & line_ex_pos_topo_vect = std::get<20>(my_state);
-    // const std::vector<int> & trafo_hv_pos_topo_vect = std::get<21>(my_state);
-    // const std::vector<int> & trafo_lv_pos_topo_vect = std::get<22>(my_state);
-    // const std::vector<int> & storage_pos_topo_vect = std::get<23>(my_state);
-    // const std::vector<int> & load_to_subid = std::get<24>(my_state);
-    // const std::vector<int> & gen_to_subid = std::get<25>(my_state);
-    // const std::vector<int> & line_or_to_subid = std::get<26>(my_state);
-    // const std::vector<int> & line_ex_to_subid = std::get<27>(my_state);
-    // const std::vector<int> & trafo_hv_to_subid = std::get<28>(my_state);
-    // const std::vector<int> & trafo_lv_to_subid = std::get<29>(my_state);
-    // const std::vector<int> & storage_to_subid = std::get<30>(my_state);
-
-    // load_pos_topo_vect_ = IntVectRowMaj::Map(load_pos_topo_vect.data(), load_pos_topo_vect.size());
-    // gen_pos_topo_vect_ = IntVectRowMaj::Map(gen_pos_topo_vect.data(), gen_pos_topo_vect.size());
-    // line_or_pos_topo_vect_ = IntVectRowMaj::Map(line_or_pos_topo_vect.data(), line_or_pos_topo_vect.size());
-    // line_ex_pos_topo_vect_ = IntVectRowMaj::Map(line_ex_pos_topo_vect.data(), line_ex_pos_topo_vect.size());
-    // trafo_hv_pos_topo_vect_ = IntVectRowMaj::Map(trafo_hv_pos_topo_vect.data(), trafo_hv_pos_topo_vect.size());
-    // trafo_lv_pos_topo_vect_ = IntVectRowMaj::Map(trafo_lv_pos_topo_vect.data(), trafo_lv_pos_topo_vect.size());
-    // storage_pos_topo_vect_ = IntVectRowMaj::Map(storage_pos_topo_vect.data(), storage_pos_topo_vect.size());
-    // load_to_subid_ = IntVectRowMaj::Map(load_to_subid.data(), load_to_subid.size());
-    // gen_to_subid_ = IntVectRowMaj::Map(gen_to_subid.data(), gen_to_subid.size());
-    // line_or_to_subid_ = IntVectRowMaj::Map(line_or_to_subid.data(), line_or_to_subid.size());
-    // line_ex_to_subid_ = IntVectRowMaj::Map(line_ex_to_subid.data(), line_ex_to_subid.size());
-    // trafo_hv_to_subid_ = IntVectRowMaj::Map(trafo_hv_to_subid.data(), trafo_hv_to_subid.size());
-    // trafo_lv_to_subid_ = IntVectRowMaj::Map(trafo_lv_to_subid.data(), trafo_lv_to_subid.size());
-    // storage_to_subid_ = IntVectRowMaj::Map(storage_to_subid.data(), storage_to_subid.size());
 
     // assign it to this instance
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
@@ -319,14 +260,14 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     if(reset_ac){
         id_me_to_ac_solver_ = std::vector<SolverBusId>();
         id_ac_solver_to_me_ = std::vector<GlobalBusId>();
-        slack_bus_id_ac_solver_ = Eigen::VectorXi();
+        slack_bus_id_ac_solver_ = SolverBusIdVect();
         Ybus_ac_ = Eigen::SparseMatrix<cplx_type>();
     }
 
     if(reset_dc){
         id_me_to_dc_solver_ = std::vector<SolverBusId>();
         id_dc_solver_to_me_ = std::vector<GlobalBusId>();
-        slack_bus_id_dc_solver_ = Eigen::VectorXi();
+        slack_bus_id_dc_solver_ = SolverBusIdVect();
         Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();
     }
 
@@ -335,14 +276,14 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 
     acSbus_ = CplxVect();
     dcSbus_ = CplxVect();
-    bus_pv_ = Eigen::VectorXi();
-    bus_pq_ = Eigen::VectorXi();
+    bus_pv_ = SolverBusIdVect();
+    bus_pq_ = SolverBusIdVect();
     solver_control_.tell_all_changed();
     
-    slack_bus_id_ac_me_ = Eigen::VectorXi();  // slack bus id, gridmodel number
-    slack_bus_id_ac_solver_ = Eigen::VectorXi();  // slack bus id, solver number
-    slack_bus_id_dc_me_ = Eigen::VectorXi();
-    slack_bus_id_dc_solver_ = Eigen::VectorXi();
+    slack_bus_id_ac_me_ = GlobalBusIdVect();  // slack bus id, gridmodel number
+    slack_bus_id_ac_solver_ = SolverBusIdVect();  // slack bus id, solver number
+    slack_bus_id_dc_me_ = GlobalBusIdVect();
+    slack_bus_id_dc_solver_ = SolverBusIdVect();
     slack_weights_ = RealVect();
 
     // reset the solvers
@@ -375,13 +316,6 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
 
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     bool is_ac = true;
-    // std::cout << "before pre process" << std::endl;
-    // std::cout << "acSbus_.size()" << acSbus_.size() << std::endl;
-    // std::cout << "Ybus_ac_.size()" << Ybus_ac_.size() << std::endl;
-    // std::cout << "id_me_to_ac_solver_.size()" << id_me_to_ac_solver_.size() << std::endl;
-    // std::cout << "id_ac_solver_to_me_.size()" << id_ac_solver_to_me_.size() << std::endl;
-    // std::cout << "slack_bus_id_ac_me_.size()" << slack_bus_id_ac_me_.size() << std::endl;
-    // std::cout << "slack_bus_id_ac_solver_.size()" << slack_bus_id_ac_solver_.size() << std::endl;
     CplxVect V = pre_process_solver(Vinit, 
                                     acSbus_,
                                     Ybus_ac_,
@@ -402,7 +336,16 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
         slack_weights_ = generators_.get_slack_weights_solver(Ybus_ac_.rows(), id_me_to_ac_solver_); 
     }
     // std::cout << "\tbefore compute_pf" << std::endl;
-    conv = _solver.compute_pf(Ybus_ac_, V, acSbus_, slack_bus_id_ac_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol / sn_mva_);
+    conv = _solver.compute_pf(
+        Ybus_ac_,
+        V,
+        acSbus_,
+        _to_intvect(slack_bus_id_ac_solver_),
+        slack_weights_,
+        _to_intvect(bus_pv_),
+        _to_intvect(bus_pq_),
+        max_iter,
+        tol / sn_mva_);
 
     // store results (in ac mode) 
     // std::cout << "\tbefore process_results" << std::endl;
@@ -517,8 +460,8 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                                        Eigen::SparseMatrix<cplx_type> & Ybus,
                                        std::vector<SolverBusId> & id_me_to_solver,
                                        std::vector<GlobalBusId> & id_solver_to_me,
-                                       Eigen::VectorXi & slack_bus_id_me,
-                                       Eigen::VectorXi & slack_bus_id_solver,
+                                       GlobalBusIdVect & slack_bus_id_me,
+                                       SolverBusIdVect & slack_bus_id_solver,
                                        bool is_ac,
                                        const SolverControl & solver_control)
 {
@@ -568,7 +511,11 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         solver_control.has_pv_changed() || 
         solver_control.has_pq_changed()) {
             init_slack_bus(Sbus, id_me_to_solver, id_solver_to_me, slack_bus_id_me, slack_bus_id_solver);
-            fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
+            fillpv_pq(
+                id_me_to_solver,
+                id_solver_to_me,
+                slack_bus_id_solver,
+                solver_control);
         }
     
     if (is_ac && (solver_control.need_reset_solver() || 
@@ -683,10 +630,10 @@ void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
 void GridModel::init_slack_bus(const CplxVect & Sbus,
                                const std::vector<SolverBusId>& id_me_to_solver,
                                const std::vector<GlobalBusId>& id_solver_to_me,
-                               const Eigen::VectorXi & slack_bus_id_me,
-                               Eigen::VectorXi & slack_bus_id_solver){
+                               const GlobalBusIdVect & slack_bus_id_me,
+                               SolverBusIdVect & slack_bus_id_solver){
     // slack_bus_id_solver = Eigen::VectorXi::Zero(slack_bus_id_.size());
-    slack_bus_id_solver = Eigen::VectorXi::Constant(slack_bus_id_me.size(), _deactivated_bus_id);
+    slack_bus_id_solver = SolverBusIdVect::Constant(slack_bus_id_me.size(), _deactivated_bus_id);
 
     size_t i = 0;
     // std::cout << "slack_bus_id_solver 2: ";
@@ -700,15 +647,15 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
     // std::cout << std::endl;
 
     // for(auto el: slack_bus_id_) {
-    for(auto el: slack_bus_id_me) {
+    for(const auto & el: slack_bus_id_me) {
         SolverBusId tmp = id_me_to_solver[el];
         if(tmp == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::init_Sbus: One of the slack bus is disconnected.";
             exc_ << " You can check element ";
-            exc_ << el;
+            exc_ << el.cast_int();
             exc_ << ": [";
-            for(auto el2 : slack_bus_id_me) exc_ << el2 << ", ";
+            for(const auto & el2 : slack_bus_id_me) exc_ << el2.cast_int() << ", ";
             exc_ << "].";
             throw std::out_of_range(exc_.str());
         }
@@ -769,7 +716,7 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<SolverBu
 
 void GridModel::fillpv_pq(const std::vector<SolverBusId>& id_me_to_solver,
                           const std::vector<GlobalBusId>& id_solver_to_me,
-                          const Eigen::VectorXi & slack_bus_id_solver,
+                          const SolverBusIdVect & slack_bus_id_solver,
                           const SolverControl & solver_control)
 {
     // Nothing to do if neither pv, nor pq nor the dimension of the problem has changed
@@ -783,8 +730,8 @@ void GridModel::fillpv_pq(const std::vector<SolverBusId>& id_me_to_solver,
     bus_pv.reserve(nb_bus);
     std::vector<bool> has_bus_been_added(nb_bus, false);
 
-    bus_pv_ = Eigen::VectorXi();
-    bus_pq_ = Eigen::VectorXi();
+    bus_pv_ = SolverBusIdVect();
+    bus_pq_ = SolverBusIdVect();
     powerlines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);  // TODO have a function to dispatch that to all type of elements
     shunts_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     trafos_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
@@ -800,8 +747,12 @@ void GridModel::fillpv_pq(const std::vector<SolverBusId>& id_me_to_solver,
         bus_pq.push_back(bus_id);
         has_bus_been_added[bus_id] = true;  // don't add it a second time
     }
-    bus_pv_ = Eigen::VectorXi::Map(&bus_pv[0], bus_pv.size());
-    bus_pq_ = Eigen::VectorXi::Map(&bus_pq[0], bus_pq.size());
+    bus_pv_ = SolverBusIdVect::Map(
+        reinterpret_cast<const SolverBusId*>(&bus_pv[0]),
+        bus_pv.size());
+    bus_pq_ = SolverBusIdVect::Map(
+        reinterpret_cast<const SolverBusId*>(&bus_pq[0]),
+        bus_pq.size());
 }
 
 void GridModel::compute_results(bool ac){
@@ -843,8 +794,8 @@ void GridModel::compute_results(bool ac){
         // it is possible to know in advance the contribution of each slack generators (sum(Sbus) MW 
         // to split among the contributing generators) so it's possible to "mess with" Sbus 
         // for such purpose
-        const auto id_slack = slack_bus_id_dc_solver_(0);
-        active_mismatch(id_slack) = -dcSbus_.real().sum() * sn_mva_;
+        const SolverBusId id_slack = slack_bus_id_dc_solver_(0);
+        active_mismatch(id_slack.cast_int()) = -dcSbus_.real().sum() * sn_mva_;
     }
     // for(auto el: active_mismatch) std::cout << el << ", ";
     // std::cout << std::endl;
@@ -924,7 +875,16 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     // for(auto el: dcSbus_) std::cout << el << ", ";
     // std::cout << std::endl;
     // std::cout << "\tbefore compute dc pf" << std::endl;
-    conv = _dc_solver.compute_pf(Ybus_dc_, V, dcSbus_, slack_bus_id_dc_solver_, slack_weights_, bus_pv_, bus_pq_, max_iter, tol);
+    conv = _dc_solver.compute_pf(
+        Ybus_dc_,
+        V,
+        dcSbus_,
+        _to_intvect(slack_bus_id_dc_solver_),
+        slack_weights_,
+        _to_intvect(bus_pv_),
+        _to_intvect(bus_pq_),
+        max_iter,
+        tol);
     // std::cout << "\tprocess_results (dc) \n";
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, is_ac, id_me_to_dc_solver_);
@@ -1085,47 +1045,12 @@ void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, 
     loads_.update_topo(has_changed, new_values, solver_control_, substations_);
     generators_.update_topo(has_changed, new_values, solver_control_, substations_);
     storages_.update_topo(has_changed, new_values, solver_control_, substations_);
-    
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_load,
-    //                     &GridModel::change_bus_load,
-    //                     &GridModel::deactivate_load
-    //                     );
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_gen,
-    //                     &GridModel::change_bus_gen,
-    //                     &GridModel::deactivate_gen
-    //                     );
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_storage,
-    //                     &GridModel::change_bus_storage,
-    //                     &GridModel::deactivate_storage
-    //                     );
+    // shunts are not in "topo" in grid2op
 
     // NB we suppose that if a powerline (or a trafo) is disconnected, then both its ends are
     // and same for trafo, obviously
     powerlines_.update_topo(has_changed, new_values, solver_control_, substations_);
     trafos_.update_topo(has_changed, new_values, solver_control_, substations_);
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_powerline,
-    //                     &GridModel::change_bus_powerline_or,
-    //                     &GridModel::deactivate_powerline
-    //                     );
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_powerline,
-    //                     &GridModel::change_bus_powerline_ex,
-    //                     &GridModel::deactivate_powerline
-    //                     );
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_trafo,
-    //                     &GridModel::change_bus_trafo_hv,
-    //                     &GridModel::deactivate_trafo
-    //                     );
-    // update_topo_generic(has_changed, new_values,
-    //                     &GridModel::reactivate_trafo,
-    //                     &GridModel::change_bus_trafo_lv,
-    //                     &GridModel::deactivate_trafo
-    //                     );
 
     // update the bus status
     substations_.disconnect_all_buses();
@@ -1250,8 +1175,8 @@ std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
     res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, solver_control_);
     std::get<1>(res) = res_gen_id;
     // slack_bus_id_ = std::vector<int>();
-    slack_bus_id_ac_solver_ = Eigen::VectorXi();
-    slack_bus_id_dc_solver_ = Eigen::VectorXi();
+    slack_bus_id_ac_solver_ = SolverBusIdVect();
+    slack_bus_id_dc_solver_ = SolverBusIdVect();
     slack_weights_ = RealVect();
     return res;
 }
