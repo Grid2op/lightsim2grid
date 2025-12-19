@@ -27,7 +27,7 @@ void GenericContainer::_get_amps(RealVect & a, const RealVect & p, const RealVec
     a = p2q2.array() * _1_sqrt_3 / v_tmp.array();
 }
 
-void GenericContainer::_generic_reactivate(int global_bus_id, SubstationContainer & substation){
+void GenericContainer::_generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation){
     _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
                     substation.get_bus_status(),
                     "_generic_reactivate");
@@ -35,7 +35,7 @@ void GenericContainer::_generic_reactivate(int global_bus_id, SubstationContaine
     // status[el_id] = true;  //TODO why it's needed to do that again
 }
 
-void GenericContainer::_generic_deactivate(int global_bus_id, SubstationContainer & substation){
+void GenericContainer::_generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation){
     _check_in_range(static_cast<std::vector<bool>::size_type>(global_bus_id),
                     substation.get_bus_status(),
                     "_generic_deactivate");
@@ -59,7 +59,7 @@ void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype
 
 void GenericContainer::_generic_change_bus(
     int el_id,
-    GridModelBusId new_gridmodel_bus_id,
+    const GridModelBusId & new_gridmodel_bus_id,
     Eigen::Ref<GlobalBusIdVect> el_bus_ids,
     SolverControl & solver_control,
     int nb_max_bus) const {
@@ -70,25 +70,24 @@ void GenericContainer::_generic_change_bus(
                     el_bus_ids,
                     "_change_bus");
 
-    int bus_id_int = new_gridmodel_bus_id;
     // throw error: bus id does not exist
-    if(bus_id_int >= nb_max_bus)
+    if(new_gridmodel_bus_id.cast_int() >= nb_max_bus)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: Cannot change an element to bus ";
-        exc_ << bus_id_int;
+        exc_ << new_gridmodel_bus_id.cast_int();
         exc_ << " There are only ";
         exc_ << nb_max_bus;
         exc_ << " distinct buses on this grid.";
         throw std::out_of_range(exc_.str());
     }
-    if(bus_id_int < 0)
+    if(new_gridmodel_bus_id.cast_int() < 0)
     {
         // TODO DEBUG MODE: only check in debug mode
         std::ostringstream exc_;
         exc_ << "GenericContainer::_change_bus: new bus id should be >=0 and not ";
-        exc_ << bus_id_int;
+        exc_ << new_gridmodel_bus_id.cast_int();
         throw std::out_of_range(exc_.str());
     }
     GlobalBusId & bus_me_id = el_bus_ids(el_id);

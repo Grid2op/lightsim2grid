@@ -65,8 +65,8 @@ class OneSideContainer_PQ : public OneSideContainer
             for(int sgen_id = 0; sgen_id < nb_gen; ++sgen_id)
             {
                 if(!status_[sgen_id]) continue;
-                const auto my_bus = bus_id_(sgen_id);
-                res[my_bus] += target_p_mw_(sgen_id);
+                const GlobalBusId my_bus = bus_id_(sgen_id);
+                res[my_bus.cast_int()] += target_p_mw_(sgen_id);
             }
         }
 

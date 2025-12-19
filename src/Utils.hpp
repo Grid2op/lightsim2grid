@@ -192,8 +192,12 @@ class IntClass
             m_bus_id = std::move(oth.m_bus_id);
             return *this;
         }
-        // accessor (if needed)
-        int bus_id() const {return m_bus_id;}
+
+        // cast to int (if needed)
+        const int & cast_int() const & {return m_bus_id;}
+        const int & cast_int() const && {return m_bus_id;}
+        int cast_int() & {return m_bus_id;}  // do a copy in this case
+
         // automatic conversion to int
         operator int() const {return m_bus_id;}
 

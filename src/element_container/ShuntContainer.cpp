@@ -106,7 +106,7 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & 
 void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<int> & id_grid_to_solver,
+                                      const std::vector<SolverBusId> & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac)

@@ -29,14 +29,15 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
                              bool ac) const
 {
     int nb_load = nb();
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     cplx_type tmp;
     for(int load_id = 0; load_id < nb_load; ++load_id){
         //  i don't do anything if the load is disconnected
         if(!status_[load_id]) continue;
 
         bus_id_me = bus_id_(load_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "LoadContainer::fillSbus: the load with id ";
@@ -45,6 +46,6 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
             throw std::runtime_error(exc_.str());
         }
         tmp = {target_p_mw_(load_id), target_q_mvar_(load_id)};
-        Sbus.coeffRef(bus_id_solver) -= tmp;
+        Sbus.coeffRef(bus_id_solver.cast_int()) -= tmp;
     }
 }

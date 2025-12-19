@@ -177,7 +177,7 @@ class OneSideContainer : public GenericContainer
             for(int el_id = 0; el_id < nb_els; ++el_id)
             {
                 if(!status_[el_id]) continue;
-                const auto my_bus = bus_id_(el_id);
+                const GlobalBusId my_bus = bus_id_(el_id);
                 if(my_bus == _deactivated_bus_id){
                     // TODO DEBUG MODE only this in debug mode
                     std::ostringstream exc_;
@@ -196,8 +196,8 @@ class OneSideContainer : public GenericContainer
             for(int el_id = 0; el_id < nb_el; ++el_id)
             {
                 if(!status_[el_id]) continue;
-                const auto my_bus = bus_id_(el_id);
-                if(!busbar_in_main_component[my_bus]){
+                const GlobalBusId my_bus = bus_id_(el_id);
+                if(!busbar_in_main_component[my_bus.cast_int()]){
                     deactivate(el_id, unused_solver_control);
                 }
             }    

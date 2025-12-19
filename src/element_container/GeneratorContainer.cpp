@@ -122,7 +122,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(
         //  i don't do anything if the load is disconnected
         if(!status_[gen_id]) continue;
         bus_id_me = bus_id_(gen_id);
-        bus_id_solver = id_grid_to_solver[static_cast<int>(bus_id_me)];
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
             std::ostringstream exc_;
@@ -131,7 +131,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-        if(gen_slackbus_[gen_id]) res.coeffRef(bus_id_solver) += gen_slack_weight_[gen_id];
+        if(gen_slackbus_[gen_id]) res.coeffRef(bus_id_solver.cast_int()) += gen_slack_weight_[gen_id];
     }
     bus_slack_weight_ = res;
     real_type sum_res = res.sum();
@@ -141,14 +141,15 @@ RealVect GeneratorContainer::get_slack_weights_solver(
 
 void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
     const int nb_gen = nb();
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     cplx_type tmp;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the load is disconnected
         if(!status_[gen_id]) continue;
 
         bus_id_me = bus_id_(gen_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
@@ -162,7 +163,7 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId
             // gen is pq if voltage regulaton is off
             tmp += my_i * target_q_mvar_(gen_id);
         }
-        Sbus.coeffRef(bus_id_solver) += tmp;
+        Sbus.coeffRef(bus_id_solver.cast_int()) += tmp;
     }
 }
 
@@ -172,7 +173,8 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
                                 const std::vector<SolverBusId> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
@@ -187,7 +189,7 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
         // if (gen_slack_weight_[gen_id] != 0.) gen_pseudo_off = false;  // useless: slack is not PV anyway
         if ((!turnedoff_gen_pv_) && gen_pseudo_off) continue;  
         bus_id_me = bus_id_(gen_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
             std::ostringstream exc_;
@@ -197,16 +199,16 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
             throw std::runtime_error(exc_.str());
         }
 
-        if(is_in_vect(bus_id_solver, slack_bus_id_solver)) continue;  // slack bus is not PV
-        if(has_bus_been_added[bus_id_solver]) continue; // i already added this bus
-        bus_pv.push_back(bus_id_solver);
-        has_bus_been_added[bus_id_solver] = true;  // don't add it a second time
+        if(is_in_vect(bus_id_solver.cast_int(), slack_bus_id_solver)) continue;  // slack bus is not PV
+        if(has_bus_been_added[bus_id_solver.cast_int()]) continue; // i already added this bus
+        bus_pv.push_back(bus_id_solver.cast_int());
+        has_bus_been_added[bus_id_solver.cast_int()] = true;  // don't add it a second time
     }
 }
 
 void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     const int nb_gen = nb();
-    int bus_id_me;
+    GlobalBusId bus_id_me;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
@@ -216,7 +218,7 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
 
         bus_id_me = bus_id_(gen_id);
         real_type tmp = target_vm_pu_(gen_id);
-        if(abs(tmp) > _tol_equal_float) Vm(bus_id_me) = tmp;
+        if(abs(tmp) > _tol_equal_float) Vm(bus_id_me.cast_int()) = tmp;
     }
 }
 
@@ -283,7 +285,8 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
 void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the generator is disconnected
         if(!status_[gen_id]) continue;
@@ -309,18 +312,17 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & i
             exc_ << " is connected to a disconnected bus while being connected to the grid.";
             throw std::runtime_error(exc_.str());
         }
-
         // scale the input V such that abs(V) = Vm for this generator
-        real_type tmp = std::abs(V(bus_id_solver));
+        real_type tmp = std::abs(V(bus_id_solver.cast_int()));
         if(abs(tmp) < _tol_equal_float)
         {
             // if it was 0. i force it to 1. (otherwise the rest of the computation would make it O. still)
-            V(bus_id_solver) = 1.0;
+            V(bus_id_solver.cast_int()) = 1.0;
             tmp = 1.0;
         }
         tmp = 1.0 / tmp;
         tmp *= target_vm_pu_(gen_id);
-        V(bus_id_solver) *= tmp;
+        V(bus_id_solver.cast_int()) *= tmp;
     }
 }
 
@@ -328,12 +330,12 @@ Eigen::VectorXi GeneratorContainer::get_slack_bus_id() const{
     std::vector<int> tmp;
     tmp.reserve(gen_slackbus_.size());
     Eigen::VectorXi res;
-    const auto nb_gen = nb();
+    const int nb_gen = nb();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(gen_slackbus_[gen_id]){
-            const auto my_bus = bus_id_(gen_id);
+            const GlobalBusId my_bus = bus_id_(gen_id);
             // do not add twice the same "slack bus"
-            if(!is_in_vect(my_bus, tmp)) tmp.push_back(my_bus);
+            if(!is_in_vect(my_bus.cast_int(), tmp)) tmp.push_back(my_bus.cast_int());
         }
     }
     if(tmp.empty()) throw std::runtime_error("GeneratorContainer::get_slack_bus_id: no generator are tagged slack bus for this grid.");
@@ -357,9 +359,9 @@ void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
         const SolverBusId bus_id_solver = id_grid_to_solver[bus_id_me];
         // TODO DEBUG MODE: check bus_id_solver >= 0
         // TODO DEBUG MODE: check bus_slack_weight_[bus_id_solver] > 0
-        const real_type total_contrib_slack = bus_slack_weight_(static_cast<int>(bus_id_solver));
+        const real_type total_contrib_slack = bus_slack_weight_(bus_id_solver.cast_int());
         const real_type my_contrib_slack = gen_slack_weight_[gen_id];
-        res_p_(gen_id) += node_mismatch(static_cast<int>(bus_id_solver)) * my_contrib_slack / total_contrib_slack;
+        res_p_(gen_id) += node_mismatch(bus_id_solver.cast_int()) * my_contrib_slack / total_contrib_slack;
     }
 }
 
@@ -376,10 +378,10 @@ void GeneratorContainer::init_q_vector(int nb_bus,
         if (!voltage_regulator_on_[gen_id]) continue;  // gen is purposedly not pv
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) continue;  // in this case "turned off" generators are not pv
         
-        int bus_id = bus_id_(gen_id);
-        total_q_min_per_bus(bus_id) += min_q_(gen_id);
-        total_q_max_per_bus(bus_id) += max_q_(gen_id);
-        total_gen_per_bus(bus_id) += 1;
+        const GlobalBusId bus_id = bus_id_(gen_id);
+        total_q_min_per_bus(bus_id.cast_int()) += min_q_(bus_id.cast_int());
+        total_q_max_per_bus(bus_id.cast_int()) += max_q_(bus_id.cast_int());
+        total_gen_per_bus(bus_id.cast_int()) += 1;
     }
 }
 
@@ -418,15 +420,15 @@ void GeneratorContainer::set_q(
             continue;
         }  
 
-        int bus_id = bus_id_(gen_id);
-        const auto bus_solver = id_grid_to_solver[bus_id];
+        const GlobalBusId bus_id = bus_id_(gen_id);
+        const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
         // TODO DEBUG MODE: check that the bus is correct!
         real_type q_to_absorb = reactive_mismatch[bus_solver];
         real_type max_q_me = max_q_(gen_id);
         real_type min_q_me = min_q_(gen_id);
-        real_type max_q_bus = total_q_max_per_bus(bus_id);
-        real_type min_q_bus = total_q_min_per_bus(bus_id);
-        int nb_gen_with_me = total_gen_per_bus(bus_id);
+        real_type max_q_bus = total_q_max_per_bus(bus_id.cast_int());
+        real_type min_q_bus = total_q_min_per_bus(bus_id.cast_int());
+        int nb_gen_with_me = total_gen_per_bus(bus_id.cast_int());
         if(nb_gen_with_me == 1){
             real_q = q_to_absorb;
         }else{

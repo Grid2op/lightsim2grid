@@ -374,7 +374,7 @@ class GridModel : public GenericContainer
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
         //still connected to it, it will throw an exception
-        void deactivate_bus(int global_bus_id) {
+        void deactivate_bus(GlobalBusId global_bus_id) {
             if(substations_.is_bus_connected(global_bus_id)){
                 // bus was connected, dim of matrix change
                 solver_control_.need_reset_solver();
@@ -386,7 +386,7 @@ class GridModel : public GenericContainer
         }
 
         // if a bus is connected, but isolated, it will make the powerflow diverge
-        void reactivate_bus(int global_bus_id) {
+        void reactivate_bus(GlobalBusId global_bus_id) {
             if(!substations_.is_bus_connected(global_bus_id)){
                 // bus was not connected, dim of matrix change
                 solver_control_.need_reset_solver();
@@ -1410,10 +1410,6 @@ class GridModel : public GenericContainer
         double timer_last_ac_pf_;
         double timer_last_dc_pf_;
 
-        // bool need_reset_solver_;  // some matrices change size, needs to be computed
-        // bool need_recompute_sbus_;  // some coeff of sbus changed, need to recompute it
-        // bool need_recompute_ybus_;  // some coeff of ybus changed, but not its sparsity pattern
-        // bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff)
         SolverControl solver_control_;
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
@@ -1424,8 +1420,6 @@ class GridModel : public GenericContainer
         int n_sub_;
         int max_nb_bus_per_sub_;
         SubstationContainer substations_;
-        // RealVect bus_vn_kv_;
-        // std::vector<bool> bus_status_;  // for each bus, gives its status. true if connected, false otherwise
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.
@@ -1488,24 +1482,6 @@ class GridModel : public GenericContainer
         // to solve the newton raphson
         ChooseSolver _solver;
         ChooseSolver _dc_solver;
-
-        // // specific grid2op
-        // IntVectRowMaj load_pos_topo_vect_;
-        // IntVectRowMaj gen_pos_topo_vect_;
-        // IntVectRowMaj line_or_pos_topo_vect_;
-        // IntVectRowMaj line_ex_pos_topo_vect_;
-        // IntVectRowMaj trafo_hv_pos_topo_vect_;
-        // IntVectRowMaj trafo_lv_pos_topo_vect_;
-        // IntVectRowMaj storage_pos_topo_vect_;
-
-        // IntVectRowMaj load_to_subid_;
-        // IntVectRowMaj gen_to_subid_;
-        // IntVectRowMaj line_or_to_subid_;
-        // IntVectRowMaj line_ex_to_subid_;
-        // IntVectRowMaj trafo_hv_to_subid_;
-        // IntVectRowMaj trafo_lv_to_subid_;
-        // IntVectRowMaj storage_to_subid_;
-
 };
 
 #endif  //GRIDMODEL_H

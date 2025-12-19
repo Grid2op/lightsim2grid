@@ -948,7 +948,7 @@ RealMat GridModel::get_ptdf(){
     const RealMat & PTDF_solver = get_ptdf_solver();
     RealMat PTDF_grid =  RealMat::Zero(powerlines_.nb() + trafos_.nb(), total_bus());  // , std::numeric_limits<real_type>::quiet_NaN()
     int solver_col = 0;
-    for(const auto my_col: id_dc_solver_to_me()){
+    for(const auto & my_col: id_dc_solver_to_me()){
         PTDF_grid.col(my_col) = PTDF_solver.col(solver_col);
         ++solver_col;
     }
@@ -959,7 +959,7 @@ RealMat GridModel::get_lodf(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    const auto nb_el = powerlines_.nb() + trafos_.nb();
+    const int nb_el = powerlines_.nb() + trafos_.nb();
     GlobalBusIdVect from_bus(nb_el);
     GlobalBusIdVect to_bus(nb_el);
     // retrieve the from_bus / to_bus from the grid
@@ -969,7 +969,7 @@ RealMat GridModel::get_lodf(){
     // convert it to solver bus id
     IntVect from_bus_solver(nb_el);  // TODO : SolverBusIdVect here
     IntVect to_bus_solver(nb_el);
-    for(auto el_id = 0; el_id < nb_el; ++el_id){
+    for(int el_id = 0; el_id < nb_el; ++el_id){
         // from side
         GlobalBusId f_grid_bus = from_bus[el_id];
         SolverBusId f_solver_bus = id_me_to_dc_solver_[f_grid_bus];

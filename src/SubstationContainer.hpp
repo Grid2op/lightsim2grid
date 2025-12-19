@@ -120,9 +120,9 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
         int nmax_busbar_per_sub() const {return nmax_busbar_per_sub_;}
 
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
-        bool is_bus_connected(GridModelBusId global_bus_id) const {return bus_status_[static_cast<int>(global_bus_id)];}
-        bool is_bus_connected(int sub_id, LocalBusId local_bus_id) const {
-            return bus_status_[static_cast<int>(local_to_gridmodel(sub_id, local_bus_id))];
+        bool is_bus_connected(const GridModelBusId & global_bus_id) const {return bus_status_[global_bus_id.cast_int()];}
+        bool is_bus_connected(int sub_id, const LocalBusId & local_bus_id) const {
+            return bus_status_[local_to_gridmodel(sub_id, local_bus_id).cast_int()];
         }
 
         void init_bus(int n_sub, int nmax_busbar_per_sub, const RealVect & bus_vn_kv)
@@ -149,7 +149,7 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
                 real_type ref_vn_kv = bus_vn_kv(sub_id);
                 for(int bus_id=1; bus_id < nmax_busbar_per_sub; bus_id++)
                 {
-                    real_type this_bus_vn_kv = bus_vn_kv(static_cast<int>(local_to_gridmodel(sub_id, bus_id)));
+                    real_type this_bus_vn_kv = bus_vn_kv(local_to_gridmodel(sub_id, bus_id).cast_int());
                     if(abs(this_bus_vn_kv - ref_vn_kv) > BaseConstants::_tol_equal_float){
                         const std::string msg = R"mydelimiter(
                         Each bus of each substation must have the same nominal voltage. 
@@ -180,20 +180,20 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
         void disconnect_all_buses(){
             for(unsigned int i = 0; i < nb_bus(); ++i) bus_status_[i] = false;
         }
-        void reconnect_bus(GridModelBusId global_bus_id){
-            bus_status_[static_cast<int>(global_bus_id)] = true;
+        void reconnect_bus(const GridModelBusId& global_bus_id){
+            bus_status_[global_bus_id.cast_int()] = true;
         }
-        void reconnect_bus(int sub_id, LocalBusId local_bus_id){
+        void reconnect_bus(int sub_id, const LocalBusId & local_bus_id){
             reconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
         }
-        void disconnect_bus(GridModelBusId global_bus_id){
-            bus_status_[static_cast<int>(global_bus_id)] = false;
+        void disconnect_bus(const GridModelBusId & global_bus_id){
+            bus_status_[global_bus_id.cast_int()] = false;
         }
-        void disconnect_bus(int sub_id, LocalBusId local_bus_id){
+        void disconnect_bus(int sub_id, const LocalBusId & local_bus_id){
             disconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
         }
-        GridModelBusId local_to_gridmodel(int sub_id, LocalBusId local_bus_id) const{
-            return sub_id + (static_cast<int>(local_bus_id) - 1) * n_sub_;
+        GridModelBusId local_to_gridmodel(int sub_id, const LocalBusId & local_bus_id) const{
+            return sub_id + (local_bus_id.cast_int() - 1) * n_sub_;
         }
 
     private:

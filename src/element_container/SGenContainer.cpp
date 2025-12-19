@@ -67,14 +67,15 @@ void SGenContainer::set_state(SGenContainer::StateRes & my_state )
 
 void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
     const int nb_sgen = nb();
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     cplx_type tmp;
     for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id){
         //  i don't do anything if the static generator is disconnected
         if(!status_[sgen_id]) continue;
 
         bus_id_me = bus_id_(sgen_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "SGenContainer::fillSbus: Static Generator with id ";
@@ -83,6 +84,6 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & i
             throw std::runtime_error(exc_.str());
         }
         tmp = {target_p_mw_(sgen_id), target_q_mvar_(sgen_id)};
-        Sbus.coeffRef(bus_id_solver) += tmp;
+        Sbus.coeffRef(bus_id_solver.cast_int()) += tmp;
     }
 }

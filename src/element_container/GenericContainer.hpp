@@ -112,8 +112,9 @@ class GenericContainer : public BaseConstants
         **/
         void _generic_reactivate(int el_id, std::vector<bool> & status);
         void _generic_deactivate(int el_id, std::vector<bool> & status);
-        void _generic_reactivate(int el_id, SubstationContainer & substation);
-        void _generic_deactivate(int el_id, SubstationContainer & substation);
+
+        void _generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
+        void _generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
         
         /**
          * Change the bus of the element "el_id" and performs some basic check that the new bus is valid.
@@ -122,7 +123,7 @@ class GenericContainer : public BaseConstants
          */
         void _generic_change_bus(
             int el_id,
-            GridModelBusId new_gridmodel_bus_id,
+            const GridModelBusId & new_gridmodel_bus_id,
             Eigen::Ref<GlobalBusIdVect>  el_bus_ids,
             SolverControl & solver_control,
             int nb_bus) const;
@@ -170,8 +171,12 @@ class GenericContainer : public BaseConstants
         /**
         check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)
         **/
-        template<class T>  // a std::vector, or an Eigen::Vector                                                 
-        bool is_in_vect(int val, const T & cont) const {return std::find(cont.begin(), cont.end(), val) != cont.end();}
+        template<class ScalarCLS, class VectCLS>  // a std::vector, or an Eigen::Vector                                                 
+        bool is_in_vect(const ScalarCLS & val, const VectCLS & cont) const {
+            return std::find(
+                cont.begin(),
+                cont.end(),
+                static_cast<typename VectCLS::value_type>(val)) != cont.end();}
 };
 
 #endif // GENERIC_CONTAINER_H

@@ -125,7 +125,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             }
         };
         virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
-            GridModelBusId & bus_me_id = bus_id_(el_id);
+            const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
                 // TODO speed: here the dimension changed only if nothing was connected before
