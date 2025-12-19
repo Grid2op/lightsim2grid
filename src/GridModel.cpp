@@ -647,8 +647,8 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
     // std::cout << std::endl;
 
     // for(auto el: slack_bus_id_) {
-    for(const auto & el: slack_bus_id_me) {
-        SolverBusId tmp = id_me_to_solver[el];
+    for(const GlobalBusId & el: slack_bus_id_me) {
+        SolverBusId tmp = id_me_to_solver[el.cast_int()];
         if(tmp == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::init_Sbus: One of the slack bus is disconnected.";

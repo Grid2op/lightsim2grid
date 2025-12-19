@@ -118,6 +118,20 @@ class GridModel : public GenericContainer
         const std::vector<SolverBusId> & id_me_to_dc_solver() const {return id_me_to_dc_solver_;}
         const std::vector<GlobalBusId> & id_dc_solver_to_me() const {return id_dc_solver_to_me_;}
 
+        std::vector<int> id_me_to_ac_solver_numpy() const {
+            const int* arr = reinterpret_cast<const int*>(&id_me_to_ac_solver_[0]);
+            return std::vector<int>(arr, arr + id_me_to_ac_solver_.size());
+        }
+        std::vector<int> id_ac_solver_to_me_numpy() const {
+            const int* arr = reinterpret_cast<const int*>(&id_ac_solver_to_me_[0]);
+            return std::vector<int>(arr, arr + id_ac_solver_to_me_.size());}
+        std::vector<int> id_me_to_dc_solver_numpy() const {
+            const int* arr = reinterpret_cast<const int*>(&id_me_to_dc_solver_[0]);
+            return std::vector<int>(arr, arr + id_me_to_dc_solver_.size());}
+        std::vector<int> id_dc_solver_to_me_numpy() const {
+            const int* arr = reinterpret_cast<const int*>(&id_dc_solver_to_me_[0]);
+            return std::vector<int>(arr, arr + id_dc_solver_to_me_.size());}
+
         // retrieve the underlying data (raw class)
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
         // turned off generators are not pv
@@ -537,6 +551,12 @@ class GridModel : public GenericContainer
         }
         int get_bus_trafo_lv(int trafo_id) {
             return trafos_.get_bus_side_2(trafo_id).cast_int();
+        }
+        void change_ratio_trafo(int trafo_id, real_type new_ratio){
+            trafos_.change_ratio(trafo_id, new_ratio, solver_control_);
+        }
+        void change_shift_trafo(int trafo_id, real_type new_shift){
+            trafos_.change_shift(trafo_id, new_shift, solver_control_);
         }
 
         //load
@@ -1374,14 +1394,9 @@ class GridModel : public GenericContainer
         }
 
         /**
-         * @brief Build the pv; pq or slack ids (or any other vector labelled using the gridmodel convention) 
+         * @brief Build the pv; pq or slack ids 
+         * (or any other vector labelled using the gridmodel convention) 
          * from the same vector (input) that uses the solver convention.
-         * 
-         * TODO copy paste from above, find a better way !
-         * 
-         * @param Sbus : Sbus with the solver convention, the one used by the solver
-         * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
-         * @return CplxVect 
          */
         template<class ScalarInput, class SclaraOutput>
         Eigen::Matrix<SclaraOutput, Eigen::Dynamic, 1> _relabel_vector2(
@@ -1391,7 +1406,7 @@ class GridModel : public GenericContainer
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             Eigen::Matrix<SclaraOutput, Eigen::Dynamic, 1> res = Eigen::Matrix<SclaraOutput, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
             Eigen::Index pos_id = 0;
-            for(auto el_id : pv_pq_ref_bus){
+            for(const auto & el_id : pv_pq_ref_bus){
                 res[pos_id] = id_solver_to_me[el_id];
                 ++ pos_id;
             }
@@ -1505,7 +1520,7 @@ class GridModel : public GenericContainer
                 }
             }
         }
-        
+
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                  std::vector<SolverBusId> & id_me_to_solver,
                                                  int size);

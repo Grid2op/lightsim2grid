@@ -122,42 +122,47 @@ void TrafoContainer::_update_model_coeffs()
     dc_x_tau_shift_ = RealVect::Zero(my_size);
     for(Eigen::Index i = 0; i < my_size; ++i)
     {
-        // for AC
-        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
-        const cplx_type ys = 1. / cplx_type(r_(i), x_(i));
-        // const cplx_type h = h_side_1_(i);
-        real_type tau = ratio_(i);
-        real_type theta_shift = shift_(i);
-        if(!is_tap_hv_side_[i]){
-            tau = my_one_ / tau;
-            theta_shift = -theta_shift;
-        }
-        cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
-        cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
-        if(std::abs(theta_shift) > _tol_equal_float)
-        {
-            real_type cos_theta = std::cos(theta_shift);
-            real_type sin_theta = std::sin(theta_shift);
-            eitheta_shift = {cos_theta, sin_theta};
-            emitheta_shift = {cos_theta, -sin_theta};
-        }
-
-        yac_11_(i) = (ys + h_side_1_(i)) / (tau * tau);
-        yac_22_(i) = (ys + h_side_2_(i));
-        yac_21_(i) = -ys / tau * emitheta_shift ;
-        yac_12_(i) = -ys / tau * eitheta_shift;
-
-        // for DC
-        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
-        // except here I only care about the real part, so I remove the "1/j"
-        cplx_type tmp = 1. / (tau * x_(i));
-        ydc_11_(i) = tmp;
-        ydc_22_(i) = tmp;
-        ydc_21_(i) = -tmp;
-        ydc_12_(i) = -tmp;
-        if(!is_tap_hv_side_[i]) dc_x_tau_shift_(i) = -std::real(tmp) * theta_shift;
-        else dc_x_tau_shift_(i) = std::real(tmp) * theta_shift;
+        _update_model_coeffs_one_el(i);
     }
+}
+
+void TrafoContainer::_update_model_coeffs_one_el(int el_id)
+{
+    // for AC
+    // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+    const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));
+    // const cplx_type h = h_side_1_(i);
+    real_type tau = ratio_(el_id);
+    real_type theta_shift = shift_(el_id);
+    if(!is_tap_hv_side_[el_id]){
+        tau = my_one_ / tau;
+        theta_shift = -theta_shift;
+    }
+    cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
+    cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
+    if(std::abs(theta_shift) > _tol_equal_float)
+    {
+        real_type cos_theta = std::cos(theta_shift);
+        real_type sin_theta = std::sin(theta_shift);
+        eitheta_shift = {cos_theta, sin_theta};
+        emitheta_shift = {cos_theta, -sin_theta};
+    }
+
+    yac_11_(el_id) = (ys + h_side_1_(el_id)) / (tau * tau);
+    yac_22_(el_id) = (ys + h_side_2_(el_id));
+    yac_21_(el_id) = -ys / tau * emitheta_shift ;
+    yac_12_(el_id) = -ys / tau * eitheta_shift;
+
+    // for DC
+    // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
+    // except here I only care about the real part, so I remove the "1/j"
+    cplx_type tmp = 1. / (tau * x_(el_id));
+    ydc_11_(el_id) = tmp;
+    ydc_22_(el_id) = tmp;
+    ydc_21_(el_id) = -tmp;
+    ydc_12_(el_id) = -tmp;
+    if(!is_tap_hv_side_[el_id]) dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    else dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
 }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,

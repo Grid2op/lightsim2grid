@@ -885,6 +885,8 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv_python, DocGridModel::_internal_do_not_use.c_str())
         .def("get_bus_trafo_hv", &GridModel::get_bus_trafo_hv, DocGridModel::_internal_do_not_use.c_str())
         .def("get_bus_trafo_lv", &GridModel::get_bus_trafo_lv, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_ratio_trafo", &GridModel::change_ratio_trafo, "TODO")
+        .def("change_shift_trafo", &GridModel::change_shift_trafo, "TODO")
 
         .def("deactivate_load", &GridModel::deactivate_load, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_load", &GridModel::reactivate_load, DocGridModel::_internal_do_not_use.c_str())
@@ -941,13 +943,12 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_Vm_solver", &GridModel::get_Vm_solver, DocGridModel::get_Vm_solver.c_str())
         .def("get_J_solver", &GridModel::get_J_python_solver, DocGridModel::get_J_python_solver.c_str())
 
-        .def("id_me_to_ac_solver", &GridModel::id_me_to_ac_solver, DocGridModel::id_me_to_ac_solver.c_str())
-        .def("id_ac_solver_to_me", &GridModel::id_ac_solver_to_me, DocGridModel::id_ac_solver_to_me.c_str())
-        .def("id_me_to_dc_solver", &GridModel::id_me_to_dc_solver, DocGridModel::id_me_to_dc_solver.c_str())
-        .def("id_dc_solver_to_me", &GridModel::id_dc_solver_to_me, DocGridModel::id_dc_solver_to_me.c_str())
+        .def("id_me_to_ac_solver", &GridModel::id_ac_solver_to_me_numpy, DocGridModel::id_me_to_ac_solver.c_str())
+        .def("id_ac_solver_to_me", &GridModel::id_ac_solver_to_me_numpy, DocGridModel::id_ac_solver_to_me.c_str())
+        .def("id_me_to_dc_solver", &GridModel::id_me_to_dc_solver_numpy, DocGridModel::id_me_to_dc_solver.c_str())
+        .def("id_dc_solver_to_me", &GridModel::id_dc_solver_to_me_numpy, DocGridModel::id_dc_solver_to_me.c_str())
         .def("total_bus", &GridModel::total_bus, DocGridModel::total_bus.c_str())
         .def("nb_connected_bus", &GridModel::nb_connected_bus, DocGridModel::nb_connected_bus.c_str())
-
 
         .def("get_pv", &GridModel::get_pv_numpy, DocGridModel::get_pv.c_str())
         .def("get_pq", &GridModel::get_pq_numpy, DocGridModel::get_pq.c_str())

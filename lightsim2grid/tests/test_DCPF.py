@@ -344,7 +344,10 @@ class TestDCPF_LODF(TestDCPF):
             slack_ids = gridmodel.get_slack_ids()           
         slack_ids_solver = gridmodel.get_slack_ids_solver()
         assert slack_ids_solver.shape == (0, )
-        slack_ids_dc = gridmodel.get_slack_ids_dc()     
+        slack_ids_dc = gridmodel.get_slack_ids_dc()    
+        print(slack_ids_dc) 
+        import pdb
+        pdb.set_trace()
         this_slack = np.sort(np.unique([el.bus_id for el in gridmodel.get_generators() if el.is_slack]))
         assert (np.sort(slack_ids_dc) == this_slack).all()   
         slack_ids_dc_solver = gridmodel.get_slack_ids_dc_solver()     

@@ -137,10 +137,36 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         }
 
         Eigen::Ref<const RealVect> dc_x_tau_shift() const {return dc_x_tau_shift_;}
+
+        void change_ratio(
+            int el_id,
+            real_type new_ratio,
+            SolverControl & solver_control){
+                if(std::abs(ratio_(el_id) - new_ratio) >_tol_equal_float){
+                    ratio_(el_id) = new_ratio;
+                    // TODO speed: only some part needs to be recomputed
+                    _update_model_coeffs_one_el(el_id); 
+                    solver_control.tell_recompute_ybus();
+                }
+        }
+        
+        void change_shift(
+            int el_id,
+            real_type new_shift,
+            SolverControl & solver_control){
+                if(std::abs(shift_(el_id) - new_shift) >_tol_equal_float){
+                    shift_(el_id) = new_shift;
+                    // TODO speed: only some part needs to be recomputed
+                    _update_model_coeffs_one_el(el_id); 
+                    solver_control.tell_recompute_ybus();
+                    solver_control.tell_recompute_sbus();  // only in DC however
+                }
+        }
         
     protected:
         void _update_model_coeffs();
-        
+        void _update_model_coeffs_one_el(int el_id);
+
     protected:
         // physical properties
         std::vector<bool> is_tap_hv_side_;  // whether the tap is hav side or not

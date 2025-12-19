@@ -486,6 +486,24 @@ class BaseTests:
         self.model.change_q_shunt(0, 80)  # it was 40 put it to 80
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
+        
+    def test_change_trafo_ratio(self):
+        # update gridmodel
+        old_val = self.model.get_trafos()[0].ratio
+        nm_trafo = self.model.get_trafos()[0].name
+        new_val = 1. + 2. * (old_val - 1.)
+        self.model.change_ratio_trafo(0, new_val)
+        assert np.allclose(self.model.get_trafos()[0].ratio, new_val)
+        
+        # update pypowsybl
+        pp_tr = self.net_ref.get_2_windings_transformers().loc[nm_trafo]
+        ref_vnom1 = self.net_ref.get_voltage_levels().loc[pp_tr["voltage_level1_id"], "nominal_v"]
+        
+        self.net_ref.update_2_windings_transformers(
+            id=nm_trafo,
+            rated_u1=ref_vnom1 / new_val)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
 
 
 class MakeDCTests(BaseTests, unittest.TestCase):
@@ -507,6 +525,7 @@ class MakeDCTests(BaseTests, unittest.TestCase):
 
     def test_pf_changeshuntp(self):
         self.skipTest("pypowsybl ignores shunt in dc, lightsim2grid does not")
+        
         
 class MakeACTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):
