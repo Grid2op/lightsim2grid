@@ -207,10 +207,10 @@ class BaseBatchSolverSynch : protected BaseConstants
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
-                                   const Eigen::VectorXi & slack_ids,
+                                   const SolverBusIdVect & slack_ids,
                                    const RealVect & slack_weights,
-                                   const Eigen::VectorXi & bus_pv,
-                                   const Eigen::VectorXi & bus_pq,
+                                   const SolverBusIdVect & bus_pv,
+                                   const SolverBusIdVect & bus_pq,
                                    int max_iter,
                                    double tol
                                    );

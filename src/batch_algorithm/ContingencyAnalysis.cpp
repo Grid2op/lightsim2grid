@@ -204,13 +204,14 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // perform the initial powerflow
     _solver_control.tell_all_changed();
     _solver.tell_solver_control(_solver_control);
-    bool conv = _solver.compute_pf(Ybus,
+    bool conv = _solver.compute_pf(
+        Ybus,
         Vinit_solver,
         Sbus,
-        slack_ids,
+        _to_intvect(slack_ids),
         slack_weights,
-        bus_pv,
-        bus_pq,
+        _to_intvect(bus_pv),
+        _to_intvect(bus_pq),
         max_iter,
         tol);
 
@@ -241,11 +242,16 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
                 }
             }
             V = Vinit_solver; // Vinit is reused for each contingencies
-            conv = compute_one_powerflow(Ybus, V, Sbus,
-                                         slack_ids, slack_weights,
-                                         bus_pv, bus_pq,
-                                         max_iter,
-                                         tol / sn_mva);
+            conv = compute_one_powerflow(
+                Ybus,
+                V,
+                Sbus,
+                slack_ids,
+                slack_weights,
+                bus_pv,
+                bus_pq,
+                max_iter,
+                tol / sn_mva);
             if(!ac_solver_used)
             {
                 // DC solver stores the ybus internally, I update it

@@ -115,8 +115,8 @@ class TwoSidesContainer : public GenericContainer
     public:
         // public generic API
         int nb() const { return side_1_.nb(); }
-        int get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
-        int get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
+        GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
+        GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
 
         void init_tsc(
             const Eigen::VectorXi & els_bus1_id,

@@ -14,16 +14,25 @@
 bool BaseBatchSolverSynch::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                   CplxVect & V,
                                                   const CplxVect & Sbus,
-                                                  const Eigen::VectorXi & slack_ids,
+                                                  const SolverBusIdVect & slack_ids,
                                                   const RealVect & slack_weights,
-                                                  const Eigen::VectorXi & bus_pv,
-                                                  const Eigen::VectorXi & bus_pq,
+                                                  const SolverBusIdVect & bus_pv,
+                                                  const SolverBusIdVect & bus_pq,
                                                   int max_iter,
                                                   double tol
                                                   )
 {
     _solver.tell_solver_control(_solver_control);
-    bool conv = _solver.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
+    bool conv = _solver.compute_pf(
+        Ybus,
+        V,
+        Sbus,
+        _to_intvect(slack_ids),
+        slack_weights,
+        _to_intvect(bus_pv),
+        _to_intvect(bus_pq),
+        max_iter,
+        tol);
     if(conv){
         V = _solver.get_V().array();
     }

@@ -178,7 +178,8 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
         }
         
         void disconnect_all_buses(){
-            for(unsigned int i = 0; i < nb_bus(); ++i) bus_status_[i] = false;
+            const size_t nb_bus_total = nb_bus();
+            for(size_t i = 0; i < nb_bus_total; ++i) bus_status_[i] = false;
         }
         void reconnect_bus(const GridModelBusId& global_bus_id){
             bus_status_[global_bus_id.cast_int()] = true;

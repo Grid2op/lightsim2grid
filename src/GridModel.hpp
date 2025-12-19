@@ -384,6 +384,9 @@ class GridModel : public GenericContainer
                 _generic_deactivate(global_bus_id, substations_);
             }
         }
+        void deactivate_bus_python(int global_bus_id) {
+            deactivate_bus(GlobalBusId(global_bus_id));
+        }
 
         // if a bus is connected, but isolated, it will make the powerflow diverge
         void reactivate_bus(GlobalBusId global_bus_id) {
@@ -396,6 +399,10 @@ class GridModel : public GenericContainer
                 _generic_reactivate(global_bus_id, substations_); 
             }
         }
+        void reactivate_bus_python(int global_bus_id) {
+            reactivate_bus(GlobalBusId(global_bus_id));
+        }
+
         /**
          * @brief Return the total number of connected buses !
          * 
@@ -453,8 +460,12 @@ class GridModel : public GenericContainer
         }
 
         //deactivate a powerline (disconnect it)
-        void deactivate_powerline(int powerline_id) {powerlines_.deactivate(powerline_id, solver_control_); }
-        void reactivate_powerline(int powerline_id) {powerlines_.reactivate(powerline_id, solver_control_); }
+        void deactivate_powerline(int powerline_id) {
+            powerlines_.deactivate(powerline_id, solver_control_);
+        }
+        void reactivate_powerline(int powerline_id) {
+            powerlines_.reactivate(powerline_id, solver_control_);
+        }
 
         /**
          * Change the bus on the "side 1" of the powerline powerline_id.
@@ -462,18 +473,33 @@ class GridModel : public GenericContainer
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id". **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_powerline_or(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
-            powerlines_.change_bus_side_1(powerline_id, new_gridmodel_bus_id, solver_control_, substations_);
+            powerlines_.change_bus_side_1(
+                powerline_id,
+                new_gridmodel_bus_id,
+                solver_control_,    
+                substations_);
         }
+        void change_bus_powerline_or_python(int powerline_id, int new_gridmodel_bus_id) {
+            change_bus_powerline_or(powerline_id, GridModelBusId(new_gridmodel_bus_id));
+        }
+
         /**
          * Change the bus on the "side 2" of the powerline powerline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_powerline_ex(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
-            powerlines_.change_bus_side_2(powerline_id, new_gridmodel_bus_id, solver_control_, substations_);
+            powerlines_.change_bus_side_2(
+                powerline_id,
+                new_gridmodel_bus_id,
+                solver_control_,
+                substations_);
         }
-        int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id);}
-        int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id);}
+        void change_bus_powerline_ex_python(int powerline_id, int new_gridmodel_bus_id) {
+            change_bus_powerline_ex(powerline_id, GridModelBusId(new_gridmodel_bus_id));
+        }
+        int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id).cast_int();}
+        int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
@@ -485,8 +511,16 @@ class GridModel : public GenericContainer
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_trafo_hv(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
-            trafos_.change_bus_side_1(trafo_id, new_gridmodel_bus_id, solver_control_, substations_); 
+            trafos_.change_bus_side_1(
+                trafo_id,
+                new_gridmodel_bus_id,
+                solver_control_,
+                substations_); 
         }
+        void change_bus_trafo_hv_python(int trafo_id, int new_gridmodel_bus_id) {
+            change_bus_trafo_hv(trafo_id, GridModelBusId(new_gridmodel_bus_id));
+        }
+
         /**
          * Change the bus on the "side 2" of the trafo trafo_id.
          * 
@@ -495,8 +529,15 @@ class GridModel : public GenericContainer
         void change_bus_trafo_lv(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
             trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, solver_control_, substations_);
         }
-        int get_bus_trafo_hv(int trafo_id) {return trafos_.get_bus_side_1(trafo_id);}
-        int get_bus_trafo_lv(int trafo_id) {return trafos_.get_bus_side_2(trafo_id);}
+        void change_bus_trafo_lv_python(int trafo_id, int new_gridmodel_bus_id) {
+            change_bus_trafo_lv(trafo_id, GridModelBusId(new_gridmodel_bus_id));
+        }
+        int get_bus_trafo_hv(int trafo_id) {
+            return trafos_.get_bus_side_1(trafo_id).cast_int();
+        }
+        int get_bus_trafo_lv(int trafo_id) {
+            return trafos_.get_bus_side_2(trafo_id).cast_int();
+        }
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
@@ -509,6 +550,9 @@ class GridModel : public GenericContainer
          */
         void change_bus_load(int load_id, GridModelBusId new_gridmodel_bus_id) {
             loads_.change_bus(load_id, new_gridmodel_bus_id, solver_control_, substations_);
+        }
+        void change_bus_load_python(int load_id, int new_gridmodel_bus_id) {
+            change_bus_load(load_id, GridModelBusId(new_gridmodel_bus_id));
         }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
@@ -526,10 +570,13 @@ class GridModel : public GenericContainer
         void change_bus_gen(int gen_id, GridModelBusId new_gridmodel_bus_id) {
             generators_.change_bus(gen_id, new_gridmodel_bus_id, solver_control_, substations_);
         }
+        void change_bus_gen_python(int gen_id, int new_gridmodel_bus_id) {
+            change_bus_gen(gen_id, GridModelBusId(new_gridmodel_bus_id));
+        }
         void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, solver_control_); }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, solver_control_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, solver_control_); }
-        int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id);}
+        int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id).cast_int();}
 
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, solver_control_); }
@@ -541,6 +588,9 @@ class GridModel : public GenericContainer
          */
         void change_bus_shunt(int shunt_id, GridModelBusId new_gridmodel_bus_id) {
             shunts_.change_bus(shunt_id, new_gridmodel_bus_id, solver_control_, substations_);  
+        }
+        void change_bus_shunt_python(int shunt_id, int new_gridmodel_bus_id) {
+            change_bus_shunt(shunt_id, GridModelBusId(new_gridmodel_bus_id));  
         }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
@@ -557,6 +607,9 @@ class GridModel : public GenericContainer
         void change_bus_sgen(int sgen_id, GridModelBusId new_gridmodel_bus_id) {
             sgens_.change_bus(sgen_id, new_gridmodel_bus_id, solver_control_, substations_);
         }
+        void change_bus_sgen_python(int sgen_id, int new_gridmodel_bus_id) {
+            change_bus_sgen(sgen_id, GridModelBusId(new_gridmodel_bus_id));
+        }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
@@ -572,11 +625,14 @@ class GridModel : public GenericContainer
         void change_bus_storage(int storage_id, GridModelBusId new_gridmodel_bus_id) {
             storages_.change_bus(storage_id, new_gridmodel_bus_id, solver_control_, substations_);
         }
+        void change_bus_storage_python(int sgen_id, int new_gridmodel_bus_id) {
+            change_bus_storage(sgen_id, GridModelBusId(new_gridmodel_bus_id));
+        }
         void change_p_storage(int storage_id, real_type new_p) {
                storages_.change_p_nothrow(storage_id, new_p, solver_control_);
             }
         void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, solver_control_); }
-        int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id);}
+        int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
         void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, solver_control_); }
@@ -590,7 +646,11 @@ class GridModel : public GenericContainer
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_dcline_or(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
-            dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); }
+            dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
+        }
+        void change_bus_dcline_or_python(int dcline_id, int new_gridmodel_bus_id) {
+            change_bus_dcline_or(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
+        }
         /**
          * Change the bus on the dc line "side 2" dcline_id.
          * 
@@ -598,6 +658,9 @@ class GridModel : public GenericContainer
          */
         void change_bus_dcline_ex(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
             dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
+        }
+        void change_bus_dcline_ex_python(int dcline_id, int new_gridmodel_bus_id) {
+            change_bus_dcline_ex(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
         }
         int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
         int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
@@ -912,10 +975,18 @@ class GridModel : public GenericContainer
         /**
          * @brief Get the ids of the buses that participate to the slack (DC), solver labelling
          * 
-         * @return Eigen::Ref<const Eigen::VectorXi> 
+         * @return Eigen::Ref<const SolverBusIdVect> 
          */
         Eigen::Ref<const SolverBusIdVect> get_slack_ids_dc_solver() const{
             return slack_bus_id_dc_solver_;
+        }
+        /**
+         * @brief Get the ids of the buses that participate to the slack (DC), solver labelling
+         * 
+         * @return Eigen::Ref<const IntVect> 
+         */
+        Eigen::Ref<const IntVect> get_slack_ids_dc_solver_numpy() const{
+            return _to_intvect(slack_bus_id_dc_solver_);
         }
 
         Eigen::Ref<const GlobalBusIdVect> get_slack_ids_dc() const{
@@ -1434,39 +1505,7 @@ class GridModel : public GenericContainer
                 }
             }
         }
-        // template<class CReac, class CChange, class CDeact>
-        // void update_topo_generic(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
-        //                          Eigen::Ref<Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
-        //                          const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_pos,
-        //                          const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> & vect_subid,
-        //                          CReac fun_react,
-        //                          CChange fun_change,
-        //                          CDeact fun_deact)
-        // {
-        //     for(int el_id = 0; el_id < vect_pos.rows(); ++el_id)
-        //     {
-
-        //         int el_pos = vect_pos(el_id);
-        //         if(! has_changed(el_pos)) continue;
-        //         int new_bus = new_values(el_pos);
-        //         if(new_bus > 0){
-        //             // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
-        //             int sub_id = vect_subid(el_id);
-        //             int new_bus_backend = sub_id + (new_bus - 1) * n_sub_;
-        //             // bus_status_[new_bus_backend] = true;
-        //             substations_.reconnect_bus(new_bus_backend);
-        //             (this->*fun_react)(el_id); // eg reactivate_load(load_id);
-        //             (this->*fun_change)(el_id, new_bus_backend); // eg change_bus_load(load_id, new_bus_backend);
-        //         } else{
-        //             // new bus is negative, we deactivate it
-        //             (this->*fun_deact)(el_id);// eg deactivate_load(load_id);
-        //             // bus_status_ is set to "false" in GridModel.update_topo
-        //             // and a bus is activated if (and only if) one element is connected to it.
-        //             // I must not set `bus_status_[new_bus_backend] = false;` in this case !
-        //         }
-        //     }
-        // }
-
+        
         CplxVect _get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                  std::vector<SolverBusId> & id_me_to_solver,
                                                  int size);

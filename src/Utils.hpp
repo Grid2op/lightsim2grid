@@ -251,4 +251,30 @@ static_assert(sizeof(SolverBusId)==sizeof(int));  // make sure I can safely "rei
 
 typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
 
+
+/**
+ * Allow easily to pass from GlobalIntVect to IntVect (for example when
+ * exposing numpy arrays python side)
+ */
+template<class BusId>
+Eigen::Ref<const IntVect> _to_intvect(
+    const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
+){
+    return IntVect::Map(
+        reinterpret_cast<const int*>(&strongly_typed_vect(0)),
+        strongly_typed_vect.size());
+}
+/**
+ * Allow easily to pass from GlobalIntVect to IntVect (for example when
+ * exposing numpy arrays python side)
+ */
+template<class BusId>
+Eigen::Ref<const IntVect> _to_intvect(
+    Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > strongly_typed_vect
+){
+    return IntVect::Map(
+        reinterpret_cast<const int*>(&strongly_typed_vect(0)),
+        strongly_typed_vect.size());
+}
+
 #endif // UTILS_H

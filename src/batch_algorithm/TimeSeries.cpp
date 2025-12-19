@@ -52,9 +52,9 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
 
     const Eigen::Index nb_steps = gen_p.rows();
 
-    const Eigen::VectorXi & bus_pv = _grid_model.get_pv_solver();
-    const Eigen::VectorXi & bus_pq = _grid_model.get_pq_solver();
-    const Eigen::VectorXi & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
+    const SolverBusIdVect & bus_pv = _grid_model.get_pv_solver();
+    const SolverBusIdVect & bus_pq = _grid_model.get_pq_solver();
+    const SolverBusIdVect & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
     const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
     _solver.reset();
     _solver_control.tell_none_changed();
