@@ -19,10 +19,14 @@ void GeneratorContainer::init(const RealVect & generators_p,
 {
     const auto generators_q = RealVect::Zero(generators_p.size());
     const auto voltage_regulator_on = std::vector<bool>(generators_p.size(), true);
-    init_full(generators_p, generators_v, generators_q,
-              voltage_regulator_on,
-              generators_min_q, generators_max_q,
-              generators_bus_id);
+    init_full(
+        generators_p,
+        generators_v,
+        generators_q,
+        voltage_regulator_on,
+        generators_min_q,
+        generators_max_q,
+        generators_bus_id);
 }
 
 void GeneratorContainer::init_full(const RealVect & generators_p,
@@ -39,6 +43,7 @@ void GeneratorContainer::init_full(const RealVect & generators_p,
     // check the sizes
     int size = nb();
     check_size(generators_v, size, "generators_v");
+    check_size(generators_q, size, "generators_q");
     check_size(generators_min_q, size, "generators_min_q");
     check_size(generators_max_q, size, "generators_max_q");
     check_size(voltage_regulator_on, size, "voltage_regulator_on");
@@ -121,6 +126,9 @@ RealVect GeneratorContainer::get_slack_weights_solver(
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         //  i don't do anything if the load is disconnected
         if(!status_[gen_id]) continue;
+        if(!gen_slackbus_[gen_id]) continue;
+        if(abs(gen_slack_weight_[gen_id]) < _tol_equal_float) continue;
+
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
@@ -145,8 +153,11 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId
     SolverBusId bus_id_solver;
     cplx_type tmp;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        //  i don't do anything if the load is disconnected
+        //  i don't do anything if the gen is disconnected
         if(!status_[gen_id]) continue;
+
+        // a pv gen that is "pseudo off" (if the flag is set) is turned off, so disconnected
+        if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id) && voltage_regulator_on_[gen_id]) continue;  
 
         bus_id_me = bus_id_(gen_id);
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
@@ -185,7 +196,7 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
         // in this case turned off generators are not pv
         // except the slack that can have a target of 0MW but is still "on"
         // no matter what
-        bool gen_pseudo_off = abs(target_p_mw_(gen_id)) < 1e-6;
+        bool gen_pseudo_off = is_pseudo_off(gen_id);
         // if (gen_slack_weight_[gen_id] != 0.) gen_pseudo_off = false;  // useless: slack is not PV anyway
         if ((!turnedoff_gen_pv_) && gen_pseudo_off) continue;  
         bus_id_me = bus_id_(gen_id);
@@ -232,6 +243,10 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, 
         // are not pv, if we change the active generation, it changes
         // the list of pv buses, so I need to refactorize the solver
         // on the other hand, if all generators are pv then I do not need to refactorize in this case
+
+        if (gen_slackbus_[gen_id]) return;  // slack is not pseudo off
+        if ((abs(gen_slack_weight_[gen_id]) >= _tol_equal_float)) return;  // slack is not pseudo off
+
         bool pseudo_off_before = abs(target_p_mw_(gen_id)) < _tol_equal_float;
         bool pseudo_off_now = abs(new_p) < _tol_equal_float;
         if((pseudo_off_before && !pseudo_off_now) || 
@@ -381,8 +396,8 @@ void GeneratorContainer::init_q_vector(int nb_bus,
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) continue;  // in this case "turned off" generators are not pv
         
         const GlobalBusId bus_id = bus_id_(gen_id);
-        total_q_min_per_bus(bus_id.cast_int()) += min_q_(bus_id.cast_int());
-        total_q_max_per_bus(bus_id.cast_int()) += max_q_(bus_id.cast_int());
+        total_q_min_per_bus(bus_id.cast_int()) += min_q_(gen_id);
+        total_q_max_per_bus(bus_id.cast_int()) += max_q_(gen_id);
         total_gen_per_bus(bus_id.cast_int()) += 1;
     }
 }
@@ -412,12 +427,13 @@ void GeneratorContainer::set_q(
         }
         real_type real_q = 0.;
         if (!voltage_regulator_on_[gen_id]){
-            // gen is purposedly not pv
-            res_q_(gen_id) = 0.;
+            // gen is purposedly not pv, so output MVAr = input MVAr (just like a load)
+            res_q_(gen_id) = target_q_mvar_(gen_id);
             continue;
         } 
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) {
             // in this case turned off generators are not pv
+            // it's as if the generator were turned off
             res_q_(gen_id) = 0.;
             continue;
         }  
@@ -425,13 +441,13 @@ void GeneratorContainer::set_q(
         const GlobalBusId bus_id = bus_id_(gen_id);
         const SolverBusId bus_solver = id_grid_to_solver[bus_id.cast_int()];
         // TODO DEBUG MODE: check that the bus is correct!
-        real_type q_to_absorb = reactive_mismatch[bus_solver];
+        real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
         real_type max_q_me = max_q_(gen_id);
         real_type min_q_me = min_q_(gen_id);
         real_type max_q_bus = total_q_max_per_bus(bus_id.cast_int());
         real_type min_q_bus = total_q_min_per_bus(bus_id.cast_int());
-        int nb_gen_with_me = total_gen_per_bus(bus_id.cast_int());
-        if(nb_gen_with_me == 1){
+        real_type nb_gen_with_me = static_cast<real_type>(total_gen_per_bus(bus_id.cast_int()));
+        if(nb_gen_with_me == 1.){
             real_q = q_to_absorb;
         }else{
             real_type ratio = (max_q_me - min_q_me + eps_q) / (max_q_bus - min_q_bus + nb_gen_with_me * eps_q) ;

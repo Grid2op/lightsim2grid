@@ -146,6 +146,9 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // trafos
     TrafoContainer::StateRes & state_trafos = std::get<9>(my_state);
     // generators
+    total_q_min_per_bus_;
+    total_q_max_per_bus_;
+    total_gen_per_bus_;
     GeneratorContainer::StateRes & state_gens = std::get<10>(my_state);
     // loads
     LoadContainer::StateRes & state_loads = std::get<11>(my_state);
@@ -785,8 +788,8 @@ void GridModel::compute_results(bool ac){
     RealVect active_mismatch;
     if(ac){
         // In AC mode i am not forced to run through all the grid
-        auto tmp = (Ybus_ac_ * V).conjugate();
-        mismatch = V.array() * tmp.array() - acSbus_.array();
+        // auto tmp = (Ybus_ac_ * V).conjugate();
+        mismatch = V.array() * (Ybus_ac_ * V).conjugate().array() - acSbus_.array();
         active_mismatch = mismatch.real() * sn_mva_;
     } else{
         active_mismatch = RealVect::Zero(V.size());

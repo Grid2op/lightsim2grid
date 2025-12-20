@@ -155,11 +155,17 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
                 int nb_gen = nb();
                 for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
                 {
-                    if(!status_[gen_id]) continue;
+                    if(!status_[gen_id]){
+                        // turned off gen does not have q
+                        res_q_[gen_id] = 0.;
+                    }
                     if(voltage_regulator_on_[gen_id]) continue;
                     res_q_(gen_id) = target_q_mvar_(gen_id);
                         
               }
+            }else{
+                // nothing special to do here
+                set_osc_pq_res_q(ac);
             }
         }
 
@@ -256,7 +262,10 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
          * pseudo off generator (with p == 0) and with no contribution to the the slack bus
          */
         bool is_pseudo_off(int gen_id) const{
-            return (abs(target_p_mw_(gen_id)) < _tol_equal_float) && (!gen_slackbus_[gen_id] || (abs(gen_slack_weight_[gen_id]) < _tol_equal_float));
+            if (gen_slackbus_[gen_id]) return false;  // slack is not pseudo off
+            if ((abs(gen_slack_weight_[gen_id]) >= _tol_equal_float)) return false;  // slack is not pseudo off
+            // pseudo-off <=> target_p == 0.
+            return (abs(target_p_mw_(gen_id)) < _tol_equal_float);
         }
 
 };

@@ -985,10 +985,10 @@ class GridModel : public GenericContainer
          * 
          * @return const Eigen::VectorXi 
          */
-        Eigen::Ref<const GlobalBusIdVect> get_slack_ids() const {
+        const GlobalBusIdVect get_slack_ids() const {
             return _relabel_vector2<SolverBusId, GlobalBusId>(slack_bus_id_ac_solver_, id_ac_solver_to_me_);
         }
-        Eigen::Ref<const IntVect> get_slack_ids_numpy() const {
+        const IntVect get_slack_ids_numpy() const {
             return _to_intvect(get_slack_ids());
         }
 
@@ -1009,7 +1009,7 @@ class GridModel : public GenericContainer
             return _to_intvect(slack_bus_id_dc_solver_);
         }
 
-        Eigen::Ref<const GlobalBusIdVect> get_slack_ids_dc() const{
+        const GlobalBusIdVect get_slack_ids_dc() const{
             return _relabel_vector2<SolverBusId, GlobalBusId>(
                 slack_bus_id_dc_solver_, 
                 id_dc_solver_to_me_);
@@ -1019,7 +1019,7 @@ class GridModel : public GenericContainer
          * 
          * @return const Eigen::VectorXi 
          */
-        Eigen::Ref<const IntVect> get_slack_ids_dc_numpy() const{
+        const IntVect get_slack_ids_dc_numpy() const{
             return _to_intvect(get_slack_ids_dc());
         }
 
