@@ -71,13 +71,13 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
             }
             
             GlobalBusId glob_bus_1 = p_branch->get_bus_side_1(el_id);
-            GlobalBusId glob_bus_2 = p_branch->get_bus_side_1(el_id);
+            GlobalBusId glob_bus_2 = p_branch->get_bus_side_2(el_id);
             bus_1_id = glob_bus_1 == GenericContainer::_deactivated_bus_id ? 
                 GenericContainer::_deactivated_bus_id : 
-                static_cast<int>(id_me_to_solver[static_cast<int>(glob_bus_1)]);
+                id_me_to_solver[glob_bus_1.cast_int()].cast_int();
             bus_2_id = glob_bus_2 == GenericContainer::_deactivated_bus_id ? 
                 GenericContainer::_deactivated_bus_id : 
-                static_cast<int>(id_me_to_solver[static_cast<int>(glob_bus_2)]);
+                id_me_to_solver[glob_bus_2.cast_int()].cast_int();
             status = p_branch->get_status_global()[el_id];
             if(ac_solver_used){
                 y_ff = p_branch->yac_11()[el_id];
@@ -91,13 +91,15 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
                 y_tt = p_branch->ydc_22()[el_id];
             }
 
-            if(status && bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)
+            if(status)
             {
-                // element is connected
-                this_cont_coeffs.push_back({bus_1_id, bus_1_id, y_ff});
-                this_cont_coeffs.push_back({bus_1_id, bus_2_id, y_ft});
-                this_cont_coeffs.push_back({bus_2_id, bus_1_id, y_tf});
-                this_cont_coeffs.push_back({bus_2_id, bus_2_id, y_tt});
+                // element is connected, update coeffs based on status of each powerlines
+                if((bus_1_id != GenericContainer::_deactivated_bus_id)) this_cont_coeffs.push_back({bus_1_id, bus_1_id, y_ff});
+                if((bus_2_id != GenericContainer::_deactivated_bus_id)) this_cont_coeffs.push_back({bus_2_id, bus_2_id, y_tt});
+                if((bus_1_id != GenericContainer::_deactivated_bus_id) && (bus_2_id != GenericContainer::_deactivated_bus_id)){
+                    this_cont_coeffs.push_back({bus_1_id, bus_2_id, y_ft});
+                    this_cont_coeffs.push_back({bus_2_id, bus_1_id, y_tf});
+                }
             }
         }
         _li_coeffs.push_back(this_cont_coeffs);

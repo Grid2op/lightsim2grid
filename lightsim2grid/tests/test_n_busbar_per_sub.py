@@ -157,9 +157,10 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             else:
                 assert not self.env.backend._grid.get_generators()[el_id].connected
                 if line_or_id is not None:
-                    assert not self.env.backend._grid.get_lines()[line_or_id].connected_global
+                    line_id = line_or_id
                 else:
-                    assert not self.env.backend._grid.get_lines()[line_ex_id].connected_global
+                    line_id = line_ex_id
+                assert not self.env.backend._grid.get_lines()[line_id].connected_global
             topo_vect = 1 * self.env.backend.get_topo_vect()
             assert topo_vect[cls.gen_pos_topo_vect[el_id]] == new_bus, f"{topo_vect[cls.gen_pos_topo_vect[el_id]]} vs {new_bus}"
         

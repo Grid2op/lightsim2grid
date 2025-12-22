@@ -232,19 +232,9 @@ class TwoSidesContainer : public GenericContainer
             SubstationContainer & substations
         )
         {
+            side_1_._check_pos_topo_vect_filled();
+            side_2_._check_pos_topo_vect_filled();
 
-            if(side_1_.pos_topo_vect_.size() == 0){
-                // TODO DEBUG MODE: only check in debug mode
-                std::ostringstream exc_;
-                exc_ << "update_topo: can only be used if the pos_topo_vect has been set (missing on side 1)";
-                throw std::runtime_error(exc_.str());
-            }
-            if(side_2_.pos_topo_vect_.size() == 0){
-                // TODO DEBUG MODE: only check in debug mode
-                std::ostringstream exc_;
-                exc_ << "update_topo: can only be used if the pos_topo_vect has been set (missing on side 2)";
-                throw std::runtime_error(exc_.str());
-            }
             side_1_.update_topo(has_changed, new_values, solver_control, substations);
             side_2_.update_topo(has_changed, new_values, solver_control, substations);
 
@@ -322,16 +312,18 @@ class TwoSidesContainer : public GenericContainer
         void resolve_status(int el_id, bool side_1_modif, SolverControl & solver_control){
             OneSideType & side_modified = side_1_modif ? side_1_: side_2_;
             OneSideType & side_to_update = side_1_modif ? side_2_: side_1_;
-            if(ignore_status_global_) status_global_[el_id] = true;  // always true in this case
             if(synch_status_both_side_){
                 if(side_modified.get_status(el_id)){
                     // element has been reconnected
                     // I need to reconnect other side
                     side_to_update.reactivate(el_id, solver_control);
+                    status_global_[el_id] = true;
                 }else{
                     side_to_update.deactivate(el_id, solver_control);
+                    status_global_[el_id] = false;
                 }
             }
+            if(ignore_status_global_) status_global_[el_id] = true;  // always true in this case
         }
 
     protected:
