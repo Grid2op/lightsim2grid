@@ -273,13 +273,20 @@ class OneSideContainer : public GenericContainer
             SubstationContainer & substations
         )
         {
-            if(pos_topo_vect_.size() == 0){
+            if((nb() > 0) && (pos_topo_vect_.size() == 0)){
                 // TODO DEBUG MODE: only check in debug mode
                 std::ostringstream exc_;
                 exc_ << "update_topo: can only be used if the pos_topo_vect has been set.";
                 throw std::runtime_error(exc_.str());
             }
-            for(int el_id = 0; el_id < pos_topo_vect_.rows(); ++el_id)
+            if(pos_topo_vect_.size() != nb()){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "update_topo: pos_topo_vect_ has not the size of the number of elements: ";
+                exc_ << pos_topo_vect_.size() << " vs " << nb() << " elements.";
+                throw std::runtime_error(exc_.str());
+            }
+            for(int el_id = 0; el_id < nb(); ++el_id)
             {
                 int el_pos = pos_topo_vect_(el_id);
                 if(!has_changed(el_pos)) continue;
