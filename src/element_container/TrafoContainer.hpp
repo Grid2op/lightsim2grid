@@ -98,13 +98,6 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         StateRes get_state() const;
         void set_state(StateRes & my_state );
 
-
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<SolverBusId> & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const;
-
         virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<SolverBusId> & id_grid_to_solver);  // needed for dc mode  
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -187,6 +180,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
             real_type tau = is_tap_hv_side_[el_id] ? ratio_(el_id) : 1. / ratio_(el_id);
             return res * tau;
         }
+        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const;
 
         virtual int fillBf_for_PTDF_id(int el_id, int nb_powerline) const{
             return el_id + nb_powerline;

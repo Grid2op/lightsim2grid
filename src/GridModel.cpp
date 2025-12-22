@@ -146,9 +146,9 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // trafos
     TrafoContainer::StateRes & state_trafos = std::get<9>(my_state);
     // generators
-    total_q_min_per_bus_;
-    total_q_max_per_bus_;
-    total_gen_per_bus_;
+    // total_q_min_per_bus_;
+    // total_q_max_per_bus_;
+    // total_gen_per_bus_;
     GeneratorContainer::StateRes & state_gens = std::get<10>(my_state);
     // loads
     LoadContainer::StateRes & state_loads = std::get<11>(my_state);

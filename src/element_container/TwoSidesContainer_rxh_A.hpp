@@ -10,6 +10,7 @@
 #define TWO_SIDES_CONTAINER_RXH_A_H
 
 #include "TwoSidesContainer.hpp"
+
 /**
  * Type of container to represent a line or a transformer.
  * 
@@ -126,24 +127,6 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
     private:
         typedef GenericContainerConstIterator<TwoSidesContainer_rxh_A> TwoSidesContainer_rxh_AInfoConstIterator;
 
-    // make it iterable
-    // public:
-    //     TwoSidesContainer_rxh_AInfoConstIterator begin() const {return TwoSidesContainer_rxh_AInfoConstIterator(this, 0); }
-    //     TwoSidesContainer_rxh_AInfoConstIterator end() const {return TwoSidesContainer_rxh_AInfoConstIterator(this, nb()); }
-    //     TwoSidesContainer_rxh_AInfo operator[](int id) const
-    //     {
-    //         if(id < 0)
-    //         {
-    //             throw std::range_error("id should be >= 0");
-    //         }
-    //         if(id >= nb())
-    //         {
-    //             throw std::range_error("Out of bound error.");
-    //         }
-    //         return TwoSidesContainer_rxh_AInfo(*this, id);
-    //     }
-    /////////////////////////
-
     public:
         // pickle
         typedef std::tuple<
@@ -207,10 +190,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             Eigen::Ref<RealVect> res_v_side_1 = get_res_v_side_1();
             Eigen::Ref<RealVect> res_theta_side_1 = get_res_theta_side_1();
 
-            Eigen::Ref<RealVect> res_p_lv_ = get_res_p_side_2();
-            Eigen::Ref<RealVect> res_q_lv_ = get_res_q_side_2();
-            Eigen::Ref<RealVect> res_v_lv_ = get_res_v_side_2();
-            Eigen::Ref<RealVect> res_theta_lv_ = get_res_theta_side_2();
+            Eigen::Ref<RealVect> res_p_side_2 = get_res_p_side_2();
+            Eigen::Ref<RealVect> res_q_side_2 = get_res_q_side_2();
+            Eigen::Ref<RealVect> res_v_side_2 = get_res_v_side_2();
+            Eigen::Ref<RealVect> res_theta_side_2 = get_res_theta_side_2();
 
             const std::vector<bool> & status1 = side_1_.get_status();
             const std::vector<bool> & status2 = side_2_.get_status();
@@ -222,54 +205,90 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     res_q_side_1(el_id) = 0.0;  // in MVar
                     res_v_side_1(el_id) = v_disco_el_;  // in kV
                     res_a_side_1_(el_id) = 0.0;  // in kA
-                    res_p_lv_(el_id) = 0.0;  // in MW
-                    res_q_lv_(el_id) = 0.0;  // in MVar
-                    res_v_lv_(el_id) = v_disco_el_;  // in kV
+                    res_p_side_2(el_id) = 0.0;  // in MW
+                    res_q_side_2(el_id) = 0.0;  // in MVar
+                    res_v_side_2(el_id) = v_disco_el_;  // in kV
                     res_a_side_2_(el_id) = 0.0;  // in kA
                     res_theta_side_1(el_id) = theta_disco_el_;  // in degree
-                    res_theta_lv_(el_id) = theta_disco_el_;  // in degree            
+                    res_theta_side_2(el_id) = theta_disco_el_;  // in degree            
                     continue;
                 }
 
-                // connectivity
-                int bus_hv_id_me = get_bus_side_1(el_id);
-                int bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me];
-                if(bus_hv_solver_id == _deactivated_bus_id){
-                    std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected (side 1) to a disconnected bus while being connected";
-                    throw std::runtime_error(exc_.str());
-                }
-                int bus_lv_id_me = get_bus_side_2(el_id);
-                int bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me];
-                if(bus_lv_solver_id == _deactivated_bus_id){
-                    std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected (side 2) to a disconnected bus while being connected";
-                    throw std::runtime_error(exc_.str());
-                }
                 cplx_type is_1_conn = {status1[el_id] ? 1. : 0., 0.};
                 cplx_type is_2_conn = {status2[el_id] ? 1. : 0., 0.};
 
+                // connectivity
+                GridModelBusId bus_hv_id_me, bus_lv_id_me;
+                SolverBusId bus_hv_solver_id, bus_lv_solver_id;
+                if(status1[el_id]){
+                    bus_hv_id_me = get_bus_side_1(el_id);
+                    if(bus_hv_id_me.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    bus_hv_solver_id = id_grid_to_solver[bus_hv_id_me.cast_int()];
+                    if(bus_hv_solver_id.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                }else{
+                    bus_hv_id_me = GridModelBusId(_deactivated_bus_id);
+                    bus_hv_solver_id = SolverBusId(_deactivated_bus_id);
+                }
+
+                if(status2[el_id]){
+                    bus_lv_id_me = get_bus_side_2(el_id);
+                    if(bus_lv_id_me.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    bus_lv_solver_id = id_grid_to_solver[bus_lv_id_me.cast_int()];
+                    if(bus_lv_solver_id.cast_int() == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::compute_results: the branch with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                }else{
+                    bus_lv_id_me = GridModelBusId(_deactivated_bus_id);
+                    bus_lv_solver_id = SolverBusId(_deactivated_bus_id);
+                }
+
                 // retrieve voltages magnitude in kv instead of pu
-                real_type v_hv = Vm(bus_hv_solver_id);
-                real_type v_lv = Vm(bus_lv_solver_id);
-                real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me);
-                real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me);           
+                if(status1[el_id]){
+                    real_type v_hv = Vm(bus_hv_solver_id.cast_int());
+                    real_type bus_vn_kv_hv = bus_vn_kv(bus_hv_id_me.cast_int());
+                    res_v_side_1(el_id) = v_hv * bus_vn_kv_hv;
+                    res_theta_side_1(el_id) = Va(bus_hv_solver_id.cast_int()) * my_180_pi_;
+                }else{
+                    res_v_side_1(el_id) = v_disco_el_;
+                    res_theta_side_1(el_id) = theta_disco_el_;
+                }
 
-                // for voltages
-                res_v_side_1(el_id) = v_hv * bus_vn_kv_hv;
-                res_v_lv_(el_id) = v_lv * bus_vn_kv_lv;
-
-                res_theta_side_1(el_id) = Va(bus_hv_solver_id) * my_180_pi_;
-                res_theta_lv_(el_id) = Va(bus_lv_solver_id) * my_180_pi_;
+                if(status2[el_id]){
+                    real_type v_lv = Vm(bus_lv_solver_id.cast_int());
+                    real_type bus_vn_kv_lv = bus_vn_kv(bus_lv_id_me.cast_int());  
+                    res_v_side_2(el_id) = v_lv * bus_vn_kv_lv;
+                    res_theta_side_2(el_id) = Va(bus_lv_solver_id.cast_int()) * my_180_pi_;
+                }else{
+                    res_v_side_2(el_id) = v_disco_el_;
+                    res_theta_side_2(el_id) = theta_disco_el_;
+                }
 
                 if(ac){
                     // results of the ac powerflow
-                    cplx_type Ehv = V(bus_hv_solver_id);
-                    cplx_type Elv = V(bus_lv_solver_id);
+                    cplx_type Ehv = status1[el_id] ? V(bus_hv_solver_id.cast_int()) : cplx_type({0., 0.});
+                    cplx_type Elv = status2[el_id] ? V(bus_lv_solver_id.cast_int()) : cplx_type({0., 0.});
 
                     // TODO for DC with yff, ...
                     // trafo equations
@@ -283,15 +302,17 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                     res_p_side_1(el_id) = std::real(s_hvlv) * sn_mva;
                     res_q_side_1(el_id) = std::imag(s_hvlv) * sn_mva;
-                    res_p_lv_(el_id) = std::real(s_lvhv) * sn_mva;
-                    res_q_lv_(el_id) = std::imag(s_lvhv) * sn_mva;
+                    res_p_side_2(el_id) = std::real(s_lvhv) * sn_mva;
+                    res_q_side_2(el_id) = std::imag(s_lvhv) * sn_mva;
                 }else{
                     // result of the dc powerflow
-                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va(bus_hv_solver_id) + std::real(ydc_12_(el_id)) * Va(bus_lv_solver_id)) * sn_mva * std::real(is_1_conn); // - dc_x_tau_shift_(el_id) ) * sn_mva;
-                    res_p_lv_(el_id) = (std::real(ydc_22_(el_id)) * Va(bus_lv_solver_id) + std::real(ydc_21_(el_id)) * Va(bus_hv_solver_id)) * sn_mva * std::real(is_2_conn); // + dc_x_tau_shift_(el_id) ) * sn_mva; 
+                    real_type Va_hv = status1[el_id] ? Va(bus_hv_solver_id.cast_int()) : 0.;
+                    real_type Va_lv = status2[el_id] ? Va(bus_lv_solver_id.cast_int()) : 0.;
+                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va_hv + std::real(ydc_12_(el_id)) * Va_lv) * sn_mva * std::real(is_1_conn); // - dc_x_tau_shift_(el_id) ) * sn_mva;
+                    res_p_side_2(el_id) = (std::real(ydc_22_(el_id)) * Va_lv + std::real(ydc_21_(el_id)) * Va_hv) * sn_mva * std::real(is_2_conn); // + dc_x_tau_shift_(el_id) ) * sn_mva; 
                 
                     res_q_side_1(el_id) = 0.;
-                    res_q_lv_(el_id) = 0.;
+                    res_q_side_2(el_id) = 0.;
                     
                     // for voltages, because vm = 1. pu by hypothesis
                     // res_v_hv_(trafo_id) = bus_vn_kv_hv;
@@ -363,27 +384,47 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 if(!status_global_[el_id]) continue;
 
                 // compute from / to
-                int bus_side1_id_me = get_bus_side_1(el_id);
-                int bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me];
-                if(bus_side1_solver_id == _deactivated_bus_id){
-                    std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected (side 1) to a disconnected bus while being connected";
-                    throw std::runtime_error(exc_.str());
+                GlobalBusId bus_side1_id_me, bus_side2_id_me;
+                SolverBusId bus_side1_solver_id, bus_side2_solver_id;
+
+                if(status1[el_id]){
+                    bus_side1_id_me = get_bus_side_1(el_id);
+                    if(bus_side1_id_me == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me];
+                    if(bus_side1_solver_id == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
                 }
-                int bus_side2_id_me = get_bus_side_2(el_id);
-                int bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me];
-                if(bus_side2_solver_id == _deactivated_bus_id){
-                    std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected (side 2) to a disconnected bus while being connected";
-                    throw std::runtime_error(exc_.str());
+
+                if(status2[el_id]){
+                    bus_side2_id_me = get_bus_side_2(el_id);
+                    if(bus_side2_id_me == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me];
+                    if(bus_side2_solver_id == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
                 }
                 
-                cplx_type is_1_conn = {status1[el_id] ? 1. : 0., 0.};
-                cplx_type is_2_conn = {status2[el_id] ? 1. : 0., 0.};
                 if(ac){
                     // ac mode
                     yft = yac_12_(el_id);
@@ -397,10 +438,97 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     yff = ydc_11_(el_id);
                     ytt = ydc_22_(el_id);
                 }
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side2_solver_id, yft * is_1_conn));
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side1_solver_id, ytf * is_2_conn));
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side1_solver_id, yff * is_1_conn));
-                res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side2_solver_id, ytt * is_2_conn));
+                if(status1[el_id]) res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side1_solver_id, yff));
+                if(status2[el_id]) res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side2_solver_id, ytt));
+                if(status1[el_id] && status2[el_id]){
+                    res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side2_solver_id, yft));
+                    res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side1_solver_id, ytf));
+                }
+            }
+        }
+
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                                std::vector<Eigen::Triplet<real_type> > & Bpp,
+                                const std::vector<SolverBusId> & id_grid_to_solver,
+                                real_type sn_mva,
+                                FDPFMethod xb_or_bx) const
+        {
+
+            // For Bp
+            // temp_branch[:, BR_B] = zeros(nl)           ## zero out line charging shunts
+            // temp_branch[:, TAP] = ones(nl)             ## cancel out taps
+            // if alg == 2:                               ## if XB method
+            //    temp_branch[:, BR_R] = zeros(nl)       ## zero out line resistance
+
+            // For Bpp
+            // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
+            // if alg == 3:                               ## if BX method
+            //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
+            const Eigen::Index nb_trafo = nb();
+
+            for(Eigen::Index el_id=0; el_id < nb_trafo; ++el_id){
+                // i only add this if the powerline is connected
+                if(!status_global_[el_id]) continue;
+
+                GlobalBusId bus_or_id_me, bus_ex_id_me;
+                SolverBusId bus_or_solver_id , bus_ex_solver_id;
+                // get the from / to bus id
+                if(side_1_.get_status(el_id))
+                {
+                    bus_or_id_me = get_bus_side_1(el_id);
+                    if(bus_or_id_me == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the branch (line or trafo) with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    bus_or_solver_id = id_grid_to_solver[bus_or_id_me.cast_int()];
+                    if(bus_or_solver_id == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the branch (line or trafo) with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                }
+                if(side_2_.get_status(el_id))
+                {
+                    bus_ex_id_me = get_bus_side_2(el_id);
+                    if(bus_ex_id_me == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+                    if(bus_ex_solver_id == _deactivated_bus_id){
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                        throw std::runtime_error(exc_.str());
+                    }
+                }
+
+                const FDPFCoeffs & coeffs = this->get_fdpf_coeffs(el_id, xb_or_bx);
+
+                // and now add them
+                if(side_1_.get_status(el_id)){
+                    Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -coeffs.yff_bp));
+                    Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_or_solver_id, -coeffs.yff_bpp));
+                }
+                if(side_2_.get_status(el_id)){
+                    Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -coeffs.ytt_bp));
+                    Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_ex_solver_id, -coeffs.ytt_bpp));
+                }
+                if(side_1_.get_status(el_id) && side_2_.get_status(el_id)){
+                    Bp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -coeffs.yft_bp));
+                    Bp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -coeffs.ytf_bp));
+                    Bpp.push_back(Eigen::Triplet<real_type> (bus_or_solver_id, bus_ex_solver_id, -coeffs.yft_bpp));
+                    Bpp.push_back(Eigen::Triplet<real_type> (bus_ex_solver_id, bus_or_solver_id, -coeffs.ytf_bpp));
+                }
             }
         }
 
@@ -420,22 +548,36 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 if(!side2_conn[line_id]) continue;
                 
                 // get the from / to bus id
-                int bus_or_id_me = get_bus_side_1(line_id);
-                int bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
+                GlobalBusId bus_or_id_me = get_bus_side_1(line_id);
+                if(bus_or_id_me == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << line_id;
+                    exc_ << " is connected (side 1) to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                SolverBusId bus_or_solver_id = id_grid_to_solver[bus_or_id_me];
                 if(bus_or_solver_id == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
                     exc_ << line_id;
-                    exc_ << " is connected (or side) to a disconnected bus while being connected";
+                    exc_ << " is connected (side 1) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
-                int bus_ex_id_me = get_bus_side_2(line_id);
-                int bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
+                GlobalBusId bus_ex_id_me = get_bus_side_2(line_id);
+                if(bus_ex_id_me == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << line_id;
+                    exc_ << " is connected (side 2) to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                SolverBusId bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me];
                 if(bus_ex_solver_id == _deactivated_bus_id){
                     std::ostringstream exc_;
                     exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
                     exc_ << line_id;
-                    exc_ << " is connected (ex side) to a disconnected bus while being connected";
+                    exc_ << " is connected (side 2) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
                 }
                 real_type x = this->fillBf_for_PTDF_coeff(line_id);
@@ -462,7 +604,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
                 
-                const auto bus_or_id_me = get_bus_side_1(el_id);        
+                const GlobalBusId bus_or_id_me = get_bus_side_1(el_id);        
                 if(bus_or_id_me == _deactivated_bus_id){
                     // TODO DEBUG MODE only this in debug mode
                     std::ostringstream exc_;
@@ -474,7 +616,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // bus_status[bus_or_id_me] = true;
                 substation.reconnect_bus(bus_or_id_me);
 
-                const auto bus_ex_id_me = get_bus_side_2(el_id);        
+                const GlobalBusId bus_ex_id_me = get_bus_side_2(el_id);        
                 if(bus_ex_id_me == _deactivated_bus_id){
                     // TODO DEBUG MODE only this in debug mode
                     std::ostringstream exc_;
@@ -487,7 +629,22 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 substation.reconnect_bus(bus_ex_id_me);
             }
         }
+
     protected:
+
+        // TODO save that somewhere (and don't forget to template that)
+        // with FDPFXB or FPDFBX if saved !
+        struct FDPFCoeffs
+        {
+            real_type yft_bp;
+            real_type ytf_bp;
+            real_type yff_bp;
+            real_type ytt_bp;
+            real_type yft_bpp;
+            real_type ytf_bpp;
+            real_type yff_bpp;
+            real_type ytt_bpp;
+        };
 
         StateRes get_tsc_rxha_state() const  // tsc: two sides container
         {
@@ -555,8 +712,35 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             return el_id;
         }
 
+        FDPFCoeffs get_fdpf_coeffs(int line_id, FDPFMethod xb_or_bx) const{
+            FDPFCoeffs res;        
+            cplx_type ys_bp, ys_bpp;
+            if(xb_or_bx==FDPFMethod::XB){
+                ys_bp = 1. / (cplx_type(0., x_(line_id)));
+                ys_bpp = 1. / (cplx_type(r_(line_id), x_(line_id)));
+            }else if (xb_or_bx==FDPFMethod::BX){
+                ys_bp = 1. / (cplx_type(r_(line_id), x_(line_id)));
+                ys_bpp = 1. / (cplx_type(0., x_(line_id)));
+            }else{
+                std::ostringstream exc_;
+                exc_ << "fillBp_Bpp: unknown method for the FDPF powerflow for line id ";
+                exc_ << line_id;
+                throw std::runtime_error(exc_.str());            
+            }
+            const real_type ys_bp_r = std::imag(ys_bp); 
+            res.yff_bp = ys_bp_r;
+            res.ytt_bp = ys_bp_r;
+            res.yft_bp = -ys_bp_r;
+            res.ytf_bp = -ys_bp_r;
+            const real_type ys_bpp_r = std::imag(ys_bpp); 
+            res.yff_bpp = ys_bpp_r + std::imag(h_side_1_(line_id));
+            res.ytt_bpp = ys_bpp_r + std::imag(h_side_2_(line_id));
+            res.yft_bpp = -ys_bpp_r;
+            res.ytf_bpp = -ys_bpp_r;
+            return res;
+        }
 
-    protected:
+    protected:        
         // physical properties
         RealVect r_;  // in pu
         RealVect x_;  // in pu

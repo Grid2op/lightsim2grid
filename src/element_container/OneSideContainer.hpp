@@ -167,6 +167,7 @@ class OneSideContainer : public GenericContainer
         
         Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
         const std::vector<bool>& get_status() const {return status_;}
+        bool get_status(int el_id) const {return status_.at(el_id);}
         Eigen::Ref<const GlobalBusIdVect> get_bus_id() const {return bus_id_;}
         Eigen::Ref<const IntVect> get_bus_id_numpy() const {
             return IntVect::Map(reinterpret_cast<const int *>(&bus_id_(0)), bus_id_.size());
@@ -272,11 +273,17 @@ class OneSideContainer : public GenericContainer
             SubstationContainer & substations
         )
         {
+            if(pos_topo_vect_.size() == 0){
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "update_topo: can only be used if the pos_topo_vect has been set.";
+                throw std::runtime_error(exc_.str());
+            }
             for(int el_id = 0; el_id < pos_topo_vect_.rows(); ++el_id)
             {
                 int el_pos = pos_topo_vect_(el_id);
-                if(! has_changed(el_pos)) continue;
-                int new_bus = new_values(el_pos);  // it is a LocalBusId
+                if(!has_changed(el_pos)) continue;
+                LocalBusId new_bus = new_values(el_pos);  // it is a LocalBusId
                 if(new_bus < _deactivated_bus_id){
                     // TODO DEBUG MODE: only check in debug mode
                     std::ostringstream exc_;
@@ -333,7 +340,7 @@ class OneSideContainer : public GenericContainer
             std::vector<bool> status = status_;
             bool has_subid_info = subid_.size();
             std::vector<int> subid(subid_.begin(), subid_.end());
-            bool has_topo_vect_info = pos_topo_vect_.size();
+            bool has_topo_vect_info = pos_topo_vect_.size() > 0;
             std::vector<int> pos_topo_vect(pos_topo_vect_.begin(), pos_topo_vect_.end());
             OneSideContainer::StateRes res(
                 names_,
@@ -433,7 +440,6 @@ class OneSideContainer : public GenericContainer
 
     protected:
         // used for example when trafo.change_bus_hv need to access 
-        // side_1_.get_buses_not_const_side_1()
         Eigen::Ref<GlobalBusIdVect> get_buses_not_const() {return bus_id_;}
 
         // DANGER zone, neede for trafoContainer and lineContainer

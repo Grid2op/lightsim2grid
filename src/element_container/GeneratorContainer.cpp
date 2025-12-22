@@ -130,6 +130,14 @@ RealVect GeneratorContainer::get_slack_weights_solver(
         if(abs(gen_slack_weight_[gen_id]) < _tol_equal_float) continue;
 
         bus_id_me = bus_id_(gen_id);
+        if(bus_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
+            std::ostringstream exc_;
+            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE: only check in debug mode
@@ -160,6 +168,14 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId
         if ((!turnedoff_gen_pv_) && is_pseudo_off(gen_id) && voltage_regulator_on_[gen_id]) continue;  
 
         bus_id_me = bus_id_(gen_id);
+        if(bus_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
+            std::ostringstream exc_;
+            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
@@ -200,6 +216,14 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
         // if (gen_slack_weight_[gen_id] != 0.) gen_pseudo_off = false;  // useless: slack is not PV anyway
         if ((!turnedoff_gen_pv_) && gen_pseudo_off) continue;  
         bus_id_me = bus_id_(gen_id);
+        if(bus_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
+            std::ostringstream exc_;
+            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode
@@ -313,11 +337,14 @@ void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & i
         if ((!turnedoff_gen_pv_) && pseudo_off) continue;  // in this case turned off generators are not pv
 
         bus_id_me = bus_id_(gen_id);
-        // std::cout << "gen_id " << gen_id << std::endl;
-        // std::cout << "id_grid_to_solver.size() " << id_grid_to_solver.size() << std::endl;
-        // std::cout << "bus_id_me " << bus_id_me << std::endl;
-        // std::cout << "======== " << std::endl;
-
+        if(bus_id_me == _deactivated_bus_id){
+            // TODO DEBUG MODE: only check in debug mode
+            std::ostringstream exc_;
+            exc_ << "GeneratorContainer::get_slack_weights_solver: Generator with id ";
+            exc_ << gen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         bus_id_solver = id_grid_to_solver[bus_id_me];
         if(bus_id_solver == _deactivated_bus_id){
             // TODO DEBUG MODE only this in debug mode

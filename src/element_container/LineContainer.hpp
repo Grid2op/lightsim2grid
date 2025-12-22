@@ -72,12 +72,6 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
             _update_model_coeffs();
             reset_results();
         }
-
-        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
-                                std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<SolverBusId> & id_grid_to_solver,
-                                real_type sn_mva,
-                                FDPFMethod xb_or_bx) const;
         
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,

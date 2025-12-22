@@ -37,6 +37,13 @@ void LoadContainer::fillSbus(CplxVect & Sbus,
         if(!status_[load_id]) continue;
 
         bus_id_me = bus_id_(load_id);
+        if(bus_id_me == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LoadContainer::fillSbus: the load with id ";
+            exc_ << load_id;
+            exc_ << " is connected to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;

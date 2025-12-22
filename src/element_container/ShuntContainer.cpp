@@ -31,7 +31,8 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
 
     const Eigen::Index nb_shunt = static_cast<int>(target_q_mvar_.size());
     cplx_type tmp;
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     for(Eigen::Index shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
         if(!status_[shunt_id]) continue;
@@ -40,7 +41,14 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
         tmp = {target_p_mw_(shunt_id), -target_q_mvar_(shunt_id)};  // TODO : check the sign here for p_mw, it is suspicious !
 
         bus_id_me = bus_id_(shunt_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_solver == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "ShuntContainer::fillYbus: the shunt with id ";
+            exc_ << shunt_id;
+            exc_ << " is connected to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillYbus: the shunt with id ";
@@ -49,7 +57,7 @@ void ShuntContainer::fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
             throw std::runtime_error(exc_.str());
         }
         if(abs(sn_mva - 1.) > _tol_equal_float) tmp /= sn_mva;
-        res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver, bus_id_solver, tmp));
+        res.push_back(Eigen::Triplet<cplx_type> (bus_id_solver.cast_int(), bus_id_solver.cast_int(), tmp));
     }
 }
 
@@ -59,16 +67,24 @@ void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const
 {
-    const Eigen::Index nb_shunt = static_cast<int>(target_q_mvar_.size());
+    const int nb_shunt = nb();
     real_type tmp;
-    int bus_id_me, bus_id_solver;
+    GlobalBusId bus_id_me;
+    SolverBusId bus_id_solver;
     const bool sn_mva_not_1 = abs(sn_mva - 1.) > _tol_equal_float;
-    for(Eigen::Index shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
+    for(int shunt_id=0; shunt_id < nb_shunt; ++shunt_id){
         // i don't do anything if the shunt is disconnected
         if(!status_[shunt_id]) continue;
 
         bus_id_me = bus_id_(shunt_id);
-        bus_id_solver = id_grid_to_solver[bus_id_me];
+        if(bus_id_me == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "ShuntContainer::fillBp_Bpp: the shunt with id ";
+            exc_ << shunt_id;
+            exc_ << " is connected to a disconnected bus while being connected";
+            throw std::runtime_error(exc_.str());
+        }
+        bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::fillBp_Bpp: the shunt with id ";
@@ -79,7 +95,7 @@ void ShuntContainer::fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
         // assign diagonal coefficient
         tmp = target_q_mvar_(shunt_id);
         if(sn_mva_not_1) tmp /= sn_mva;
-        Bpp.push_back(Eigen::Triplet<real_type> (bus_id_solver, bus_id_solver, tmp));  // -(-tmp) [-tmp for the "correct" value, but then for Bpp i have -(-tmp)]
+        Bpp.push_back(Eigen::Triplet<real_type> (bus_id_solver.cast_int(), bus_id_solver.cast_int(), tmp));  // -(-tmp) [-tmp for the "correct" value, but then for Bpp i have -(-tmp)]
     }
 }
 

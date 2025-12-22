@@ -46,10 +46,13 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   `loader_kwargs` of LightSimBackend)
 - [ADDED] possibility to initialize LightSimBackend with an already loaded grid (by using the `grid` key of the
   `loader_kwargs` of LightSimBackend when loading it with pypowsybl)
+- [ADDED] possibility to change the ratio (`rho`) of transformers (`gridmodel.change_ratio_trafo(trafo_id, new_rho)`)
+- [ADDED] possibility to change the phase shift (`alpha`) of transformers (`gridmodel.change_shift_trafo(trafo_id, new_alpha)`)
+- [ADDED] more consistency checkings to avoid "negative buses" cpp side.
 - [IMPROVED] Eigen to version 5.0.1 (2025/11/11)
 - [IMPROVED] rename all ".h" file to ".hpp" for cpp headers (cpp side). 
-- [IMPROVED] consistency of "bus labelling" cpp side (make it harder to 
-  mix `LocalBusId`, `GlobalBusId` / `GridModelBusId` and `SolverBusId`)
+- [IMPROVED] consistency of "bus labelling" cpp side (implement compile time check to prevent accidental conversion from 
+  `LocalBusId`, `GlobalBusId` / `GridModelBusId` and / or `SolverBusId`)
 
 [0.11.0] 2025-12-09
 ----------------------

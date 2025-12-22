@@ -75,6 +75,13 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & i
         if(!status_[sgen_id]) continue;
 
         bus_id_me = bus_id_(sgen_id);
+        if(bus_id_me == _deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "SGenContainer::fillSbus: Static Generator with id ";
+            exc_ << sgen_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver == _deactivated_bus_id){
             std::ostringstream exc_;

@@ -62,11 +62,14 @@ class TestSolverControl(unittest.TestCase):
         mask_val = np.zeros(dim_topo, dtype=np.int32)
         mask_changed[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = True
         mask_val[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = 2
+        assert self.gridmodel.nb_connected_bus() == 14
         self.gridmodel.update_topo(mask_changed, mask_val)
         V = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V), "it should not have diverged here"
+        assert self.gridmodel.nb_connected_bus() == 15
         self.gridmodel.unset_changes()
         
+        # now this should also disconnects the line (and not just the extremity)
         mask_changed = np.zeros(dim_topo, dtype=bool)
         mask_val = np.zeros(dim_topo, dtype=np.int32)
         mask_changed[type(self.env).line_or_pos_topo_vect[LINE_ID]] = True

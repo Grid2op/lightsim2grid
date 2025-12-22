@@ -117,6 +117,20 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
 
         // return the maximum number of possible buses on the grid
         unsigned int nb_bus() const {return bus_vn_kv_.size();}
+        /**
+        Retrieve the number of connected buses
+        **/
+        int nb_connected_bus() const
+        {
+            int res = 0;
+            for(const auto & el : bus_status_)
+            {
+                if(el) ++res;
+            }
+            return res;
+        }
+
+        
         int nmax_busbar_per_sub() const {return nmax_busbar_per_sub_;}
 
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return bus_vn_kv_;}
@@ -164,18 +178,6 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
             }
         }
         const std::vector<bool> & get_bus_status() const {return bus_status_;}
-        /**
-        Retrieve the number of connected buses
-        **/
-        int nb_connected_bus() const
-        {
-            int res = 0;
-            for(const auto & el : bus_status_)
-            {
-                if(el) ++res;
-            }
-            return res;
-        }
         
         void disconnect_all_buses(){
             const size_t nb_bus_total = nb_bus();
@@ -185,13 +187,13 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
             bus_status_[global_bus_id.cast_int()] = true;
         }
         void reconnect_bus(int sub_id, const LocalBusId & local_bus_id){
-            reconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
+            reconnect_bus(local_to_gridmodel(sub_id, local_bus_id).cast_int());
         }
         void disconnect_bus(const GridModelBusId & global_bus_id){
             bus_status_[global_bus_id.cast_int()] = false;
         }
         void disconnect_bus(int sub_id, const LocalBusId & local_bus_id){
-            disconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
+            disconnect_bus(local_to_gridmodel(sub_id, local_bus_id).cast_int());
         }
         GridModelBusId local_to_gridmodel(int sub_id, const LocalBusId & local_bus_id) const{
             if(local_bus_id.cast_int() == BaseConstants::_deactivated_bus_id){

@@ -47,12 +47,12 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
     public:
         typedef DCLineInfo DataInfo;
 
-    // underlying generators are not pv when powerline is off
-    DCLineContainer(){
-        SolverControl solver_control_not_used;
-        side_1_.turnedoff_no_pv(solver_control_not_used);
-        side_2_.turnedoff_no_pv(solver_control_not_used);
-    };
+        // underlying generators are not pv when powerline is off
+        DCLineContainer(){
+            SolverControl solver_control_not_used;
+            side_1_.turnedoff_no_pv(solver_control_not_used);
+            side_2_.turnedoff_no_pv(solver_control_not_used);
+        };
 
         // pickle
         typedef std::tuple<
@@ -140,6 +140,13 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
             side_1_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   
             side_2_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_grid_to_solver);   
         }
+
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                        std::vector<Eigen::Triplet<real_type> > & Bpp,
+                        const std::vector<SolverBusId> & id_grid_to_solver,
+                        real_type sn_mva,
+                        FDPFMethod xb_or_bx) const {}
+
         void init_q_vector(int nb_bus,
                         Eigen::VectorXi & total_gen_per_bus,
                         RealVect & total_q_min_per_bus,
