@@ -858,7 +858,11 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("update_slack_weights_by_id", &GridModel::update_slack_weights_by_id, "TODO")
         .def("assign_slack_to_most_connected", &GridModel::assign_slack_to_most_connected, "TODO")
         .def("consider_only_main_component", &GridModel::consider_only_main_component, "TODO and TODO DC LINE: one side might be in the connected comp and not the other !")
-        
+        .def("set_ignore_status_global", &GridModel::set_ignore_status_global, "Ignore the 'global_status' flags for powerlines and trafo (set to true if you want to control independantly each side of powerlines and trafo). Default: false.")
+        .def("set_synch_status_both_side", &GridModel::set_synch_status_both_side, "Synch the status of each side of the powerlines and trafo. It means that if you disconnect one side of a powerline / trafo, the other side will also be disconnected. Default: true.")
+        .def("get_ignore_status_global", &GridModel::get_ignore_status_global, "TODO doc")
+        .def("get_synch_status_both_side", &GridModel::get_synch_status_both_side, "TODO doc")
+
         // names
         .def("set_line_names", &GridModel::set_line_names, "TODO")
         .def("set_dcline_names", &GridModel::set_dcline_names, "TODO")

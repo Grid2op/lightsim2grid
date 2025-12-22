@@ -114,22 +114,23 @@ class OneSideContainer_ForBranch : public OneSideContainer
             if(status_[el_id]){
                 solver_control.tell_ybus_some_coeffs_zero();
                 solver_control.tell_recompute_ybus();
-                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
         };
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_[el_id]){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_ybus_change_sparsity_pattern();
-                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
         };
         virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
+                // std::cout << bus_me_id << " != " << new_bus_id << "\n";
                 // TODO speed: here the dimension changed only if nothing was connected before
-                solver_control.tell_dimension_changed();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+                solver_control.tell_one_el_changed_bus();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
                 
                 // TODO speed: sparsity pattern might not change if something is already there  
                 solver_control.tell_ybus_change_sparsity_pattern();

@@ -89,7 +89,8 @@ class SolverControl
             v_changed_(true),
             slack_weight_changed_(true),
             ybus_some_coeffs_zero_(true),
-            ybus_change_sparsity_pattern_(true)
+            ybus_change_sparsity_pattern_(true),
+            one_el_change_bus_(true)
             {};
 
         void tell_all_changed(){
@@ -104,6 +105,7 @@ class SolverControl
             slack_weight_changed_ = true;
             ybus_some_coeffs_zero_ = true;
             ybus_change_sparsity_pattern_ = true;
+            one_el_change_bus_ = true;
         }
 
         void tell_none_changed(){
@@ -118,6 +120,7 @@ class SolverControl
             slack_weight_changed_ = false;
             ybus_some_coeffs_zero_ = false;
             ybus_change_sparsity_pattern_ = false;
+            one_el_change_bus_ = false;
         }
 
         // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes) 
@@ -144,6 +147,7 @@ class SolverControl
         // (and ybus compressed again, so these coeffs are really completely hidden)
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
+        void tell_one_el_changed_bus(){one_el_change_bus_ = true;}
 
         bool has_dimension_changed() const {return change_dimension_;}
         bool has_pv_changed() const {return pv_changed_;}
@@ -156,6 +160,7 @@ class SolverControl
         bool has_slack_weight_changed() const {return slack_weight_changed_;}
         bool has_v_changed() const {return v_changed_;}
         bool has_ybus_some_coeffs_zero() const {return ybus_some_coeffs_zero_;}
+        bool has_one_el_changed_bus() const {return one_el_change_bus_;}
 
     protected:    
         bool change_dimension_;
@@ -169,6 +174,7 @@ class SolverControl
         bool slack_weight_changed_;
         bool ybus_some_coeffs_zero_;  // tells that some coeff of ybus might have been set to 0. (and ybus compressed again, so these coeffs are really completely hidden)
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
+        bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
 };
 
 template<int U>

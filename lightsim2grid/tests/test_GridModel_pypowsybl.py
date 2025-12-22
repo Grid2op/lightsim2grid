@@ -8,6 +8,7 @@
 
 import unittest
 import numpy as np
+import pandas as pd
 
 import pypowsybl.network as pp_network
 import pypowsybl as pp
@@ -23,23 +24,24 @@ import warnings
 import pdb
 
 
-class BaseTests:
-    def setUp(self):
-        self.net_ref = pp_network.create_ieee118()
-        self.net_datamodel = pp_network.create_ieee118()
+class BaseTests:    
+    def setUp(self, grid_nm="ieee118"):
+        fun_create = getattr(pp_network, f"create_{grid_nm}")
+        self.net_ref = fun_create()
+        self.net_datamodel = fun_create()
 
         # initialize constant stuff
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 3e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
         self.tol_V = 1e-6
-        self.slack_vl_id_pypow, ls_slack = get_same_slack("ieee118")
+        self.slack_vl_id_pypow, self.ls_slack = get_same_slack(grid_nm)
         self.gen_slack_id = 29
         # initialize and use converters
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.model = init_from_pypowsybl(self.net_datamodel,
-                                             slack_bus_id=ls_slack,
+                                             slack_bus_id=self.ls_slack,
                                              buses_for_sub=True,
                                              sort_index=False)
 
@@ -488,13 +490,20 @@ class BaseTests:
         self.check_res(Vfinal, self.net_ref)
         
     def test_change_trafo_ratio(self):
+        self.do_i_skip("test_change_trafo_ratio")
         # update gridmodel
         old_val = self.model.get_trafos()[0].ratio
         nm_trafo = self.model.get_trafos()[0].name
-        new_val = 1. + 2. * (old_val - 1.)
+        assert abs(old_val -1.) > 1e-6
+        new_val = 1. + 2. * (old_val - 1.)  # multiply actual ratio by 2
         self.model.change_ratio_trafo(0, new_val)
         assert np.allclose(self.model.get_trafos()[0].ratio, new_val)
         
+        # check it has an impact on the load flow
+        Vfinal = self._run_both_pf(self.net_ref)
+        with self.assertRaises(AssertionError):
+            self.check_res(Vfinal, self.net_ref)
+            
         # update pypowsybl
         pp_tr = self.net_ref.get_2_windings_transformers().loc[nm_trafo]
         ref_vnom1 = self.net_ref.get_voltage_levels().loc[pp_tr["voltage_level1_id"], "nominal_v"]
@@ -502,6 +511,34 @@ class BaseTests:
         self.net_ref.update_2_windings_transformers(
             id=nm_trafo,
             rated_u1=ref_vnom1 / new_val)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+        
+    def test_change_trafo_shift(self):
+        self.do_i_skip("test_change_trafo_shift")
+        self.setUp("ieee300")  # the smaller grid does not have phase shifters
+        
+        # update gridmodel
+        trafo_id = 85
+        old_val = self.model.get_trafos()[trafo_id].shift_rad
+        nm_trafo = self.model.get_trafos()[trafo_id].name
+        assert abs(old_val) > 1e-6
+        new_val = 2. * old_val  # multiply actual phase shift by 2
+        self.model.change_ratio_trafo(trafo_id, new_val)
+        assert np.allclose(self.model.get_trafos()[trafo_id].ratio, new_val)
+        
+        # check it has an impact on the load flow
+        Vfinal = self._run_both_pf(self.net_ref)
+        with self.assertRaises(AssertionError):
+            self.check_res(Vfinal, self.net_ref)
+            
+        self.skipTest("Hard to change the alpha of phase tap changer in pypowsbl")
+        
+        # update pypowsybl
+        df = self.net_ref.get_phase_tap_changer_steps().loc[[(nm_trafo, 0)]]
+        df["alpha"] *= 2
+        df = self.net_ref.get_phase_tap_changer_steps()
+        self.net_ref.update_phase_tap_changer_steps(df)  # .reset_index().set_index("id"))
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 

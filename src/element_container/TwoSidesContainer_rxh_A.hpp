@@ -41,6 +41,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         using TwoSidesContainer<OneSideType>::get_tsc_state;
         using TwoSidesContainer<OneSideType>::set_tsc_state;
         using TwoSidesContainer<OneSideType>::status_global_;
+        using TwoSidesContainer<OneSideType>::get_status_side_1;
+        using TwoSidesContainer<OneSideType>::get_status_side_2;
         using TwoSidesContainer<OneSideType>::side_1_;
         using TwoSidesContainer<OneSideType>::side_2_;
         using TwoSidesContainer<OneSideType>::get_res_p_side_1;
@@ -350,10 +352,13 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             for(Eigen::Index el_id = 0; el_id < my_size; ++el_id){
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
-                const auto bus_or = get_bus_side_1(el_id);
-                const auto bus_ex = get_bus_side_2(el_id);
-                res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
-                res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
+                const GridModelBusId bus_or = get_bus_side_1(el_id);
+                const GridModelBusId bus_ex = get_bus_side_2(el_id);
+                if((bus_or != _deactivated_bus_id) && 
+                   (bus_ex != _deactivated_bus_id)){
+                    res.push_back(Eigen::Triplet<real_type>(bus_or, bus_ex, 1.));
+                    res.push_back(Eigen::Triplet<real_type>(bus_ex, bus_or, 1.));
+                }
             }
         }
 
@@ -386,39 +391,40 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 // compute from / to
                 GlobalBusId bus_side1_id_me, bus_side2_id_me;
                 SolverBusId bus_side1_solver_id, bus_side2_solver_id;
-
-                if(status1[el_id]){
+                bool status1_me = status1[el_id];
+                bool status2_me = status2[el_id];
+                if(status1_me){
                     bus_side1_id_me = get_bus_side_1(el_id);
                     if(bus_side1_id_me == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: (GlobalID) the branch with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
-                    bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me];
+                    bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me.cast_int()];
                     if(bus_side1_solver_id == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: (SolverID) the branch with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
                 }
 
-                if(status2[el_id]){
+                if(status2_me){
                     bus_side2_id_me = get_bus_side_2(el_id);
                     if(bus_side2_id_me == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: (GlobalID) the branch with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
-                    bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me];
+                    bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me.cast_int()];
                     if(bus_side2_solver_id == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: the trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillYbus: (SolverID) the branch with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
@@ -437,10 +443,15 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     ytf = ydc_21_(el_id);
                     yff = ydc_11_(el_id);
                     ytt = ydc_22_(el_id);
+                    // In DC disconnected on one side == disco on both sides
+                    if((!status1_me) || (!status2_me)){
+                        status1_me = false;
+                        status2_me = false;
+                    }
                 }
-                if(status1[el_id]) res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side1_solver_id, yff));
-                if(status2[el_id]) res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side2_solver_id, ytt));
-                if(status1[el_id] && status2[el_id]){
+                if(status1_me) res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side1_solver_id, yff));
+                if(status2_me) res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side2_solver_id, ytt));
+                if(status1_me && status2_me){
                     res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id, bus_side2_solver_id, yft));
                     res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id, bus_side1_solver_id, ytf));
                 }
@@ -600,33 +611,40 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         // gridmodel utilities
         void reconnect_connected_buses(SubstationContainer & substation) const{
             const Eigen::Index nb_els = nb();
+            const std::vector<bool>& status_side_1_ = get_status_side_1();
+            const std::vector<bool>& status_side_2_ = get_status_side_2();
             for(Eigen::Index el_id = 0; el_id < nb_els; ++el_id){
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
                 
-                const GlobalBusId bus_or_id_me = get_bus_side_1(el_id);        
-                if(bus_or_id_me == _deactivated_bus_id){
-                    // TODO DEBUG MODE only this in debug mode
-                    std::ostringstream exc_;
-                    exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected (hv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
-                    throw std::runtime_error(exc_.str());
+                if(status_side_1_[el_id])
+                {
+                    const GlobalBusId bus_or_id_me = get_bus_side_1(el_id);        
+                    if(bus_or_id_me == _deactivated_bus_id){
+                        // TODO DEBUG MODE only this in debug mode
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: Trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 1) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    substation.reconnect_bus(bus_or_id_me);
                 }
-                // bus_status[bus_or_id_me] = true;
-                substation.reconnect_bus(bus_or_id_me);
 
-                const GlobalBusId bus_ex_id_me = get_bus_side_2(el_id);        
-                if(bus_ex_id_me == _deactivated_bus_id){
-                    // TODO DEBUG MODE only this in debug mode
-                    std::ostringstream exc_;
-                    exc_ << "TrafoContainer::reconnect_connected_buses: Trafo with id ";
-                    exc_ << el_id;
-                    exc_ << " is connected (lv) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
-                    throw std::runtime_error(exc_.str());
+                if(status_side_2_[el_id])
+                {
+                    const GlobalBusId bus_ex_id_me = get_bus_side_2(el_id);        
+                    if(bus_ex_id_me == _deactivated_bus_id){
+                        // TODO DEBUG MODE only this in debug mode
+                        std::ostringstream exc_;
+                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: Trafo with id ";
+                        exc_ << el_id;
+                        exc_ << " is connected (side 2) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+                        throw std::runtime_error(exc_.str());
+                    }
+                    // bus_status[bus_ex_id_me] = true;
+                    substation.reconnect_bus(bus_ex_id_me);
                 }
-                // bus_status[bus_ex_id_me] = true;
-                substation.reconnect_bus(bus_ex_id_me);
             }
         }
 
@@ -693,14 +711,14 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 solver_control.tell_recompute_ybus();
                 // but sparsity pattern do not change here (possibly one more coeff at 0.)
                 solver_control.tell_ybus_some_coeffs_zero();
-                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
         }
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_global_[el_id]){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_ybus_change_sparsity_pattern();  // this might change
-                solver_control.tell_dimension_changed();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
         }
 

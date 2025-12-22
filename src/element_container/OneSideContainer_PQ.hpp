@@ -186,16 +186,19 @@ class OneSideContainer_PQ : public OneSideContainer
         virtual void _deactivate(int el_id, SolverControl & solver_control) {
             if(status_[el_id]){
                 solver_control.tell_recompute_sbus();
+                solver_control.tell_one_el_changed_bus();
             }
         };
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_[el_id]){
                 solver_control.tell_recompute_sbus();
+                solver_control.tell_one_el_changed_bus();
             }
         };
         virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
             if(bus_id_(el_id) != new_bus_id){
                 solver_control.tell_recompute_sbus();
+                solver_control.tell_one_el_changed_bus();
             }
         };
         virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {

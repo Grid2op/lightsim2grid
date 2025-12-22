@@ -490,6 +490,10 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
             // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
             // conversion to solver ordering is done in init_slack_bus
         }
+    if (solver_control.has_one_el_changed_bus()){
+        init_bus_status();
+    }
+    
     if (solver_control.need_reset_solver() ||
         solver_control.ybus_change_sparsity_pattern() || 
         solver_control.has_dimension_changed()){
@@ -610,15 +614,15 @@ void GridModel::init_converter_bus_id(std::vector<SolverBusId>& id_me_to_solver,
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(substations_.nb_bus());
-    id_me_to_solver = std::vector<SolverBusId>(nb_bus_init, static_cast<SolverBusId>(_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
+    id_me_to_solver = std::vector<SolverBusId>(nb_bus_init, SolverBusId(_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = std::vector<GlobalBusId>();
     id_solver_to_me.reserve(nb_bus_init);
     int bus_id_solver = 0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
         if(substations_.is_bus_connected(bus_id_me)){
             // bus is connected
-            id_solver_to_me.push_back(bus_id_me);
-            id_me_to_solver[bus_id_me] = static_cast<SolverBusId>(bus_id_solver);
+            id_solver_to_me.push_back(GlobalBusId(bus_id_me));
+            id_me_to_solver[bus_id_me] = SolverBusId(bus_id_solver);
             ++bus_id_solver;
         }
     }

@@ -88,7 +88,7 @@ class LightSimBackend(Backend):
     
     KEYS_PANDAPOWER_LOADER = {
         "pp_orig_file",
-        "grid"
+        # "grid"
     }
     
     

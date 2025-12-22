@@ -366,7 +366,7 @@ def init(net : pypo.network.Network,
         if net.get_phase_tap_changers().shape[0] > 0:
             raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter "
                                "when not accessible using the 'alpha' columns "
-                               "of the net (once per unit). "
+                               "of the net (once per unit). Please upgrade pypowsybl."
                                "NB: phase tap change are handled by lightsim2grid)")
         shift_ = np.zeros(df_trafo.shape[0])
     is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO    

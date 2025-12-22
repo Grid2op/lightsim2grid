@@ -304,7 +304,6 @@ class OneSideContainer : public GenericContainer
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
                     int sub_id = subid_(el_id);
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
-                    substations.reconnect_bus(new_bus_backend);
                     reactivate(el_id, solver_control); // eg reactivate_load(load_id);
                     change_bus(el_id, new_bus_backend, solver_control, substations); // eg change_bus_load(load_id, new_bus_backend);
                 } else if (new_bus == _deactivated_bus_id){

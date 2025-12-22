@@ -92,16 +92,19 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
         virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
             if(bus_id_(el_id) != new_bus_id){
                 solver_control.tell_recompute_ybus();
+                solver_control.tell_one_el_changed_bus();
             }
         };
         virtual void _deactivate(int el_id, SolverControl & solver_control) {
             if(status_[el_id]){
                 solver_control.tell_recompute_ybus();
+                solver_control.tell_one_el_changed_bus();
             }
         };
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_[el_id]){
                 solver_control.tell_recompute_ybus();
+                solver_control.tell_one_el_changed_bus();
             }
         };
         virtual void _compute_results(

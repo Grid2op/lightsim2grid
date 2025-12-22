@@ -165,7 +165,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         std::vector<bool> is_tap_hv_side_;  // whether the tap is hav side or not
 
         // input data
-        RealVect ratio_;  // transformer ratio
+        RealVect ratio_;  // transformer ratio (no unit)
         RealVect shift_;  // phase shifter (in radian !)
 
         //output data

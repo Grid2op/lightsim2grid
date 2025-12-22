@@ -199,6 +199,7 @@ class TwoSidesContainer : public GenericContainer
             Eigen::Ref<const GlobalBusIdVect> bus_side_2_id_ = get_buses_side_2();
             const std::vector<bool>& status_side_1_ = get_status_side_1();
             const std::vector<bool>& status_side_2_ = get_status_side_2();
+            // std::cout << "calling 2SidesC update_bus_status\n";
             for(int el_id = 0; el_id < nb_; ++el_id)
             {
                 if(!status_global_[el_id]) continue;
@@ -269,7 +270,6 @@ class TwoSidesContainer : public GenericContainer
             _generic_reactivate(el_id, status_global_);
             side_1_.reactivate(el_id, solver_control);
             side_2_.reactivate(el_id, solver_control);
-            if(ignore_status_global_) status_global_[el_id] = true;
         }
 
         virtual ~TwoSidesContainer() noexcept = default;
@@ -324,10 +324,27 @@ class TwoSidesContainer : public GenericContainer
                 }
             }
             if(ignore_status_global_) status_global_[el_id] = true;  // always true in this case
+            else{
+                if(side_modified.get_status(el_id) == side_to_update.get_status(el_id)){
+                    status_global_[el_id] = side_modified.get_status(el_id);
+                }
+            }
+        }
+
+        void set_ignore_status_global(bool ignore_status_global){
+            ignore_status_global_ = ignore_status_global;
+        }
+        bool get_ignore_status_global() const{
+            return ignore_status_global_;
+        }
+        void set_synch_status_both_side(bool synch_status_both_side){
+            synch_status_both_side_=synch_status_both_side;
+        }
+        bool get_synch_status_both_side() const{
+            return synch_status_both_side_;
         }
 
     protected:
-        // TODO different flags:
         bool ignore_status_global_;
         bool synch_status_both_side_;
         

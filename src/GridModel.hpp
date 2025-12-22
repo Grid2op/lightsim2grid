@@ -160,6 +160,28 @@ class GridModel : public GenericContainer
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return substations_.get_bus_vn_kv();}
         std::tuple<int, int> assign_slack_to_most_connected();
         void consider_only_main_component();
+        /**
+         * Not relevant for dc lines, which always have the default to 
+         * synch both sides !
+         */
+        void set_ignore_status_global(bool ignore_status_global){
+            powerlines_.set_ignore_status_global(ignore_status_global);
+            trafos_.set_ignore_status_global(ignore_status_global);
+        }
+        bool get_ignore_status_global() const{
+            return powerlines_.get_ignore_status_global();
+        }
+        /**
+         * Not relevant for dc lines, which always have the default to 
+         * synch both sides !
+         */
+        void set_synch_status_both_side(bool synch_status_both_side){
+            powerlines_.set_synch_status_both_side(synch_status_both_side);
+            trafos_.set_synch_status_both_side(synch_status_both_side);
+        }
+        bool get_synch_status_both_side() const{
+            return powerlines_.get_synch_status_both_side();
+        }
 
         // solver "control"
         void change_solver(const SolverType & type){
@@ -288,9 +310,9 @@ class GridModel : public GenericContainer
         }
 
         void init_bus_status(){
-            // const int nb_bus = static_cast<int>(substations_.nb_bus());
+            const int nb_bus_total = static_cast<int>(substations_.nb_bus());
+            std::vector<bool> prev_bus = substations_.get_bus_status();
             substations_.disconnect_all_buses();
-            // for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
             powerlines_.reconnect_connected_buses(substations_);
             shunts_.reconnect_connected_buses(substations_);
             trafos_.reconnect_connected_buses(substations_);
@@ -299,6 +321,13 @@ class GridModel : public GenericContainer
             sgens_.reconnect_connected_buses(substations_);
             storages_.reconnect_connected_buses(substations_);
             dc_lines_.reconnect_connected_buses(substations_);
+            const std::vector<bool> new_status = substations_.get_bus_status();
+            for(int global_bus = 0; global_bus < nb_bus_total; global_bus++){
+                if(prev_bus[global_bus] != new_status[global_bus]){
+                    solver_control_.tell_dimension_changed();
+                    break;
+                }
+            }
         }
         void init_sub_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);
