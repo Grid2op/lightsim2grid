@@ -202,7 +202,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             for(int el_id = 0; el_id < nb_element; ++el_id){
 
                 // don't do anything if the element is disconnected
-                if(!status_global_[el_id]) {
+                if(!status_global_[el_id] || (!status1[el_id] && !status2[el_id])) {
                     res_p_side_1(el_id) = 0.0;  // in MW
                     res_q_side_1(el_id) = 0.0;  // in MVar
                     res_v_side_1(el_id) = v_disco_el_;  // in kV
@@ -289,13 +289,13 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                 if(ac){
                     // results of the ac powerflow
-                    cplx_type Ehv = status1[el_id] ? V(bus_hv_solver_id.cast_int()) : cplx_type({0., 0.});
-                    cplx_type Elv = status2[el_id] ? V(bus_lv_solver_id.cast_int()) : cplx_type({0., 0.});
+                    cplx_type Ehv = status1[el_id] ? V(bus_hv_solver_id.cast_int()) : - yac_12_(el_id) *  V(bus_lv_solver_id.cast_int()) / yac_11_(el_id);
+                    cplx_type Elv = status2[el_id] ? V(bus_lv_solver_id.cast_int()) : - yac_21_(el_id) *  V(bus_hv_solver_id.cast_int()) / yac_22_(el_id);
 
                     // TODO for DC with yff, ...
                     // trafo equations
-                    cplx_type I_hvlv =  (yac_11_(el_id) * Ehv + yac_12_(el_id) * Elv) * is_1_conn;
-                    cplx_type I_lvhv =  (yac_22_(el_id) * Elv + yac_21_(el_id) * Ehv) * is_2_conn;
+                    cplx_type I_hvlv =  (yac_11_(el_id) * Ehv + yac_12_(el_id) * Elv);
+                    cplx_type I_lvhv =  (yac_22_(el_id) * Elv + yac_21_(el_id) * Ehv);
 
                     I_hvlv = std::conj(I_hvlv);
                     I_lvhv = std::conj(I_lvhv);
@@ -310,8 +310,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     // result of the dc powerflow
                     real_type Va_hv = status1[el_id] ? Va(bus_hv_solver_id.cast_int()) : 0.;
                     real_type Va_lv = status2[el_id] ? Va(bus_lv_solver_id.cast_int()) : 0.;
-                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va_hv + std::real(ydc_12_(el_id)) * Va_lv) * sn_mva * std::real(is_1_conn); // - dc_x_tau_shift_(el_id) ) * sn_mva;
-                    res_p_side_2(el_id) = (std::real(ydc_22_(el_id)) * Va_lv + std::real(ydc_21_(el_id)) * Va_hv) * sn_mva * std::real(is_2_conn); // + dc_x_tau_shift_(el_id) ) * sn_mva; 
+                    res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va_hv + std::real(ydc_12_(el_id)) * Va_lv) * sn_mva; // - dc_x_tau_shift_(el_id) ) * sn_mva;
+                    res_p_side_2(el_id) = (std::real(ydc_22_(el_id)) * Va_lv + std::real(ydc_21_(el_id)) * Va_hv) * sn_mva; // + dc_x_tau_shift_(el_id) ) * sn_mva; 
                 
                     res_q_side_1(el_id) = 0.;
                     res_q_side_2(el_id) = 0.;
@@ -386,7 +386,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             cplx_type yft, ytf, yff, ytt;
             for(Eigen::Index el_id =0; el_id < nb_els; ++el_id){
                 // i don't do anything if the trafo is disconnected
-                if(!status_global_[el_id]) continue;
+                if(!status_global_[el_id]  || (!status1[el_id] && !status2[el_id])) continue;
 
                 // compute from / to
                 GlobalBusId bus_side1_id_me, bus_side2_id_me;
@@ -437,6 +437,18 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     ytf = yac_21_(el_id);
                     yff = yac_11_(el_id);
                     ytt = yac_22_(el_id);
+                    if(!status1_me){
+                        // I know that the powerline is connected on side 2 
+                        // otherwise I would not be here
+                        // (nothing is done if neither side 1 nor side 2 are connected)
+                        ytt -= ytf * yft / yff;
+                    }
+                    if(!status2_me){
+                        // I know that the powerline is connected on side 1
+                        // otherwise I would not be here
+                        // (nothing is done if neither side 1 nor side 2 are connected)
+                        yff -= ytf * yft / ytt;
+                    }
                 }else{
                     // dc mode
                     yft = ydc_12_(el_id);
