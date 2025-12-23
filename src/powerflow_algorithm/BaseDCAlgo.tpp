@@ -44,6 +44,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.has_ybus_some_coeffs_zero()
        ){
        reset();
+       // at this stage need_factorize_ is set also to true
     }
     
     sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());

@@ -55,7 +55,6 @@ class GenericContainer : public BaseConstants
                             const std::vector<SolverBusId> & id_grid_to_solver) const {};
         
         virtual void get_q(std::vector<real_type>& q_by_bus) {};
-        virtual void update_bus_status(SubstationContainer & substation) const {};
         
         void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver) {};
     

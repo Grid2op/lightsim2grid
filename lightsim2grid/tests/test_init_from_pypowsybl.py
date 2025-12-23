@@ -233,7 +233,7 @@ class TestCase14FromPypo(TestCase14FromPypoBusesForSub):
 class TestCase30FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 30"""
     # unittest.TestCase does not work because of https://github.com/powsybl/pypowsybl/issues/644
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee30"
     
     def get_equiv_pdp_grid(self):
@@ -249,7 +249,7 @@ class TestCase30FromPypo(TestCase30FromPypoBusesForSub):
 class TestCase57FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 57"""
     # does not appear to be the same grid !
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee57"
     
     def get_equiv_pdp_grid(self):
@@ -272,7 +272,7 @@ class TestCase57FromPypo(TestCase57FromPypoBusesForSub):
 class TestCase118FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 118: does not work because of https://github.com/e2nIEE/pandapower/issues/2131"""
     # does not work because of https://github.com/e2nIEE/pandapower/issues/2131
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee118"
     
     def get_equiv_pdp_grid(self):
@@ -293,7 +293,7 @@ class TestCase118FromPypo(TestCase118FromPypoBusesForSub):
         return False
                 
         
-class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub):
+class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 300"""
     # does not work because of phase tap changer
     # def get_pypo_grid(self):
@@ -302,15 +302,17 @@ class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub):
     #     df["connected"] = False
     #     res.update_shunt_compensators(df)
     #     return res
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee300"
     
     def get_equiv_pdp_grid(self):
         return pn.case300()
     
     def get_tol_eq(self):
-        # return 3e-3  # otherwise vangle from pypowsybl and pandapower does not match
-        return 1e-6  # otherwise vangle from pypowsybl and pandapower does not match
+        return 2.2e-5
+    
+    def get_tol_eq_kcl(self):
+        return 3.7e-4
     
     def compare_pp(self):
         return super().compare_pp() and False

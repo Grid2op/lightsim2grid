@@ -67,7 +67,7 @@ def _aux_add_trafo(
     if np.any(~np.isfinite(is_tap_hv_side)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
     is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
-
+    
     if "tap_phase_shifter" in pp_net.trafo:
         if np.any(pp_net.trafo["tap_phase_shifter"].values):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all trafos with "

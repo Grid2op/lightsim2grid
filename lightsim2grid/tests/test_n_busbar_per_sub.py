@@ -121,6 +121,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
                     assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
+                self.env.backend._grid.init_bus_status()  # force computation of bus status
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_loads()[el_id].connected
@@ -153,6 +154,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
                     assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
+                self.env.backend._grid.init_bus_status()  # force computation of bus status
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_generators()[el_id].connected
@@ -186,6 +188,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
                     assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
+                self.env.backend._grid.init_bus_status()  # force computation of bus status
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_storages()[el_id].connected
@@ -207,6 +210,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             global_bus = cls.line_or_to_subid[line_id] + (new_bus -1) * cls.n_sub 
             if new_bus >= 1:
                 assert self.env.backend._grid.get_lines()[line_id].bus_1_id == global_bus
+                self.env.backend._grid.init_bus_status()  # force computation of bus status
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_lines()[line_id].connected_global
@@ -227,6 +231,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
                 assert self.env.backend._grid.get_lines()[line_id].connected_global
                 assert self.env.backend._grid.get_lines()[line_id].connected_1
                 assert self.env.backend._grid.get_lines()[line_id].connected_2
+                self.env.backend._grid.init_bus_status()  # force computation of bus status
                 assert self.env.backend._grid.get_bus_status()[global_bus], f"for new_bus = {new_bus} and line_id={line_id}"
             else:
                 assert not self.env.backend._grid.get_lines()[line_id].connected_global
@@ -262,6 +267,7 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
                     assert self.env.backend._grid.get_lines()[line_or_id].bus_1_id == global_bus
                 else:
                     assert self.env.backend._grid.get_lines()[line_ex_id].bus_2_id == global_bus
+                self.env.backend._grid.init_bus_status()  # force computation of bus status
                 assert self.env.backend._grid.get_bus_status()[global_bus]
             else:
                 assert not self.env.backend._grid.get_shunts()[el_id].connected

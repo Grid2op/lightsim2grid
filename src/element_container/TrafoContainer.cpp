@@ -161,28 +161,38 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     ydc_22_(el_id) = tmp;
     ydc_21_(el_id) = -tmp;
     ydc_12_(el_id) = -tmp;
-    if(!is_tap_hv_side_[el_id]) dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
-    else dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
+
+    dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
+    // if(!is_tap_hv_side_[el_id]) dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
+    // else dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
 }
 
-void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
-                                                    bool ac,
-                                                    const std::vector<SolverBusId> & id_grid_to_solver)
+void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
+    CplxVect & Sbus,
+    bool ac,
+    const std::vector<SolverBusId> & id_grid_to_solver)
 {
     if(ac) return;
+
     // return;
     const int nb_trafo = nb();
+    const std::vector<bool> & status1 = side_1_.get_status();
+    const std::vector<bool> & status2 = side_2_.get_status();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver_hv, bus_id_solver_lv;
     // cplx_type tmp;
     for(int trafo_id = 0; trafo_id < nb_trafo; ++trafo_id){
         //  i don't do anything if the load is disconnected
         if(!status_global_[trafo_id]) continue;
+        if(!status1[trafo_id]) continue;
+        if(!status2[trafo_id]) continue;
+
         if(abs(dc_x_tau_shift_[trafo_id]) < _tol_equal_float) continue; // nothing to do if the trafo is not concerned (no phase shifter)
+        
         bus_id_me = get_bus_side_2(trafo_id);
         if(bus_id_me == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
+            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (GridModelId) the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (side 2) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -190,15 +200,16 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
         bus_id_solver_lv = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver_lv == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
+            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (SolverId) the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (side 2) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
+
         bus_id_me = get_bus_side_1(trafo_id);
         if(bus_id_me == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
+            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (GridModelId) the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (side 1) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
@@ -206,7 +217,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus,
         bus_id_solver_hv = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver_hv == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: the trafo with id ";
+            exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (SolverId) the trafo with id ";
             exc_ << trafo_id;
             exc_ << " is connected (side 1) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());

@@ -23,8 +23,7 @@ GridModel::GridModel(const GridModel & other)
 
     // copy the powersystem representation
     // 1. bus
-    // bus_vn_kv_ = other.bus_vn_kv_;
-    // bus_status_ = other.bus_status_;
+    last_bus_status_saved_ = other.last_bus_status_saved_;
     substations_ = other.substations_;
 
     set_ls_to_orig(other._ls_to_orig);  // sets also orig_to_ls
@@ -94,8 +93,7 @@ GridModel::StateRes GridModel::get_state() const
                             ls_to_orig,
                             init_vm_pu_,
                             sn_mva_,
-                            // bus_vn_kv,
-                            // bus_status_,
+                            last_bus_status_saved_,
                             res_substation,
                             res_line,
                             res_shunt,
@@ -137,31 +135,31 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     init_vm_pu_ = std::get<4>(my_state);
     sn_mva_ = std::get<5>(my_state);
     // const std::vector<real_type> & bus_vn_kv = std::get<6>(my_state);
-    // const std::vector<bool> & bus_status = std::get<7>(my_state);
-    SubstationContainer::StateRes & state_substations = std::get<6>(my_state);
+    const std::vector<bool> & last_bus_status_saved = std::get<6>(my_state);
+    SubstationContainer::StateRes & state_substations = std::get<7>(my_state);
     // powerlines
-    LineContainer::StateRes & state_lines = std::get<7>(my_state);
+    LineContainer::StateRes & state_lines = std::get<8>(my_state);
     // shunts
-    ShuntContainer::StateRes & state_shunts = std::get<8>(my_state);
+    ShuntContainer::StateRes & state_shunts = std::get<9>(my_state);
     // trafos
-    TrafoContainer::StateRes & state_trafos = std::get<9>(my_state);
+    TrafoContainer::StateRes & state_trafos = std::get<10>(my_state);
     // generators
     // total_q_min_per_bus_;
     // total_q_max_per_bus_;
     // total_gen_per_bus_;
-    GeneratorContainer::StateRes & state_gens = std::get<10>(my_state);
+    GeneratorContainer::StateRes & state_gens = std::get<11>(my_state);
     // loads
-    LoadContainer::StateRes & state_loads = std::get<11>(my_state);
+    LoadContainer::StateRes & state_loads = std::get<12>(my_state);
     // static gen
-    SGenContainer::StateRes & state_sgens= std::get<12>(my_state);
+    SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
     // storage units
-    LoadContainer::StateRes & state_storages = std::get<13>(my_state);
+    LoadContainer::StateRes & state_storages = std::get<14>(my_state);
     // dc lines
-    DCLineContainer::StateRes & state_dc_lines = std::get<14>(my_state);
+    DCLineContainer::StateRes & state_dc_lines = std::get<15>(my_state);
 
     // grid2op specific
-    n_sub_ = std::get<15>(my_state);
-    max_nb_bus_per_sub_ = std::get<16>(my_state);
+    n_sub_ = std::get<16>(my_state);
+    max_nb_bus_per_sub_ = std::get<17>(my_state);
 
     // assign it to this instance
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
@@ -170,7 +168,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // // 1. bus_vn_kv_
     // bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
     // // 2. bus status
-    // bus_status_ = bus_status;
+    last_bus_status_saved_ = last_bus_status_saved;
     substations_.set_state(state_substations);
 
     // elements
@@ -249,8 +247,6 @@ void GridModel::init_bus(unsigned int n_sub,
     // const int nb_bus = static_cast<int>(bus_vn_kv.size());  // size of buses are checked in set_max_nb_bus_per_sub
 
     // bus_vn_kv_ = bus_vn_kv;  // base_kv
-
-    // bus_status_ = std::vector<bool>(nb_bus, true); // by default everything is connected
     n_sub_ = n_sub;
     max_nb_bus_per_sub_ = n_busbar_per_sub;
     substations_.init_bus(n_sub_, max_nb_bus_per_sub_,  bus_vn_kv);
@@ -458,15 +454,16 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     return res;
 };
 
-CplxVect GridModel::pre_process_solver(const CplxVect & Vinit, 
-                                       CplxVect & Sbus,
-                                       Eigen::SparseMatrix<cplx_type> & Ybus,
-                                       std::vector<SolverBusId> & id_me_to_solver,
-                                       std::vector<GlobalBusId> & id_solver_to_me,
-                                       GlobalBusIdVect & slack_bus_id_me,
-                                       SolverBusIdVect & slack_bus_id_solver,
-                                       bool is_ac,
-                                       const SolverControl & solver_control)
+CplxVect GridModel::pre_process_solver(
+    const CplxVect & Vinit, 
+    CplxVect & Sbus,
+    Eigen::SparseMatrix<cplx_type> & Ybus,
+    std::vector<SolverBusId> & id_me_to_solver,
+    std::vector<GlobalBusId> & id_solver_to_me,
+    GlobalBusIdVect & slack_bus_id_me,
+    SolverBusIdVect & slack_bus_id_solver,
+    bool is_ac,
+    const SolverControl & solver_control)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
     if(is_ac){
@@ -483,37 +480,43 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         }
     }
 
-    if (solver_control.need_reset_solver() || 
-        solver_control.has_dimension_changed() ||
+    bool redo_all = 
+            solver_control.need_reset_solver() || 
+            solver_control.has_dimension_changed();
+
+    if (redo_all ||
         solver_control.has_slack_participate_changed()){
             slack_bus_id_me = generators_.get_slack_bus_id();
             // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
             // conversion to solver ordering is done in init_slack_bus
         }
-    if (solver_control.has_one_el_changed_bus()){
+    if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();
     }
     
-    if (solver_control.need_reset_solver() ||
-        solver_control.ybus_change_sparsity_pattern() || 
-        solver_control.has_dimension_changed()){
+    // init_bus_status can set the flag "has_dimension_change"
+    // so I need to redo this here
+    redo_all = 
+            solver_control.need_reset_solver() || 
+            solver_control.has_dimension_changed();
+    bool converter_changed = false;
+    if (redo_all ||
+        solver_control.ybus_change_sparsity_pattern()){
             init_converter_bus_id(id_me_to_solver, id_solver_to_me);
             const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
             init_Ybus(Ybus, nb_bus_solver);
+            converter_changed = true;
         }
-    if (solver_control.need_reset_solver() ||
-        solver_control.ybus_change_sparsity_pattern() || 
-        solver_control.has_dimension_changed() || 
+    if (redo_all ||
+        converter_changed || 
         solver_control.need_recompute_ybus()){
             fillYbus(Ybus, is_ac, id_me_to_solver);
         }
-    if (solver_control.need_reset_solver() || 
-        solver_control.has_dimension_changed()) {
+    if (redo_all || converter_changed || solver_control.need_recompute_sbus()) {
             // init Sbus
             Sbus = CplxVect::Constant(id_solver_to_me.size(), 0.);
         }
-    if (solver_control.need_reset_solver() || 
-        solver_control.has_dimension_changed() ||
+    if (redo_all || converter_changed ||
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pv_changed() || 
         solver_control.has_pq_changed()) {
@@ -525,8 +528,7 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
                 solver_control);
         }
     
-    if (is_ac && (solver_control.need_reset_solver() || 
-                  solver_control.has_dimension_changed() || 
+    if (is_ac && (redo_all ||
                   solver_control.need_recompute_sbus() ||  // TODO do we need it ?
                   solver_control.has_slack_participate_changed() || 
                   solver_control.has_pv_changed() || 
@@ -540,19 +542,27 @@ CplxVect GridModel::pre_process_solver(const CplxVect & Vinit,
         dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
     }
 
-    if (solver_control.need_reset_solver() || 
-        solver_control.has_dimension_changed() ||
+    if (redo_all || converter_changed ||
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pv_changed() || 
         solver_control.has_pq_changed() ||
         solver_control.need_recompute_sbus()) {
             fillSbus_me(Sbus, is_ac, id_me_to_solver);
         }
+    
     const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
-        int bus_me_id = id_solver_to_me[bus_solver_id];  //TODO DEBUG MODE : POSSIBLE SEGFAULT
-        cplx_type tmp = Vinit(bus_me_id);
+        GlobalBusId bus_me_id = id_solver_to_me[bus_solver_id]; 
+        if(bus_me_id.cast_int() == _deactivated_bus_id){
+            //TODO DEBUG MODE : only in debug mode
+            std::ostringstream exc_;
+            exc_ << "GridModel::pre_process_solver: the bus with solver id ";
+            exc_ << bus_solver_id;
+            exc_ << " is connected, but mapped (in id_solver_to_me) to a disconnected bus (global / gridmodel id)";
+            throw std::runtime_error(exc_.str());
+        }
+        cplx_type tmp = Vinit(bus_me_id.cast_int());
         V(bus_solver_id) = tmp;
     }
     generators_.set_vm(V, id_me_to_solver);
@@ -631,7 +641,7 @@ void GridModel::init_converter_bus_id(std::vector<SolverBusId>& id_me_to_solver,
 void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                           int nb_bus_solver){
     Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus_solver, nb_bus_solver);
-    Ybus.reserve(nb_bus_solver + 2*powerlines_.nb() + 2*trafos_.nb());
+    Ybus.reserve(nb_bus_solver + 4*powerlines_.nb() + 4*trafos_.nb() + 2 * shunts_.nb());
 }
 
 void GridModel::init_slack_bus(const CplxVect & Sbus,
@@ -658,8 +668,8 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
         SolverBusId tmp = id_me_to_solver[el.cast_int()];
         if(tmp == _deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "GridModel::init_Sbus: One of the slack bus is disconnected.";
-            exc_ << " You can check element ";
+            exc_ << "GridModel::init_slack_bus: One of the slack bus is disconnected.";
+            exc_ << " You can check bus with global id GlobalBusId : ";
             exc_ << el.cast_int();
             exc_ << ": [";
             for(const auto & el2 : slack_bus_id_me) exc_ << el2.cast_int() << ", ";
@@ -1059,19 +1069,17 @@ void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, 
     powerlines_.update_topo(has_changed, new_values, solver_control_, substations_);
     trafos_.update_topo(has_changed, new_values, solver_control_, substations_);
 
-    // update the bus status
-    substations_.disconnect_all_buses();
-    // const int nb_bus = static_cast<int>(bus_status_.size());
-    // for(int i = 0; i < nb_bus; ++i) bus_status_[i] = false;
+    // // update the bus status
+    // substations_.disconnect_all_buses();
 
-    powerlines_.update_bus_status(substations_);  // TODO have a function to dispatch that to all type of elements
-    shunts_.update_bus_status(substations_);
-    trafos_.update_bus_status(substations_);
-    loads_.update_bus_status(substations_);
-    sgens_.update_bus_status(substations_);
-    storages_.update_bus_status(substations_);
-    generators_.update_bus_status(substations_);
-    dc_lines_.update_bus_status(substations_);
+    // powerlines_.update_bus_status(substations_);  // TODO have a function to dispatch that to all type of elements
+    // shunts_.update_bus_status(substations_);
+    // trafos_.update_bus_status(substations_);
+    // loads_.update_bus_status(substations_);
+    // sgens_.update_bus_status(substations_);
+    // storages_.update_bus_status(substations_);
+    // generators_.update_bus_status(substations_);
+    // dc_lines_.update_bus_status(substations_);
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF

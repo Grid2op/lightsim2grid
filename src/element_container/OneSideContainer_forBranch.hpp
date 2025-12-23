@@ -59,7 +59,8 @@ class OneSideContainer_ForBranch : public OneSideContainer
 
     // regular implementation
     public:
-        OneSideContainer_ForBranch() {};
+        OneSideContainer_ForBranch(){};
+        OneSideContainer_ForBranch(bool is_trafo){};
 
         // public generic API
 
@@ -114,12 +115,14 @@ class OneSideContainer_ForBranch : public OneSideContainer
             if(status_[el_id]){
                 solver_control.tell_ybus_some_coeffs_zero();
                 solver_control.tell_recompute_ybus();
+                solver_control.tell_recompute_sbus();  // only for trafo in DC
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
         };
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_[el_id]){
                 solver_control.tell_recompute_ybus();
+                solver_control.tell_recompute_sbus();  // only for trafo in DC
                 solver_control.tell_ybus_change_sparsity_pattern();
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
@@ -135,6 +138,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
                 // TODO speed: sparsity pattern might not change if something is already there  
                 solver_control.tell_ybus_change_sparsity_pattern();
                 solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
+                solver_control.tell_recompute_sbus();  // only for trafo in DC
             }
         };
 

@@ -746,6 +746,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("has_slack_weight_changed", &SolverControl::has_slack_weight_changed, "TODO")
         .def("has_v_changed", &SolverControl::has_v_changed, "TODO")
         .def("has_ybus_some_coeffs_zero", &SolverControl::has_ybus_some_coeffs_zero, "TODO")
+        .def("has_one_el_changed_bus", &SolverControl::has_one_el_changed_bus, "TODO")
         ;
 
     py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())

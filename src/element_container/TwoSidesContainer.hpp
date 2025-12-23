@@ -193,21 +193,6 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
-        void update_bus_status(SubstationContainer & substation) const {
-            const int nb_ = nb();
-            Eigen::Ref<const GlobalBusIdVect> bus_side_1_id_ = get_buses_side_1();
-            Eigen::Ref<const GlobalBusIdVect> bus_side_2_id_ = get_buses_side_2();
-            const std::vector<bool>& status_side_1_ = get_status_side_1();
-            const std::vector<bool>& status_side_2_ = get_status_side_2();
-            // std::cout << "calling 2SidesC update_bus_status\n";
-            for(int el_id = 0; el_id < nb_; ++el_id)
-            {
-                if(!status_global_[el_id]) continue;
-                if(status_side_1_[el_id]) substation.reconnect_bus(bus_side_1_id_(el_id));
-                if(status_side_2_[el_id]) substation.reconnect_bus(bus_side_2_id_(el_id));
-            }
-        }   
-
         void set_pos_topo_vect_side_1(Eigen::Ref<const IntVect> pos_topo_vect)
         {
             side_1_.set_pos_topo_vect(pos_topo_vect);
@@ -240,8 +225,6 @@ class TwoSidesContainer : public GenericContainer
             side_2_.update_topo(has_changed, new_values, solver_control, substations);
 
             // set the global status
-            // const std::vector<bool> & status1 = side_1_.get_status();
-            // const std::vector<bool> & status2 = side_2_.get_status();
             int nb_el = nb();
             for(int el_id=0; el_id<nb_el; ++el_id)
             {

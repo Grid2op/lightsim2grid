@@ -175,11 +175,12 @@ class TestSolverControl(unittest.TestCase):
             assert len(V_disc1) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
             self.gridmodel.tell_solver_need_reset()
             V_disc2 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
-            assert len(V_disc1) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
+            assert len(V_disc2) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
             
         # test "undo the action"
         self.gridmodel.unset_changes()
         getattr(self, funname_undo)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val)
+        sovler_control = self.gridmodel.get_solver_control()
         V_reco = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V_reco), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         Sbus_1 = self.gridmodel.get_Sbus_solver()
@@ -725,25 +726,21 @@ class TestSolverControl(unittest.TestCase):
             self.skipTest("Useless to run DC")
         self.test_disco_reco_shunt_ac(runpf_fun="_run_dc_pf")
     
-    def _aux_disco_shunt(self, gridmodel, el_id, el_val):
-        gridmodel.deactivate_bus(0)
-        gridmodel.reactivate_bus(15)
+    def _aux_disco_slack(self, gridmodel, el_id, el_val):
         gridmodel.change_bus_powerline_or(0, 15)
         gridmodel.change_bus_powerline_or(1, 15)
         gridmodel.change_bus_gen(5, 15)
         
-    def _aux_reco_shunt(self, gridmodel, el_id, el_val):
-        gridmodel.reactivate_bus(0)
-        gridmodel.deactivate_bus(15)
+    def _aux_reco_slack(self, gridmodel, el_id, el_val):
         gridmodel.change_bus_powerline_or(0, 0)
         gridmodel.change_bus_powerline_or(1, 0)
         gridmodel.change_bus_gen(5, 0)
         
-    def test_change_bus2_ac(self, runpf_fun="_run_ac_pf"):
+    def test_change_bus2_slack(self, runpf_fun="_run_ac_pf"):
         """test for bus 2, basic test I don't do it for all kind of objects (AC pf)"""
         expected_diff = 1e-2
-        self.aux_do_undo_ac(funname_do="_aux_disco_shunt",
-                            funname_undo="_aux_reco_shunt",
+        self.aux_do_undo_ac(funname_do="_aux_disco_slack",
+                            funname_undo="_aux_reco_slack",
                             runpf_fun=runpf_fun,
                             el_id=0,
                             expected_diff=expected_diff,

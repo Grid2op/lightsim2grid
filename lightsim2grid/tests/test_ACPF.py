@@ -71,22 +71,27 @@ class MyTestCase(unittest.TestCase):
 
     def test_case39(self):
         case = pn.case39()
-        self.tol = 4e-5  # results are equal if they match up to tol
+        self.tol = 3.1e-5  # results are equal if they match up to tol
+        self._aux_test(case)
+        
+    def test_case57(self):
+        case = pn.case57()
+        self.tol = 3.1e-5  # results are equal if they match up to tol
         self._aux_test(case)
 
     def test_case118(self):        
         case = pn.case118()
-        self.tol = 4e-5  # results are equal if they match up to tol
-        self._aux_test(case)
-
-    def test_case1888rte(self):
-        case = pn.case1888rte()
-        self.tol = 4e-5  # results are equal if they match up to tol
+        self.tol = 3.1e-5  # results are equal if they match up to tol
         self._aux_test(case)
 
     def test_case300(self):
         case = pn.case300()
-        self.tol = 4e-5  # results are equal if they match up to tol
+        self.tol = 3.1e-5  # results are equal if they match up to tol
+        self._aux_test(case)
+
+    def test_case1888rte(self):
+        case = pn.case1888rte()
+        self.tol = 3.1e-5  # results are equal if they match up to tol
         self._aux_test(case)
 
     # def test_case9241pegase(self):

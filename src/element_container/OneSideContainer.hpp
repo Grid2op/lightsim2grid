@@ -29,7 +29,6 @@
 // - get_status
 // - get_bus_id
 // - reconnect_connected_buses
-// - update_bus_status
 // - gen_p_per_bus
 
 // same public api but need overriden in private api
@@ -203,14 +202,6 @@ class OneSideContainer : public GenericContainer
                 }
             }    
         }
-        void update_bus_status(SubstationContainer & substation) const {
-            const int nb_ = nb();
-            for(int el_id = 0; el_id < nb_; ++el_id)
-            {
-                if(!status_[el_id]) continue;
-                substation.reconnect_bus(bus_id_[el_id]);
-            }
-        }    
 
         void deactivate(int el_id, SolverControl & solver_control) {
             this->_deactivate(el_id, solver_control);

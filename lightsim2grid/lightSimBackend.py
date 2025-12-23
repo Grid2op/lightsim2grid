@@ -867,7 +867,7 @@ class LightSimBackend(Backend):
         else:
             df = grid_tmp.get_voltage_levels()
             self.n_sub = df.shape[0]
-
+            
         sort_index = True
         if "sort_index" in loader_kwargs and (bool(loader_kwargs["sort_index"]) == loader_kwargs["sort_index"]):
             sort_index = bool(loader_kwargs["sort_index"])
@@ -939,7 +939,7 @@ class LightSimBackend(Backend):
         self.line_ex_to_subid = np.concatenate((lex_sub.values.ravel(), tex_sub.values.ravel())).astype(dt_int)
         if self.__has_storage:
             self.storage_to_subid = np.array(batt_sub.values.ravel(), dtype=dt_int)
-        self.n_sub = grid_tmp.get_voltage_levels().shape[0]
+            
         if self.n_shunt is not None:
             self.shunt_to_subid = np.array(sh_sub.values.ravel(), dtype=dt_int)
             
@@ -987,7 +987,7 @@ class LightSimBackend(Backend):
                     self._grid.change_bus_load(el.id, self.load_to_subid[el.id])
                     self._grid.change_p_load(el.id, 0.)
                     self._grid.change_q_load(el.id, 0.)
-                    
+        
         # complete the other vectors
         self._compute_pos_big_topo()
         
@@ -1520,7 +1520,7 @@ class LightSimBackend(Backend):
             # that are tagged as "possible slack" by the user input
             # (set when creating the LightSimBackend through `gen_slack_id=XXX`)
             self._grid.update_slack_weights_by_id(self._gen_slack_id)
-
+        
     def _fetch_grid_data(self):
         beg_test = time.perf_counter()
         if self._lineor_res is None:
@@ -1546,12 +1546,10 @@ class LightSimBackend(Backend):
         res = False
         try:            
             if self._next_pf_fails is not None:
-                raise self._next_pf_fails
-            
+                raise self._next_pf_fails            
             beg_preproc = time.perf_counter()
             if self._need_islanding_detection:
                 self._grid.consider_only_main_component()
-                
             if is_dc:
                 # somehow, when asked to do a powerflow in DC, pandapower assign Vm to be
                 # one everywhere...
@@ -1587,7 +1585,8 @@ class LightSimBackend(Backend):
                 tick = time.perf_counter()
                 self._timer_preproc += tick - beg_preproc
                 if self._last_dc:
-                    # otherwise might segfault is a dc powerflow as been run before an ac one
+                    # otherwise might segfault is a dc powerflow as 
+                    # been run before an ac one
                     self._grid.tell_solver_need_reset()
                     self._last_dc = False
                 V = self._grid.ac_pf(V_init, self.max_it, self.tol)
@@ -1674,7 +1673,7 @@ class LightSimBackend(Backend):
                     disco = ((~np.isfinite(self.storage_v)) | (self.storage_v <= 0.)) & sto_active
                     sto_disco = disco.nonzero()[0]
                     self._timer_postproc += time.perf_counter() - beg_postroc
-                    raise BackendError(f"At least one storage unit is disconnected (check gen {sto_disco})")
+                    raise BackendError(f"At least one storage unit is disconnected (check storage {sto_disco})")
             # TODO storage case of divergence !
 
             if type(self).shunts_data_available:

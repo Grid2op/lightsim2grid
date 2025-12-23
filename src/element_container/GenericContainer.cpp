@@ -40,7 +40,6 @@ void GenericContainer::_generic_deactivate(const GlobalBusId & global_bus_id, Su
                     substation.get_bus_status(),
                     "_generic_deactivate");
     substation.disconnect_bus(global_bus_id);
-    // status[el_id] = false;
 }
 
 void GenericContainer::_generic_reactivate(int el_id, std::vector<bool> & eltype_status){

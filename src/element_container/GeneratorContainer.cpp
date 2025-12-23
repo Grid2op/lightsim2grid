@@ -321,6 +321,14 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
     }
 }
 
+void GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+    if(bus_id_(el_id) == new_bus_id) return;  // nothing to do if the bus did not changed
+    solver_control.tell_recompute_sbus();
+    solver_control.tell_one_el_changed_bus();
+    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
+    if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+};
+
 void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const
 {
     const int nb_gen = nb();
@@ -484,53 +492,60 @@ void GeneratorContainer::set_q(
     }
 }
 
-void GeneratorContainer::update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-                                              SolverControl & solver_control)
+void GeneratorContainer::update_slack_weights(
+    Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
+    SolverControl & solver_control)
 {
     const int nb_gen = nb();
+    std::vector<int> gen_slack_id;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
     {
-        if(could_be_slack(gen_id) && status_[gen_id]){
-            // gen is connected and participate to the slack
-            if(abs(target_p_mw_(gen_id)) > _tol_equal_float){
-                // gen is properly connected
-                if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed(); // it was not in the slack before, so I need to reset the solver
-                add_slackbus(gen_id, target_p_mw_(gen_id), solver_control);
-
-            }else{
-                // gen is now "turned off" (p_mw=0.)
-                if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, so I need to reset the solver
-                remove_slackbus(gen_id, solver_control);
-            }
-        }else{
-            if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, I need to reset the solver
-            remove_slackbus(gen_id, solver_control);
-        }
+        if(could_be_slack(gen_id)) gen_slack_id.push_back(gen_id);
     }
+    Eigen::Ref<const IntVect> gen_slack_id_ref = IntVect::Map(&gen_slack_id[0], gen_slack_id.size());
+    update_slack_weights_by_id(
+        gen_slack_id_ref,
+        solver_control);
 }
 
-// TODO copy paste from update_slack_weights ...
 void GeneratorContainer::update_slack_weights_by_id(
     Eigen::Ref<const IntVect> gen_slack_id,
     SolverControl & solver_control)
 {
+    // TODO speed: the solver_control will always tell that the slacks changed
+    // even if it's not the case.
+    // Because the 
+    int nb_gen = nb();
+    std::vector<bool> maybe_slack_bus(nb_gen, false);
+
+    // find which generators can be slack
+    real_type total_target_p = 0.;
     for(int gen_id : gen_slack_id)
     {
-        if(status_[gen_id]){
-            // gen is connected and participate to the slack
-            if(abs(target_p_mw_(gen_id)) > _tol_equal_float){
-                // gen is properly connected
-                if(!gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed(); // it was not in the slack before, so I need to reset the solver
-                add_slackbus(gen_id, target_p_mw_(gen_id), solver_control);
+        if(status_[gen_id]) 
+        {
+            maybe_slack_bus[gen_id] = true;
+            total_target_p += abs(target_p_mw_(gen_id));
+        }
+    }
 
-            }else{
-                // gen is now "turned off" (p_mw=0.)
-                if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, so I need to reset the solver
-                remove_slackbus(gen_id, solver_control);
-            }
-        }else{
-            if(gen_slackbus_[gen_id]) solver_control.tell_slack_participate_changed();  // it was in the slack before, I need to reset the solver
-            remove_slackbus(gen_id, solver_control);
+    // assign the slack to the generators
+    if(abs(total_target_p) < _tol_equal_float){
+        // all gen to the slacks produces 0.
+        // slacks weights are equal for all generators
+        real_type slack_weight = 1. / static_cast<real_type>(gen_slack_id.size());
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+            if(maybe_slack_bus[gen_id]) 
+                add_slackbus(gen_id, slack_weight, solver_control);
+            else remove_slackbus(gen_id, solver_control);
+        }
+    }else{
+        // slack weights prop to abs(target_p)
+        for(int gen_id : gen_slack_id)
+        {
+            if(maybe_slack_bus[gen_id] && (abs(target_p_mw_[gen_id]) > _tol_equal_float)) 
+                add_slackbus(gen_id, abs(target_p_mw_[gen_id]), solver_control);
+            else remove_slackbus(gen_id, solver_control);
         }
     }
 }

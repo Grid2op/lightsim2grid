@@ -54,7 +54,7 @@ class GridModel : public GenericContainer
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
                 // std::vector<real_type>,  // bus_vn_kv
-                // std::vector<bool>,  // bus_status
+                std::vector<bool>,  // bus_status
                 SubstationContainer::StateRes,
                 // powerlines
                 LineContainer::StateRes ,
@@ -311,8 +311,8 @@ class GridModel : public GenericContainer
 
         void init_bus_status(){
             const int nb_bus_total = static_cast<int>(substations_.nb_bus());
-            std::vector<bool> prev_bus = substations_.get_bus_status();
             substations_.disconnect_all_buses();
+
             powerlines_.reconnect_connected_buses(substations_);
             shunts_.reconnect_connected_buses(substations_);
             trafos_.reconnect_connected_buses(substations_);
@@ -322,8 +322,17 @@ class GridModel : public GenericContainer
             storages_.reconnect_connected_buses(substations_);
             dc_lines_.reconnect_connected_buses(substations_);
             const std::vector<bool> new_status = substations_.get_bus_status();
+
+            if(new_status.size() != last_bus_status_saved_.size()){
+                // this can happen if last_bus_status_saved_ has never been set
+                // for example right after loading
+                // or if `tell_none_changed` has not been called yet.
+                solver_control_.tell_dimension_changed();
+                return;
+            }
+            // NB last_bus_status_saved_ wil be set to the right state after `gridmodel.tell_none_changed` has been called.
             for(int global_bus = 0; global_bus < nb_bus_total; global_bus++){
-                if(prev_bus[global_bus] != new_status[global_bus]){
+                if(last_bus_status_saved_[global_bus] != new_status[global_bus]){
                     solver_control_.tell_dimension_changed();
                     break;
                 }
@@ -357,13 +366,24 @@ class GridModel : public GenericContainer
 
         //powerflows
         // control the need to refactorize the topology
+        /**
+         * Inform the grid that a powerflow has been run and that every "past changes"
+         * can be "forgotten" : if a solver is re run, then some things are cached to 
+         * avoid un necessary computation.
+         * 
+         * It should be called after a powerflow has been succesfully run. Ideally after each powerflow.
+         * 
+         * It is not mandatory, and allow to save computation times.
+         */
         void unset_changes(){
             solver_control_.tell_none_changed();
+            last_bus_status_saved_ = substations_.get_bus_status();
         }  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
-        void tell_recompute_ybus(){solver_control_.tell_recompute_ybus();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
-        void tell_recompute_sbus(){solver_control_.tell_recompute_sbus();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
-        void tell_solver_need_reset(){solver_control_.tell_solver_need_reset();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
-        void tell_ybus_change_sparsity_pattern(){solver_control_.tell_ybus_change_sparsity_pattern();}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
+
+        void tell_recompute_ybus(){solver_control_.tell_recompute_ybus();}
+        void tell_recompute_sbus(){solver_control_.tell_recompute_sbus();}
+        void tell_solver_need_reset(){solver_control_.tell_solver_need_reset();}
+        void tell_ybus_change_sparsity_pattern(){solver_control_.tell_ybus_change_sparsity_pattern();} 
         const SolverControl & get_solver_control() const {return solver_control_;}
 
         // dc powerflow
@@ -416,7 +436,7 @@ class GridModel : public GenericContainer
         CplxVect check_solution(const CplxVect & V, bool check_q_limits);
 
         // deactivate a bus. Be careful, if a bus is deactivated, but an element is
-        //still connected to it, it will throw an exception
+        // still connected to it, it will throw an exception
         void deactivate_bus(GlobalBusId global_bus_id) {
             if(substations_.is_bus_connected(global_bus_id)){
                 // bus was connected, dim of matrix change
@@ -1591,6 +1611,7 @@ class GridModel : public GenericContainer
         int n_sub_;
         int max_nb_bus_per_sub_;
         SubstationContainer substations_;
+        std::vector<bool> last_bus_status_saved_;
 
         // always have the length of the number of buses,
         // id_me_to_model_[id_me] gives -1 if the bus "id_me" is deactivated, or "id_model" if it is activated.

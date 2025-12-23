@@ -70,7 +70,8 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                    std::vector<real_type> // shift_
                >  StateRes;
 
-        TrafoContainer() {};
+        TrafoContainer(){};
+
         virtual ~TrafoContainer() noexcept = default;
 
         void init(const RealVect & trafo_r,
@@ -98,7 +99,10 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         StateRes get_state() const;
         void set_state(StateRes & my_state );
 
-        virtual void hack_Sbus_for_dc_phase_shifter(CplxVect & Sbus, bool ac, const std::vector<SolverBusId> & id_grid_to_solver);  // needed for dc mode  
+        virtual void hack_Sbus_for_dc_phase_shifter(
+            CplxVect & Sbus,
+            bool ac,
+            const std::vector<SolverBusId> & id_grid_to_solver);  // needed for dc mode  
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
@@ -114,11 +118,15 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
             if(!ac){
                 Eigen::Ref<RealVect> res_p_side_1 = get_res_p_side_1();
                 Eigen::Ref<RealVect> res_p_side_2 = get_res_p_side_2();
+                const std::vector<bool> & status1 = side_1_.get_status();
+                const std::vector<bool> & status2 = side_2_.get_status();
 
                 const int nb_element = nb();
                 for(int el_id = 0; el_id < nb_element; ++el_id){
-                    res_p_side_1(el_id) -= dc_x_tau_shift_(el_id) * sn_mva;
-                    res_p_side_2(el_id) += dc_x_tau_shift_(el_id) * sn_mva;
+                    if(status_global_[el_id] && status1[el_id] && status2[el_id]){
+                        res_p_side_1(el_id) += dc_x_tau_shift_(el_id) * sn_mva;
+                        res_p_side_2(el_id) -= dc_x_tau_shift_(el_id) * sn_mva;
+                    }
                 }
             }
             // compute amps flow
