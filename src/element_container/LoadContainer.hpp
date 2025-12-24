@@ -53,7 +53,7 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
            OneSideContainer_PQ::StateRes  // state of the base class 
            >  StateRes;
         
-        LoadContainer():OneSideContainer_PQ(){};
+        LoadContainer() noexcept = default;
         
         // pickle (python)
         LoadContainer::StateRes get_state() const;

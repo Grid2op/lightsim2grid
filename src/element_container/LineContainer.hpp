@@ -43,7 +43,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
                    >  StateRes;
         
-        LineContainer() {};
+        LineContainer() noexcept = default;
         
         void init(const RealVect & branch_r,
                   const RealVect & branch_x,

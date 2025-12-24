@@ -70,7 +70,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                    std::vector<real_type> // shift_
                >  StateRes;
 
-        TrafoContainer(){};
+        TrafoContainer() noexcept = default;
 
         virtual ~TrafoContainer() noexcept = default;
 

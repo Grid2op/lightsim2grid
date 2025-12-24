@@ -61,7 +61,7 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
            std::vector<real_type> //  q_max
            >  StateRes;
         
-        SGenContainer():OneSideContainer_PQ() {};
+        SGenContainer()noexcept = default;
         
         // pickle (python)
         SGenContainer::StateRes get_state() const;

@@ -496,7 +496,8 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered (ChooseSolver get_prt_solver non const)");
             return res;
         }
-    protected:
+        
+    private:
         SolverType _solver_type;
         SolverType _type_used_for_nr;
 

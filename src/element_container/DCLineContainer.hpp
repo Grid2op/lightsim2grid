@@ -48,7 +48,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
         typedef DCLineInfo DataInfo;
 
         // underlying generators are not pv when powerline is off
-        DCLineContainer(){
+        DCLineContainer() noexcept {
             SolverControl solver_control_not_used;
             side_1_.turnedoff_no_pv(solver_control_not_used);
             side_2_.turnedoff_no_pv(solver_control_not_used);

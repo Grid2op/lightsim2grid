@@ -184,30 +184,30 @@ class IntClass
         int m_bus_id;
 
     public:
-        IntClass(int bus_id) : m_bus_id(bus_id){}
-        IntClass() : m_bus_id(0) {}
+        IntClass(int bus_id) noexcept : m_bus_id(bus_id) {} 
+        IntClass() noexcept : m_bus_id(0) {}
 
         // rule of 5 for the same IntClass
-        IntClass(const IntClass & oth): m_bus_id(oth.m_bus_id){};
-        IntClass(IntClass && oth): m_bus_id(std::move(oth.m_bus_id)){};
-        IntClass& operator=(const IntClass & oth){
+        IntClass(const IntClass & oth) noexcept : m_bus_id(oth.m_bus_id){};
+        IntClass(IntClass && oth) noexcept : m_bus_id(std::move(oth.m_bus_id)){};
+        IntClass& operator=(const IntClass & oth) noexcept {
             m_bus_id = oth.m_bus_id;
             return *this;
         }
-        IntClass& operator=(IntClass && oth){
+        IntClass& operator=(IntClass && oth) noexcept{
             m_bus_id = std::move(oth.m_bus_id);
             return *this;
         }
 
         // cast to int (if needed)
-        const int & cast_int() const & {return m_bus_id;}
-        const int & cast_int() const && {return m_bus_id;}
-        int cast_int() & {return m_bus_id;}  // do a copy in this case
+        const int & cast_int() const & noexcept {return m_bus_id;}
+        const int & cast_int() const && noexcept {return m_bus_id;}
+        int cast_int() & noexcept {return m_bus_id;}  // do a copy in this case
 
         // automatic conversion to int
-        operator int() const {return m_bus_id;}
+        operator int() const noexcept {return m_bus_id;}
 
-        IntClass operator=(int bus_id){
+        IntClass operator=(int bus_id) noexcept{
             return IntClass(bus_id);
         }
 

@@ -153,7 +153,7 @@ class OneSideContainer : public GenericContainer
     /////////////////////////////////////
 
     public:
-        OneSideContainer() {};
+        OneSideContainer() noexcept = default;
         // OneSideInfo get_osc_info(int id_) {return OneSideInfo(*this, id_);}
 
         // public generic API

@@ -52,7 +52,7 @@ class OneSideContainer_PQ : public OneSideContainer
     
     // regular implementation
     public:
-        OneSideContainer_PQ() {};
+        OneSideContainer_PQ() noexcept = default;
 
         // public generic API
 

@@ -65,8 +65,8 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
            std::vector<real_type>   // gen_slack_weight_
         >  StateRes;
         
-        GeneratorContainer():OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
-        GeneratorContainer(bool turnedoff_gen_pv):OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
+        GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
+        GeneratorContainer(bool turnedoff_gen_pv)noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
         
         // TODO add pmin and pmax here !
         void init(const RealVect & generators_p,

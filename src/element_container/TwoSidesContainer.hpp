@@ -113,7 +113,7 @@ class TwoSidesContainer : public GenericContainer
         };
 
     public:
-        TwoSidesContainer():ignore_status_global_(false), synch_status_both_side_(true){}
+        TwoSidesContainer() noexcept :ignore_status_global_(false), synch_status_both_side_(true){}
 
         // public generic API
         int nb() const { return side_1_.nb(); }
