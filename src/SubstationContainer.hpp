@@ -163,7 +163,7 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
                 real_type ref_vn_kv = bus_vn_kv(sub_id);
                 for(int bus_id=1; bus_id < nmax_busbar_per_sub; bus_id++)
                 {
-                    real_type this_bus_vn_kv = bus_vn_kv(local_to_gridmodel(sub_id, bus_id).cast_int());
+                    real_type this_bus_vn_kv = bus_vn_kv(local_to_gridmodel(sub_id, LocalBusId(bus_id)).cast_int());
                     if(abs(this_bus_vn_kv - ref_vn_kv) > BaseConstants::_tol_equal_float){
                         const std::string msg = R"mydelimiter(
                         Each bus of each substation must have the same nominal voltage. 
@@ -187,13 +187,13 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
             bus_status_[global_bus_id.cast_int()] = true;
         }
         void reconnect_bus(int sub_id, const LocalBusId & local_bus_id){
-            reconnect_bus(local_to_gridmodel(sub_id, local_bus_id).cast_int());
+            reconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
         }
         void disconnect_bus(const GridModelBusId & global_bus_id){
             bus_status_[global_bus_id.cast_int()] = false;
         }
         void disconnect_bus(int sub_id, const LocalBusId & local_bus_id){
-            disconnect_bus(local_to_gridmodel(sub_id, local_bus_id).cast_int());
+            disconnect_bus(local_to_gridmodel(sub_id, local_bus_id));
         }
         GridModelBusId local_to_gridmodel(int sub_id, const LocalBusId & local_bus_id) const{
             if(local_bus_id.cast_int() == BaseConstants::_deactivated_bus_id){
@@ -216,7 +216,7 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
                 throw std::runtime_error(exc_.str());
             }
 
-            return sub_id + (local_bus_id.cast_int() - 1) * n_sub_;
+            return GridModelBusId(sub_id + (local_bus_id.cast_int() - 1) * n_sub_);
         }
 
     private:

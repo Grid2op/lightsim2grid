@@ -190,7 +190,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
         if(abs(dc_x_tau_shift_[trafo_id]) < _tol_equal_float) continue; // nothing to do if the trafo is not concerned (no phase shifter)
         
         bus_id_me = get_bus_side_2(trafo_id);
-        if(bus_id_me == _deactivated_bus_id){
+        if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (GridModelId) the trafo with id ";
             exc_ << trafo_id;
@@ -198,7 +198,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             throw std::runtime_error(exc_.str());
         }
         bus_id_solver_lv = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver_lv == _deactivated_bus_id){
+        if(bus_id_solver_lv.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (SolverId) the trafo with id ";
             exc_ << trafo_id;
@@ -207,7 +207,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
         }
 
         bus_id_me = get_bus_side_1(trafo_id);
-        if(bus_id_me == _deactivated_bus_id){
+        if(bus_id_me.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (GridModelId) the trafo with id ";
             exc_ << trafo_id;
@@ -215,7 +215,7 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             throw std::runtime_error(exc_.str());
         }
         bus_id_solver_hv = id_grid_to_solver[bus_id_me.cast_int()];
-        if(bus_id_solver_hv == _deactivated_bus_id){
+        if(bus_id_solver_hv.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "TrafoContainer::hack_Sbus_for_dc_phase_shifter: (SolverId) the trafo with id ";
             exc_ << trafo_id;

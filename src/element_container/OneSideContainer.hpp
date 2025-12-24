@@ -115,7 +115,7 @@ class OneSideContainer : public GenericContainer
                             pos_topo_vect = r_data_one_side.pos_topo_vect_(my_id);
                         }
                         connected = r_data_one_side.status_[my_id];
-                        if(connected) bus_id = r_data_one_side.bus_id_[my_id];
+                        if(connected) bus_id = r_data_one_side.bus_id_[my_id].cast_int();
 
                         has_res = r_data_one_side.res_p_.size() > 0;
                         if(has_res)
@@ -178,7 +178,7 @@ class OneSideContainer : public GenericContainer
             {
                 if(!status_[el_id]) continue;
                 const GlobalBusId my_bus = bus_id_(el_id);
-                if(my_bus == _deactivated_bus_id){
+                if(my_bus.cast_int() == _deactivated_bus_id){
                     // TODO DEBUG MODE only this in debug mode
                     std::ostringstream exc_;
                     exc_ << "OneSideContainer::reconnect_connected_buses: element with id ";
@@ -269,35 +269,35 @@ class OneSideContainer : public GenericContainer
             {
                 int el_pos = pos_topo_vect_(el_id);
                 if(!has_changed(el_pos)) continue;
-                LocalBusId new_bus = new_values(el_pos);  // it is a LocalBusId
-                if(new_bus < _deactivated_bus_id){
+                LocalBusId new_bus = LocalBusId(new_values(el_pos));  // it is a LocalBusId
+                if(new_bus.cast_int() < _deactivated_bus_id){
                     // TODO DEBUG MODE: only check in debug mode
                     std::ostringstream exc_;
                     exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
                     exc_ << substations.nmax_busbar_per_sub();
                     exc_ << " you provided ";
-                    exc_ << new_bus;
+                    exc_ << new_bus.cast_int();
                     exc_ << ".";
                     throw std::out_of_range(exc_.str());
                 }
-                if(new_bus > substations.nmax_busbar_per_sub()){
+                if(new_bus.cast_int() > substations.nmax_busbar_per_sub()){
                     // TODO DEBUG MODE: only check in debug mode
                     std::ostringstream exc_;
                     exc_ << "OneSideContainer::update_topo: bus id should be between -1 and ";
                     exc_ << substations.nmax_busbar_per_sub();
                     exc_ << " you provided ";
-                    exc_ << new_bus;
+                    exc_ << new_bus.cast_int();
                     exc_ << ".";
                     throw std::out_of_range(exc_.str());
                 }
 
-                if(new_bus > 0){
+                if(new_bus.cast_int() > 0){
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
                     int sub_id = subid_(el_id);
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
                     reactivate(el_id, solver_control); // eg reactivate_load(load_id);
                     change_bus(el_id, new_bus_backend, solver_control, substations); // eg change_bus_load(load_id, new_bus_backend);
-                } else if (new_bus == _deactivated_bus_id){
+                } else if (new_bus.cast_int() == _deactivated_bus_id){
                     // new bus is negative, we deactivate it
                     deactivate(el_id, solver_control);// eg deactivate_load(load_id);
                     // bus_status_ is set to "false" in GridModel.update_topo

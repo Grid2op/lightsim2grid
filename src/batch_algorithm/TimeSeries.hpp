@@ -90,10 +90,24 @@ class TimeSeries: public BaseBatchSolverSynch
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);
-                bus_id_solver = id_me_to_ac_solver[static_cast<int>(bus_id_me)];
+                if(bus_id_me.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TimeSeries::fill_SBus_real: the element with id ";
+                    exc_ << el_id;
+                    exc_ << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                bus_id_solver = id_me_to_ac_solver[bus_id_me.cast_int()];
+                if(bus_id_solver.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TimeSeries::fill_SBus_real: the element with id ";
+                    exc_ << el_id;
+                    exc_ << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
                 const auto & tmp = temporal_data.col(el_id).cast<cplx_type>();
-                if(add) Sbuses.col(bus_id_solver) += tmp;
-                else Sbuses.col(bus_id_solver) -= tmp;
+                if(add) Sbuses.col(bus_id_solver.cast_int()) += tmp;
+                else Sbuses.col(bus_id_solver.cast_int()) -= tmp;
             }
         }
 
@@ -108,14 +122,29 @@ class TimeSeries: public BaseBatchSolverSynch
             auto nb_el = structure_data.nb();
             const auto & el_status = structure_data.get_status();
             const auto & el_bus_id = structure_data.get_bus_id();
-            int  bus_id_solver, bus_id_me;
+            SolverBusId  bus_id_solver;
+            GlobalBusId bus_id_me;
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);
-                bus_id_solver = id_me_to_ac_solver[bus_id_me];
+                if(bus_id_me.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TimeSeries::fill_SBus_imag: the element with id ";
+                    exc_ << el_id;
+                    exc_ << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                bus_id_solver = id_me_to_ac_solver[bus_id_me.cast_int()];
+                if(bus_id_solver.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TimeSeries::fill_SBus_imag: the element with id ";
+                    exc_ << el_id;
+                    exc_ << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
                 const auto & tmp = temporal_data.col(el_id).cast<cplx_type>();
-                if(add) Sbuses.col(bus_id_solver) += BaseConstants::my_i * tmp;
-                else Sbuses.col(bus_id_solver) -= BaseConstants::my_i * tmp;
+                if(add) Sbuses.col(bus_id_solver.cast_int()) += BaseConstants::my_i * tmp;
+                else Sbuses.col(bus_id_solver.cast_int()) -= BaseConstants::my_i * tmp;
             }
         }
 

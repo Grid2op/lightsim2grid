@@ -23,7 +23,7 @@ Supposes that, at the init of the file, every element on the same substation is 
 **/
 class GridModelFromIIDM
 {
-    GridModelFromIIDM(const std::string & path):network_("not init", "dont use"){
+    explicit GridModelFromIIDM(const std::string & path):network_("not init", "dont use"){
         xmlInitParser();
         powsybl::iidm::Network network_ = powsybl::iidm::Network::readXml("/home/benjamin/Documents/powsybl-iidm4cpp/examples/example1/eurostag-tutorial1.xml");
         xmlCleanupParser();
@@ -33,7 +33,7 @@ class GridModelFromIIDM
 
     GridModel get_grid_model() const;
 
-    protected:
+    private:
         powsybl::iidm::Network network_;
 
         powsybl::iidm::network::BusView init_bus(GridModel & grid_model) const;

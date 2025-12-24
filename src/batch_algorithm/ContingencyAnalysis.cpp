@@ -72,10 +72,10 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
             
             GlobalBusId glob_bus_1 = p_branch->get_bus_side_1(el_id);
             GlobalBusId glob_bus_2 = p_branch->get_bus_side_2(el_id);
-            bus_1_id = glob_bus_1 == GenericContainer::_deactivated_bus_id ? 
+            bus_1_id = glob_bus_1.cast_int() == GenericContainer::_deactivated_bus_id ? 
                 GenericContainer::_deactivated_bus_id : 
                 id_me_to_solver[glob_bus_1.cast_int()].cast_int();
-            bus_2_id = glob_bus_2 == GenericContainer::_deactivated_bus_id ? 
+            bus_2_id = glob_bus_2.cast_int() == GenericContainer::_deactivated_bus_id ? 
                 GenericContainer::_deactivated_bus_id : 
                 id_me_to_solver[glob_bus_2.cast_int()].cast_int();
             status = p_branch->get_status_global()[el_id];
@@ -176,7 +176,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     }
     Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
     const Eigen::Index nb_buses_solver = Ybus.cols();
-    const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
+    const std::vector<GlobalBusId> & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
     const SolverBusIdVect & bus_pv = _grid_model.get_pv_solver();
     const SolverBusIdVect & bus_pq = _grid_model.get_pq_solver();
     const SolverBusIdVect & slack_ids = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
@@ -272,7 +272,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
         if (ac_solver_used) readd_to_Ybus(Ybus, coeffs_modif); 
         _timer_modif_Ybus += timer_modif_Ybus.duration();
-        if (conv && invertible) _voltages.row(cont_id)(id_solver_to_me) = V.array();
+        if (conv && invertible) _voltages.row(cont_id)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me)) = V.array();
         ++cont_id;
     }
     _timer_total = timer.duration();

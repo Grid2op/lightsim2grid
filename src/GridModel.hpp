@@ -625,7 +625,7 @@ class GridModel : public GenericContainer
         }
         void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
         void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
-        int get_bus_load(int load_id) {return loads_.get_bus(load_id);}
+        int get_bus_load(int load_id) {return loads_.get_bus(load_id).cast_int();}
 
         //generator
         void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, solver_control_); }
@@ -663,7 +663,7 @@ class GridModel : public GenericContainer
         }
         void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
         void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
-        int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id);}
+        int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id).cast_int();}
 
         //static gen
         void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, solver_control_); }
@@ -681,7 +681,7 @@ class GridModel : public GenericContainer
         }
         void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
         void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
-        int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id);}
+        int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id).cast_int();}
 
         //storage units
         void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, solver_control_); }
@@ -731,8 +731,8 @@ class GridModel : public GenericContainer
         void change_bus_dcline_ex_python(int dcline_id, int new_gridmodel_bus_id) {
             change_bus_dcline_ex(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
         }
-        int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
-        int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id);}
+        int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
+        int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
@@ -1456,7 +1456,7 @@ class GridModel : public GenericContainer
             Eigen::Matrix<SclaraOutput, Eigen::Dynamic, 1> res = Eigen::Matrix<SclaraOutput, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
             Eigen::Index pos_id = 0;
             for(const auto & el_id : pv_pq_ref_bus){
-                res[pos_id] = id_solver_to_me[el_id];
+                res[pos_id] = id_solver_to_me[el_id.cast_int()];
                 ++ pos_id;
             }
             return res;
@@ -1525,6 +1525,7 @@ class GridModel : public GenericContainer
 
     private:
         using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
+    
     protected:
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver);
         void fillSbus_me(CplxVect & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver);
@@ -1577,7 +1578,7 @@ class GridModel : public GenericContainer
         void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
         void check_solution_q_values_onegen(CplxVect & res, const GenInfo& gen, bool check_q_limits) const;
 
-    protected:
+    private:
         // memory for the import
         // TODO switches: move to BaseSubstation
         /**

@@ -129,7 +129,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
             {
                 if(!status_[gen_id]) continue;
-                if(bus_id_(gen_id) != slack_bus_id) continue;
+                if(bus_id_(gen_id).cast_int() != slack_bus_id) continue;
                 const real_type p_mw = target_p_mw_(gen_id);
                 if (p_mw > 0.) add_slackbus(gen_id, p_mw / gen_p_per_bus[slack_bus_id], solver_control);
                 if((p_mw > max_p) || (res_gen_id == -1) ){

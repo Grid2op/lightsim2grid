@@ -45,7 +45,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     const Eigen::Index nb_buses_solver = Ybus.cols();
 
     const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
-    const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
+    const std::vector<GlobalBusId> & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
     const auto & generators = _grid_model.get_generators_as_data();
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
@@ -104,7 +104,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
             _timer_total = timer.duration();
             return _status;
         }
-        if(conv && step_diverge < 0) _voltages.row(i)(id_solver_to_me) = V.array();
+        if(conv && step_diverge < 0) _voltages.row(i)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me)) = V.array();
         else step_diverge = i;
     }
     if(step_diverge > 0){

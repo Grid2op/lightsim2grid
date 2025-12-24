@@ -162,7 +162,7 @@ class SolverControl
         bool has_ybus_some_coeffs_zero() const {return ybus_some_coeffs_zero_;}
         bool has_one_el_changed_bus() const {return one_el_change_bus_;}
 
-    protected:    
+    private:    
         bool change_dimension_;
         bool pv_changed_;
         bool pq_changed_;
@@ -180,24 +180,22 @@ class SolverControl
 template<int U>
 class IntClass
 {
-    protected:
+    private:
         int m_bus_id;
 
     public:
-        IntClass(int bus_id) noexcept : m_bus_id(bus_id) {} 
+        explicit IntClass(const int bus_id) noexcept : m_bus_id(bus_id) {} 
         IntClass() noexcept : m_bus_id(0) {}
 
         // rule of 5 for the same IntClass
-        IntClass(const IntClass & oth) noexcept : m_bus_id(oth.m_bus_id){};
-        IntClass(IntClass && oth) noexcept : m_bus_id(std::move(oth.m_bus_id)){};
-        IntClass& operator=(const IntClass & oth) noexcept {
-            m_bus_id = oth.m_bus_id;
-            return *this;
+        IntClass(const IntClass & oth) noexcept = default;
+        IntClass(IntClass && oth) noexcept = default;
+        IntClass& operator=(const IntClass & oth) noexcept = default;
+        IntClass& operator=(IntClass && oth) noexcept = default;
+        IntClass& operator=(const int bus_id) noexcept{
+            return IntClass(bus_id);
         }
-        IntClass& operator=(IntClass && oth) noexcept{
-            m_bus_id = std::move(oth.m_bus_id);
-            return *this;
-        }
+        ~ IntClass() noexcept = default;
 
         // cast to int (if needed)
         const int & cast_int() const & noexcept {return m_bus_id;}
@@ -205,10 +203,12 @@ class IntClass
         int cast_int() & noexcept {return m_bus_id;}  // do a copy in this case
 
         // automatic conversion to int
-        operator int() const noexcept {return m_bus_id;}
-
-        IntClass operator=(int bus_id) noexcept{
-            return IntClass(bus_id);
+        explicit operator int() const noexcept {return m_bus_id;}
+        bool operator==(const IntClass & oth) const noexcept{
+            return m_bus_id == oth.m_bus_id;
+        }
+        bool operator!=(const IntClass & oth) const noexcept{
+            return !(m_bus_id == oth.m_bus_id);
         }
 
         // prevent conversion between the different IntClass

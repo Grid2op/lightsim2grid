@@ -95,7 +95,7 @@ class PandaPowerConverter : public BaseConstants
                           const RealVect & branch_from_kv,
                           const RealVect & branch_to_kv);
 
-    protected:
+    private:
         real_type sn_mva_;
         real_type f_hz_;
 

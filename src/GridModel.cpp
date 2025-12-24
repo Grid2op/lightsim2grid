@@ -448,7 +448,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     // set to 0 the error on the disconnected bus (it is not initialized at 0.0 in _get_results_back_to_orig_nodes)
     for(int bus_id = 0; bus_id < nb_bus; ++bus_id)
     {
-        if(substations_.is_bus_connected(bus_id)) continue;
+        if(substations_.is_bus_connected(GlobalBusId(bus_id))) continue;
         res.coeffRef(bus_id) = my_zero_;
     }
     return res;
@@ -577,9 +577,9 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
     CplxVect res = CplxVect::Constant(size, {init_vm_pu_, my_zero_});
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
-        if(!substations_.is_bus_connected(bus_id_me)) continue;  // nothing is done if the bus is connected
+        if(!substations_.is_bus_connected(GlobalBusId(bus_id_me))) continue;  // nothing is done if the bus is connected
         SolverBusId bus_id_solver = id_me_to_solver[bus_id_me];
-        if(bus_id_solver == _deactivated_bus_id){
+        if(bus_id_solver.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::_get_results_back_to_orig_nodes: the bus with id ";
             exc_ << bus_id_me;
@@ -629,7 +629,7 @@ void GridModel::init_converter_bus_id(std::vector<SolverBusId>& id_me_to_solver,
     id_solver_to_me.reserve(nb_bus_init);
     int bus_id_solver = 0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
-        if(substations_.is_bus_connected(bus_id_me)){
+        if(substations_.is_bus_connected(GlobalBusId(bus_id_me))){
             // bus is connected
             id_solver_to_me.push_back(GlobalBusId(bus_id_me));
             id_me_to_solver[bus_id_me] = SolverBusId(bus_id_solver);
@@ -650,7 +650,7 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
                                const GlobalBusIdVect & slack_bus_id_me,
                                SolverBusIdVect & slack_bus_id_solver){
     // slack_bus_id_solver = Eigen::VectorXi::Zero(slack_bus_id_.size());
-    slack_bus_id_solver = SolverBusIdVect::Constant(slack_bus_id_me.size(), _deactivated_bus_id);
+    slack_bus_id_solver = SolverBusIdVect::Constant(slack_bus_id_me.size(), SolverBusId(_deactivated_bus_id));
 
     size_t i = 0;
     // std::cout << "slack_bus_id_solver 2: ";
@@ -666,7 +666,7 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
     // for(auto el: slack_bus_id_) {
     for(const GlobalBusId & el: slack_bus_id_me) {
         SolverBusId tmp = id_me_to_solver[el.cast_int()];
-        if(tmp == _deactivated_bus_id){
+        if(tmp.cast_int() == _deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::init_slack_bus: One of the slack bus is disconnected.";
             exc_ << " You can check bus with global id GlobalBusId : ";
@@ -925,8 +925,8 @@ RealMat GridModel::get_ptdf(){
     const RealMat & PTDF_solver = get_ptdf_solver();
     RealMat PTDF_grid =  RealMat::Zero(powerlines_.nb() + trafos_.nb(), total_bus());  // , std::numeric_limits<real_type>::quiet_NaN()
     int solver_col = 0;
-    for(const auto & my_col: id_dc_solver_to_me()){
-        PTDF_grid.col(my_col) = PTDF_solver.col(solver_col);
+    for(const GlobalBusId & my_col: id_dc_solver_to_me()){
+        PTDF_grid.col(my_col.cast_int()) = PTDF_solver.col(solver_col);
         ++solver_col;
     }
     return PTDF_grid;
@@ -949,12 +949,12 @@ RealMat GridModel::get_lodf(){
     for(int el_id = 0; el_id < nb_el; ++el_id){
         // from side
         GlobalBusId f_grid_bus = from_bus[el_id];
-        SolverBusId f_solver_bus = id_me_to_dc_solver_[f_grid_bus];
-        from_bus_solver[el_id] = f_solver_bus;
+        SolverBusId f_solver_bus = id_me_to_dc_solver_[f_grid_bus.cast_int()];
+        from_bus_solver[el_id] = f_solver_bus.cast_int();
         // to side
         GlobalBusId t_grid_bus = to_bus[el_id];
-        SolverBusId t_solver_bus = id_me_to_dc_solver_[t_grid_bus];
-        to_bus_solver[el_id] = t_solver_bus;
+        SolverBusId t_solver_bus = id_me_to_dc_solver_[t_grid_bus.cast_int()];
+        to_bus_solver[el_id] = t_solver_bus.cast_int();
     }
     return _dc_solver.get_lodf(from_bus_solver, to_bus_solver);
 }
@@ -1227,15 +1227,15 @@ void GridModel::consider_only_main_component(){
     std::vector<bool> already_added(nb_busbars, false);
 
     int connected_comp = 0;
-    std::queue<Eigen::Index> neighborhood;
+    std::queue<GlobalBusId> neighborhood;
     while(true)
     {
-        neighborhood = std::queue<Eigen::Index>();
+        neighborhood = std::queue<GlobalBusId>();
 
         // choose bus id (one of the slack) to start
         bool one_added = false;
         for(const auto & el : slack_buses_id){
-            if(!tmp_visited[el] && !already_added[el])
+            if(!tmp_visited[el.cast_int()] && !already_added[el.cast_int()])
             {
                 one_added = true;
                 neighborhood.push(el);
@@ -1248,15 +1248,15 @@ void GridModel::consider_only_main_component(){
         // start the bfs
         while (true)
         {
-            const Eigen::Index col_id = neighborhood.front();
+            const GlobalBusId col_id = neighborhood.front();
             neighborhood.pop();
-            tmp_visited[col_id] = true;
-            conn_comp[col_id] = connected_comp;
-            for (Eigen::SparseMatrix<real_type>::InnerIterator it(graph, col_id); it; ++it)
+            tmp_visited[col_id.cast_int()] = true;
+            conn_comp[col_id.cast_int()] = connected_comp;
+            for (Eigen::SparseMatrix<real_type>::InnerIterator it(graph, col_id.cast_int()); it; ++it)
             {
                 // add in the queue all my neighbor
                 if(!tmp_visited[it.row()] && !already_added[it.row()]){
-                    neighborhood.push(it.row());
+                    neighborhood.push(GlobalBusId(it.row()));
                     already_added[it.row()] = true;
                 }
             }
