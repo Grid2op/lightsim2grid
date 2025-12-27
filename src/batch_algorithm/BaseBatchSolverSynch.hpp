@@ -104,8 +104,8 @@ class BaseBatchSolverSynch : protected BaseConstants
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
-            const auto & bus_from = structure_data.get_bus_id_side_1();
-            const auto & bus_to = structure_data.get_bus_id_side_2();
+            const Eigen::Ref<const GlobalBusIdVect> & bus_from = structure_data.get_bus_id_side_1();
+            const Eigen::Ref<const GlobalBusIdVect> & bus_to = structure_data.get_bus_id_side_2();
             bool is_ac = _solver.ac_solver_used();
 
             const auto & vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
@@ -118,16 +118,17 @@ class BaseBatchSolverSynch : protected BaseConstants
             RealVect res;
             for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
+                // TODO connected one side only !
 
                 // retrieve which buses are used
-                int bus_from_me = bus_from(el_id);
-                int bus_to_me = bus_to(el_id);
+                GlobalBusId bus_from_me = bus_from(el_id);
+                GlobalBusId bus_to_me = bus_to(el_id);
 
                 // retrieve voltages
-                const auto Efrom = _voltages.col(bus_from_me);  // vector (one voltages per step)
-                const auto Eto = _voltages.col(bus_to_me);
+                const auto Efrom = _voltages.col(bus_from_me.cast_int());  // vector (one voltages per step)
+                const auto Eto = _voltages.col(bus_to_me.cast_int());
 
-                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me);
+                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me.cast_int());
                 const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
 
                 // retrieve physical parameters
@@ -159,8 +160,8 @@ class BaseBatchSolverSynch : protected BaseConstants
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
-            const auto & bus_from = structure_data.get_bus_id_side_1();
-            const auto & bus_to = structure_data.get_bus_id_side_2();
+            const Eigen::Ref<const GlobalBusIdVect> & bus_from = structure_data.get_bus_id_side_1();
+            const Eigen::Ref<const GlobalBusIdVect> & bus_to = structure_data.get_bus_id_side_2();
             const bool is_ac = _solver.ac_solver_used();
 
             Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
@@ -174,14 +175,14 @@ class BaseBatchSolverSynch : protected BaseConstants
                 if(!el_status[el_id]) continue;
 
                 // retrieve which buses are used
-                int bus_from_me = bus_from(el_id);
-                int bus_to_me = bus_to(el_id);
+                GlobalBusId bus_from_me = bus_from(el_id);
+                GlobalBusId bus_to_me = bus_to(el_id);
 
                 // retrieve voltages
-                const auto Efrom = _voltages.col(bus_from_me);  // vector (one voltages per step)
-                const auto Eto = _voltages.col(bus_to_me);
+                const auto & Efrom = _voltages.col(bus_from_me.cast_int());  // vector (one voltages per step)
+                const auto & Eto = _voltages.col(bus_to_me.cast_int());
 
-                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me);
+                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me.cast_int());
                 const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
 
                 // retrieve physical parameters
