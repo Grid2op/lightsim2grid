@@ -42,11 +42,11 @@ class OneSideContainer_PQ : public OneSideContainer
                 target_p_mw(0.),
                 target_q_mvar(0.)
                 {
-                    if((my_id >= 0) & (my_id < r_data_pq.nb()))
-                    {
-                        target_p_mw = r_data_pq.target_p_mw_.coeff(my_id);
-                        target_q_mvar = r_data_pq.target_q_mvar_.coeff(my_id);
-                    }
+                    if (my_id < 0) return;
+                    if (my_id >= r_data_pq.nb()) return;
+
+                    target_p_mw = r_data_pq.target_p_mw_.coeff(my_id);
+                    target_q_mvar = r_data_pq.target_q_mvar_.coeff(my_id);
                 }
         };
     
