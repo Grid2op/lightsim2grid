@@ -178,7 +178,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
-    _solver_control.tell_none_changed();
     timer_total_nr_ += timer.duration();
     return true;
 }

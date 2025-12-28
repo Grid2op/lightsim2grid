@@ -102,7 +102,7 @@ class OneSideContainer : public GenericContainer
                 res_v_kv(0.),
                 res_theta_deg(0.)
                 {
-                    if((my_id >= 0) & (my_id < r_data_one_side.nb()))
+                    if((my_id >= 0) && (my_id < r_data_one_side.nb()))
                     {
                         id = my_id;
                         if(r_data_one_side.names_.size()){

@@ -503,7 +503,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     bus_or_id_me = get_bus_side_1(el_id);
                     if(bus_or_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the branch (line or trafo) with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: (GlobalId) the branch (line or trafo) with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 1) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
@@ -511,18 +511,20 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     bus_or_solver_id = id_grid_to_solver[bus_or_id_me.cast_int()];
                     if(bus_or_solver_id.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the branch (line or trafo) with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: (SolverId) the branch (line or trafo) with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+                }else{
+                    throw std::runtime_error("FDPF algorithm does not handle lines / trafos disconnected at only one side at the moment.");
                 }
                 if(side_2_.get_status(el_id))
                 {
                     bus_ex_id_me = get_bus_side_2(el_id);
                     if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: (GlobalId) the branch (line or trafo) with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
@@ -530,11 +532,13 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me.cast_int()];
                     if(bus_ex_solver_id.cast_int() == _deactivated_bus_id){
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: (SolverId) the branch (line or trafo) with id ";
                         exc_ << el_id;
                         exc_ << " is connected (side 2) to a disconnected bus while being connected";
                         throw std::runtime_error(exc_.str());
                     }
+                }else{
+                    throw std::runtime_error("FDPF algorithm does not handle lines / trafos disconnected at only one side at the moment.");
                 }
 
                 const FDPFCoeffs & coeffs = this->get_fdpf_coeffs(el_id, xb_or_bx);
@@ -564,8 +568,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                              bool transpose) const
         {
             const Eigen::Index nb_line = nb();
-            const std::vector<bool> side1_conn = side_1_.get_status();
-            const std::vector<bool> side2_conn = side_2_.get_status();
+            const std::vector<bool> & side1_conn = side_1_.get_status();
+            const std::vector<bool> & side2_conn = side_2_.get_status();
             for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
                 // i only add this if the powerline is connected
                 if(!status_global_[line_id]) continue;
@@ -576,7 +580,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 GlobalBusId bus_or_id_me = get_bus_side_1(line_id);
                 if(bus_or_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: (GlobalId) the line/trafo with id ";
                     exc_ << line_id;
                     exc_ << " is connected (side 1) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -584,7 +588,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 SolverBusId bus_or_solver_id = id_grid_to_solver[bus_or_id_me.cast_int()];
                 if(bus_or_solver_id.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: (SolverId) the line/trafo with id ";
                     exc_ << line_id;
                     exc_ << " is connected (side 1) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -592,7 +596,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 GlobalBusId bus_ex_id_me = get_bus_side_2(line_id);
                 if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: (GlobalId) the line/trafo with id ";
                     exc_ << line_id;
                     exc_ << " is connected (side 2) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -600,7 +604,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 SolverBusId bus_ex_solver_id = id_grid_to_solver[bus_ex_id_me.cast_int()];
                 if(bus_ex_solver_id.cast_int() == _deactivated_bus_id){
                     std::ostringstream exc_;
-                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: the line/trafo with id ";
+                    exc_ << "TwoSidesContainer_rxh_A::fillBf_for_PTDF: (SolverId) the line/trafo with id ";
                     exc_ << line_id;
                     exc_ << " is connected (side 2) to a disconnected bus while being connected";
                     throw std::runtime_error(exc_.str());
@@ -637,9 +641,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     if(bus_or_id_me.cast_int() == _deactivated_bus_id){
                         // TODO DEBUG MODE only this in debug mode
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: Trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: branch with id ";
                         exc_ << el_id;
-                        exc_ << " is connected (side 1) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+                        exc_ << " is connected (side 1) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx_side_1(...)` ?.";
                         throw std::runtime_error(exc_.str());
                     }
                     substation.reconnect_bus(bus_or_id_me);
@@ -651,9 +655,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     if(bus_ex_id_me.cast_int() == _deactivated_bus_id){
                         // TODO DEBUG MODE only this in debug mode
                         std::ostringstream exc_;
-                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: Trafo with id ";
+                        exc_ << "TwoSidesContainer_rxh_A::reconnect_connected_buses: branch with id ";
                         exc_ << el_id;
-                        exc_ << " is connected (side 2) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_trafo(...)` ?.";
+                        exc_ << " is connected (side 2) to bus '-1' (meaning disconnected) while you said it was disconnected. Have you called `gridmodel.deactivate_xxx_side_2(...)` ?.";
                         throw std::runtime_error(exc_.str());
                     }
                     // bus_status[bus_ex_id_me] = true;

@@ -279,7 +279,7 @@ target_vm_pu(0.),
 min_q_mvar(0.),
 max_q_mvar(0.)
 {
-    if((my_id >= 0) & (my_id < r_data_gen.nb()))
+    if((my_id >= 0) && (my_id < r_data_gen.nb()))
     {
         is_slack = r_data_gen.gen_slackbus_[my_id];
         slack_weight = r_data_gen.gen_slack_weight_[my_id];

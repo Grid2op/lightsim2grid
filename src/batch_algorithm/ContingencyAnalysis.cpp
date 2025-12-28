@@ -197,8 +197,6 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     // reset the solver
     _solver.reset();
-    _solver_control.tell_ybus_some_coeffs_zero();
-    // ybus does not change sparsity pattern here
 
     // compute the right Vinit to send to the solver
     CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
@@ -244,6 +242,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
                 }
             }
             V = Vinit_solver; // Vinit is reused for each contingencies
+            // _solver_control.tell_all_changed();
             conv = compute_one_powerflow(
                 Ybus,
                 V,
@@ -263,10 +262,9 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
                 }
             }
         }
-        // std::string conv_str =  conv ? "has converged" : "has diverged";
-        // std::cout << "contingency " << contingency << ": " << conv_str << std::endl;
-        // if(!conv) std::cout << "\t error was: " << _solver.get_error() << std::endl;
-        // ++contingency;
+        std::string conv_str =  conv ? "has converged" : "has diverged";
+        std::cout << "contingency " << cont_id << ": " << conv_str << std::endl;
+        if(!conv) std::cout << "\t error was: " << _solver.get_error() << std::endl;
 
         timer_modif_Ybus = CustTimer();
         // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus

@@ -113,7 +113,7 @@ max_q_mvar(0.),
 min_p_mw(0.),
 max_p_mw(0.)
 {
-    if((my_id >= 0) & (my_id < r_data_sgen.nb()))
+    if((my_id >= 0) && (my_id < r_data_sgen.nb()))
     {
         min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
         max_q_mvar = r_data_sgen.q_max_mvar_(my_id);

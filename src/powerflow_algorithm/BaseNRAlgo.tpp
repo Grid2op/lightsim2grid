@@ -184,8 +184,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
                   << "\n\n";
     #endif // __COUT_TIMES
     Vm_ = V_.array().abs();  
-    Va_ = V_.array().arg();  
-    _solver_control.tell_none_changed();
+    Va_ = V_.array().arg(); 
     return res;
 }
 

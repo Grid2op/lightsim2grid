@@ -102,18 +102,15 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                                      tol_);
         if(!conv){
             _timer_total = timer.duration();
+            step_diverge = i;
+            _status = 0;
             return _status;
         }
         if(conv && step_diverge < 0) _voltages.row(i)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me)) = V.array();
-        else step_diverge = i;
     }
-    if(step_diverge > 0){
-        _status = 0;
-    }else{
-        // If i reached there, it means it is succesfull
-        _status = 1;
-    }
-    
+
+    // If i reached there, it means it is succesfull
+    _status = 1;
     _timer_total = timer.duration();
     return _status;
 }

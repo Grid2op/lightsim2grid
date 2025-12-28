@@ -183,16 +183,17 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
 
     protected:
 
-        virtual real_type fillBf_for_PTDF_coeff(int el_id) const{
-            real_type res = x_(el_id);
-            real_type tau = is_tap_hv_side_[el_id] ? ratio_(el_id) : 1. / ratio_(el_id);
+        virtual real_type fillBf_for_PTDF_coeff(int tr_id) const{
+            real_type res = x_(tr_id);
+            real_type tau = is_tap_hv_side_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
             return res * tau;
         }
-        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const;
 
-        virtual int fillBf_for_PTDF_id(int el_id, int nb_powerline) const{
-            return el_id + nb_powerline;
+        virtual int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const{
+            return tr_id + nb_powerline;
         }
+
+        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id):
