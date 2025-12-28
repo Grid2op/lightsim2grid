@@ -17,15 +17,13 @@ import pypowsybl.loadflow as pp_lf
 
 from lightsim2grid.gridmodel import init_from_pypowsybl
 
-from global_var_tests import CURRENT_PYPOW_VERSION
+from global_var_tests import CURRENT_PYPOW_VERSION, VERSION_PHASESHIFT_OK_PYPOW
 from test_match_with_pypowsybl.utils_for_slack import (
     get_pypowsybl_parameters,
     get_same_slack
 )
 import warnings
 import pdb
-
-VERSION_PHASESHIFT_OK = version_packaging.parse("1.11.0")
 
 
 class BaseTests:    
@@ -520,7 +518,7 @@ class BaseTests:
         
     def test_change_trafo_shift(self):
         self.do_i_skip("test_change_trafo_shift")
-        if CURRENT_PYPOW_VERSION < VERSION_PHASESHIFT_OK:
+        if CURRENT_PYPOW_VERSION < VERSION_PHASESHIFT_OK_PYPOW:
             self.skipTest("phase shifter are not supported for "
                           "this version of pypowsybl")
         self.setUp("ieee300")  # the smaller grid does not have phase shifters

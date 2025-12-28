@@ -29,7 +29,7 @@ except ImportError:
 from global_var_tests import (
     MAX_PP2_DATAREADER,
     CURRENT_PP_VERSION,
-    MIN_PYPO_DC_NONDEF_PARAMS,
+    VERSION_PHASESHIFT_OK_PYPOW,
     CURRENT_PYPOW_VERSION)
 from test_match_with_pypowsybl.utils_for_slack import (
     get_pypowsybl_parameters,
@@ -295,14 +295,10 @@ class TestCase118FromPypo(TestCase118FromPypoBusesForSub):
         
 class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 300"""
-    # does not work because of phase tap changer
-    # def get_pypo_grid(self):
-    #     res = pp.network.create_ieee300()
-    #     df = res.get_shunt_compensators()[["connected"]] # "b", "g", 
-    #     df["connected"] = False
-    #     res.update_shunt_compensators(df)
-    #     return res
     def get_pypo_grid_name(self):
+        if CURRENT_PYPOW_VERSION < VERSION_PHASESHIFT_OK_PYPOW:
+            self.skipTest("phase shifter are not supported for "
+                          "this version of pypowsybl")
         return "ieee300"
     
     def get_equiv_pdp_grid(self):

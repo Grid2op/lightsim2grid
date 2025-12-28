@@ -20,6 +20,8 @@ except ImportError:
     
 
 MIN_PYPO_DC_NONDEF_PARAMS = version.parse("1.13.0")
+VERSION_PHASESHIFT_OK_PYPOW = version.parse("1.11.0")
+
 try:
     import pypowsybl as pypow
     CURRENT_PYPOW_VERSION = version.parse(pypow.__version__)
