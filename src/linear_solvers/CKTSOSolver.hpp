@@ -35,10 +35,10 @@ can find a version of `https://github.com/chenxm1986/cktso`. Be careful though, 
 specific license.
 
 **/
-class CKTSOLinearSolver
+class CKTSOLinearSolver final
 {
     public:
-        CKTSOLinearSolver():
+        CKTSOLinearSolver() noexcept:
             solver_(nullptr),
             nb_thread_(1),
             ai_(nullptr), 
@@ -47,17 +47,35 @@ class CKTSOLinearSolver
             oparm_(nullptr)
             {}
 
-        ~CKTSOLinearSolver()
-         {
-            if(solver_!= nullptr) solver_->DestroySolver();
+        ~CKTSOLinearSolver() noexcept
+        {
+           if(solver_!= nullptr) solver_->DestroySolver();
+           if(ai_!= nullptr) delete [] ai_;
+           if(ap_!= nullptr) delete [] ap_;
+           
+           // should not be deleted, see https://github.com/Grid2Op/lightsim2grid/issues/52#issuecomment-1333565959
+           // if(iparm_!= nullptr) delete iparm_;
+           // if(oparm_!= nullptr) delete oparm_;
+           
+        }
+        CKTSOLinearSolver(CKTSOLinearSolver && other) noexcept: nb_thread_(ohter.nb_thread_){
+            std::swap(solver_, other.solver_);
+
             if(ai_!= nullptr) delete [] ai_;
+            ai_ = other.ai_;
+            other.ai_ = nullptr;
+
             if(ap_!= nullptr) delete [] ap_;
-            
-            // should not be deleted, see https://github.com/Grid2Op/lightsim2grid/issues/52#issuecomment-1333565959
-            // if(iparm_!= nullptr) delete iparm_;
-            // if(oparm_!= nullptr) delete oparm_;
-            
-         }
+            ap_ = other.ap_;
+            other.ap_ = nullptr;
+
+            iparm_ = other.iparm_;
+            other.iparm_ = nullptr;
+
+            oparm_ = other.oparm_;
+            other.oparm_ = nullptr;
+        }
+        
 
         // public api
         ErrorType reset();

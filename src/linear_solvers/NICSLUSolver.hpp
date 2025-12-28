@@ -36,21 +36,33 @@ specific license.
 **/
 
 // TODO use the cpp API instead !
-class NICSLULinearSolver
+class NICSLULinearSolver final
 {
     public:
-        NICSLULinearSolver():
+        NICSLULinearSolver() noexcept:
             solver_(),
             nb_thread_(1),
             ai_(nullptr), 
             ap_(nullptr){}
 
-        ~NICSLULinearSolver()
-         {
-            solver_.Free();
+        ~NICSLULinearSolver() noexcept
+        {
+           solver_.Free();
+           if(ai_!= nullptr) delete [] ai_;
+           if(ap_!= nullptr) delete [] ap_;
+        }
+
+        NICSLULinearSolver(NICSLULinearSolver && other) noexcept: nb_thread_(other.nb_thread_){
             if(ai_!= nullptr) delete [] ai_;
+            ai_ = other.ai_;
+            other.ai_ = nullptr;
+
             if(ap_!= nullptr) delete [] ap_;
-         }
+            ap_ = other.ap_;
+            other.ap_ = nullptr;
+
+            std::swap(solver_, other.solver_);
+        }
 
         // public api
         ErrorType reset();

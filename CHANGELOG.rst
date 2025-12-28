@@ -43,6 +43,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] an issue with the handling of the slack due to a not correct implementation
   of `update_slack_weights_by_id` cpp side (previous slacks were not removed, slacks get_slack_weights
   were prop to target_p which caused issues when all slacks had targetp==0.)
+- [FIXED] an issue with serialization / de serialization caused by an error in serializing the solver types.
 - [ADDED] in all "xxxInfo"  (*eg* "LoadInfo") information about subtation and position in the topology
   vector.
 - [ADDED] possibility to load the pypowsybl grid with extra key-words arguments (by using `pypowsybl_load_kwargs` in the 

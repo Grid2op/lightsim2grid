@@ -12,7 +12,7 @@
 /**
 Some typedef and other structures define here and used everywhere else
 **/
-
+#include <iostream>
 #include <complex>
 #include "Eigen/Core"
 
@@ -75,10 +75,10 @@ struct Coeff{
 #define VERSION_MINOR -1
 #endif
 
-class SolverControl
+class SolverControl final
 {
     public:
-        SolverControl(): 
+        SolverControl() noexcept: 
             change_dimension_(true),
             pv_changed_(true),
             pq_changed_(true),
@@ -92,6 +92,10 @@ class SolverControl
             ybus_change_sparsity_pattern_(true),
             one_el_change_bus_(true)
             {};
+
+        ~SolverControl() noexcept{
+            // std::cout << "SolverControl destructor" << std::endl;
+        }; 
 
         void tell_all_changed(){
             change_dimension_ = true;

@@ -31,7 +31,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
         class OneSideForBranchInfo: public OneSideContainer::OneSideInfo
         {
             public:
-                OneSideForBranchInfo(const OneSideContainer_ForBranch & r_data_pq, int my_id):
+                OneSideForBranchInfo(const OneSideContainer_ForBranch & r_data_pq, int my_id) noexcept:
                 OneSideInfo(r_data_pq, my_id) {}
         };
     
@@ -59,8 +59,11 @@ class OneSideContainer_ForBranch : public OneSideContainer
 
     // regular implementation
     public:
-        OneSideContainer_ForBranch(){};
-        OneSideContainer_ForBranch(bool is_trafo){};
+        OneSideContainer_ForBranch() noexcept {};
+        OneSideContainer_ForBranch(bool is_trafo) noexcept{};
+        virtual ~OneSideContainer_ForBranch() noexcept{
+            // std::cout << "\tOneSideContainer_ForBranch destructor" << std::endl;
+        }
 
         // public generic API
 

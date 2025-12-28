@@ -15,12 +15,14 @@
 Base class for Newton Raphson based solver (only interesting for single slack)
 **/
 template<class LinearSolver>
-class BaseNRSingleSlackAlgo : public BaseNRAlgo<LinearSolver>
+class BaseNRSingleSlackAlgo final : public BaseNRAlgo<LinearSolver>
 {
     public:
-        BaseNRSingleSlackAlgo():BaseNRAlgo<LinearSolver>(){}
+        BaseNRSingleSlackAlgo() noexcept = default;
 
-        ~BaseNRSingleSlackAlgo(){}
+        virtual ~BaseNRSingleSlackAlgo() noexcept {
+            // std::cout << "BaseNRSingleSlackAlgo destructor" << std::endl;
+        };
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,

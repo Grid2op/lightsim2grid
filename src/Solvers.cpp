@@ -15,7 +15,7 @@
 template<class LinearSolver, FDPFMethod XB_BX>
 void BaseFDPFAlgo<LinearSolver, XB_BX>::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const
 {
-    _gridmodel->fillBp_Bpp(Bp, Bpp, XB_BX);
+    gridmodel_ptr_->fillBp_Bpp(Bp, Bpp, XB_BX);
 }
 
 template void FDPF_XB_SparseLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;

@@ -15,6 +15,7 @@
 #include <cstdint> // for int32
 #include <chrono>
 #include <cmath>  // for PI
+#include <memory>
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -45,7 +46,7 @@ class BaseAlgo : public BaseConstants
         const bool IS_AC;  // should be static ideally...
 
     public:
-        BaseAlgo(bool is_ac=true):
+        BaseAlgo(bool is_ac=true) noexcept:
             BaseConstants(),
             IS_AC(is_ac),
             n_(-1),
@@ -55,10 +56,16 @@ class BaseAlgo : public BaseConstants
             timer_check_(0.),
             timer_total_nr_(0.){};
 
-        virtual ~BaseAlgo(){}
+        virtual ~BaseAlgo() noexcept {
+            // std::cout << "\t\t BaseAlgo destructor" << std::endl;
+        };  // I don't put "=default" because I don't have the ownership to gridmodel
+
+        // no copy allowed
+        BaseAlgo( const BaseAlgo & ) =delete;
+        BaseAlgo & operator=( const BaseAlgo & ) =delete;
 
         void set_gridmodel(const GridModel * gridmodel){
-            _gridmodel = gridmodel;
+            gridmodel_ptr_ = gridmodel;
         }
 
         Eigen::Ref<const RealVect> get_Va() const{
@@ -89,7 +96,7 @@ class BaseAlgo : public BaseConstants
             return res;
         }
         
-        virtual TimerJacType  get_timers_jacobian() const
+        virtual TimerJacType get_timers_jacobian() const
         {
             TimerJacType res = {
                 timer_Fx_,
@@ -182,16 +189,16 @@ class BaseAlgo : public BaseConstants
                                     const RealVect & q,
                                     real_type tol);
 
-        void one_iter_all_at_once(CplxVect & tmp_Sbus,
-                                  const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                  const Eigen::VectorXi & pv,
-                                  const Eigen::VectorXi & pq
-                                  );
-        void one_iter(CplxVect & tmp_Sbus,
-                      const Eigen::SparseMatrix<cplx_type> & Ybus,
-                      const Eigen::VectorXi & pv,
-                      const Eigen::VectorXi & pq
-                      );
+        // void one_iter_all_at_once(CplxVect & tmp_Sbus,
+        //                           const Eigen::SparseMatrix<cplx_type> & Ybus,
+        //                           const Eigen::VectorXi & pv,
+        //                           const Eigen::VectorXi & pq
+        //                           );
+        // void one_iter(CplxVect & tmp_Sbus,
+        //               const Eigen::SparseMatrix<cplx_type> & Ybus,
+        //               const Eigen::VectorXi & pv,
+        //               const Eigen::VectorXi & pq
+        //               );
 
         Eigen::VectorXi extract_slack_bus_id(const Eigen::VectorXi & pv,
                                              const Eigen::VectorXi & pq,
@@ -262,13 +269,8 @@ class BaseAlgo : public BaseConstants
         double timer_check_;
         double timer_total_nr_;
 
-        const GridModel * _gridmodel;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
+        const GridModel * gridmodel_ptr_;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
         SolverControl _solver_control;
-
-    private:
-        // no copy allowed
-        BaseAlgo( const BaseAlgo & ) ;
-        BaseAlgo & operator=( const BaseAlgo & ) ;
 
 };
 

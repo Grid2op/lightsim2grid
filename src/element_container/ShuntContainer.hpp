@@ -22,7 +22,7 @@ class ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         // no members
-        inline ShuntInfo(const ShuntContainer & r_data_shunt, int my_id);
+        inline ShuntInfo(const ShuntContainer & r_data_shunt, int my_id) noexcept;
 };
 
 /**
@@ -43,7 +43,10 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
     public:
         typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;
         
-        ShuntContainer()noexcept = default;
+        ShuntContainer() noexcept = default;
+        virtual ~ShuntContainer() noexcept{
+            // std::cout << "ShuntContainer destructor" << std::endl;
+        }
         
         
         void init(const RealVect & shunt_p_mw,
@@ -128,6 +131,7 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
 
 };
 
-inline ShuntInfo::ShuntInfo(const ShuntContainer & r_data_shunt, int my_id):OneSidePQInfo(r_data_shunt, my_id){}
+inline ShuntInfo::ShuntInfo(const ShuntContainer & r_data_shunt, int my_id) noexcept:
+OneSidePQInfo(r_data_shunt, my_id){}
 
 #endif  //SHUNT_CONTAINER_H

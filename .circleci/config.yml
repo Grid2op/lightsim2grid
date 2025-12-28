@@ -238,6 +238,7 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
+
     compile_and_test_gcc_latest:
         executor: gcc_latest
         resource_class: medium
@@ -577,6 +578,7 @@ jobs:
                     cd lightsim2grid/tests/
                     python -m unittest test_GridModel_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
+
 
 workflows:
     version: 2.1

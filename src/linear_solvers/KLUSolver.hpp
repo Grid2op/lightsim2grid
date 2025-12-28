@@ -9,6 +9,7 @@
 #ifdef KLU_SOLVER_AVAILABLE
 #ifndef KLSOLVER_H
 #define KLSOLVER_H
+#include <iostream>
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -33,16 +34,31 @@ Reusing the same solver is possible, but "reset" method must be called.
 Otherwise, unexpected behaviour might follow, including "segfault".
 
 **/
-class KLULinearSolver
+class KLULinearSolver final
 {
     public:
-        KLULinearSolver():symbolic_(),numeric_(),common_(){}
+        KLULinearSolver() noexcept :symbolic_(nullptr),numeric_(nullptr),common_(){}
 
-        ~KLULinearSolver()
-         {
-             klu_free_symbolic(&symbolic_, &common_);
-             klu_free_numeric(&numeric_, &common_);
-         }
+        ~KLULinearSolver() noexcept
+        {
+            // std::cout << "KLULinearSolver destructor 1" << std::endl;
+            if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
+            // std::cout << "KLULinearSolver destructor 2" << std::endl;
+            if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
+            // std::cout << "KLULinearSolver destructor 3" << std::endl;
+        }
+
+        KLULinearSolver(KLULinearSolver && other) noexcept {
+            if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
+            symbolic_ = other.symbolic_;
+            other.symbolic_ = nullptr;
+            
+            if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
+            numeric_ = other.numeric_;
+            other.numeric_ = nullptr;
+
+            std::swap(common_, other.common_);
+        }
 
         // public api
         ErrorType reset();

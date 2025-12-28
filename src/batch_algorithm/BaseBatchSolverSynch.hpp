@@ -23,7 +23,7 @@ class BaseBatchSolverSynch : protected BaseConstants
         typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
         typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
         
-        BaseBatchSolverSynch(const GridModel & init_grid_model):
+        BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -39,7 +39,7 @@ class BaseBatchSolverSynch : protected BaseConstants
             {
                 // make sure that my "grid_model" is ready to be used (for ac and dc)
                 Eigen::Index nb_bus = init_grid_model.total_bus();
-                CplxVect V = CplxVect::Constant(nb_bus, 1.04);
+                CplxVect V = CplxVect::Constant(nb_bus, cplx_type(1.04, 0));
                 // const auto & Vtmp = init_grid_model.get_V_solver();
                 // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
                 _grid_model.tell_solver_need_reset();

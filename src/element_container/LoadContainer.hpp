@@ -23,7 +23,7 @@ class LoadContainer;
 class LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
-        inline LoadInfo(const LoadContainer & r_data_load, int my_id);
+        inline LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept;
 };
 
 
@@ -54,6 +54,9 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
            >  StateRes;
         
         LoadContainer() noexcept = default;
+        virtual ~LoadContainer() noexcept{
+            // std::cout << "LoadContainer destructor" << std::endl;
+        };
         
         // pickle (python)
         LoadContainer::StateRes get_state() const;
@@ -88,7 +91,7 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
                                     }
 };
 
-inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id): 
+inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept: 
         OneSidePQInfo(r_data_load, my_id) {}
 
 #endif  //LOAD_CONTAINER_H

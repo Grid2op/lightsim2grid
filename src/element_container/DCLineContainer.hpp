@@ -36,11 +36,11 @@ class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
         GenInfo gen_side_1;
         GenInfo gen_side_2;
 
-       inline DCLineInfo(const DCLineContainer & r_data_dcline, int my_id);
+       inline DCLineInfo(const DCLineContainer & r_data_dcline, int my_id) noexcept;
 };
 
 
-class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public IteratorAdder<DCLineContainer, DCLineInfo>
+class DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, public IteratorAdder<DCLineContainer, DCLineInfo>
 {
     friend class DCLineInfo;
 
@@ -52,6 +52,9 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
             SolverControl solver_control_not_used;
             side_1_.turnedoff_no_pv(solver_control_not_used);
             side_2_.turnedoff_no_pv(solver_control_not_used);
+        };
+        virtual ~DCLineContainer() noexcept{
+            // std::cout << "DCLineContainer destructor" << std::endl;
         };
 
         // pickle
@@ -203,7 +206,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
             side_2_.set_vm(V, id_grid_to_solver);
         }
 
-    protected:
+    private:
         // it is modeled as 2 generators that are "linked" together
         // see https://pandapower.readthedocs.io/en/v2.0.1/elements/dcline.html#electric-model
         RealVect loss_percent_;
@@ -211,7 +214,7 @@ class DCLineContainer : public TwoSidesContainer<GeneratorContainer>, public Ite
 
 };
 
-inline DCLineInfo::DCLineInfo(const DCLineContainer & r_data_dcline, int my_id):
+inline DCLineInfo::DCLineInfo(const DCLineContainer & r_data_dcline, int my_id) noexcept:
     TwoSidesContainer<GeneratorContainer>::TwoSidesInfo(r_data_dcline, my_id),
     target_p_1_mw(0.),
     p_2_mw(0.),

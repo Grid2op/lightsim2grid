@@ -135,7 +135,7 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
                                       real_type sn_mva,
                                       bool ac)
 {
-    const int nb_shunt = static_cast<int>(target_p_mw_.size());
+    const int nb_shunt = nb();
     for(int shunt_id = 0; shunt_id < nb_shunt; ++shunt_id){
         if(!status_[shunt_id]) {
             res_p_(shunt_id) = my_zero_;

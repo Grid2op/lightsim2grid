@@ -89,7 +89,7 @@ class OneSideContainer : public GenericContainer
                 real_type res_v_kv;
                 real_type res_theta_deg;
 
-                OneSideInfo(const OneSideContainer & r_data_one_side, int my_id):
+                OneSideInfo(const OneSideContainer & r_data_one_side, int my_id) noexcept:
                 id(-1),
                 name(""),
                 sub_id(-1),
@@ -102,7 +102,7 @@ class OneSideContainer : public GenericContainer
                 res_v_kv(0.),
                 res_theta_deg(0.)
                 {
-                    if((my_id >= 0) & (my_id < r_data_one_side.nb()))
+                    if((my_id >= 0) && (my_id < r_data_one_side.nb()))
                     {
                         id = my_id;
                         if(r_data_one_side.names_.size()){
@@ -154,6 +154,9 @@ class OneSideContainer : public GenericContainer
 
     public:
         OneSideContainer() noexcept = default;
+        virtual ~OneSideContainer() noexcept{
+            // std::cout << "\t\tOneSideContainer destructor" << std::endl;
+        }
         // OneSideInfo get_osc_info(int id_) {return OneSideInfo(*this, id_);}
 
         // public generic API
@@ -218,9 +221,13 @@ class OneSideContainer : public GenericContainer
          * 
          * Not the "solver" bus, nor the "substation" / "local" bus.
          */
-        void change_bus(int load_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
-            this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
-            _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
+        void change_bus(
+            int load_id,
+            GridModelBusId new_gridmodel_bus_id,
+            SolverControl & solver_control,
+            const SubstationContainer & substation){
+                this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
+                _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
         }
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,

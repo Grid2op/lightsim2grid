@@ -29,7 +29,7 @@ class SGenInfo  : public OneSideContainer_PQ::OneSidePQInfo
         real_type min_p_mw;
         real_type max_p_mw;
 
-        inline SGenInfo(const SGenContainer & r_data_sgen, int my_id);
+        inline SGenInfo(const SGenContainer & r_data_sgen, int my_id) noexcept;
 };
 
 /**
@@ -61,7 +61,10 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
            std::vector<real_type> //  q_max
            >  StateRes;
         
-        SGenContainer()noexcept = default;
+        SGenContainer() noexcept = default;
+        virtual ~SGenContainer() noexcept{
+            // std::cout << "SGenContainer destructor" << std::endl;
+        }
         
         // pickle (python)
         SGenContainer::StateRes get_state() const;
@@ -89,12 +92,11 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
             real_type sn_mva,
             bool ac)
             {
-
-            set_osc_pq_res_p();
-            set_osc_pq_res_q(ac);
+                set_osc_pq_res_p();
+                set_osc_pq_res_q(ac);
             }
 
-    protected:
+    private:
         // physical properties
         RealVect p_min_mw_;
         RealVect p_max_mw_;
@@ -106,14 +108,14 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
         //output data
 };
 
-inline  SGenInfo::SGenInfo(const SGenContainer & r_data_sgen, int my_id):
+inline  SGenInfo::SGenInfo(const SGenContainer & r_data_sgen, int my_id) noexcept:
 OneSidePQInfo(r_data_sgen, my_id),
 min_q_mvar(0.),
 max_q_mvar(0.),
 min_p_mw(0.),
 max_p_mw(0.)
 {
-    if((my_id >= 0) & (my_id < r_data_sgen.nb()))
+    if((my_id >= 0) && (my_id < r_data_sgen.nb()))
     {
         min_q_mvar = r_data_sgen.q_min_mvar_(my_id);
         max_q_mvar = r_data_sgen.q_max_mvar_(my_id);

@@ -104,6 +104,9 @@ class TestPickle(unittest.TestCase):
                     pickle.dump(self.env.backend, f)
                 with open(os.path.join(tmpdir, "test_pickle.pickle"), "rb") as f:
                     backend_1 = pickle.load(f)
+                assert backend_1._grid.get_solver_type() ==  self.env.backend._grid.get_solver_type()
+                assert backend_1._grid.get_dc_solver_type() ==  self.env.backend._grid.get_dc_solver_type()
+                
                 self.aux_test_2sides(self.env.backend._grid, backend_1._grid)
                 self.aux_test_1side(self.env.backend._grid, backend_1._grid)
                 

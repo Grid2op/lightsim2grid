@@ -8,6 +8,7 @@
 
 #ifndef SPARSELUSOLVER_H
 #define SPARSELUSOLVER_H
+#include <iostream>
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
 // and to optimize the matrix operations
@@ -28,15 +29,20 @@ Reusing the same solver is possible, but "reset" method must be called.
 Otherwise, unexpected behaviour might follow, including "segfault".
 
 **/
-class SparseLULinearSolver
+class SparseLULinearSolver final
 {
     public:
-        SparseLULinearSolver():solver_(){}
+        SparseLULinearSolver() noexcept :solver_(){}
+        ~SparseLULinearSolver() noexcept{
+            // std::cout << "SparseLULinearSolver destructor" << std::endl;
+        };
         
         // public api
         ErrorType initialize(const Eigen::SparseMatrix<real_type> & J);
         ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor);
-        ErrorType reset(){return ErrorType::NoError; }
+        ErrorType reset(){
+            return ErrorType::NoError;
+        }
 
         // can this linear solver solve problem where RHS is a matrix
         static const bool CAN_SOLVE_MAT;

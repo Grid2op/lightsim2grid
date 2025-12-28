@@ -16,10 +16,10 @@
 Class to perform a contingency analysis (security analysis), which consist of performing some powerflow after some powerlines
 have been disconnected 
  **/
-class ContingencyAnalysis: public BaseBatchSolverSynch
+class ContingencyAnalysis final: public BaseBatchSolverSynch
 {
     public:
-        ContingencyAnalysis(const GridModel & init_grid_model):
+        ContingencyAnalysis(const GridModel & init_grid_model) noexcept:
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),

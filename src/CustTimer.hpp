@@ -17,9 +17,9 @@ This class presents a basic timer that is used in KLUSolver to know on which par
 most time were taken.
 
 **/
-class CustTimer{
+class CustTimer final{
     public:
-        CustTimer():start_(std::chrono::steady_clock::now()), end_(start_){};
+        CustTimer() noexcept :start_(std::chrono::steady_clock::now()), end_(start_){};
 
         double duration(){
             end_ = std::chrono::steady_clock::now();

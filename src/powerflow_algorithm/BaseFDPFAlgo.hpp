@@ -18,7 +18,10 @@ template<class LinearSolver, FDPFMethod XB_BX>
 class BaseFDPFAlgo: public BaseAlgo
 {
     public:
-        BaseFDPFAlgo():BaseAlgo(true), need_factorize_(true) {}
+        BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
+        virtual ~BaseFDPFAlgo() noexcept{
+            // std::cout << "BaseFDPFAlgo destructor" << std::endl;
+        };
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,

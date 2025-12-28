@@ -42,7 +42,7 @@ class SubstationInfo
         inline SubstationInfo(const SubstationContainer & r_data, int my_id);
 };
 
-class SubstationContainer : public IteratorAdder<SubstationContainer, SubstationInfo>
+class SubstationContainer final : public IteratorAdder<SubstationContainer, SubstationInfo>
 {
     friend class SubstationInfo;
 
@@ -65,18 +65,22 @@ class SubstationContainer : public IteratorAdder<SubstationContainer, Substation
         SubstationContainer::StateRes get_state() const;
         void set_state(SubstationContainer::StateRes & my_state);
 
-        SubstationContainer():
+        SubstationContainer() noexcept:
             n_sub_(-1), 
             nmax_busbar_per_sub_(-1),
             n_bus_max_(-1){}
             
-        SubstationContainer(int n_sub, int nmax_busbar_per_sub):
+        SubstationContainer(int n_sub, int nmax_busbar_per_sub) noexcept:
             n_sub_(n_sub),
             nmax_busbar_per_sub_(nmax_busbar_per_sub),
             n_bus_max_(n_sub * nmax_busbar_per_sub),
             sub_vn_kv_(n_sub),
             bus_status_(n_bus_max_, false),
             bus_vn_kv_(n_bus_max_){}
+            
+        ~SubstationContainer() noexcept {
+            // std::cout << "SubstationContainer destructor" << std::endl;
+        }; 
 
         void reset_bus_status(){
             for(auto i = 0; i < n_bus_max_; ++ i) bus_status_[i] = -1;

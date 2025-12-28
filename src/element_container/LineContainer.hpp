@@ -25,7 +25,7 @@ class LineContainer;
 class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
 {
     public:
-        inline LineInfo(const LineContainer & r_data, int my_id);
+        inline LineInfo(const LineContainer & r_data, int my_id) noexcept;
 };
 
 /**
@@ -44,6 +44,9 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
                    >  StateRes;
         
         LineContainer() noexcept = default;
+        virtual ~LineContainer() noexcept{
+            // std::cout << "LineContainer destructor" << std::endl;
+        };
         
         void init(const RealVect & branch_r,
                   const RealVect & branch_x,
@@ -103,7 +106,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
         // model coefficients
 };
 
-inline LineInfo::LineInfo(const LineContainer & r_data, int my_id):
+inline LineInfo::LineInfo(const LineContainer & r_data, int my_id) noexcept:
 TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
 
 #endif  //LINE_CONTAINER_H

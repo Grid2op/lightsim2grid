@@ -22,11 +22,13 @@ This class and all that are in there are provided as examples.
 It allows conversion of "higher level" data, such as pandapower into a format that can be
 digested by DataModel further used to compute powerflows thanks to KLUSolver.
 **/
-class PandaPowerConverter : public BaseConstants
+class PandaPowerConverter final : public BaseConstants
 {
 
     public:
-        PandaPowerConverter():BaseConstants(),sn_mva_(-1.0),f_hz_(-1.0){};
+        PandaPowerConverter() noexcept :BaseConstants(),sn_mva_(-1.0),f_hz_(-1.0){};
+        ~PandaPowerConverter() noexcept = default;
+        
         void set_f_hz(real_type f_hz) { f_hz_ = f_hz;}
         void set_sn_mva(real_type sn_mva) { sn_mva_ = sn_mva;}
 

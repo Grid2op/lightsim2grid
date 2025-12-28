@@ -183,10 +183,10 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::VectorXi & pv,
 
 void BaseAlgo::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
-    _gridmodel->fillBf_for_PTDF(Bf);
+    gridmodel_ptr_->fillBf_for_PTDF(Bf);
 }
 
 void BaseAlgo::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
-    _gridmodel->fillBf_for_PTDF(Bf_T, true);
+    gridmodel_ptr_->fillBf_for_PTDF(Bf_T, true);
 }

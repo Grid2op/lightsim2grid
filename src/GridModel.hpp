@@ -41,7 +41,7 @@
 #include "ChooseSolver.hpp"
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
-class GridModel : public GenericContainer
+class GridModel final : public GenericContainer
 {
     public:
         typedef Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> IntVectRowMaj;
@@ -72,12 +72,16 @@ class GridModel : public GenericContainer
                 LoadContainer::StateRes,
                 //dc lines
                 DCLineContainer::StateRes,
+                // solver types
+                SolverType, // ac_solver
+                SolverType // dc_solver
+                // grid2
                 // grid2op specific
-                int, // n_sub
-                int // max_nb_bus_per_sub
+                // int, // n_sub
+                // int // max_nb_bus_per_sub
                 >  StateRes;
 
-        GridModel():
+        GridModel() noexcept:
           timer_last_ac_pf_(0.),
           timer_last_dc_pf_(0.),
           solver_control_(),
@@ -90,12 +94,18 @@ class GridModel : public GenericContainer
             _solver.set_gridmodel(this);
             _dc_solver.set_gridmodel(this);
             solver_control_.tell_all_changed();
+            // std::cout << "GridModel init: " << this << std::endl;
         }
-        GridModel(const GridModel & other);
-        GridModel copy() const{
+        GridModel(const GridModel & other) noexcept;
+        // GridModel(GridModel && other) noexcept = default;  // TODO 
+        GridModel copy() const noexcept{
             GridModel res(*this);
             return res;
         }
+        ~GridModel() noexcept = default;
+        // {
+        //     std::cout << "GridModel destructor: " << this << std::endl;
+        // };
 
         void set_ls_to_orig(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
         void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
@@ -190,8 +200,8 @@ class GridModel : public GenericContainer
             else _solver.change_solver(type);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
-        SolverType get_solver_type() {return _solver.get_type(); }
-        SolverType get_dc_solver_type() {return _dc_solver.get_type(); }
+        SolverType get_solver_type() const {return _solver.get_type(); }
+        SolverType get_dc_solver_type() const {return _dc_solver.get_type(); }
         const ChooseSolver & get_solver() const {return _solver;}
         const ChooseSolver & get_dc_solver() const {return _dc_solver;}
 
@@ -382,7 +392,10 @@ class GridModel : public GenericContainer
 
         void tell_recompute_ybus(){solver_control_.tell_recompute_ybus();}
         void tell_recompute_sbus(){solver_control_.tell_recompute_sbus();}
-        void tell_solver_need_reset(){solver_control_.tell_solver_need_reset();}
+        void tell_solver_need_reset(){
+            last_bus_status_saved_ = std::vector<bool>(substations_.nb_bus(), false);
+            solver_control_.tell_solver_need_reset();
+        }
         void tell_ybus_change_sparsity_pattern(){solver_control_.tell_ybus_change_sparsity_pattern();} 
         const SolverControl & get_solver_control() const {return solver_control_;}
 

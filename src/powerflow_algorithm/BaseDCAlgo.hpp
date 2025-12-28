@@ -12,10 +12,10 @@
 #include "BaseAlgo.hpp"
 
 template<class LinearSolver>
-class BaseDCAlgo: public BaseAlgo
+class BaseDCAlgo final: public BaseAlgo
 {
     public:
-        BaseDCAlgo():
+        BaseDCAlgo() noexcept :
             BaseAlgo(false),
             _linear_solver(),
             need_factorize_(true),
@@ -24,7 +24,9 @@ class BaseDCAlgo: public BaseAlgo
             sizeYbus_with_slack_(0),
             sizeYbus_without_slack_(0){};
 
-        ~BaseDCAlgo(){}
+        virtual ~BaseDCAlgo() noexcept {
+            // std::cout << "BaseDCAlgo destructor" << std::endl;
+        };
 
         virtual void reset();
         virtual void reset_timer(){

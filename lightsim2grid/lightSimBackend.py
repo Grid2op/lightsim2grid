@@ -341,11 +341,12 @@ class LightSimBackend(Backend):
         self.thermal_limit_a = None
 
         self.dim_topo = -1
-        self._init_action_to_set = None
+        # self._init_action_to_set = None
         self._backend_action_class = None
         self.cst_1 = dt_float(1.0)
         self.__me_at_init = None
         self.__init_topo_vect = None
+        self.__init_shunt_bus = None
 
         # available solver in lightsim
         self.available_solvers = []
@@ -738,7 +739,7 @@ class LightSimBackend(Backend):
         
     def load_grid(self,
                   path : Union[os.PathLike, str],
-                  filename : Optional[Union[os.PathLike, str]]=None) -> None: 
+                  filename : Optional[Union[os.PathLike, str]]=None) -> None:
         cls = type(self)
         if hasattr(cls, "can_handle_more_than_2_busbar"):
             # grid2op version >= 1.10.0 then we use this
@@ -1007,7 +1008,6 @@ class LightSimBackend(Backend):
         max_not_too_max = (np.finfo(dt_float).max * 0.5 - 1.)
         self.thermal_limit_a = max_not_too_max * np.ones(self.n_line, dtype=dt_float)
         bus_vn_kv = np.array(self._grid.get_bus_vn_kv())
-        # shunt_bus_id = np.array([el.bus_id for el in self._grid.get_shunts()])
         self._sh_vnkv = bus_vn_kv[self.shunt_to_subid]
         self._aux_finish_setup_after_reading()
     
@@ -1335,15 +1335,18 @@ class LightSimBackend(Backend):
             if my_cls.load_pos_topo_vect is None:
                 # old grid2op version
                 self.topo_vect[:] = 1
+                self.sh_bus[:] = 1
             else:
-                self._read_topo_vect(self.topo_vect)
+                self.topo_vect.flags.writeable = True  # this is set to False in _read_topo_vect
+                self._read_topo_vect(self.topo_vect)  # this also reads shunts information
             self._grid.tell_solver_need_reset()
             self.__me_at_init = self._grid.copy()
             self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
             self.__init_topo_vect[:] = self.topo_vect
-            if cls.shunts_data_available:
-                self.sh_bus[:] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_shunts()]),
-                                                        cls.shunt_to_subid)
+            self.__init_topo_vect.flags.writeable = False
+            
+            self.__init_shunt_bus = self.sh_bus.copy()
+            self.__init_shunt_bus.flags.writeable = False
         finally:
             cls.n_sub = n_sub_cls_orig
             LightSimBackend.n_sub = n_sub_ls_orig
@@ -1352,6 +1355,7 @@ class LightSimBackend(Backend):
         """the input vector "res" is modified !"""
         # TODO speed optimization here to read it "better"
         cls = type(self)
+        # handle object in topo vect
         res[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
                                                                         cls.load_to_subid)
         res[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
@@ -1365,6 +1369,14 @@ class LightSimBackend(Backend):
         lex_glob_bus = np.concatenate((np.array([el.bus_2_id for el in self._grid.get_lines()]),
                                         np.array([el.bus_2_id for el in self._grid.get_trafos()])))
         res[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus, cls.line_ex_to_subid)
+        res.flags.writeable = False
+        
+        # handle shunts (not in topo vect)
+        if cls.shunts_data_available:
+            self.sh_bus.flags.writeable = True
+            self.sh_bus[:] = cls.global_bus_to_local(self._grid.get_shunts().get_bus_id(),
+                                                     cls.shunt_to_subid).copy()
+            self.sh_bus.flags.writeable = False
         
     def assert_grid_correct_after_powerflow(self) -> None:
         """
@@ -1381,14 +1393,15 @@ class LightSimBackend(Backend):
             _DoNotUseAnywherePandaPowerBackend._clear_grid_dependant_class_attributes()
             self._init_pp_backend.__class__ = type(self._init_pp_backend).init_grid(type(self))
         self._backend_action_class = _BackendAction.init_grid(type(self))
-        self._init_action_to_set = self._backend_action_class()
-        try:
-            _init_action_to_set = self.get_action_to_set()
-        except TypeError:
-            # I am in legacy grid2op version...
-            _init_action_to_set = _dont_use_get_action_to_set_legacy(self)
+        
+        # self._init_action_to_set = self._backend_action_class()
+        # try:
+        #     _init_action_to_set = self.get_action_to_set()
+        # except TypeError:
+        #     # I am in legacy grid2op version...
+        #     _init_action_to_set = _dont_use_get_action_to_set_legacy(self)
             
-        self._init_action_to_set += _init_action_to_set
+        # self._init_action_to_set += _init_action_to_set
         if self.prod_pu_to_kv is not None:
             assert np.isfinite(self.prod_pu_to_kv).all()
         if self.load_pu_to_kv is not None:
@@ -1436,7 +1449,10 @@ class LightSimBackend(Backend):
         if self._init_pp_backend is not None:
             # self.init_pp_backend.close()  # should not close it, the same init_pp_backend is used when copied
             self._init_pp_backend = None
+        self._reset_res_pointers()
+        self._fill_nans()
         self._grid = None
+        self.__me_at_init = None
 
     def apply_action(self, backendAction: Union["grid2op.Action._backendAction._BackendAction", None]) -> None:
         """
@@ -1452,7 +1468,9 @@ class LightSimBackend(Backend):
         if not self._automatically_disconnect:
             # the backend cannot change the topology, so 
             # this holds
+            self.topo_vect.flags.writeable = True
             self.topo_vect[chgt] = backendAction.current_topo.values[chgt]
+            self.topo_vect.flags.writeable = False
         else:
             if chgt.sum():
                 # there has been topological changes, I need 
@@ -1500,8 +1518,11 @@ class LightSimBackend(Backend):
                         self._grid.change_bus_shunt(sh_id, type(self).local_bus_to_global_int(new_bus, self.shunt_to_subid[sh_id]))
                     else:
                         self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] + (new_bus == 2) * type(self).n_sub)
+                        
             # remember the topology not to need to read it back from the grid
+            self.sh_bus.flags.writeable = True
             self.sh_bus[shunt_bus.changed] = shunt_bus.values[shunt_bus.changed]
+            self.sh_bus.flags.writeable = False
             for sh_id, new_p in shunt_p:
                 self._grid.change_p_shunt(sh_id, new_p)
             for sh_id, new_q in shunt_q:
@@ -1613,6 +1634,7 @@ class LightSimBackend(Backend):
             beg_readback = time.perf_counter()
             self.V[:] = V
             self._fetch_grid_data()
+            self._allow_modif()
                     
             (self.p_or[:self.__nb_powerline],
              self.q_or[:self.__nb_powerline],
@@ -1675,7 +1697,6 @@ class LightSimBackend(Backend):
                     self._timer_postproc += time.perf_counter() - beg_postroc
                     raise BackendError(f"At least one storage unit is disconnected (check storage {sto_disco})")
             # TODO storage case of divergence !
-
             if type(self).shunts_data_available:
                 self._set_shunt_info()
 
@@ -1683,7 +1704,8 @@ class LightSimBackend(Backend):
                 raise BackendError("Some theta are above 1e6 which should not be happening !")
             res = True
             self._grid.unset_changes()
-            
+            self._disallow_modif()
+        
             if self._need_islanding_detection:
                 # topology might have changed in the
                 # powerflow computation
@@ -1692,8 +1714,8 @@ class LightSimBackend(Backend):
             self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
             # of the powerflow has not converged, results are Nan
-            self._grid.tell_solver_need_reset()
             self._fill_nans()
+            self._reset_res_pointers()
             res = False
             my_exc_ = exc_
             if not isinstance(my_exc_, BackendError):
@@ -1702,6 +1724,7 @@ class LightSimBackend(Backend):
                 # set back the solver to its previous state
                 self._grid.change_solver(self.__current_solver_type)
             self._grid.tell_solver_need_reset()
+            self._grid.reactivate_result_computation()
             if self._automatically_disconnect:
                 # trigger a check for the connected component only
                 # if relevant attribute is set
@@ -1709,11 +1732,65 @@ class LightSimBackend(Backend):
         # TODO grid2op compatibility ! (was a single returned element before storage were introduced)
         if self.__has_storage:
             res = res, my_exc_
+
         return res
 
+    def _aux_get_attr_for_modif_flag(self):
+        li_attr = [
+            self.p_or,
+            self.q_or,
+            self.v_or,
+            self.a_or,
+            self.p_ex,
+            self.q_ex,
+            self.v_ex,
+            self.a_ex,
+            self.load_p,
+            self.load_q,
+            self.load_v,
+            self.prod_p,
+            self.next_prod_p,
+            self.prod_q,
+            self.prod_v,
+            self.line_or_theta,
+            self.line_ex_theta,
+            self.load_theta,
+            self.gen_theta]
+        
+        if type(self).shunts_data_available:
+            li_attr += [
+                self.sh_p,
+                self.sh_q,
+                self.sh_v,
+                self.sh_theta,
+                self.sh_bus,
+            ]
+            
+        if self.__has_storage:
+            li_attr += [
+                self.storage_p,
+                self.storage_q,
+                self.storage_v,
+                self.storage_theta,
+            ]
+        return li_attr
+    
+    def _aux_modif_flags(self, li_attr, flag):
+        for el in li_attr:
+            el.flags.writeable = flag
+        
+    def _allow_modif(self):
+        li_attr = self._aux_get_attr_for_modif_flag()
+        self._aux_modif_flags(li_attr, True)
+        
+    def _disallow_modif(self):
+        li_attr = self._aux_get_attr_for_modif_flag()
+        self._aux_modif_flags(li_attr, False)
+    
     def _fill_nans(self):
         """fill the results vectors with nans"""
         self._next_pf_fails = None
+        self._allow_modif()
         self.p_or[:] = np.nan
         self.q_or[:] = np.nan
         self.v_or[:] = np.nan
@@ -1748,6 +1825,7 @@ class LightSimBackend(Backend):
             self.storage_theta[:] = np.nan
         self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
         self._reset_res_pointers()
+        self._disallow_modif()
         self._last_dc = True
     
     def _reset_res_pointers(self):
@@ -1765,6 +1843,7 @@ class LightSimBackend(Backend):
             result = self.copy_public()
         else:
             result = self.copy()
+        result._reset_res_pointers()
         memo[id(self)] = result
         return result
 
@@ -1884,6 +1963,7 @@ class LightSimBackend(Backend):
         # handle the most complicated
         if mygrid is not None:
             res._grid = mygrid.copy()
+            res._fill_nans()
             res._reset_res_pointers()
             res._fetch_grid_data()
             if orig_grid is not None:
@@ -1891,11 +1971,13 @@ class LightSimBackend(Backend):
                     raise Grid2OpException("Error in the copy of a LightSimBackend: my_grid is not orig_grid")
         else:
             res._grid = None
-        res.__me_at_init = __me_at_init.copy()  # this is const
+        res.__me_at_init = __me_at_init.copy()  # this is const (but I copy it for "safety")
         res._init_pp_backend = inippbackend  # this is const
-        res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
+        # res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
         res._backend_action_class = self._backend_action_class  # this is const
-        res.__init_topo_vect = 1 * self.__init_topo_vect
+        res.__init_topo_vect = self.__init_topo_vect  # this is const
+        res.__init_shunt_bus = self.__init_shunt_bus  # this is const
+        
         res.available_solvers = self.available_solvers
         res._orig_grid_pypowsybl = self._orig_grid_pypowsybl 
         
@@ -1914,44 +1996,46 @@ class LightSimBackend(Backend):
         return self.a_or
     
     def get_topo_vect(self) -> np.ndarray:
-        return 1 * self.topo_vect
+        return self.topo_vect
 
     def generators_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.cst_1 * self.prod_p, self.cst_1 * self.prod_q, self.cst_1 * self.prod_v
+        return self.prod_p, self.prod_q, self.prod_v
 
     def loads_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.cst_1 * self.load_p, self.cst_1 * self.load_q, self.cst_1 * self.load_v
+        return self.load_p, self.load_q, self.load_v
 
     def lines_or_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.cst_1 * self.p_or, self.cst_1 * self.q_or, self.cst_1 * self.v_or, self.cst_1 * self.a_or
+        return self.p_or, self.q_or, self.v_or, self.a_or
 
     def lines_ex_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.cst_1 * self.p_ex, self.cst_1 * self.q_ex, self.cst_1 * self.v_ex, self.cst_1 * self.a_ex
+        return self.p_ex, self.q_ex, self.v_ex, self.a_ex
 
     def storages_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not self.__has_storage:
             raise RuntimeError("Storage units are not supported with your grid2op version. Please upgrade to "
                                "grid2op >1.5")
-        return self.cst_1 * self.storage_p, self.cst_1 * self.storage_q, self.cst_1 * self.storage_v
+        return self.storage_p, self.storage_q, self.storage_v
 
     def shunt_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.cst_1 * self.sh_p, self.cst_1 * self.sh_q, self.cst_1 * self.sh_v, self.sh_bus
+        return self.sh_p, self.sh_q, self.sh_v, self.sh_bus
 
-    def _compute_shunt_bus_with_compat(self, shunt_bus):
-        cls = type(self)
-        if hasattr(cls, "global_bus_to_local"):
-            self.sh_bus[:] = cls.global_bus_to_local(shunt_bus, cls.shunt_to_subid)
-        else:
-            res = (1 * shunt_bus).astype(dt_int)  # make a copy
-            if hasattr(cls, "n_busbar_per_sub"):
-                n_busbar_per_sub = cls.n_busbar_per_sub
-            else:
-                # backward compat when this was not defined:
-                n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
-            for i in range(n_busbar_per_sub):
-                res[(i * self.n_sub <= shunt_bus) & (shunt_bus < (i+1) * self.n_sub)] = i + 1
-            res[shunt_bus == -1] = -1
-            self.sh_bus[:] = res
+    # def _compute_shunt_bus_with_compat(self, shunt_bus):
+    #     cls = type(self)
+    #     self.sh_bus.flags.writeable = True
+    #     if hasattr(cls, "global_bus_to_local"):
+    #         self.sh_bus[:] = cls.global_bus_to_local(shunt_bus, cls.shunt_to_subid)
+    #     else:
+    #         res = (1 * shunt_bus).astype(dt_int)  # make a copy
+    #         if hasattr(cls, "n_busbar_per_sub"):
+    #             n_busbar_per_sub = cls.n_busbar_per_sub
+    #         else:
+    #             # backward compat when this was not defined:
+    #             n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
+    #         for i in range(n_busbar_per_sub):
+    #             res[(i * self.n_sub <= shunt_bus) & (shunt_bus < (i+1) * self.n_sub)] = i + 1
+    #         res[shunt_bus == -1] = -1
+    #         self.sh_bus[:] = res
+    #     self.sh_bus.flags.writeable = False
         
     def _set_shunt_info(self):
         tick = time.perf_counter()
@@ -1974,9 +2058,9 @@ class LightSimBackend(Backend):
     def reset(self,
               path : Union[os.PathLike, str],
               grid_filename : Optional[Union[os.PathLike, str]]=None) -> None:
+        self._reset_res_pointers()
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
-        # self._grid.unset_changes()
         self._grid.change_solver(self.__current_solver_type)
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
@@ -1988,9 +2072,16 @@ class LightSimBackend(Backend):
         self._timer_read_data_back = 0.
         self._timer_fetch_data_cpp = 0.
         self._timer_apply_act = 0.
+        
+        # handle initial topology
+        self.sh_bus.flags.writeable = True
         if type(self).shunts_data_available:
-            self.sh_bus[:] = 1  # TODO self._compute_shunt_bus_with_compat(self._grid.get_all_shunt_buses())
-        self.topo_vect[:] = self.__init_topo_vect  # TODO#
+            self.sh_bus[:] = self.__init_shunt_bus
+        self.sh_bus.flags.writeable = False
+        self.topo_vect.flags.writeable = True
+        self.topo_vect[:] = self.__init_topo_vect
+        self.topo_vect.flags.writeable = False
+        
         if self._automatically_disconnect:
             # automatically disconnect things if needed (and if the option is properly set)
             self._need_islanding_detection = True

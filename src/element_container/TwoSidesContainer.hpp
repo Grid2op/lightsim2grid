@@ -52,7 +52,7 @@ class TwoSidesContainer : public GenericContainer
                 real_type res_v2_kv;
                 real_type res_theta2_deg;
 
-                TwoSidesInfo(const TwoSidesContainer & r_data_two_sides, int my_id):
+                TwoSidesInfo(const TwoSidesContainer & r_data_two_sides, int my_id) noexcept:
                 id(-1),
                 name(""),
                 sub_1_id(-1),
@@ -114,6 +114,9 @@ class TwoSidesContainer : public GenericContainer
 
     public:
         TwoSidesContainer() noexcept :ignore_status_global_(false), synch_status_both_side_(true){}
+        virtual ~TwoSidesContainer() noexcept{
+            // std::cout << "\t\tTwoSidesContainer destructor" << std::endl;
+        }
 
         // public generic API
         int nb() const { return side_1_.nb(); }
@@ -254,8 +257,6 @@ class TwoSidesContainer : public GenericContainer
             side_1_.reactivate(el_id, solver_control);
             side_2_.reactivate(el_id, solver_control);
         }
-
-        virtual ~TwoSidesContainer() noexcept = default;
 
         void reset_results_tsc(){
             side_1_.reset_results();

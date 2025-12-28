@@ -45,21 +45,24 @@ try:
     
 except ImportError as exc_:
     # old way of doing, need to inherit from that
-    from grid2op.tests.helper_path_test import HelperTests
-from grid2op.tests.BaseBackendTest import (BaseTestNames,
+    from grid2op.tests.helper_path_test import HelperTests  # noqa: F401
+    
+from grid2op.tests.BaseBackendTest import (BaseTestNames,  # noqa: E402
                                            BaseTestLoadingCase,
                                            BaseTestLoadingBackendFunc, 
                                            BaseTestTopoAction,
                                            BaseTestEnvPerformsCorrectCascadingFailures,
                                            BaseTestChangeBusAffectRightBus,
-                                           BaseTestShuntAction,
+                                        #    BaseTestShuntAction,
                                            BaseTestResetEqualsLoadGrid,
                                            BaseTestVoltageOWhenDisco,
                                            BaseTestChangeBusSlack,
                                            BaseIssuesTest,
-                                           BaseStatusActions)
+                                           BaseStatusActions,
+                                           MakeBackend, AlwaysLegal, CompleteAction, AmbiguousAction
+                                           )
 
-from grid2op.tests.test_Environment import (BaseTestLoadingBackendPandaPower,
+from grid2op.tests.test_Environment import (BaseTestLoadingBackendPandaPower,  # noqa: E402
                                             BaseTestResetOk,
                                             BaseTestResetAfterCascadingFailure,
                                             BaseTestCascadingFailure)
@@ -74,6 +77,98 @@ from lightsim2grid.solver import SolverType
 from grid2op.Runner import Runner
 
 
+class BaseTestShuntAction(MakeBackend):
+    def test_shunt_ambiguous_id_incorrect(self):
+        self.skip_if_needed()
+        backend = self.make_backend_with_glue_code()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            with grid2op.make(
+                "rte_case5_example",
+                test=True,
+                gamerules_class=AlwaysLegal,
+                action_class=CompleteAction,
+                backend=backend,
+                _add_to_name=type(self).__name__ + "_1"
+            ) as env_case2:
+                with self.assertRaises(AmbiguousAction):
+                    act = env_case2.action_space({"shunt": {"set_bus": [(0, 2)]}})
+
+    def test_shunt_effect(self):
+        self.skip_if_needed()
+        backend1 = self.make_backend_with_glue_code()
+        backend2 = self.make_backend_with_glue_code()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env_ref = grid2op.make(
+                "rte_case14_realistic",
+                test=True,
+                gamerules_class=AlwaysLegal,
+                action_class=CompleteAction,
+                backend=backend1,
+                _add_to_name=type(self).__name__  + "_2"
+            )
+            env_change_q = grid2op.make(
+                "rte_case14_realistic",
+                test=True,
+                gamerules_class=AlwaysLegal,
+                action_class=CompleteAction,
+                backend=backend2,
+                _add_to_name=type(self).__name__ + "_3"
+            )
+            param = env_ref.parameters
+            param.NO_OVERFLOW_DISCONNECTION = True
+            env_ref.change_parameters(param)
+            env_change_q.change_parameters(param)
+            env_ref.set_id(0)
+            env_change_q.set_id(0)
+            env_ref.reset()
+            env_change_q.reset()
+        assert len(env_change_q.backend._grid.get_shunts()) == 1
+        obs_ref, *_ = env_ref.step(env_ref.action_space())
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error")
+            act = env_change_q.action_space({"shunt": {"shunt_q": [(0, -30)]}})
+        obs_change_p_down, *_ = env_change_q.step(act)
+        assert obs_ref.v_or[10] < obs_change_p_down.v_or[10] - self.tol_one
+        obs_change_p_up, *_ = env_change_q.step(
+            env_change_q.action_space({"shunt": {"shunt_q": [(0, +30)]}})
+        )
+        obs_ref, *_ = env_ref.step(env_ref.action_space())
+        assert obs_ref.v_or[10] > obs_change_p_up.v_or[10] + self.tol_one
+        obs_disco_sh, *_ = env_change_q.step(
+            env_change_q.action_space({"shunt": {"set_bus": [(0, -1)]}})
+        )
+        # given the shunt amount at first, this is the right test to do
+        assert obs_ref.v_or[10] > obs_disco_sh.v_or[10] + self.tol_one
+        
+        # test specific rule on shunt: if alone on a bus, it's disconnected ???
+        obs_co_bus2_sh_alone, *_ = env_change_q.step(
+            env_change_q.action_space({"shunt": {"set_bus": [(0, 2)]}})
+        )
+        assert obs_co_bus2_sh_alone._shunt_bus == -1
+        assert obs_co_bus2_sh_alone._shunt_v == 0.
+        assert obs_co_bus2_sh_alone._shunt_p == 0
+        assert obs_co_bus2_sh_alone._shunt_q == 0
+        
+        # note that above the backend can diverge (shunt is alone on its bus !)
+        # on pp it does not ... but it probably should
+        env_ref.set_id(0)
+        env_change_q.set_id(0)
+        env_ref.reset()
+        env_change_q.reset()
+        act = env_change_q.action_space({"set_bus": {"lines_or_id": [(10, 2)]}, 
+                                         "shunt": {"set_bus": [(0, 2)]}
+                                         })
+        
+        obs_co_bus2_sh_notalone, *_ = env_change_q.step(act)
+        assert obs_co_bus2_sh_notalone.line_or_bus[10] == 2
+        assert np.allclose(obs_co_bus2_sh_notalone.v_or[10], 23.15359878540039)
+        assert obs_co_bus2_sh_notalone._shunt_bus == 2
+        assert np.allclose(obs_co_bus2_sh_notalone._shunt_v, 23.15359878540039)
+        assert obs_co_bus2_sh_notalone._shunt_p == 0
+        assert obs_co_bus2_sh_notalone._shunt_q == -25.464233
+        
 class TestNames(BaseTestNames, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
@@ -146,7 +241,8 @@ class TestChangeBusAffectRightBus(BaseTestChangeBusAffectRightBus, unittest.Test
 
 
 class TestShuntAction(BaseTestShuntAction, unittest.TestCase):
-    tests_skipped = ["test_shunt_effect"]  if sys.platform.startswith("win32") else []  # TODO I don't know why but needs to be fixed
+    # tests_skipped = ["test_shunt_effect"]  if sys.platform.startswith("win32") else []  # TODO I don't know why but needs to be fixed
+    tests_skipped = []
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

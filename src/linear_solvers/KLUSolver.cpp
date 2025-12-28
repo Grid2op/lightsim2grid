@@ -13,8 +13,8 @@
 const bool KLULinearSolver::CAN_SOLVE_MAT = false;
 
 ErrorType KLULinearSolver::reset(){
-    klu_free_symbolic(&symbolic_, &common_);
-    klu_free_numeric(&numeric_, &common_);
+    if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
+    if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
     common_ = klu_common();
     symbolic_ = nullptr;
     numeric_ = nullptr;

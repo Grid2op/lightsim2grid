@@ -32,7 +32,7 @@ class GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type min_q_mvar;
         real_type max_q_mvar;
 
-        inline GenInfo(const GeneratorContainer & r_data_gen, int my_id);
+        inline GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept;
 };
 
 // typedef OneSideContainer_PQ<_GeneratorImpl> _BaseGenClass;
@@ -66,7 +66,10 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         >  StateRes;
         
         GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
-        GeneratorContainer(bool turnedoff_gen_pv)noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
+        GeneratorContainer(bool turnedoff_gen_pv) noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
+        virtual ~GeneratorContainer() noexcept{
+            // std::cout << "GeneratorContainer destructor" << std::endl;
+        };
         
         // TODO add pmin and pmax here !
         void init(const RealVect & generators_p,
@@ -231,7 +234,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
             }
         }
 
-    protected:
+    private:
         // physical properties
         RealVect min_q_;
         RealVect max_q_;
@@ -270,7 +273,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
 
 };
 
-inline GenInfo::GenInfo(const GeneratorContainer & r_data_gen, int my_id):
+inline GenInfo::GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept:
 OneSidePQInfo(r_data_gen, my_id),
 is_slack(false),
 slack_weight(-1.0),
@@ -279,7 +282,7 @@ target_vm_pu(0.),
 min_q_mvar(0.),
 max_q_mvar(0.)
 {
-    if((my_id >= 0) & (my_id < r_data_gen.nb()))
+    if((my_id >= 0) && (my_id < r_data_gen.nb()))
     {
         is_slack = r_data_gen.gen_slackbus_[my_id];
         slack_weight = r_data_gen.gen_slack_weight_[my_id];

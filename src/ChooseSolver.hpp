@@ -34,18 +34,25 @@ std::ostream& operator<<(std::ostream& out, const SolverType& solver_type);
 // and also to "forward" the specialisation (adding the if(solvertype==XXX)) in the compute_pf, get_V, get_J, get_Va, get_Vm
 // and the "available_solvers" (add it to the list)
 // and to add a attribute with the proper class and the reset method
-class ChooseSolver
+class ChooseSolver final
 {
     public:
-         ChooseSolver():
+        ChooseSolver() noexcept:
              _solver_type(SolverType::SparseLU),
              _type_used_for_nr(SolverType::SparseLU)
              {};
 
+        ~ChooseSolver() noexcept{
+            // std::cout << "ChooseSolver destructor" << std::endl;
+        };
+
+        ChooseSolver(const ChooseSolver&) = delete;
+        ChooseSolver operator=(const ChooseSolver&) = delete;
+        
         std::vector<SolverType> available_solvers() const
         {
             std::vector<SolverType> res;
-            res.reserve(14);
+            res.reserve(22);
 
             res.push_back(SolverType::SparseLU);
             res.push_back(SolverType::GaussSeidel);
@@ -426,11 +433,11 @@ class ChooseSolver
 
     protected:
         /**
-        returns a pointer to the current solver used
+        returns a pointer to the current solver used (const version)
         **/
         const BaseAlgo * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) const {
             if (check_right_solver_) check_right_solver(error_msg);
-            const BaseAlgo * res;
+            const BaseAlgo * res = nullptr;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}
@@ -462,9 +469,12 @@ class ChooseSolver
             else throw std::runtime_error("Unknown solver type encountered (ChooseSolver get_prt_solver const)");
             return res;
         }
+        /**
+         * Returns a pointer (non const) to the current solver used
+         */
         BaseAlgo * get_prt_solver(const std::string & error_msg, bool check_right_solver_=true) {
             if (check_right_solver_) check_right_solver(error_msg);
-            BaseAlgo * res;
+            BaseAlgo * res = nullptr;
             if(_solver_type == SolverType::SparseLU){res = &_solver_lu;}
             else if(_solver_type == SolverType::SparseLUSingleSlack){res = &_solver_lu_single;}
             else if(_solver_type == SolverType::DC){res = &_solver_dc;}

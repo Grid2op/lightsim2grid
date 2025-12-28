@@ -37,7 +37,7 @@ class OneSideContainer_PQ : public OneSideContainer
                 real_type target_p_mw;
                 real_type target_q_mvar;
 
-                OneSidePQInfo(const OneSideContainer_PQ & r_data_pq, int my_id):
+                OneSidePQInfo(const OneSideContainer_PQ & r_data_pq, int my_id) noexcept:
                 OneSideInfo(r_data_pq, my_id),
                 target_p_mw(0.),
                 target_q_mvar(0.)
@@ -53,6 +53,9 @@ class OneSideContainer_PQ : public OneSideContainer
     // regular implementation
     public:
         OneSideContainer_PQ() noexcept = default;
+        virtual ~OneSideContainer_PQ() noexcept{
+            // std::cout << "\tOneSideContainer_PQ destructor" << std::endl;
+        }
 
         // public generic API
 
@@ -147,6 +150,9 @@ class OneSideContainer_PQ : public OneSideContainer
             // input data
             target_p_mw_ = RealVect::Map(&p_mw[0], p_mw.size());
             target_q_mvar_ = RealVect::Map(&q_mvar[0], q_mvar.size());
+
+            // initialize properly the right "results" vectors (ie res_XXX RealVect)
+            this->reset_results();
         }
         
         void init_osc_pq(const RealVect & els_p,
@@ -165,13 +171,26 @@ class OneSideContainer_PQ : public OneSideContainer
         }
 
         void set_osc_pq_res_p(){
-            res_p_ = target_p_mw_;
-            set_osc_res_p();
+            const int nb_els = nb();
+            for(int el_id = 0; el_id < nb_els; ++el_id){
+                if(!status_[el_id]) res_p_[el_id] = 0.;
+                else res_p_[el_id] = target_p_mw_(el_id);
+            }
         }
 
         void set_osc_pq_res_q(bool ac){
-            if(ac) res_q_ = target_q_mvar_;
-            set_osc_res_q(ac);
+            if(ac){
+                const int nb_els = nb();
+                if(ac){
+                    for(int el_id = 0; el_id < nb_els; ++el_id){
+                        if(!status_[el_id]) res_q_[el_id] = 0.;
+                        else res_q_[el_id] = target_q_mvar_(el_id);
+                    }
+                }
+            }
+            else{
+                set_osc_res_q(ac);
+            }
         }
 
     protected:

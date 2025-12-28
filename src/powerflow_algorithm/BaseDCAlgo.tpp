@@ -27,6 +27,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // tol is ignored
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
+    // std::cout << "BaseDCAlgo<LinearSolver>::compute_pf\n";
 
     if(!is_linear_solver_valid()) {
         // std::cout << "!is_linear_solver_valid()\n";
@@ -43,6 +44,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()
        ){
+        // std::cout << "need reset DC algorithm \n";
        reset();
        // at this stage need_factorize_ is set also to true
     }
@@ -124,6 +126,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
+        // std::cout << "need reset DC algorithm  _linear_solver.solve error \n";
         err_ = error;
         timer_total_nr_ += timer.duration();
         return false;
@@ -178,7 +181,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
-    _solver_control.tell_none_changed();
     timer_total_nr_ += timer.duration();
     return true;
 }

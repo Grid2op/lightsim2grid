@@ -12,10 +12,10 @@
 #include <queue>
 
 
-GridModel::GridModel(const GridModel & other)
+GridModel::GridModel(const GridModel & other) noexcept
 {
-    reset(true, true, true);
-    max_nb_bus_per_sub_ = other.max_nb_bus_per_sub_;
+    // std::cout << "\t\t GridModel Copy " << &other << " to " << this << std::endl;
+    // std::cout << "\t\t 1" << std::endl;
 
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -25,14 +25,29 @@ GridModel::GridModel(const GridModel & other)
     // 1. bus
     last_bus_status_saved_ = other.last_bus_status_saved_;
     substations_ = other.substations_;
+    max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
+    n_sub_ = substations_.nb_sub();
+    
+    // id_me_to_ac_solver_ = std::vector<SolverBusId>();  // done in reset
+    // id_ac_solver_to_me_ = std::vector<GlobalBusId>();  // done in reset
+    // id_me_to_dc_solver_ = std::vector<SolverBusId>();  // done in reset
+    // id_dc_solver_to_me_ = std::vector<GlobalBusId>();  // done in reset
 
+
+    // std::cout << "\t\t 2" << std::endl;
     set_ls_to_orig(other._ls_to_orig);  // sets also orig_to_ls
+    // std::cout << "\t\t 3" << std::endl;
 
     // 2. powerline
     powerlines_ = other.powerlines_;
+    // std::cout << "\t\t 4" << std::endl;
 
     // 3. shunt
     shunts_ = other.shunts_;
+    // std::cout << "\t\t " << shunts_.get_bus(0).cast_int() << std::endl;
+    // std::cout << "\t\t " << other.shunts_.get_bus(0).cast_int() << std::endl;
+    // std::cout << "\t\t " << last_bus_status_saved_[8 + 14] << std::endl;
+    // std::cout << "\t\t " << other.last_bus_status_saved_[8 + 14] << std::endl;
 
     // 4. transformers
     // have the r, x, h and ratio
@@ -40,6 +55,8 @@ GridModel::GridModel(const GridModel & other)
     trafos_ = other.trafos_;
 
     // 5. generators
+    total_q_min_per_bus_ = RealVect();
+    total_q_max_per_bus_ = RealVect();
     generators_ = other.generators_;
 
     // 6. loads
@@ -53,24 +70,32 @@ GridModel::GridModel(const GridModel & other)
 
     // dc lines
     dc_lines_ = other.dc_lines_;
+    // std::cout << "\t\t 6" << std::endl;
 
-    // copy the attributes specific grid2op (speed optimization)
-    n_sub_ = other.n_sub_;
-    max_nb_bus_per_sub_ = other.max_nb_bus_per_sub_;
+    // 10. slack bus
+    // slack_bus_id_ac_me_ = GlobalBusIdVect();  // done in reset
+    // slack_bus_id_ac_solver_ = SolverBusIdVect();  // done in reset
+    // slack_bus_id_dc_me_ = GlobalBusIdVect();  // done in reset
+    // slack_bus_id_dc_solver_ = SolverBusIdVect();  // done in reset
+    // slack_weights_ = RealVect();  // done in reset
+
+
+    // as matrix, for the solver
+    // Ybus_ac_ = Eigen::SparseMatrix<cplx_type>();  // done in reset
+    // Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();  // done in reset
+    // acSbus_ = CplxVect();  // done in reset
+    // dcSbus_ = CplxVect();  // done in reset
+    // bus_pv_ = SolverBusIdVect();  // done in reset
+    // bus_pq_ = SolverBusIdVect();  // done in reset
 
     // assign the right solver
-    _solver.change_solver(other._solver.get_type());
-    _dc_solver.change_solver(other._dc_solver.get_type());
-    compute_results_ = other.compute_results_;
-    solver_control_.tell_all_changed();
-    _dc_solver.set_gridmodel(this);
-    _solver.set_gridmodel(this);
-    _dc_solver.tell_solver_control(solver_control_);
-    _solver.tell_solver_control(solver_control_);
+    reset(true, true, true);
+    _solver.change_solver(other.get_solver_type());
+    _dc_solver.change_solver(other.get_dc_solver_type());
 }
 
 //pickle
-GridModel::StateRes GridModel::get_state() const
+GridModel::StateRes GridModel::get_state() const 
 {
     // std::vector<real_type> bus_vn_kv(bus_vn_kv_.begin(), bus_vn_kv_.end());
     std::vector<int> ls_to_orig(_ls_to_orig.begin(), _ls_to_orig.end());
@@ -103,8 +128,8 @@ GridModel::StateRes GridModel::get_state() const
                             res_sgen,
                             res_storage,
                             res_dc_line,
-                            n_sub_,
-                            max_nb_bus_per_sub_
+                            get_solver_type(),
+                            get_dc_solver_type()
                             );
     return res;
 };
@@ -113,7 +138,6 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
-    reset(true, true, true);
     solver_control_.tell_all_changed();
     compute_results_ = true;
 
@@ -157,19 +181,14 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // dc lines
     DCLineContainer::StateRes & state_dc_lines = std::get<15>(my_state);
 
-    // grid2op specific
-    n_sub_ = std::get<16>(my_state);
-    max_nb_bus_per_sub_ = std::get<17>(my_state);
-
     // assign it to this instance
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
 
-    // buses
-    // // 1. bus_vn_kv_
-    // bus_vn_kv_ = RealVect::Map(bus_vn_kv.data(), bus_vn_kv.size());
-    // // 2. bus status
+    // substations
     last_bus_status_saved_ = last_bus_status_saved;
     substations_.set_state(state_substations);
+    max_nb_bus_per_sub_ = substations_.nmax_busbar_per_sub();
+    n_sub_ = substations_.nb_sub();
 
     // elements
     // 1. powerlines
@@ -179,6 +198,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     // 3. trafos
     trafos_.set_state(state_trafos);
     // 4. gen
+    total_q_min_per_bus_ = RealVect();
+    total_q_max_per_bus_ = RealVect();
     generators_.set_state(state_gens);
     // 5. loads
     loads_.set_state(state_loads);
@@ -188,6 +209,11 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     storages_.set_state(state_storages);
     // dc lines
     dc_lines_.set_state(state_dc_lines);
+
+    // handle the solver
+    reset(true, true, true);
+    _solver.change_solver(std::get<16>(my_state));
+    _dc_solver.change_solver(std::get<17>(my_state));
 };
 
 void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
@@ -277,7 +303,9 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     dcSbus_ = CplxVect();
     bus_pv_ = SolverBusIdVect();
     bus_pq_ = SolverBusIdVect();
+
     solver_control_.tell_all_changed();
+    tell_solver_need_reset(); // also handles last_bus_status_saved_
     
     slack_bus_id_ac_me_ = GlobalBusIdVect();  // slack bus id, gridmodel number
     slack_bus_id_ac_solver_ = SolverBusIdVect();  // slack bus id, solver number
@@ -288,11 +316,13 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     // reset the solvers
     if (reset_solver){
         _solver.reset();
-        _dc_solver.reset();
         _solver.set_gridmodel(this);
-        _dc_solver.set_gridmodel(this);
-    }
+        _solver.tell_solver_control(solver_control_);
 
+        _dc_solver.reset();
+        _dc_solver.set_gridmodel(this);
+        _dc_solver.tell_solver_control(solver_control_);
+    }
 }
 
 CplxVect GridModel::ac_pf(const CplxVect & Vinit,
@@ -467,15 +497,11 @@ CplxVect GridModel::pre_process_solver(
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
     if(is_ac){
-        _solver.tell_solver_control(solver_control);
         if(solver_control.need_reset_solver()){   
-        // std::cout << "\t\t_ac_solver.reset();" << std::endl;
-        _solver.reset();
+            _solver.reset();
         }
     } else {
-        _dc_solver.tell_solver_control(solver_control);
         if(solver_control.need_reset_solver()){
-            // std::cout << "\t\t_dc_solver.reset();" << std::endl;
             _dc_solver.reset();
         }
     }
@@ -567,6 +593,9 @@ CplxVect GridModel::pre_process_solver(
     }
     generators_.set_vm(V, id_me_to_solver);
     dc_lines_.set_vm(V, id_me_to_solver);
+
+    if(is_ac) _solver.tell_solver_control(solver_control_);
+    else _dc_solver.tell_solver_control(solver_control_);
     return V;
 }
 
@@ -902,7 +931,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
         _to_intvect(bus_pq_),
         max_iter,
         tol);
-    // std::cout << "\tprocess_results (dc) \n";
+    // std::cout << "process_results (dc) \n";
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, is_ac, id_me_to_dc_solver_);
     timer_last_dc_pf_ = timer.duration();

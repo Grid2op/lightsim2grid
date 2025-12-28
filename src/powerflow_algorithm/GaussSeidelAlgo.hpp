@@ -14,9 +14,11 @@
 class GaussSeidelAlgo : public BaseAlgo
 {
     public:
-        GaussSeidelAlgo():BaseAlgo(true) {};
+        GaussSeidelAlgo() noexcept :BaseAlgo(true) {};
 
-        ~GaussSeidelAlgo(){}
+        virtual ~GaussSeidelAlgo() noexcept {
+            // std::cout << "GaussSeidelAlgo destructor" << std::endl;
+        };
 
         // todo  can be factorized
         Eigen::SparseMatrix<real_type> get_J(){

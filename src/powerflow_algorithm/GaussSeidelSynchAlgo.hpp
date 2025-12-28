@@ -15,12 +15,14 @@
 The gauss seidel method, where all the updates are happening in a synchronous way, instead of
 in a asynchronous way (like for standard gauss seidel)
 **/
-class GaussSeidelSynchAlgo: public GaussSeidelAlgo
+class GaussSeidelSynchAlgo final: public GaussSeidelAlgo
 {
     public:
-        GaussSeidelSynchAlgo():GaussSeidelAlgo() {};
+        GaussSeidelSynchAlgo() noexcept : GaussSeidelAlgo() {};
 
-        ~GaussSeidelSynchAlgo(){}
+        virtual ~GaussSeidelSynchAlgo() noexcept {
+            // std::cout << "GaussSeidelSynchAlgo destructor" << std::endl;
+        };
 
     protected:
         void one_iter(CplxVect & tmp_Sbus,

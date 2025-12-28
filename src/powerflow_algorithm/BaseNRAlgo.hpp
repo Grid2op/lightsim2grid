@@ -18,7 +18,7 @@ template<class LinearSolver>
 class BaseNRAlgo : public BaseAlgo
 {
     public:
-        BaseNRAlgo():
+        BaseNRAlgo() noexcept :
             BaseAlgo(true),
             need_factorize_(true),
             timer_initialize_(0.),
@@ -26,6 +26,13 @@ class BaseNRAlgo : public BaseAlgo
             timer_fillJ_(0.),
             timer_Va_Vm_(0.),
             timer_pre_proc_(0.){}
+            
+        virtual ~BaseNRAlgo() noexcept{
+            // std::cout << "BaseNRAlgo destructor" << std::endl;
+        };
+
+        
+        
 
         virtual
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
