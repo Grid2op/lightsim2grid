@@ -252,7 +252,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // std::cout << "slack_weights.size() " << slack_weights.size() << std::endl;
     // std::cout << "bus_pv.size() " << bus_pv.size() << std::endl;
     // std::cout << "bus_pq.size() " << bus_pq.size() << std::endl;
-    _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
+    // _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
     CplxVect Vinit_solver2 = Vinit_solver;
     bool conv = _solver.compute_pf(
         Ybus_,
@@ -294,6 +294,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
             }
             V = Vinit_solver; // Vinit is reused for each contingencies
             // _solver_control.tell_all_changed();
+            // _solver_control.tell_solver_need_reset();
             // std::cout << "\t compute_one_powerflow\n";
             conv = compute_one_powerflow(
                 Ybus_,

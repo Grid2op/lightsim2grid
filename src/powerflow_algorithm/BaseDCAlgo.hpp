@@ -70,7 +70,7 @@ class BaseDCAlgo final: public BaseAlgo
             int col_res = static_cast<int>(coeff.col_id);
             col_res = mat_bus_id_(col_res);
             if(col_res == -1) return;
-            auto val = add ? std::real(coeff.value) : - std::real(coeff.value);
+            real_type val = add ? std::real(coeff.value) : - std::real(coeff.value);
             dcYbus_noslack_.coeffRef(row_res, col_res) += val;
         }
 

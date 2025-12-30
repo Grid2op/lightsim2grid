@@ -753,7 +753,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             return el_id;
         }
 
-        FDPFCoeffs get_fdpf_coeffs(int line_id, FDPFMethod xb_or_bx) const{
+        virtual FDPFCoeffs get_fdpf_coeffs(int line_id, FDPFMethod xb_or_bx) const{
             FDPFCoeffs res;        
             cplx_type ys_bp, ys_bpp;
             if(xb_or_bx==FDPFMethod::XB){
