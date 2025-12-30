@@ -1823,7 +1823,8 @@ class LightSimBackend(Backend):
             self.storage_q[:] = np.nan
             self.storage_v[:] = np.nan
             self.storage_theta[:] = np.nan
-        self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
+        if self._grid is not None:
+            self.V[:] = self._grid.get_init_vm_pu()  # reset the V to its "original" value (see issue 30)
         self._reset_res_pointers()
         self._disallow_modif()
         self._last_dc = True
@@ -2045,12 +2046,14 @@ class LightSimBackend(Backend):
         # self._timer_fetch_data_cpp += time.perf_counter() - tick
         
     def _disconnect_line(self, id_):
-        self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1
-        self.topo_vect[self.line_or_pos_topo_vect[id_]] = -1
         if id_ < self.__nb_powerline:
             self._grid.deactivate_powerline(id_)
         else:
             self._grid.deactivate_trafo(id_ - self.__nb_powerline)
+        self.topo_vect.flags.writeable = True
+        self.topo_vect[self.line_ex_pos_topo_vect[id_]] = -1
+        self.topo_vect[self.line_or_pos_topo_vect[id_]] = -1
+        self.topo_vect.flags.writeable = False
 
     def get_current_solver_type(self) -> SolverType:
         return self.__current_solver_type
