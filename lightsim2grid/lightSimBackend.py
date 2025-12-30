@@ -1994,31 +1994,31 @@ class LightSimBackend(Backend):
         return np.concatenate((l_s, t_s)).astype(dt_bool)
 
     def get_line_flow(self) -> np.ndarray:
-        return self.a_or
+        return self.a_or.copy()
     
     def get_topo_vect(self) -> np.ndarray:
-        return self.topo_vect
+        return self.topo_vect.copy()
 
     def generators_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.prod_p, self.prod_q, self.prod_v
+        return self.prod_p.copy(), self.prod_q.copy(), self.prod_v.copy()
 
     def loads_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.load_p, self.load_q, self.load_v
+        return self.load_p.copy(), self.load_q.copy(), self.load_v.copy()
 
     def lines_or_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.p_or, self.q_or, self.v_or, self.a_or
+        return self.p_or.copy(), self.q_or.copy(), self.v_or.copy(), self.a_or.copy()
 
     def lines_ex_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.p_ex, self.q_ex, self.v_ex, self.a_ex
+        return self.p_ex.copy(), self.q_ex.copy(), self.v_ex.copy(), self.a_ex.copy()
 
     def storages_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not self.__has_storage:
             raise RuntimeError("Storage units are not supported with your grid2op version. Please upgrade to "
                                "grid2op >1.5")
-        return self.storage_p, self.storage_q, self.storage_v
+        return self.storage_p.copy(), self.storage_q.copy(), self.storage_v.copy()
 
     def shunt_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.sh_p, self.sh_q, self.sh_v, self.sh_bus
+        return self.sh_p.copy(), self.sh_q.copy(), self.sh_v.copy(), self.sh_bus.copy()
 
     # def _compute_shunt_bus_with_compat(self, shunt_bus):
     #     cls = type(self)

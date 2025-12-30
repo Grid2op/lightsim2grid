@@ -257,7 +257,9 @@ class TestLightSimBackend_3busbars(unittest.TestCase):
             bk_act += act
             self.env.backend.apply_action(bk_act)
             bk_act.reset()
+            self.env.backend._allow_modif()
             self.env.backend._set_shunt_info()
+            self.env.backend._disallow_modif()
             sh_p, sh_q, sh_v, sh_bus = self.env.backend.shunt_info()
             assert sh_bus[el_id] == new_bus, f"{sh_bus[el_id]} vs {new_bus}"
             global_bus = sub_id + (new_bus -1) * cls.n_sub 
