@@ -70,6 +70,7 @@ class N1ContingencyReward(BaseReward):
             else:
                 self._solver_type = SolverType.SparseLU
         self._backend_ls = False
+        self._debug_unsafe_conts = None
         self._tol = tol
         self._nb_iter = nb_iter
         self._timer_call = 0.
@@ -90,7 +91,10 @@ class N1ContingencyReward(BaseReward):
                                "``PandaPowerBackend` nor `LightSimBackend`."
                                )
         if isinstance(env.backend, LightSimBackend):
-            self._backend : LightSimBackend = env.backend.copy()
+            if hasattr(type(env.backend), "copy_public"):
+                self._backend : LightSimBackend = env.backend.copy_public()
+            else:
+                self._backend : LightSimBackend = env.backend.copy()
             self._backend_ls : bool  = True
         elif isinstance(env.backend, PandaPowerBackend):
             self._backend = LightSimBackend.init_grid(type(env.backend))()
@@ -122,18 +126,23 @@ class N1ContingencyReward(BaseReward):
         
         beg = time.perf_counter()
         # retrieve the state of the grid
+        self._debug_unsafe_conts = None
         self._backend_action.reset()
         act = env.backend.get_action_to_set()
-        th_lim_a = 1. * env.get_thermal_limit()
+        th_lim_a = env.get_thermal_limit().copy()
         th_lim_a[th_lim_a <= 1.] = 1.  # assign 1 for the thermal limit
         
         # apply it to the backend
         self._backend_action += act
-        self._backend.apply_action(self._backend_action)
+        if hasattr(type(self._backend), "apply_action_public"):
+            self._backend.apply_action_public(self._backend_action)
+        else:
+            self._backend.apply_action(self._backend_action)
         conv, exc_ = self._backend.runpf()
         if not conv:
             self.logger.warn("Cannot set the backend of the `N1ContingencyReward` => divergence")
             return self.reward_min
+        self._backend._grid.unset_changes()
         
         # synch the contingency analyzer
         contingecy_analyzer = ContingencyAnalysis(self._backend)
@@ -154,10 +163,11 @@ class N1ContingencyReward(BaseReward):
             p_sq[p_sq <= 0.] = 0.
             limits = np.sqrt(p_sq)
         else:
-            tmp_res = 1. * tmp[1]
+            tmp_res = tmp[1].copy()
             limits = th_lim_a
         res = ((tmp_res > self._threshold_margin * limits) | (~np.isfinite(tmp_res))).any(axis=1)  # whether one powerline is above its limit, per cont
         res |=  (np.abs(tmp_res) <= self._tol).all(axis=1)  # other type of divergence: all 0.
+        self._debug_unsafe_conts = np.asarray(self._l_ids)[res.nonzero()[0]]  # for debug purpose
         res = res.sum()  # count total of n-1 unsafe 
         res = len(self._l_ids) - res  # reward = things to maximise
         if self._normalize:
@@ -165,6 +175,31 @@ class N1ContingencyReward(BaseReward):
         now_3 = time.perf_counter()
         self._timer_post_proc += now_3 - now_2
         self._timer_call += time.perf_counter() - beg
+        # print()
+        # print("sanity check")
+        # print("a_or")
+        # print(f"obs.a_or:\n{env.get_obs().a_or}")
+        # print(f"backend updated state:\n{self._backend.lines_or_info()[3]}")
+        # print("gen_p")
+        # print(f"obs.gen_p:\n{env.get_obs().gen_p}")
+        # print(f"backend updated state:\n{self._backend.generators_info()[0]}")
+        # print("shunt_bus")
+        # print(f"obs._shunt_bus:\n{env.get_obs()._shunt_bus}")
+        # print(f"backend updated state:\n{self._backend.shunt_info()[-1]}")
+        # print(f"env backend shunt bus {env.backend._grid.get_shunts()[0].bus_id}")
+        # print(f"self backend shunt bus {self._backend._grid.get_shunts()[0].bus_id}")
+        # print("shunt_q")
+        # print(f"obs._shunt_q:\n{env.get_obs()._shunt_q}")
+        # print(f"backend updated state:\n{self._backend.shunt_info()[1]}")
+        # print("load_p")
+        # print(f"obs.load_p:\n{env.get_obs().load_p}")
+        # print(f"backend updated state:\n{self._backend.loads_info()[0]}")
+        # print("")
+        # print("reward for 0: ")
+        # print(tmp_res[0])
+        # print("reward for 3: ")
+        # print(tmp_res[3])
+        # print("")
         return res
 
     def reset(self, env: "grid2op.Environment.BaseEnv") -> None:

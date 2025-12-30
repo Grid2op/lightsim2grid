@@ -38,9 +38,9 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     auto npq = pq.size();
 
     // compute the mismatch
-    CplxVect tmp = Ybus * V;  // this is a vector
-    tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - Sbus.array();
+    // CplxVect tmp = Ybus * V;  // this is a vector
+    // tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array();
     auto real_ = mis.real();
     auto imag_ = mis.imag();
 
@@ -100,9 +100,9 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     auto npq = pq.size();
 
     // compute the mismatch
-    CplxVect tmp = Ybus * V;  // this is a vector
-    tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - Sbus.array() + slack_absorbed * slack_weights.array();
+    // CplxVect tmp = Ybus * V;  // this is a vector
+    // tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
     RealVect real_ = mis.real();
     RealVect imag_ = mis.imag();
 

@@ -956,7 +956,7 @@ class GridModel final : public GenericContainer
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        Eigen::Ref<const SolverBusIdVect> get_pv_solver() const{
+        const Eigen::Ref<const SolverBusIdVect> get_pv_solver() const{
             return bus_pv_;
         }
         /**
@@ -993,7 +993,7 @@ class GridModel final : public GenericContainer
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        Eigen::Ref<const SolverBusIdVect> get_pq_solver() const{
+        const Eigen::Ref<const SolverBusIdVect> get_pq_solver() const{
             return bus_pq_;
         }
         /**
@@ -1003,7 +1003,7 @@ class GridModel final : public GenericContainer
          * 
          * @return Eigen::Ref<const Eigen::VectorXi> 
          */
-        Eigen::Ref<const IntVect> get_pq_solver_numpy() const{
+        const Eigen::Ref<const IntVect> get_pq_solver_numpy() const{
             return _to_intvect(bus_pq_);
         }
 
@@ -1302,6 +1302,23 @@ class GridModel final : public GenericContainer
             fillSbus_me(res, ac, id_me_to_solver);
         }
 
+        /**
+        computes Ybus_ and Sbus_. It has different flags to have more control on the purpose for this "computation"
+        is_ac indicates if you want to perform and AC powerflow or a DC powerflow and reset_solver indicates
+        if you will perform a powerflow after it or not. (usually put ``true`` here).
+
+        This is use internally by ac_pf or dc_pf but also when doing batched solvers (*eg* TimeSeries or Contingency analysis)
+        **/
+        CplxVect pre_process_solver(const CplxVect & Vinit,
+                                    CplxVect & Sbus,
+                                    Eigen::SparseMatrix<cplx_type> & Ybus,
+                                    std::vector<SolverBusId> & id_me_to_solver,
+                                    std::vector<GlobalBusId> & id_solver_to_me,
+                                    GlobalBusIdVect & slack_bus_id_me,
+                                    SolverBusIdVect & slack_bus_id_solver,
+                                    bool is_ac,
+                                    const SolverControl & solver_control);
+
         //for FDPF
     private:
         using GenericContainer::fillBp_Bpp;  // silence clang warning overload-virtual
@@ -1336,20 +1353,6 @@ class GridModel final : public GenericContainer
         // void init_dcY(Eigen::SparseMatrix<real_type> & dcYbus);
 
         // ac powerflows
-        /**
-        computes Ybus_ and Sbus_. It has different flags to have more control on the purpose for this "computation"
-        is_ac indicates if you want to perform and AC powerflow or a DC powerflow and reset_solver indicates
-        if you will perform a powerflow after it or not. (usually put ``true`` here).
-        **/
-        CplxVect pre_process_solver(const CplxVect & Vinit,
-                                    CplxVect & Sbus,
-                                    Eigen::SparseMatrix<cplx_type> & Ybus,
-                                    std::vector<SolverBusId> & id_me_to_solver,
-                                    std::vector<GlobalBusId> & id_solver_to_me,
-                                    GlobalBusIdVect & slack_bus_id_me,
-                                    SolverBusIdVect & slack_bus_id_solver,
-                                    bool is_ac,
-                                    const SolverControl & solver_control);
 
         // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
@@ -1479,22 +1482,22 @@ class GridModel final : public GenericContainer
          * Allow easily to pass from GlobalIntVect to IntVect (for example when
          * exposing numpy arrays python side)
          */
-        template<class BusId>
-        Eigen::Ref<const IntVect> _to_intvect(
-            const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
-        ) const{
-            return IntVect::Map(
-                reinterpret_cast<const int*>(&strongly_typed_vect(0)),
-                strongly_typed_vect.size());
-        }
-        template<class BusId>
-        Eigen::Ref<const IntVect> _to_intvect(
-            Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > strongly_typed_vect
-        ) const{
-            return IntVect::Map(
-                reinterpret_cast<const int*>(&strongly_typed_vect(0)),
-                strongly_typed_vect.size());
-        }
+        // template<class BusId>
+        // Eigen::Ref<const IntVect> _to_intvect(
+        //     const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
+        // ) const{
+        //     return IntVect::Map(
+        //         reinterpret_cast<const int*>(&strongly_typed_vect(0)),
+        //         strongly_typed_vect.size());
+        // }
+        // template<class BusId>
+        // Eigen::Ref<const IntVect> _to_intvect(
+        //     const Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > & strongly_typed_vect
+        // ) const{
+        //     return IntVect::Map(
+        //         reinterpret_cast<const int*>(&strongly_typed_vect(0)),
+        //         strongly_typed_vect.size());
+        // }
         // template<class BusId>
         // Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > _to_typed_vect(
         //     const IntVect & int_vect

@@ -1507,6 +1507,12 @@ class LightSimBackend(Backend):
         # handle shunts
         if type(self).shunts_data_available:
             shunt_p, shunt_q, shunt_bus = backendAction.shunt_p, backendAction.shunt_q, backendAction.shunt_bus
+            
+            # remember the topology not to need to read it back from the grid
+            self.sh_bus.flags.writeable = True
+            self.sh_bus[shunt_bus.changed] = shunt_bus.values[shunt_bus.changed]
+            self.sh_bus.flags.writeable = False
+            
             # shunt topology
             # (need to be done before to avoid error like "impossible to set reactive value of a disconnected shunt")
             for sh_id, new_bus in shunt_bus:
@@ -1519,10 +1525,6 @@ class LightSimBackend(Backend):
                     else:
                         self._grid.change_bus_shunt(sh_id, self.shunt_to_subid[sh_id] + (new_bus == 2) * type(self).n_sub)
                         
-            # remember the topology not to need to read it back from the grid
-            self.sh_bus.flags.writeable = True
-            self.sh_bus[shunt_bus.changed] = shunt_bus.values[shunt_bus.changed]
-            self.sh_bus.flags.writeable = False
             for sh_id, new_p in shunt_p:
                 self._grid.change_p_shunt(sh_id, new_p)
             for sh_id, new_q in shunt_q:
@@ -1600,7 +1602,7 @@ class LightSimBackend(Backend):
                         raise BackendError(f"Divergence of DC powerflow (non connected grid) at the "
                                            f"initialization of AC powerflow. Detailed error: "
                                            f"{self._grid.get_dc_solver().get_error()}")
-                    V_init = 1. * self._debug_Vdc
+                    V_init = self._debug_Vdc.copy()
                 else:
                     V_init = copy.deepcopy(self.V)
                 tick = time.perf_counter()
@@ -1927,7 +1929,7 @@ class LightSimBackend(Backend):
                        "storage_p", "storage_q", "storage_v",
                        "sh_p", "sh_q", "sh_v", "sh_bus", "sh_theta",
                        "line_or_theta", "line_ex_theta", "load_theta", "gen_theta", "storage_theta",   
-                       "_debug_Vdc"                
+                       "_debug_Vdc",        
                        ]
         for attr_nm in li_attr_npy:
             if hasattr(self, attr_nm):
@@ -1964,7 +1966,7 @@ class LightSimBackend(Backend):
         # handle the most complicated
         if mygrid is not None:
             res._grid = mygrid.copy()
-            res._fill_nans()
+            # res._fill_nans()  # don't do this, data are copied from ref
             res._reset_res_pointers()
             res._fetch_grid_data()
             if orig_grid is not None:
@@ -1974,7 +1976,6 @@ class LightSimBackend(Backend):
             res._grid = None
         res.__me_at_init = __me_at_init.copy()  # this is const (but I copy it for "safety")
         res._init_pp_backend = inippbackend  # this is const
-        # res._init_action_to_set = copy.deepcopy(self._init_action_to_set)
         res._backend_action_class = self._backend_action_class  # this is const
         res.__init_topo_vect = self.__init_topo_vect  # this is const
         res.__init_shunt_bus = self.__init_shunt_bus  # this is const
@@ -2019,24 +2020,6 @@ class LightSimBackend(Backend):
 
     def shunt_info(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         return self.sh_p.copy(), self.sh_q.copy(), self.sh_v.copy(), self.sh_bus.copy()
-
-    # def _compute_shunt_bus_with_compat(self, shunt_bus):
-    #     cls = type(self)
-    #     self.sh_bus.flags.writeable = True
-    #     if hasattr(cls, "global_bus_to_local"):
-    #         self.sh_bus[:] = cls.global_bus_to_local(shunt_bus, cls.shunt_to_subid)
-    #     else:
-    #         res = (1 * shunt_bus).astype(dt_int)  # make a copy
-    #         if hasattr(cls, "n_busbar_per_sub"):
-    #             n_busbar_per_sub = cls.n_busbar_per_sub
-    #         else:
-    #             # backward compat when this was not defined:
-    #             n_busbar_per_sub = DEFAULT_N_BUSBAR_PER_SUB
-    #         for i in range(n_busbar_per_sub):
-    #             res[(i * self.n_sub <= shunt_bus) & (shunt_bus < (i+1) * self.n_sub)] = i + 1
-    #         res[shunt_bus == -1] = -1
-    #         self.sh_bus[:] = res
-    #     self.sh_bus.flags.writeable = False
         
     def _set_shunt_info(self):
         tick = time.perf_counter()

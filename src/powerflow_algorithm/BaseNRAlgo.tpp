@@ -50,6 +50,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // err_ = ErrorType::NotInitError;
         return false;
     }
+    // std::cout << "here \n";
     reset_timer();
     reset_if_needed();
     err_ = ErrorType::NoError;  // reset the error if previous error happened
@@ -65,6 +66,20 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     const auto n_pq = pq.size();
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq; 
+    // std::cout << "my_pv: \n";
+    // for(auto el : my_pv){
+    //     std::cout << '\t' << el << std::endl;
+    // }
+    // std::cout << "pq: \n";
+    // for(auto el : pq){
+    //     std::cout << '\t' << el << std::endl;
+    // }
+    // std::cout << std::endl;
+    // std::cout << "pvpq: \n";
+    // for(auto el : pvpq){
+    //     std::cout << '\t' << el << std::endl;
+    // }
+    // std::cout << std::endl;
 
     // some clever tricks are used in the making of the Jacobian to handle the slack bus 
     // (in case there is a distributed slack bus)
@@ -80,6 +95,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     Va_ = V_.array().arg();  // we "wrapped around" with a negative Vm
     timer_pre_proc_ += timer_pre_proc.duration();
 
+    // std::cout << "end pre proc \n";
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
     RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
@@ -88,6 +104,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
+    // std::cout << "has_just_been_initialized\n";
     // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
     // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     if(need_factorize_ ||
@@ -111,6 +128,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
 
        }
+    // std::cout << "before while\n";
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
@@ -200,6 +218,8 @@ void BaseNRAlgo<LinearSolver>::reset(){
     // reset linear solver
     ErrorType reset_status = _linear_solver.reset();
     if(reset_status != ErrorType::NoError) err_ = reset_status;
+
+    // std::cout << "BaseNRAlgo<LinearSolver>::reset called \n";
 }
 
 template<class LinearSolver>

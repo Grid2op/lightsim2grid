@@ -137,7 +137,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
 
         virtual void change_solver(const SolverType & type){
             BaseBatchSolverSynch::change_solver(type);
-            init_li_coeffs(_solver.ac_solver_used());
+            // init_li_coeffs(_solver.ac_solver_used());
         }
 
     protected:
@@ -156,7 +156,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
-        void init_li_coeffs(bool ac_solver_used);
+        void init_li_coeffs(bool ac_solver_used, const std::vector<SolverBusId> &id_me_to_solver);
         // remove the line parameters from Ybus, this is to emulate its disconnection
         bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus

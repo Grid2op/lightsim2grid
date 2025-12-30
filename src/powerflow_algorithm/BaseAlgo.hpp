@@ -189,39 +189,29 @@ class BaseAlgo : public BaseConstants
                                     const RealVect & q,
                                     real_type tol);
 
-        // void one_iter_all_at_once(CplxVect & tmp_Sbus,
-        //                           const Eigen::SparseMatrix<cplx_type> & Ybus,
-        //                           const Eigen::VectorXi & pv,
-        //                           const Eigen::VectorXi & pq
-        //                           );
-        // void one_iter(CplxVect & tmp_Sbus,
-        //               const Eigen::SparseMatrix<cplx_type> & Ybus,
-        //               const Eigen::VectorXi & pv,
-        //               const Eigen::VectorXi & pq
-        //               );
-
         Eigen::VectorXi extract_slack_bus_id(const Eigen::VectorXi & pv,
                                              const Eigen::VectorXi & pq,
                                              unsigned int nb_bus);
 
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
-        (behaves as if only the first element is used for the slack !!!)
+        (behaves as if only the first element is used for the slack !!!, called "ref slack")
         **/
         Eigen::VectorXi retrieve_pv_with_slack(const Eigen::VectorXi & slack_ids, 
                                                const Eigen::VectorXi & pv) const {
-            Eigen::VectorXi my_pv = pv;
             if(slack_ids.size() > 1){
                 const auto nb_slack_added = slack_ids.size() - 1;
-                my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
+                Eigen::VectorXi my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
                 for(auto i = 0; i < nb_slack_added; ++i){
-                    my_pv(i) = slack_ids[i+1];
+                    my_pv(i) = slack_ids(i+1);
                 }
                 for(auto i = 0; i < pv.size(); ++i){
-                    my_pv(i + nb_slack_added) = pv[i];
+                    my_pv(i + nb_slack_added) = pv(i);
                 }
+                return my_pv;
+            }else{
+                return pv;
             }
-            return my_pv;
         }
 
         /**

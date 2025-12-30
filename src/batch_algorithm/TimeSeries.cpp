@@ -41,34 +41,23 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // init the computations
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
-    const Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
-    const Eigen::Index nb_buses_solver = Ybus.cols();
+    CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);   
 
-    const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
-    const std::vector<GlobalBusId> & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
+    // retrieve necessary data
     const auto & generators = _grid_model.get_generators_as_data();
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
-
     const Eigen::Index nb_steps = gen_p.rows();
 
-    const SolverBusIdVect & bus_pv = _grid_model.get_pv_solver();
-    const SolverBusIdVect & bus_pq = _grid_model.get_pq_solver();
-    const SolverBusIdVect & slack_ids  = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
-    const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
-    _solver.reset();
-    _solver_control.tell_none_changed();
-    _solver_control.tell_recompute_sbus();
-
     // now build the Sbus
-    _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver);
+    _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver_);
 
     bool add_ = true;
-    fill_SBus_real(_Sbuses, generators, gen_p, id_me_to_solver, add_);
-    fill_SBus_real(_Sbuses, s_generators, sgen_p, id_me_to_solver, add_);
+    fill_SBus_real(_Sbuses, generators, gen_p, id_me_to_solver_, add_);
+    fill_SBus_real(_Sbuses, s_generators, sgen_p, id_me_to_solver_, add_);
     add_ = false;
-    fill_SBus_real(_Sbuses, loads, load_p, id_me_to_solver, add_);
-    fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver, add_);
+    fill_SBus_real(_Sbuses, loads, load_p, id_me_to_solver_, add_);
+    fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver_, add_);
     if(abs(sn_mva - 1.0) > _tol_equal_float) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
     // TODO trafo hack for Sbus !
 
@@ -76,37 +65,40 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
     _amps_flows = RealMat::Zero(0, n_total_);
 
-    // extract V solver from the given V
-    CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
+    // end of the pre processing steps
     _timer_pre_proc = timer_preproc.duration();
 
     // compute the powerflows
     // set the "right" init vector
     CplxVect V = Vinit_solver;
-    _grid_model.get_generators().set_vm(V, id_me_to_solver);
+    _grid_model.get_generators().set_vm(V, id_me_to_solver_);
 
-    bool conv;
     Eigen::Index step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
+    bool conv;
     // do the computation for each step
+    _solver_control.tell_all_changed();  // recompute everything at the first iteration
     for(Eigen::Index i = 0; i < nb_steps; ++i){
         conv = false;
-        conv = compute_one_powerflow(Ybus,
+        conv = compute_one_powerflow(Ybus_,
                                      V, 
                                      _Sbuses.row(i),
-                                     slack_ids,
-                                     slack_weights,
-                                     bus_pv,
-                                     bus_pq,
+                                     slack_ids_,
+                                     slack_weights_,
+                                     bus_pv_,
+                                     bus_pq_,
                                      max_iter,
                                      tol_);
+        // nothing changes
+        _solver_control.tell_none_changed(); 
+        if(!ac_solver_used) _solver_control.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
         if(!conv){
             _timer_total = timer.duration();
             step_diverge = i;
             _status = 0;
             return _status;
         }
-        if(conv && step_diverge < 0) _voltages.row(i)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me)) = V.array();
+        if(conv && step_diverge < 0) _voltages.row(i)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
     }
 
     // If i reached there, it means it is succesfull

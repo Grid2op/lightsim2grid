@@ -15,7 +15,10 @@
 This is a utility class, used for TimeSeries and SecurityAnalysis that abstract some computations when
 the same solver is re used multiple times.
 
-It allows to perform "batch" powerflow one a time in a synchronous manner
+It allows to perform "batch" powerflow one a time in a synchronous manner.
+
+The "solver" of the gridmodel is never really used to perform powerflows.
+
 **/
 class BaseBatchSolverSynch : protected BaseConstants
 {
@@ -37,19 +40,6 @@ class BaseBatchSolverSynch : protected BaseConstants
             _timer_compute_P(0.),
             _timer_solver(0.)
             {
-                // make sure that my "grid_model" is ready to be used (for ac and dc)
-                Eigen::Index nb_bus = init_grid_model.total_bus();
-                CplxVect V = CplxVect::Constant(nb_bus, cplx_type(1.04, 0));
-                // const auto & Vtmp = init_grid_model.get_V_solver();
-                // for(int i = 0; i < Vtmp.size(); ++i) V[i] = Vtmp[i];
-                _grid_model.tell_solver_need_reset();
-                CplxVect Vdc = _grid_model.dc_pf(V, 10, 1e-5);
-                _grid_model.ac_pf(Vdc, 10, 1e-5);
-                
-                // assign the right solver type
-                _solver_control.tell_none_changed();
-                _solver.change_solver(_grid_model.get_solver_type());
-                _solver.tell_solver_control(_solver_control);
             }
 
         BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
@@ -63,14 +53,10 @@ class BaseBatchSolverSynch : protected BaseConstants
         std::vector<SolverType> available_solvers() const {return _solver.available_solvers(); }
         SolverType get_solver_type() const {return _solver.get_type(); }
 
-        // TODO
+        // // TODO
         // void change_gridmodel(const GridModel & new_grid_model){
-        //     if(_grid_model.total_bus() != new_grid_model.total_bus()){
-        //         throw std::runtime_error("BaseBatchSolverSynch: impossible to change the gridmodel. It appears it's not the same grid (not the same number of buses).");
-        //     }
         //     CplxVect V = CplxVect::Constant(new_grid_model.total_bus(), 1.04);
         //     _grid_model = new_grid_model.copy(); // not implemented !!!
-
         // }
 
         // utlities informations
@@ -134,6 +120,7 @@ class BaseBatchSolverSynch : protected BaseConstants
                 // retrieve physical parameters
                 const cplx_type y_ff = vect_y_ff(el_id);  // scalar
                 const cplx_type y_ft = vect_y_ft(el_id);
+                // TODO disconnected one side !
 
                 if(is_ac){
                     // trafo equations (to get the power at the "from" side)
@@ -188,6 +175,7 @@ class BaseBatchSolverSynch : protected BaseConstants
                 // retrieve physical parameters
                 const cplx_type y_ff = vect_y_ff(el_id);  // scalar
                 const cplx_type y_ft = vect_y_ft(el_id);
+                // TODO disconnected one side !
 
                 // trafo equations (to get the power at the "from" side)
                 if(is_ac){
@@ -208,10 +196,10 @@ class BaseBatchSolverSynch : protected BaseConstants
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
-                                   const SolverBusIdVect & slack_ids,
+                                   const IntVect & slack_ids,
                                    const RealVect & slack_weights,
-                                   const SolverBusIdVect & bus_pv,
-                                   const SolverBusIdVect & bus_pq,
+                                   const IntVect & bus_pv,
+                                   const IntVect & bus_pq,
                                    int max_iter,
                                    double tol
                                    );
@@ -232,6 +220,44 @@ class BaseBatchSolverSynch : protected BaseConstants
             }
             return Vinit_solver;
         }
+    protected:
+
+        CplxVect prepare_solver_input_base(const CplxVect & Vinit, bool ac_solver_used){
+            // clear previous data
+            Sbus_ = CplxVect();
+            Ybus_ = Eigen::SparseMatrix<cplx_type>();
+            id_solver_to_me_.clear();
+            id_me_to_solver_.clear();
+            slack_ids_solver_ = SolverBusIdVect();
+            slack_ids_me_ = GlobalBusIdVect();
+            nb_buses_solver_ = -1;
+
+            // fill the data correctly
+            _solver_control.tell_all_changed();
+            CplxVect res = _grid_model.pre_process_solver(
+                Vinit, 
+                Sbus_,
+                Ybus_,
+                id_me_to_solver_,
+                id_solver_to_me_,
+                slack_ids_me_,
+                slack_ids_solver_,
+                ac_solver_used,
+                _solver_control);
+
+            // extract relevant information
+            nb_buses_solver_ = static_cast<int>(Ybus_.cols());
+            const SolverBusIdVect & gm_bus_pv = _grid_model.get_pv_solver();
+            const SolverBusIdVect & gm_bus_pq = _grid_model.get_pq_solver();
+            const RealVect & gm_bus_sw = _grid_model.get_slack_weights_solver();
+            // TODO copies are made here, which is not ideal
+            bus_pv_ = _to_intvect(gm_bus_pv);
+            bus_pq_ = _to_intvect(gm_bus_pq);
+            slack_ids_ = _to_intvect(slack_ids_solver_);
+            slack_weights_ = gm_bus_sw;
+            return res;
+        }
+
     protected:
         // inputs
         GridModel _grid_model;
@@ -257,6 +283,22 @@ class BaseBatchSolverSynch : protected BaseConstants
 
         // solver control
         SolverControl _solver_control;
+
+        // internal data
+        CplxVect Sbus_;
+        Eigen::SparseMatrix<cplx_type> Ybus_;
+        std::vector<GlobalBusId> id_solver_to_me_;
+        std::vector<SolverBusId> id_me_to_solver_;
+        SolverBusIdVect slack_ids_solver_;
+        GlobalBusIdVect slack_ids_me_;
+        int nb_buses_solver_;
+
+        // TODO everything is copied here
+        // not optimal...
+        IntVect bus_pv_;
+        IntVect bus_pq_;
+        IntVect slack_ids_;
+        RealVect slack_weights_;
 
 };
 
