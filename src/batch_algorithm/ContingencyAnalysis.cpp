@@ -111,12 +111,25 @@ void ContingencyAnalysis::init_li_coeffs(
 }
 
 bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                                           const std::vector<Coeff> & coeffs) const
+                                           const std::vector<Coeff> & coeffs,
+                                           bool ac_solver_used)
 {
-    for(const auto & coeff_to_remove: coeffs){
-        Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
+    if(ac_solver_used)
+    {
+        for(const auto & coeff_to_remove: coeffs){
+            Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
+        }
+        return check_invertible(Ybus);
+    } else{
+        // DC solver stores the ybus internally, I update it
+        // instead of building it over and over
+        for(const Coeff& coeff : coeffs){
+            _solver.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
+        }
+        // in DC mode the solver takes the responsibility
+        // so Ybus is always "connected".
+        return true;
     }
-    return check_invertible(Ybus);
 }
 
 IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
@@ -125,25 +138,34 @@ IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
     int cont_id = 0;
     for(const auto & coeffs_modif: _li_coeffs){
-        if(remove_from_Ybus(Ybus, coeffs_modif)) res(cont_id) = 1;
+        if(remove_from_Ybus(Ybus, coeffs_modif, true)) res(cont_id) = 1;
         else res(cont_id) = 0;
-        readd_to_Ybus(Ybus, coeffs_modif);
+        readd_to_Ybus(Ybus, coeffs_modif, true);
         ++cont_id;
     }
     return res;
 }
 
-void ContingencyAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                                     const std::vector<Coeff> & coeffs) const
+void ContingencyAnalysis::readd_to_Ybus(
+    Eigen::SparseMatrix<cplx_type> & Ybus,
+    const std::vector<Coeff> & coeffs,
+    bool ac_solver_used)
 {
-    for(const auto & coeff_to_remove: coeffs){
-        Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) += coeff_to_remove.value;
+    if(ac_solver_used){
+        for(const Coeff & coeff_to_remove: coeffs){
+            Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) += coeff_to_remove.value;
+        }
+    } else {
+        // DC solver stores the ybus internally, I update it
+        // instead of building it over and over
+        for(const Coeff& coeff : coeffs){
+            _solver.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
+        }
     }
 }
 
 void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_type tol)
 {
-    // std::cout << "entering compute\n";
     auto timer = CustTimer();
     auto timer_preproc = CustTimer();
 
@@ -165,68 +187,8 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
 
-    // redo a powerflow to prepare the solver
-    // if(ac_solver_used){
-    //     if(_grid_model.get_solver().get_type() != _solver.get_type())
-    //     {
-    //         _grid_model.change_solver(_solver.get_type());
-    //         _grid_model.ac_pf(Vinit, max_iter, tol);
-    //         _grid_model.unset_changes();
-    //     }
-    // }else{
-    //     if(_grid_model.get_dc_solver().get_type() != _solver.get_type())
-    //     {
-    //         _grid_model.change_solver(_solver.get_type());
-    //         _grid_model.dc_pf(Vinit, max_iter, tol);
-    //         _grid_model.unset_changes();
-    //     }
-    // }
-
     // prepare the gridmodel (compute Ybus, Sbus etc.)
     CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
-
-    // _solver_control.tell_all_changed();
-    // CplxVect Sbus;
-    // Eigen::SparseMatrix<cplx_type> Ybus;
-    // std::vector<GlobalBusId> id_solver_to_me;
-    // std::vector<SolverBusId> id_me_to_solver;
-    // SolverBusIdVect slack_ids_solver;
-    // GlobalBusIdVect slack_ids_me;
-    // CplxVect Vinit_solver = _grid_model.pre_process_solver(
-    //     Vinit, 
-    //     Sbus,
-    //     Ybus,
-    //     id_me_to_solver,
-    //     id_solver_to_me,
-    //     slack_ids_me,
-    //     slack_ids_solver,
-    //     ac_solver_used,
-    //     _solver_control);
-
-    // std::cout << "end pre_process_solver\n";
-
-    // Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
-    // const Eigen::Index nb_buses_solver = Ybus_.cols();
-    // // const std::vector<GlobalBusId> & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
-    // const SolverBusIdVect & gm_bus_pv = _grid_model.get_pv_solver();
-    // // std::cout << "end get_pv_solver\n";
-    // const SolverBusIdVect & gm_bus_pq = _grid_model.get_pq_solver();
-    // // std::cout << "end get_pq_solver\n";
-    // const IntVect & bus_pv = _to_intvect(gm_bus_pv);
-    // // std::cout << "end bus_pv\n";
-    // const IntVect & bus_pq = _to_intvect(gm_bus_pq);
-    // // std::cout << "end gm_bus_pq\n";
-    // const IntVect & slack_ids = _to_intvect(slack_ids_solver_);
-    // // const IntVect & slack_ids = 
-    // //     ac_solver_used ? 
-    // //     _to_intvect(static_cast<const SolverBusIdVect &>(_grid_model.get_slack_ids_solver())): 
-    // //     _to_intvect(static_cast<const SolverBusIdVect &>(_grid_model.get_slack_ids_dc_solver()));
-    // const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
-    // const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
-    
-    // get the proper Sbus vector
-    // CplxVect Sbus = CplxVect::Zero(nb_buses_solver);
-    // _grid_model.fillSbus_other(Sbus, ac_solver_used, id_me_to_solver); 
 
     // initialize properly the coefficients that I will need to remove
     init_li_coeffs(ac_solver_used, id_me_to_solver_);
@@ -245,14 +207,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // perform the initial powerflow / "powerflow in n"
     _solver_control.tell_all_changed();
     _solver.tell_solver_control(_solver_control);
-    // std::cout << "Ybus.size() " << Ybus.size() << std::endl;
-    // std::cout << "Vinit_solver.size() " << Vinit_solver.size() << std::endl;
-    // std::cout << "Sbus.size() " << Sbus.size() << std::endl;
-    // std::cout << "slack_ids.size() " << slack_ids.size() << std::endl;
-    // std::cout << "slack_weights.size() " << slack_weights.size() << std::endl;
-    // std::cout << "bus_pv.size() " << bus_pv.size() << std::endl;
-    // std::cout << "bus_pq.size() " << bus_pq.size() << std::endl;
-    // _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
+    _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
     CplxVect Vinit_solver2 = Vinit_solver;
     bool conv = _solver.compute_pf(
         Ybus_,
@@ -277,25 +232,15 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
         bool invertible = true;
-        // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
-        if (ac_solver_used) invertible = remove_from_Ybus(Ybus_, coeffs_modif);
+        invertible = remove_from_Ybus(Ybus_, coeffs_modif, ac_solver_used);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
         conv = false;
 
         if(invertible)
         {
-            if(!ac_solver_used)
-            {
-                // DC solver stores the ybus internally, I update it
-                // instead of building it over and over
-                for(const Coeff& coeff : coeffs_modif){
-                    _solver.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
-                }
-            }
             V = Vinit_solver; // Vinit is reused for each contingencies
             // _solver_control.tell_all_changed();
             // _solver_control.tell_solver_need_reset();
-            // std::cout << "\t compute_one_powerflow\n";
             conv = compute_one_powerflow(
                 Ybus_,
                 V,
@@ -306,23 +251,10 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
                 bus_pq_,
                 max_iter,
                 tol / sn_mva);
-            if(!ac_solver_used)
-            {
-                // DC solver stores the ybus internally, I update it
-                // instead of building it over and over
-                for(const Coeff& coeff : coeffs_modif){
-                    _solver.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
-                }
-            }
         }
-        // std::string conv_str =  conv ? "has converged" : "has diverged";
-        // std::cout << "contingency " << cont_id << ": " << conv_str << std::endl;
-        // if(!conv) std::cout << "\t error was: " << _solver.get_error() << std::endl;
 
         timer_modif_Ybus = CustTimer();
-        // std::cout << "\t end compute_one_powerflow\n";
-        // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
-        if (ac_solver_used) readd_to_Ybus(Ybus_, coeffs_modif); 
+        readd_to_Ybus(Ybus_, coeffs_modif, ac_solver_used); 
         _timer_modif_Ybus += timer_modif_Ybus.duration();
         if (conv && invertible) _voltages.row(cont_id)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
         ++cont_id;

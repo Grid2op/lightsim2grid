@@ -162,9 +162,9 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         }
         void init_li_coeffs(bool ac_solver_used, const std::vector<SolverBusId> &id_me_to_solver);
         // remove the line parameters from Ybus, this is to emulate its disconnection
-        bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
+        bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used);
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus
-        void readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs) const;
+        void readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used);
 
         // by default the flows are not 0 when the powerline is connected in the original topology
         // this function sorts this out

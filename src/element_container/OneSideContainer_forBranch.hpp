@@ -59,8 +59,8 @@ class OneSideContainer_ForBranch : public OneSideContainer
 
     // regular implementation
     public:
-        OneSideContainer_ForBranch() noexcept {};
-        OneSideContainer_ForBranch(bool is_trafo) noexcept{};
+        OneSideContainer_ForBranch() noexcept = default;
+        explicit OneSideContainer_ForBranch(bool is_trafo) noexcept{};
         virtual ~OneSideContainer_ForBranch() noexcept = default;
 
         // public generic API
@@ -119,7 +119,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos) 
             // elements
             };
-            
+
         virtual void _deactivate(int el_id, SolverControl & solver_control) {
             if(status_[el_id]){
                 solver_control.tell_ybus_some_coeffs_zero();

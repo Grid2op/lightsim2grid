@@ -46,7 +46,7 @@ class BaseAlgo : public BaseConstants
         const bool IS_AC;  // should be static ideally...
 
     public:
-        BaseAlgo(bool is_ac=true) noexcept:
+        explicit BaseAlgo(bool is_ac=true) noexcept:
             BaseConstants(),
             IS_AC(is_ac),
             n_(-1),

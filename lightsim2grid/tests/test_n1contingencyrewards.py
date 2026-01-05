@@ -215,8 +215,10 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         env_cpy = self.env.copy()
         assert env_cpy._reward_helper.template_reward._threshold_margin == self.threshold_margin() 
         assert self.env._reward_helper.template_reward._backend is not env_cpy._reward_helper.template_reward._backend
-        assert (env_cpy.backend.sh_bus == self.env.backend.sh_bus).all()
-        assert (env_cpy.backend.shunt_info()[3] == self.env.backend.shunt_info()[3]).all()
+        if isinstance(self.env.backend, LightSimBackend):
+            # there is a test using pandapower backend
+            assert (env_cpy.backend.sh_bus == self.env.backend.sh_bus).all()
+            assert (env_cpy.backend.shunt_info()[3] == self.env.backend.shunt_info()[3]).all()
         # print("here for reward")
         obs, reward, done, info = self.env.step(self.env.action_space(
             {"set_bus": {"substations_id": [(3, (1, 2, 1, 2, 1, 2))]}}))

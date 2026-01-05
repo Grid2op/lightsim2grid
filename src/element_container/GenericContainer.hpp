@@ -71,7 +71,7 @@ class GenericContainer : public BaseConstants
                                 // is overriden mainly for "generators"
                                 };
         
-        void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver) {
+        virtual void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };

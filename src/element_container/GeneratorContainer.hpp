@@ -176,7 +176,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         RealVect get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<SolverBusId> & id_grid_to_solver);
     
         GlobalBusIdVect get_slack_bus_id() const;
-        void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver);
+        virtual void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver);
     
         // modification
         void turnedoff_no_pv(SolverControl & solver_control){

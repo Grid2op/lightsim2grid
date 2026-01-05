@@ -48,8 +48,14 @@ class NICSLULinearSolver final
         ~NICSLULinearSolver() noexcept
         {
            solver_.Free();
-           if(ai_!= nullptr) delete [] ai_;
-           if(ap_!= nullptr) delete [] ap_;
+           if(ai_!= nullptr){
+            delete [] ai_;
+            ai_= nullptr;
+           }
+           if(ap_!= nullptr){
+            delete [] ap_;
+            ap_ = nullptr;
+           }
         }
 
         // NICSLULinearSolver(NICSLULinearSolver && other) noexcept: nb_thread_(other.nb_thread_){

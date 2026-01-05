@@ -50,7 +50,7 @@ class BaseBatchSolverSynch : protected BaseConstants
         // solver "control"
         virtual void change_solver(const SolverType & type){
             _solver.change_solver(type);
-            clear();
+            this->clear();
         }
         std::vector<SolverType> available_solvers() const {return _solver.available_solvers(); }
         SolverType get_solver_type() const {return _solver.get_type(); }
