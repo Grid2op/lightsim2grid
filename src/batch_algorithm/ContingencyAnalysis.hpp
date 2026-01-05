@@ -19,7 +19,7 @@ have been disconnected
 class ContingencyAnalysis final: public BaseBatchSolverSynch
 {
     public:
-        ContingencyAnalysis(const GridModel & init_grid_model) noexcept:
+        explicit  ContingencyAnalysis(const GridModel & init_grid_model) noexcept:
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),
@@ -27,7 +27,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                             _timer_modif_Ybus(0.),
                             _timer_pre_proc(0.)
                             { }
-                            
+
         ~ContingencyAnalysis() noexcept = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;

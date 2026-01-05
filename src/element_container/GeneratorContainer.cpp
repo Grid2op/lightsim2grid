@@ -321,7 +321,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
     }
 }
 
-void GeneratorContainer::_change_bus(int el_id, GlobalBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+void GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
     if(bus_id_(el_id) == new_bus_id) return;  // nothing to do if the bus did not changed
     solver_control.tell_recompute_sbus();
     solver_control.tell_one_el_changed_bus();

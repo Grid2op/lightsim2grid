@@ -104,14 +104,22 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
 
     protected:
-        virtual void _reset_results() {};
+        virtual void _reset_results() {
+            // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos) 
+            // elements
+        };
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
                                       const std::vector<SolverBusId> & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
-                                      bool ac) {};
+                                      bool ac) {
+
+            // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos) 
+            // elements
+            };
+            
         virtual void _deactivate(int el_id, SolverControl & solver_control) {
             if(status_[el_id]){
                 solver_control.tell_ybus_some_coeffs_zero();

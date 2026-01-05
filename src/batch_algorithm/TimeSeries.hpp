@@ -18,7 +18,7 @@ series of injections (productions and loads) to compute powerflows/
 class TimeSeries final: public BaseBatchSolverSynch
 {
     public:
-        TimeSeries(const GridModel & init_grid_model) noexcept:
+        explicit TimeSeries(const GridModel & init_grid_model) noexcept:
             BaseBatchSolverSynch(init_grid_model),
             _Sbuses(),
             _status(1), // 1: success, 0: failure

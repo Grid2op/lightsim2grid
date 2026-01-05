@@ -362,8 +362,12 @@ class TwoSidesContainer : public GenericContainer
             if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");
             if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
         }
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {}
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {}
+        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+            // nothing to do by default: handled in derived class
+        }
+        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+            // nothing to do by default: handled in derived class
+        }
 
         // used for example in change_bus_lv(int, int solver_control, int)
         // Eigen::Ref<IntVect> get_buses_not_const_side_1() {return side_1_.get_buses_not_const();}

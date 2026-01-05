@@ -26,7 +26,7 @@ class BaseBatchSolverSynch : protected BaseConstants
         typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
         typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
         
-        BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
+        explicit BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),

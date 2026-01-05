@@ -90,18 +90,15 @@ class DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, publ
             side_2_.reactivate(dcline_id, solver_control);
         }
 
-        // for buses only connected through dc line, i don't add them
-        // they are not in the same "connected component"
         virtual void reconnect_connected_buses(SubstationContainer & Substation) const {
-            // from_gen_.reconnect_connected_buses(bus_status);
-            // to_gen_.reconnect_connected_buses(bus_status);
+            side_1_.reconnect_connected_buses(Substation);
+            side_2_.reconnect_connected_buses(Substation);
         }
 
-        // for buses only connected through dc line, i don't add them
-        // they are not in the same "connected component"
-        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {};
-
-        // virtual void nb_line_end(std::vector<int> & res) const;
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {
+            // for buses only connected through dc line, i don't add them
+            // they are not in the same "connected component"
+        };
         
         real_type get_qmin_or(int dcline_id) {return side_1_.get_qmin(dcline_id);}
         real_type get_qmax_or(int dcline_id) {return  side_1_.get_qmax(dcline_id);}
@@ -146,7 +143,9 @@ class DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, publ
                         std::vector<Eigen::Triplet<real_type> > & Bpp,
                         const std::vector<SolverBusId> & id_grid_to_solver,
                         real_type sn_mva,
-                        FDPFMethod xb_or_bx) const {}
+                        FDPFMethod xb_or_bx) const {
+                            // no Bp coeffs for dc lines
+                        }
 
         void init_q_vector(int nb_bus,
                         Eigen::VectorXi & total_gen_per_bus,

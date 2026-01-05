@@ -413,20 +413,33 @@ class OneSideContainer : public GenericContainer
         }
 
     protected:
-        virtual void _reset_results() {};
+        virtual void _reset_results() {
+            // nothing to do by default
+        };
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
                                       const std::vector<SolverBusId> & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
-                                      bool ac) {};
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {};
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {};
-        virtual void _change_bus(int load_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {};
-        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {};
-        virtual void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {};
-        // virtual void _change_v(int el_id, real_type new_p, SolverControl & solver_control) {};
+                                      bool ac) {
+                                        // nothing to do by default
+                                      };
+        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+            // nothing do to by default
+        };
+        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+            // nothing to do by default
+        };
+        virtual void _change_bus(int load_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+            // nothing to do by default
+        };
+        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {
+            // nothing to do by default
+            };
+        virtual void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {
+            // nothing to do by default
+        };
 
         void _check_pos_topo_vect_filled(){
             if((nb() > 0) && (pos_topo_vect_.size() == 0)){
