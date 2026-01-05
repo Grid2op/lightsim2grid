@@ -1353,9 +1353,9 @@ class LightSimBackend(Backend):
             self.__init_topo_vect = np.ones(cls.dim_topo, dtype=dt_int)
             self.__init_topo_vect[:] = self.topo_vect
             self.__init_topo_vect.flags.writeable = False
-            
-            self.__init_shunt_bus = self.sh_bus.copy()
-            self.__init_shunt_bus.flags.writeable = False
+            if my_cls.shunts_data_available:
+                self.__init_shunt_bus = self.sh_bus.copy()
+                self.__init_shunt_bus.flags.writeable = False
         finally:
             cls.n_sub = n_sub_cls_orig
             LightSimBackend.n_sub = n_sub_ls_orig
@@ -2074,10 +2074,10 @@ class LightSimBackend(Backend):
         self._timer_apply_act = 0.
         
         # handle initial topology
-        self.sh_bus.flags.writeable = True
         if type(self).shunts_data_available:
+            self.sh_bus.flags.writeable = True
             self.sh_bus[:] = self.__init_shunt_bus
-        self.sh_bus.flags.writeable = False
+            self.sh_bus.flags.writeable = False
         self.topo_vect.flags.writeable = True
         self.topo_vect[:] = self.__init_topo_vect
         self.topo_vect.flags.writeable = False
