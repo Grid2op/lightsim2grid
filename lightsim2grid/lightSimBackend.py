@@ -1720,7 +1720,9 @@ class LightSimBackend(Backend):
             if self._need_islanding_detection:
                 # topology might have changed in the
                 # powerflow computation
+                self.topo_vect.flags.writeable = True
                 self._read_topo_vect(self.topo_vect)
+                self.topo_vect.flags.writeable = False
                 self._need_islanding_detection = False
             self._timer_postproc += time.perf_counter() - beg_postroc
         except Exception as exc_:
