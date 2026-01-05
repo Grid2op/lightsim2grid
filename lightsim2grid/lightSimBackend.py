@@ -1864,12 +1864,13 @@ class LightSimBackend(Backend):
     def copy(self, orig_grid=None) -> Self:
         # i can perform a regular copy, everything has been initialized
         mygrid = self._grid
-        __me_at_init = self.__me_at_init
+        _me_at_init = self.__me_at_init
         inippbackend = self._init_pp_backend
-        if __me_at_init is None:
+        if _me_at_init is None and self._grid is not None:
             # __me_at_init is defined as being the copy of the grid,
             # if it's not defined then i can define it here.
-            __me_at_init = self._grid.copy()
+            # TODO error in deepcopy, this is why I added "self._grid is not None"
+            _me_at_init = self._grid.copy()
 
         self._grid = None
         self.__me_at_init = None
@@ -1985,7 +1986,9 @@ class LightSimBackend(Backend):
                     raise Grid2OpException("Error in the copy of a LightSimBackend: my_grid is not orig_grid")
         else:
             res._grid = None
-        res.__me_at_init = __me_at_init.copy()  # this is const (but I copy it for "safety")
+        if _me_at_init is not None:
+            # TODO error in deepcopy, this is why I added "_me_at_init is not None"
+            res.__me_at_init = _me_at_init.copy()  # this is const (but I copy it for "safety")
         res._init_pp_backend = inippbackend  # this is const
         res._backend_action_class = self._backend_action_class  # this is const
         res.__init_topo_vect = self.__init_topo_vect  # this is const
@@ -1997,7 +2000,7 @@ class LightSimBackend(Backend):
         # assign back "self" attributes
         self._grid = mygrid
         self._init_pp_backend = inippbackend
-        self.__me_at_init = __me_at_init
+        self.__me_at_init = _me_at_init
         return res
 
     def get_line_status(self) -> np.ndarray:

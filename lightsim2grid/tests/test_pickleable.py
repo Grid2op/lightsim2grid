@@ -16,6 +16,7 @@ import numpy as np
 
 from grid2op import make
 from lightsim2grid.lightSimBackend import LightSimBackend
+from lightsim2grid.gridmodel.compare_gridmodel import compare_gridmodel_input
 import pdb
 
 
@@ -109,6 +110,8 @@ class TestPickle(unittest.TestCase):
                 
                 self.aux_test_2sides(self.env.backend._grid, backend_1._grid)
                 self.aux_test_1side(self.env.backend._grid, backend_1._grid)
+                tmp = compare_gridmodel_input(self.env.backend._grid, backend_1._grid)
+                assert len(tmp) == 0
                 
                 nb_bus_total = self.env.n_sub * 2
                 max_it = 10
