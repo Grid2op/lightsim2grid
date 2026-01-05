@@ -399,7 +399,7 @@ def init(net : pypo.network.Network,
                      ratio,
                      shift_,  # in degree !
                      is_tap_hv_side,
-                     tor_bus, # TODO do I need to change hv / lv
+                     tor_bus,
                      tex_bus)    
     for t_id, (is_or_disc, is_ex_disc) in enumerate(zip(tor_disco, tex_disco)):
         if is_or_disc or is_ex_disc:

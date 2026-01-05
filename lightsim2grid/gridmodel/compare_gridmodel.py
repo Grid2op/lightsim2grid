@@ -103,7 +103,7 @@ ATTR_LINES_INPUT = (ATTR_2SIDES_INPUT +
 
 ATTR_TAFO_INPUT = (ATTR_LINES_INPUT + 
     [
-        "is_tap_hv_side",
+        "is_tap_side_1",
         "ratio",
         "shift_rad",
     ]
