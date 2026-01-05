@@ -78,9 +78,7 @@ class SubstationContainer final : public IteratorAdder<SubstationContainer, Subs
             bus_status_(n_bus_max_, false),
             bus_vn_kv_(n_bus_max_){}
             
-        ~SubstationContainer() noexcept {
-            // std::cout << "SubstationContainer destructor" << std::endl;
-        }; 
+        ~SubstationContainer() noexcept = default;
 
         void reset_bus_status(){
             for(auto i = 0; i < n_bus_max_; ++ i) bus_status_[i] = -1;

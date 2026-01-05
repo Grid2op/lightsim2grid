@@ -16,9 +16,7 @@ class GaussSeidelAlgo : public BaseAlgo
     public:
         GaussSeidelAlgo() noexcept :BaseAlgo(true) {};
 
-        virtual ~GaussSeidelAlgo() noexcept {
-            // std::cout << "GaussSeidelAlgo destructor" << std::endl;
-        };
+        virtual ~GaussSeidelAlgo() noexcept = default;
 
         // todo  can be factorized
         Eigen::SparseMatrix<real_type> get_J(){
@@ -49,8 +47,10 @@ class GaussSeidelAlgo : public BaseAlgo
 
     private:
         // no copy allowed
-        GaussSeidelAlgo( const GaussSeidelAlgo & ) =delete;
-        GaussSeidelAlgo & operator=( const GaussSeidelAlgo & ) =delete;
+        GaussSeidelAlgo(const GaussSeidelAlgo&) = delete;
+        GaussSeidelAlgo(GaussSeidelAlgo&&) = delete;
+        GaussSeidelAlgo & operator=(GaussSeidelAlgo&&) = delete;
+        GaussSeidelAlgo & operator=(const GaussSeidelAlgo&) = delete;
 
 };
 

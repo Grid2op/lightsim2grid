@@ -41,9 +41,11 @@ class BaseBatchSolverSynch : protected BaseConstants
             _timer_solver(0.)
             {
             }
-
-        BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
         virtual ~BaseBatchSolverSynch() noexcept = default;  // to avoid warning about overload virtual
+        BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;
+        BaseBatchSolverSynch(BaseBatchSolverSynch&&) = delete;
+        BaseBatchSolverSynch & operator=(BaseBatchSolverSynch&&) = delete;
+        BaseBatchSolverSynch & operator=(const BaseBatchSolverSynch&) = delete;
     
         // solver "control"
         virtual void change_solver(const SolverType & type){

@@ -53,9 +53,7 @@ class DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, publ
             side_1_.turnedoff_no_pv(solver_control_not_used);
             side_2_.turnedoff_no_pv(solver_control_not_used);
         };
-        virtual ~DCLineContainer() noexcept{
-            // std::cout << "DCLineContainer destructor" << std::endl;
-        };
+        virtual ~DCLineContainer() noexcept = default;
 
         // pickle
         typedef std::tuple<

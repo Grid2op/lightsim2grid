@@ -52,17 +52,18 @@ class NICSLULinearSolver final
            if(ap_!= nullptr) delete [] ap_;
         }
 
-        NICSLULinearSolver(NICSLULinearSolver && other) noexcept: nb_thread_(other.nb_thread_){
-            if(ai_!= nullptr) delete [] ai_;
-            ai_ = other.ai_;
-            other.ai_ = nullptr;
+        // NICSLULinearSolver(NICSLULinearSolver && other) noexcept: nb_thread_(other.nb_thread_){
+        //     TODO
+        //     if(ai_!= nullptr) delete [] ai_;
+        //     ai_ = other.ai_;
+        //     other.ai_ = nullptr;
 
-            if(ap_!= nullptr) delete [] ap_;
-            ap_ = other.ap_;
-            other.ap_ = nullptr;
+        //     if(ap_!= nullptr) delete [] ap_;
+        //     ap_ = other.ap_;
+        //     other.ap_ = nullptr;
 
-            std::swap(solver_, other.solver_);
-        }
+        //     std::swap(solver_, other.solver_);
+        // }
 
         // public api
         ErrorType reset();
@@ -73,8 +74,10 @@ class NICSLULinearSolver final
         static const bool CAN_SOLVE_MAT;
 
         // prevent copy and assignment
-        NICSLULinearSolver(const NICSLULinearSolver & other) = delete;
-        NICSLULinearSolver & operator=( const NICSLULinearSolver & ) = delete;
+        NICSLULinearSolver(const NICSLULinearSolver&) = delete;
+        NICSLULinearSolver(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(NICSLULinearSolver&&) = delete;
+        NICSLULinearSolver & operator=(const NICSLULinearSolver&) = delete;
         
     private:
         // solver initialization

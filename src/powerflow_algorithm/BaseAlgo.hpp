@@ -56,13 +56,13 @@ class BaseAlgo : public BaseConstants
             timer_check_(0.),
             timer_total_nr_(0.){};
 
-        virtual ~BaseAlgo() noexcept {
-            // std::cout << "\t\t BaseAlgo destructor" << std::endl;
-        };  // I don't put "=default" because I don't have the ownership to gridmodel
+        virtual ~BaseAlgo() noexcept = default;
 
         // no copy allowed
-        BaseAlgo( const BaseAlgo & ) =delete;
-        BaseAlgo & operator=( const BaseAlgo & ) =delete;
+        BaseAlgo(const BaseAlgo&) = delete;
+        BaseAlgo(BaseAlgo&&) = delete;
+        BaseAlgo & operator=(BaseAlgo&&) = delete;
+        BaseAlgo & operator=(const BaseAlgo&) = delete;
 
         void set_gridmodel(const GridModel * gridmodel){
             gridmodel_ptr_ = gridmodel;

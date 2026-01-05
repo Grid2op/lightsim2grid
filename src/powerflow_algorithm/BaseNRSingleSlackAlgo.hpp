@@ -20,9 +20,7 @@ class BaseNRSingleSlackAlgo final : public BaseNRAlgo<LinearSolver>
     public:
         BaseNRSingleSlackAlgo() noexcept = default;
 
-        virtual ~BaseNRSingleSlackAlgo() noexcept {
-            // std::cout << "BaseNRSingleSlackAlgo destructor" << std::endl;
-        };
+        virtual ~BaseNRSingleSlackAlgo() noexcept = default;
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,

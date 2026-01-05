@@ -48,17 +48,18 @@ class KLULinearSolver final
             // std::cout << "KLULinearSolver destructor 3" << std::endl;
         }
 
-        KLULinearSolver(KLULinearSolver && other) noexcept {
-            if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
-            symbolic_ = other.symbolic_;
-            other.symbolic_ = nullptr;
+        // KLULinearSolver(KLULinearSolver && other) noexcept {
+        //     TODO
+        //     if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
+        //     symbolic_ = other.symbolic_;
+        //     other.symbolic_ = nullptr;
             
-            if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
-            numeric_ = other.numeric_;
-            other.numeric_ = nullptr;
+        //     if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
+        //     numeric_ = other.numeric_;
+        //     other.numeric_ = nullptr;
 
-            std::swap(common_, other.common_);
-        }
+        //     std::swap(common_, other.common_);
+        // }
 
         // public api
         ErrorType reset();
@@ -75,8 +76,10 @@ class KLULinearSolver final
         klu_common common_;
 
         // no copy allowed
-        KLULinearSolver( const KLULinearSolver & ) = delete ;
-        KLULinearSolver & operator=( const KLULinearSolver & ) = delete ;
+        KLULinearSolver(const KLULinearSolver&) = delete;
+        KLULinearSolver(KLULinearSolver&&) = delete;
+        KLULinearSolver & operator=(KLULinearSolver&&) = delete;
+        KLULinearSolver & operator=(const KLULinearSolver&) = delete;
 };
 
 #endif // KLSOLVER_H

@@ -19,9 +19,7 @@ class BaseFDPFAlgo: public BaseAlgo
 {
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
-        virtual ~BaseFDPFAlgo() noexcept{
-            // std::cout << "BaseFDPFAlgo destructor" << std::endl;
-        };
+        virtual ~BaseFDPFAlgo() noexcept = default;
 
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -34,19 +32,6 @@ class BaseFDPFAlgo: public BaseAlgo
                         int max_iter,
                         real_type tol
                         ) ;  // requires a gridmodel !
-
-        // bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-        //                 const Eigen::SparseMatrix<cplx_type> & Bp,
-        //                 const Eigen::SparseMatrix<cplx_type> & Bpp,
-        //                 CplxVect & V,
-        //                 const CplxVect & Sbus,
-        //                 const Eigen::VectorXi & slack_ids,
-        //                 const RealVect & slack_weights,
-        //                 const Eigen::VectorXi & pv,
-        //                 const Eigen::VectorXi & pq,
-        //                 int max_iter,
-        //                 real_type tol
-        //                 ) ;  // TODO add Bp and Bpp as argument for use in python directly !
 
         virtual void reset()
         {   
@@ -218,8 +203,10 @@ class BaseFDPFAlgo: public BaseAlgo
 
     private:
         // no copy allowed
-        BaseFDPFAlgo( const BaseFDPFAlgo & ) =delete ;
-        BaseFDPFAlgo & operator=( const BaseFDPFAlgo & ) =delete ;
+        BaseFDPFAlgo(const BaseFDPFAlgo&) = delete;
+        BaseFDPFAlgo(BaseFDPFAlgo&&) = delete;
+        BaseFDPFAlgo & operator=(BaseFDPFAlgo&&) = delete;
+        BaseFDPFAlgo & operator=(const BaseFDPFAlgo&) = delete;
 };
 
 #include "BaseFDPFAlgo.tpp"

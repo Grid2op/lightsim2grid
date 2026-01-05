@@ -1346,7 +1346,7 @@ class GridModel final : public GenericContainer
         }
 
     protected:
-    // add method to change topology, change ratio of transformers, change
+        void set_ls_to_orig_internal(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
 
         // compute admittance matrix
         // dc powerflow

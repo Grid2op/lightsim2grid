@@ -35,7 +35,7 @@ GridModel::GridModel(const GridModel & other) noexcept
 
 
     // std::cout << "\t\t 2" << std::endl;
-    set_ls_to_orig(other._ls_to_orig);  // sets also orig_to_ls
+    set_ls_to_orig_internal(other._ls_to_orig);  // sets also orig_to_ls
     // std::cout << "\t\t 3" << std::endl;
 
     // 2. powerline
@@ -225,14 +225,7 @@ void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
 
     if(ls_to_orig.size() != substations_.nb_bus()) 
         throw std::runtime_error("Impossible to set the converter ls_to_orig: the provided vector has not the same size as the number of bus on the grid.");
-    _ls_to_orig = ls_to_orig;
-    const auto size = ls_to_orig.lpNorm<Eigen::Infinity>();
-    _orig_to_ls = IntVect::Constant(size + 1, -1);
-    int i = 0;
-    for(auto el : _ls_to_orig){
-        if(el != -1) _orig_to_ls[el] = i;
-        ++i;
-    }
+    set_ls_to_orig_internal(ls_to_orig);
 }
 
 void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
@@ -256,6 +249,23 @@ void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
             _ls_to_orig[ls2or_ind] = my_ind;
             ls2or_ind++;
         }
+    }
+}
+
+void GridModel::set_ls_to_orig_internal(const IntVect & ls_to_orig){
+    if(ls_to_orig.size() == 0){
+        _ls_to_orig = IntVect();
+        _orig_to_ls = IntVect();
+        return;
+    }
+    
+    _ls_to_orig = ls_to_orig;
+    const auto size = ls_to_orig.lpNorm<Eigen::Infinity>();
+    _orig_to_ls = IntVect::Constant(size + 1, -1);
+    int i = 0;
+    for(auto el : _ls_to_orig){
+        if(el != -1) _orig_to_ls[el] = i;
+        ++i;
     }
 }
 

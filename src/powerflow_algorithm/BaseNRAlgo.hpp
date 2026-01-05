@@ -27,9 +27,7 @@ class BaseNRAlgo : public BaseAlgo
             timer_Va_Vm_(0.),
             timer_pre_proc_(0.){}
             
-        virtual ~BaseNRAlgo() noexcept{
-            // std::cout << "BaseNRAlgo destructor" << std::endl;
-        };
+        virtual ~BaseNRAlgo() noexcept = default;
 
         
         
@@ -224,8 +222,10 @@ class BaseNRAlgo : public BaseAlgo
 
     private:
         // no copy allowed
-        BaseNRAlgo( const BaseNRAlgo & ) =delete ;
-        BaseNRAlgo & operator=( const BaseNRAlgo & ) =delete ;
+        BaseNRAlgo(const BaseNRAlgo&) = delete;
+        BaseNRAlgo(BaseNRAlgo&&) = delete;
+        BaseNRAlgo & operator=(BaseNRAlgo&&) = delete;
+        BaseNRAlgo & operator=(const BaseNRAlgo&) = delete;
 
         /** helper function to print the max_col left most columns of the J matrix **/
         void print_J(int min_col=-1, int max_col=-1) const{

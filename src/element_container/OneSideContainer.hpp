@@ -154,9 +154,7 @@ class OneSideContainer : public GenericContainer
 
     public:
         OneSideContainer() noexcept = default;
-        virtual ~OneSideContainer() noexcept{
-            // std::cout << "\t\tOneSideContainer destructor" << std::endl;
-        }
+        virtual ~OneSideContainer() noexcept = default;
         // OneSideInfo get_osc_info(int id_) {return OneSideInfo(*this, id_);}
 
         // public generic API

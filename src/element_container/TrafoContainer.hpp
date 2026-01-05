@@ -71,9 +71,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                >  StateRes;
 
         TrafoContainer() noexcept = default;
-        virtual ~TrafoContainer() noexcept{
-            // std::cout << "TrafoContainer destructor" << std::endl;
-        }
+        virtual ~TrafoContainer() noexcept = default;
 
         void init(const RealVect & trafo_r,
                   const RealVect & trafo_x,

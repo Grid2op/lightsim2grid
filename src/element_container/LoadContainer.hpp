@@ -54,9 +54,7 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
            >  StateRes;
         
         LoadContainer() noexcept = default;
-        virtual ~LoadContainer() noexcept{
-            // std::cout << "LoadContainer destructor" << std::endl;
-        };
+        virtual ~LoadContainer() noexcept = default;
         
         // pickle (python)
         LoadContainer::StateRes get_state() const;

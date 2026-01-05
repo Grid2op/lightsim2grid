@@ -27,8 +27,12 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                             _timer_modif_Ybus(0.),
                             _timer_pre_proc(0.)
                             { }
-
+                            
+        ~ContingencyAnalysis() noexcept = default;
         ContingencyAnalysis(const ContingencyAnalysis&) = delete;
+        ContingencyAnalysis(ContingencyAnalysis&&) = delete;
+        ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;
+        ContingencyAnalysis & operator=(const ContingencyAnalysis&) = delete;
 
         // utilities to add defaults to simulate
         void add_all_n1(){

@@ -42,12 +42,12 @@ class ChooseSolver final
              _type_used_for_nr(SolverType::SparseLU)
              {};
 
-        ~ChooseSolver() noexcept{
-            // std::cout << "ChooseSolver destructor" << std::endl;
-        };
+        ~ChooseSolver() noexcept = default;
 
         ChooseSolver(const ChooseSolver&) = delete;
-        ChooseSolver operator=(const ChooseSolver&) = delete;
+        ChooseSolver(ChooseSolver&&) = delete;
+        ChooseSolver & operator=(ChooseSolver&&) = delete;
+        ChooseSolver & operator=(const ChooseSolver&) = delete;
         
         std::vector<SolverType> available_solvers() const
         {

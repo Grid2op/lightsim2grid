@@ -26,8 +26,12 @@ class TimeSeries final: public BaseBatchSolverSynch
             _timer_total(0.) ,
             _timer_pre_proc(0.)
             {}
+        ~TimeSeries() noexcept = default;
 
         TimeSeries(const TimeSeries&) = delete;
+        TimeSeries(TimeSeries&&) = delete;
+        TimeSeries & operator=(TimeSeries&&) = delete;
+        TimeSeries & operator=(const TimeSeries&) = delete;
 
         // control on whether I compute the flows or not
         void deactivate_flow_computations() {_compute_flows = false;}

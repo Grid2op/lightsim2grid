@@ -20,9 +20,7 @@ class GaussSeidelSynchAlgo final: public GaussSeidelAlgo
     public:
         GaussSeidelSynchAlgo() noexcept : GaussSeidelAlgo() {};
 
-        virtual ~GaussSeidelSynchAlgo() noexcept {
-            // std::cout << "GaussSeidelSynchAlgo destructor" << std::endl;
-        };
+        virtual ~GaussSeidelSynchAlgo() noexcept = default;
 
     protected:
         void one_iter(CplxVect & tmp_Sbus,
@@ -33,8 +31,10 @@ class GaussSeidelSynchAlgo final: public GaussSeidelAlgo
 
     private:
         // no copy allowed
-        GaussSeidelSynchAlgo( const GaussSeidelSynchAlgo & ) =delete;
-        GaussSeidelSynchAlgo & operator=( const GaussSeidelSynchAlgo & )=delete ;
+        GaussSeidelSynchAlgo(const GaussSeidelSynchAlgo&) = delete;
+        GaussSeidelSynchAlgo(GaussSeidelSynchAlgo&&) = delete;
+        GaussSeidelSynchAlgo & operator=(GaussSeidelSynchAlgo&&) = delete;
+        GaussSeidelSynchAlgo & operator=(const GaussSeidelSynchAlgo&) = delete;
 
 };
 

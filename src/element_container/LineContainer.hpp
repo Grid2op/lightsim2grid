@@ -44,9 +44,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
                    >  StateRes;
         
         LineContainer() noexcept = default;
-        virtual ~LineContainer() noexcept{
-            // std::cout << "LineContainer destructor" << std::endl;
-        };
+        virtual ~LineContainer() noexcept = default;
         
         void init(const RealVect & branch_r,
                   const RealVect & branch_x,

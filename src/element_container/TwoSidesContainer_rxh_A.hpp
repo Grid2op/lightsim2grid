@@ -131,9 +131,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
     public:
         TwoSidesContainer_rxh_A() noexcept = default;
-        virtual ~TwoSidesContainer_rxh_A() noexcept{
-            // std::cout << "\tTwoSidesContainer_rxh_A destructor" << std::endl;
-        }
+        virtual ~TwoSidesContainer_rxh_A() noexcept = default;
         
         // pickle
         typedef std::tuple<

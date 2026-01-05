@@ -114,9 +114,7 @@ class TwoSidesContainer : public GenericContainer
 
     public:
         TwoSidesContainer() noexcept :ignore_status_global_(false), synch_status_both_side_(true){}
-        virtual ~TwoSidesContainer() noexcept{
-            // std::cout << "\t\tTwoSidesContainer destructor" << std::endl;
-        }
+        virtual ~TwoSidesContainer() noexcept = default;
 
         // public generic API
         int nb() const { return side_1_.nb(); }

@@ -44,9 +44,7 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
         typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;
         
         ShuntContainer() noexcept = default;
-        virtual ~ShuntContainer() noexcept{
-            // std::cout << "ShuntContainer destructor" << std::endl;
-        }
+        virtual ~ShuntContainer() noexcept = default;
         
         
         void init(const RealVect & shunt_p_mw,

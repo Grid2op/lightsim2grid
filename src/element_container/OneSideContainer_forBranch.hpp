@@ -61,9 +61,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
     public:
         OneSideContainer_ForBranch() noexcept {};
         OneSideContainer_ForBranch(bool is_trafo) noexcept{};
-        virtual ~OneSideContainer_ForBranch() noexcept{
-            // std::cout << "\tOneSideContainer_ForBranch destructor" << std::endl;
-        }
+        virtual ~OneSideContainer_ForBranch() noexcept = default;
 
         // public generic API
 

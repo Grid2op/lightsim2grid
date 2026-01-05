@@ -33,9 +33,7 @@ class SparseLULinearSolver final
 {
     public:
         SparseLULinearSolver() noexcept :solver_(){}
-        ~SparseLULinearSolver() noexcept{
-            // std::cout << "SparseLULinearSolver destructor" << std::endl;
-        };
+        ~SparseLULinearSolver() noexcept = default;
         
         // public api
         ErrorType initialize(const Eigen::SparseMatrix<real_type> & J);
@@ -51,8 +49,10 @@ class SparseLULinearSolver final
         Eigen::SparseLU<Eigen::SparseMatrix<real_type>, Eigen::COLAMDOrdering<int> >  solver_;
 
         // no copy allowed
-        SparseLULinearSolver( const SparseLULinearSolver & ) =delete ;
-        SparseLULinearSolver & operator=( const SparseLULinearSolver & ) =delete ;
+        SparseLULinearSolver(const SparseLULinearSolver&) = delete;
+        SparseLULinearSolver(SparseLULinearSolver&&) = delete;
+        SparseLULinearSolver & operator=(SparseLULinearSolver&&) = delete;
+        SparseLULinearSolver & operator=(const SparseLULinearSolver&) = delete;
 };
 
 #endif // SPARSELUSOLVER_H

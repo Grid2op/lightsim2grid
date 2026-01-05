@@ -67,9 +67,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         
         GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
         GeneratorContainer(bool turnedoff_gen_pv) noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};
-        virtual ~GeneratorContainer() noexcept{
-            // std::cout << "GeneratorContainer destructor" << std::endl;
-        };
+        virtual ~GeneratorContainer() noexcept = default;
         
         // TODO add pmin and pmax here !
         void init(const RealVect & generators_p,

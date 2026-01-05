@@ -53,9 +53,7 @@ class OneSideContainer_PQ : public OneSideContainer
     // regular implementation
     public:
         OneSideContainer_PQ() noexcept = default;
-        virtual ~OneSideContainer_PQ() noexcept{
-            // std::cout << "\tOneSideContainer_PQ destructor" << std::endl;
-        }
+        virtual ~OneSideContainer_PQ() noexcept = default;
 
         // public generic API
 

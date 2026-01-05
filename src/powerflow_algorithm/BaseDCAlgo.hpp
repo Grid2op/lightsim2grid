@@ -24,9 +24,7 @@ class BaseDCAlgo final: public BaseAlgo
             sizeYbus_with_slack_(0),
             sizeYbus_without_slack_(0){};
 
-        virtual ~BaseDCAlgo() noexcept {
-            // std::cout << "BaseDCAlgo destructor" << std::endl;
-        };
+        virtual ~BaseDCAlgo() noexcept = default;
 
         virtual void reset();
         virtual void reset_timer(){
@@ -76,8 +74,10 @@ class BaseDCAlgo final: public BaseAlgo
 
     private:
         // no copy allowed
-        BaseDCAlgo( const BaseDCAlgo & ) =delete ;
-        BaseDCAlgo & operator=( const BaseDCAlgo & ) =delete;
+        BaseDCAlgo(const BaseDCAlgo&) = delete;
+        BaseDCAlgo(BaseDCAlgo&&) = delete;
+        BaseDCAlgo & operator=(BaseDCAlgo&&) = delete;
+        BaseDCAlgo & operator=(const BaseDCAlgo&) = delete;
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);

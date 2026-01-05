@@ -20,6 +20,11 @@ most time were taken.
 class CustTimer final{
     public:
         CustTimer() noexcept :start_(std::chrono::steady_clock::now()), end_(start_){};
+        CustTimer(const CustTimer & other) noexcept = default;
+        CustTimer(CustTimer && other) noexcept = default;
+        ~CustTimer() noexcept = default;
+        CustTimer& operator=(const CustTimer & other) noexcept = default;
+        CustTimer& operator=(CustTimer && other) noexcept = default;
 
         double duration(){
             end_ = std::chrono::steady_clock::now();

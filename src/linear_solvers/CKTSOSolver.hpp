@@ -58,23 +58,24 @@ class CKTSOLinearSolver final
            // if(oparm_!= nullptr) delete oparm_;
            
         }
-        CKTSOLinearSolver(CKTSOLinearSolver && other) noexcept: nb_thread_(ohter.nb_thread_){
-            std::swap(solver_, other.solver_);
+        // CKTSOLinearSolver(CKTSOLinearSolver && other) noexcept: nb_thread_(ohter.nb_thread_){
+        // TODO !
+        //     std::swap(solver_, other.solver_);
 
-            if(ai_!= nullptr) delete [] ai_;
-            ai_ = other.ai_;
-            other.ai_ = nullptr;
+        //     if(ai_!= nullptr) delete [] ai_;
+        //     ai_ = other.ai_;
+        //     other.ai_ = nullptr;
 
-            if(ap_!= nullptr) delete [] ap_;
-            ap_ = other.ap_;
-            other.ap_ = nullptr;
+        //     if(ap_!= nullptr) delete [] ap_;
+        //     ap_ = other.ap_;
+        //     other.ap_ = nullptr;
 
-            iparm_ = other.iparm_;
-            other.iparm_ = nullptr;
+        //     iparm_ = other.iparm_;
+        //     other.iparm_ = nullptr;
 
-            oparm_ = other.oparm_;
-            other.oparm_ = nullptr;
-        }
+        //     oparm_ = other.oparm_;
+        //     other.oparm_ = nullptr;
+        // }
         
 
         // public api
@@ -86,8 +87,10 @@ class CKTSOLinearSolver final
         static const bool CAN_SOLVE_MAT;
         
         // prevent copy and assignment
-        CKTSOLinearSolver(const CKTSOLinearSolver & other) = delete;
-        CKTSOLinearSolver & operator=( const CKTSOLinearSolver & ) = delete;
+        CKTSOLinearSolver(const CKTSOLinearSolver&) = delete;
+        CKTSOLinearSolver(CKTSOLinearSolver&&) = delete;
+        CKTSOLinearSolver & operator=(CKTSOLinearSolver&&) = delete;
+        CKTSOLinearSolver & operator=(const CKTSOLinearSolver&) = delete;
         
     private:
         // solver initialization

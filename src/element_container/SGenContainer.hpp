@@ -62,9 +62,7 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
            >  StateRes;
         
         SGenContainer() noexcept = default;
-        virtual ~SGenContainer() noexcept{
-            // std::cout << "SGenContainer destructor" << std::endl;
-        }
+        virtual ~SGenContainer() noexcept = default;
         
         // pickle (python)
         SGenContainer::StateRes get_state() const;

@@ -93,9 +93,7 @@ class SolverControl final
             one_el_change_bus_(true)
             {};
 
-        ~SolverControl() noexcept{
-            // std::cout << "SolverControl destructor" << std::endl;
-        }; 
+        ~SolverControl() noexcept = default; 
 
         void tell_all_changed(){
             change_dimension_ = true;
