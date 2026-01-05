@@ -79,7 +79,7 @@ class BaseTests:
 
         # check trafo
         f_is = self.net_ref.get_2_windings_transformers()["connected2"]
-        plv, qlv, vlv, alv = self.model.get_trafolv_res()
+        plv, qlv, vlv, alv = self.model.get_trafo_res2()
         self.assert_equal(plv[f_is], net.get_2_windings_transformers()["p2"].values[f_is], "error for p_lv_mw")
         self.assert_equal(qlv[f_is], net.get_2_windings_transformers()["q2"].values[f_is], "error for q_lv_mvar")
         self.assert_equal(alv[f_is], net.get_2_windings_transformers()["i2"].values[f_is] * 1e-3, "error for i_lv_ka")
@@ -185,9 +185,9 @@ class BaseTests:
             self.model.change_bus2_powerline(n_line, 1)
         n_trafo = self.net_datamodel.get_2_windings_transformers().shape[0]
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_hv(n_trafo, 1)
+            self.model.change_bus1_trafo(n_trafo, 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_lv(n_trafo, 1)
+            self.model.change_bus2_trafo(n_trafo, 1)
 
     def test_changebus_newbus_out_of_bound(self):
         self.do_i_skip("test_changebus_newbus_out_of_bound")
@@ -203,9 +203,9 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_bus2_powerline(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_hv(0, newbusid)
+            self.model.change_bus1_trafo(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_lv(0, newbusid)
+            self.model.change_bus2_trafo(0, newbusid)
 
     def test_changesetpoint_out_of_bound(self):
         self.do_i_skip("test_changesetpoint_out_of_bound")
@@ -401,7 +401,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_trafolv")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.trafo["lv_bus"][0] = 5  # was 4 initially, and 4 is connected to 5
-        self.model.change_bus_trafo_lv(0, 5)
+        self.model.change_bus2_trafo(0, 5)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
@@ -409,7 +409,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_trafohv")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.trafo["hv_bus"][0] = 29  # was 7 initially, and 7 is connected to 29
-        self.model.change_bus_trafo_hv(0, 29)
+        self.model.change_bus1_trafo(0, 29)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 

@@ -277,7 +277,7 @@ class TestPFOk(unittest.TestCase):
 
         # check trafo
         f_is = self.net_ref.get_2_windings_transformers()["connected2"]
-        plv, qlv, vlv, alv = self.model.get_trafolv_res()
+        plv, qlv, vlv, alv = self.model.get_trafo_res2()
         self.assert_equal(plv[f_is], net.get_2_windings_transformers()["p2"].values[f_is], "error for p_lv_mw")
         if not is_dc:
             self.assert_equal(qlv[f_is], net.get_2_windings_transformers()["q2"].values[f_is], "error for q_lv_mvar")
@@ -411,7 +411,7 @@ class TestPFOk(unittest.TestCase):
             buses_for_sub=True,
             sort_index=False,
             n_busbar_per_sub=2)
-        model2.change_bus_trafo_hv(el_id, model2.get_trafos()[el_id].sub1_id + len(model2.get_substations()))
+        model2.change_bus1_trafo(el_id, model2.get_trafos()[el_id].sub1_id + len(model2.get_substations()))
         V0 = np.full(model2.total_bus(),
                      fill_value=1.0,
                      dtype=complex)
@@ -476,7 +476,7 @@ class TestPFOk(unittest.TestCase):
         #     buses_for_sub=True,
         #     sort_index=False,
         #     n_busbar_per_sub=2)
-        # model2.change_bus_trafo_hv(
+        # model2.change_bus1_trafo(
         #     el_id,
         #     model2.get_trafos()[el_id].sub1_id + len(model2.get_substations()))
         # V0 = np.full(model2.total_bus(),
