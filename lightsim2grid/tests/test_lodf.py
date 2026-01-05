@@ -42,7 +42,7 @@ class TestLODFCase14SLU(unittest.TestCase):
         self.dcYbus = 1.0 * self.gridmodel.get_dcYbus_solver()
         self.dcSbus = 1.0 * self.gridmodel.get_dcSbus_solver().real
         self.Bbus = 1.0 * self.dcYbus.real
-        self.res_powerflow = 1.0 * np.concatenate((self.gridmodel.get_lineor_res()[0], self.gridmodel.get_trafohv_res()[0]))
+        self.res_powerflow = 1.0 * np.concatenate((self.gridmodel.get_line_res1()[0], self.gridmodel.get_trafo_res1()[0]))
         self.nb = self.case.bus.shape[0]
         self.nbr = self.case.line.shape[0] + self.case.trafo.shape[0]
         self.slack_bus = self.case.ext_grid.iloc[0]["bus"]
@@ -116,8 +116,8 @@ class TestLODFCase14SLU(unittest.TestCase):
             if V.shape[0] > 0:
                 # it has converged
                 assert np.isfinite(LODF_ls[:, l_id]).all(), f"powerflow should have converged (LODF) for {l_id}"
-                por_pow = np.concatenate((self.gridmodel.get_lineor_res()[0],
-                                          self.gridmodel.get_trafohv_res()[0]))
+                por_pow = np.concatenate((self.gridmodel.get_line_res1()[0],
+                                          self.gridmodel.get_trafo_res1()[0]))
                 por_lodf = self.res_powerflow + LODF_ls[:, l_id] * self.res_powerflow[l_id]
                 assert np.abs(por_lodf - por_pow).max() <= 1e-6, f"error for line id {l_id}"
             else:

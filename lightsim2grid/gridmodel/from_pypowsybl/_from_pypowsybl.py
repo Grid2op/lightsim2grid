@@ -238,7 +238,7 @@ def init(net : pypo.network.Network,
                    )
     model._ls_to_orig = ls_to_orig
     model._max_nb_bus_per_sub = n_busbar_per_sub_ls
-    model.init_substation_names(sub_names)
+    model.set_substation_names(sub_names)
         
     # do the generators
     if sort_index:
@@ -542,10 +542,10 @@ def init(net : pypo.network.Network,
     model.set_load_to_subid(load_sub["sub_id"].values)
     model.set_storage_to_subid(batt_sub["sub_id"].values)
     model.set_shunt_to_subid(sh_sub["sub_id"].values)
-    model.set_line_or_to_subid(lor_sub["sub_id"].values)
-    model.set_line_ex_to_subid(lex_sub["sub_id"].values)
-    model.set_trafo_hv_to_subid(tor_sub["sub_id"].values)
-    model.set_trafo_lv_to_subid(tex_sub["sub_id"].values)
+    model.set_line_to_sub1_id(lor_sub["sub_id"].values)
+    model.set_line_to_sub2_id(lex_sub["sub_id"].values)
+    model.set_trafo_to_sub1_id(tor_sub["sub_id"].values)
+    model.set_trafo_to_sub2_id(tex_sub["sub_id"].values)
     if not return_sub_id:
         return model
     else:

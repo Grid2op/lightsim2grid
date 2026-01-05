@@ -916,7 +916,7 @@ class LightSimBackend(Backend):
         
         if use_grid2op_default_names:
             self.name_sub = ["sub_{}".format(i) for i, _ in enumerate(range(self.n_sub))]
-            self._grid.init_substation_names(self.name_sub)
+            self._grid.set_substation_names(self.name_sub)
         else:
             self.name_sub = self._grid.get_substation_names()
         
@@ -949,8 +949,8 @@ class LightSimBackend(Backend):
             self.name_load = np.array([f"load_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_loads())]).astype(str)
             self.name_gen = np.array([f"gen_{el.sub_id}_{id_obj}" for id_obj, el in enumerate(self._grid.get_generators())]).astype(str)
             self.name_line = np.array(
-                [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
-                [f"{el.sub_1_id}_{el.sub_2_id}_{id_obj + self.__nb_powerline}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
+                [f"{el.sub1_id}_{el.sub2_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_lines())] +
+                [f"{el.sub1_id}_{el.sub2_id}_{id_obj + self.__nb_powerline}"  for id_obj, el in enumerate(self._grid.get_trafos())]).astype(str)
             self.name_storage = np.array([f"storage_{el.sub_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_storages())]).astype(str)
             self.name_shunt = np.array([f"shunt_{el.sub_id}_{id_obj}"  for id_obj, el in enumerate(self._grid.get_shunts())]).astype(str)
             
@@ -1164,7 +1164,7 @@ class LightSimBackend(Backend):
         self._grid.set_line_names(self.name_line[:self.__nb_powerline])
         self._grid.set_trafo_names(self.name_line[self.__nb_powerline:])
         self.name_sub = pp_cls.name_sub
-        self._grid.init_substation_names(self.name_sub)
+        self._grid.set_substation_names(self.name_sub)
 
         self.prod_pu_to_kv = self._init_pp_backend.prod_pu_to_kv
         self.load_pu_to_kv = self._init_pp_backend.load_pu_to_kv
@@ -1253,17 +1253,17 @@ class LightSimBackend(Backend):
             cls = my_cls
         self._grid.set_load_pos_topo_vect(cls.load_pos_topo_vect)
         self._grid.set_gen_pos_topo_vect(cls.gen_pos_topo_vect)
-        self._grid.set_line_or_pos_topo_vect(cls.line_or_pos_topo_vect[:self.__nb_powerline])
-        self._grid.set_line_ex_pos_topo_vect(cls.line_ex_pos_topo_vect[:self.__nb_powerline])
-        self._grid.set_trafo_hv_pos_topo_vect(cls.line_or_pos_topo_vect[self.__nb_powerline:])
-        self._grid.set_trafo_lv_pos_topo_vect(cls.line_ex_pos_topo_vect[self.__nb_powerline:])
+        self._grid.set_line_pos1_topo_vect(cls.line_or_pos_topo_vect[:self.__nb_powerline])
+        self._grid.set_line_pos2_topo_vect(cls.line_ex_pos_topo_vect[:self.__nb_powerline])
+        self._grid.set_trafo_pos1_topo_vect(cls.line_or_pos_topo_vect[self.__nb_powerline:])
+        self._grid.set_trafo_pos2_topo_vect(cls.line_ex_pos_topo_vect[self.__nb_powerline:])
 
         self._grid.set_load_to_subid(cls.load_to_subid)
         self._grid.set_gen_to_subid(cls.gen_to_subid)
-        self._grid.set_line_or_to_subid(cls.line_or_to_subid[:self.__nb_powerline])
-        self._grid.set_line_ex_to_subid(cls.line_ex_to_subid[:self.__nb_powerline])
-        self._grid.set_trafo_hv_to_subid(cls.line_or_to_subid[self.__nb_powerline:])
-        self._grid.set_trafo_lv_to_subid(cls.line_ex_to_subid[self.__nb_powerline:])
+        self._grid.set_line_to_sub1_id(cls.line_or_to_subid[:self.__nb_powerline])
+        self._grid.set_line_to_sub2_id(cls.line_ex_to_subid[:self.__nb_powerline])
+        self._grid.set_trafo_to_sub1_id(cls.line_or_to_subid[self.__nb_powerline:])
+        self._grid.set_trafo_to_sub2_id(cls.line_ex_to_subid[self.__nb_powerline:])
         
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
@@ -1372,11 +1372,11 @@ class LightSimBackend(Backend):
         if self.__has_storage:
             res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
                                                                                 cls.storage_to_subid)
-        lor_glob_bus = np.concatenate((np.array([el.bus_1_id for el in self._grid.get_lines()]),
-                                        np.array([el.bus_1_id for el in self._grid.get_trafos()])))
+        lor_glob_bus = np.concatenate((np.array([el.bus1_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus1_id for el in self._grid.get_trafos()])))
         res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus, cls.line_or_to_subid)
-        lex_glob_bus = np.concatenate((np.array([el.bus_2_id for el in self._grid.get_lines()]),
-                                        np.array([el.bus_2_id for el in self._grid.get_trafos()])))
+        lex_glob_bus = np.concatenate((np.array([el.bus2_id for el in self._grid.get_lines()]),
+                                        np.array([el.bus2_id for el in self._grid.get_trafos()])))
         res[cls.line_ex_pos_topo_vect] = cls.global_bus_to_local(lex_glob_bus, cls.line_ex_to_subid)
         res.flags.writeable = False
         
@@ -1556,17 +1556,17 @@ class LightSimBackend(Backend):
     def _fetch_grid_data(self):
         beg_test = time.perf_counter()
         if self._lineor_res is None:
-            self._lineor_res = self._grid.get_lineor_res_full()
+            self._lineor_res = self._grid.get_line_res1_full()
         if self._lineex_res is None:
-            self._lineex_res = self._grid.get_lineex_res_full()
+            self._lineex_res = self._grid.get_line_res2_full()
         if self._load_res is None:
             self._load_res = self._grid.get_loads_res_full()
         if self._gen_res is None:
             self._gen_res = self._grid.get_gen_res_full()
         if self._trafo_hv_res is None:
-            self._trafo_hv_res = self._grid.get_trafohv_res_full()
+            self._trafo_hv_res = self._grid.get_trafo_res1_full()
         if self._trafo_lv_res is None:
-            self._trafo_lv_res = self._grid.get_trafolv_res_full()
+            self._trafo_lv_res = self._grid.get_trafo_res2_full()
         if self._storage_res is None:
             self._storage_res = self._grid.get_storages_res_full()
         if self._shunt_res is None:

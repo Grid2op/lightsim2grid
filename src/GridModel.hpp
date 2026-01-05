@@ -226,13 +226,13 @@ class GridModel final : public GenericContainer
         }
         void init_powerlines_full(const RealVect & branch_r,
                                   const RealVect & branch_x,
-                                  const CplxVect & branch_h_or,
-                                  const CplxVect & branch_h_ex,
+                                  const CplxVect & branch_h1,
+                                  const CplxVect & branch_h2,
                                   const Eigen::VectorXi & branch_from_id,
                                   const Eigen::VectorXi & branch_to_id
                              ){
-            powerlines_.init(branch_r, branch_x, branch_h_or,
-                             branch_h_ex, branch_from_id, 
+            powerlines_.init(branch_r, branch_x, branch_h1,
+                             branch_h2, branch_from_id, 
                              branch_to_id);
         }
 
@@ -248,11 +248,11 @@ class GridModel final : public GenericContainer
                                    const RealVect & trafo_tap_pos,
                                    const RealVect & trafo_shift_degree,
                                    const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                                   const Eigen::VectorXi & trafo_hv_id,
-                                   const Eigen::VectorXi & trafo_lv_id
+                                   const Eigen::VectorXi & bus1_id,
+                                   const Eigen::VectorXi & bus2_id
                                    ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
-                         trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+                         trafo_tap_hv, bus1_id, bus2_id);
         }
         void init_trafo(const RealVect & trafo_r,
                         const RealVect & trafo_x,
@@ -260,11 +260,11 @@ class GridModel final : public GenericContainer
                         const RealVect & trafo_ratio,
                         const RealVect & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                        const Eigen::VectorXi & trafo_hv_id,
-                        const Eigen::VectorXi & trafo_lv_id
+                        const Eigen::VectorXi & bus1_id,
+                        const Eigen::VectorXi & bus2_id
                            ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
-                         trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+                         trafo_tap_hv, bus1_id, bus2_id);
         }
 
         void init_generators(const RealVect & generators_p,
@@ -308,15 +308,15 @@ class GridModel final : public GenericContainer
                           const RealVect & p_mw,
                           const RealVect & loss_percent,
                           const RealVect & loss_mw,
-                          const RealVect & vm_or_pu,
-                          const RealVect & vm_ex_pu,
-                          const RealVect & min_q_or,
-                          const RealVect & max_q_or,
-                          const RealVect & min_q_ex,
-                          const RealVect & max_q_ex){
+                          const RealVect & vm1_pu,
+                          const RealVect & vm2_pu,
+                          const RealVect & min_q1,
+                          const RealVect & max_q1,
+                          const RealVect & min_q2,
+                          const RealVect & max_q2){
             dc_lines_.init(branch_from_id, branch_to_id, p_mw,
-                           loss_percent, loss_mw, vm_or_pu, vm_ex_pu,
-                           min_q_or, max_q_or, min_q_ex, max_q_ex);
+                           loss_percent, loss_mw, vm1_pu, vm2_pu,
+                           min_q1, max_q1, min_q2, max_q2);
         }
 
         void init_bus_status(){
@@ -348,10 +348,10 @@ class GridModel final : public GenericContainer
                 }
             }
         }
-        void init_sub_names(const std::vector<std::string> & sub_names){
+        void set_substation_names(const std::vector<std::string> & sub_names){
             substations_.init_sub_names(sub_names);
         }
-        const std::vector<std::string> & get_sub_names()const {
+        const std::vector<std::string> & get_substation_names()const {
             return substations_.get_sub_names();
         }
 
@@ -548,15 +548,15 @@ class GridModel final : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id". **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_powerline_or(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
+        void change_bus1_powerline(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
             powerlines_.change_bus_side_1(
                 powerline_id,
                 new_gridmodel_bus_id,
                 solver_control_,    
                 substations_);
         }
-        void change_bus_powerline_or_python(int powerline_id, int new_gridmodel_bus_id) {
-            change_bus_powerline_or(powerline_id, GridModelBusId(new_gridmodel_bus_id));
+        void change_bus1_powerline_python(int powerline_id, int new_gridmodel_bus_id) {
+            change_bus1_powerline(powerline_id, GridModelBusId(new_gridmodel_bus_id));
         }
 
         /**
@@ -564,18 +564,18 @@ class GridModel final : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_powerline_ex(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
+        void change_bus2_powerline(int powerline_id, GridModelBusId new_gridmodel_bus_id) {
             powerlines_.change_bus_side_2(
                 powerline_id,
                 new_gridmodel_bus_id,
                 solver_control_,
                 substations_);
         }
-        void change_bus_powerline_ex_python(int powerline_id, int new_gridmodel_bus_id) {
-            change_bus_powerline_ex(powerline_id, GridModelBusId(new_gridmodel_bus_id));
+        void change_bus2_powerline_python(int powerline_id, int new_gridmodel_bus_id) {
+            change_bus2_powerline(powerline_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        int get_bus_powerline_or(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id).cast_int();}
-        int get_bus_powerline_ex(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
+        int get_bus1_powerline(int powerline_id) {return powerlines_.get_bus_side_1(powerline_id).cast_int();}
+        int get_bus2_powerline(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
 
         //deactivate trafo
         void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
@@ -586,15 +586,15 @@ class GridModel final : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_trafo_hv(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
+        void change_bus1_trafo(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
             trafos_.change_bus_side_1(
                 trafo_id,
                 new_gridmodel_bus_id,
                 solver_control_,
                 substations_); 
         }
-        void change_bus_trafo_hv_python(int trafo_id, int new_gridmodel_bus_id) {
-            change_bus_trafo_hv(trafo_id, GridModelBusId(new_gridmodel_bus_id));
+        void change_bus1_trafo_python(int trafo_id, int new_gridmodel_bus_id) {
+            change_bus1_trafo(trafo_id, GridModelBusId(new_gridmodel_bus_id));
         }
 
         /**
@@ -602,16 +602,16 @@ class GridModel final : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_trafo_lv(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
+        void change_bus2_trafo(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
             trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, solver_control_, substations_);
         }
-        void change_bus_trafo_lv_python(int trafo_id, int new_gridmodel_bus_id) {
-            change_bus_trafo_lv(trafo_id, GridModelBusId(new_gridmodel_bus_id));
+        void change_bus2_trafo_python(int trafo_id, int new_gridmodel_bus_id) {
+            change_bus2_trafo(trafo_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        int get_bus_trafo_hv(int trafo_id) {
+        int get_bus1_trafo(int trafo_id) {
             return trafos_.get_bus_side_1(trafo_id).cast_int();
         }
-        int get_bus_trafo_lv(int trafo_id) {
+        int get_bus2_trafo(int trafo_id) {
             return trafos_.get_bus_side_2(trafo_id).cast_int();
         }
         void change_ratio_trafo(int trafo_id, real_type new_ratio){
@@ -720,32 +720,32 @@ class GridModel final : public GenericContainer
         void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, solver_control_); }
         void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, solver_control_); }
         void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, solver_control_); }
-        void change_v_or_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, solver_control_); }
-        void change_v_ex_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, solver_control_); }
+        void change_v1_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, solver_control_); }
+        void change_v2_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, solver_control_); }
         /**
          * Change the bus on the dc line "side 1" dcline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_dcline_or(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
+        void change_bus1_dcline(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
             dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
         }
-        void change_bus_dcline_or_python(int dcline_id, int new_gridmodel_bus_id) {
-            change_bus_dcline_or(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
+        void change_bus1_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
+            change_bus1_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
         }
         /**
          * Change the bus on the dc line "side 2" dcline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
-        void change_bus_dcline_ex(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
+        void change_bus2_dcline(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
             dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
         }
-        void change_bus_dcline_ex_python(int dcline_id, int new_gridmodel_bus_id) {
-            change_bus_dcline_ex(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
+        void change_bus2_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
+            change_bus2_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
         }
-        int get_bus_dcline_or(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
-        int get_bus_dcline_ex(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
+        int get_bus1_dcline(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
+        int get_bus2_dcline(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
@@ -754,30 +754,30 @@ class GridModel final : public GenericContainer
         const std::vector<bool>& get_shunts_status() const { return shunts_.get_status();}
         tuple3d get_gen_res() const {return generators_.get_res();}
         const std::vector<bool>& get_gen_status() const { return generators_.get_status();}
-        tuple4d get_lineor_res() const {return powerlines_.get_res_side_1();}
-        tuple4d get_lineex_res() const {return powerlines_.get_res_side_2();}
+        tuple4d get_line_res1() const {return powerlines_.get_res_side_1();}
+        tuple4d get_line_res2() const {return powerlines_.get_res_side_2();}
         const std::vector<bool>& get_lines_status() const { return powerlines_.get_status_global();}
-        tuple4d get_trafohv_res() const {return trafos_.get_res_side_1();}
-        tuple4d get_trafolv_res() const {return trafos_.get_res_side_2();}
+        tuple4d get_trafo_res1() const {return trafos_.get_res_side_1();}
+        tuple4d get_trafo_res2() const {return trafos_.get_res_side_2();}
         const std::vector<bool>& get_trafo_status() const { return trafos_.get_status_global();}
         tuple3d get_storages_res() const {return storages_.get_res();}
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
         tuple3d get_sgens_res() const {return sgens_.get_res();}
         const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
-        tuple3d get_dclineor_res() const {return dc_lines_.get_res_side_1();}
-        tuple3d get_dclineex_res() const {return dc_lines_.get_res_side_2();}
+        tuple3d get_dcline_res1() const {return dc_lines_.get_res_side_1();}
+        tuple3d get_dcline_res2() const {return dc_lines_.get_res_side_2();}
         const std::vector<bool>& get_dclines_status() const { return dc_lines_.get_status_global();}
 
         Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
         Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
         Eigen::Ref<const RealVect> get_shunt_theta() const  {return shunts_.get_theta();}
         Eigen::Ref<const RealVect> get_storage_theta() const  {return storages_.get_theta();}
-        Eigen::Ref<const RealVect> get_lineor_theta() const {return powerlines_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_lineex_theta() const {return powerlines_.get_theta_side_2();}
-        Eigen::Ref<const RealVect> get_trafohv_theta() const {return trafos_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_trafolv_theta() const {return trafos_.get_theta_side_2();}
-        Eigen::Ref<const RealVect> get_dclineor_theta() const {return dc_lines_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_dclineex_theta() const {return dc_lines_.get_theta_side_2();}
+        Eigen::Ref<const RealVect> get_line_theta1() const {return powerlines_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_line_theta2() const {return powerlines_.get_theta_side_2();}
+        Eigen::Ref<const RealVect> get_trafo_theta1() const {return trafos_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_trafo_theta2() const {return trafos_.get_theta_side_2();}
+        Eigen::Ref<const RealVect> get_dcline_theta1() const {return dc_lines_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_dcline_theta2() const {return dc_lines_.get_theta_side_2();}
 
         Eigen::Ref<const GlobalBusIdVect> get_all_shunt_buses() const {return shunts_.get_buses();}
         Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
@@ -792,14 +792,14 @@ class GridModel final : public GenericContainer
         tuple4d get_loads_res_full() const {return loads_.get_res_full();}
         tuple4d get_shunts_res_full() const {return shunts_.get_res_full();}
         tuple4d get_gen_res_full() const {return generators_.get_res_full();}
-        tuple5d get_lineor_res_full() const {return powerlines_.get_res_full_side_1();}
-        tuple5d get_lineex_res_full() const {return powerlines_.get_res_full_side_2();}
-        tuple5d get_trafohv_res_full() const {return trafos_.get_res_full_side_1();}
-        tuple5d get_trafolv_res_full() const {return trafos_.get_res_full_side_2();}
+        tuple5d get_line_res1_full() const {return powerlines_.get_res_full_side_1();}
+        tuple5d get_line_res2_full() const {return powerlines_.get_res_full_side_2();}
+        tuple5d get_trafo_res1_full() const {return trafos_.get_res_full_side_1();}
+        tuple5d get_trafo_res2_full() const {return trafos_.get_res_full_side_2();}
         tuple4d get_storages_res_full() const {return storages_.get_res_full();}
         tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
-        tuple4d get_dclineor_res_full() const {return dc_lines_.get_res_full_side_1();}
-        tuple4d get_dclineex_res_full() const {return dc_lines_.get_res_full_side_2();}
+        tuple4d get_dcline_res1_full() const {return dc_lines_.get_res_full_side_1();}
+        tuple4d get_dcline_res2_full() const {return dc_lines_.get_res_full_side_2();}
 
         /**
          * @brief Get the Ybus solver object (AC)
@@ -1225,19 +1225,19 @@ class GridModel final : public GenericContainer
         {
             storages_.set_pos_topo_vect(sto_pos_topo_vect);
         }
-        void set_line_or_pos_topo_vect(Eigen::Ref<const IntVect> line_or_pos_topo_vect)
+        void set_line_pos1_topo_vect(Eigen::Ref<const IntVect> line_or_pos_topo_vect)
         {
             powerlines_.set_pos_topo_vect_side_1(line_or_pos_topo_vect);
         }
-        void set_line_ex_pos_topo_vect(Eigen::Ref<const IntVect> line_ex_pos_topo_vect)
+        void set_line_pos2_topo_vect(Eigen::Ref<const IntVect> line_ex_pos_topo_vect)
         {
             powerlines_.set_pos_topo_vect_side_2(line_ex_pos_topo_vect);
         }
-        void set_trafo_hv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_hv_pos_topo_vect)
+        void set_trafo_pos1_topo_vect(Eigen::Ref<const IntVect> trafo_hv_pos_topo_vect)
         {
             trafos_.set_pos_topo_vect_side_1(trafo_hv_pos_topo_vect);
         }
-        void set_trafo_lv_pos_topo_vect(Eigen::Ref<const IntVect> trafo_lv_pos_topo_vect)
+        void set_trafo_pos2_topo_vect(Eigen::Ref<const IntVect> trafo_lv_pos_topo_vect)
         {
             trafos_.set_pos_topo_vect_side_2(trafo_lv_pos_topo_vect);
         }
@@ -1258,19 +1258,19 @@ class GridModel final : public GenericContainer
         {
             shunts_.set_subid(shunt_to_subid);
         }
-        void set_line_or_to_subid(Eigen::Ref<const IntVect> line_or_to_subid)
+        void set_line_to_sub1_id(Eigen::Ref<const IntVect> line_or_to_subid)
         {
             powerlines_.set_subid_side_1(line_or_to_subid);
         }
-        void set_line_ex_to_subid(Eigen::Ref<const IntVect> line_ex_to_subid)
+        void set_line_to_sub2_id(Eigen::Ref<const IntVect> line_ex_to_subid)
         {
             powerlines_.set_subid_side_2(line_ex_to_subid);
         }
-        void set_trafo_hv_to_subid(Eigen::Ref<const IntVect> trafo_hv_to_subid)
+        void set_trafo_to_sub1_id(Eigen::Ref<const IntVect> trafo_hv_to_subid)
         {
             trafos_.set_subid_side_1(trafo_hv_to_subid);
         }
-        void set_trafo_lv_to_subid(Eigen::Ref<const IntVect> trafo_lv_to_subid)
+        void set_trafo_to_sub2_id(Eigen::Ref<const IntVect> trafo_lv_to_subid)
         {
             trafos_.set_subid_side_2(trafo_lv_to_subid);
         }

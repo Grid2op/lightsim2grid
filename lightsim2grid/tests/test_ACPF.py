@@ -374,9 +374,9 @@ class MyTestCase(unittest.TestCase):
         Vinit[:nb_sub] = V_init_ref[pp_vect_converter]
         conv = backend._grid.ac_pf(Vinit, max_iter, tol_this)
         self._assert_or_print(conv.shape[0] > 0, "\t Error: the lightsim diverge when initialized with pandapower Vinit_dc")
-        lpor, lqor, lvor, laor = backend._grid.get_lineor_res()
-        tpor, tqor, tvor, taor = backend._grid.get_trafohv_res()
-        tpex, tqex, tvex, taex = backend._grid.get_trafolv_res()
+        lpor, lqor, lvor, laor = backend._grid.get_line_res1()
+        tpor, tqor, tvor, taor = backend._grid.get_trafo_res1()
+        tpex, tqex, tvex, taex = backend._grid.get_trafo_res2()
         nb_trafo = tpor.shape[0]
         nb_powerline = lpor.shape[0]
         p_or_me2 = np.concatenate((lpor, tpor))

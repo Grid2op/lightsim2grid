@@ -74,13 +74,13 @@ class MakeTests(unittest.TestCase):
         """trafo_id: id for the trafo in grid2Op"""
         p_or, q_or, v_or, a_or = data_ref
         assert el.connected_global is True, f"gen {trafo_id} is not connected"
-        assert el.sub_1_id == self.env.backend.line_or_to_subid[trafo_id], \
+        assert el.sub1_id == self.env.backend.line_or_to_subid[trafo_id], \
             f"trafo {trafo_id} is connected to wrong bus (hv side)"
-        assert el.sub_2_id == self.env.backend.line_ex_to_subid[trafo_id], \
+        assert el.sub2_id == self.env.backend.line_ex_to_subid[trafo_id], \
             f"trafo {trafo_id} is connected to wrong bus (lv side)"
-        assert el.bus_1_id == self.env.backend.line_or_to_subid[trafo_id], \
+        assert el.bus1_id == self.env.backend.line_or_to_subid[trafo_id], \
             f"trafo {trafo_id} is connected to wrong bus (hv side)"
-        assert el.bus_2_id == self.env.backend.line_ex_to_subid[trafo_id], \
+        assert el.bus2_id == self.env.backend.line_ex_to_subid[trafo_id], \
             f"trafo {trafo_id} is connected to wrong bus (lv side)"
         assert el.has_res, f"trafo {trafo_id} don't have any results"
         assert np.abs(el.res_p1_mw - p_or[trafo_id]) <= tol, f"trafo {trafo_id} has wrong p_hv"
@@ -116,13 +116,13 @@ class MakeTests(unittest.TestCase):
         """trafo_id: id for the trafo in grid2Op"""
         p_or, q_or, v_or, a_or = data_ref
         assert el.connected_global, f"line {line_id} is not connected"
-        assert el.sub_1_id == self.env.backend.line_or_to_subid[line_id], \
+        assert el.sub1_id == self.env.backend.line_or_to_subid[line_id], \
             f"line {line_id} is connected to wrong substation (or side)"
-        assert el.sub_2_id == self.env.backend.line_ex_to_subid[line_id], \
+        assert el.sub2_id == self.env.backend.line_ex_to_subid[line_id], \
             f"line {line_id} is connected to wrong substation (ex side)"
-        assert el.bus_1_id == self.env.backend.line_or_to_subid[line_id], \
+        assert el.bus1_id == self.env.backend.line_or_to_subid[line_id], \
             f"line {line_id} is connected to wrong bus (or side)"
-        assert el.bus_2_id == self.env.backend.line_ex_to_subid[line_id], \
+        assert el.bus2_id == self.env.backend.line_ex_to_subid[line_id], \
             f"line {line_id} is connected to wrong bus (ex side)"
         assert el.has_res, f"line {line_id} don't have any results"
         assert np.abs(el.res_p1_mw - p_or[line_id]) <= tol, f"line {line_id} has wrong p_or"

@@ -70,7 +70,7 @@ class BaseTests:
     
         # check lines
         l_is = self.net_ref.get_lines()["connected1"]
-        por, qor, vor, aor = self.model.get_lineor_res()
+        por, qor, vor, aor = self.model.get_line_res1()
         self.assert_equal(por[l_is], net.get_lines()["p1"].values[l_is], "error for p_from")
         self.assert_equal(qor[l_is], net.get_lines()["q1"].values[l_is], "error for q_from")
         self.assert_equal(aor[l_is], net.get_lines()["i1"].values[l_is] * 1e-3, "error for i_from_ka")
@@ -180,9 +180,9 @@ class BaseTests:
             self.model.change_bus_shunt(n_shunt, 1)
         n_line = self.net_datamodel.get_lines().shape[0]
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_or(n_line, 1)
+            self.model.change_bus1_powerline(n_line, 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_ex(n_line, 1)
+            self.model.change_bus2_powerline(n_line, 1)
         n_trafo = self.net_datamodel.get_2_windings_transformers().shape[0]
         with self.assertRaises(IndexError):
             self.model.change_bus_trafo_hv(n_trafo, 1)
@@ -199,9 +199,9 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_bus_shunt(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_or(0, newbusid)
+            self.model.change_bus1_powerline(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_ex(0, newbusid)
+            self.model.change_bus2_powerline(0, newbusid)
         with self.assertRaises(IndexError):
             self.model.change_bus_trafo_hv(0, newbusid)
         with self.assertRaises(IndexError):
@@ -385,7 +385,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_lineor")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.line["from_bus"][0] = 2
-        self.model.change_bus_powerline_or(0, 2)
+        self.model.change_bus1_powerline(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
@@ -393,7 +393,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_lineex")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.line["to_bus"][0] = 2
-        self.model.change_bus_powerline_ex(0, 2)
+        self.model.change_bus2_powerline(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 

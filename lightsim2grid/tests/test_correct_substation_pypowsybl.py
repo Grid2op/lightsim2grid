@@ -81,16 +81,16 @@ class _AuxCorrectGraph:
         
         for line in self.gridmodel.get_lines():
             assert line.name in df_els.index
-            sub1 = self.gridmodel.get_substations()[line.sub_1_id]
-            sub2 = self.gridmodel.get_substations()[line.sub_2_id]
+            sub1 = self.gridmodel.get_substations()[line.sub1_id]
+            sub2 = self.gridmodel.get_substations()[line.sub2_id]
             assert sub1.vn_kv == vls.loc[df_els.loc[line.name, "voltage_level1_id"], "nominal_v"]
             assert sub2.vn_kv == vls.loc[df_els.loc[line.name, "voltage_level2_id"], "nominal_v"]
             if self.use_buses_for_sub():
-                if line.connected_1:
+                if line.connected1:
                     assert sub1.name == df_els.loc[line.name, "bus1_id"]
                 else:
                     pass # TODO
-                if line.connected_2:
+                if line.connected2:
                     assert sub2.name == df_els.loc[line.name, "bus2_id"]
                 else:
                     pass # TODO
@@ -109,16 +109,16 @@ class _AuxCorrectGraph:
         
         for line in self.gridmodel.get_trafos():
             assert line.name in df_els.index
-            sub1 = self.gridmodel.get_substations()[line.sub_1_id]
-            sub2 = self.gridmodel.get_substations()[line.sub_2_id]
+            sub1 = self.gridmodel.get_substations()[line.sub1_id]
+            sub2 = self.gridmodel.get_substations()[line.sub2_id]
             assert sub1.vn_kv == vls.loc[df_els.loc[line.name, "voltage_level1_id"], "nominal_v"]
             assert sub2.vn_kv == vls.loc[df_els.loc[line.name, "voltage_level2_id"], "nominal_v"]
             if self.use_buses_for_sub():
-                if line.connected_1:
+                if line.connected1:
                     assert sub1.name == df_els.loc[line.name, "bus1_id"]
                 else:
                     pass # TODO
-                if line.connected_2:
+                if line.connected2:
                     assert sub2.name == df_els.loc[line.name, "bus2_id"]
                 else:
                     pass # TODO
@@ -296,14 +296,14 @@ class Test_CorrectGraph_TT_mult_busbar(_AuxCorrectGraph, unittest.TestCase):
         el_id = 0
         el = self.gridmodel.get_lines()[el_id]
         n_sub = len(self.gridmodel.get_substations())
-        self.gridmodel.change_bus_powerline_or(el_id, el.sub_1_id + n_sub)
+        self.gridmodel.change_bus1_powerline(el_id, el.sub1_id + n_sub)
         self.test_correct_lines()
         
     def test_trafo_change_bus(self):
         el_id = 0
         el = self.gridmodel.get_trafos()[el_id]
         n_sub = len(self.gridmodel.get_substations())
-        self.gridmodel.change_bus_trafo_hv(el_id, el.sub_1_id + n_sub)
+        self.gridmodel.change_bus1_trafo(el_id, el.sub1_id + n_sub)
         self.test_correct_trafos()
         
     def test_load_change_bus(self):

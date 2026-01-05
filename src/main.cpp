@@ -479,7 +479,9 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_p_mw", &GenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &GenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &GenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &GenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+        .def_readonly("res_v_kv", &GenInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        // pypowsybl
+        .def_readonly("voltage_level_id", &GenInfo::sub_id, DocIterator::sub_id.c_str());
 
     // iterator for sgens
     py::class_<SGenContainer>(m, "SGenContainer", DocIterator::SGenContainer.c_str())
@@ -508,7 +510,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_p_mw", &SGenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &SGenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &SGenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &SGenInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+        .def_readonly("res_v_kv", &SGenInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        // pypowsybl
+        .def_readonly("voltage_level_id", &SGenInfo::sub_id, DocIterator::sub_id.c_str())
+        ;
 
     // iterator for loads (and storage units)
     py::class_<LoadContainer>(m, "LoadContainer", DocIterator::LoadContainer.c_str())
@@ -533,7 +538,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_p_mw", &LoadInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &LoadInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &LoadInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+        .def_readonly("res_v_kv", &LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        // pypowsybl
+        .def_readonly("voltage_level_id", &LoadInfo::sub_id, DocIterator::sub_id.c_str())
+        ;
 
     // iterator for shunts
     py::class_<ShuntContainer>(m, "ShuntContainer", DocIterator::ShuntContainer.c_str())
@@ -558,7 +566,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_p_mw", &ShuntInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &ShuntInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &ShuntInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
-        .def_readonly("res_v_kv", &ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str());
+        .def_readonly("res_v_kv", &ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        // pypowsybl
+        .def_readonly("voltage_level_id", &ShuntInfo::sub_id, DocIterator::sub_id.c_str())
+        ;
 
     // iterator for trafos
     py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
@@ -574,17 +585,17 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
         .def_readonly("id", &TrafoInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &TrafoInfo::name, DocIterator::name.c_str())
-        .def_readonly("sub_1_id", &TrafoInfo::sub_1_id, DocIterator::sub_id.c_str())
-        .def_readonly("sub_2_id", &TrafoInfo::sub_2_id, DocIterator::sub_id.c_str())
-        .def_readonly("pos_1_topo_vect", &TrafoInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
-        .def_readonly("pos_2_topo_vect", &TrafoInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("sub1_id", &TrafoInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("sub2_id", &TrafoInfo::sub_2_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos1_topo_vect", &TrafoInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("pos2_topo_vect", &TrafoInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
 
         .def_readonly("connected_global", &TrafoInfo::connected_global, DocIterator::connected.c_str())
-        .def_readonly("connected_1", &TrafoInfo::connected_1, DocIterator::connected.c_str())
-        .def_readonly("connected_2", &TrafoInfo::connected_2, DocIterator::connected.c_str())
+        .def_readonly("connected1", &TrafoInfo::connected_1, DocIterator::connected.c_str())
+        .def_readonly("connected2", &TrafoInfo::connected_2, DocIterator::connected.c_str())
 
-        .def_readonly("bus_1_id", &TrafoInfo::bus_1_id, DocIterator::bus_hv_id.c_str())
-        .def_readonly("bus_2_id", &TrafoInfo::bus_2_id, DocIterator::bus_lv_id.c_str())
+        .def_readonly("bus1_id", &TrafoInfo::bus_1_id, DocIterator::bus_hv_id.c_str())
+        .def_readonly("bus2_id", &TrafoInfo::bus_2_id, DocIterator::bus_lv_id.c_str())
 
         .def_readonly("r_pu", &TrafoInfo::r_pu, DocIterator::r_pu.c_str())
         .def_readonly("x_pu", &TrafoInfo::x_pu, DocIterator::x_pu.c_str())
@@ -613,6 +624,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("ydc_12", &TrafoInfo::ydc_12, "TODO doc")
         .def_readonly("ydc_21", &TrafoInfo::ydc_21, "TODO doc")
         .def_readonly("ydc_22", &TrafoInfo::ydc_22, "TODO doc")
+
+        // pypowsybl
+        .def_readonly("voltage_level1_id", &TrafoInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("voltage_level2_id", &TrafoInfo::sub_2_id, DocIterator::sub_id.c_str())
         ;
 
     // iterator for trafos
@@ -628,17 +643,17 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &LineInfo::name, DocIterator::name.c_str())
-        .def_readonly("sub_1_id", &LineInfo::sub_1_id, DocIterator::sub_id.c_str())
-        .def_readonly("sub_2_id", &LineInfo::sub_2_id, DocIterator::sub_id.c_str())
-        .def_readonly("pos_1_topo_vect", &LineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
-        .def_readonly("pos_2_topo_vect", &LineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("sub1_id", &LineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("sub2_id", &LineInfo::sub_2_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos1_topo_vect", &LineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("pos2_topo_vect", &LineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
 
         .def_readonly("connected_global", &LineInfo::connected_global, DocIterator::connected.c_str())
-        .def_readonly("connected_1", &LineInfo::connected_1, DocIterator::connected.c_str())
-        .def_readonly("connected_2", &LineInfo::connected_2, DocIterator::connected.c_str())
+        .def_readonly("connected1", &LineInfo::connected_1, DocIterator::connected.c_str())
+        .def_readonly("connected2", &LineInfo::connected_2, DocIterator::connected.c_str())
 
-        .def_readonly("bus_1_id", &LineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
-        .def_readonly("bus_2_id", &LineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("bus1_id", &LineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus2_id", &LineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
 
         .def_readonly("r_pu", &LineInfo::r_pu, DocIterator::r_pu.c_str())
         .def_readonly("x_pu", &LineInfo::x_pu, DocIterator::x_pu.c_str())
@@ -665,6 +680,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("ydc_12", &LineInfo::ydc_12, "TODO doc")
         .def_readonly("ydc_21", &LineInfo::ydc_21, "TODO doc")
         .def_readonly("ydc_22", &LineInfo::ydc_22, "TODO doc")
+
+        // pypowsybl
+        .def_readonly("voltage_level1_id", &LineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("voltage_level2_id", &LineInfo::sub_2_id, DocIterator::sub_id.c_str())
         ;
 
     // iterator for dc lines
@@ -680,23 +699,23 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     py::class_<DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DCLineInfo::id, DocIterator::id.c_str())
         .def_readonly("name", &DCLineInfo::name, DocIterator::name.c_str())
-        .def_readonly("sub_1_id", &DCLineInfo::sub_1_id, DocIterator::sub_id.c_str())
-        .def_readonly("sub_2_id", &DCLineInfo::sub_2_id, DocIterator::sub_id.c_str())
-        .def_readonly("pos_1_topo_vect", &DCLineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
-        .def_readonly("pos_2_topo_vect", &DCLineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("sub1_id", &DCLineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("sub2_id", &DCLineInfo::sub_2_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos1_topo_vect", &DCLineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("pos2_topo_vect", &DCLineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
         .def_readonly("connected_global", &DCLineInfo::connected_global, DocIterator::connected.c_str())
-        .def_readonly("connected_1", &DCLineInfo::connected_1, DocIterator::connected.c_str())
-        .def_readonly("connected_2", &DCLineInfo::connected_2, DocIterator::connected.c_str())
-        .def_readonly("bus_1_id", &DCLineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
-        .def_readonly("bus_2_id", &DCLineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("connected1", &DCLineInfo::connected_1, DocIterator::connected.c_str())
+        .def_readonly("connected2", &DCLineInfo::connected_2, DocIterator::connected.c_str())
+        .def_readonly("bus1_id", &DCLineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus2_id", &DCLineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
         .def_readonly("target_p1_mw", &DCLineInfo::target_p_1_mw, DocIterator::target_p_or_mw.c_str())
         .def_readonly("p2_mw", &DCLineInfo::p_2_mw, DocIterator::target_p_or_mw.c_str())
         .def_readonly("target_vm1_pu", &DCLineInfo::target_vm_1_pu, DocIterator::target_vm_or_pu.c_str())
         .def_readonly("target_vm2_pu", &DCLineInfo::target_vm_2_pu, DocIterator::target_vm_ex_pu.c_str())
         .def_readonly("loss_pct", &DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
         .def_readonly("loss_mw", &DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
-        .def_readonly("gen_side_1", &DCLineInfo::gen_side_1, DocIterator::gen_or.c_str())
-        .def_readonly("gen_side_2", &DCLineInfo::gen_side_2, DocIterator::gen_ex.c_str())
+        .def_readonly("gen1", &DCLineInfo::gen_side_1, DocIterator::gen_or.c_str())
+        .def_readonly("gen2", &DCLineInfo::gen_side_2, DocIterator::gen_ex.c_str())
         .def_readonly("has_res", &DCLineInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p1_mw", &DCLineInfo::res_p1_mw, DocIterator::res_p_or_mw_dcline.c_str())
         .def_readonly("res_p2_mw", &DCLineInfo::res_p2_mw, DocIterator::res_p_ex_mw_dcline.c_str())
@@ -706,6 +725,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("res_v2_kv", &DCLineInfo::res_v2_kv, DocIterator::res_v_ex_kv_dcline.c_str())
         .def_readonly("res_theta1_deg", &DCLineInfo::res_theta1_deg, DocIterator::res_theta_or_deg_dcline.c_str())
         .def_readonly("res_theta2_deg", &DCLineInfo::res_theta2_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
+
+        // pypowsybl
+        .def_readonly("voltage_level1_id", &DCLineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("voltage_level2_id", &DCLineInfo::sub_2_id, DocIterator::sub_id.c_str())
         ;
 
     py::class_<SubstationContainer>(m, "SubstationContainer", "TODO")
@@ -820,8 +843,6 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_init_vm_pu", &GridModel::get_init_vm_pu, DocGridModel::_internal_do_not_use.c_str())
         .def("set_sn_mva", &GridModel::set_sn_mva, DocGridModel::_internal_do_not_use.c_str())   // TODO use python "property" for that
         .def("get_sn_mva", &GridModel::get_sn_mva, DocGridModel::_internal_do_not_use.c_str())
-        .def("init_substation_names", &GridModel::init_sub_names, DocGridModel::_internal_do_not_use.c_str())
-        .def("get_substation_names", &GridModel::get_sub_names, DocGridModel::_internal_do_not_use.c_str())
         
         // init its elements
         .def("init_powerlines", &GridModel::init_powerlines, DocGridModel::_internal_do_not_use.c_str())  // TODO code the possibility to add / remove a powerline after creation
@@ -837,6 +858,8 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("init_dclines", &GridModel::init_dclines, DocGridModel::_internal_do_not_use.c_str())  // same
         .def("add_gen_slackbus", &GridModel::add_gen_slackbus, DocGridModel::_internal_do_not_use.c_str()) // same
         .def("remove_gen_slackbus", &GridModel::remove_gen_slackbus, DocGridModel::_internal_do_not_use.c_str())  // same
+        .def("get_bus_vn_kv", &GridModel::get_bus_vn_kv, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_bus_status", &GridModel::get_bus_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
 
         // inspect the grid
         .def("get_substations", &GridModel::get_substations, "TODO", py::return_value_policy::reference)
@@ -848,8 +871,11 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_shunts", &GridModel::get_shunts, DocGridModel::get_shunts.c_str(), py::return_value_policy::reference)
         .def("get_storages", &GridModel::get_storages, DocGridModel::get_storages.c_str(), py::return_value_policy::reference)
         .def("get_loads", &GridModel::get_loads, DocGridModel::get_loads.c_str(), py::return_value_policy::reference)
-        .def("get_bus_vn_kv", &GridModel::get_bus_vn_kv, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus_status", &GridModel::get_bus_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+
+        // pypowsybl compat names
+        .def("get_voltage_levels", &GridModel::get_substations, "TODO", py::return_value_policy::reference)
+        .def("get_2_windings_transformers", &GridModel::get_trafos, DocGridModel::get_trafos.c_str(), py::return_value_policy::reference)
+        .def("get_shunt_compensators", &GridModel::get_shunts, DocGridModel::get_shunts.c_str(), py::return_value_policy::reference)
 
         // modify the grid
         .def("turnedoff_no_pv", &GridModel::turnedoff_no_pv, "Turned off (or generators with p = 0) generators will not be pv buses, they will not maintain voltage")
@@ -873,23 +899,25 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("set_storage_names", &GridModel::set_storage_names,  "TODO")
         .def("set_sgen_names", &GridModel::set_sgen_names, "TODO")
         .def("set_shunt_names", &GridModel::set_shunt_names, "TODO")
+        .def("set_substation_names", &GridModel::set_substation_names, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_substation_names", &GridModel::get_substation_names, DocGridModel::_internal_do_not_use.c_str())
 
         .def("deactivate_bus", &GridModel::deactivate_bus_python, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_bus", &GridModel::reactivate_bus_python, DocGridModel::_internal_do_not_use.c_str())
 
         .def("deactivate_powerline", &GridModel::deactivate_powerline, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_powerline", &GridModel::reactivate_powerline, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_bus_powerline_or", &GridModel::change_bus_powerline_or_python, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_bus_powerline_ex", &GridModel::change_bus_powerline_ex_python, DocGridModel::_internal_do_not_use.c_str())
-        .def("get_bus_powerline_or", &GridModel::get_bus_powerline_or, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus_powerline_ex", &GridModel::get_bus_powerline_ex, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("change_bus1_powerline", &GridModel::change_bus1_powerline_python, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus2_powerline", &GridModel::change_bus2_powerline_python, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus1_powerline", &GridModel::get_bus1_powerline, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_powerline", &GridModel::get_bus2_powerline, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
 
         .def("deactivate_trafo", &GridModel::deactivate_trafo, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_trafo", &GridModel::reactivate_trafo, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_bus_trafo_hv", &GridModel::change_bus_trafo_hv_python, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_bus_trafo_lv", &GridModel::change_bus_trafo_lv_python, DocGridModel::_internal_do_not_use.c_str())
-        .def("get_bus_trafo_hv", &GridModel::get_bus_trafo_hv, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus_trafo_lv", &GridModel::get_bus_trafo_lv, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("change_bus1_trafo", &GridModel::change_bus1_trafo_python, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus2_trafo", &GridModel::change_bus2_trafo_python, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus1_trafo", &GridModel::get_bus1_trafo, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_trafo", &GridModel::get_bus2_trafo, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("change_ratio_trafo", &GridModel::change_ratio_trafo, "TODO")
         .def("change_shift_trafo", &GridModel::change_shift_trafo, "TODO")
 
@@ -931,12 +959,12 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("deactivate_dcline", &GridModel::deactivate_dcline, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_dcline", &GridModel::reactivate_dcline, DocGridModel::_internal_do_not_use.c_str())
         .def("change_p_dcline", &GridModel::change_p_dcline, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_v_or_dcline", &GridModel::change_v_or_dcline, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_v_ex_dcline", &GridModel::change_v_ex_dcline, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_bus_dcline_or", &GridModel::change_bus_dcline_or_python, DocGridModel::_internal_do_not_use.c_str())
-        .def("change_bus_dcline_ex", &GridModel::change_bus_dcline_ex_python, DocGridModel::_internal_do_not_use.c_str())
-        .def("get_bus_dcline_or", &GridModel::get_bus_dcline_or, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_bus_dcline_ex", &GridModel::get_bus_dcline_ex, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("change_v1_dcline", &GridModel::change_v1_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_v2_dcline", &GridModel::change_v2_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus1_dcline", &GridModel::change_bus1_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("change_bus2_dcline", &GridModel::change_bus2_dcline, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_bus1_dcline", &GridModel::get_bus1_dcline, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_dcline", &GridModel::get_bus2_dcline, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
 
         // get back the results
         // todo _solver
@@ -984,11 +1012,11 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_shunts_status", &GridModel::get_shunts_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_gen_res", &GridModel::get_gen_res, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_gen_status", &GridModel::get_gen_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lineor_res", &GridModel::get_lineor_res, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lineex_res", &GridModel::get_lineex_res, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_line_res1", &GridModel::get_line_res1, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_line_res2", &GridModel::get_line_res2, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_lines_status", &GridModel::get_lines_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafohv_res", &GridModel::get_trafohv_res, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafolv_res", &GridModel::get_trafolv_res, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res1", &GridModel::get_trafo_res1, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res2", &GridModel::get_trafo_res2, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_trafo_status", &GridModel::get_trafo_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_storages_res", &GridModel::get_storages_res, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_storages_status", &GridModel::get_storages_status, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
@@ -999,23 +1027,23 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_load_theta", &GridModel::get_load_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_shunt_theta", &GridModel::get_shunt_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_storage_theta", &GridModel::get_storage_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lineor_theta", &GridModel::get_lineor_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lineex_theta", &GridModel::get_lineex_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafohv_theta", &GridModel::get_trafohv_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafolv_theta", &GridModel::get_trafolv_theta, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_line_theta1", &GridModel::get_line_theta1, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_line_theta2", &GridModel::get_line_theta2, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_theta1", &GridModel::get_trafo_theta1, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_theta2", &GridModel::get_trafo_theta2, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
 
         .def("get_all_shunt_buses", &GridModel::get_all_shunt_buses_numpy, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_loads_res_full", &GridModel::get_loads_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_shunts_res_full", &GridModel::get_shunts_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_gen_res_full", &GridModel::get_gen_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lineor_res_full", &GridModel::get_lineor_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_lineex_res_full", &GridModel::get_lineex_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafohv_res_full", &GridModel::get_trafohv_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_trafolv_res_full", &GridModel::get_trafolv_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_line_res1_full", &GridModel::get_line_res1_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_line_res2_full", &GridModel::get_line_res2_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res1_full", &GridModel::get_trafo_res1_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res2_full", &GridModel::get_trafo_res2_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_storages_res_full", &GridModel::get_storages_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_sgens_res_full", &GridModel::get_sgens_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_dclineor_res_full", &GridModel::get_dclineor_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
-        .def("get_dclineex_res_full", &GridModel::get_dclineex_res_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_dcline_res1_full", &GridModel::get_dcline_res1_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("get_dcline_res2_full", &GridModel::get_dcline_res2_full, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
 
         .def("get_shunt_target_p", &GridModel::get_shunt_target_p, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_load_target_p", &GridModel::get_load_target_p, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
@@ -1042,8 +1070,8 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_Bf", &GridModel::get_Bf, DocGridModel::get_Bf.c_str(), py::return_value_policy::reference)
         .def("get_Bf_solver", &GridModel::get_Bf_solver, DocGridModel::get_Bf_solver.c_str(), py::return_value_policy::reference)
 
-         // apply action faster (optimized for grid2op representation)
-         // it is not recommended to use it outside of grid2Op.
+        // apply action faster (optimized for grid2op representation)
+        // it is not recommended to use it outside of grid2Op.
         .def("update_gens_p", &GridModel::update_gens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_sgens_p", &GridModel::update_sgens_p, DocGridModel::_internal_do_not_use.c_str())
         .def("update_gens_v", &GridModel::update_gens_v, DocGridModel::_internal_do_not_use.c_str())
@@ -1058,18 +1086,18 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("set_max_nb_bus_per_sub", &GridModel::set_max_nb_bus_per_sub, DocGridModel::_internal_do_not_use.c_str())
         .def("set_load_pos_topo_vect", &GridModel::set_load_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_gen_pos_topo_vect", &GridModel::set_gen_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_line_or_pos_topo_vect", &GridModel::set_line_or_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_line_ex_pos_topo_vect", &GridModel::set_line_ex_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_trafo_hv_pos_topo_vect", &GridModel::set_trafo_hv_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_trafo_lv_pos_topo_vect", &GridModel::set_trafo_lv_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_line_pos1_topo_vect", &GridModel::set_line_pos1_topo_vect, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_line_pos2_topo_vect", &GridModel::set_line_pos2_topo_vect, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_trafo_pos1_topo_vect", &GridModel::set_trafo_pos1_topo_vect, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_trafo_pos2_topo_vect", &GridModel::set_trafo_pos2_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_storage_pos_topo_vect", &GridModel::set_storage_pos_topo_vect, DocGridModel::_internal_do_not_use.c_str())
         .def("set_load_to_subid", &GridModel::set_load_to_subid, DocGridModel::_internal_do_not_use.c_str())
         .def("set_gen_to_subid", &GridModel::set_gen_to_subid, DocGridModel::_internal_do_not_use.c_str())
         .def("set_shunt_to_subid", &GridModel::set_shunt_to_subid, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_line_or_to_subid", &GridModel::set_line_or_to_subid, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_line_ex_to_subid", &GridModel::set_line_ex_to_subid, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_trafo_hv_to_subid", &GridModel::set_trafo_hv_to_subid, DocGridModel::_internal_do_not_use.c_str())
-        .def("set_trafo_lv_to_subid", &GridModel::set_trafo_lv_to_subid, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_line_to_sub1_id", &GridModel::set_line_to_sub1_id, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_line_to_sub2_id", &GridModel::set_line_to_sub2_id, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_trafo_to_sub1_id", &GridModel::set_trafo_to_sub1_id, DocGridModel::_internal_do_not_use.c_str())
+        .def("set_trafo_to_sub2_id", &GridModel::set_trafo_to_sub2_id, DocGridModel::_internal_do_not_use.c_str())
         .def("set_storage_to_subid", &GridModel::set_storage_to_subid, DocGridModel::_internal_do_not_use.c_str())
 
         // debug function (might disappear without further notice)

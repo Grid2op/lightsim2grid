@@ -305,8 +305,8 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         gridmodel = self.env.backend._grid.copy()
         gridmodel.change_solver(SolverType.DC)
         res = gridmodel.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
-        lor_p, *_ = gridmodel.get_lineor_res()
-        tor_p, *_ = gridmodel.get_trafohv_res()
+        lor_p, *_ = gridmodel.get_line_res1()
+        tor_p, *_ = gridmodel.get_trafo_res1()
         res_powerflow = np.concatenate((lor_p, tor_p))
         LODF_mat = 1. * gridmodel.get_lodf()
         mat_flow = np.tile(res_powerflow, LODF_mat.shape[0]).reshape(LODF_mat.shape)
@@ -321,7 +321,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
         # debug lodf
         nb = gridmodel.total_bus()  # number of buses
-        nbr = len(gridmodel.get_lineor_res()[0]) + len(gridmodel.get_trafohv_res()[0])
+        nbr = len(gridmodel.get_line_res1()[0]) + len(gridmodel.get_trafo_res1()[0])
         f_ = np.concatenate((1 * gridmodel.get_lines().get_bus_id_side_1(), 1 * gridmodel.get_trafos().get_bus_id_side_1()))
         t_ = np.concatenate((1 * gridmodel.get_lines().get_bus_id_side_2(), 1 * gridmodel.get_trafos().get_bus_id_side_2()))
         Cft = scipy.sparse.csr_matrix((np.r_[np.ones(nbr), -np.ones(nbr)],
@@ -341,7 +341,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
                                                                                     f"{np.abs(LODF_pypower - LODF_mat).max():.2e}")
 
         # compute with the reference
-        nb_real_line = len(gridmodel.get_lineor_res()[0])
+        nb_real_line = len(gridmodel.get_line_res1()[0])
         has_conv = np.any(res_v1 != 0., axis=1)
         for l_id in range(type(self.env).n_line):
             gridmodel_tmp = gridmodel.copy()
@@ -361,8 +361,8 @@ class TestDCSecurityAnalysis(unittest.TestCase):
             res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
             if res_tmp.shape[0] == 0:
                 raise AssertionError("Security analisys converges, powerflow should converge too")
-            lor_tmp, *_ = gridmodel_tmp.get_lineor_res()
-            tor_tmpp, *_ = gridmodel_tmp.get_trafohv_res()
+            lor_tmp, *_ = gridmodel_tmp.get_line_res1()
+            tor_tmpp, *_ = gridmodel_tmp.get_trafo_res1()
             powerflow_tmp = np.concatenate((lor_tmp, tor_tmpp))
             assert np.abs(res_p1[l_id] - powerflow_tmp).max() <= 1e-6, f"error for line / trafo {l_id}: {np.abs(res_p1[l_id] - powerflow_tmp)}"
             assert np.abs(por_lodf[l_id] - powerflow_tmp).max() <= 1e-6, f"error for line / trafo {l_id}: {np.abs(por_lodf[l_id] - powerflow_tmp)}"

@@ -727,13 +727,13 @@ class TestSolverControl(unittest.TestCase):
         self.test_disco_reco_shunt_ac(runpf_fun="_run_dc_pf")
     
     def _aux_disco_slack(self, gridmodel, el_id, el_val):
-        gridmodel.change_bus_powerline_or(0, 15)
-        gridmodel.change_bus_powerline_or(1, 15)
+        gridmodel.change_bus1_powerline(0, 15)
+        gridmodel.change_bus1_powerline(1, 15)
         gridmodel.change_bus_gen(5, 15)
         
     def _aux_reco_slack(self, gridmodel, el_id, el_val):
-        gridmodel.change_bus_powerline_or(0, 0)
-        gridmodel.change_bus_powerline_or(1, 0)
+        gridmodel.change_bus1_powerline(0, 0)
+        gridmodel.change_bus1_powerline(1, 0)
         gridmodel.change_bus_gen(5, 0)
         
     def test_change_bus2_slack(self, runpf_fun="_run_ac_pf"):

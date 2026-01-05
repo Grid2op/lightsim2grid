@@ -557,9 +557,9 @@ if conv.shape[0] == 0:
     print("\t Error: the lightsim diverge when initialized with pandapower Vinit_dc")
     test_ok = False
 else:
-    lpor, lqor, lvor, laor = backend._grid.get_lineor_res()
-    tpor, tqor, tvor, taor = backend._grid.get_trafohv_res()
-    tpex, tqex, tvex, taex = backend._grid.get_trafolv_res()
+    lpor, lqor, lvor, laor = backend._grid.get_line_res1()
+    tpor, tqor, tvor, taor = backend._grid.get_trafo_res1()
+    tpex, tqex, tvex, taex = backend._grid.get_trafo_res2()
     nb_trafo = tpor.shape[0]
     nb_powerline = lpor.shape[0]
     p_or_me2 = np.concatenate((lpor, tpor))

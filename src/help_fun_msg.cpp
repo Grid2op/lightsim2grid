@@ -733,6 +733,9 @@ const std::string DocIterator::name = R"mydelimiter(
 const std::string DocIterator::sub_id = R"mydelimiter(
     Get the substation id of the element.
 
+    .. note::
+        In pypowsybl, this is called "voltage levels".
+
     .. warning::
         Substation ids are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
 

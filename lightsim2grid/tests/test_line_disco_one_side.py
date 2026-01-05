@@ -68,13 +68,13 @@ class BaseDiscoOneSide:
             assert self.model.get_lines()[el_id].connected_global
         else:
             assert not self.model.get_lines()[el_id].connected_global
-        assert not self.model.get_lines()[el_id].connected_1
-        assert not self.model.get_lines()[el_id].connected_2
+        assert not self.model.get_lines()[el_id].connected1
+        assert not self.model.get_lines()[el_id].connected2
         
         self.model.reactivate_powerline(el_id)
         assert self.model.get_lines()[el_id].connected_global
-        assert self.model.get_lines()[el_id].connected_1
-        assert self.model.get_lines()[el_id].connected_2
+        assert self.model.get_lines()[el_id].connected1
+        assert self.model.get_lines()[el_id].connected2
         
     def test_gridmodel_line_side1_topo(self):
         """test disconnecting the line side1 when updated from topology"""
@@ -88,27 +88,27 @@ class BaseDiscoOneSide:
         self.model.update_topo(change, new_values)
         if self.ignore_status_global():
             assert self.model.get_lines()[el_id].connected_global
-        assert not self.model.get_lines()[el_id].connected_1
+        assert not self.model.get_lines()[el_id].connected1
         
         if self.synch_status_both_side():
             if not self.ignore_status_global():
                 assert not self.model.get_lines()[el_id].connected_global
-            assert not self.model.get_lines()[el_id].connected_2
+            assert not self.model.get_lines()[el_id].connected2
         else:
-            assert self.model.get_lines()[el_id].connected_2
+            assert self.model.get_lines()[el_id].connected2
         
         # now reconnects it
         new_values[el_tp] = 1
         self.model.update_topo(change, new_values)
         if self.ignore_status_global():
             assert self.model.get_lines()[el_id].connected_global
-        assert self.model.get_lines()[el_id].connected_1
+        assert self.model.get_lines()[el_id].connected1
         
         if self.synch_status_both_side():
             assert self.model.get_lines()[el_id].connected_global
-            assert self.model.get_lines()[el_id].connected_2
+            assert self.model.get_lines()[el_id].connected2
         else:
-            assert self.model.get_lines()[el_id].connected_2
+            assert self.model.get_lines()[el_id].connected2
             
     # def test_gridmodel_line_side1_changebus(self):
     #     """test disconnecting the line side1, when updated from change_bus"""
@@ -117,26 +117,26 @@ class BaseDiscoOneSide:
     #     self.model.change_bus_powerline_or(el_id, -1)
     #     if self.ignore_status_global():
     #         assert self.model.get_lines()[el_id].connected_global
-    #     assert not self.model.get_lines()[el_id].connected_1
+    #     assert not self.model.get_lines()[el_id].connected1
         
     #     if self.synch_status_both_side():
     #         if not self.ignore_status_global():
     #             assert not self.model.get_lines()[el_id].connected_global
-    #         assert not self.model.get_lines()[el_id].connected_2
+    #         assert not self.model.get_lines()[el_id].connected2
     #     else:
-    #         assert self.model.get_lines()[el_id].connected_2
+    #         assert self.model.get_lines()[el_id].connected2
         
     #     # now reconnects it
-    #     self.model.change_bus_powerline_or(el_id, self.model.get_lines()[el_id].sub_1_id)
+    #     self.model.change_bus_powerline_or(el_id, self.model.get_lines()[el_id].sub1_id)
     #     if self.ignore_status_global():
     #         assert self.model.get_lines()[el_id].connected_global
-    #     assert self.model.get_lines()[el_id].connected_1
+    #     assert self.model.get_lines()[el_id].connected1
         
     #     if self.synch_status_both_side():
     #         assert self.model.get_lines()[el_id].connected_global
-    #         assert self.model.get_lines()[el_id].connected_2
+    #         assert self.model.get_lines()[el_id].connected2
     #     else:
-    #         assert self.model.get_lines()[el_id].connected_2
+    #         assert self.model.get_lines()[el_id].connected2
             
     def test_gridmodel_line_both_sides_topo(self):
         """test disconnecting both sides of the line"""
@@ -151,8 +151,8 @@ class BaseDiscoOneSide:
         new_values[el_tp2] = -1
         
         self.model.update_topo(change, new_values)
-        assert not self.model.get_lines()[el_id].connected_1
-        assert not self.model.get_lines()[el_id].connected_2
+        assert not self.model.get_lines()[el_id].connected1
+        assert not self.model.get_lines()[el_id].connected2
         if self.ignore_status_global():
             # flag not modified
             assert self.model.get_lines()[el_id].connected_global
@@ -164,8 +164,8 @@ class BaseDiscoOneSide:
         new_values[el_tp1] = 1
         new_values[el_tp2] = 1
         self.model.update_topo(change, new_values)
-        assert self.model.get_lines()[el_id].connected_1
-        assert self.model.get_lines()[el_id].connected_2
+        assert self.model.get_lines()[el_id].connected1
+        assert self.model.get_lines()[el_id].connected2
         # both sides are reconnected, so this should reconnect this automatically
         # if it was disconnected
         assert self.model.get_lines()[el_id].connected_global
@@ -267,7 +267,7 @@ class TestPFOk(unittest.TestCase):
     
         # check lines
         l_is = self.net_ref.get_lines()["connected1"]
-        por, qor, vor, aor = self.model.get_lineor_res()
+        por, qor, vor, aor = self.model.get_line_res1()
         self.assert_equal(por[l_is], net.get_lines()["p1"].values[l_is], "error for p_from")
         if not is_dc:
             self.assert_equal(qor[l_is], net.get_lines()["q1"].values[l_is], "error for q_from")
@@ -348,7 +348,7 @@ class TestPFOk(unittest.TestCase):
             buses_for_sub=True,
             sort_index=False,
             n_busbar_per_sub=2)
-        model2.change_bus_powerline_or(el_id, model2.get_lines()[el_id].sub_1_id + len(model2.get_substations()))
+        model2.change_bus1_powerline(el_id, model2.get_lines()[el_id].sub1_id + len(model2.get_substations()))
         V0 = np.full(model2.total_bus(),
                      fill_value=1.0,
                      dtype=complex)
@@ -411,7 +411,7 @@ class TestPFOk(unittest.TestCase):
             buses_for_sub=True,
             sort_index=False,
             n_busbar_per_sub=2)
-        model2.change_bus_trafo_hv(el_id, model2.get_trafos()[el_id].sub_1_id + len(model2.get_substations()))
+        model2.change_bus_trafo_hv(el_id, model2.get_trafos()[el_id].sub1_id + len(model2.get_substations()))
         V0 = np.full(model2.total_bus(),
                      fill_value=1.0,
                      dtype=complex)
@@ -478,7 +478,7 @@ class TestPFOk(unittest.TestCase):
         #     n_busbar_per_sub=2)
         # model2.change_bus_trafo_hv(
         #     el_id,
-        #     model2.get_trafos()[el_id].sub_1_id + len(model2.get_substations()))
+        #     model2.get_trafos()[el_id].sub1_id + len(model2.get_substations()))
         # V0 = np.full(model2.total_bus(),
         #              fill_value=1.0,
         #              dtype=complex)

@@ -32,9 +32,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 [0.12.0] 202x-yy-zz
 --------------------
 - [BREAKING] for better consistency, and following pypowsybl convention, trafo and lines "side"
-  are now called "_1" and "_2" instead of "hv" / "lv" (for trafo) or "or" / "ex" for powerlines.
+  are now called "1" and "2" instead of "hv" / "lv" (for trafo) or "or" / "ex" for powerlines.
   For example, what used to be accessible with `gridmodel.change_bus_powerline_or(...)` is now called
-  `gridmodel.change_bus_1_powerline()`. This affects powerlines, transformers and dc powerlines but also
+  `gridmodel.change_bus1_powerline()`. This affects powerlines, transformers and dc powerlines but also
   "LineInfo", "TrafoInfo" and "DCPowerlineInfo".
 - [BREAKING] the `init_pp_backend` public attribute is now private (called now `_init_pp_backend`) and 
   optional, meaning it's None when the grid is initialized from pypowsybl.

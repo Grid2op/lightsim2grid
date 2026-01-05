@@ -377,8 +377,8 @@ class TestDCPF_LODF(TestDCPF):
         self._aux_aux_test_accessors(gridmodel)
         # test the lodf formula
         LODF_mat = gridmodel.get_lodf()      
-        lor_p, *_ = gridmodel.get_lineor_res()
-        tor_p, *_ = gridmodel.get_trafohv_res()
+        lor_p, *_ = gridmodel.get_line_res1()
+        tor_p, *_ = gridmodel.get_trafo_res1()
         init_powerflow = np.concatenate((lor_p, tor_p))
         prng = np.random.default_rng(0)
         nb_powerline = len(gridmodel.get_lines())
@@ -406,8 +406,8 @@ class TestDCPF_LODF(TestDCPF):
                 assert np.isfinite(LODF_mat[:, l_id]).all(), f"error for line / trafo {l_id} : divergence for LODF but not for regular LF(iter {i})"
                 
             # convergence, flows should match
-            lor_p_tmp, *_ = gridmodel_cpy.get_lineor_res()
-            tor_p_tmp, *_ = gridmodel_cpy.get_trafohv_res()
+            lor_p_tmp, *_ = gridmodel_cpy.get_line_res1()
+            tor_p_tmp, *_ = gridmodel_cpy.get_trafo_res1()
             real_val = np.concatenate((lor_p_tmp, tor_p_tmp))
             assert (np.abs(por_lodf - real_val) <= 1e-6).all(), f"error for line / trafo {l_id} (iter {i}): {por_lodf - real_val}"
         

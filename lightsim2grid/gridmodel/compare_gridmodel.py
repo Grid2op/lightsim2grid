@@ -71,15 +71,15 @@ ATTR_SHUNTS_INPUT = [
 
 ATTR_2SIDES_INPUT = [
     "name",
-    "sub_1_id",
-    "sub_2_id",
-    "pos_1_topo_vect",
-    "pos_2_topo_vect",
+    "sub1_id",
+    "sub2_id",
+    "pos1_topo_vect",
+    "pos2_topo_vect",
     "connected_global",
-    "connected_1",
-    "connected_2",
-    "bus_1_id",
-    "bus_2_id",
+    "connected1",
+    "connected2",
+    "bus1_id",
+    "bus2_id",
 ]
 
 

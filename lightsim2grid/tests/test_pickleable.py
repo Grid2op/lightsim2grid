@@ -24,10 +24,10 @@ class TestPickle(unittest.TestCase):
     def _aux_test_2sides(self, grid1, grid2, method_name, test_results=False):
         assert len(getattr(grid1, method_name)()) == len(getattr(grid2, method_name)())
         for line1, line2 in zip(getattr(grid1, method_name)(), getattr(grid2, method_name)()):
-            for attr_nm in ["id", "name", "sub_1_id", "sub_2_id",
-                            "pos_1_topo_vect", "pos_2_topo_vect",
-                            "connected_global", "connected_1", "connected_2",
-                            "bus_1_id", "bus_2_id", "has_res",
+            for attr_nm in ["id", "name", "sub1_id", "sub2_id",
+                            "pos1_topo_vect", "pos2_topo_vect",
+                            "connected_global", "connected1", "connected2",
+                            "bus1_id", "bus2_id", "has_res",
                             ]:
                 assert getattr(line1, attr_nm) == getattr(line2, attr_nm), f"{method_name} error for {attr_nm}: {getattr(line1, attr_nm)} vs {getattr(line2, attr_nm)}"
             
@@ -49,11 +49,12 @@ class TestPickle(unittest.TestCase):
     def _aux_test_1side(self, grid1, grid2, method_name, test_results=False,
                         add_attr_int=None,
                         add_attr_float=None):
-        li_attr_to_test_int = ["id", "name", "sub_id",
-                            "pos_topo_vect", 
-                            "connected",
-                            "bus_id",
-                            ]
+        li_attr_to_test_int = [
+            "id", "name", "sub_id",
+            "pos_topo_vect", 
+            "connected",
+            "bus_id",
+        ]
         if add_attr_int is not None:
             li_attr_to_test_int += add_attr_int
             
