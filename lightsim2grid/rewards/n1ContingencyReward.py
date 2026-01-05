@@ -97,7 +97,7 @@ class N1ContingencyReward(BaseReward):
                 self._backend : LightSimBackend = env.backend.copy()
             self._backend_ls : bool  = True
         elif isinstance(env.backend, PandaPowerBackend):
-            self._backend = LightSimBackend.init_grid(type(env.backend))()
+            self._backend : LightSimBackend = LightSimBackend.init_grid(type(env.backend))()
             self._backend.init_from_loaded_pandapower(env.backend)
             self._backend.is_loaded = True
         else:

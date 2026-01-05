@@ -1072,6 +1072,15 @@ class LightSimBackend(Backend):
                         "storage_discharging_efficiency",
                         ]:
             setattr(self, attr_nm, copy.deepcopy(getattr( type(pp_net), attr_nm)))
+            
+        # handle the "_public" type of attributes
+        # ie attributes added when methods like load_grid_public were introduced in 
+        # grid2op
+        for attr_nm in ["_load_bus_target", "_gen_bus_target", "_storage_bus_target", "_shunt_bus_target"]:
+            if not hasattr(pp_net, attr_nm):
+                # in grid2op compat mode
+                continue
+            setattr(self, attr_nm, copy.deepcopy(getattr(pp_net, attr_nm)))
         
     def _load_grid_pandapower(self, path=None, filename=None):
         self._aux_assign_init_pp_backend()
