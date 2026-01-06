@@ -136,7 +136,7 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     real_type theta_shift = shift_(el_id);
     if(!is_tap_hv_side_[el_id]){
         tau = my_one_ / tau;
-        theta_shift = -theta_shift;
+        // theta_shift = -theta_shift;
     }
     cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
     cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
@@ -162,9 +162,9 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     ydc_21_(el_id) = -tmp;
     ydc_12_(el_id) = -tmp;
 
-    dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
-    // if(!is_tap_hv_side_[el_id]) dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
-    // else dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    // dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
+    if(!is_tap_hv_side_[el_id]) dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    else dc_x_tau_shift_(el_id) = +std::real(tmp) * theta_shift;
 }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
@@ -222,8 +222,8 @@ void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
             exc_ << " is connected (side 1) to a disconnected bus while being connected";
             throw std::runtime_error(exc_.str());
         }
-        Sbus.coeffRef(bus_id_solver_hv.cast_int()) += dc_x_tau_shift_[trafo_id];
-        Sbus.coeffRef(bus_id_solver_lv.cast_int()) -= dc_x_tau_shift_[trafo_id];
+        Sbus.coeffRef(bus_id_solver_hv.cast_int()) -= dc_x_tau_shift_[trafo_id];
+        Sbus.coeffRef(bus_id_solver_lv.cast_int()) += dc_x_tau_shift_[trafo_id];
     }
 }
 

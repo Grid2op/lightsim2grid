@@ -112,7 +112,7 @@ class AuxInitFromPyPowSyBlBusesForSub:
         assert len(self.gridmodel.get_shunts()) == self.network_ref.get_shunt_compensators().shape[0]    
     
     def test_compare_pp(self):
-        """compare from the reference case14"""
+        """test I get the same results than pypowsybl, in AC"""
         if not self.can_pp:
             self.skipTest("no equivalent pandapower grid")
         if not self.compare_pp():
@@ -158,7 +158,7 @@ class AuxInitFromPyPowSyBlBusesForSub:
             assert max_ <= self.tol_eq, f"error for dc Sbus : {max_:.2e}"
 
     def test_dc_pf(self):
-        """test I get the same results as pandapower in dc"""
+        """test I get the same results as pypowsybl in dc"""
         # if CURRENT_PYPOW_VERSION >= MIN_PYPO_DC_NOT_WORKING:
             # self.skipTest("Test not correct: pypowsybl change DC approx, see https://github.com/powsybl/pypowsybl/issues/1127")
         v_ls = self.gridmodel.dc_pf(self.V_init_dc, 2, self.tol)
@@ -175,7 +175,27 @@ class AuxInitFromPyPowSyBlBusesForSub:
         # v_mag not really relevant in dc so i study only va
         v_ang_pypo = self.network_ref.get_buses()["v_angle"].values
         v_ang_ls = np.rad2deg(np.angle(v_ls))
-        # np.where(np.abs(v_ang_ls[reorder] - v_ang_pypo) >= 9.)
+        # for case300
+        # self.gridmodel.get_2_windings_transformers()[85]
+        # shift of 0.19896753472735357 radian
+        # 161 (bus1_id) and 424 (bus2_id)
+        # DC
+        # -9.859724243884386
+        # 9.859724243884614
+        # AC
+        # 83.57031489368106
+        # -83.56243958793598
+        
+        # self.network_ref.get_2_windings_transformers(all_attributes=True).iloc[85]
+        # alpha = 11.4 deg
+        # bus1_id VL196_0, bus2_id VL196_1
+        # self.network_ref.get_buses().loc[["VL196_0", "VL196_1"]]
+        # DC
+        # p1                         88.74429
+        # p2                        -88.74429
+        # AC
+        # p1                          83.570175
+        # p2                           -83.5623
         if self.compare_pp():
             v_ang_pp = self.pp_samecase.res_bus["va_degree"].values
             assert np.abs(v_ang_ls[reorder] - v_ang_pp).max() <= self.tol_eq, f"error for va results for dc: {np.abs(v_ang_ls[reorder] - v_ang_pp).max():.2e}"

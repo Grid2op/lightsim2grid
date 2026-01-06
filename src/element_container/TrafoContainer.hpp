@@ -150,12 +150,19 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                 }
         }
         
+        /**
+         * The shift is in radian (not degree !)
+         * 
+         * It is the shift on the "side 1" (regardless of the value of "is_tap_hv_side").
+         * If the tap is on the other side, the user has the reponsibility to
+         * take the opposite (ie -0.1 instead of +0.1)
+         */
         void change_shift(
             int el_id,
-            real_type new_shift,
+            real_type new_shift_rad,
             SolverControl & solver_control){
-                if(std::abs(shift_(el_id) - new_shift) >_tol_equal_float){
-                    shift_(el_id) = new_shift;
+                if(std::abs(shift_(el_id) - new_shift_rad) >_tol_equal_float){
+                    shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
                     _update_model_coeffs_one_el(el_id); 
                     solver_control.tell_recompute_ybus();

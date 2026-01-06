@@ -919,7 +919,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_bus1_trafo", &GridModel::get_bus1_trafo, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_bus2_trafo", &GridModel::get_bus2_trafo, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("change_ratio_trafo", &GridModel::change_ratio_trafo, "TODO")
-        .def("change_shift_trafo", &GridModel::change_shift_trafo, "TODO")
+        .def("change_shift_trafo", &GridModel::change_shift_trafo, "TODO Change the phase shift ratio for a given transformer. It should be expressed in rad (not in deg) and on side1 (and not side2, as opposed to pypowsybl. If alpha is 10 in pypowsybl, you should convert it to rad (*eg* np.deg2rad(10.)), and invert it, so -np.deg2rad(10.). )")
 
         .def("deactivate_load", &GridModel::deactivate_load, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_load", &GridModel::reactivate_load, DocGridModel::_internal_do_not_use.c_str())

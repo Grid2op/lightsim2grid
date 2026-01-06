@@ -361,7 +361,7 @@ def init(net : pypo.network.Network,
     ratio_tap_changer = net_pu.get_ratio_tap_changers()
     
     if 'alpha' in df_trafo_pu:
-        shift_ = np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
+        shift_ = -np.rad2deg(df_trafo_pu['alpha'].values)  # given in radian by pypowsybl
     else:
         if net.get_phase_tap_changers().shape[0] > 0:
             raise RuntimeError("Phase tap changer are not handled by the pypowsybl converter "

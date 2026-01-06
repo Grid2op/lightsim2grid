@@ -43,11 +43,10 @@ class TestDCPF(unittest.TestCase):
     def test_case14(self):
         case = pn.case14()
         case.name = "case14"
-        # self.tol = 2e-3
         self._aux_test(case)
 
     def test_case14_with_phaseshift(self):
-        self.skipTest("pypowsybl and pandapower does not align on DC computation and phase shift... Lightsim2grid choses pypowsybl")
+        # self.skipTest("pandapower might do something weird in DC with phase shift")
         case = pn.case14()        
         hv_bus=0
         lv_bus=2
@@ -84,19 +83,19 @@ class TestDCPF(unittest.TestCase):
         self.tol = 4e-5
         self._aux_test(case)
 
-    # def test_case1888rte(self):
-    #     # does not work probably with None in converters
-    #     case = pn.case1888rte()
-    #     case.name = "case1888rte"
-    #     self.tol_kcl = 2e-3
-    #     self._aux_test(case)
+    def test_case1888rte(self):
+        # self.skipTest("pandapower might do something weird in DC with phase shift")
+        case = pn.case1888rte()
+        case.name = "case1888rte"
+        self.tol_kcl = 2e-3
+        self._aux_test(case)
 
     def test_case300(self):
         case = pn.case300()
         self._aux_test(case)
 
     # def test_case2848rte(self):
-    #     # does not work probably with None in converters
+    #     # too large for CI
     #     case = pn.case2848rte()
     #     case.name = "case2848rte"
     #     self.tol = 4e-5
@@ -104,7 +103,7 @@ class TestDCPF(unittest.TestCase):
     #     self._aux_test(case)
 
     # def test_case6470rte(self):
-    #     # does not work probably with None in converters
+    # #     # too large for CI
     #     case = pn.case6470rte()
     #     case.name = "case6470rte"
     #     self.tol = 2e-4
@@ -112,7 +111,7 @@ class TestDCPF(unittest.TestCase):
     #     self._aux_test(case)
 
     # def test_case6495rte(self):
-    #     # does not work probably with None in converters
+    #     # too large for CI
     #     case = pn.case6495rte()
     #     case.name = "case6495rte"
     #     self.tol = 2e-4
@@ -120,7 +119,7 @@ class TestDCPF(unittest.TestCase):
     #     self._aux_test(case)
 
     # def test_case6515rte(self):
-    #     # does not work probably with None in converters
+    #     # too large for CI
     #     case = pn.case6515rte()
     #     case.name = "case6515rte"
     #     self.tol = 2e-4

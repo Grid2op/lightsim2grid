@@ -29,6 +29,12 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.12.1]  2026-xx-yy
+---------------------
+- [FIXED] phase shift transformers are now properly modeled
+  for both pandapower (new in this version) and pypowsybl (already
+  the case in previous version)
+
 [0.12.0] 2026-01-06
 --------------------
 - [BREAKING] for better consistency, and following pypowsybl convention, trafo and lines "side"

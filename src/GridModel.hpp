@@ -608,6 +608,14 @@ class GridModel final : public GenericContainer
         void change_ratio_trafo(int trafo_id, real_type new_ratio){
             trafos_.change_ratio(trafo_id, new_ratio, solver_control_);
         }
+
+        /**
+         * The shift is in radian (not degree !)
+         * 
+         * It is the shift on the "side 1" (regardless of the value of "is_tap_hv_side").
+         * If the tap is on the other side, the user has the reponsibility to
+         * take the opposite (ie -0.1 instead of +0.1)
+         */
         void change_shift_trafo(int trafo_id, real_type new_shift){
             trafos_.change_shift(trafo_id, new_shift, solver_control_);
         }
