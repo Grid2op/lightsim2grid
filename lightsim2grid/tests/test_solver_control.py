@@ -62,11 +62,14 @@ class TestSolverControl(unittest.TestCase):
         mask_val = np.zeros(dim_topo, dtype=np.int32)
         mask_changed[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = True
         mask_val[type(self.env).line_ex_pos_topo_vect[LINE_ID]] = 2
+        assert self.gridmodel.nb_connected_bus() == 14
         self.gridmodel.update_topo(mask_changed, mask_val)
         V = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V), "it should not have diverged here"
+        assert self.gridmodel.nb_connected_bus() == 15
         self.gridmodel.unset_changes()
         
+        # now this should also disconnects the line (and not just the extremity)
         mask_changed = np.zeros(dim_topo, dtype=bool)
         mask_val = np.zeros(dim_topo, dtype=np.int32)
         mask_changed[type(self.env).line_or_pos_topo_vect[LINE_ID]] = True
@@ -94,26 +97,26 @@ class TestSolverControl(unittest.TestCase):
         if not self.need_dc:
             self.skipTest("Useless to run DC")
         Vdc_init = self.gridmodel.dc_pf(self.v_init, self.iter, self.tol_solver)
-        assert len(Vdc_init), f"error: gridmodel should converge in DC"
+        assert len(Vdc_init), "error: gridmodel should converge in DC"
         self.gridmodel.unset_changes()
         Vdc_init2 = self.gridmodel.dc_pf(self.v_init, self.iter, self.tol_solver)
-        assert len(Vdc_init2), f"error: gridmodel should converge in DC"
+        assert len(Vdc_init2), "error: gridmodel should converge in DC"
         self.gridmodel.tell_solver_need_reset()
         Vdc_init3 = self.gridmodel.dc_pf(self.v_init, self.iter, self.tol_solver)
-        assert len(Vdc_init3), f"error: gridmodel should converge in DC"
+        assert len(Vdc_init3), "error: gridmodel should converge in DC"
         assert np.allclose(Vdc_init, Vdc_init2, rtol=self.tol_equal, atol=self.tol_equal)
         assert np.allclose(Vdc_init2, Vdc_init3, rtol=self.tol_equal, atol=self.tol_equal)
         
     def test_pf_run_ac(self):   
         """test I have the same results if nothing is done with and without restarting from scratch when running ac powerflow"""
         Vac_init = self.gridmodel.ac_pf(self.v_init, self.iter, self.tol_solver)
-        assert len(Vac_init), f"error: gridmodel should converge in AC"
+        assert len(Vac_init), "error: gridmodel should converge in AC"
         self.gridmodel.unset_changes()
         Vac_init2 = self.gridmodel.ac_pf(self.v_init, self.iter, self.tol_solver)
-        assert len(Vac_init2), f"error: gridmodel should converge in AC"
+        assert len(Vac_init2), "error: gridmodel should converge in AC"
         self.gridmodel.tell_solver_need_reset()
         Vac_init3 = self.gridmodel.ac_pf(self.v_init, self.iter, self.tol_solver)
-        assert len(Vac_init3), f"error: gridmodel should converge in AC"
+        assert len(Vac_init3), "error: gridmodel should converge in AC"
         assert np.allclose(Vac_init, Vac_init2, rtol=self.tol_equal, atol=self.tol_equal)
         assert np.allclose(Vac_init2, Vac_init3, rtol=self.tol_equal, atol=self.tol_equal)
     
@@ -148,6 +151,8 @@ class TestSolverControl(unittest.TestCase):
                 
         # test "do the action"
         V_init = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        Sbus_init = self.gridmodel.get_Sbus_solver().copy()
+        Ybus_init = self.gridmodel.get_Ybus_solver().copy()
         assert len(V_init), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         getattr(self, funname_do)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val + to_add_remove)
         V_disc = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
@@ -170,13 +175,16 @@ class TestSolverControl(unittest.TestCase):
             assert len(V_disc1) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
             self.gridmodel.tell_solver_need_reset()
             V_disc2 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
-            assert len(V_disc1) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
+            assert len(V_disc2) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
             
         # test "undo the action"
         self.gridmodel.unset_changes()
         getattr(self, funname_undo)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val)
+        sovler_control = self.gridmodel.get_solver_control()
         V_reco = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V_reco), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
+        Sbus_1 = self.gridmodel.get_Sbus_solver()
+        Ybus_1 = self.gridmodel.get_Ybus_solver()
         assert np.allclose(V_reco, V_init, rtol=self.tol_equal, atol=self.tol_equal), f"error for el_id={el_id}: do an action and then undo it should not have any impact in {pf_mode}: max {np.abs(V_init - V_reco).max():.2e}"
         self.gridmodel.unset_changes()
         V_reco1 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
@@ -316,15 +324,15 @@ class TestSolverControl(unittest.TestCase):
             if gen.is_slack:
                 # nothing to do for the slack bus...
                 continue
-            self.gridmodel.tell_solver_need_reset()
             expected_diff = 1e-3
             to_add_remove = 5.
+            self.gridmodel.tell_solver_need_reset()
             self.aux_do_undo_ac(funname_do="_change_gen_p_action",
                                 funname_undo="_change_gen_p_action",
                                 runpf_fun=runpf_fun,
                                 el_id=gen.id,
                                 expected_diff=expected_diff,
-                                el_val=gen.target_p_mw,
+                                el_val=1. * gen.target_p_mw,
                                 to_add_remove=to_add_remove,
                                 )
             
@@ -718,25 +726,21 @@ class TestSolverControl(unittest.TestCase):
             self.skipTest("Useless to run DC")
         self.test_disco_reco_shunt_ac(runpf_fun="_run_dc_pf")
     
-    def _aux_disco_shunt(self, gridmodel, el_id, el_val):
-        gridmodel.deactivate_bus(0)
-        gridmodel.reactivate_bus(15)
-        gridmodel.change_bus_powerline_or(0, 15)
-        gridmodel.change_bus_powerline_or(1, 15)
+    def _aux_disco_slack(self, gridmodel, el_id, el_val):
+        gridmodel.change_bus1_powerline(0, 15)
+        gridmodel.change_bus1_powerline(1, 15)
         gridmodel.change_bus_gen(5, 15)
         
-    def _aux_reco_shunt(self, gridmodel, el_id, el_val):
-        gridmodel.reactivate_bus(0)
-        gridmodel.deactivate_bus(15)
-        gridmodel.change_bus_powerline_or(0, 0)
-        gridmodel.change_bus_powerline_or(1, 0)
+    def _aux_reco_slack(self, gridmodel, el_id, el_val):
+        gridmodel.change_bus1_powerline(0, 0)
+        gridmodel.change_bus1_powerline(1, 0)
         gridmodel.change_bus_gen(5, 0)
         
-    def test_change_bus2_ac(self, runpf_fun="_run_ac_pf"):
+    def test_change_bus2_slack(self, runpf_fun="_run_ac_pf"):
         """test for bus 2, basic test I don't do it for all kind of objects (AC pf)"""
         expected_diff = 1e-2
-        self.aux_do_undo_ac(funname_do="_aux_disco_shunt",
-                            funname_undo="_aux_reco_shunt",
+        self.aux_do_undo_ac(funname_do="_aux_disco_slack",
+                            funname_undo="_aux_reco_slack",
                             runpf_fun=runpf_fun,
                             el_id=0,
                             expected_diff=expected_diff,

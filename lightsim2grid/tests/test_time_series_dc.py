@@ -73,8 +73,8 @@ class TestTSDC_14(unittest.TestCase):
                 # check voltages
                 assert np.allclose(res_v_dc[ts, :nb_bus], res[:nb_bus]), f"error for step {ts}"
                 # now check the flows
-                pl_dc, ql_dc, vl_dc, al_dc = grid_model.get_lineor_res()
-                pt_dc, qt_dc, vt_dc, at_dc = grid_model.get_trafohv_res()
+                pl_dc, ql_dc, vl_dc, al_dc = grid_model.get_line_res1()
+                pt_dc, qt_dc, vt_dc, at_dc = grid_model.get_trafo_res1()
                 # check active power
                 p_dc_ref = np.concatenate((pl_dc, pt_dc))
                 assert np.allclose(res_p_dc[ts], p_dc_ref), f"error for step {ts}"

@@ -1,4 +1,4 @@
-# Copyright (c) 2023, RTE (https://www.rte-france.com)
+# Copyright (c) 2023-2025, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -29,7 +29,7 @@ except ImportError:
 from global_var_tests import (
     MAX_PP2_DATAREADER,
     CURRENT_PP_VERSION,
-    MIN_PYPO_DC_NONDEF_PARAMS,
+    VERSION_PHASESHIFT_OK_PYPOW,
     CURRENT_PYPOW_VERSION)
 from test_match_with_pypowsybl.utils_for_slack import (
     get_pypowsybl_parameters,
@@ -233,7 +233,7 @@ class TestCase14FromPypo(TestCase14FromPypoBusesForSub):
 class TestCase30FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 30"""
     # unittest.TestCase does not work because of https://github.com/powsybl/pypowsybl/issues/644
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee30"
     
     def get_equiv_pdp_grid(self):
@@ -249,7 +249,7 @@ class TestCase30FromPypo(TestCase30FromPypoBusesForSub):
 class TestCase57FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 57"""
     # does not appear to be the same grid !
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee57"
     
     def get_equiv_pdp_grid(self):
@@ -272,7 +272,7 @@ class TestCase57FromPypo(TestCase57FromPypoBusesForSub):
 class TestCase118FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 118: does not work because of https://github.com/e2nIEE/pandapower/issues/2131"""
     # does not work because of https://github.com/e2nIEE/pandapower/issues/2131
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
         return "ieee118"
     
     def get_equiv_pdp_grid(self):
@@ -293,24 +293,22 @@ class TestCase118FromPypo(TestCase118FromPypoBusesForSub):
         return False
                 
         
-class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub):
+class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 300"""
-    # does not work because of phase tap changer
-    # def get_pypo_grid(self):
-    #     res = pp.network.create_ieee300()
-    #     df = res.get_shunt_compensators()[["connected"]] # "b", "g", 
-    #     df["connected"] = False
-    #     res.update_shunt_compensators(df)
-    #     return res
-    def get_pypo_gridname(self):
+    def get_pypo_grid_name(self):
+        if CURRENT_PYPOW_VERSION < VERSION_PHASESHIFT_OK_PYPOW:
+            self.skipTest("phase shifter are not supported for "
+                          "this version of pypowsybl")
         return "ieee300"
     
     def get_equiv_pdp_grid(self):
         return pn.case300()
     
     def get_tol_eq(self):
-        # return 3e-3  # otherwise vangle from pypowsybl and pandapower does not match
-        return 1e-6  # otherwise vangle from pypowsybl and pandapower does not match
+        return 2.2e-5
+    
+    def get_tol_eq_kcl(self):
+        return 3.7e-4
     
     def compare_pp(self):
         return super().compare_pp() and False
@@ -499,7 +497,6 @@ class TestBusesForSub_nosort(TestBusesForSub_dosort):
             dtype=str
         )
         
-    
     
 if __name__ == "__main__":
     unittest.main()

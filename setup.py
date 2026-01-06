@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -149,12 +149,11 @@ src_files = ['src/main.cpp',
              "src/Solvers.cpp",
              "src/Utils.cpp",
              "src/DataConverter.cpp",
-             "src/BaseSubstation.cpp",
+             "src/SubstationContainer.cpp",
              "src/batch_algorithm/BaseBatchSolverSynch.cpp",
              "src/batch_algorithm/TimeSeries.cpp",
              "src/batch_algorithm/ContingencyAnalysis.cpp",
              "src/element_container/GenericContainer.cpp",
-             "src/element_container/OneSideContainer.cpp",
              "src/element_container/ShuntContainer.cpp",
              "src/element_container/TrafoContainer.cpp",
              "src/element_container/LoadContainer.cpp",

@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -177,8 +177,7 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     // update Vm and Va again in case
     // we wrapped around with a negative Vm TODO more efficient way maybe ?
     BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  
-    BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  
-    BaseNRAlgo<LinearSolver>::_solver_control.tell_none_changed();
+    BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();
     return res;
 }
 

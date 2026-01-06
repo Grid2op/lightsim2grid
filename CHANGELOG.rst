@@ -29,7 +29,115 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.11.0] 2025-12-xx
+[0.12.0] 2026-01-06
+--------------------
+- [BREAKING] for better consistency, and following pypowsybl convention, trafo and lines "side"
+  are now called "1" and "2" instead of "hv" / "lv" (for trafo) or "or" / "ex" for powerlines.
+  For example, what used to be accessible with `gridmodel.change_bus_powerline_or(...)` is now called
+  `gridmodel.change_bus1_powerline()`. This affects powerlines, transformers and dc powerlines but also
+  "LineInfo", "TrafoInfo" and "DCPowerlineInfo". See below for a (should-be exhaustive) list of changes.
+- [BREAKING] the `init_pp_backend` public attribute is now private (called now `_init_pp_backend`) and 
+  optional, meaning it's `None` when the grid is initialized from pypowsybl (for example).
+- [FIXED] some issues with the "load_grid_from_pypowsybl" function (and making sure the graph of the structure
+  of the lightsim2grid gridmodel matches the one of the pypowsybl grid).
+- [FIXED] an issue with the handling of the slack due to a not correct implementation
+  of `update_slack_weights_by_id` cpp side (previous slacks were not removed, slacks get_slack_weights
+  were prop to target_p which caused issues when all slacks had targetp==0.)
+- [FIXED] an issue with serialization / de serialization caused by an error in serializing the solver types.
+- [ADDED] in all "xxxInfo"  (*eg* "LoadInfo") information about subtation and position in the topology
+  vector, with the `sub_id` / `pos_topo_vect` (for `LoadInfo`, `SGenInfo`, `GenInfo`, `StorageInfo`, `ShuntInfo`)
+  and `sub1_id` / `sub2_id` / `pos1_topo_vect` / `pos2_topo_vect` (for `LineInfo`, `TrafoInfo` and `DCLineInfo`)
+- [ADDED] possibility to load the pypowsybl grid with extra key-words arguments (by using `pypowsybl_load_kwargs` in the 
+  `loader_kwargs` of LightSimBackend)
+- [ADDED] possibility to initialize LightSimBackend with an already loaded grid (by using the `grid` key of the
+  `loader_kwargs` of LightSimBackend when loading it with pypowsybl)
+- [ADDED] possibility to change the ratio (`rho`) of transformers (`gridmodel.change_ratio_trafo(trafo_id, new_rho)`)
+- [ADDED] possibility to change the phase shift (`alpha`) of transformers (`gridmodel.change_shift_trafo(trafo_id, new_alpha)`)
+- [ADDED] more consistency checkings to avoid "negative buses" cpp side.
+- [ADDED] information about the coefficients assigned on the Ybus matrix for `LineInfo` and `TrafoInfo`: `yac_11`, `yac_12`, 
+  `yac_21`, `yac_22`, `ydc_11`, `ydc_12`, `ydc_21`, and `ydc_22`
+- [ADDED] possibility to have a powerline / transformer connected on only one side (for DC and Newton-Raphson algorithm, not implemented
+  for fast-decoupled yet). This means that powerlines / transformers have 3 statuses: one for each side and one "global".
+- [ADDED] possibility to choose the way lightsim2grid will internally treat the powerlines status:
+
+  - `ignore_status_global` (`gridmodel.set_ignore_status_global(True)` or `gridmodel.set_ignore_status_global(False)`). If set
+     to `False` (default) the the "global" status is synch with all the others. For example you can deactivate both sides of a line by 
+     deactivating `status_global` and conversely if you deactivate both side of a given line, then its "status_global" is set 
+     to "activated". If `ignore_status_global` is set to `True` then `global_status` is not updated at all and ignored (*NB* in 
+     this case, calling `gridmodel.deactivate_line(...)` will deactivate both sides but not the "global status")
+  - `synch_status_both_side` (`self.model.set_synch_status_both_side(XXX)`). If set to `True` (default) then the status of each 
+    side of any given line will be synched. Meaning that if an action disconnects one side, it will also disconnect the "status_global"
+    and the other side (*NB* in this case if the same actions both connects one side and disconnect another, then the outcome is "undefined").
+    If `synch_status_both_side` is `False` then each side of the powerline is independant from the other (which can lead to powerline / 
+    transformer being connected at only one side).
+  - The complete bahviour is tested in `tests/test_line_disco_one_side.py`. Feel free to have a look if you need more information.
+
+- [IMPROVED] Eigen to version 5.0.1 (2025/11/11)
+- [IMPROVED] rename all ".h" file to ".hpp" for cpp headers (cpp side). 
+- [IMPROVED] consistency of "bus labelling" cpp side (implement compile time check to prevent accidental conversion from 
+  `LocalBusId`, `GlobalBusId` / `GridModelBusId` and / or `SolverBusId`)
+
+Table to upgrade the names:
+
+=============================    =======================  =======================
+Class Name                       Old Attribute Name       New Attribute Name
+=============================    =======================  =======================
+TrafoContainer                   get_bus_from             get_bus_id_side_1
+TrafoContainer                   get_bus_to               get_bus_id_side_2
+TrafoInfo                        bus_hv_id                bus1_id
+TrafoInfo                        bus_lv_id                bus2_id
+TrafoInfo                        connected                connected_global
+TrafoInfo                        h_pu                     h1_pu or h2_pu
+TrafoInfo                        is_tap_hv_side           is_tap_side_1
+TrafoInfo                        res_p_hv_mw              res_p1_mw
+TrafoInfo                        res_q_hv_mvar            res_q1_mvar      
+TrafoInfo                        res_v_hv_kv              res_v1_kv    
+TrafoInfo                        res_a_hv_ka              res_a1_ka         
+TrafoInfo                        res_p_lv_mw              res_p2_mw      
+TrafoInfo                        res_q_lv_mvar            res_q2_mvar    
+TrafoInfo                        res_v_lv_kv              res_v2_kv     
+TrafoInfo                        res_a_lv_ka              res_a2_ka     
+TrafoInfo                        res_theta_hv_deg         res_theta1_deg    
+TrafoInfo                        res_theta_lv_deg         res_theta2_deg
+LineContainer                    get_bus_from             get_bus_id_side_1
+LineContainer                    get_bus_to               get_bus_id_side_2
+LineInfo                         connected                connected_global
+LineInfo                         bus_or_id                bus1_id
+LineInfo                         bus_ex_id                bus2_id
+LineInfo                         h_pu                     removed
+LineInfo                         h_or_pu                  h1_pu
+LineInfo                         h_ex_pu                  h2_pu
+LineInfo                         res_p_or_mw              res_p1_mw
+LineInfo                         res_q_or_mvar            res_q1_mvar      
+LineInfo                         res_v_or_kv              res_v1_kv    
+LineInfo                         res_a_or_ka              res_a1_ka         
+LineInfo                         res_p_ex_mw              res_p2_mw      
+LineInfo                         res_q_ex_mvar            res_q2_mvar    
+LineInfo                         res_v_ex_kv              res_v2_kv     
+LineInfo                         res_a_ex_ka              res_a2_ka     
+LineInfo                         res_theta_or_deg         res_theta1_deg    
+LineInfo                         res_theta_ex_deg         res_theta2_deg
+DCLineContainer                  get_bus_from             get_bus_id_side_1
+DCLineContainer                  get_bus_to               get_bus_id_side_2
+DCLineInfo                       connected                connected_global
+DCLineInfo                       bus_or_id                bus1_id
+DCLineInfo                       bus_ex_id                bus2_id
+DCLineInfo                       target_vm_or_pu          target_vm1_pu         
+DCLineInfo                       target_vm_ex_pu          target_vm2_pu 
+DCLineInfo                       gen_or                   gen1         
+DCLineInfo                       gen_ex                   gen2
+DCLineInfo                       res_p_or_mw              res_p1_mw
+DCLineInfo                       res_q_or_mvar            res_q1_mvar      
+DCLineInfo                       res_v_or_kv              res_v1_kv          
+DCLineInfo                       res_p_ex_mw              res_p2_mw      
+DCLineInfo                       res_q_ex_mvar            res_q2_mvar    
+DCLineInfo                       res_v_ex_kv              res_v2_kv      
+DCLineInfo                       res_theta_or_deg         res_theta1_deg      
+DCLineInfo                       res_theta_ex_deg         res_theta2_deg      
+=============================    =======================  =======================
+
+
+[0.11.0] 2025-12-09
 ----------------------
 - [DEPRECATED] python 3.7 builds will no longer be available
 - [FIXED] a bug in the import of the grid from pypowsybl

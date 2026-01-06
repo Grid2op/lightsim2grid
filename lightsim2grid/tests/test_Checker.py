@@ -28,7 +28,10 @@ class MakeTestsCase14(unittest.TestCase):
     def setUp(self) -> None:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make('rte_case14_realistic', backend=LightSimBackend(), test=True)
+            self.env = grid2op.make('rte_case14_realistic',
+                                    backend=LightSimBackend(),
+                                    test=True,
+                                    _add_to_name=f"_{type(self).__name__}")
         self.nb_bus = 14
 
     def tearDown(self) -> None:
@@ -66,11 +69,11 @@ class MakeTestsCase14(unittest.TestCase):
         qlim = True
         mismatch = self.env.backend._grid.check_solution(self.env.backend.V, qlim)
         _, q_gen_tmp, _ = self.env.backend.generators_info()
-        # gen_qmin = self.env.backend.init_pp_backend._grid.gen["min_q_mvar"].values
-        # gen_qmax = self.env.backend.init_pp_backend._grid.gen["max_q_mvar"].values
-        gen_qmin = self.env.backend.init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().values[:, 0]
-        gen_qmax = self.env.backend.init_pp_backend._grid.gen[["bus", "max_q_mvar"]].groupby("bus").sum().values[:, 0]
-        gen_bus = self.env.backend.init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().index.values
+        # gen_qmin = self.env.backend._init_pp_backend._grid.gen["min_q_mvar"].values
+        # gen_qmax = self.env.backend._init_pp_backend._grid.gen["max_q_mvar"].values
+        gen_qmin = self.env.backend._init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().values[:, 0]
+        gen_qmax = self.env.backend._init_pp_backend._grid.gen[["bus", "max_q_mvar"]].groupby("bus").sum().values[:, 0]
+        gen_bus = self.env.backend._init_pp_backend._grid.gen[["bus", "min_q_mvar"]].groupby("bus").sum().index.values
 
         dt = pd.DataFrame({"bus":  self.env.gen_to_subid, "gen_q": q_gen_tmp})
         q_gen = dt.groupby("bus").sum().values[:, 0]
@@ -99,24 +102,27 @@ class MakeTestsCase118(MakeTestsCase14):
     def setUp(self) -> None:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("rte_case118_example", backend=LightSimBackend(), test=True)
-        self.nb_bus = self.env.n_sub
+            self.env = grid2op.make("rte_case118_example", backend=LightSimBackend(), test=True,
+                                    _add_to_name=f"_{type(self).__name__}")
+        self.nb_bus = type(self.env).n_sub
 
 
 class MakeTestsNeurips2020Track1(MakeTestsCase14):
     def setUp(self) -> None:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_neurips_2020_track1", backend=LightSimBackend(), test=True)
-        self.nb_bus = self.env.n_sub
+            self.env = grid2op.make("l2rpn_neurips_2020_track1", backend=LightSimBackend(), test=True,
+                                    _add_to_name=f"_{type(self).__name__}")
+        self.nb_bus = type(self.env).n_sub
 
 
 class MakeTestsNeurips2020Track2(MakeTestsCase14):
     def setUp(self) -> None:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_neurips_2020_track2", backend=LightSimBackend(), test=True)
-        self.nb_bus = self.env.n_sub
+            self.env = grid2op.make("l2rpn_neurips_2020_track2", backend=LightSimBackend(), test=True,
+                                    _add_to_name=f"_{type(self).__name__}")
+        self.nb_bus = type(self.env).n_sub
 
 
 if __name__ == "__main__":

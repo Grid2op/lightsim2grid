@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -29,7 +29,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     //   and for the slack bus both the magnitude and the angle are used.
 
     if(!is_linear_solver_valid()) {
-        // std::cout << "!is_linear_solver_valid()\n";
         return false;
     }
     BaseAlgo::reset_timer();
@@ -44,6 +43,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.has_ybus_some_coeffs_zero()
        ){
        reset();
+       // at this stage need_factorize_ is set also to true
     }
     
     sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());
@@ -59,7 +59,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // TODO SLACK (for now i put all slacks as PV, except the first one)
         // this should be handled in Sbus, because we know the amount of power absorbed by the slack
         // so we can compute it correctly !
-        // std::cout << "\t\t\tneed to retrieve slack\n";
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
         // find the slack buses
@@ -75,7 +74,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
-        // std::cout << "\t\t\tneed to sizeYbus_with_slack_\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
         has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
@@ -177,7 +175,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;
     #endif // __COUT_TIMES
-    _solver_control.tell_none_changed();
     timer_total_nr_ += timer.duration();
     return true;
 }
@@ -185,12 +182,10 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 template<class LinearSolver>
 void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
     mat_bus_id_ = Eigen::VectorXi::Constant(nb_bus_solver, -1);
-    // Eigen::VectorXi me_to_ybus = Eigen::VectorXi::Constant(nb_bus_solver - slack_bus_ids_solver.size(), -1);
     int solver_id = 0;
     for (int ybus_id=0; ybus_id < nb_bus_solver; ++ybus_id){
         if(isin(ybus_id, slack_buses_ids_solver_)) continue;  // I don't add anything to the slack bus
         mat_bus_id_(ybus_id) = solver_id;
-        // me_to_ybus(solver_id) = ybus_id;
         ++solver_id;
     }
 }
@@ -258,7 +253,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
     std::vector<int> ind_no_slack_;
     ind_no_slack_.reserve(nb_bus);
     for(int bus_id = 0; bus_id < nb_bus; ++bus_id){
-        if(mat_bus_id_(bus_id) == -1) continue;
+        if(mat_bus_id_(bus_id) == BaseConstants::_deactivated_bus_id) continue;
         ind_no_slack_.push_back(bus_id);
     }
     const Eigen::VectorXi ind_no_slack = Eigen::VectorXi::Map(&ind_no_slack_[0], ind_no_slack_.size());
@@ -270,7 +265,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
         for (typename Eigen::SparseMatrix<real_type>::InnerIterator it(Bf_T_with_slack, row_id); it; ++it)
         {
             const auto bus_id = it.row();
-            if(mat_bus_id_(bus_id) == -1) continue;  // I don't add anything if it's the slack
+            if(mat_bus_id_(bus_id) == BaseConstants::_deactivated_bus_id) continue;  // I don't add anything if it's the slack
             const auto col_res = mat_bus_id_(bus_id);
             rhs[col_res] = it.value();
         }
@@ -295,6 +290,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
     auto timer = CustTimer();
     const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
+    const real_type tol_equal_float = _tol_equal_float;
     for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
         auto f_bus = from_bus(line_id);
         auto t_bus = to_bus(line_id);
@@ -304,7 +300,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
         }
         LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
         const real_type diag_coeff = LODF(line_id, line_id);
-        if (diag_coeff != 1.){
+        if (abs(diag_coeff - 1.) > tol_equal_float){
             LODF.col(line_id).array() /= (1. - diag_coeff);
             LODF(line_id, line_id) = -1.;
         }else{

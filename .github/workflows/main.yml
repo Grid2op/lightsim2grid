@@ -298,7 +298,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check package can be imported (bare install, numpy < 2)
-        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313'
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
         run: |
           python3 -m pip install "numpy<2"
           cd tmp_for_import_checking
@@ -309,9 +309,10 @@ jobs:
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
           python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -m pip install --upgrade numpy
 
       - name: Check LightSimBackend can be imported (with grid2op)
-        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
+        if: matrix.python.name != 'cp314' # pandapower does not support 3.14, so grid2op does not so I cannot test that for 3.14
         run: |
           python -m pip install grid2op lxml   # lxml missing import see https://github.com/e2nIEE/pandapower/issues/2752
           cd tmp_for_import_checking
@@ -324,7 +325,7 @@ jobs:
           python -c "from lightsim2grid.gridmodel import init_from_pandapower"
           
       - name: Check LightSimBackend can be used to create env
-        if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
+        if: matrix.python.name != 'cp314' # pandapower does not support 3.14, so grid2op does not so I cannot test that for 3.14
         run: |
           cd tmp_for_import_checking
           python3 -v -c "from lightsim2grid import LightSimBackend; import grid2op; env = grid2op.make('l2rpn_case14_sandbox', test=True, backend=LightSimBackend())"

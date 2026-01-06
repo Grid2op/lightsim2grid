@@ -9,8 +9,12 @@
 
 import grid2op
 from grid2op.gym_compat import GymEnv
+
 import numpy as np
 from lightsim2grid import LightSimBackend
+from lightsim2grid.gridmodel import GridModel
+from lightsim2grid.gridmodel.compare_gridmodel import compare_gridmodel_input
+
 import unittest
 import warnings
 import copy
@@ -56,6 +60,26 @@ class TestDistSlackBackend(unittest.TestCase):
 
         # This line raised an error
         env_gym_cpy = copy.deepcopy(env_gym)
+        # check the copy is done correctly
+        assert isinstance(env_gym_cpy.init_env.backend, LightSimBackend)
+        
+        assert env_gym_cpy.init_env.backend._grid is not None
+        assert isinstance(env_gym_cpy.init_env.backend._grid, GridModel)
+        assert env_gym_cpy.init_env.backend._grid is not env_gym.init_env.backend._grid
+        tmp = compare_gridmodel_input(
+            env_gym_cpy.init_env.backend._grid,
+            env_gym.init_env.backend._grid
+        )
+        assert len(tmp) == 0
+        
+        assert env_gym_cpy.init_env.backend._LightSimBackend__me_at_init is not None
+        assert isinstance(env_gym_cpy.init_env.backend._LightSimBackend__me_at_init, GridModel)
+        assert env_gym_cpy.init_env.backend._LightSimBackend__me_at_init is not env_gym.init_env.backend._LightSimBackend__me_at_init
+        tmp = compare_gridmodel_input(
+            env_gym_cpy.init_env.backend._LightSimBackend__me_at_init,
+            env_gym.init_env.backend._LightSimBackend__me_at_init
+        )
+        assert len(tmp) == 0
         
         # now check they are equal
         obs_cpy, info_cpy = env_gym_cpy.reset(seed=0, options={"time serie id": 0})

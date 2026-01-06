@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -8,7 +8,7 @@
 
 // containst he help message of some common functions (not to write them dozens of time)
 
-#include "help_fun_msg.h"
+#include "help_fun_msg.hpp"
 
 const std::string DocSolver::get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
@@ -727,6 +727,25 @@ const std::string DocIterator::name = R"mydelimiter(
 
         first_gen = grid_model.get_generators()[0]  # or get_loads for loads, etc.
         first_gen.name 
+
+)mydelimiter";
+
+const std::string DocIterator::sub_id = R"mydelimiter(
+    Get the substation id of the element.
+
+    .. note::
+        In pypowsybl, this is called "voltage levels".
+
+    .. warning::
+        Substation ids are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
+
+)mydelimiter";
+
+const std::string DocIterator::pos_topo_vect = R"mydelimiter(
+    Get the position of the element in the grid2op "topo_vect" vector.
+
+    .. warning::
+        Position in the "topo vector" are optional and might not be set when reading the grid. In that case -1 is set for this attribute.
 
 )mydelimiter";
 

@@ -26,10 +26,10 @@ except ImportError as exc_:
 
 
 def _aux_get_loader_kwargs_storage():
-    return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 5}
+    return {"use_buses_for_sub": True, "double_bus_per_sub": True}
 
 def _aux_get_loader_kwargs():
-    return {"use_buses_for_sub": True, "double_bus_per_sub": False, "gen_slack_id": 0}
+    return {"use_buses_for_sub": True, "double_bus_per_sub": False}
     
     
 class BackendTester(unittest.TestCase):
@@ -49,6 +49,7 @@ class BackendTester(unittest.TestCase):
     
     def test_load_grid(self):
         backend = LightSimBackend(loader_method="pypowsybl",
+                                  gen_slack_id=0,
                                   loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         cls = type(backend)
@@ -67,6 +68,7 @@ class BackendTester(unittest.TestCase):
         
     def test_runpf(self):
         backend = LightSimBackend(loader_method="pypowsybl",
+                                  gen_slack_id=0,
                                   loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         # DC powerflow
@@ -98,6 +100,7 @@ class BackendTester2(unittest.TestCase):
         
     def test_runpf(self):
         backend = LightSimBackend(loader_method="pypowsybl",
+                                  gen_slack_id=0,
                                   loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         # AC powerflow
@@ -122,6 +125,7 @@ if CAN_DO_TEST_SUITE:
         
         def make_backend(self, detailed_infos_for_cascading_failures=False):
             return LightSimBackend(loader_method="pypowsybl",
+                                   gen_slack_id=5,
                                    loader_kwargs=_aux_get_loader_kwargs_storage(),
                                    detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
                             
@@ -142,6 +146,7 @@ if CAN_DO_TEST_SUITE:
             path_case_14_storage_iidm = os.path.join(dir_path, "case_14_storage_iidm")
             self.env = grid2op.make(path_case_14_storage_iidm,
                                     backend=LightSimBackend(loader_method="pypowsybl",
+                                                            gen_slack_id=5,
                                                             loader_kwargs=_aux_get_loader_kwargs_storage(),
                                                             ),
                                     _add_to_name=type(self).__name__

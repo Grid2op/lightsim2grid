@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,7 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "DataConverter.h"
+#include "DataConverter.hpp"
+
 #include <iostream>
 
 
@@ -104,7 +105,7 @@ std::tuple<RealVect,
     //transform trafo from t model to pi model, of course...
     // (remove that if trafo model is not t, but directly pi)
     for(int i = 0; i<nb_trafo; ++i){
-        if(b_sc(i) == my_zero_) continue;
+        if(abs(b_sc(i)) < _tol_equal_float) continue;
         cplx_type za_star = my_half_ * (r_sc(i) + my_i * x_sc(i));
         cplx_type zc_star = - my_i / b_sc(i);
         cplx_type zSum_triangle = za_star * za_star + my_two_ * za_star * zc_star;
@@ -282,8 +283,8 @@ std::tuple<RealVect,
     if(trafo_model_is_t){
         for(int t_id = 0; t_id < nb_trafo; t_id++){
             // tidx = (g != 0) | (b != 0)
-            if((std::abs(g_pu(t_id)) < 1e-7) && 
-               (std::abs(b_pu(t_id)) < 1e-7)) continue;
+            if((std::abs(g_pu(t_id)) < _tol_equal_float) && 
+               (std::abs(b_pu(t_id)) < _tol_equal_float)) continue;
 
             // za_star = r[tidx] * r_ratio[tidx] + x[tidx] * x_ratio[tidx] * 1j
             cplx_type za_star = {r_sc(t_id) * r_ratio, x_sc(t_id) * x_ratio};
@@ -299,7 +300,7 @@ std::tuple<RealVect,
             // std::cout << "za_star " << za_star << " , zb_star " << zb_star << " , zc_star " << zc_star << " , zSum_triangle" << zSum_triangle << std::endl;
             cplx_type zab_triangle = zSum_triangle / zc_star;
             cplx_type zac_triangle = zSum_triangle / zb_star;
-            cplx_type zbc_triangle = zSum_triangle / za_star;
+            // cplx_type zbc_triangle = zSum_triangle / za_star;
             // r[tidx] = zab_triangle.real
             // x[tidx] = zab_triangle.imag
             r_sc(t_id) = std::real(zab_triangle);
@@ -321,7 +322,7 @@ std::tuple<RealVect,
         std::tuple<RealVect, RealVect, CplxVect>(
             std::move(r_sc),
             std::move(x_sc),
-            g_pu.cast<cplx_type>() + my_i * b_pu.cast<cplx_type>()  // - is put here for consistency with pypowsybl
+            g_pu.cast<cplx_type>() + my_i * b_pu.cast<cplx_type>()
         );
 
     return res;

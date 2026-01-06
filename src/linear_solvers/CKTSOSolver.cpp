@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -8,7 +8,8 @@
 
 
 // This file has been inspired from https://github.com/chenxm1986/cktso/blob/master/demo/demo.cpp
-#include "CKTSOSolver.h"
+#include "CKTSOSolver.hpp"
+
 #include <iostream>
 
 const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;

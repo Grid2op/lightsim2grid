@@ -54,7 +54,7 @@ class BaseTests:
 
         # check lines
         l_is = self.net_ref.line["in_service"]
-        por, qor, vor, aor = self.model.get_lineor_res()
+        por, qor, vor, aor = self.model.get_line_res1()
         self.assert_equal(por, net.res_line["p_from_mw"].values, "error for p_from")
         self.assert_equal(qor, net.res_line["q_from_mvar"].values, "error for q_from")
         self.assert_equal(aor, net.res_line["i_from_ka"].values, "error for i_from_ka")
@@ -63,7 +63,7 @@ class BaseTests:
 
         # check trafo
         f_is = self.net_ref.trafo["in_service"]
-        plv, qlv, vlv, alv = self.model.get_trafolv_res()
+        plv, qlv, vlv, alv = self.model.get_trafo_res2()
         self.assert_equal(plv, net.res_trafo["p_lv_mw"].values, "error for p_lv_mw")
         self.assert_equal(qlv, net.res_trafo["q_lv_mvar"].values, "error for q_lv_mvar")
         self.assert_equal(alv, net.res_trafo["i_lv_ka"].values, "error for i_lv_ka")
@@ -163,13 +163,13 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_bus_shunt(self.net_datamodel.shunt.shape[0], 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_or(self.net_datamodel.line.shape[0], 1)
+            self.model.change_bus1_powerline(self.net_datamodel.line.shape[0], 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_ex(self.net_datamodel.line.shape[0], 1)
+            self.model.change_bus2_powerline(self.net_datamodel.line.shape[0], 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_hv(self.net_datamodel.trafo.shape[0], 1)
+            self.model.change_bus1_trafo(self.net_datamodel.trafo.shape[0], 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_lv(self.net_datamodel.trafo.shape[0], 1)
+            self.model.change_bus2_trafo(self.net_datamodel.trafo.shape[0], 1)
 
     def test_changebus_newbus_out_of_bound(self):
         self.do_i_skip("test_changebus_newbus_out_of_bound")
@@ -181,13 +181,13 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_bus_shunt(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_or(0, newbusid)
+            self.model.change_bus1_powerline(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_ex(0, newbusid)
+            self.model.change_bus2_powerline(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_hv(0, newbusid)
+            self.model.change_bus1_trafo(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_lv(0, newbusid)
+            self.model.change_bus2_trafo(0, newbusid)
 
     def test_changesetpoint_out_of_bound(self):
         self.do_i_skip("test_changesetpoint_out_of_bound")
@@ -321,28 +321,28 @@ class BaseTests:
     def test_pf_changebus_lineor(self):
         self.do_i_skip("test_pf_changebus_lineor")
         self.net_ref.line.loc[0, "from_bus"] = 2
-        self.model.change_bus_powerline_or(0, 2)
+        self.model.change_bus1_powerline(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_lineex(self):
         self.do_i_skip("test_pf_changebus_lineex")
         self.net_ref.line.loc[0, "to_bus"] = 2
-        self.model.change_bus_powerline_ex(0, 2)
+        self.model.change_bus2_powerline(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_trafolv(self):
         self.do_i_skip("test_pf_changebus_trafolv")
         self.net_ref.trafo.loc[0, "lv_bus"] = 5  # was 4 initially, and 4 is connected to 5
-        self.model.change_bus_trafo_lv(0, 5)
+        self.model.change_bus2_trafo(0, 5)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
     def test_pf_changebus_trafohv(self):
         self.do_i_skip("test_pf_changebus_trafohv")
         self.net_ref.trafo.loc[0, "hv_bus"] = 29  # was 7 initially, and 7 is connected to 29
-        self.model.change_bus_trafo_hv(0, 29)
+        self.model.change_bus1_trafo(0, 29)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 

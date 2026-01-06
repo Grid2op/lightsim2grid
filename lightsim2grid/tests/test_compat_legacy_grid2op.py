@@ -63,6 +63,7 @@ class TestEnvironmentBasic(unittest.TestCase):
                 self.legacy = False
                 self.issue_cooldown = False
             except Grid2OpException as exc_:
+                # for oldes grid2op version
                 self.env = grid2op.make("rte_case14_realistic",
                                         test=True,
                                         action_class=PlayableAction,
@@ -117,7 +118,6 @@ class TestEnvironmentBasicCpy(TestEnvironmentBasic):
         self.env = self.env.copy()
         init_int.close()
         
-
 class TestBasicEnvironmentRunner(unittest.TestCase):    
     def setUp(self) -> None:
         TestEnvironmentBasic.setUp(self)
@@ -136,18 +136,20 @@ class TestBasicEnvironmentRunner(unittest.TestCase):
     
     def test_runner(self):
         # create the runner
-        runner_in = Runner(**self.env.get_params_for_runner())
         try:
+            runner_in = Runner(**self.env.get_params_for_runner())
             res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0], episode_id=[0], add_detailed_output=True)
             res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0], episode_id=[0])
             add_data_output = True
         except TypeError:
             # legacy mode
             try:
+                runner_in = Runner(**self.env.get_params_for_runner())
                 res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0])
                 res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter, env_seeds=[0])  
             except TypeError:  
                 # super legacy mode (eg 0.9.1)  
+                runner_in = Runner(**self.env.get_params_for_runner())
                 res_in, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter)
                 res_in2, *_ = runner_in.run(nb_episode=1, max_iter=self.max_iter)  
             add_data_output = False     

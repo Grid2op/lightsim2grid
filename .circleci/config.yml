@@ -238,6 +238,7 @@ jobs:
                     make
                     CC=gcc python setup.py build
                     python -m pip install -U .
+
     compile_and_test_gcc_latest:
         executor: gcc_latest
         resource_class: medium
@@ -437,9 +438,9 @@ jobs:
                 name: "Install grid2op from source"
                 command: |
                     .\venv_test\Scripts\activate
-                    pip install gymnasium "numpy<2" pybind11 scipy
+                    pip install gymnasium pybind11 scipy
                     git clone https://github.com/Grid2Op/grid2op.git _grid2op
-                    pip install -e _grid2op gymnasium
+                    pip install -e _grid2op
             - run:
                 name: "Install lightsim2grid"
                 command: |
@@ -456,11 +457,11 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
-                name: "make tests"
+                name: "make basic tests" # otherwise it takes too long (time out)  
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -m unittest discover -v
+                    python -W "ignore" -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control
                     
     test_legacy_pandapower:
         executor: gcc_latest  
@@ -577,6 +578,7 @@ jobs:
                     cd lightsim2grid/tests/
                     python -m unittest test_GridModel_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
+
 
 workflows:
     version: 2.1

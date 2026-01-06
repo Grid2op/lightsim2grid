@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "ContingencyAnalysis.h"
+#include "ContingencyAnalysis.hpp"
 
 #include <queue>
 #include <math.h>       /* isfinite */
@@ -44,62 +44,66 @@ bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> 
     return ok;
 }
 
-void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
+void ContingencyAnalysis::init_li_coeffs(
+    bool ac_solver_used,
+    const std::vector<SolverBusId> &id_me_to_solver)
+{
     _li_coeffs.clear();
     _li_coeffs.reserve(_li_defaults.size());
     const auto & powerlines = _grid_model.get_powerlines_as_data();
     const auto & trafos = _grid_model.get_trafos_as_data();
-    const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver(): _grid_model.id_me_to_dc_solver();
-    Eigen::Index bus_1_id, bus_2_id;
+    // const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver(): _grid_model.id_me_to_dc_solver();
+    int bus_1_id, bus_2_id;
     cplx_type y_ff, y_ft, y_tf, y_tt;
     bool status;
     for(const auto & this_cont_id: _li_defaults){
         std::vector<Coeff> this_cont_coeffs;
         this_cont_coeffs.reserve(this_cont_id.size() * 4);  // usually there are 4 coeffs per powerlines / trafos
-        for(auto line_id : this_cont_id){
-            if(line_id < n_line_)
+        for(auto br_id : this_cont_id){
+            int el_id;
+            const TwoSidesContainer_rxh_A<OneSideContainer_ForBranch> *p_branch;
+            if(br_id < n_line_)
             {
                 // this is a powerline
-                bus_1_id = id_me_to_solver[powerlines.get_bus_from()[line_id]];
-                bus_2_id = id_me_to_solver[powerlines.get_bus_to()[line_id]];
-                status = powerlines.get_status()[line_id];
-                if(ac_solver_used){
-                    y_ff = powerlines.yac_ff()[line_id];
-                    y_ft = powerlines.yac_ft()[line_id];
-                    y_tf = powerlines.yac_tf()[line_id];
-                    y_tt = powerlines.yac_tt()[line_id];
-                }else{
-                    y_ff = powerlines.ydc_ff()[line_id];
-                    y_ft = powerlines.ydc_ft()[line_id];
-                    y_tf = powerlines.ydc_tf()[line_id];
-                    y_tt = powerlines.ydc_tt()[line_id];
-                }
+                el_id = br_id;
+                p_branch = & powerlines;
             }else{
                 // this is a trafo
-                const auto trafo_id = line_id - n_line_;
-                status = trafos.get_status()[trafo_id];
-                bus_1_id = id_me_to_solver[trafos.get_bus_from()[trafo_id]];
-                bus_2_id = id_me_to_solver[trafos.get_bus_to()[trafo_id]];
-                if(ac_solver_used){
-                    y_ff = trafos.yac_ff()[trafo_id];
-                    y_ft = trafos.yac_ft()[trafo_id];
-                    y_tf = trafos.yac_tf()[trafo_id];
-                    y_tt = trafos.yac_tt()[trafo_id];
-                }else{
-                    y_ff = trafos.ydc_ff()[trafo_id];
-                    y_ft = trafos.ydc_ft()[trafo_id];
-                    y_tf = trafos.ydc_tf()[trafo_id];
-                    y_tt = trafos.ydc_tt()[trafo_id];
-                }
+                el_id = br_id - n_line_;
+                p_branch = & trafos;
+            }
+            
+            GlobalBusId glob_bus_1 = p_branch->get_bus_side_1(el_id);
+            GlobalBusId glob_bus_2 = p_branch->get_bus_side_2(el_id);
+            bus_1_id = glob_bus_1.cast_int() == GenericContainer::_deactivated_bus_id ? 
+                GenericContainer::_deactivated_bus_id : 
+                id_me_to_solver[glob_bus_1.cast_int()].cast_int();
+            bus_2_id = glob_bus_2.cast_int() == GenericContainer::_deactivated_bus_id ? 
+                GenericContainer::_deactivated_bus_id : 
+                id_me_to_solver[glob_bus_2.cast_int()].cast_int();
+            status = p_branch->get_status_global()[el_id];
+            // TODO disconnected one side !
+            if(ac_solver_used){
+                y_ff = p_branch->yac_11()[el_id];
+                y_ft = p_branch->yac_12()[el_id];
+                y_tf = p_branch->yac_21()[el_id];
+                y_tt = p_branch->yac_22()[el_id];
+            }else{
+                y_ff = p_branch->ydc_11()[el_id];
+                y_ft = p_branch->ydc_12()[el_id];
+                y_tf = p_branch->ydc_21()[el_id];
+                y_tt = p_branch->ydc_22()[el_id];
             }
 
-            if(status && bus_1_id != GenericContainer::_deactivated_bus_id && bus_2_id != GenericContainer::_deactivated_bus_id)
+            if(status)
             {
-                // element is connected
-                this_cont_coeffs.push_back({bus_1_id, bus_1_id, y_ff});
-                this_cont_coeffs.push_back({bus_1_id, bus_2_id, y_ft});
-                this_cont_coeffs.push_back({bus_2_id, bus_1_id, y_tf});
-                this_cont_coeffs.push_back({bus_2_id, bus_2_id, y_tt});
+                // element is connected, update coeffs based on status of each powerlines
+                if((bus_1_id != GenericContainer::_deactivated_bus_id)) this_cont_coeffs.push_back({bus_1_id, bus_1_id, y_ff});
+                if((bus_2_id != GenericContainer::_deactivated_bus_id)) this_cont_coeffs.push_back({bus_2_id, bus_2_id, y_tt});
+                if((bus_1_id != GenericContainer::_deactivated_bus_id) && (bus_2_id != GenericContainer::_deactivated_bus_id)){
+                    this_cont_coeffs.push_back({bus_1_id, bus_2_id, y_ft});
+                    this_cont_coeffs.push_back({bus_2_id, bus_1_id, y_tf});
+                }
             }
         }
         _li_coeffs.push_back(this_cont_coeffs);
@@ -107,12 +111,25 @@ void ContingencyAnalysis::init_li_coeffs(bool ac_solver_used){
 }
 
 bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                                           const std::vector<Coeff> & coeffs) const
+                                           const std::vector<Coeff> & coeffs,
+                                           bool ac_solver_used)
 {
-    for(const auto & coeff_to_remove: coeffs){
-        Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
+    if(ac_solver_used)
+    {
+        for(const auto & coeff_to_remove: coeffs){
+            Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) -= coeff_to_remove.value;
+        }
+        return check_invertible(Ybus);
+    } else{
+        // DC solver stores the ybus internally, I update it
+        // instead of building it over and over
+        for(const Coeff& coeff : coeffs){
+            _solver.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
+        }
+        // in DC mode the solver takes the responsibility
+        // so Ybus is always "connected".
+        return true;
     }
-    return check_invertible(Ybus);
 }
 
 IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
@@ -121,19 +138,29 @@ IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
     int cont_id = 0;
     for(const auto & coeffs_modif: _li_coeffs){
-        if(remove_from_Ybus(Ybus, coeffs_modif)) res(cont_id) = 1;
+        if(remove_from_Ybus(Ybus, coeffs_modif, true)) res(cont_id) = 1;
         else res(cont_id) = 0;
-        readd_to_Ybus(Ybus, coeffs_modif);
+        readd_to_Ybus(Ybus, coeffs_modif, true);
         ++cont_id;
     }
     return res;
 }
 
-void ContingencyAnalysis::readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
-                                     const std::vector<Coeff> & coeffs) const
+void ContingencyAnalysis::readd_to_Ybus(
+    Eigen::SparseMatrix<cplx_type> & Ybus,
+    const std::vector<Coeff> & coeffs,
+    bool ac_solver_used)
 {
-    for(const auto & coeff_to_remove: coeffs){
-        Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) += coeff_to_remove.value;
+    if(ac_solver_used){
+        for(const Coeff & coeff_to_remove: coeffs){
+            Ybus.coeffRef(coeff_to_remove.row_id, coeff_to_remove.col_id) += coeff_to_remove.value;
+        }
+    } else {
+        // DC solver stores the ybus internally, I update it
+        // instead of building it over and over
+        for(const Coeff& coeff : coeffs){
+            _solver.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
+        }
     }
 }
 
@@ -160,35 +187,11 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
 
-    // redo a powerflow in case the solver has changed
-    if(ac_solver_used){
-        if(_grid_model.get_solver().get_type() != _solver.get_type())
-        {
-            _grid_model.change_solver(_solver.get_type());
-            _grid_model.ac_pf(Vinit, max_iter, tol);
-        }
-    }else{
-        if(_grid_model.get_dc_solver().get_type() != _solver.get_type())
-        {
-            _grid_model.change_solver(_solver.get_type());
-            _grid_model.dc_pf(Vinit, max_iter, tol);
-        }
-    }
-    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
-    const Eigen::Index nb_buses_solver = Ybus.cols();
-    const auto & id_solver_to_me = ac_solver_used ? _grid_model.id_ac_solver_to_me() : _grid_model.id_dc_solver_to_me();
-    const Eigen::VectorXi & bus_pv = _grid_model.get_pv_solver();
-    const Eigen::VectorXi & bus_pq = _grid_model.get_pq_solver();
-    const Eigen::VectorXi & slack_ids = ac_solver_used ? _grid_model.get_slack_ids_solver(): _grid_model.get_slack_ids_dc_solver();
-    const RealVect & slack_weights = _grid_model.get_slack_weights_solver();
-    const auto & id_me_to_solver = ac_solver_used ? _grid_model.id_me_to_ac_solver() :  _grid_model.id_me_to_dc_solver();
-    
-    // get the proper Sbus vector
-    CplxVect Sbus = CplxVect::Zero(nb_buses_solver);
-    _grid_model.fillSbus_other(Sbus, ac_solver_used, id_me_to_solver); 
+    // prepare the gridmodel (compute Ybus, Sbus etc.)
+    CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
 
     // initialize properly the coefficients that I will need to remove
-    init_li_coeffs(ac_solver_used);
+    init_li_coeffs(ac_solver_used, id_me_to_solver_);
     Eigen::Index nb_steps = _li_defaults.size();
 
     // init the results matrices
@@ -197,16 +200,25 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     // reset the solver
     _solver.reset();
-    _solver_control.tell_ybus_some_coeffs_zero();
-    // ybus does not change sparsity pattern here
 
     // compute the right Vinit to send to the solver
-    CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
+    // CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
 
-    // perform the initial powerflow
+    // perform the initial powerflow / "powerflow in n"
     _solver_control.tell_all_changed();
     _solver.tell_solver_control(_solver_control);
-    bool conv = _solver.compute_pf(Ybus, Vinit_solver, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
+    _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
+    CplxVect Vinit_solver2 = Vinit_solver;
+    bool conv = _solver.compute_pf(
+        Ybus_,
+        Vinit_solver2,
+        Sbus_,
+        slack_ids_,
+        slack_weights_,
+        bus_pv_,
+        bus_pq_,
+        max_iter,
+        tol);
 
     // end of pre processing
     _timer_pre_proc = timer_preproc.duration();
@@ -219,46 +231,31 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
         bool invertible = true;
-        // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
-        if (ac_solver_used) invertible = remove_from_Ybus(Ybus, coeffs_modif);
+        invertible = remove_from_Ybus(Ybus_, coeffs_modif, ac_solver_used);
         _timer_modif_Ybus += timer_modif_Ybus.duration();
         conv = false;
 
         if(invertible)
         {
-            if(!ac_solver_used)
-            {
-                // DC solver stores the ybus internally, I update it
-                // instead of building it over and over
-                for(const Coeff& coeff : coeffs_modif){
-                    _solver.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
-                }
-            }
             V = Vinit_solver; // Vinit is reused for each contingencies
-            conv = compute_one_powerflow(Ybus, V, Sbus,
-                                         slack_ids, slack_weights,
-                                         bus_pv, bus_pq,
-                                         max_iter,
-                                         tol / sn_mva);
-            if(!ac_solver_used)
-            {
-                // DC solver stores the ybus internally, I update it
-                // instead of building it over and over
-                for(const Coeff& coeff : coeffs_modif){
-                    _solver.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
-                }
-            }
+            // _solver_control.tell_all_changed();
+            // _solver_control.tell_solver_need_reset();
+            conv = compute_one_powerflow(
+                Ybus_,
+                V,
+                Sbus_,
+                slack_ids_,
+                slack_weights_,
+                bus_pv_,
+                bus_pq_,
+                max_iter,
+                tol / sn_mva);
         }
-        // std::string conv_str =  conv ? "has converged" : "has diverged";
-        // std::cout << "contingency " << contingency << ": " << conv_str << std::endl;
-        // if(!conv) std::cout << "\t error was: " << _solver.get_error() << std::endl;
-        // ++contingency;
 
         timer_modif_Ybus = CustTimer();
-        // no need to add to this Ybus as DC solver have an internal Ybus which is updated with _solver.update_internal_Ybus
-        if (ac_solver_used) readd_to_Ybus(Ybus, coeffs_modif); 
+        readd_to_Ybus(Ybus_, coeffs_modif, ac_solver_used); 
         _timer_modif_Ybus += timer_modif_Ybus.duration();
-        if (conv && invertible) _voltages.row(cont_id)(id_solver_to_me) = V.array();
+        if (conv && invertible) _voltages.row(cont_id)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
         ++cont_id;
     }
     _timer_total = timer.duration();

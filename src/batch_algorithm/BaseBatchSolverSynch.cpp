@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseBatchSolverSynch.h"
+#include "BaseBatchSolverSynch.hpp"
 
 /**
  V is modified at each call !
@@ -14,16 +14,25 @@
 bool BaseBatchSolverSynch::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                   CplxVect & V,
                                                   const CplxVect & Sbus,
-                                                  const Eigen::VectorXi & slack_ids,
+                                                  const IntVect & slack_ids,
                                                   const RealVect & slack_weights,
-                                                  const Eigen::VectorXi & bus_pv,
-                                                  const Eigen::VectorXi & bus_pq,
+                                                  const IntVect & bus_pv,
+                                                  const IntVect & bus_pq,
                                                   int max_iter,
                                                   double tol
                                                   )
 {
     _solver.tell_solver_control(_solver_control);
-    bool conv = _solver.compute_pf(Ybus, V, Sbus, slack_ids, slack_weights, bus_pv, bus_pq, max_iter, tol);
+    bool conv = _solver.compute_pf(
+        Ybus,
+        V,
+        Sbus,
+        slack_ids,
+        slack_weights,
+        bus_pv,
+        bus_pq,
+        max_iter,
+        tol);
     if(conv){
         V = _solver.get_V().array();
     }

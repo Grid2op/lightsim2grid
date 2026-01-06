@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "BaseAlgo.h"
-#include "GridModel.h"  // needs to be included here because of the forward declaration
+#include "BaseAlgo.hpp"
+#include "GridModel.hpp"  // needs to be included here because of the forward declaration
 
 
 void BaseAlgo::reset(){
@@ -38,9 +38,9 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     auto npq = pq.size();
 
     // compute the mismatch
-    CplxVect tmp = Ybus * V;  // this is a vector
-    tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - Sbus.array();
+    // CplxVect tmp = Ybus * V;  // this is a vector
+    // tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array();
     auto real_ = mis.real();
     auto imag_ = mis.imag();
 
@@ -100,9 +100,9 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
     auto npq = pq.size();
 
     // compute the mismatch
-    CplxVect tmp = Ybus * V;  // this is a vector
-    tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - Sbus.array() + slack_absorbed * slack_weights.array();
+    // CplxVect tmp = Ybus * V;  // this is a vector
+    // tmp = tmp.array().conjugate();  // i take the conjugate
+    auto mis = V.array() * (Ybus * V).array().conjugate() - Sbus.array() + slack_absorbed * slack_weights.array();
     RealVect real_ = mis.real();
     RealVect imag_ = mis.imag();
 
@@ -183,10 +183,10 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::VectorXi & pv,
 
 void BaseAlgo::get_Bf(Eigen::SparseMatrix<real_type> & Bf) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
-    _gridmodel->fillBf_for_PTDF(Bf);
+    gridmodel_ptr_->fillBf_for_PTDF(Bf);
 }
 
 void BaseAlgo::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
-    _gridmodel->fillBf_for_PTDF(Bf_T, true);
+    gridmodel_ptr_->fillBf_for_PTDF(Bf_T, true);
 }

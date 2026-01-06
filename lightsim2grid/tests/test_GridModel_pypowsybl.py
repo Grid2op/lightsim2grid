@@ -8,6 +8,8 @@
 
 import unittest
 import numpy as np
+import pandas as pd
+from packaging import version as version_packaging 
 
 import pypowsybl.network as pp_network
 import pypowsybl as pp
@@ -15,6 +17,7 @@ import pypowsybl.loadflow as pp_lf
 
 from lightsim2grid.gridmodel import init_from_pypowsybl
 
+from global_var_tests import CURRENT_PYPOW_VERSION, VERSION_PHASESHIFT_OK_PYPOW
 from test_match_with_pypowsybl.utils_for_slack import (
     get_pypowsybl_parameters,
     get_same_slack
@@ -23,23 +26,24 @@ import warnings
 import pdb
 
 
-class BaseTests:
-    def setUp(self):
-        self.net_ref = pp_network.create_ieee118()
-        self.net_datamodel = pp_network.create_ieee118()
+class BaseTests:    
+    def setUp(self, grid_nm="ieee118"):
+        fun_create = getattr(pp_network, f"create_{grid_nm}")
+        self.net_ref = fun_create()
+        self.net_datamodel = fun_create()
 
         # initialize constant stuff
         self.max_it = 10
         self.tol = 1e-8  # tolerance for the solver
         self.tol_test = 3e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
         self.tol_V = 1e-6
-        self.slack_vl_id_pypow, ls_slack = get_same_slack("ieee118")
+        self.slack_vl_id_pypow, self.ls_slack = get_same_slack(grid_nm)
         self.gen_slack_id = 29
         # initialize and use converters
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.model = init_from_pypowsybl(self.net_datamodel,
-                                             slack_bus_id=ls_slack,
+                                             slack_bus_id=self.ls_slack,
                                              buses_for_sub=True,
                                              sort_index=False)
 
@@ -66,7 +70,7 @@ class BaseTests:
     
         # check lines
         l_is = self.net_ref.get_lines()["connected1"]
-        por, qor, vor, aor = self.model.get_lineor_res()
+        por, qor, vor, aor = self.model.get_line_res1()
         self.assert_equal(por[l_is], net.get_lines()["p1"].values[l_is], "error for p_from")
         self.assert_equal(qor[l_is], net.get_lines()["q1"].values[l_is], "error for q_from")
         self.assert_equal(aor[l_is], net.get_lines()["i1"].values[l_is] * 1e-3, "error for i_from_ka")
@@ -75,7 +79,7 @@ class BaseTests:
 
         # check trafo
         f_is = self.net_ref.get_2_windings_transformers()["connected2"]
-        plv, qlv, vlv, alv = self.model.get_trafolv_res()
+        plv, qlv, vlv, alv = self.model.get_trafo_res2()
         self.assert_equal(plv[f_is], net.get_2_windings_transformers()["p2"].values[f_is], "error for p_lv_mw")
         self.assert_equal(qlv[f_is], net.get_2_windings_transformers()["q2"].values[f_is], "error for q_lv_mvar")
         self.assert_equal(alv[f_is], net.get_2_windings_transformers()["i2"].values[f_is] * 1e-3, "error for i_lv_ka")
@@ -176,14 +180,14 @@ class BaseTests:
             self.model.change_bus_shunt(n_shunt, 1)
         n_line = self.net_datamodel.get_lines().shape[0]
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_or(n_line, 1)
+            self.model.change_bus1_powerline(n_line, 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_ex(n_line, 1)
+            self.model.change_bus2_powerline(n_line, 1)
         n_trafo = self.net_datamodel.get_2_windings_transformers().shape[0]
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_hv(n_trafo, 1)
+            self.model.change_bus1_trafo(n_trafo, 1)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_lv(n_trafo, 1)
+            self.model.change_bus2_trafo(n_trafo, 1)
 
     def test_changebus_newbus_out_of_bound(self):
         self.do_i_skip("test_changebus_newbus_out_of_bound")
@@ -195,13 +199,13 @@ class BaseTests:
         with self.assertRaises(IndexError):
             self.model.change_bus_shunt(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_or(0, newbusid)
+            self.model.change_bus1_powerline(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_powerline_ex(0, newbusid)
+            self.model.change_bus2_powerline(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_hv(0, newbusid)
+            self.model.change_bus1_trafo(0, newbusid)
         with self.assertRaises(IndexError):
-            self.model.change_bus_trafo_lv(0, newbusid)
+            self.model.change_bus2_trafo(0, newbusid)
 
     def test_changesetpoint_out_of_bound(self):
         self.do_i_skip("test_changesetpoint_out_of_bound")
@@ -381,7 +385,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_lineor")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.line["from_bus"][0] = 2
-        self.model.change_bus_powerline_or(0, 2)
+        self.model.change_bus1_powerline(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
@@ -389,7 +393,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_lineex")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.line["to_bus"][0] = 2
-        self.model.change_bus_powerline_ex(0, 2)
+        self.model.change_bus2_powerline(0, 2)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
@@ -397,7 +401,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_trafolv")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.trafo["lv_bus"][0] = 5  # was 4 initially, and 4 is connected to 5
-        self.model.change_bus_trafo_lv(0, 5)
+        self.model.change_bus2_trafo(0, 5)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
@@ -405,7 +409,7 @@ class BaseTests:
         self.do_i_skip("test_pf_changebus_trafohv")
         self.skipTest("changebus does not work with pypowsybl at the moment")
         self.net_ref.trafo["hv_bus"][0] = 29  # was 7 initially, and 7 is connected to 29
-        self.model.change_bus_trafo_hv(0, 29)
+        self.model.change_bus1_trafo(0, 29)
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
 
@@ -486,6 +490,62 @@ class BaseTests:
         self.model.change_q_shunt(0, 80)  # it was 40 put it to 80
         Vfinal = self._run_both_pf(self.net_ref)
         self.check_res(Vfinal, self.net_ref)
+        
+    def test_change_trafo_ratio(self):
+        self.do_i_skip("test_change_trafo_ratio")
+        # update gridmodel
+        old_val = self.model.get_trafos()[0].ratio
+        nm_trafo = self.model.get_trafos()[0].name
+        assert abs(old_val -1.) > 1e-6
+        new_val = 1. + 2. * (old_val - 1.)  # multiply actual ratio by 2
+        self.model.change_ratio_trafo(0, new_val)
+        assert np.allclose(self.model.get_trafos()[0].ratio, new_val)
+        
+        # check it has an impact on the load flow
+        Vfinal = self._run_both_pf(self.net_ref)
+        with self.assertRaises(AssertionError):
+            self.check_res(Vfinal, self.net_ref)
+            
+        # update pypowsybl
+        pp_tr = self.net_ref.get_2_windings_transformers().loc[nm_trafo]
+        ref_vnom1 = self.net_ref.get_voltage_levels().loc[pp_tr["voltage_level1_id"], "nominal_v"]
+        
+        self.net_ref.update_2_windings_transformers(
+            id=nm_trafo,
+            rated_u1=ref_vnom1 / new_val)
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
+        
+    def test_change_trafo_shift(self):
+        self.do_i_skip("test_change_trafo_shift")
+        if CURRENT_PYPOW_VERSION < VERSION_PHASESHIFT_OK_PYPOW:
+            self.skipTest("phase shifter are not supported for "
+                          "this version of pypowsybl")
+        self.setUp("ieee300")  # the smaller grid does not have phase shifters
+        
+        # update gridmodel
+        trafo_id = 85
+        old_val = self.model.get_trafos()[trafo_id].shift_rad
+        nm_trafo = self.model.get_trafos()[trafo_id].name
+        assert abs(old_val) > 1e-6
+        new_val = 2. * old_val  # multiply actual phase shift by 2
+        self.model.change_ratio_trafo(trafo_id, new_val)
+        assert np.allclose(self.model.get_trafos()[trafo_id].ratio, new_val)
+        
+        # check it has an impact on the load flow
+        Vfinal = self._run_both_pf(self.net_ref)
+        with self.assertRaises(AssertionError):
+            self.check_res(Vfinal, self.net_ref)
+            
+        self.skipTest("Hard to change the alpha of phase tap changer in pypowsbl")
+        
+        # update pypowsybl
+        df = self.net_ref.get_phase_tap_changer_steps().loc[[(nm_trafo, 0)]]
+        df["alpha"] *= 2
+        df = self.net_ref.get_phase_tap_changer_steps()
+        self.net_ref.update_phase_tap_changer_steps(df)  # .reset_index().set_index("id"))
+        Vfinal = self._run_both_pf(self.net_ref)
+        self.check_res(Vfinal, self.net_ref)
 
 
 class MakeDCTests(BaseTests, unittest.TestCase):
@@ -507,6 +567,7 @@ class MakeDCTests(BaseTests, unittest.TestCase):
 
     def test_pf_changeshuntp(self):
         self.skipTest("pypowsybl ignores shunt in dc, lightsim2grid does not")
+        
         
 class MakeACTests(BaseTests, unittest.TestCase):
     def run_me_pf(self, V0):

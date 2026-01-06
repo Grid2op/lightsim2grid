@@ -268,10 +268,16 @@ class TestDCSecurityAnalysis(unittest.TestCase):
                 act_dict = {"set_line_status": [(l_id, -1) for l_id in cont]}
             else:
                 act_dict = {"set_line_status": [(cont, -1)]}
-            sim_obs1 = self.obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
-            sim_obs2 = obs.simulate(self.env.action_space(act_dict), time_step=0)[0]
+            sim_obs1, reward1, done1, info1 = self.obs.simulate(self.env.action_space(act_dict), time_step=0)
+            assert not done1
+            assert not info1["is_illegal"]
+            sim_obs2, reward2, done2, info2 = obs.simulate(self.env.action_space(act_dict), time_step=0)
+            assert not done2
+            assert not info2["is_illegal"]
             assert np.abs(sim_obs1.q_or).max() <= 1e-6, "In DC there should not be any reactive !"
             assert np.abs(sim_obs2.q_or).max() <= 1e-6, "In DC there should not be any reactive !"
+            assert np.allclose(np.abs(sim_obs1.p_or[cont]), 0.), "there should not be any power flow on disconnected lines"
+            assert np.allclose(np.abs(sim_obs2.p_or[cont]), 0.), "there should not be any power flow on disconnected lines"
             assert (np.abs(res_p1[cont_id, :] - sim_obs1.p_or) <= 1e-5).all(), f"{res_p1[cont_id, :] - sim_obs1.p_or}"
             assert (np.abs(res_p2[cont_id, :] - sim_obs2.p_or) <= 1e-5).all(), f"{res_p2[cont_id, :] - sim_obs2.p_or}"
             # below: does not pass because the voltages are not the same. Vm are init with results of AC PF for 
@@ -299,8 +305,8 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         gridmodel = self.env.backend._grid.copy()
         gridmodel.change_solver(SolverType.DC)
         res = gridmodel.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
-        lor_p, *_ = gridmodel.get_lineor_res()
-        tor_p, *_ = gridmodel.get_trafohv_res()
+        lor_p, *_ = gridmodel.get_line_res1()
+        tor_p, *_ = gridmodel.get_trafo_res1()
         res_powerflow = np.concatenate((lor_p, tor_p))
         LODF_mat = 1. * gridmodel.get_lodf()
         mat_flow = np.tile(res_powerflow, LODF_mat.shape[0]).reshape(LODF_mat.shape)
@@ -315,9 +321,9 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
         # debug lodf
         nb = gridmodel.total_bus()  # number of buses
-        nbr = len(gridmodel.get_lineor_res()[0]) + len(gridmodel.get_trafohv_res()[0])
-        f_ = np.concatenate((1 * gridmodel.get_lines().get_bus_from(), 1 * gridmodel.get_trafos().get_bus_from()))
-        t_ = np.concatenate((1 * gridmodel.get_lines().get_bus_to(), 1 * gridmodel.get_trafos().get_bus_to()))
+        nbr = len(gridmodel.get_line_res1()[0]) + len(gridmodel.get_trafo_res1()[0])
+        f_ = np.concatenate((1 * gridmodel.get_lines().get_bus_id_side_1(), 1 * gridmodel.get_trafos().get_bus_id_side_1()))
+        t_ = np.concatenate((1 * gridmodel.get_lines().get_bus_id_side_2(), 1 * gridmodel.get_trafos().get_bus_id_side_2()))
         Cft = scipy.sparse.csr_matrix((np.r_[np.ones(nbr), -np.ones(nbr)],
                                         (np.r_[f_, t_], np.r_[np.arange(nbr), np.arange(nbr)])),
                                         (nb, nbr))
@@ -327,28 +333,36 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         with np.errstate(divide='ignore', invalid='ignore'):
             LODF_pypower = (H / den)
         update_LODF_diag(LODF_pypower)  
-        isfinite = np.isfinite(LODF_pypower)
+        # nan and inf etc are handled below
+        isfinite_pypower = np.isfinite(LODF_pypower)
+        isfinite_ls = np.isfinite(LODF_mat)
+        isfinite = isfinite_pypower & isfinite_ls
         assert np.abs(LODF_pypower[isfinite] - LODF_mat[isfinite]).max() <= 1e-6, (f"problem with lodf computation: "
                                                                                     f"{np.abs(LODF_pypower - LODF_mat).max():.2e}")
 
         # compute with the reference
-        nb_real_line = len(gridmodel.get_lineor_res()[0])
+        nb_real_line = len(gridmodel.get_line_res1()[0])
         has_conv = np.any(res_v1 != 0., axis=1)
         for l_id in range(type(self.env).n_line):
-            if not has_conv[l_id]:
-                # nothing to check in this case
-                continue
             gridmodel_tmp = gridmodel.copy()
             if l_id < nb_real_line:
                 gridmodel_tmp.deactivate_powerline(l_id)
             else:
                 t_id = l_id - nb_real_line
                 gridmodel_tmp.deactivate_trafo(t_id)
+                
+            if not has_conv[l_id]:
+                # check the divergence / nan
+                res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)
+                assert res_tmp.shape[0] == 0, "it should have converged for contingency anlysis"
+                assert (~np.isfinite(LODF_mat[:, l_id])).all(), "LODF should be NAN in this case"
+                continue
+            
             res_tmp = gridmodel_tmp.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
             if res_tmp.shape[0] == 0:
-                continue
-            lor_tmp, *_ = gridmodel_tmp.get_lineor_res()
-            tor_tmpp, *_ = gridmodel_tmp.get_trafohv_res()
+                raise AssertionError("Security analisys converges, powerflow should converge too")
+            lor_tmp, *_ = gridmodel_tmp.get_line_res1()
+            tor_tmpp, *_ = gridmodel_tmp.get_trafo_res1()
             powerflow_tmp = np.concatenate((lor_tmp, tor_tmpp))
             assert np.abs(res_p1[l_id] - powerflow_tmp).max() <= 1e-6, f"error for line / trafo {l_id}: {np.abs(res_p1[l_id] - powerflow_tmp)}"
             assert np.abs(por_lodf[l_id] - powerflow_tmp).max() <= 1e-6, f"error for line / trafo {l_id}: {np.abs(por_lodf[l_id] - powerflow_tmp)}"
