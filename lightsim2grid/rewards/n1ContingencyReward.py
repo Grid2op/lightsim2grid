@@ -31,6 +31,7 @@ class N1ContingencyReward(BaseReward):
     .. code-block:: python
 
         import grid2op
+        
         from lightsim2grid.rewards import N1ContingencyReward
         l_ids = [0, 1, 7]
         env = grid2op.make("l2rpn_case14_sandbox",
@@ -70,6 +71,7 @@ class N1ContingencyReward(BaseReward):
             else:
                 self._solver_type = SolverType.SparseLU
         self._backend_ls = False
+        self._debug_unsafe_conts = None
         self._tol = tol
         self._nb_iter = nb_iter
         self._timer_call = 0.
@@ -90,10 +92,13 @@ class N1ContingencyReward(BaseReward):
                                "``PandaPowerBackend` nor `LightSimBackend`."
                                )
         if isinstance(env.backend, LightSimBackend):
-            self._backend : LightSimBackend = env.backend.copy()
+            if hasattr(type(env.backend), "copy_public"):
+                self._backend : LightSimBackend = env.backend.copy_public()
+            else:
+                self._backend : LightSimBackend = env.backend.copy()
             self._backend_ls : bool  = True
         elif isinstance(env.backend, PandaPowerBackend):
-            self._backend = LightSimBackend.init_grid(type(env.backend))()
+            self._backend : LightSimBackend = LightSimBackend.init_grid(type(env.backend))()
             self._backend.init_from_loaded_pandapower(env.backend)
             self._backend.is_loaded = True
         else:
@@ -113,8 +118,6 @@ class N1ContingencyReward(BaseReward):
                                "without any contingencies !")
         self.reward_min = 0.
         self.reward_max = len(self._l_ids) if not self._normalize else 1.
-        # self._contingecy_analyzer = ContingencyAnalysis(self._backend)
-        # self._contingecy_analyzer.add_multiple_contingencies(self._l_ids)
 
     def __call__(self, action, env, has_error, is_done, is_illegal, is_ambiguous):
         if is_done:
@@ -122,18 +125,23 @@ class N1ContingencyReward(BaseReward):
         
         beg = time.perf_counter()
         # retrieve the state of the grid
+        self._debug_unsafe_conts = None
         self._backend_action.reset()
         act = env.backend.get_action_to_set()
-        th_lim_a = 1. * env.get_thermal_limit()
+        th_lim_a = env.get_thermal_limit().copy()
         th_lim_a[th_lim_a <= 1.] = 1.  # assign 1 for the thermal limit
         
         # apply it to the backend
         self._backend_action += act
-        self._backend.apply_action(self._backend_action)
+        if hasattr(type(self._backend), "apply_action_public"):
+            self._backend.apply_action_public(self._backend_action)
+        else:
+            self._backend.apply_action(self._backend_action)
         conv, exc_ = self._backend.runpf()
         if not conv:
             self.logger.warn("Cannot set the backend of the `N1ContingencyReward` => divergence")
             return self.reward_min
+        self._backend._grid.unset_changes()
         
         # synch the contingency analyzer
         contingecy_analyzer = ContingencyAnalysis(self._backend)
@@ -154,10 +162,11 @@ class N1ContingencyReward(BaseReward):
             p_sq[p_sq <= 0.] = 0.
             limits = np.sqrt(p_sq)
         else:
-            tmp_res = 1. * tmp[1]
+            tmp_res = tmp[1].copy()
             limits = th_lim_a
         res = ((tmp_res > self._threshold_margin * limits) | (~np.isfinite(tmp_res))).any(axis=1)  # whether one powerline is above its limit, per cont
         res |=  (np.abs(tmp_res) <= self._tol).all(axis=1)  # other type of divergence: all 0.
+        self._debug_unsafe_conts = np.asarray(self._l_ids)[res.nonzero()[0]]  # for debug purpose
         res = res.sum()  # count total of n-1 unsafe 
         res = len(self._l_ids) - res  # reward = things to maximise
         if self._normalize:

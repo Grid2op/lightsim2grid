@@ -37,6 +37,8 @@ Open source options for powerflow analysis
 To get free of these limitations and be able to perform state of the art powerflow analysis, 
 while still using open source softwares, we kindly recommend you to have a look at:
 
+- [power-grid-model](https://github.com/PowerGridModel/power-grid-model) which is an "*open-source library for
+  steady-state distribution power system analysis, distributed for Python and C*"
 - [Matpower](https://matpower.org/) which is a "*free, open-source tools for electric power system simulation and 
   optimization*"
 - [Pandapower](https://www.pandapower.org/) that is "*An easy to use open source tool for power system modeling, 

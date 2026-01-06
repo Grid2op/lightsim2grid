@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from typing import Type
 import unittest
 import warnings
 import os
@@ -13,6 +14,7 @@ import numpy as np
 from lightsim2grid import LightSimBackend
 from lightsim2grid.gridmodel import init_from_pypowsybl
 import grid2op
+from grid2op.Backend import Backend
 from grid2op.Runner import Runner
 import pypowsybl.network as pypow_net
 
@@ -24,10 +26,10 @@ except ImportError as exc_:
 
 
 def _aux_get_loader_kwargs_storage():
-    return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 5}
+    return {"use_buses_for_sub": True, "double_bus_per_sub": True}
 
 def _aux_get_loader_kwargs():
-    return {"use_buses_for_sub": True, "double_bus_per_sub": True, "gen_slack_id": 0}
+    return {"use_buses_for_sub": True, "double_bus_per_sub": False}
     
     
 class BackendTester(unittest.TestCase):
@@ -37,7 +39,8 @@ class BackendTester(unittest.TestCase):
         self.path = os.path.join(dir_path, "case_14_iidm")
         self.file_name = "grid.xiidm"
 
-    def _aux_prep_backend(self, backend):
+    def _aux_prep_backend(self, backend: Type[Backend]):
+        type(backend)._clear_grid_dependant_class_attributes()
         backend.set_env_name("case_14_iidm_BackendTester")
         backend.load_grid(self.path, self.file_name)
         backend.load_storage_data(self.path)
@@ -46,6 +49,7 @@ class BackendTester(unittest.TestCase):
     
     def test_load_grid(self):
         backend = LightSimBackend(loader_method="pypowsybl",
+                                  gen_slack_id=0,
                                   loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         cls = type(backend)
@@ -63,15 +67,17 @@ class BackendTester(unittest.TestCase):
         assert backend.nb_bus_total == 28
         
     def test_runpf(self):
-        backend = LightSimBackend(loader_method="pypowsybl", loader_kwargs=_aux_get_loader_kwargs())
+        backend = LightSimBackend(loader_method="pypowsybl",
+                                  gen_slack_id=0,
+                                  loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
-        # AC powerflow
-        conv, exc_ = backend.runpf()
-        assert conv
         # DC powerflow
         conv, exc_ = backend.runpf(is_dc=True)
         assert conv
         assert backend.can_output_theta
+        # AC powerflow
+        conv, exc_ = backend.runpf()
+        assert conv
 
 class BackendTester2(unittest.TestCase):
     """issue is still not replicated and these tests pass"""
@@ -94,6 +100,7 @@ class BackendTester2(unittest.TestCase):
         
     def test_runpf(self):
         backend = LightSimBackend(loader_method="pypowsybl",
+                                  gen_slack_id=0,
                                   loader_kwargs=_aux_get_loader_kwargs())
         self._aux_prep_backend(backend)
         # AC powerflow
@@ -118,6 +125,7 @@ if CAN_DO_TEST_SUITE:
         
         def make_backend(self, detailed_infos_for_cascading_failures=False):
             return LightSimBackend(loader_method="pypowsybl",
+                                   gen_slack_id=5,
                                    loader_kwargs=_aux_get_loader_kwargs_storage(),
                                    detailed_infos_for_cascading_failures=detailed_infos_for_cascading_failures)
                             
@@ -138,6 +146,7 @@ if CAN_DO_TEST_SUITE:
             path_case_14_storage_iidm = os.path.join(dir_path, "case_14_storage_iidm")
             self.env = grid2op.make(path_case_14_storage_iidm,
                                     backend=LightSimBackend(loader_method="pypowsybl",
+                                                            gen_slack_id=5,
                                                             loader_kwargs=_aux_get_loader_kwargs_storage(),
                                                             ),
                                     _add_to_name=type(self).__name__
@@ -150,7 +159,6 @@ if CAN_DO_TEST_SUITE:
         
         def test_can_make(self):
             self.env.reset()
-            1 + 1
         
         def test_copy(self):
             obs = self.env.reset()
@@ -168,7 +176,6 @@ if CAN_DO_TEST_SUITE:
             res_cpy = runner_cpy.run(nb_episode=1, max_iter=10)
             for el, el_cpy in zip(res[0], res_cpy[0]):
                 assert el == el_cpy, f"{el} vs {el_cpy}"
-            
         
 # TODO env tester
 if __name__ == "__main__":

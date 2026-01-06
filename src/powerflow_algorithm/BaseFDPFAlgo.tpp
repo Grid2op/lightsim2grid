@@ -1,4 +1,4 @@
-// Copyright (c) 2023, RTE (https://www.rte-france.com)
+// Copyright (c) 2023-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -119,8 +119,6 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
     nr_iter_ = 0; //current step
     bool converged = _check_for_convergence(p_, q_, tol);
     bool res = true;  // have i converged or not
-    bool ls_bp_has_just_been_initialized = false;
-    bool ls_bpp_has_just_been_initialized = false;
 
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
@@ -132,13 +130,11 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
                 res = false;
                 break;
             }
-            ls_bp_has_just_been_initialized = true;
-            ls_bpp_has_just_been_initialized = true;
         }
 
         // do the P iteration (for Va)
         RealVect x = p_;
-        solve(_linear_solver_Bp, Bp_, x, ls_bp_has_just_been_initialized);  //  dVa = -Bp_solver.solve(P)     
+        solve(_linear_solver_Bp, Bp_, x);  //  dVa = -Bp_solver.solve(P)     
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
@@ -151,7 +147,7 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
             break;
         }
         // do the Q iterations (for Vm)
-        solve(_linear_solver_Bpp, Bpp_, q_, ls_bpp_has_just_been_initialized);  //  dVm = -Bpp_solver.solve(Q)   
+        solve(_linear_solver_Bpp, Bpp_, q_);  //  dVm = -Bpp_solver.solve(Q)   
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;

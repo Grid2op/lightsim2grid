@@ -6,6 +6,10 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from typing import Literal
 from packaging import version
+
 # pandapower version with more advanced grid modelling
 _MIN_PP_VERSION_ADV_GRID_MODEL = version.parse("2.15")  
+
+ALLOWED_PP_ORIG_FILE = Literal["pandapower_v2", "pandapower_v3"]

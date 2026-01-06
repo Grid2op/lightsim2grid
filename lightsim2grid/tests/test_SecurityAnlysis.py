@@ -15,6 +15,8 @@ from lightsim2grid import ContingencyAnalysis
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb
+# command to run gdb
+# gdb python --eval-command "run -m unittest test_SecurityAnlysis.TestSecurityAnalysis.test_change_injection"
 
 
 class TestSecurityAnalysis(unittest.TestCase):
@@ -22,7 +24,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
-        self.obs = self.env.reset(seed=0,options={"time serie id": 0})
+        self.obs = self.env.reset(seed=0, options={"time serie id": 0})
         
     def tearDown(self) -> None:
         self.env.close()
@@ -201,7 +203,7 @@ class TestSecurityAnalysis(unittest.TestCase):
         sa1 = ContingencyAnalysis(self.env)
         conts = [0, [0, 4], [5, 7], 4]
         sa1.add_multiple_contingencies(*conts)
-        obs = self.env.reset()
+        obs = self.env.reset(seed=0, options={"time serie id": 1})
         sa2 = ContingencyAnalysis(self.env)
         sa2.add_multiple_contingencies(*conts)
 

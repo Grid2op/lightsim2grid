@@ -41,7 +41,7 @@ class TestCase14SLU(unittest.TestCase):
         self.dcYbus = 1.0 * self.gridmodel.get_dcYbus_solver()
         self.dcSbus = 1.0 * self.gridmodel.get_dcSbus_solver().real
         self.Bbus = 1.0 * self.dcYbus.real
-        self.res_powerflow = 1.0 * np.concatenate((self.gridmodel.get_lineor_res()[0], self.gridmodel.get_trafohv_res()[0]))
+        self.res_powerflow = 1.0 * np.concatenate((self.gridmodel.get_line_res1()[0], self.gridmodel.get_trafo_res1()[0]))
         self.nb = self.case.bus.shape[0]
         self.nbr = self.case.line.shape[0] + self.case.trafo.shape[0]
         self.slack_bus = self.case.ext_grid.iloc[0]["bus"]

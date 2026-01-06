@@ -1,4 +1,4 @@
-// Copyright (c) 2023, RTE (https://www.rte-france.com)
+// Copyright (c) 2023-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "Solvers.h"
-#include "GridModel.h"
+#include "Solvers.hpp"
+#include "GridModel.hpp"
 
 // these functions use the _gridmodel that is a not a real type in the template class declaration.
 // this is why i need to define them here for every specialization.
@@ -15,7 +15,7 @@
 template<class LinearSolver, FDPFMethod XB_BX>
 void BaseFDPFAlgo<LinearSolver, XB_BX>::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const
 {
-    _gridmodel->fillBp_Bpp(Bp, Bpp, XB_BX);
+    gridmodel_ptr_->fillBp_Bpp(Bp, Bpp, XB_BX);
 }
 
 template void FDPF_XB_SparseLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;

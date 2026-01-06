@@ -15,7 +15,7 @@ from ._pp_bus_to_ls_bus import pp_bus_to_ls
 
 def _aux_add_dc_line(model, pp_net, pp_to_ls):
     """
-    Add the transformers of the pp_net into the lightsim2grid "model"
+    Add the dc lines of the pp_net into the lightsim2grid "model"
 
     Parameters
     ----------

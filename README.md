@@ -82,17 +82,20 @@ see section [6.1 Customization of the compilation](#Customization-of-the-compila
 
 Pypi packages are available for linux (`x86_64` cpu architecture), windows (`x86_64` cpu architecture) and macos (`x86_64` cpu architecture) with python versions: 
 
-- 3.7
+- 3.7  (lightsim2grid < 0.10.4)
 - 3.8
 - 3.9
 - 3.10 (lightsim2grid >= 0.6.1)
 - 3.11 (lightsim2grid >= 0.7.1)
 - 3.12 (lightsim2grid >= 0.7.5)
 - 3.13 (lightsim2grid >= 0.9.2.post2)
+- 3.14 (lightsim2grid >= 0.10.4)
 
 
 As from version 0.8.2, we also distribute windows `arm64` and macos `arm64` binaries of lightsim2grid that can be installed
-directly with pip too (requires python >= 3.8 for macos and python >= 3.9 for windows). We do not currently produce `arm64` (`aarch64`) linux binaries because it takes too long to build. If you really want them, let us know and we'll see what we can do.
+directly with pip too (requires python >= 3.8 for macos and python >= 3.9 for windows). 
+
+We do not currently produce `arm64` (`aarch64`) linux binaries because it takes too long to build. If you really want them, let us know and we'll see what we can do.
 
 
 **NB** on some version of MacOs (thanks Apple !), especially the one using M1 or M2 chip, lightsim2grid is only available
@@ -279,13 +282,13 @@ cd ..
 
 Some tests are performed automatically on standard platform each time modifications are made in the lightsim2grid code.
 
-These tests include, for now, compilation on gcc (version 8, 12 and 13) and clang (version 11, 16 and 17).
+These tests include, for now, compilation on gcc (version 8, 14 and 15) and clang (version 11, 20 and 21).
 
 **NB** Intermediate versions of clang and gcc (*eg* gcc 9 or clang 12) are not tested regularly, but lightsim2grid used to work on these. 
-We suppose that if it works on *eg* clang 10 and clang 14 then it compiles also on all intermediate versions.
+We suppose that if it works on *eg* clang 11 and clang 21 then it compiles also on all intermediate versions.
 
 **NB** Package might work (we never tested it) on earlier version of these compilers. 
-The only "real" requirement for lightsim2grid is to have a compiler supporting c++11
+The only "real" requirement for lightsim2grid is to have a compiler supporting c++14
 (at least).
 
 ### Known issues

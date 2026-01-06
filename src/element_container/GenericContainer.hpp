@@ -1,0 +1,214 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef GENERIC_CONTAINER_H
+#define GENERIC_CONTAINER_H
+
+#include <algorithm>  // for std::find
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SparseCore"
+#include "Eigen/SparseLU"
+
+#include "Utils.hpp"
+#include "BaseConstants.hpp"
+#include "Container_IteratorUtils.hpp"
+#include "SubstationContainer.hpp"
+
+/**
+Base class for every object that can be manipulated
+**/
+class GenericContainer : public BaseConstants
+{
+    public:
+
+        virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
+                              bool ac,
+                              const std::vector<SolverBusId> & id_grid_to_solver,
+                              real_type sn_mva) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                              };
+
+        virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
+                                std::vector<Eigen::Triplet<real_type> > & Bpp,
+                                const std::vector<SolverBusId> & id_grid_to_solver,
+                                real_type sn_mva,
+                                FDPFMethod xb_or_bx) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                                };
+                                
+        virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
+                                     const std::vector<SolverBusId> & id_grid_to_solver,
+                                     real_type sn_mva,
+                                     int nb_line,
+                                     bool transpose) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                                };
+
+        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
+                                // nothing to do by default
+                                // is overriden mainly for "one side elements" (loads, generators etc.)
+                                };
+        virtual void fillpv(std::vector<int>& bus_pv,
+                            std::vector<bool> & has_bus_been_added,
+                            const SolverBusIdVect& slack_bus_id_solver,
+                            const std::vector<SolverBusId> & id_grid_to_solver) const {
+                                // nothing to do by default
+                                // is overriden mainly for "generators"
+                            };
+        
+        virtual void get_q(std::vector<real_type>& q_by_bus) {
+                                // nothing to do by default
+                                // is overriden mainly for "generators"
+                                };
+        
+        virtual void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver) {
+                                // nothing to do by default
+                                // is overriden mainly for "generators"
+                                };
+    
+        static const int _deactivated_bus_id;
+        virtual void reconnect_connected_buses(SubstationContainer & substation) const {
+                                // nothing to do by default
+                                };
+
+        /**computes the total amount of power for each bus (for generator only)**/
+        virtual void gen_p_per_bus(std::vector<real_type> & res) const {
+                                // nothing to do by default
+                                // is overriden mainly for "one side elements" (loads, generators etc.)
+                                };
+        virtual void nb_line_end(std::vector<int> & res) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                                };
+        virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                                };
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) {
+                                // nothing to do by default
+                                };
+
+        void set_names(const std::vector<std::string> & names){
+            names_ = names;
+        }
+        
+        /**"define" the destructor for compliance with clang (otherwise lots of warnings)**/
+        GenericContainer() noexcept = default;
+        virtual ~GenericContainer() noexcept = default;
+        
+    protected:
+        std::vector<std::string> names_;
+
+    protected:
+        template<typename Cont, typename FunName, typename IntType>
+        // todo automatically "unwrap" IntType to be either cont::size_type for stl container and
+        // Eigen::Index for Eigen containers
+        void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="") const
+        {
+            // TODO debug mode: only in debug mode
+            if(el_id >= cont.size())
+            {
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::"<<fun_name<<": Cannot access element with id";
+                exc_ << el_id;
+                exc_ << " while the grid counts ";
+                exc_ << cont.size();
+                exc_ << " such elements (id too high)";
+                throw std::out_of_range(exc_.str());
+            }
+            if(el_id < 0)
+            {
+                // TODO DEBUG MODE: only check in debug mode
+                std::ostringstream exc_;
+                exc_ << "GenericContainer::"<< fun_name <<" Cannot change the bus of element with id ";
+                exc_ << el_id;
+                exc_ << " (id should be >= 0)";
+                throw std::out_of_range(exc_.str());
+            }
+        }
+
+        /**
+        activation / deactivation of elements
+        **/
+        void _generic_reactivate(int el_id, std::vector<bool> & status);
+        void _generic_deactivate(int el_id, std::vector<bool> & status);
+
+        void _generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
+        void _generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
+        
+        /**
+         * Change the bus of the element "el_id" and performs some basic check that the new bus is valid.
+         * 
+         * The new_gridmodel_bus_id is given in the gridmodel convention, between 0 and `n_sub * n_busbar_per_sub` 
+         */
+        void _generic_change_bus(
+            int el_id,
+            const GridModelBusId & new_gridmodel_bus_id,
+            Eigen::Ref<GlobalBusIdVect>  el_bus_ids,
+            SolverControl & solver_control,
+            int nb_bus) const;
+        GridModelBusId _get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const;
+
+        /**
+        compute the amps from the p, the q and the v (v should NOT be pair unit)
+        **/
+        void _get_amps(RealVect & a, const RealVect & p, const RealVect & q, const RealVect & v) const;
+
+        /**
+        convert v from pu to v in kv (and assign it to the right element...)
+        **/
+        void v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
+                           const Eigen::Ref<const RealVect> & Vm,
+                           const std::vector<bool> & status,
+                           int nb_element,
+                           const GlobalBusIdVect & bus_me_id,
+                           const std::vector<SolverBusId> & id_grid_to_solver,
+                           const RealVect & bus_vn_kv,
+                           RealVect & v) const;
+
+
+        /**
+        compute va in degree from va in rad.
+        **/
+        void v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
+                           const Eigen::Ref<const RealVect> & Vm,
+                           const std::vector<bool> & status,
+                           int nb_element,
+                           const GlobalBusIdVect & bus_me_id,
+                           const std::vector<SolverBusId> & id_grid_to_solver,
+                           const RealVect & bus_vn_kv,
+                           RealVect & v) const;
+
+        /**
+        check the size of the elements
+        **/
+        template<class T, class intType>
+        void check_size(const T & container, intType size, const std::string & container_name) const
+        {
+            if(static_cast<intType>(container.size()) != size) throw std::runtime_error(container_name + " do not have the proper size");
+        }
+
+        /**
+        check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)
+        **/
+        template<class ScalarCLS, class VectCLS>  // a std::vector, or an Eigen::Vector                                                 
+        bool is_in_vect(const ScalarCLS & val, const VectCLS & cont) const {
+            return std::find(
+                cont.begin(),
+                cont.end(),
+                static_cast<typename VectCLS::value_type>(val)) != cont.end();}
+};
+
+#endif // GENERIC_CONTAINER_H
+

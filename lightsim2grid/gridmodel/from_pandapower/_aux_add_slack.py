@@ -6,12 +6,19 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from typing import Literal
 import warnings
 import numpy as np
+
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
+from ._my_const import ALLOWED_PP_ORIG_FILE
 
 
-def _aux_add_slack(model, pp_net, pp_to_ls):
+def _aux_add_slack(
+    model,
+    pp_net,
+    pp_to_ls,
+    pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2"):
     """
     add the slack bus(es) to the lightsim2grid "model" based on the information in the pandapower network.
 
@@ -37,7 +44,12 @@ def _aux_add_slack(model, pp_net, pp_to_ls):
         #     # TODO SLACK remove this warning ! (will be done at the end when more tests will be done)
         #     warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
         #                   "slack bus of pandapower will be used.")
-        slack_gen_ids = np.where(pp_net.gen["slack"].values)[0]
+        possible_slack = pp_net.gen["slack"]
+        if pp_orig_file == "pandapower_v3" and "slack_weight" in pp_net.gen:
+            # in pandapower 3 even if a generator is not marked as a slack, but has a 
+            # slack weight != 0. then it's a slack. It was not the case in pandapower 2...
+            possible_slack |= pp_net.gen["slack_weight"].abs() > 1e-6
+        slack_gen_ids = possible_slack.values.nonzero()[0]
         if "slack_weight" in pp_net.gen:
             slack_coeff = pp_net.gen["slack_weight"].values[slack_gen_ids]
         for slack_id in slack_gen_ids:

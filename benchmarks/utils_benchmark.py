@@ -9,12 +9,15 @@
 import time
 import re
 import numpy as np
-from tqdm import tqdm
 import argparse
 import datetime
 import importlib
-from grid2op.Environment import MultiMixEnvironment
-import pdb
+try:
+    from tqdm import tqdm
+    from grid2op.Environment import MultiMixEnvironment # type: ignore
+except ImportError:
+    # above packages not mandatory for compare_lightsim2grid_pypowsybl.py
+    pass
 
 
 def get_env_name_displayed(env_name):
@@ -111,7 +114,7 @@ def run_env(env, max_ts, agent, chron_id=None, keep_forecast=False, with_type_so
                 break
             # if np.sum(obs.line_status) < obs.n_line - 1 * (nb_ts % 2 == 1):
             #     print("There is a bug following action; {}".format(act))
-            prev_act = act
+            prev_act = act  # noqa: F841
     end_ = time.perf_counter()
     total_time = end_ - beg_
     return nb_ts, total_time, aor, gen_p, gen_q
@@ -128,7 +131,10 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def print_configuration(pypow_error=True):
+def print_configuration(
+    pypowbk_error=True,
+    pypowsybl_error=True
+    ):
     res = []
     print()
     tmp = f"- date: {datetime.datetime.now():%Y-%m-%d %H:%M %z} {time.localtime().tm_zone}"
@@ -140,7 +146,7 @@ def print_configuration(pypow_error=True):
         res.append(tmp)
         print(tmp)
     except ImportError:
-        tmp = f"- system: please install the `platform` to have this information"
+        tmp = "- system: please install the `platform` to have this information"
         res.append(tmp)
         print(tmp)
 
@@ -151,7 +157,7 @@ def print_configuration(pypow_error=True):
         res.append(tmp)
         print(tmp)
     except ImportError:
-        tmp = (f"- OS: please install the `distro` to have this information")
+        tmp = ("- OS: please install the `distro` to have this information")
         res.append(tmp)
         print(tmp)
 
@@ -166,59 +172,72 @@ def print_configuration(pypow_error=True):
         print(tmp)
 
     except ImportError:
-        tmp = (f"- processor: please install the `py-cpuinfo` to have this information")
+        tmp = ("- processor: please install the `py-cpuinfo` to have this information")
         res.append(tmp)
         print(tmp)
-        tmp = (f"- python version: please install the `py-cpuinfo` to have this information")
+        tmp = ("- python version: please install the `py-cpuinfo` to have this information")
         res.append(tmp)
         print(tmp)
 
     import pandas as pd
-    import pandapower as pp
     import lightsim2grid
-    import grid2op
     tmp = (f"- numpy version: {np.__version__}")
     res.append(tmp)
     print(tmp)
     tmp = (f"- pandas version: {pd.__version__}")
     res.append(tmp)
     print(tmp)
-    tmp = (f"- pandapower version: {pp.__version__}")
-    res.append(tmp)
-    print(tmp)
-    if pypow_error is None:
+    try:
+        import pandapower as pp
+        tmp = (f"- pandapower version: {pp.__version__}")
+        res.append(tmp)
+        print(tmp)
+    except ImportError:
+        # pandapower not used for compare_lightsim2grid_pypowsybl
+        pass
+    if pypowbk_error is None:
+        # print both pypowsybl and pypowsybl2grid info
         tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
         res.append(tmp)
         print(tmp)
         tmp = (f"- pypowsybl2grid version: {importlib.metadata.version('pypowsybl2grid')}")
         res.append(tmp)
         print(tmp)
-        
-    tmp = (f"- grid2op version: {grid2op.__version__}")
-    res.append(tmp)
-    print(tmp)
+    elif pypowsybl_error is None:
+        # print only pypowsybl info
+        tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
+        res.append(tmp)
+        print(tmp)
+    try:
+        import grid2op # type: ignore
+        tmp = (f"- grid2op version: {grid2op.__version__}")
+        res.append(tmp)
+        print(tmp)
+    except ImportError:
+        # grid2op not used for compare_lightsim2grid_pypowsybl
+        pass
     tmp = (f"- lightsim2grid version: {lightsim2grid.__version__}")
     res.append(tmp)
     print(tmp)
     try:
         from lightsim2grid import compilation_options
-        tmp = (f"- lightsim2grid extra information: ")
+        tmp = ("- lightsim2grid extra information: ")
         res.append(tmp)
         print(tmp)
         print()
-        tmp = (f"\t- klu_solver_available: {lightsim2grid.compilation_options.klu_solver_available} ")
+        tmp = (f"\t- klu_solver_available: {compilation_options.klu_solver_available} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- nicslu_solver_available: {lightsim2grid.compilation_options.nicslu_solver_available} ")
+        tmp = (f"\t- nicslu_solver_available: {compilation_options.nicslu_solver_available} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- cktso_solver_available: {lightsim2grid.compilation_options.cktso_solver_available} ")
+        tmp = (f"\t- cktso_solver_available: {compilation_options.cktso_solver_available} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- compiled_march_native: {lightsim2grid.compilation_options.compiled_march_native} ")
+        tmp = (f"\t- compiled_march_native: {compilation_options.compiled_march_native} ")
         res.append(tmp)
         print(tmp)
-        tmp = (f"\t- compiled_o3_optim: {lightsim2grid.compilation_options.compiled_o3_optim} ")
+        tmp = (f"\t- compiled_o3_optim: {compilation_options.compiled_o3_optim} ")
         res.append(tmp)
         print(tmp)
     except ImportError:

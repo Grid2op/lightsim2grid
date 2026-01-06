@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,15 +6,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "KLUSolver.h"
+#include "KLUSolver.hpp"
 
 #include <iostream>
 
 const bool KLULinearSolver::CAN_SOLVE_MAT = false;
 
 ErrorType KLULinearSolver::reset(){
-    klu_free_symbolic(&symbolic_, &common_);
-    klu_free_numeric(&numeric_, &common_);
+    if(symbolic_ != nullptr) klu_free_symbolic(&symbolic_, &common_);
+    if(numeric_ != nullptr) klu_free_numeric(&numeric_, &common_);
     common_ = klu_common();
     symbolic_ = nullptr;
     numeric_ = nullptr;

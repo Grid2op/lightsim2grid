@@ -1,4 +1,4 @@
-# Copyright (c) 2023, RTE (https://www.rte-france.com)
+# Copyright (c) 2023-2025, RTE (https://www.rte-france.com)
 # See AUTHORS.txt
 # This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -6,13 +6,16 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+
+import pdb
+from packaging import version
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
 import numpy as np
 import unittest
 import warnings
 
-from lightsim2grid.gridmodel import init_from_pypowsybl
+from lightsim2grid.gridmodel import init_from_pypowsybl, GridModel
 
 try:
     import pandapower.networks as pn
@@ -23,15 +26,27 @@ except ImportError:
     # pandapower not available, eg if testing with numpy 2
     PDP_AVAIL = False
 
+from global_var_tests import (
+    MAX_PP2_DATAREADER,
+    CURRENT_PP_VERSION,
+    VERSION_PHASESHIFT_OK_PYPOW,
+    CURRENT_PYPOW_VERSION)
+from test_match_with_pypowsybl.utils_for_slack import (
+    get_pypowsybl_parameters,
+    get_same_slack
+)
 
-class AuxInitFromPyPowSyBl:    
-    def get_pypo_grid(self):
-        return pp.network.create_ieee14()
+if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+    # deactivate compat with recent pandapower version, for now
+    PDP_AVAIL = False
+
+
+class AuxInitFromPyPowSyBlBusesForSub:    
+    def use_buses_for_sub(self):
+        return True
     
-    def get_slackbus_id(self):
-        # id in pandapower which is the same than the ID in the pypowsybl network when loaded from disk
-        # but might not be the same as the lightsim2grid gridmodel (if sort_index is True, which is the default)
-        return 0
+    def get_pypo_grid_name(self):
+        return "ieee14"
     
     def get_equiv_pdp_grid(self):
         return pn.case14()
@@ -39,12 +54,17 @@ class AuxInitFromPyPowSyBl:
     def get_tol_eq(self):
         return 1e-6
     
+    def get_tol_eq_kcl(self):
+        return 1e-5
+    
     def compare_pp(self):
         """will this test suite compare pypowsybl and pandapower (cannot be used for ieee57 or ieee118)"""
         return PDP_AVAIL
     
     def setUp(self) -> None:
-        self.network_ref = self.get_pypo_grid()
+        self.pypo_grid_name = self.get_pypo_grid_name()
+        self.pypo_slack_name, self.ls_slack_bus_id = get_same_slack(self.pypo_grid_name)
+        self.network_ref = getattr(pp.network, f"create_{self.pypo_grid_name}")()
         
         # init equivalent pandapower grid (if any)
         if PDP_AVAIL:
@@ -65,14 +85,22 @@ class AuxInitFromPyPowSyBl:
             self.ref_samecase = None
             
         # init lightsim2grid model
-        self.gridmodel, self.el_ids = init_from_pypowsybl(self.network_ref, slack_bus_id=self.get_slackbus_id(), return_sub_id=True)
+        self.gridmodel, self.el_ids = init_from_pypowsybl(self.network_ref,
+                                                          slack_bus_id=self.ls_slack_bus_id,
+                                                          sort_index=False,
+                                                          return_sub_id=True,
+                                                          buses_for_sub=self.use_buses_for_sub())
         
         # use some data
-        self.nb_bus_total = self.network_ref.get_buses().shape[0]
+        if self.use_buses_for_sub():
+            self.nb_bus_total = self.network_ref.get_buses().shape[0]
+        else:
+            self.nb_bus_total = self.gridmodel.get_bus_vn_kv().shape[0]
         self.V_init_dc = np.ones(self.nb_bus_total, dtype=np.complex128)
-        self.V_init_ac = 1.04 * self.V_init_dc
+        self.V_init_ac = 1.06 * self.V_init_dc
         self.tol = 1e-7  # for the solver
         self.tol_eq = self.get_tol_eq()
+        self.tol_eq_kcl = self.get_tol_eq_kcl()
         return super().setUp()
     
     def test_basic(self):
@@ -95,42 +123,9 @@ class AuxInitFromPyPowSyBl:
         v_ls_ref = None
         if self.ref_samecase is not None:
             v_ls_ref = self.ref_samecase.dc_pf(1.0 * self.V_init_dc, 2, self.tol)
-        slack_id = self.get_slackbus_id()
+        slack_id = self.ls_slack_bus_id
         reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
-        
-        # for case 118
-        # reorder_flat = reorder.reshape(-1)
-        # bus_or = [64]  # pandapower
-        # bus_ex = [67]  # pandapower
-        # lines = [el.id for el in self.gridmodel.get_lines() if (reorder_flat[el.bus_or_id] in bus_or and reorder_flat[el.bus_ex_id] in bus_ex) or (reorder_flat[el.bus_or_id] in bus_ex and reorder_flat[el.bus_ex_id] in bus_or)]
-        # lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in reorder_flat[bus_or] and el.bus_ex_id in reorder_flat[bus_ex]) or (el.bus_or_id in reorder_flat[bus_ex] and el.bus_ex_id in reorder_flat[bus_or])]
-        # tmp_or = [reorder_flat[el.bus_or_id]  for el in self.gridmodel.get_lines()]
-        # tmp_ex = [reorder_flat[el.bus_ex_id]  for el in self.gridmodel.get_lines()]
-        # lines = [el.id for el in self.gridmodel.get_trafos() if (reorder_flat[el.bus_hv_id] in bus_or and reorder_flat[el.bus_lv_id] in bus_ex) or (reorder_flat[el.bus_hv_id] in bus_ex and reorder_flat[el.bus_lv_id] in bus_or)]
-        # tmp_or = [reorder_flat[el.bus_hv_id]  for el in self.gridmodel.get_trafos()]
-        # tmp_ex = [reorder_flat[el.bus_lv_id]  for el in self.gridmodel.get_trafos()]
-        # lines_ref = [el.id for el in self.ref_samecase.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
-        # if not lines_ref:
-        #     lines_ref = [el.id for el in self.ref_samecase.get_trafos() if (el.bus_hv_id in bus_or and el.bus_lv_id in bus_ex) or (el.bus_hv_id in bus_ex and el.bus_lv_id in bus_or)]
-        # # self.pp_samecase["_ppc"]["internal"]["Bbus"]
-        # self.pp_samecase["_ppc"]["internal"]["Ybus"][64,67]
-        # self.pp_samecase["_ppc"]["internal"]["bus"]
 
-        # for case 300
-        # np.where(tmp_.todense() >= 2000)
-        # (array([ 30,  31, 212, 218, 265]), array([265,  31, 212, 218,  30]))
-
-        # bus_or = [64]
-        # bus_ex = [67]
-        # lines = [el.id for el in self.gridmodel.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
-        # lines_ref = [el.id for el in self.ref_samecase.get_lines() if (el.bus_or_id in bus_or and el.bus_ex_id in bus_ex) or (el.bus_or_id in bus_ex and el.bus_ex_id in bus_or)]
-        # if not lines_ref:
-        #     lines_ref = [el.id for el in self.ref_samecase.get_trafos() if (el.bus_hv_id in bus_or and el.bus_lv_id in bus_ex) or (el.bus_hv_id in bus_ex and el.bus_lv_id in bus_or)]
-        # # self.pp_samecase["_ppc"]["internal"]["Bbus"]
-        # self.pp_samecase["_ppc"]["internal"]["Ybus"][64,67]
-        # self.pp_samecase["_ppc"]["internal"]["bus"]
-        # bus_id = self.el_ids[0]
-        # reorder = np.argsort([int(el.lstrip("VL").rstrip("0").rstrip("_")) for el in bus_id.index]).reshape(1, -1)
         if v_ls_ref is not None:
             max_ = np.abs(v_ls[reorder] - v_ls_ref).max()
             assert max_ <= self.tol_eq, f"error for vresults for dc: {max_:.2e}"
@@ -164,12 +159,16 @@ class AuxInitFromPyPowSyBl:
 
     def test_dc_pf(self):
         """test I get the same results as pandapower in dc"""
+        # if CURRENT_PYPOW_VERSION >= MIN_PYPO_DC_NOT_WORKING:
+            # self.skipTest("Test not correct: pypowsybl change DC approx, see https://github.com/powsybl/pypowsybl/issues/1127")
         v_ls = self.gridmodel.dc_pf(self.V_init_dc, 2, self.tol)
         reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
         if self.compare_pp():
             v_ls_ref = self.ref_samecase.dc_pf(self.V_init_dc, 2, self.tol)
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for dc: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"
-        lf.run_dc(self.network_ref)
+        # see https://github.com/powsybl/pypowsybl/issues/1127#issuecomment-3581713875
+        params = get_pypowsybl_parameters(self.pypo_slack_name)
+        lf.run_dc(self.network_ref, parameters=params)
         if self.compare_pp():
             pdp.rundcpp(self.pp_samecase)
         
@@ -190,27 +189,7 @@ class AuxInitFromPyPowSyBl:
             v_ls_ref = self.ref_samecase.ac_pf(1.0 * self.V_init_ac, 10, self.tol)   
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for ac: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"
         
-        try:
-            param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-                                  transformer_voltage_control_on=False,
-                                  use_reactive_limits=False,
-                                  shunt_compensator_voltage_control_on=False,
-                                  phase_shifter_regulation_on=False,
-                                  distributed_slack=False,
-                                  provider_parameters={"slackBusSelectionMode": "NAME",
-                                                       "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
-                                  ) 
-        except TypeError:
-            param = lf.Parameters(voltage_init_mode=pp._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-                                  transformer_voltage_control_on=False,
-                                  no_generator_reactive_limits=True,  # documented in the doc but apparently fails
-                                  phase_shifter_regulation_on=False,
-                                  simul_shunt=False,  # documented in the doc but apparently fails
-                                  distributed_slack=False,
-                                  provider_parameters={"slackBusSelectionMode": "NAME",
-                                                       "slackBusesIds": self.network_ref.get_buses().iloc[self.get_slackbus_id()].name}
-                                  ) 
-
+        param = get_pypowsybl_parameters(self.pypo_slack_name)
         res_pypow = lf.run_ac(self.network_ref, parameters=param)
         bus_ref_kv = self.network_ref.get_voltage_levels().loc[self.network_ref.get_buses()["voltage_level_id"].values]["nominal_v"].values
         v_mag_pypo = self.network_ref.get_buses()["v_mag"].values / bus_ref_kv
@@ -221,9 +200,10 @@ class AuxInitFromPyPowSyBl:
         # check that pypow solution is "feasible" as seen by lightsim2grid
         if res_pypow[0].status == pp._pypowsybl.LoadFlowComponentStatus.CONVERGED:
             v_pypow = v_mag_pypo * np.exp(1j * np.deg2rad(v_ang_pypo))
-            pypow_to_ls = np.argsort(reorder).reshape(-1)
-            v_pypow_ls = self.gridmodel.check_solution(v_pypow[pypow_to_ls], False)
-            assert np.abs(v_pypow_ls).max() <= 10. * self.tol_eq, f"error when checking results of pypowsybl in lightsim2grid: {np.abs(v_pypow_ls).max():.2e}"
+            v_pypow_for_ls = self.V_init_dc.copy()
+            v_pypow_for_ls[self.gridmodel._orig_to_ls] = v_pypow
+            v_pypow_ls = self.gridmodel.check_solution(v_pypow_for_ls, False)
+            assert np.abs(v_pypow_ls).max() <= self.tol_eq_kcl, f"error when checking results of pypowsybl in lightsim2grid: {np.abs(v_pypow_ls).max():.2e}"
                  
         # check voltage angles
         v_ang_ls = np.rad2deg(np.angle(v_ls))
@@ -241,84 +221,283 @@ class AuxInitFromPyPowSyBl:
         if res_pypow[0].status == pp._pypowsybl.LoadFlowComponentStatus.CONVERGED:
             assert np.abs(v_mag_ls[reorder] - v_mag_pypo).max() <= self.tol_eq, f"error for va results for dc: {np.abs(v_mag_ls[reorder] - v_mag_pypo).max():.2e}"
         
-
-        
-class TestCase14FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase14FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     pass
+
+
+class TestCase14FromPypo(TestCase14FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
         
         
-class TestCase30FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase30FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 30"""
     # unittest.TestCase does not work because of https://github.com/powsybl/pypowsybl/issues/644
-    def get_pypo_grid(self):
-        return pp.network.create_ieee30()
+    def get_pypo_grid_name(self):
+        return "ieee30"
     
     def get_equiv_pdp_grid(self):
         return pn.case_ieee30()
+ 
+ 
+class TestCase30FromPypo(TestCase30FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
+    
+           
         
-        
-class TestCase57FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase57FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 57"""
     # does not appear to be the same grid !
-    def get_pypo_grid(self):
-        res = pp.network.create_ieee57()
-        return res
+    def get_pypo_grid_name(self):
+        return "ieee57"
     
     def get_equiv_pdp_grid(self):
         return pn.case57()
     
     def compare_pp(self):
-        return super().compare_pp() and False
+        return False
+    
+    def get_tol_eq_kcl(self):
+        return 1.53e-04
     
     def get_tol_eq(self):
-        return 1e-4  # otherwise vangle from pypowsybl and pandapower does not match
-                
+        return 5.47e-05
+                    
+    
+class TestCase57FromPypo(TestCase57FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
         
-class TestCase118FromPypo(AuxInitFromPyPowSyBl, unittest.TestCase):
+class TestCase118FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 118: does not work because of https://github.com/e2nIEE/pandapower/issues/2131"""
     # does not work because of https://github.com/e2nIEE/pandapower/issues/2131
-    def get_pypo_grid(self):
-        return pp.network.create_ieee118()
+    def get_pypo_grid_name(self):
+        return "ieee118"
     
     def get_equiv_pdp_grid(self):
         return pn.case118()
     
-    def get_slackbus_id(self):
-        return 68
+    def get_tol_eq_kcl(self):
+        return 2.72e-4
     
     def get_tol_eq(self):
-        # return 3e-3  # otherwise vangle from pypowsybl and pandapower does not match
-        return 3e-5  # otherwise vangle from pypowsybl and pandapower does not match
+        return 1.46e-5
     
     def compare_pp(self):
         return super().compare_pp() and False
+
+
+class TestCase118FromPypo(TestCase118FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
                 
         
-class TestCase300FromPypo(AuxInitFromPyPowSyBl):
+class TestCase300FromPypoBusesForSub(AuxInitFromPyPowSyBlBusesForSub, unittest.TestCase):
     """compare from the ieee 300"""
-    # does not work because of phase tap changer
-    def get_pypo_grid(self):
-        res = pp.network.create_ieee300()
-        df = res.get_shunt_compensators()[["connected"]] # "b", "g", 
-        df["connected"] = False
-        res.update_shunt_compensators(df)
-        return res
+    def get_pypo_grid_name(self):
+        if CURRENT_PYPOW_VERSION < VERSION_PHASESHIFT_OK_PYPOW:
+            self.skipTest("phase shifter are not supported for "
+                          "this version of pypowsybl")
+        return "ieee300"
     
     def get_equiv_pdp_grid(self):
         return pn.case300()
     
     def get_tol_eq(self):
-        # return 3e-3  # otherwise vangle from pypowsybl and pandapower does not match
-        return 3e-5  # otherwise vangle from pypowsybl and pandapower does not match
+        return 2.2e-5
+    
+    def get_tol_eq_kcl(self):
+        return 3.7e-4
     
     def compare_pp(self):
         return super().compare_pp() and False
+
+
+class TestCase300FromPypo(TestCase300FromPypoBusesForSub):
+    def use_buses_for_sub(self):
+        return False
+
+
+class TestBusesForSub_dosort(unittest.TestCase):
+    def do_i_sort(self):
+        return True
     
-    def get_slackbus_id(self):
-        # does not work with PP, probably bus not ordered the same
-        return 257
-
-
+    def get_align_vector(self):
+        return np.asarray(
+            [ 5,  0,  1,  2,  3,  4,  6,  7,  8,  9, 10, 11, 12, 13],
+            dtype=int)
+    
+    def get_ls_to_orig(self):
+        return self.get_align_vector()
+    
+    def get_gen_slack_bus_id(self):
+        return 5
+    
+    def get_sub_names(self):
+        return np.asarray(
+            ['VL1', 'VL10', 'VL11', 'VL12', 'VL13', 'VL14', 'VL2', 
+             'VL3', 'VL4', 'VL5', 'VL6', 'VL7', 'VL8', 'VL9'],
+            dtype=str
+        )
+        
+    def get_sub_names_b4s(self):
+        return np.asarray(
+            ['VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0', 'VL1_0', 
+            'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 'VL7_0', 'VL8_0', 'VL9_0'],
+            dtype=str
+        )
+        
+    def setUp(self):
+        # dir_path = os.path.dirname(os.path.realpath(__file__))
+        # self.path = os.path.join(dir_path, "case_14_iidm")
+        # self.file_name = "grid.xiidm"
+        # self.pypow_grid = pp.network.load(os.path.join(self.path, self.file_name))
+        self.pypo_slack_name, _ = get_same_slack("ieee14")
+        self.pypow_grid = pp.network.create_ieee14()
+        self.ls_grid_b4s : GridModel = init_from_pypowsybl(
+            self.pypow_grid,
+            buses_for_sub=True,
+            sort_index=self.do_i_sort(), 
+            gen_slack_id=0)
+        self.ls_grid : GridModel = init_from_pypowsybl(
+            self.pypow_grid,
+            buses_for_sub=False,
+            sort_index=self.do_i_sort(), 
+            gen_slack_id=0)
+        self.align_vect = self.get_align_vector()
+        return super().setUp()
+    
+    def test_some_differences(self):
+        # correct generator is slack
+        assert self.ls_grid.get_generators()[0].is_slack
+        assert self.ls_grid_b4s.get_generators()[0].is_slack
+        # no other generators are slack
+        assert abs(self.ls_grid.get_generators()[0].slack_weight - 1.) < 1e-6
+        assert abs(self.ls_grid_b4s.get_generators()[0].slack_weight - 1.) < 1e-6
+        # generator is at the correct bus
+        assert self.ls_grid.get_generators()[0].bus_id == 0
+        assert self.ls_grid_b4s.get_generators()[0].bus_id == self.get_gen_slack_bus_id()
+        # 'correct' ls_to_orig vector
+        assert (
+            self.ls_grid._ls_to_orig ==
+            self.get_ls_to_orig()
+        ).all()
+        assert (
+            self.ls_grid_b4s._ls_to_orig ==
+            [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13]
+        ).all()      
+          
+        # correct substation names
+        assert (
+            self.ls_grid.get_substation_names() ==
+            self.get_sub_names()
+        ).all()
+        assert (
+            self.ls_grid_b4s.get_substation_names() ==
+            self.get_sub_names_b4s()
+        ).all()
+        
+    def test_same_res_dc(self):
+        v_init = np.ones(self.ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
+        v_dc = self.ls_grid.dc_pf(v_init, 10, 1e-6)
+        v_dc_b4s = self.ls_grid_b4s.dc_pf(v_init, 10, 1e-6)
+        assert v_dc.shape[0] > 0
+        assert v_dc_b4s.shape[0] > 0
+        
+        # test same Sbus
+        sbus = self.ls_grid.get_dcSbus_solver()
+        sbus_b4s = self.ls_grid_b4s.get_dcSbus_solver()
+        assert (np.abs(sbus_b4s[self.align_vect] - sbus) < 1e-6).all()
+        
+        # test same Ybus
+        Ybus = self.ls_grid.get_dcYbus_solver()
+        Ybus_b4s = self.ls_grid_b4s.get_dcYbus_solver()
+        assert (np.abs(Ybus_b4s[self.align_vect.reshape(-1,1), self.align_vect] - Ybus) > 1e-6).size == 0
+        
+        # test resulting vectors are the same
+        assert (np.abs(v_dc_b4s[self.align_vect] - v_dc) < 1e-6).all()
+        
+        # now test they both match pypowsybl results
+        param = get_pypowsybl_parameters(self.pypo_slack_name)
+        res_pypow = lf.run_dc(self.pypow_grid, parameters=param)
+        vl_pypow = self.pypow_grid.get_voltage_levels()
+        vl_pypow["order_pypo"] = np.arange(14)
+        
+        # voltage angle
+        v_ang_pypo = self.pypow_grid.get_buses()["v_angle"].values
+        v_ang_ls = np.rad2deg(np.angle(v_dc))
+        v_pypo_aligned = v_ang_pypo[vl_pypow.loc[self.ls_grid.get_substation_names(), "order_pypo"]]
+        assert (np.abs(v_pypo_aligned - v_ang_ls) < 1e-6).all()
+        
+    def test_same_res_ac(self):
+        v_init = np.ones(self.ls_grid.get_bus_vn_kv().shape[0], dtype=complex)
+        v_ac = self.ls_grid.ac_pf(v_init, 10, 1e-6)
+        v_ac_b4s = self.ls_grid_b4s.ac_pf(v_init, 10, 1e-6)
+        assert v_ac.shape[0] > 0
+        assert v_ac_b4s.shape[0] > 0
+        
+        # test same Sbus
+        sbus = self.ls_grid.get_Sbus_solver()
+        sbus_b4s = self.ls_grid_b4s.get_Sbus_solver()
+        assert (np.abs(sbus_b4s[self.align_vect] - sbus) < 1e-6).all()
+        
+        # test same Ybus
+        Ybus = self.ls_grid.get_Ybus_solver()
+        Ybus_b4s = self.ls_grid_b4s.get_Ybus_solver()
+        assert (np.abs(Ybus_b4s[self.align_vect.reshape(-1,1), self.align_vect] - Ybus) > 1e-6).size == 0
+        
+        # test resulting vectors are the same
+        assert (np.abs(v_ac_b4s[self.align_vect] - v_ac) < 1e-6).all()
+        
+        # now test they both match pypowsybl results
+        param = get_pypowsybl_parameters(self.pypo_slack_name)
+        res_pypow = lf.run_ac(self.pypow_grid, parameters=param)
+        vl_pypow = self.pypow_grid.get_voltage_levels()
+        vl_pypow["order_pypo"] = np.arange(14)
+        
+        v_ang_pypo = self.pypow_grid.get_buses()["v_angle"].values
+        v_ang_ls = np.rad2deg(np.angle(v_ac))
+        v_pypo_aligned = v_ang_pypo[vl_pypow.loc[self.ls_grid.get_substation_names(), "order_pypo"]]
+        assert (np.abs(v_pypo_aligned - v_ang_ls) < 1e-6).all()
+        
+        # voltage angle
+        bus_df = self.pypow_grid.get_buses()
+        v_ang_pypo = bus_df["v_mag"].values / self.pypow_grid.get_voltage_levels().loc[bus_df["voltage_level_id"], "nominal_v"].values
+        v_ang_ls = np.abs(v_ac)
+        v_pypo_aligned = v_ang_pypo[vl_pypow.loc[self.ls_grid.get_substation_names(), "order_pypo"]]
+        assert (np.abs(v_pypo_aligned - v_ang_ls) < 1e-6).all()
+        
+        
+class TestBusesForSub_nosort(TestBusesForSub_dosort):   
+    def do_i_sort(self):
+        return False     
+    
+    def get_gen_slack_bus_id(self):
+        return 0
+    
+    def get_ls_to_orig(self):
+        return np.arange(14)
+    
+    def get_align_vector(self):
+        return np.arange(14)
+    
+    def get_sub_names(self):
+        return np.asarray(
+            ['VL1', 'VL2', 'VL3', 'VL4', 'VL5', 'VL6', 'VL7', 'VL8', 
+             'VL9', 'VL10', 'VL11', 'VL12', 'VL13', 'VL14'],
+            dtype=str
+        )
+        
+    def get_sub_names_b4s(self):
+        return np.asarray(
+            ['VL1_0', 'VL2_0', 'VL3_0', 'VL4_0', 'VL5_0', 'VL6_0', 
+             'VL7_0', 'VL8_0', 
+             'VL9_0', 'VL10_0', 'VL11_0', 'VL12_0', 'VL13_0', 'VL14_0'],
+            dtype=str
+        )
+        
+    
 if __name__ == "__main__":
     unittest.main()
     

@@ -45,8 +45,9 @@ try:
     
 except ImportError as exc_:
     # old way of doing, need to inherit from that
-    from grid2op.tests.helper_path_test import HelperTests
-from grid2op.tests.BaseBackendTest import (BaseTestNames,
+    from grid2op.tests.helper_path_test import HelperTests  # noqa: F401
+    
+from grid2op.tests.BaseBackendTest import (BaseTestNames,  # noqa: E402
                                            BaseTestLoadingCase,
                                            BaseTestLoadingBackendFunc, 
                                            BaseTestTopoAction,
@@ -57,9 +58,11 @@ from grid2op.tests.BaseBackendTest import (BaseTestNames,
                                            BaseTestVoltageOWhenDisco,
                                            BaseTestChangeBusSlack,
                                            BaseIssuesTest,
-                                           BaseStatusActions)
+                                           BaseStatusActions,
+                                        #    MakeBackend, AlwaysLegal, CompleteAction, AmbiguousAction
+                                           )
 
-from grid2op.tests.test_Environment import (BaseTestLoadingBackendPandaPower,
+from grid2op.tests.test_Environment import (BaseTestLoadingBackendPandaPower,  # noqa: E402
                                             BaseTestResetOk,
                                             BaseTestResetAfterCascadingFailure,
                                             BaseTestCascadingFailure)
@@ -73,7 +76,7 @@ from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.solver import SolverType
 from grid2op.Runner import Runner
 
-
+        
 class TestNames(BaseTestNames, unittest.TestCase):
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
@@ -146,7 +149,8 @@ class TestChangeBusAffectRightBus(BaseTestChangeBusAffectRightBus, unittest.Test
 
 
 class TestShuntAction(BaseTestShuntAction, unittest.TestCase):
-    tests_skipped = ["test_shunt_effect"]  if sys.platform.startswith("win32") else []  # TODO I don't know why but needs to be fixed
+    # tests_skipped = ["test_shunt_effect"]  if sys.platform.startswith("win32") else []  # TODO I don't know why but needs to be fixed
+    tests_skipped = []
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

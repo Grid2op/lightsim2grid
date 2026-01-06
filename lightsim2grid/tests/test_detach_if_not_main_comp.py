@@ -140,9 +140,9 @@ class Test_LSMainComp(unittest.TestCase):
         for el in self.grid.get_generators():
             assert el.connected, f"error for {el.id}"
         for el in self.grid.get_lines():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         for el in self.grid.get_trafos():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
             
     def test_load_not_same_bus(self):
         self.grid.change_bus_load(0, 15)
@@ -155,9 +155,9 @@ class Test_LSMainComp(unittest.TestCase):
         for el in self.grid.get_generators():
             assert el.connected, f"error for {el.id}"
         for el in self.grid.get_lines():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         for el in self.grid.get_trafos():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         # test no crash
         obs, reward, done, info = self.env.step(self.env.action_space())
         assert not done
@@ -175,9 +175,9 @@ class Test_LSMainComp(unittest.TestCase):
         for el in self.grid.get_loads():
             assert el.connected, f"error for {el.id}"
         for el in self.grid.get_lines():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         for el in self.grid.get_trafos():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         # test no crash
         obs, reward, done, info = self.env.step(self.env.action_space())
         assert not done
@@ -195,9 +195,9 @@ class Test_LSMainComp(unittest.TestCase):
         for el in self.grid.get_loads():
             assert el.connected, f"error for {el.id}"
         for el in self.grid.get_lines():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         for el in self.grid.get_trafos():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         # test no crash
         obs, reward, done, info = self.env.step(self.env.action_space())
         assert not done
@@ -209,9 +209,9 @@ class Test_LSMainComp(unittest.TestCase):
         load_id = 9
         
         # isolate it
-        self.grid.change_bus_powerline_ex(9, 12+14)  # 5_12_9
-        self.grid.change_bus_powerline_ex(13, 12+14)  # 11_12_13
-        self.grid.change_bus_powerline_or(14, 12+14)  # 12_13_14
+        self.grid.change_bus2_powerline(9, 12+14)  # 5_12_9
+        self.grid.change_bus2_powerline(13, 12+14)  # 11_12_13
+        self.grid.change_bus1_powerline(14, 12+14)  # 12_13_14
         
         self.grid.consider_only_main_component()
         for el in self.grid.get_loads():
@@ -222,9 +222,9 @@ class Test_LSMainComp(unittest.TestCase):
         for el in self.grid.get_generators():
             assert el.connected, f"error for {el.id}"
         for el in self.grid.get_lines():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         for el in self.grid.get_trafos():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         # test no crash
         obs, reward, done, info = self.env.step(self.env.action_space())
         assert not done
@@ -235,8 +235,8 @@ class Test_LSMainComp(unittest.TestCase):
         # gen gen_2_1
         gen_id = 1
         # isolate it
-        self.grid.change_bus_powerline_ex(2, 16)  # 1_2_2
-        self.grid.change_bus_powerline_or(5, 16)  # 2_3_5
+        self.grid.change_bus2_powerline(2, 16)  # 1_2_2
+        self.grid.change_bus1_powerline(5, 16)  # 2_3_5
         self.grid.change_bus_load(1, 16)          # load_2_1
         self.grid.consider_only_main_component()
         for el in self.grid.get_generators():
@@ -247,9 +247,9 @@ class Test_LSMainComp(unittest.TestCase):
         for el in self.grid.get_loads():
             assert el.connected, f"error for {el.id}"
         for el in self.grid.get_lines():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         for el in self.grid.get_trafos():
-            assert el.connected, f"error for {el.id}"
+            assert el.connected_global, f"error for {el.id}"
         # test no crash
         obs, reward, done, info = self.env.step(self.env.action_space())
         assert not done

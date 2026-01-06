@@ -43,18 +43,18 @@ print(f"Basic check for {case_name}")
 real_init_file = pp.from_json(case_name)
 backend = LightSimBackend()
 backend.load_grid(case_name)
-pp_net = backend.init_pp_backend._grid
+pp_net = backend._init_pp_backend._grid
 # first i deactivate all slack bus in pp that are connected but not handled in ls
 pp_net.ext_grid["in_service"].loc[:] = False
 pp_net.ext_grid["in_service"].iloc[0] = True
 conv = backend.runpf()
-conv_pp = backend.init_pp_backend.runpf()
+conv_pp = backend._init_pp_backend.runpf()
 
 if not conv_pp:
     print("Error: pandapower do not converge, impossible to perform the necessary checks")
     sys.exit()
-por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend.init_pp_backend.lines_or_info())
-pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend.init_pp_backend.lines_ex_info())
+por_pp, qor_pp, vor_pp, aor_pp = copy.deepcopy(backend._init_pp_backend.lines_or_info())
+pex_pp, qex_pp, vex_pp, aex_pp = copy.deepcopy(backend._init_pp_backend.lines_ex_info())
 
 print("I- Check for divergence and equality of flows")
 if conv and conv_pp:
@@ -89,20 +89,20 @@ elif not conv and conv_pp:
 ## in this case, i simply take the Ybus, Sbus and all from pandapower, fill it to lightsim
 ## and theck if results matches
 print(f"II - Check for possible solver issues")
-pp.runpp(backend.init_pp_backend._grid, v_debug=True)
-v_tmp = backend.init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
-v_tmp *= np.exp(1j * np.pi/180. * backend.init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
+pp.runpp(backend._init_pp_backend._grid, v_debug=True)
+v_tmp = backend._init_pp_backend._grid.res_bus["vm_pu"].values[:nb_sub] + 0j
+v_tmp *= np.exp(1j * np.pi/180. * backend._init_pp_backend._grid.res_bus["va_degree"].values[:nb_sub])
 v_tmp = np.concatenate((v_tmp, v_tmp))
 backend._grid.ac_pf(v_tmp, 1000, 1e-5)
 
-Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
-Sbus = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
-pv_ = backend.init_pp_backend._grid._ppc["internal"]["pv"]
-pq_ = backend.init_pp_backend._grid._ppc["internal"]["pq"]
+Y_pp = backend._init_pp_backend._grid._ppc["internal"]["Ybus"]
+Sbus = backend._init_pp_backend._grid._ppc["internal"]["Sbus"]
+pv_ = backend._init_pp_backend._grid._ppc["internal"]["pv"]
+pq_ = backend._init_pp_backend._grid._ppc["internal"]["pq"]
 max_iter = 10
 tol_this = 1e-8
-All_Vms = backend.init_pp_backend._grid._ppc["internal"]["Vm_it"]
-AllVas = backend.init_pp_backend._grid._ppc["internal"]["Va_it"]
+All_Vms = backend._init_pp_backend._grid._ppc["internal"]["Vm_it"]
+AllVas = backend._init_pp_backend._grid._ppc["internal"]["Va_it"]
 
 for index_V in range(All_Vms.shape[1]-1, -1, -1):
     # i check from easiest to hardest, so from the last iteartion of pandapower to the first iteration of pandapower
@@ -114,13 +114,13 @@ for index_V in range(All_Vms.shape[1]-1, -1, -1):
     solver.solve(scipy.sparse.csc_matrix(Y_pp), V_init, Sbus, pv_, pq_, max_iter, tol_this)
     time_for_nr = solver.get_timers()[3]
     print(f"\t Info: Time to perform the NR for {case_name}: {1000.*time_for_nr:.2f}ms")
-    error_va = np.abs(solver.get_Va() - np.angle(backend.init_pp_backend._grid._ppc["internal"]["V"]))
+    error_va = np.abs(solver.get_Va() - np.angle(backend._init_pp_backend._grid._ppc["internal"]["V"]))
     test_ok = True
     if np.max(error_va) > tol:
         test_ok = False
         print(f"\t Error: VA do not match for iteration {index_V}, maximum absolute error "
               f"is {np.max(error_va):.5f} rad")
-    error_vm = np.abs(np.abs(solver.get_Vm() - np.abs(backend.init_pp_backend._grid._ppc["internal"]["V"])))
+    error_vm = np.abs(np.abs(solver.get_Vm() - np.abs(backend._init_pp_backend._grid._ppc["internal"]["V"])))
     if np.max(error_vm) > tol:
         test_ok = False
         print(f"\t Error: VM do not match for iteration {index_V}, maximum absolute error "
@@ -133,11 +133,11 @@ for index_V in range(All_Vms.shape[1]-1, -1, -1):
 
 ### Now i check for solver issue
 print('III - Check the data conversion')
-pp_vect_converter = backend.init_pp_backend._grid._pd2ppc_lookups["bus"][:nb_sub]
+pp_vect_converter = backend._init_pp_backend._grid._pd2ppc_lookups["bus"][:nb_sub]
 ### first check the Sbus vector
 print("1) Checking Sbus conversion")
-pp_net = backend.init_pp_backend._grid
-Sbus_pp = backend.init_pp_backend._grid._ppc["internal"]["Sbus"]
+pp_net = backend._init_pp_backend._grid
+Sbus_pp = backend._init_pp_backend._grid._ppc["internal"]["Sbus"]
 Sbus_pp_right_order = Sbus_pp[pp_vect_converter]
 Sbus_me = backend._grid.get_Sbus_solver()
 test_ok = True
@@ -162,7 +162,7 @@ else:
     np.sum(Sbus_pp_right_order[errors])
 
     for bus_id_error in np.where(error_p > tol)[0]:
-        bus_pp_orig = np.where(backend.init_pp_backend._grid._pd2ppc_lookups["bus"][:nb_sub] == bus_id_error)[0][0]
+        bus_pp_orig = np.where(backend._init_pp_backend._grid._pd2ppc_lookups["bus"][:nb_sub] == bus_id_error)[0][0]
         gen_this_bus = pp_net.gen.loc[pp_net.gen["bus"] == bus_id_error]
         load_this_bus = pp_net.load.loc[pp_net.load["bus"] == bus_id_error]
         sgen_this_bus = pp_net.sgen.loc[pp_net.sgen["bus"] == bus_id_error]
@@ -171,7 +171,7 @@ else:
 ### then check the Ybus matrix
 print("2)  Checking Ybus conversion")
 Y_me = backend._grid.get_Ybus_solver()
-Y_pp = backend.init_pp_backend._grid._ppc["internal"]["Ybus"]
+Y_pp = backend._init_pp_backend._grid._ppc["internal"]["Ybus"]
 Y_pp_right_order = Y_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
 
 test_ok = True
@@ -408,7 +408,7 @@ else:
 
 print("IV - Check for the initialization (dc powerflow)")
 print("1) check that the results are same for dc lightsim and dc pandapower")
-Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+Vinit = np.ones(backend.nb_bus_total, dtype=complex) * pp_net["_options"]["init_vm_pu"]
 backend._grid.deactivate_result_computation()
 Vdc = backend._grid.dc_pf(Vinit, max_iter, tol_this)
 backend._grid.reactivate_result_computation()
@@ -479,7 +479,7 @@ if test_ok:
 
 print("3) check that the Ybus matrix is same for PP and lightisim in DC")
 pandapower.rundcpp(pp_net)
-Ydc_pp = backend.init_pp_backend._grid._ppc["internal"]["Bbus"]
+Ydc_pp = backend._init_pp_backend._grid._ppc["internal"]["Bbus"]
 Ydc_pp_right_order = Ydc_pp[pp_vect_converter.reshape(nb_sub, 1), pp_vect_converter.reshape(1, nb_sub)]
 test_ok = True
 error_p = np.abs(np.real(Ydc_me) - np.real(Ydc_pp_right_order))
@@ -549,7 +549,7 @@ else:
 # np.max(np.abs(V_init_ref[pp_vect_converter] - Vdc[:nb_sub]))  # 0.061585492793420286
 
 print("3) check that lightsim ac pf init with pp dc pf give same results (than pp)")
-Vinit = np.ones(backend.nb_bus_total, dtype=np.complex_) * pp_net["_options"]["init_vm_pu"]
+Vinit = np.ones(backend.nb_bus_total, dtype=complex) * pp_net["_options"]["init_vm_pu"]
 Vinit[:nb_sub] = V_init_ref[pp_vect_converter]
 conv = backend._grid.ac_pf(Vinit, max_iter, tol_this)
 
@@ -557,9 +557,9 @@ if conv.shape[0] == 0:
     print("\t Error: the lightsim diverge when initialized with pandapower Vinit_dc")
     test_ok = False
 else:
-    lpor, lqor, lvor, laor = backend._grid.get_lineor_res()
-    tpor, tqor, tvor, taor = backend._grid.get_trafohv_res()
-    tpex, tqex, tvex, taex = backend._grid.get_trafolv_res()
+    lpor, lqor, lvor, laor = backend._grid.get_line_res1()
+    tpor, tqor, tvor, taor = backend._grid.get_trafo_res1()
+    tpex, tqex, tvex, taex = backend._grid.get_trafo_res2()
     nb_trafo = tpor.shape[0]
     nb_powerline = lpor.shape[0]
     p_or_me2 = np.concatenate((lpor, tpor))
@@ -592,8 +592,8 @@ else:
         id_trafo = max_id_bug - nb_powerline
         if id_trafo >= 0:
             # id_trafo = 322
-            np.where(backend.init_pp_backend._grid.trafo.columns == "shift_degree")
-            backend.init_pp_backend._grid.trafo.values[id_trafo, 9]
+            np.where(backend._init_pp_backend._grid.trafo.columns == "shift_degree")
+            backend._init_pp_backend._grid.trafo.values[id_trafo, 9]
             angle_error = np.angle((p_or_me2 - por_pp)[max_id_bug] + (q_or_me2 - qor_pp)[max_id_bug] * 1j, deg=True)
             angle_me = np.angle(p_or_me2[max_id_bug] + q_or_me2[max_id_bug] * 1j, deg=True)
             angle_pp = np.angle(por_pp[max_id_bug] + qor_pp[max_id_bug] * 1j, deg=True)
@@ -666,18 +666,18 @@ if np.any(~np.isfinite(tap_pos)):
 tap_angles_[~np.isfinite(tap_angles_)] = 0.
 tap_angles_ = np.deg2rad(tap_angles_)
 trafo_r, trafo_x, trafo_b = \
-    converter.get_trafo_param(tap_step_pct,
-                              tap_pos,
-                              tap_angles_,  # in radian !
-                              is_tap_hv_side,
-                              pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
-                              pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                              pp_net.trafo["vk_percent"].values,
-                              pp_net.trafo["vkr_percent"].values,
-                              pp_net.trafo["sn_mva"].values,
-                              pp_net.trafo["pfe_kw"].values,
-                              pp_net.trafo["i0_percent"].values,
-                              )
+    converter.get_trafo_param_pp2(tap_step_pct,
+                                  tap_pos,
+                                  tap_angles_,  # in radian !
+                                  is_tap_hv_side,
+                                  pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
+                                  pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
+                                  pp_net.trafo["vk_percent"].values,
+                                  pp_net.trafo["vkr_percent"].values,
+                                  pp_net.trafo["sn_mva"].values,
+                                  pp_net.trafo["pfe_kw"].values,
+                                  pp_net.trafo["i0_percent"].values,
+                                  )
 
 # todo remove
 tap_steps = tap_step_pct * (tap_pos - tap_neutral) / 100.

@@ -29,14 +29,14 @@ class TestDCLine(unittest.TestCase):
             warnings.filterwarnings("ignore")
             model = init_from_pandapower(self.net)
         # different convention in pandapower and lightsim for now
-        assert model.get_dclines()[0].target_p_or_mw == -100.
+        assert model.get_dclines()[0].target_p1_mw == -100.
 
     def _aux_test_dc(self):
         # init ls
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             model = init_from_pandapower(self.net)
-        assert model.get_dclines()[0].target_p_or_mw == -self.net.dcline["p_mw"].values
+        assert model.get_dclines()[0].target_p1_mw == -self.net.dcline["p_mw"].values
         
         # run the dc powerflow for the reference
         pp.rundcpp(self.net, lightsim2grid=False, init="flat")
@@ -50,8 +50,8 @@ class TestDCLine(unittest.TestCase):
         p_ls = 1.0 * model.get_Sbus_solver() * model.get_sn_mva()
         
         # different convention in pandapower and lightsim for now
-        assert np.allclose(model.get_dclines()[0].res_p_or_mw, -self.net.res_dcline["p_from_mw"].values)
-        assert np.allclose(model.get_dclines()[0].res_p_ex_mw, -self.net.res_dcline["p_to_mw"].values)
+        assert np.allclose(model.get_dclines()[0].res_p1_mw, -self.net.res_dcline["p_from_mw"].values)
+        assert np.allclose(model.get_dclines()[0].res_p2_mw, -self.net.res_dcline["p_to_mw"].values)
         # check results are the same
         assert np.allclose(theta_ref, theta_ls)
         # assert np.allclose(p_ref, -1.0 * np.real(p_ls))  # pp does not use that
@@ -65,7 +65,7 @@ class TestDCLine(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             model = init_from_pandapower(self.net)
-        assert model.get_dclines()[0].target_p_or_mw == -self.net.dcline["p_mw"].values
+        assert model.get_dclines()[0].target_p1_mw == -self.net.dcline["p_mw"].values
         
         # run the dc powerflow for the reference
         pp.runpp(self.net, lightsim2grid=False, init="flat", v_debug=True,
@@ -82,8 +82,8 @@ class TestDCLine(unittest.TestCase):
         p_ls = 1.0 * model.get_Sbus_solver() * model.get_sn_mva()
         
         # different convention in pandapower and lightsim for now
-        assert np.allclose(model.get_dclines()[0].res_p_or_mw, -self.net.res_dcline["p_from_mw"].values)
-        assert np.allclose(model.get_dclines()[0].res_p_ex_mw, -self.net.res_dcline["p_to_mw"].values)
+        assert np.allclose(model.get_dclines()[0].res_p1_mw, -self.net.res_dcline["p_from_mw"].values)
+        assert np.allclose(model.get_dclines()[0].res_p2_mw, -self.net.res_dcline["p_to_mw"].values)
         # check results are the same
         assert np.allclose(theta_ref, theta_ls)
         # assert np.allclose(p_ref, -1.0 * np.real(p_ls))  # pp does not use that

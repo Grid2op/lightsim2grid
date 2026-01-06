@@ -8,6 +8,7 @@
 
 import warnings
 import numpy as np
+import unittest
 
 from lightsim2grid.gridmodel import init_from_pandapower
 
@@ -20,8 +21,7 @@ from pandapower.pf.ppci_variables import _get_pf_variables_from_ppci
 from pandapower.pd2ppc import _pd2ppc
 from pandapower.auxiliary import _init_runpp_options
 
-import unittest
-
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 
 
 class BaseCase300Tester(unittest.TestCase):
@@ -61,9 +61,13 @@ class BaseCase300Tester(unittest.TestCase):
         
     def setUp(self) -> None:
         self.net = self.get_network()
+        pp_orig_file = "pandapower_v3"
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+            pp_orig_file = "pandapower_v2"
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.gridmodel = init_from_pandapower(self.net)
+            self.gridmodel = init_from_pandapower(self.net,
+                                                  pp_orig_file=pp_orig_file)
         self.tol = 1e-7
         self.tol_solver = 1e-8
         
