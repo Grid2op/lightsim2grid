@@ -135,29 +135,14 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         for l_id in self.my_ids:
             sim_obs, sim_r, sim_d, sim_i = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
                                                         time_step=0)
-            # if l_id == 0:
-            #     print("simulate for 0")
-            #     print(sim_obs.a_or)
-            # if l_id == 3:
-            #     print("simulate for 3")
-            #     print(sim_obs.a_or)
             if not self.is_dc():
-                # print(f"for {l_id}: {sim_d = }, {sim_i['exception']}, {(sim_obs.a_or / obs._thermal_limit).max()}")
                 if np.any(sim_obs.a_or > obs._thermal_limit * self.threshold_margin()) or sim_d:
                     unsafe_cont += 1   
                     unsafe_conts.append(l_id)    
             else:
                 if np.any(np.abs(sim_obs.p_or) > th_lim_p) or sim_d:
                     unsafe_cont += 1   
-                    unsafe_conts.append(l_id)    
-        # print(f"testN1ContReward {env._reward_helper.template_reward._debug_unsafe_conts}")
-        # print(f"testN1ContReward {unsafe_conts}")
-        
-        # array([   0.        ,  337.96604781,  122.5834584 ,    0.        ,
-        # 135.9316308 ,  106.3282711 ,  280.89072926,  539.72618504,
-        # 290.85619763,  725.03591688,  180.47842569,  127.51930555,
-        # 433.16050467,   84.59000012,  370.64622793,  113.72360852,
-        #  53.04777249,  162.52315174, 1351.44796185,  779.9985506 ])
+                    unsafe_conts.append(l_id)
 
         assert reward == (len(self.my_ids) - unsafe_cont), f"wrong number of lines {reward} vs {(len(self.my_ids) - unsafe_cont)}"
         assert (env._reward_helper.template_reward._debug_unsafe_conts == unsafe_conts).all(), "wrong line ids on overflow"

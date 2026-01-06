@@ -1,4 +1,4 @@
-// Copyright (c) 2025, RTE (https://www.rte-france.com)
+// Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -108,11 +108,6 @@ class SubstationContainer final : public IteratorAdder<SubstationContainer, Subs
         const std::vector<std::string> & get_sub_names() const {
             return sub_names_;
         }
-
-        // void from_agent_topology(int sub_id, int local_bus_id){
-        //     bus_status_[sub_id + local_bus_id * n_sub_] = true;
-
-        // }
 
         // return the number of substations on the grid
         int nb_sub() const {return n_sub_;}

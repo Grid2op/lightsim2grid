@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -27,10 +27,8 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // tol is ignored
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
-    // std::cout << "BaseDCAlgo<LinearSolver>::compute_pf\n";
 
     if(!is_linear_solver_valid()) {
-        // std::cout << "!is_linear_solver_valid()\n";
         return false;
     }
     BaseAlgo::reset_timer();
@@ -44,7 +42,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()
        ){
-        // std::cout << "need reset DC algorithm \n";
        reset();
        // at this stage need_factorize_ is set also to true
     }
@@ -62,7 +59,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // TODO SLACK (for now i put all slacks as PV, except the first one)
         // this should be handled in Sbus, because we know the amount of power absorbed by the slack
         // so we can compute it correctly !
-        // std::cout << "\t\t\tneed to retrieve slack\n";
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
         // find the slack buses
@@ -78,7 +74,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
-        // std::cout << "\t\t\tneed to sizeYbus_with_slack_\n";
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
         has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
@@ -126,7 +121,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
     if(error != ErrorType::NoError){
-        // std::cout << "need reset DC algorithm  _linear_solver.solve error \n";
         err_ = error;
         timer_total_nr_ += timer.duration();
         return false;
@@ -188,12 +182,10 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 template<class LinearSolver>
 void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
     mat_bus_id_ = Eigen::VectorXi::Constant(nb_bus_solver, -1);
-    // Eigen::VectorXi me_to_ybus = Eigen::VectorXi::Constant(nb_bus_solver - slack_bus_ids_solver.size(), -1);
     int solver_id = 0;
     for (int ybus_id=0; ybus_id < nb_bus_solver; ++ybus_id){
         if(isin(ybus_id, slack_buses_ids_solver_)) continue;  // I don't add anything to the slack bus
         mat_bus_id_(ybus_id) = solver_id;
-        // me_to_ybus(solver_id) = ybus_id;
         ++solver_id;
     }
 }
@@ -304,7 +296,6 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
         auto t_bus = to_bus(line_id);
         if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){
             // element is disconnected
-            // std::cout << "line_id " << line_id << "is disconnected" << std::endl;
             LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
         }
         LODF.col(line_id).array() = PTDF.col(f_bus).array() - PTDF.col(t_bus).array();
@@ -313,7 +304,6 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
             LODF.col(line_id).array() /= (1. - diag_coeff);
             LODF(line_id, line_id) = -1.;
         }else{
-            // std::cout << "line_id " << line_id << ", diag_coeff " << diag_coeff << ", " <<abs(diag_coeff - 1.) << ", " << (diag_coeff==1.) << std::endl;
             LODF.col(line_id).array() = std::numeric_limits<real_type>::quiet_NaN();
         }
     }

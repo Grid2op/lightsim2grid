@@ -1,4 +1,4 @@
-// Copyright (c) 2025, RTE (https://www.rte-france.com)
+// Copyright (c) 2025-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -368,11 +368,6 @@ class TwoSidesContainer : public GenericContainer
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             // nothing to do by default: handled in derived class
         }
-
-        // used for example in change_bus_lv(int, int solver_control, int)
-        // Eigen::Ref<IntVect> get_buses_not_const_side_1() {return side_1_.get_buses_not_const();}
-        // Eigen::Ref<IntVect> get_buses_not_const_side_2() {return side_2_.get_buses_not_const();}
-
 
         // DANGER ZONE, for modifiers
         // when it will be fully refactorize, it should disappear

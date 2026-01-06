@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -50,7 +50,6 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // err_ = ErrorType::NotInitError;
         return false;
     }
-    // std::cout << "here \n";
     reset_timer();
     reset_if_needed();
     err_ = ErrorType::NoError;  // reset the error if previous error happened
@@ -66,20 +65,6 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     const auto n_pq = pq.size();
     Eigen::VectorXi pvpq(n_pv + n_pq);
     pvpq << my_pv, pq; 
-    // std::cout << "my_pv: \n";
-    // for(auto el : my_pv){
-    //     std::cout << '\t' << el << std::endl;
-    // }
-    // std::cout << "pq: \n";
-    // for(auto el : pq){
-    //     std::cout << '\t' << el << std::endl;
-    // }
-    // std::cout << std::endl;
-    // std::cout << "pvpq: \n";
-    // for(auto el : pvpq){
-    //     std::cout << '\t' << el << std::endl;
-    // }
-    // std::cout << std::endl;
 
     // some clever tricks are used in the making of the Jacobian to handle the slack bus 
     // (in case there is a distributed slack bus)
@@ -88,14 +73,12 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     for(int inv_id=0; inv_id < n_pvpq; ++inv_id) pvpq_inv[pvpq(inv_id)] = inv_id;
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
-    // const auto last_index = n_pvpq + n_pq;  // unused
 
     V_ = V;
     Vm_ = V_.array().abs();  // update Vm and Va again in case
     Va_ = V_.array().arg();  // we "wrapped around" with a negative Vm
     timer_pre_proc_ += timer_pre_proc.duration();
 
-    // std::cout << "end pre proc \n";
     // first check, if the problem is already solved, i stop there
     // compute a first time the mismatch to initialize the slack bus
     RealVect F = _evaluate_Fx(Ybus, V, Sbus, slack_bus_id, slack_absorbed, slack_weights, my_pv, pq);
@@ -104,9 +87,6 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
-    // std::cout << "has_just_been_initialized\n";
-    // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
-    // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
     if(need_factorize_ ||
        _solver_control.need_reset_solver() || 
        _solver_control.has_dimension_changed() ||
@@ -120,15 +100,10 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        )
        {
         value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
         dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
         dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
 
        }
-    // std::cout << "before while\n";
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
         fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
@@ -161,12 +136,8 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
             Vm_(pq) -= F.segment(n_pv + n_pq + 1, n_pq);
         }
         
-
-        // std::cout << "iter " << nr_iter_ << " dx(0): " << -F(0) << " dx(1): " << -F(1) << std::endl;
-        // std::cout << "slack_absorbed " << slack_absorbed << std::endl;
         // TODO change here for not having to cast all the time ... maybe
         V_ = Vm_.array() * (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>() );
-        // V_ = Vm_.array() *  (my_i * Va_.array().template cast<cplx_type>()).exp() ;
         if(Vm_.minCoeff() < 0.)
         {
             // update Vm and Va again in case
@@ -218,14 +189,11 @@ void BaseNRAlgo<LinearSolver>::reset(){
     // reset linear solver
     ErrorType reset_status = _linear_solver.reset();
     if(reset_status != ErrorType::NoError) err_ = reset_status;
-
-    // std::cout << "BaseNRAlgo<LinearSolver>::reset called \n";
 }
 
 template<class LinearSolver>
 void BaseNRAlgo<LinearSolver>::_dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                                            const Eigen::Ref<const CplxVect > & V){
-    // std::cout << "Ybus.nonZeros(): " << Ybus.nonZeros() << std::endl;
     auto timer = CustTimer();
     const auto size_dS = V.size();
     const CplxVect Vnorm = V.array() / V.array().abs();
@@ -466,15 +434,13 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
     const Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
     const Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
 
-    // Method (1) seems to be faster than the others
-
     // optim : if the matrix was already computed, i don't initialize it, i instead reuse as much as i can
     // i can do that because the matrix will ALWAYS have the same non zero coefficients.
     // in this if, i allocate it in a "large enough" place to avoid copy when first filling it
     if(J_.cols() != size_j) J_ = Eigen::SparseMatrix<real_type>(size_j, size_j);
 
-    std::vector<Eigen::Triplet<double> > coeffs;  // HERE FOR PERF OPTIM (3)
-    coeffs.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros())  + slack_weights.size());  // HERE FOR PERF OPTIM (3)
+    std::vector<Eigen::Triplet<double> > coeffs;
+    coeffs.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros())  + slack_weights.size());
 
     // i fill the buffer columns per columns
     int nb_obj_this_col = 0;
@@ -507,7 +473,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         // "efficient" insert of the element in the matrix
         for(Eigen::Index in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             StorageIndex row_id = static_cast<StorageIndex>(inner_index[in_ind]);
-            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id) + 1, values[in_ind]));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id) + 1, values[in_ind]));
         }
     }
 
@@ -539,7 +505,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         // "efficient" insert of the element in the matrix
         for(Eigen::Index in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             auto row_id = static_cast<StorageIndex>(inner_index[in_ind]);
-            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id + n_pvpq) + 1, values[in_ind]));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(row_id, static_cast<StorageIndex>(col_id + n_pvpq) + 1, values[in_ind]));
         }
     }
 
@@ -552,7 +518,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVa_r, col_id); it; ++it)
         {
             if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus          
-            coeffs.push_back(Eigen::Triplet<double>(0, J_col + 1, it.value()));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(0, J_col + 1, it.value()));
         }
     }
     for (Eigen::Index col_id=0; col_id < nb_bus; ++col_id){
@@ -561,25 +527,23 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVm_r, col_id); it; ++it)
         {
             if(it.row() != slack_bus_id) continue;   // don't add it if it's not the ref slack bus
-            coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq) + 1, it.value()));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(0, static_cast<StorageIndex>(J_col + n_pvpq) + 1, it.value()));
         }
     }
 
     // add later on the last column which corresponds to the slack bus equation
     const StorageIndex last_col = 0; // static_cast<StorageIndex>(size_j) - 1;
     // add the ref slack bus coeff
-    coeffs.push_back(Eigen::Triplet<double>(0, last_col, slack_weights[slack_bus_id]));   // HERE FOR PERF OPTIM (3)
+    coeffs.push_back(Eigen::Triplet<double>(0, last_col, slack_weights[slack_bus_id]));
     // add the other coeffs (for other buses)
     auto row_j = 1;
     for(auto ind: pvpq){
         auto sl_w  = slack_weights(ind);
-        if(abs(sl_w) > _tol_equal_float) coeffs.push_back(Eigen::Triplet<double>(row_j, last_col, sl_w));   // HERE FOR PERF OPTIM (3)
+        if(abs(sl_w) > _tol_equal_float) coeffs.push_back(Eigen::Triplet<double>(row_j, last_col, sl_w));
         ++row_j;
     }
-    J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
-    // std::cout << "end fill jacobian unknown " << std::endl;
+    J_.setFromTriplets(coeffs.begin(), coeffs.end());
     J_.makeCompressed();
-    // std::cout << "end fill_value_map" << std::endl;
 }
 
 /**
@@ -598,8 +562,6 @@ void BaseNRAlgo<LinearSolver>::fill_value_map(
     const int n_pvpq = static_cast<int>(pvpq.size());
     value_map_ = std::vector<cplx_type*> ();
     value_map_.reserve(BaseNRAlgo<LinearSolver>::J_.nonZeros());
-    // col_map_ = std::vector<int> (J_.nonZeros());
-    // row_map_ = std::vector<int> (J_.nonZeros());
 
     const auto n_row = J_.cols();
     // unsigned int pos_el = 0;
@@ -658,8 +620,6 @@ void BaseNRAlgo<LinearSolver>::fill_value_map(
                     value_map_.push_back(&dS_dVm_.coeffRef(row_id_dS_dVm_i, col_id_dS_dVm_i));
                 }
             }
-            // go to the next element
-            // ++pos_el;
         }
     }
     dS_dVa_.makeCompressed();

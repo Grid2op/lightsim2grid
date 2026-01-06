@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -260,45 +260,11 @@ static_assert(sizeof(SolverBusId)==sizeof(int));  // make sure I can safely "rei
 typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
 
 
-// /**
-//  * Allow easily to pass from GlobalIntVect to IntVect (for example when
-//  * exposing numpy arrays python side)
-//  */
-// template<class BusId>
-// const Eigen::Ref<const IntVect> _to_intvect(
-//     const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
-// ){
-//     return IntVect::Map(
-//         reinterpret_cast<const int*>(&strongly_typed_vect(0)),
-//         strongly_typed_vect.size());
-// }
-// /**
-//  * Allow easily to pass from GlobalIntVect to IntVect (for example when
-//  * exposing numpy arrays python side)
-//  */
-// template<class BusId>
-// Eigen::Ref<const IntVect> _to_intvect(
-//     Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > strongly_typed_vect
-// ){
-//     return IntVect::Map(
-//         reinterpret_cast<const int*>(&strongly_typed_vect(0)),
-//         strongly_typed_vect.size());
-// }
-
-
 template<class BusId>
 const IntVect & _to_intvect(
     const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
 ){
     return reinterpret_cast<const IntVect &>(strongly_typed_vect);
 }
-
-// template<class BusId>
-// Eigen::Ref<const IntVect> _to_intvect(
-//     Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > strongly_typed_vect
-// ){
-//     return reinterpret_cast<Eigen::Ref<const IntVect> >(strongly_typed_vect);
-// }
-
 
 #endif // UTILS_H

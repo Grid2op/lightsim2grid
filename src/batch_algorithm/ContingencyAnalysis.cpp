@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -228,7 +228,6 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     // now perform the security analysis
     Eigen::Index cont_id = 0;
     CplxVect V;
-    // std::cout << "entering SA " << std::endl;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
         bool invertible = true;
@@ -260,7 +259,6 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         ++cont_id;
     }
     _timer_total = timer.duration();
-    // std::cout << "end SA\n";
 }
 
 // by default the flows are not 0 when the powerline is connected in the original topology

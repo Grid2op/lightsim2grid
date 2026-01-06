@@ -1,4 +1,4 @@
-// Copyright (c) 2024, RTE (https://www.rte-france.com)
+// Copyright (c) 2024-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -140,7 +140,6 @@ class OneSideContainer_ForBranch : public OneSideContainer
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
-                // std::cout << bus_me_id << " != " << new_bus_id << "\n";
                 // TODO speed: here the dimension changed only if nothing was connected before
                 solver_control.tell_one_el_changed_bus();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
                 

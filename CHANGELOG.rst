@@ -29,7 +29,7 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.12.0] 2026-01-zz
+[0.12.0] 2026-01-06
 --------------------
 - [BREAKING] for better consistency, and following pypowsybl convention, trafo and lines "side"
   are now called "1" and "2" instead of "hv" / "lv" (for trafo) or "or" / "ex" for powerlines.

@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "0.11.1.dev0"
+__version__ = "0.12.0"
 
 __all__ = [
     "newtonpf",
@@ -22,14 +22,14 @@ from lightsim2grid.solver import ErrorType
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend  # noqa: F401
     __all__.append("LightSimBackend")
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the Backend will not be available
     pass
 
 try:
     from lightsim2grid.physical_law_checker import PhysicalLawChecker  # noqa: F401
     __all__.append("PhysicalLawChecker")
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the PhysicalLawChecker will not be available
     pass
 
@@ -37,7 +37,7 @@ try:
     from lightsim2grid.timeSerie import TimeSerie  # noqa: F401
     __all__.append("TimeSerie")  
     __all__.append("timeSerie")
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the TimeSeries module will not be available
     pass
 
@@ -45,13 +45,13 @@ try:
     from lightsim2grid.contingencyAnalysis import ContingencyAnalysis  # noqa: F401
     __all__.append("contingencyAnalysis")
     __all__.append("ContingencyAnalysis")
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
     
 try:
     from lightsim2grid.rewards import N1ContingencyReward  # noqa: F401
     __all__.append("rewards")
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass

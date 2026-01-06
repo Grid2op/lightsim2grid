@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2023, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -61,9 +61,6 @@ void LineContainer::init(const RealVect & branch_r,
     GenericContainer::check_size(branch_from_id, size, "branch_from_id");
     GenericContainer::check_size(branch_to_id, size, "branch_to_id");
 
-    // bus_or_id_ = branch_from_id;
-    // bus_ex_id_ = branch_to_id;
-    // status_ = std::vector<bool>(branch_r.size(), true); // by default everything is connected
     h_side_1_ = branch_h_or;
     h_side_2_ = branch_h_ex;
     r_ = branch_r;

@@ -31,6 +31,7 @@ class N1ContingencyReward(BaseReward):
     .. code-block:: python
 
         import grid2op
+        
         from lightsim2grid.rewards import N1ContingencyReward
         l_ids = [0, 1, 7]
         env = grid2op.make("l2rpn_case14_sandbox",
@@ -117,8 +118,6 @@ class N1ContingencyReward(BaseReward):
                                "without any contingencies !")
         self.reward_min = 0.
         self.reward_max = len(self._l_ids) if not self._normalize else 1.
-        # self._contingecy_analyzer = ContingencyAnalysis(self._backend)
-        # self._contingecy_analyzer.add_multiple_contingencies(self._l_ids)
 
     def __call__(self, action, env, has_error, is_done, is_illegal, is_ambiguous):
         if is_done:
@@ -175,31 +174,6 @@ class N1ContingencyReward(BaseReward):
         now_3 = time.perf_counter()
         self._timer_post_proc += now_3 - now_2
         self._timer_call += time.perf_counter() - beg
-        # print()
-        # print("sanity check")
-        # print("a_or")
-        # print(f"obs.a_or:\n{env.get_obs().a_or}")
-        # print(f"backend updated state:\n{self._backend.lines_or_info()[3]}")
-        # print("gen_p")
-        # print(f"obs.gen_p:\n{env.get_obs().gen_p}")
-        # print(f"backend updated state:\n{self._backend.generators_info()[0]}")
-        # print("shunt_bus")
-        # print(f"obs._shunt_bus:\n{env.get_obs()._shunt_bus}")
-        # print(f"backend updated state:\n{self._backend.shunt_info()[-1]}")
-        # print(f"env backend shunt bus {env.backend._grid.get_shunts()[0].bus_id}")
-        # print(f"self backend shunt bus {self._backend._grid.get_shunts()[0].bus_id}")
-        # print("shunt_q")
-        # print(f"obs._shunt_q:\n{env.get_obs()._shunt_q}")
-        # print(f"backend updated state:\n{self._backend.shunt_info()[1]}")
-        # print("load_p")
-        # print(f"obs.load_p:\n{env.get_obs().load_p}")
-        # print(f"backend updated state:\n{self._backend.loads_info()[0]}")
-        # print("")
-        # print("reward for 0: ")
-        # print(tmp_res[0])
-        # print("reward for 3: ")
-        # print(tmp_res[3])
-        # print("")
         return res
 
     def reset(self, env: "grid2op.Environment.BaseEnv") -> None:

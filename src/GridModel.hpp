@@ -1,4 +1,4 @@
-// Copyright (c) 2020, RTE (https://www.rte-france.com)
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
 // See AUTHORS.txt
 // This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
 // If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
@@ -75,10 +75,6 @@ class GridModel final : public GenericContainer
                 // solver types
                 SolverType, // ac_solver
                 SolverType // dc_solver
-                // grid2
-                // grid2op specific
-                // int, // n_sub
-                // int // max_nb_bus_per_sub
                 >  StateRes;
 
         GridModel() noexcept:
@@ -94,7 +90,6 @@ class GridModel final : public GenericContainer
             _solver.set_gridmodel(this);
             _dc_solver.set_gridmodel(this);
             solver_control_.tell_all_changed();
-            // std::cout << "GridModel init: " << this << std::endl;
         }
         GridModel(const GridModel & other) noexcept;
         // GridModel(GridModel && other) noexcept = default;  // TODO 
@@ -103,9 +98,6 @@ class GridModel final : public GenericContainer
             return res;
         }
         ~GridModel() noexcept = default;
-        // {
-        //     std::cout << "GridModel destructor: " << this << std::endl;
-        // };
 
         void set_ls_to_orig(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
         void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
@@ -368,7 +360,6 @@ class GridModel final : public GenericContainer
             unsigned int size_th = 6;
             if (my_state.size() != size_th)
             {
-                // std::cout << "LightSim::GridModel state size " << my_state.size() << " instead of "<< size_th << std::endl;
                 // TODO more explicit error message
                 throw std::runtime_error("Invalid state when loading LightSim::GridModel");
             }
@@ -1477,67 +1468,6 @@ class GridModel final : public GenericContainer
             }
             return res;
         }
-
-        /**
-         * Allow easily to pass from GlobalIntVect to IntVect (for example when
-         * exposing numpy arrays python side)
-         */
-        // template<class BusId>
-        // Eigen::Ref<const IntVect> _to_intvect(
-        //     const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
-        // ) const{
-        //     return IntVect::Map(
-        //         reinterpret_cast<const int*>(&strongly_typed_vect(0)),
-        //         strongly_typed_vect.size());
-        // }
-        // template<class BusId>
-        // Eigen::Ref<const IntVect> _to_intvect(
-        //     const Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > & strongly_typed_vect
-        // ) const{
-        //     return IntVect::Map(
-        //         reinterpret_cast<const int*>(&strongly_typed_vect(0)),
-        //         strongly_typed_vect.size());
-        // }
-        // template<class BusId>
-        // Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > _to_typed_vect(
-        //     const IntVect & int_vect
-        // ) const{
-        //     return Eigen::Matrix<BusId, Eigen::Dynamic, 1>::Map(
-        //         reinterpret_cast<const BusId*>(&strongly_typed_vect(0)),
-        //         strongly_typed_vect.size());
-        // }
-        // template<class BusId>
-        // Eigen::Ref<const Eigen::Matrix<BusId, Eigen::Dynamic, 1> > _to_typed_vect(
-        //     Eigen::Ref<const IntVect> int_vect
-        // ) const{
-        //     return Eigen::Matrix<BusId, Eigen::Dynamic, 1>::Map(
-        //         reinterpret_cast<const BusId*>(&strongly_typed_vect(0)),
-        //         strongly_typed_vect.size());
-        // }
-        
-        // /**
-        //  * @brief Build the pv; pq or slack ids (or any other vector labelled using the gridmodel convention) 
-        //  * from the same vector (input) that uses the solver convention.
-        //  * 
-        //  * TODO copy paste from above, find a better way !
-        //  * 
-        //  * @param Sbus : Sbus with the solver convention, the one used by the solver
-        //  * @param id_solver_to_me : mapping to convert from the solver id to the gridmodel id
-        //  * @return CplxVect 
-        //  */
-        // template<class T>
-        // Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector2(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & pv_pq_ref_bus,
-        //                                                      const std::vector<GlobalBusId> & id_solver_to_me) const
-        // {
-        //     if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
-        //     Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(pv_pq_ref_bus.size());
-        //     Eigen::Index pos_id = 0;
-        //     for(const auto & el_id : pv_pq_ref_bus){
-        //         res[pos_id] = id_solver_to_me[el_id];
-        //         ++ pos_id;
-        //     }
-        //     return res;
-        // }
 
     private:
         using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
