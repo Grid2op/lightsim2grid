@@ -7,10 +7,10 @@ orbs:
 executors:
     gcc_latest:
         docker:
-            - image: gcc:16
+            - image: gcc:15
     gcc_prev_latest:
         docker:
-            - image: gcc:15
+            - image: gcc:14
     gcc_earliest:
         docker:
             - image: gcc:8
