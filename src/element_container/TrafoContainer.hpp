@@ -150,7 +150,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                 if(std::abs(ratio_(el_id) - new_ratio) >_tol_equal_float){
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
-                    _update_model_coeffs_one_el(el_id); 
+                    _update_internal_coeffs(el_id); 
                     solver_control.tell_recompute_ybus();
                 }
         }
@@ -169,15 +169,18 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                 if(std::abs(shift_(el_id) - new_shift_rad) >_tol_equal_float){
                     shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
-                    _update_model_coeffs_one_el(el_id); 
+                    _update_internal_coeffs(el_id); 
                     solver_control.tell_recompute_ybus();
                     solver_control.tell_recompute_sbus();  // only in DC however
                 }
         }
         
     protected:
-        void _update_model_coeffs();
-        void _update_model_coeffs_one_el(int el_id);
+        // void _update_model_coeffs();
+        virtual void _update_model_coeffs_one_el(int el_id);
+        virtual void _update_other_model_coeffs(){
+            dc_x_tau_shift_ = RealVect::Zero(nb());
+        }
 
     private:
         /**

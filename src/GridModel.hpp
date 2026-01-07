@@ -41,7 +41,7 @@
 #include "ChooseSolver.hpp"
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
-class GridModel final : public GenericContainer
+class GridModel final // : public GenericContainer  // TODO remove that inheritance
 {
     public:
         typedef Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> IntVectRowMaj;
@@ -188,8 +188,12 @@ class GridModel final : public GenericContainer
         // solver "control"
         void change_solver(const SolverType & type){
             solver_control_.tell_all_changed();
+            
+            if(_solver.is_fdpf(type)) init_fdpf_coeffs();
+
             if(_solver.is_dc(type)) _dc_solver.change_solver(type);
             else _solver.change_solver(type);
+            
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
         SolverType get_solver_type() const {return _solver.get_type(); }
@@ -450,7 +454,7 @@ class GridModel final : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _generic_deactivate(global_bus_id, substations_);
+                GenericContainer::_generic_deactivate(global_bus_id, substations_);
             }
         }
         void deactivate_bus_python(int global_bus_id) {
@@ -465,7 +469,7 @@ class GridModel final : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _generic_reactivate(global_bus_id, substations_); 
+                GenericContainer::_generic_reactivate(global_bus_id, substations_); 
             }
         }
         void reactivate_bus_python(int global_bus_id) {
@@ -618,7 +622,7 @@ class GridModel final : public GenericContainer
             trafos_.change_shift(trafo_id, new_shift_rad, solver_control_);
         }
         void change_shift_trafo_deg(int trafo_id, real_type new_shift_deg){
-            real_type new_shift_rad = new_shift_deg / my_180_pi_;
+            real_type new_shift_rad = new_shift_deg / BaseConstants::my_180_pi_;
             change_shift_trafo(trafo_id, new_shift_rad);
         }
 
@@ -1321,27 +1325,34 @@ class GridModel final : public GenericContainer
                                     const SolverControl & solver_control);
 
         //for FDPF
-    private:
-        using GenericContainer::fillBp_Bpp;  // silence clang warning overload-virtual
+    // private:
+    //     using GenericContainer::fillBp_Bpp;  // silence clang warning overload-virtual
     public:
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                         Eigen::SparseMatrix<real_type> & Bpp, 
                         FDPFMethod xb_or_bx) const;
 
-    private:
-        using GenericContainer::fillBf_for_PTDF;  // silence clang warning overload-virtual
+        void init_fdpf_coeffs(){
+            powerlines_.init_fdpf_coeffs();
+            trafos_.init_fdpf_coeffs();
+        }
+
+    // private:
+    //     using GenericContainer::fillBf_for_PTDF;  // silence clang warning overload-virtual
     public:
         void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose=false) const;
 
         Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
             Eigen::SparseMatrix<real_type> Bpp;
+            init_fdpf_coeffs();
             fillBp_Bpp(Bp, Bpp, xb_or_bx);
             return Bp;
         }
         Eigen::SparseMatrix<real_type> debug_get_Bpp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
             Eigen::SparseMatrix<real_type> Bpp;
+            init_fdpf_coeffs();
             fillBp_Bpp(Bp, Bpp, xb_or_bx);
             return Bpp;
         }
@@ -1479,8 +1490,8 @@ class GridModel final : public GenericContainer
             return res;
         }
 
-    private:
-        using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
+    // private:
+    //     using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
     
     protected:
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver);

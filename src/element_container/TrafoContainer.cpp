@@ -73,6 +73,7 @@ void TrafoContainer::init(
     init_tsc(trafo_hv_id, trafo_lv_id, "trafo");
     _update_model_coeffs();
     reset_results();
+    // init_tsc_rxha();
 }
 
 TrafoContainer::StateRes TrafoContainer::get_state() const
@@ -110,25 +111,25 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     reset_results();
 }
 
-void TrafoContainer::_update_model_coeffs()
-{
-    const Eigen::Index my_size = r_.size();
+// void TrafoContainer::_update_model_coeffs()
+// {
+//     const Eigen::Index my_size = r_.size();
 
-    yac_11_ = CplxVect::Zero(my_size);
-    yac_12_ = CplxVect::Zero(my_size);
-    yac_21_ = CplxVect::Zero(my_size);
-    yac_22_ = CplxVect::Zero(my_size);
+//     yac_11_ = CplxVect::Zero(my_size);
+//     yac_12_ = CplxVect::Zero(my_size);
+//     yac_21_ = CplxVect::Zero(my_size);
+//     yac_22_ = CplxVect::Zero(my_size);
 
-    ydc_11_ = CplxVect::Zero(my_size);
-    ydc_12_ = CplxVect::Zero(my_size);
-    ydc_21_ = CplxVect::Zero(my_size);
-    ydc_22_ = CplxVect::Zero(my_size);
-    dc_x_tau_shift_ = RealVect::Zero(my_size);
-    for(Eigen::Index i = 0; i < my_size; ++i)
-    {
-        _update_model_coeffs_one_el(i);
-    }
-}
+//     ydc_11_ = CplxVect::Zero(my_size);
+//     ydc_12_ = CplxVect::Zero(my_size);
+//     ydc_21_ = CplxVect::Zero(my_size);
+//     ydc_22_ = CplxVect::Zero(my_size);
+//     dc_x_tau_shift_ = RealVect::Zero(my_size);
+//     for(Eigen::Index i = 0; i < my_size; ++i)
+//     {
+//         _update_model_coeffs_one_el(i);
+//     }
+// }
 
 void TrafoContainer::_update_model_coeffs_one_el(int el_id)
 {

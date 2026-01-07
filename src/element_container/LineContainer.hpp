@@ -90,7 +90,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
         Eigen::Ref<const RealVect> dc_x_tau_shift() const {return RealVect();}
     
     protected:
-        void _update_model_coeffs();
+        // void _update_model_coeffs();
 
     protected:
         // physical properties

@@ -68,40 +68,41 @@ void LineContainer::init(const RealVect & branch_r,
     init_tsc(branch_from_id, branch_to_id, "trafo");
     _update_model_coeffs();
     reset_results();
+    // init_tsc_rxha();
 }
 
-void LineContainer::_update_model_coeffs()
-{
-    const auto my_size = r_.size();
+// void LineContainer::_update_model_coeffs()
+// {
+//     const auto my_size = r_.size();
 
-    yac_11_ = CplxVect::Zero(my_size);
-    yac_12_ = CplxVect::Zero(my_size);
-    yac_21_ = CplxVect::Zero(my_size);
-    yac_22_ = CplxVect::Zero(my_size);
+//     yac_11_ = CplxVect::Zero(my_size);
+//     yac_12_ = CplxVect::Zero(my_size);
+//     yac_21_ = CplxVect::Zero(my_size);
+//     yac_22_ = CplxVect::Zero(my_size);
 
-    ydc_11_ = CplxVect::Zero(my_size);
-    ydc_12_ = CplxVect::Zero(my_size);
-    ydc_21_ = CplxVect::Zero(my_size);
-    ydc_22_ = CplxVect::Zero(my_size);
-    for(int i = 0; i < my_size; ++i)
-    {
-        // for AC
-        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
-        const cplx_type ys = 1. / cplx_type(r_(i), x_(i));
-        const cplx_type h_or = h_side_1_(i);
-        const cplx_type h_ex = h_side_2_(i);
-        yac_11_(i) = (ys + h_or);
-        yac_22_(i) = (ys + h_ex);
-        yac_12_(i) = -ys;
-        yac_21_(i) = -ys;
+//     ydc_11_ = CplxVect::Zero(my_size);
+//     ydc_12_ = CplxVect::Zero(my_size);
+//     ydc_21_ = CplxVect::Zero(my_size);
+//     ydc_22_ = CplxVect::Zero(my_size);
+//     for(int i = 0; i < my_size; ++i)
+//     {
+//         // for AC
+//         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+//         const cplx_type ys = 1. / cplx_type(r_(i), x_(i));
+//         const cplx_type h_or = h_side_1_(i);
+//         const cplx_type h_ex = h_side_2_(i);
+//         yac_11_(i) = (ys + h_or);
+//         yac_22_(i) = (ys + h_ex);
+//         yac_12_(i) = -ys;
+//         yac_21_(i) = -ys;
 
-        // for DC
-        // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
-        // except here I only care about the real part, so I remove the "1/j"
-        cplx_type tmp = 1. / cplx_type(x_(i), 0.);
-        ydc_11_(i) = tmp;
-        ydc_22_(i) = tmp;
-        ydc_21_(i) = -tmp;
-        ydc_12_(i) = -tmp;
-    }
-}
+//         // for DC
+//         // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
+//         // except here I only care about the real part, so I remove the "1/j"
+//         cplx_type tmp = 1. / cplx_type(x_(i), 0.);
+//         ydc_11_(i) = tmp;
+//         ydc_22_(i) = tmp;
+//         ydc_21_(i) = -tmp;
+//         ydc_12_(i) = -tmp;
+//     }
+// }

@@ -354,12 +354,12 @@ void GridModel::check_solution_q_values_onegen(CplxVect & res,
     if(check_q_limits)
     {
         // i need to check the reactive can be absorbed / produced by the generator
-        real_type new_q = my_zero_;
+        real_type new_q = BaseConstants::my_zero_;
         real_type react_this_bus = std::imag(res.coeff(gen.bus_id));
         if((react_this_bus >= gen.min_q_mvar) && (react_this_bus <= gen.max_q_mvar))
         {
             // this generator is able to handle all reactive
-            new_q = my_zero_;
+            new_q = BaseConstants::my_zero_;
         }else if(react_this_bus < gen.min_q_mvar){
             // generator cannot absorb enough reactive power
             new_q = react_this_bus - gen.min_q_mvar; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
@@ -370,7 +370,7 @@ void GridModel::check_solution_q_values_onegen(CplxVect & res,
         res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), new_q};
     }else{
         // the q value for the bus at which the generator is connected will be 0
-        res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), my_zero_};
+        res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), BaseConstants::my_zero_};
     }
 }
 
@@ -390,7 +390,7 @@ void GridModel::check_solution_q_values(CplxVect & res, bool check_q_limits) con
         {
             // slack bus, by definition, can handle all active value
             // This is probably not the case with distributed slack !
-            res.coeffRef(gen.bus_id) = {my_zero_, std::imag(res.coeff(gen.bus_id))};
+            res.coeffRef(gen.bus_id) = {BaseConstants::my_zero_, std::imag(res.coeff(gen.bus_id))};
         }
     }
 
@@ -433,7 +433,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
                                                    id_me_to_ac_solver_,
                                                    static_cast<int>(V_proposed.size())
                                                    );
-    if(abs(sn_mva_- 1.) > _tol_equal_float) res *= sn_mva_;
+    if(abs(sn_mva_- 1.) > BaseConstants::_tol_equal_float) res *= sn_mva_;
 
     // now check reactive values for buses where there are generators and active values of slack bus
     check_solution_q_values(res, check_q_limits);
@@ -442,7 +442,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     for(int bus_id = 0; bus_id < nb_bus; ++bus_id)
     {
         if(substations_.is_bus_connected(GlobalBusId(bus_id))) continue;
-        res.coeffRef(bus_id) = my_zero_;
+        res.coeffRef(bus_id) = BaseConstants::my_zero_;
     }
     return res;
 };
@@ -543,7 +543,7 @@ CplxVect GridModel::pre_process_solver(
     CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
     for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
         GlobalBusId bus_me_id = id_solver_to_me[bus_solver_id]; 
-        if(bus_me_id.cast_int() == _deactivated_bus_id){
+        if(bus_me_id.cast_int() == BaseConstants::_deactivated_bus_id){
             //TODO DEBUG MODE : only in debug mode
             std::ostringstream exc_;
             exc_ << "GridModel::pre_process_solver: the bus with solver id ";
@@ -574,12 +574,12 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                     std::vector<SolverBusId> & id_me_to_solver,
                                                     int size)
 {
-    CplxVect res = CplxVect::Constant(size, {init_vm_pu_, my_zero_});
+    CplxVect res = CplxVect::Constant(size, {init_vm_pu_, BaseConstants::my_zero_});
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     for (int bus_id_me=0; bus_id_me < nb_bus; ++bus_id_me){
         if(!substations_.is_bus_connected(GlobalBusId(bus_id_me))) continue;  // nothing is done if the bus is connected
         SolverBusId bus_id_solver = id_me_to_solver[bus_id_me];
-        if(bus_id_solver.cast_int() == _deactivated_bus_id){
+        if(bus_id_solver.cast_int() == BaseConstants::_deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::_get_results_back_to_orig_nodes: the bus with id ";
             exc_ << bus_id_me;
@@ -622,7 +622,7 @@ void GridModel::init_converter_bus_id(std::vector<SolverBusId>& id_me_to_solver,
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(substations_.nb_bus());
-    id_me_to_solver = std::vector<SolverBusId>(nb_bus_init, SolverBusId(_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
+    id_me_to_solver = std::vector<SolverBusId>(nb_bus_init, SolverBusId(BaseConstants::_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = std::vector<GlobalBusId>();
     id_solver_to_me.reserve(nb_bus_init);
     int bus_id_solver = 0;
@@ -648,12 +648,12 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
                                const GlobalBusIdVect & slack_bus_id_me,
                                SolverBusIdVect & slack_bus_id_solver)
 {
-    slack_bus_id_solver = SolverBusIdVect::Constant(slack_bus_id_me.size(), SolverBusId(_deactivated_bus_id));
+    slack_bus_id_solver = SolverBusIdVect::Constant(slack_bus_id_me.size(), SolverBusId(BaseConstants::_deactivated_bus_id));
 
     size_t i = 0;
     for(const GlobalBusId & el: slack_bus_id_me) {
         SolverBusId tmp = id_me_to_solver[el.cast_int()];
-        if(tmp.cast_int() == _deactivated_bus_id){
+        if(tmp.cast_int() == BaseConstants::_deactivated_bus_id){
             std::ostringstream exc_;
             exc_ << "GridModel::init_slack_bus: One of the slack bus is disconnected.";
             exc_ << " You can check bus with global id GlobalBusId : ";
@@ -667,7 +667,7 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
         ++i;
     }
     
-    if(is_in_vect(_deactivated_bus_id, slack_bus_id_solver)){
+    if(GenericContainer::is_in_vect(BaseConstants::_deactivated_bus_id, slack_bus_id_solver)){
         // TODO improve error message with the gen_id
         // TODO DEBUG MODE: only check that in debug mode
         throw std::runtime_error("GridModel::init_Sbus: One of the slack bus is disconnected !");
@@ -710,7 +710,7 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const std::vector<SolverBu
     storages_.fillSbus(Sbus, id_me_to_solver, ac);
     generators_.fillSbus(Sbus, id_me_to_solver, ac);
     dc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
-    if (abs(sn_mva_ - 1.0) > _tol_equal_float) Sbus /= sn_mva_;
+    if (abs(sn_mva_ - 1.0) > BaseConstants::_tol_equal_float) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
 }
@@ -743,7 +743,7 @@ void GridModel::fillpv_pq(const std::vector<SolverBusId>& id_me_to_solver,
     dc_lines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
 
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
-        if(is_in_vect(bus_id, slack_bus_id_solver)) continue;  // slack bus is not PQ either
+        if(GenericContainer::is_in_vect(bus_id, slack_bus_id_solver)) continue;  // slack bus is not PQ either
         if(has_bus_been_added[bus_id]) continue; // a pv bus cannot be PQ
         bus_pq.push_back(bus_id);
         has_bus_been_added[bus_id] = true;  // don't add it a second time
