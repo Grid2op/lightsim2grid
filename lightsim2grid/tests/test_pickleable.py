@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+from pathlib import Path
 import tempfile
 import pickle
 import os
@@ -16,8 +17,15 @@ import numpy as np
 
 from grid2op import make
 from lightsim2grid.lightSimBackend import LightSimBackend
-from lightsim2grid.gridmodel.compare_gridmodel import compare_gridmodel_input
-import pdb
+from lightsim2grid.gridmodel.compare_gridmodel import (
+    compare_gridmodel_input,
+    _compare_loads,
+    _compare_lines,
+    _compare_generators,
+    _compare_shunts,
+    _compare_storages,
+    _compare_substations,
+    _compare_trafos)
 
 
 class TestPickle(unittest.TestCase):
@@ -98,43 +106,93 @@ class TestPickle(unittest.TestCase):
     def test_save_load(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore")
-                self.env = make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
-            with tempfile.TemporaryDirectory() as tmpdir:
-                with open(os.path.join(tmpdir, "test_pickle.pickle"), "wb") as f:
-                    pickle.dump(self.env.backend, f)
-                with open(os.path.join(tmpdir, "test_pickle.pickle"), "rb") as f:
-                    backend_1 = pickle.load(f)
-                assert backend_1._grid.get_solver_type() ==  self.env.backend._grid.get_solver_type()
-                assert backend_1._grid.get_dc_solver_type() ==  self.env.backend._grid.get_dc_solver_type()
+            self.env = make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with open(os.path.join(tmpdir, "test_pickle.pickle"), "wb") as f:
+                pickle.dump(self.env.backend, f)
+            with open(os.path.join(tmpdir, "test_pickle.pickle"), "rb") as f:
+                backend_1 = pickle.load(f)
+            assert backend_1._grid.get_solver_type() ==  self.env.backend._grid.get_solver_type()
+            assert backend_1._grid.get_dc_solver_type() ==  self.env.backend._grid.get_dc_solver_type()
+            
+            self.aux_test_2sides(self.env.backend._grid, backend_1._grid)
+            self.aux_test_1side(self.env.backend._grid, backend_1._grid)
+            tmp = compare_gridmodel_input(self.env.backend._grid, backend_1._grid)
+            assert len(tmp) == 0
+            
+            nb_bus_total = self.env.n_sub * 2
+            max_it = 10
+            tol = 1e-8
+            # TODO test in case the pickle file is corrupted...
+
+            # test dc_pf
+            V_0 = np.ones(nb_bus_total, dtype=complex)
+            V_1 = V_0.copy()
+            V_0 = self.env.backend._grid.dc_pf(V_0, max_it, tol)
+            V_1 = backend_1._grid.dc_pf(V_1, max_it, tol)
+
+            assert np.all(np.abs(V_0 - V_1) <= 1e-7), "dc pf does not lead to same results"
+            self.aux_test_2sides(self.env.backend._grid, backend_1._grid, True)
+            self.aux_test_1side(self.env.backend._grid, backend_1._grid, True)
+
+            # test ac_pf
+            V_0 = self.env.backend._grid.ac_pf(V_0, max_it, tol)
+            V_1 = backend_1._grid.ac_pf(V_1, max_it, tol)
+            assert np.all(np.abs(V_0 - V_1) <= 1e-7), "ac pf does not lead to same results"
+            self.aux_test_2sides(self.env.backend._grid, backend_1._grid, True)
+            self.aux_test_1side(self.env.backend._grid, backend_1._grid, True)
+
+    def test_cannot_load_unfit_ls_version(self):
+        tmpdir = Path(".") / "old_pickle"
+        with self.assertRaises(RuntimeError):
+            with open(tmpdir / "test_pickle.pickle", "rb") as f:
+                pickle.load(f) 
+                        
+    def _aux_test_pickle(self, fun_name, fun_comp):
+        # test I can reload if saved some the same ls version
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env = make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+        els = getattr(self.env.backend._grid, fun_name)()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with open(os.path.join(tmpdir, f"test_pickle_{fun_name}.pickle"), "wb") as f:
+                pickle.dump(els, f)
+            with open(os.path.join(tmpdir, f"test_pickle_{fun_name}.pickle"), "rb") as f:
+                els_reloaded = pickle.load(f)  
                 
-                self.aux_test_2sides(self.env.backend._grid, backend_1._grid)
-                self.aux_test_1side(self.env.backend._grid, backend_1._grid)
-                tmp = compare_gridmodel_input(self.env.backend._grid, backend_1._grid)
-                assert len(tmp) == 0
-                
-                nb_bus_total = self.env.n_sub * 2
-                max_it = 10
-                tol = 1e-8
-                # TODO test in case the pickle file is corrupted...
-
-                # test dc_pf
-                V_0 = np.ones(nb_bus_total, dtype=complex)
-                V_1 = V_0.copy()
-                V_0 = self.env.backend._grid.dc_pf(V_0, max_it, tol)
-                V_1 = backend_1._grid.dc_pf(V_1, max_it, tol)
-
-                assert np.all(np.abs(V_0 - V_1) <= 1e-7), "dc pf does not lead to same results"
-                self.aux_test_2sides(self.env.backend._grid, backend_1._grid, True)
-                self.aux_test_1side(self.env.backend._grid, backend_1._grid, True)
-
-                # test ac_pf
-                V_0 = self.env.backend._grid.ac_pf(V_0, max_it, tol)
-                V_1 = backend_1._grid.ac_pf(V_1, max_it, tol)
-                assert np.all(np.abs(V_0 - V_1) <= 1e-7), "ac pf does not lead to same results"
-                self.aux_test_2sides(self.env.backend._grid, backend_1._grid, True)
-                self.aux_test_1side(self.env.backend._grid, backend_1._grid, True)
+        class Struct:
+            pass
+        setattr(Struct, fun_name, lambda self: els_reloaded)
+        diff_ = fun_comp(Struct(), self.env.backend._grid)
+        assert len(diff_) == 0
+        
+        # Test I cannot reload if saved from an old version
+        tmpdir = Path(".") / "old_pickle"
+        with self.assertRaises(RuntimeError):
+            with open(tmpdir / f"test_pickle_{fun_name}.pickle", "rb") as f:
+                pickle.load(f)  
+        
+    def test_pickle_loads(self):  
+        self._aux_test_pickle("get_loads", _compare_loads)
+        
+    def test_pickle_lines(self):
+        self._aux_test_pickle("get_lines", _compare_lines)
+        
+    def test_pickle_trafos(self):
+        self._aux_test_pickle("get_trafos", _compare_trafos)
+        
+    def test_pickle_storages(self):
+        self._aux_test_pickle("get_storages", _compare_storages)
+        
+    def test_pickle_generators(self):
+        self._aux_test_pickle("get_generators", _compare_generators)
+        
+    def test_pickle_shunts(self):
+        self._aux_test_pickle("get_shunts", _compare_shunts)
+        
+    def test_pickle_substations(self):
+        self._aux_test_pickle("get_substations", _compare_substations)
 
 
 if __name__ == "__main__":

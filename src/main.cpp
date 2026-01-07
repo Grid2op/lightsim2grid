@@ -458,6 +458,37 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def(py::pickle(
+                [](const GeneratorContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "GeneratorContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading GeneratorContainer");
+                        }
+                    // Create a new C++ instance
+                    GeneratorContainer res = GeneratorContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    GeneratorContainer::StateRes state = py_state[3].cast<GeneratorContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        })) 
         ; 
 
     py::class_<GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
@@ -491,6 +522,37 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id", &SGenContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def(py::pickle(
+                [](const SGenContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "SGenContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading SGenContainer");
+                        }
+                    // Create a new C++ instance
+                    SGenContainer res = SGenContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    SGenContainer::StateRes state = py_state[3].cast<SGenContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        })) 
         ; 
 
     py::class_<SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
@@ -523,6 +585,37 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id", &LoadContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def(py::pickle(
+                [](const LoadContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "LoadContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading LoadContainer");
+                        }
+                    // Create a new C++ instance
+                    LoadContainer res = LoadContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    LoadContainer::StateRes state = py_state[3].cast<LoadContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        })) 
         ; 
 
     py::class_<LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
@@ -551,6 +644,37 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def(py::pickle(
+                [](const ShuntContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "ShuntContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading ShuntContainer");
+                        }
+                    // Create a new C++ instance
+                    ShuntContainer res = ShuntContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    ShuntContainer::StateRes state = py_state[3].cast<ShuntContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        }))      
         ; 
 
     py::class_<ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
@@ -578,8 +702,44 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__iter__", [](const TrafoContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+        .def_property_readonly("ignore_tap_side_for_shift", &TrafoContainer::ignore_tap_side_for_shift, 
+            R"mydelimiter(
+            Whether ignore the tap side is ignored when using the 
+            'shift' attribute (should be True for pandapower, 
+            where it is ignored and False otherwise).)mydelimiter")
         .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
         .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def(py::pickle(
+                [](const TrafoContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "TrafoContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading TrafoContainer");
+                        }
+                    // Create a new C++ instance
+                    TrafoContainer res = TrafoContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    TrafoContainer::StateRes state = py_state[3].cast<TrafoContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        }))       
         ; 
 
     py::class_<TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
@@ -601,7 +761,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("x_pu", &TrafoInfo::x_pu, DocIterator::x_pu.c_str())
         .def_readonly("h1_pu", &TrafoInfo::h1_pu, DocIterator::h_pu.c_str())
         .def_readonly("h2_pu", &TrafoInfo::h2_pu, DocIterator::h_pu.c_str())
-        .def_readonly("is_tap_side_1", &TrafoInfo::is_tap_hv_side, DocIterator::is_tap_hv_side.c_str())
+        .def_readonly("is_tap_side_1", &TrafoInfo::is_tap_side1, DocIterator::is_tap_hv_side.c_str())
         .def_readonly("ratio", &TrafoInfo::ratio, DocIterator::ratio.c_str())
         .def_readonly("shift_rad", &TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
         .def_readonly("has_res", &TrafoInfo::has_res, DocIterator::has_res.c_str())
@@ -638,7 +798,39 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def(py::pickle(
+                [](const LineContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "LineContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading LineContainer");
+                        }
+                    // Create a new C++ instance
+                    LineContainer res = LineContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    LineContainer::StateRes state = py_state[3].cast<LineContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        }))  
+        ;
 
     py::class_<LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineInfo::id, DocIterator::id.c_str())
@@ -694,7 +886,39 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id_side_1", &DCLineContainer::get_bus_id_side_1_numpy)
-        .def("get_bus_id_side_2", &DCLineContainer::get_bus_id_side_2_numpy);
+        .def("get_bus_id_side_2", &DCLineContainer::get_bus_id_side_2_numpy)
+        .def(py::pickle(
+                [](const DCLineContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "DCLineContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading DCLineContainer");
+                        }
+                    // Create a new C++ instance
+                    DCLineContainer res = DCLineContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    DCLineContainer::StateRes state = py_state[3].cast<DCLineContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        }))  
+        ;
 
     py::class_<DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DCLineInfo::id, DocIterator::id.c_str())
@@ -736,7 +960,38 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("__getitem__", [](const SubstationContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const SubstationContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
-            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
+            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */        // pickle
+        .def(py::pickle(
+                [](const SubstationContainer &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "SubstationContainer.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading SubstationContainer");
+                        }
+                    // Create a new C++ instance
+                    SubstationContainer res = SubstationContainer();
+                    // TODO check the size of the input tuple!
+
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    SubstationContainer::StateRes state = py_state[3].cast<SubstationContainer::StateRes>();
+                    res.set_state(state);
+                    return res;
+        })) 
         ;
 
     py::class_<SubstationInfo>(m, "SubstationInfo", "TODO")
@@ -806,24 +1061,36 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
         // pickle
         .def(py::pickle(
-                        [](const GridModel &gm) { // __getstate__
-                            // Return a tuple that fully encodes the state of the object
-                            return py::make_tuple(gm.get_state());
-                        },
-                        [](py::tuple py_state) { // __setstate__
-                            if (py_state.size() != 1){
-                                std::cout << "GridModel.__setstate__ : state size " << py_state.size() << std::endl;
-                                throw std::runtime_error("Invalid state size when loading GridModel.__setstate__");
-                                }
-                            // Create a new C++ instance
-                            GridModel gm = GridModel();
-                            // TODO check the size of the input tuple!
+                [](const GridModel &sub) { // __getstate__
+                    // Return a tuple that fully encodes the state of the object
+                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
+                },
+                [](py::tuple py_state) { // __setstate__
+                    if (py_state.size() != 4){
+                        std::cout << "GridModel.__setstate__ : state size " << py_state.size() << std::endl;
+                        throw std::runtime_error("Invalid state size when loading GridModel");
+                        }
+                    // Create a new C++ instance
+                    GridModel res = GridModel();
+                    // TODO check the size of the input tuple!
 
-                            // now set the status
-                            GridModel::StateRes state = py_state[0].cast<GridModel::StateRes>();
-                            gm.set_state(state);
-                            return gm;
-        }))
+                    // now set the status
+                    int major = py_state[0].cast<int>();
+                    if (major != VERSION_MAJOR){
+                        throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int minor = py_state[1].cast<int>();
+                    if (minor != VERSION_MEDIUM){
+                        throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    int patch = py_state[2].cast<int>();
+                    if (patch != VERSION_MINOR){
+                        throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+                    }
+                    GridModel::StateRes state = py_state[3].cast<GridModel::StateRes>();
+                    res.set_state(state);
+                    return res;
+        })) 
 
         // general parameters
         // solver control
@@ -919,8 +1186,22 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_bus1_trafo", &GridModel::get_bus1_trafo, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_bus2_trafo", &GridModel::get_bus2_trafo, DocGridModel::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("change_ratio_trafo", &GridModel::change_ratio_trafo, "TODO")
-        .def("change_shift_trafo", &GridModel::change_shift_trafo, "TODO Change the phase shift ratio for a given transformer. It should be expressed in rad (not in deg) and on side1 (and not side2, as opposed to pypowsybl. If alpha is 10 in pypowsybl, you should convert it to rad (*eg* np.deg2rad(10.)), and invert it, so -np.deg2rad(10.). )")
+        .def("change_shift_trafo", &GridModel::change_shift_trafo, 
+            R"mydelimiter(
+            TODO Change the phase shift ratio for a given transformer. 
 
+            .. warning::
+                It should be expressed in rad (not in deg). 
+            
+            If the flag
+            `ignore_tap_side_for_shift` (*eg* gridmodel.get_trafos().ignore_tap_side_for_shift) 
+            is set to False (should be default), then the ratio should be given 
+            at the side of the tap (side1 or side2). If this
+            flag is True (*eg* the grid comes from pandapower) then the phase
+            shift ratio should be given in in the side1 (hv side in pandapower).
+            )mydelimiter")
+        .def("change_shift_trafo_deg", &GridModel::change_shift_trafo_deg, 
+            "Same as :ref:`change_shift_trafo` but phase shift is expressed in degree and NOT in rad.")
         .def("deactivate_load", &GridModel::deactivate_load, DocGridModel::_internal_do_not_use.c_str())
         .def("reactivate_load", &GridModel::reactivate_load, DocGridModel::_internal_do_not_use.c_str())
         .def("change_bus_load", &GridModel::change_bus_load_python, DocGridModel::_internal_do_not_use.c_str())

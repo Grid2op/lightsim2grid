@@ -80,7 +80,7 @@ def _aux_add_trafo(
         if np.any(pp_net.trafo3w["tap_changer_type"].values == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
-
+            
     tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
     if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
@@ -133,6 +133,7 @@ def _aux_add_trafo(
                                           )
 
     # initialize the grid
+    do_ignore_tap_side_for_phase_shift = True
     model.init_trafo_pandapower(trafo_r,
                                 trafo_x,
                                 trafo_b,
@@ -141,7 +142,8 @@ def _aux_add_trafo(
                                 shift_,
                                 is_tap_hv_side,
                                 pp_bus_to_ls(pp_net.trafo["hv_bus"].values, pp_to_ls),
-                                pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls))
+                                pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls),
+                                do_ignore_tap_side_for_phase_shift)
 
     for tr_id, is_connected in enumerate(pp_net.trafo["in_service"].values):
         if not is_connected:

@@ -241,10 +241,11 @@ class GridModel final : public GenericContainer
                                    const RealVect & trafo_shift_degree,
                                    const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                                    const Eigen::VectorXi & bus1_id,
-                                   const Eigen::VectorXi & bus2_id
+                                   const Eigen::VectorXi & bus2_id,
+                                   bool ignore_tap_side_for_shift
                                    ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
-                         trafo_tap_hv, bus1_id, bus2_id);
+                         trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
         void init_trafo(const RealVect & trafo_r,
                         const RealVect & trafo_x,
@@ -253,10 +254,11 @@ class GridModel final : public GenericContainer
                         const RealVect & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & bus1_id,
-                        const Eigen::VectorXi & bus2_id
+                        const Eigen::VectorXi & bus2_id,
+                        bool ignore_tap_side_for_shift
                            ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
-                         trafo_tap_hv, bus1_id, bus2_id);
+                         trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
 
         void init_generators(const RealVect & generators_p,
@@ -611,13 +613,13 @@ class GridModel final : public GenericContainer
 
         /**
          * The shift is in radian (not degree !)
-         * 
-         * It is the shift on the "side 1" (regardless of the value of "is_tap_hv_side").
-         * If the tap is on the other side, the user has the reponsibility to
-         * take the opposite (ie -0.1 instead of +0.1)
          */
-        void change_shift_trafo(int trafo_id, real_type new_shift){
-            trafos_.change_shift(trafo_id, new_shift, solver_control_);
+        void change_shift_trafo(int trafo_id, real_type new_shift_rad){
+            trafos_.change_shift(trafo_id, new_shift_rad, solver_control_);
+        }
+        void change_shift_trafo_deg(int trafo_id, real_type new_shift_deg){
+            real_type new_shift_rad = new_shift_deg / my_180_pi_;
+            change_shift_trafo(trafo_id, new_shift_rad);
         }
 
         //load

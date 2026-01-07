@@ -11,17 +11,18 @@
 #include <iostream>
 #include <sstream>
 
-void TrafoContainer::init(const RealVect & trafo_r,
-                          const RealVect & trafo_x,
-                          const CplxVect & trafo_b,
-                          const RealVect & trafo_tap_step_pct,
-                          const RealVect & trafo_tap_pos,
-                          const RealVect & trafo_shift_degree,
-                          const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                          const Eigen::VectorXi & trafo_hv_id,
-                          const Eigen::VectorXi & trafo_lv_id
-                          )
-{
+void TrafoContainer::init(
+    const RealVect & trafo_r,
+    const RealVect & trafo_x,
+    const CplxVect & trafo_b,
+    const RealVect & trafo_tap_step_pct,
+    const RealVect & trafo_tap_pos,
+    const RealVect & trafo_shift_degree,
+    const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
+    const Eigen::VectorXi & trafo_hv_id,
+    const Eigen::VectorXi & trafo_lv_id,
+    bool ignore_tap_side_for_shift
+) {
     /**
     INPUT DATA ARE ALREADY PAIR UNIT !!
     DOES NOT WORK WITH POWERLINES
@@ -33,27 +34,28 @@ void TrafoContainer::init(const RealVect & trafo_r,
 
     RealVect ratio = my_one_ + 0.01 * trafo_tap_step_pct.array() * trafo_tap_pos.array();
 
-
-    init(trafo_r, trafo_x, trafo_b, ratio, trafo_shift_degree, trafo_tap_hv, trafo_hv_id, trafo_lv_id);
+    init(trafo_r, trafo_x, trafo_b, ratio, trafo_shift_degree, 
+        trafo_tap_hv, trafo_hv_id, trafo_lv_id, ignore_tap_side_for_shift);
 }
 
-void TrafoContainer::init(const RealVect & trafo_r,
-                          const RealVect & trafo_x,
-                          const CplxVect & trafo_b,
-                          const RealVect & trafo_ratio,
-                          const RealVect & trafo_shift_degree,
-                          const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
-                          const Eigen::VectorXi & trafo_hv_id,
-                          const Eigen::VectorXi & trafo_lv_id
-                          )
-{
+void TrafoContainer::init(
+    const RealVect & trafo_r,
+    const RealVect & trafo_x,
+    const CplxVect & trafo_b,
+    const RealVect & trafo_ratio,
+    const RealVect & trafo_shift_degree,
+    const std::vector<bool> & trafo_tap_side1,  // is tap on high voltage (true) or low voltate
+    const Eigen::VectorXi & trafo_hv_id,
+    const Eigen::VectorXi & trafo_lv_id,
+    bool ignore_tap_side_for_shift
+) {
     const int size = static_cast<int>(trafo_r.size());
     GenericContainer::check_size(trafo_r, size, "trafo_r");
     GenericContainer::check_size(trafo_x, size, "trafo_x");
     GenericContainer::check_size(trafo_b, size, "trafo_b");
     GenericContainer::check_size(trafo_ratio, size, "trafo_ratio");
     GenericContainer::check_size(trafo_shift_degree, size, "trafo_shift_degree");
-    GenericContainer::check_size(trafo_tap_hv, static_cast<std::vector<bool>::size_type>(size), "trafo_tap_hv");
+    GenericContainer::check_size(trafo_tap_side1, static_cast<std::vector<bool>::size_type>(size), "trafo_tap_hv");
     GenericContainer::check_size(trafo_hv_id, size, "trafo_hv_id");
     GenericContainer::check_size(trafo_lv_id, size, "trafo_lv_id");
 
@@ -63,7 +65,8 @@ void TrafoContainer::init(const RealVect & trafo_r,
     h_side_2_ = 0.5 * trafo_b;
     ratio_ = trafo_ratio;
     shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
-    is_tap_hv_side_ = trafo_tap_hv;
+    is_tap_side1_ = trafo_tap_side1;
+    ignore_tap_side_for_shift_ = ignore_tap_side_for_shift;
     // bus_hv_id_ = trafo_hv_id;
     // bus_lv_id_ = trafo_lv_id;
     // status_ = std::vector<bool>(trafo_r.size(), true);
@@ -76,12 +79,13 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
 {
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
      std::vector<real_type> shift(shift_.begin(), shift_.end());
-     std::vector<bool> is_tap_hv_side = is_tap_hv_side_;
+     std::vector<bool> is_tap_hv_side = is_tap_side1_;
      TrafoContainer::StateRes res(
         get_tsc_rxha_state(),
         ratio,
         is_tap_hv_side,
-        shift);
+        shift,
+        ignore_tap_side_for_shift_);
      return res;
 }
 
@@ -90,18 +94,18 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     set_tsc_rxha_state(std::get<0>(my_state));
 
     std::vector<real_type> & ratio = std::get<1>(my_state);
-    std::vector<bool> & is_tap_hv_side = std::get<2>(my_state);
+    std::vector<bool> & is_tap_side1 = std::get<2>(my_state);
     std::vector<real_type> & shift = std::get<3>(my_state);
 
     auto size = nb();
     GenericContainer::check_size(ratio, size, "ratio");
-    GenericContainer::check_size(is_tap_hv_side, size, "is_tap_hv_side");
+    GenericContainer::check_size(is_tap_side1, size, "is_tap_side1");
     GenericContainer::check_size(shift, size, "shift");
 
-    // input data
     ratio_  = RealVect::Map(&ratio[0], size);
     shift_  = RealVect::Map(&shift[0], size);
-    is_tap_hv_side_ = is_tap_hv_side;
+    is_tap_side1_ = is_tap_side1;
+    ignore_tap_side_for_shift_ = std::get<4>(my_state);
     _update_model_coeffs();
     reset_results();
 }
@@ -131,12 +135,14 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     // for AC
     // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
     const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));
-    // const cplx_type h = h_side_1_(i);
     real_type tau = ratio_(el_id);
     real_type theta_shift = shift_(el_id);
-    if(!is_tap_hv_side_[el_id]){
+    if(!is_tap_side1_[el_id]){
         tau = my_one_ / tau;
-        // theta_shift = -theta_shift;
+
+        // pnadapower uses tap_side only for ratio, not for
+        // phase shift apparently
+        if (!ignore_tap_side_for_shift_) theta_shift = -theta_shift;
     }
     cplx_type eitheta_shift  = {my_one_, my_zero_};  // exp(j  * alpha)
     cplx_type emitheta_shift = {my_one_, my_zero_};  // exp(-j * alpha)
@@ -147,24 +153,30 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
         eitheta_shift = {cos_theta, sin_theta};
         emitheta_shift = {cos_theta, -sin_theta};
     }
-
-    yac_11_(el_id) = (ys + h_side_1_(el_id)) / (tau * tau);
-    yac_22_(el_id) = (ys + h_side_2_(el_id));
-    yac_21_(el_id) = -ys / tau * emitheta_shift ;
-    yac_12_(el_id) = -ys / tau * eitheta_shift;
+    real_type _1_tau = my_one_ / tau; // 1 / tau
+    yac_11_(el_id) = (ys + h_side_1_(el_id)) * _1_tau * _1_tau;  // (ys + h1) / tau**2
+    yac_12_(el_id) = -ys * _1_tau * eitheta_shift;  // -ys / (tau * exp(-j.theta_shift))
+    
+    yac_21_(el_id) = -ys * _1_tau * emitheta_shift;  // -ys / (tau * exp(j.theta_shift))
+    yac_22_(el_id) = (ys + h_side_2_(el_id));  // ys + h2
 
     // for DC
     // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
     // except here I only care about the real part, so I remove the "1/j"
-    cplx_type tmp = 1. / (tau * x_(el_id));
+    cplx_type tmp = 1. / x_(el_id) * _1_tau;
     ydc_11_(el_id) = tmp;
     ydc_22_(el_id) = tmp;
     ydc_21_(el_id) = -tmp;
     ydc_12_(el_id) = -tmp;
 
-    // dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
-    if(!is_tap_hv_side_[el_id]) dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
-    else dc_x_tau_shift_(el_id) = +std::real(tmp) * theta_shift;
+    dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    // if(ignore_tap_side_for_shift_)
+    // {
+    //     dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    // } else {
+    //     if(is_tap_side1_[el_id]) dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    //     else dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
+    // }
 }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(
@@ -234,9 +246,12 @@ TrafoContainer::FDPFCoeffs TrafoContainer::get_fdpf_coeffs(int tr_id, FDPFMethod
     double tau_bpp = ratio_(tr_id);
     // for Bp we need shift
     real_type theta_shift = shift_(tr_id);
-    if(!is_tap_hv_side_[tr_id]){
+    if(!is_tap_side1_[tr_id]){
         tau_bpp = 1. / ratio_(tr_id);
-        theta_shift = -shift_(tr_id); 
+        
+        // pnadapower uses tap_side only for ratio, not for
+        // phase shift apparently
+        if (!ignore_tap_side_for_shift_) theta_shift = -shift_(tr_id); 
     }
     cplx_type eitheta_shift_bp  = {my_one_, my_zero_};  // exp(j  * alpha)
     cplx_type emitheta_shift_bp = {my_one_, my_zero_};  // exp(-j * alpha)

@@ -7,7 +7,9 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 
+import io
 import pdb
+import pickle
 from packaging import version
 import pypowsybl as pp
 import pypowsybl.loadflow as lf
@@ -15,6 +17,7 @@ import numpy as np
 import unittest
 import warnings
 
+from lightsim2grid import gridmodel
 from lightsim2grid.gridmodel import init_from_pypowsybl, GridModel
 
 try:
@@ -103,6 +106,9 @@ class AuxInitFromPyPowSyBlBusesForSub:
         self.tol_eq_kcl = self.get_tol_eq_kcl()
         return super().setUp()
     
+    def test_correct_trafo_flag(self):
+        assert not self.gridmodel.get_trafos().ignore_tap_side_for_shift 
+        
     def test_basic(self):
         """check that all elements are ok"""
         assert len(self.gridmodel.get_lines()) == self.network_ref.get_lines().shape[0]    
@@ -163,6 +169,7 @@ class AuxInitFromPyPowSyBlBusesForSub:
             # self.skipTest("Test not correct: pypowsybl change DC approx, see https://github.com/powsybl/pypowsybl/issues/1127")
         v_ls = self.gridmodel.dc_pf(self.V_init_dc, 2, self.tol)
         reorder = self.gridmodel._orig_to_ls.reshape(1, -1)
+            
         if self.compare_pp():
             v_ls_ref = self.ref_samecase.dc_pf(self.V_init_dc, 2, self.tol)
             assert np.abs(v_ls[reorder] - v_ls_ref).max() <= self.tol_eq, f"error for vresults for dc: {np.abs(v_ls[reorder] - v_ls_ref).max():.2e}"

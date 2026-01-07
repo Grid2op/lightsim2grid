@@ -34,6 +34,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] phase shift transformers are now properly modeled
   for both pandapower (new in this version) and pypowsybl (already
   the case in previous version)
+- [ADDED] possibility to pickle independantly all part of the grid (*eg* gridmodel.get_lines()
+  can be pickled independantly from anything else) **NB** pickling and un-pickling 
+  lightsim2grid objects can only be used for the same lightsim2grid version.
 
 [0.12.0] 2026-01-06
 --------------------
