@@ -34,6 +34,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] phase shift transformers are now properly modeled
   for both pandapower (new in this version) and pypowsybl (already
   the case in previous version)
+- [FIXED] a performance issue for all "XXXSingleSlack" (*eg* KLUSingleSlack) algorithm (filling of the initial
+  Jacobian matrix was extremly slow due to the massive 'insert' of data in the eigen sparse matrix instead 
+  of relying on the "setFromTriplets" method)
 - [ADDED] possibility to pickle independantly all part of the grid (*eg* gridmodel.get_lines()
   can be pickled independantly from anything else) **NB** pickling and un-pickling 
   lightsim2grid objects can only be used for the same lightsim2grid version.
