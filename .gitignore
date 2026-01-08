@@ -305,3 +305,4 @@ venv_ls/
 venv_ls_glop/
 venv_old_glop/
 venv_pypobk/
+benchmarks/*.mat
