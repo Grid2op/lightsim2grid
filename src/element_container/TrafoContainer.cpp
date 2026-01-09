@@ -67,13 +67,9 @@ void TrafoContainer::init(
     shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
     is_tap_side1_ = trafo_tap_side1;
     ignore_tap_side_for_shift_ = ignore_tap_side_for_shift;
-    // bus_hv_id_ = trafo_hv_id;
-    // bus_lv_id_ = trafo_lv_id;
-    // status_ = std::vector<bool>(trafo_r.size(), true);
     init_tsc(trafo_hv_id, trafo_lv_id, "trafo");
     _update_model_coeffs();
     reset_results();
-    // init_tsc_rxha();
 }
 
 TrafoContainer::StateRes TrafoContainer::get_state() const
@@ -110,26 +106,6 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     _update_model_coeffs();
     reset_results();
 }
-
-// void TrafoContainer::_update_model_coeffs()
-// {
-//     const Eigen::Index my_size = r_.size();
-
-//     yac_11_ = CplxVect::Zero(my_size);
-//     yac_12_ = CplxVect::Zero(my_size);
-//     yac_21_ = CplxVect::Zero(my_size);
-//     yac_22_ = CplxVect::Zero(my_size);
-
-//     ydc_11_ = CplxVect::Zero(my_size);
-//     ydc_12_ = CplxVect::Zero(my_size);
-//     ydc_21_ = CplxVect::Zero(my_size);
-//     ydc_22_ = CplxVect::Zero(my_size);
-//     dc_x_tau_shift_ = RealVect::Zero(my_size);
-//     for(Eigen::Index i = 0; i < my_size; ++i)
-//     {
-//         _update_model_coeffs_one_el(i);
-//     }
-// }
 
 void TrafoContainer::_update_model_coeffs_one_el(int el_id)
 {
@@ -171,13 +147,6 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
     ydc_12_(el_id) = -tmp;
 
     dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
-    // if(ignore_tap_side_for_shift_)
-    // {
-    //     dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
-    // } else {
-    //     if(is_tap_side1_[el_id]) dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
-    //     else dc_x_tau_shift_(el_id) = std::real(tmp) * theta_shift;
-    // }
 }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(

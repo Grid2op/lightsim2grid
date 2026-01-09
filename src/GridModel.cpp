@@ -218,7 +218,7 @@ void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
     }
 }
 
-void GridModel::set_ls_to_orig_internal(const IntVect & ls_to_orig){
+void GridModel::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();

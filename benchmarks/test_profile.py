@@ -24,7 +24,7 @@ from  benchmark_grid_size import (
 prng = np.random.default_rng(42)
     
 CASE_NAME = "case9241pegase.json"
-NB_TS = 10
+NB_TS = 1000
 
 
 def my_grid2op_env(case_name, nb_ts, prng):
@@ -88,9 +88,13 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
     ls_timer_Va_Vm = 0.
     ls_timer_pre_proc = 0.
     ls_timer_total_nr = 0.
-    
-    with open(f"gridmodel_{case_name}.pickle", "rb") as f:
-        ls_grid = pickle.load(f)
+    try:
+        with open(f"gridmodel_{case_name}.pickle", "rb") as f:
+            ls_grid = pickle.load(f)
+    except FileNotFoundError:
+        raise RuntimeError("You need to comment 'main_gridmodel(...)` in test_profile.py then uncomment `my_grid2op_env(...)`, "
+                           "run it (without perf it's fine). Then uncomment `main_gridmodel` and comment `my_grid2op_env` "
+                           "and run the benchkmark (with perf) again.")
     ls_grid.change_solver(solver_used)
     v_init = ls_grid.dc_pf(np.ones(ls_grid.get_bus_vn_kv().shape[0], dtype=complex) * 1.04, 1, 0.1)
     for _ in range(nb_ts):
