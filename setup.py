@@ -14,7 +14,7 @@ import warnings
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-__version__ = "0.12.0"
+__version__ = "0.12.1"
 KLU_SOLVER_AVAILABLE = False
 
 # Try to link against SuiteSparse (if available)
@@ -240,8 +240,12 @@ if "PATH_CKTSO" in os.environ:
     libcktso_path = None
     if include_cktso:
         if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
-            libcktso_path = os.path.join(path_cktso, "ubuntu1804_x64_gcc750/libcktso.so")  # TODO CHANGE THAT !
-            if not os.path.exists(libcktso_path):
+            include_cktso = False
+            for el in ["ubuntu2004_x64_gcc940", "ubuntu1804_x64_gcc750"]:
+                libcktso_path = os.path.join(path_cktso, f"{el}/libcktso.so")  # TODO CHANGE THAT !
+                if os.path.exists(libcktso_path):
+                    include_cktso = True
+            if not include_cktso:
                 print(f"WARNING: cannot locate the CKTSO shared object that should be at: {libcktso_path}")
                 include_cktso = False
                 libcktso_path = None

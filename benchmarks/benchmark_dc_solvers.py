@@ -13,7 +13,15 @@ import warnings
 import pandas as pd
 import re
 
+from packaging import version
+import pandapower
+if version.parse(pandapower.__version__) > version.parse("3.0.0"):
+    PP_ORIG_FILE = "pandapower_v3"
+else:
+    PP_ORIG_FILE = "pandapower_v2"
+
 from grid2op import make
+from grid2op.Exceptions import Grid2OpException
 from grid2op.Backend import PandaPowerBackend
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import ChangeNothing
@@ -44,9 +52,9 @@ except ImportError:
     
 try:
     from pypowsybl2grid import PyPowSyBlBackend
-    pypow_error = None
+    PYPOW_ERROR = None
 except ImportError as exc_:
-    pypow_error = exc_
+    PYPOW_ERROR = exc_
     print("Backend based on pypowsybl will not be benchmarked")
     
 MAX_TS = 1000
@@ -81,7 +89,7 @@ def main(max_ts,
          save_results=DONT_SAVE):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True, "ENV_DC": True, "FORECAST_DC": True})
-
+    pypow_error = PYPOW_ERROR
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         if re.match("^.*\\.json$", env_name_input) is None:
@@ -89,12 +97,15 @@ def main(max_ts,
             env_pp = make(env_name_input, param=param, test=test,
                           backend=PandaPowerBackend(lightsim2grid=False, with_numba=True),
                           data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-            env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
+            env_lightsim = make(env_name_input, backend=LightSimBackend(loader_kwargs={"pp_orig_file": PP_ORIG_FILE}), param=param, test=test,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             if pypow_error is None:
-                env_pypow = make(env_name_input, param=param, test=test,
-                                 backend=PyPowSyBlBackend(),
-                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+                try:
+                    env_pypow = make(env_name_input, param=param, test=test,
+                                    backend=PyPowSyBlBackend(),
+                                    data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
+                except Grid2OpException as exc_:
+                    pypow_error = exc_
         else:
             # I provided an environment path
             env_pp = make("blank", param=param, test=True,
@@ -102,14 +113,17 @@ def main(max_ts,
                           grid_path=env_name_input
                           )
             env_lightsim = make("blank", param=param, test=True,
-                                backend=LightSimBackend(),
+                                backend=LightSimBackend(loader_kwargs={"pp_orig_file": PP_ORIG_FILE}),
                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                 grid_path=env_name_input)
             if pypow_error is None:
-                env_pypow = make("blank", param=param, test=True,
-                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
-                                 grid_path=env_name_input,
-                                 backend=PyPowSyBlBackend())
+                try:
+                    env_pypow = make("blank", param=param, test=True,
+                                    data_feeding_kwargs={"gridvalueClass": ChangeNothing},
+                                    grid_path=env_name_input,
+                                    backend=PyPowSyBlBackend())
+                except Grid2OpException as exc_:
+                    pypow_error = exc_
             _, env_name_input = os.path.split(env_name_input)
 
     agent = DoNothingAgent(action_space=env_pp.action_space)

@@ -43,11 +43,10 @@ class TestDCPF(unittest.TestCase):
     def test_case14(self):
         case = pn.case14()
         case.name = "case14"
-        # self.tol = 2e-3
         self._aux_test(case)
 
-    def test_case14_with_phaseshift(self):
-        self.skipTest("pypowsybl and pandapower does not align on DC computation and phase shift... Lightsim2grid choses pypowsybl")
+    def test_case14_with_phaseshift_hvside(self):
+        # self.skipTest("pandapower might do something weird in DC with phase shift")
         case = pn.case14()        
         hv_bus=0
         lv_bus=2
@@ -66,12 +65,39 @@ class TestDCPF(unittest.TestCase):
                                               vkr_percent=0.0,
                                               shift_degree=-10.0,  # case RTE
                                             #   shift_degree=0.,
-                                              pfe_kw=0.
+                                              pfe_kw=0.,
+                                              tap_side="hv",
                                               )
         # self.tol = 2e-3
         case.name = "case14_2"
         self._aux_test(case)
 
+    def test_case14_with_phaseshift_lvside(self):
+        case = pn.case14()        
+        hv_bus=0
+        lv_bus=2
+        pp.create_transformer_from_parameters(case,
+                                              hv_bus=hv_bus,
+                                              lv_bus=lv_bus,
+                                            #   sn_mva=1184.0,   # case RTE
+                                              sn_mva=9900.0,
+                                              vn_hv_kv=case.bus.iloc[hv_bus]["vn_kv"],
+                                              vn_lv_kv=case.bus.iloc[lv_bus]["vn_kv"],
+                                            #   i0_percent=-0.05152,   # case RTE
+                                              i0_percent=0.0,
+                                            #   vk_percent=0.404445,  # case RTE
+                                              vk_percent=2070.288000,
+                                            #   vkr_percent=0.049728, # case RTE
+                                              vkr_percent=0.0,
+                                              shift_degree=-10.0,  # case RTE
+                                            #   shift_degree=0.,
+                                              pfe_kw=0.,
+                                              tap_side="lv",
+                                              )
+        # self.tol = 2e-3
+        case.name = "case14_3"
+        self._aux_test(case)
+        
     def test_case39(self):
         case = pn.case39()
         case.name = "case39"
@@ -84,19 +110,19 @@ class TestDCPF(unittest.TestCase):
         self.tol = 4e-5
         self._aux_test(case)
 
-    # def test_case1888rte(self):
-    #     # does not work probably with None in converters
-    #     case = pn.case1888rte()
-    #     case.name = "case1888rte"
-    #     self.tol_kcl = 2e-3
-    #     self._aux_test(case)
+    def test_case1888rte(self):
+        # self.skipTest("pandapower might do something weird in DC with phase shift")
+        case = pn.case1888rte()
+        case.name = "case1888rte"
+        self.tol_kcl = 2e-3
+        self._aux_test(case)
 
     def test_case300(self):
         case = pn.case300()
         self._aux_test(case)
 
     # def test_case2848rte(self):
-    #     # does not work probably with None in converters
+    #     # too large for CI
     #     case = pn.case2848rte()
     #     case.name = "case2848rte"
     #     self.tol = 4e-5
@@ -104,7 +130,7 @@ class TestDCPF(unittest.TestCase):
     #     self._aux_test(case)
 
     # def test_case6470rte(self):
-    #     # does not work probably with None in converters
+    # #     # too large for CI
     #     case = pn.case6470rte()
     #     case.name = "case6470rte"
     #     self.tol = 2e-4
@@ -112,7 +138,7 @@ class TestDCPF(unittest.TestCase):
     #     self._aux_test(case)
 
     # def test_case6495rte(self):
-    #     # does not work probably with None in converters
+    #     # too large for CI
     #     case = pn.case6495rte()
     #     case.name = "case6495rte"
     #     self.tol = 2e-4
@@ -120,7 +146,7 @@ class TestDCPF(unittest.TestCase):
     #     self._aux_test(case)
 
     # def test_case6515rte(self):
-    #     # does not work probably with None in converters
+    #     # too large for CI
     #     case = pn.case6515rte()
     #     case.name = "case6515rte"
     #     self.tol = 2e-4

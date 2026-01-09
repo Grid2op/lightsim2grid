@@ -70,6 +70,7 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
     const auto n_pvpq = pvpq.size();
 
     // fill the sparse matrix Bp and Bpp (depends on the method: BX or XB)
+    bool new_grid_bp_bpp = false;
     if(need_factorize_ ||
        _solver_control.need_reset_solver() || 
        _solver_control.has_dimension_changed() ||
@@ -81,18 +82,14 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
         grid_Bp_ = Eigen::SparseMatrix<real_type> ();
         grid_Bpp_ = Eigen::SparseMatrix<real_type>(); 
         fillBp_Bpp(grid_Bp_, grid_Bpp_);
+        new_grid_bp_bpp = true;
     }
 
     // init "my" matrices
     // fill the solver matrices Bp_ and Bpp_
     // Bp_ = Bp[array([pvpq]).T, pvpq].tocsc()
     // Bpp_ = Bpp[array([pq]).T, pq].tocsc()
-    if(need_factorize_ ||
-       _solver_control.need_reset_solver() || 
-       _solver_control.has_dimension_changed() ||
-       _solver_control.ybus_change_sparsity_pattern() ||
-       _solver_control.has_ybus_some_coeffs_zero() ||
-       _solver_control.need_recompute_ybus() ||
+    if(new_grid_bp_bpp ||
        _solver_control.has_slack_participate_changed() ||
        _solver_control.has_pv_changed() ||
        _solver_control.has_pq_changed()
@@ -102,6 +99,7 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
         std::vector<int> pq_inv(V.size(), -1);
         for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
         fill_sparse_matrices(grid_Bp_, grid_Bpp_, pvpq_inv, pq_inv, n_pvpq, n_pq);
+        need_factorize_ = true;  // linear solvers need to be reset
     }
 
     V_ = V;  // V = V0

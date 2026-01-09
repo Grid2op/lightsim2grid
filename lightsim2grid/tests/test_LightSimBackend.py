@@ -149,8 +149,7 @@ class TestChangeBusAffectRightBus(BaseTestChangeBusAffectRightBus, unittest.Test
 
 
 class TestShuntAction(BaseTestShuntAction, unittest.TestCase):
-    # tests_skipped = ["test_shunt_effect"]  if sys.platform.startswith("win32") else []  # TODO I don't know why but needs to be fixed
-    tests_skipped = []
+    tests_skipped = ["test_shunt_effect"]  # "bug" in grid2op that performs an equality check for shunt_p real values which does not pass (shunt_p = 1e-16)
     def make_backend(self, detailed_infos_for_cascading_failures=False):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")

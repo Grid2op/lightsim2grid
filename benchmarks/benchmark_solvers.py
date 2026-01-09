@@ -15,8 +15,13 @@ from grid2op.Backend import PandaPowerBackend
 from grid2op.Agent import DoNothingAgent
 from grid2op.Chronics import ChangeNothing
 import re
-
-from lightsim2grid import solver
+from packaging import version
+import pandapower
+if version.parse(pandapower.__version__) > version.parse("3.0.0"):
+    PP_ORIG_FILE = "pandapower_v3"
+else:
+    PP_ORIG_FILE = "pandapower_v2"
+    
 try:
     from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance as GridStateFromFile
 except ImportError:
@@ -33,7 +38,7 @@ except ImportError as exc_:
 from grid2op.Parameters import Parameters
 import lightsim2grid
 from lightsim2grid.lightSimBackend import LightSimBackend
-from utils_benchmark import print_res, run_env, str2bool, get_env_name_displayed, print_configuration
+from utils_benchmark import run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
 try:
     from tabulate import tabulate
@@ -107,6 +112,7 @@ def main(max_ts,
          save_results=DONT_SAVE):
     param = Parameters()
     param.init_from_dict({"NO_OVERFLOW_DISCONNECTION": True})
+    aor_pp = None  # needed in case the user does not want to compute results for pandapower
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
@@ -121,7 +127,7 @@ def main(max_ts,
             env_pp_ls_numba = make(env_name_input, param=param, test=test,
                                    backend=PandaPowerBackend(lightsim2grid=True, with_numba=True),
                                    data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
-            env_lightsim = make(env_name_input, backend=LightSimBackend(), param=param, test=test,
+            env_lightsim = make(env_name_input, backend=LightSimBackend(loader_kwargs={"pp_orig_file": PP_ORIG_FILE}), param=param, test=test,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             if pypowbk_error is None:
                 env_pypow = make(env_name_input, param=param, test=test,
@@ -150,7 +156,7 @@ def main(max_ts,
                                  grid_path=env_name_input,
                                  backend=PyPowSyBlBackend())
             env_lightsim = make("blank", param=param, test=True,
-                                backend=LightSimBackend(),
+                                backend=LightSimBackend(loader_kwargs={"pp_orig_file": PP_ORIG_FILE}),
                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                 grid_path=env_name_input)
             _, env_name_input = os.path.split(env_name_input)
@@ -192,7 +198,6 @@ def main(max_ts,
     
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
-    
     for solver_type in solver_types:
         if solver_type not in solver_names:
             continue
@@ -234,7 +239,7 @@ def main(max_ts,
     this_order =  [el for el in res_times.keys() if el not in order_solver_print] + order_solver_print
 
     env_name = get_env_name_displayed(env_name_input)
-    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms)", f"time in 'algo' (ms / pf)"]
+    hds = [f"{env_name}", "grid2op speed (it/s)", "grid2op 'backend.runpf' time (ms)", "time in 'algo' (ms / pf)"]
     tab = []
     if no_pp is False:
         tab.append(["PP", f"{nb_ts_pp/time_pp:.2e}",
@@ -278,28 +283,30 @@ def main(max_ts,
         print(tab)
     print()
 
-    hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
-    if no_pp is False:
-        tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
-    
-    for key in this_order:
-        if key not in res_times:
-            continue
-        solver_name, nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs, gs_comp_time, gs_time_pf = res_times[key]
-        tab.append([solver_name,
-                    f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
-                    f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
-                    f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
+    if aor_pp is not None:
+        nb_ts_this_table = res_times[solver_types[0]][1]
+        hds = [f"{env_name} ({nb_ts_this_table} iter)", "Δ aor (amps)", "Δ gen_p (MW)", "Δ gen_q (MVAr)"]
+        if no_pp is False:
+            tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
+            
+        for key in this_order:
+            if key not in res_times:
+                continue
+            solver_name, nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs, gs_comp_time, gs_time_pf = res_times[key]
+            tab.append([solver_name,
+                        f"{np.max(np.abs(aor_gs - aor_pp)):.2e}",
+                        f"{np.max(np.abs(gen_p_gs - gen_p_pp)):.2e}",
+                        f"{np.max(np.abs(gen_q_gs - gen_q_pp)):.2e}"])
 
-    if TABULATE_AVAIL:
-        res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
-        print(res_use_with_grid2op_2)
-    else:
-        print(tab)
-        
-    if save_results != DONT_SAVE:
-        dt = pd.DataFrame(tab, columns=hds)
-        dt.to_csv(save_results+"diff.csv", index=False, header=True, sep=";")
+        if TABULATE_AVAIL:
+            res_use_with_grid2op_2 = tabulate(tab, headers=hds,  tablefmt="rst")
+            print(res_use_with_grid2op_2)
+        else:
+            print(tab)
+            
+        if save_results != DONT_SAVE:
+            dt = pd.DataFrame(tab, columns=hds)
+            dt.to_csv(save_results+"diff.csv", index=False, header=True, sep=";")
     print()
 
 

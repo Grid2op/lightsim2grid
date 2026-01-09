@@ -27,7 +27,7 @@ class TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::Tw
         // members
         real_type ratio;
         real_type shift_rad;
-        bool is_tap_hv_side;
+        bool is_tap_side1;
 
         inline TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept;
 };
@@ -67,7 +67,8 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes,
                    std::vector<real_type>, // ratio_
                    std::vector<bool> , // is_tap_hv_side
-                   std::vector<real_type> // shift_
+                   std::vector<real_type>, // shift_
+                   bool  // ignore_tap_side_for_shift_
                >  StateRes;
 
         TrafoContainer() noexcept = default;
@@ -81,7 +82,8 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                   const RealVect & trafo_shift_degree,
                   const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                   const Eigen::VectorXi & trafo_hv_id,
-                  const Eigen::VectorXi & trafo_lv_id
+                  const Eigen::VectorXi & trafo_lv_id,
+                  bool ignore_tap_side_for_shift
                   );
 
         void init(const RealVect & trafo_r,
@@ -91,12 +93,15 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                   const RealVect & trafo_shift_degree,
                   const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                   const Eigen::VectorXi & trafo_hv_id,
-                  const Eigen::VectorXi & trafo_lv_id
+                  const Eigen::VectorXi & trafo_lv_id,
+                  bool ignore_tap_side_for_shift
                   );
 
         //pickle
         StateRes get_state() const;
         void set_state(StateRes & my_state );
+
+        bool ignore_tap_side_for_shift() const { return ignore_tap_side_for_shift_; }
 
         virtual void hack_Sbus_for_dc_phase_shifter(
             CplxVect & Sbus,
@@ -145,35 +150,53 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
                 if(std::abs(ratio_(el_id) - new_ratio) >_tol_equal_float){
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
-                    _update_model_coeffs_one_el(el_id); 
+                    _update_internal_coeffs(el_id); 
                     solver_control.tell_recompute_ybus();
                 }
         }
         
+        /**
+         * The shift is in radian (not degree !)
+         * 
+         * It is the shift on the "side 1" (regardless of the value of "is_tap_hv_side").
+         * If the tap is on the other side, the user has the reponsibility to
+         * take the opposite (ie -0.1 instead of +0.1)
+         */
         void change_shift(
             int el_id,
-            real_type new_shift,
+            real_type new_shift_rad,
             SolverControl & solver_control){
-                if(std::abs(shift_(el_id) - new_shift) >_tol_equal_float){
-                    shift_(el_id) = new_shift;
+                if(std::abs(shift_(el_id) - new_shift_rad) >_tol_equal_float){
+                    shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
-                    _update_model_coeffs_one_el(el_id); 
+                    _update_internal_coeffs(el_id); 
                     solver_control.tell_recompute_ybus();
                     solver_control.tell_recompute_sbus();  // only in DC however
                 }
         }
         
     protected:
-        void _update_model_coeffs();
-        void _update_model_coeffs_one_el(int el_id);
+        // void _update_model_coeffs();
+        virtual void _update_model_coeffs_one_el(int el_id);
+        virtual void _update_other_model_coeffs(){
+            dc_x_tau_shift_ = RealVect::Zero(nb());
+        }
 
     private:
+        /**
+         * whether to ignore the tap position for phase shifter (alpha).
+         * 
+         * This is the default behaviour in pandapower, where the phase shifter
+         * is always assigned to side 1.
+         */
+        bool ignore_tap_side_for_shift_;
+        
         // physical properties
-        std::vector<bool> is_tap_hv_side_;  // whether the tap is hav side or not
+        std::vector<bool> is_tap_side1_;  // whether the tap is hav side or not
 
         // input data
-        RealVect ratio_;  // transformer ratio (no unit)
-        RealVect shift_;  // phase shifter (in radian !)
+        RealVect ratio_;  // transformer ratio (no unit) (depends on is_tap_side1_)
+        RealVect shift_;  // phase shifter (in radian !) (might depends on is_tap_side1, if ignore_tap_side_for_shift_ is true, then it is the shift side1)
 
         //output data
 
@@ -184,7 +207,7 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
 
         virtual real_type fillBf_for_PTDF_coeff(int tr_id) const{
             real_type res = x_(tr_id);
-            real_type tau = is_tap_hv_side_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
+            real_type tau = is_tap_side1_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
             return res * tau;
         }
 
@@ -199,11 +222,11 @@ inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noex
 TwoSidesContainer_rxh_AInfo(r_data_trafo, my_id),
 ratio(-1.0),
 shift_rad(-1.0),
-is_tap_hv_side(true)
+is_tap_side1(true)
 {
     if(my_id < 0) return;
     if(my_id >= r_data_trafo.nb()) return;
-    is_tap_hv_side = r_data_trafo.is_tap_hv_side_[my_id];
+    is_tap_side1 = r_data_trafo.is_tap_side1_[my_id];
     ratio = r_data_trafo.ratio_.coeff(my_id);
     shift_rad = r_data_trafo.shift_.coeff(my_id);
 }

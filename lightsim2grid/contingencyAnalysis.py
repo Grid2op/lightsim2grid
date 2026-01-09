@@ -122,6 +122,16 @@ class __ContingencyAnalysis(object):
         raise RuntimeError("Impossible to add new topologies like this. Please use `add_single_contingency` "
                            "or `add_multiple_contingencies`.")
 
+    @property
+    def init_from_n_powerflow(self):
+        return self.computer.init_from_n_powerflow
+    
+    @init_from_n_powerflow.setter
+    def init_from_n_powerflow(self, val):
+        if bool(val) != val:
+            raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
+        self.computer.init_from_n_powerflow = bool(val)
+        
     # TODO implement that !
     def __update_grid(self, backend_act):
         raise NotImplementedError("TODO !")

@@ -22,6 +22,8 @@ try:
 except ImportError:
     from lightsim2grid import SecurityAnalysis as ContingencyAnalysis
     
+from lightsim2grid.solver import SolverType
+
 from tqdm import tqdm
 import os
 from utils_benchmark import print_configuration, get_env_name_displayed
@@ -46,7 +48,7 @@ case_names = [
               "case300.json",
               "case1354pegase.json",
               "case1888rte.json",
-            #   "GBnetwork.json",  # 2224 buses
+              # "GBnetwork.json",  # 2224 buses
               "case2848rte.json",
               "case2869pegase.json",
               "case3120sp.json",
@@ -235,6 +237,7 @@ def run_grid2op_env(env_lightsim, case, reset_solver,
         
 if __name__ == "__main__":
     prng = np.random.default_rng(42)
+    ls_solver_type = SolverType.KLU
     case_names_displayed = [get_env_name_displayed(el) for el in case_names]
     solver_preproc_solver_time = []
     g2op_speeds = []
@@ -324,6 +327,7 @@ if __name__ == "__main__":
                                         load_q,
                                         gen_p_g2op,
                                         sgen_p)
+        env_lightsim.backend.set_solver_type(ls_solver_type)
         # Perform the computation using grid2op
         reset_solver = True  # non default
         nb_step_reset = run_grid2op_env(env_lightsim, case, reset_solver,
@@ -360,7 +364,7 @@ if __name__ == "__main__":
                                      env_lightsim.backend.tol)
         time_serie._TimeSerie__computed = True
         a_or = time_serie.compute_A()
-        assert status or computer.nb_solver() == nb_step_pp, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
+        assert status or computer.nb_solved() == nb_step_pp, f"some powerflow diverge for Time Series for {case_name}: {computer.nb_solved()} "
 
         if VERBOSE:
             # print detailed results if needed
@@ -389,6 +393,7 @@ if __name__ == "__main__":
             sa.add_single_contingency(i)
             if i >= 1000:
                 break
+        sa.init_from_n_powerflow = True
         p_or, a_or, voltages = sa.get_flows()
         computer_sa = sa.computer
         sa_times.append(computer_sa.total_time() + computer_sa.amps_computation_time())

@@ -132,20 +132,22 @@ Results
 
 The benchmarks were run on:
 
-- date: 2025-12-08 14:24  CET
+- date: 2026-01-09 10:46  CET
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
 - python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.3.5
+- numpy version: 2.0.2
 - pandas version: 2.3.3
+- pandapower version: 3.2.1
 - pypowsybl version: 1.13.0
-- lightsim2grid version: 0.11.0
+- grid2op version: 1.12.2
+- lightsim2grid version: 0.12.1
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
-	- nicslu_solver_available: False 
-	- cktso_solver_available: False 
+	- nicslu_solver_available: True 
+	- cktso_solver_available: True 
 	- compiled_march_native: True 
 	- compiled_o3_optim: True 
 
@@ -155,6 +157,7 @@ The results were obtained by launching:
 .. code-block:: bash
     python compare_lightsim2grid_pypowsybl.py --case ieee9
     python compare_lightsim2grid_pypowsybl.py --case ieee14
+    python compare_lightsim2grid_pypowsybl.py --case ieee30
     python compare_lightsim2grid_pypowsybl.py --case ieee57
     python compare_lightsim2grid_pypowsybl.py --case ieee118
     python compare_lightsim2grid_pypowsybl.py --case ieee300
@@ -172,6 +175,7 @@ case name   angle (rad)  magnitude (pu)
 ========== ============= ===============
 ieee9       1.82e-08        1.15e-08
 ieee14      9.70e-10        1.27e-09 
+ieee30      1.58e-09        3.55e-09 
 ieee57      1.63e-07        2.71e-07
 ieee118     1.06e-07        3.15e-09
 ieee300     3.10e-07        1.75e-08
@@ -184,6 +188,7 @@ case name   angle (rad)  magnitude (pu)
 ========== ============= ===============
 ieee9       3.35e-08        2.65e-08
 ieee14      2.35e-09        2.92e-09 
+ieee30      3.23e-09        7.96e-09 
 ieee57      9.54e-07        1.20e-06
 ieee118     2.54e-07        6.92e-08
 ieee300     3.80e-07        1.59e-07
@@ -211,11 +216,12 @@ Times are expressed in ms.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.32e-01         4.80e+00
-ieee14      1.35e-01         3.74e+00 
-ieee57      4.18e-01         4.14e+00
-ieee118     6.89e-01         5.77e+00
-ieee300     2.27e+00         1.78e+01
+ieee9       1.29e-01         3.56e+00
+ieee14      1.75e-01         3.98e+00 
+ieee30      2.96e-01         3.92e+00 
+ieee57      4.77e-01         5.44e+00
+ieee118     6.74e-01         6.12e+00
+ieee300     2.51e+00         1.28e+01
 ========== =============== ===============
 
 For this initial computation, lightsim2grid seems to be between 30 and 5x faster 
@@ -248,11 +254,12 @@ time it took to perform the 100 powerflows.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.72e-02         6.75e-01
-ieee14      2.77e-02         8.38e-01 
-ieee57      1.38e-01         1.50e+00
-ieee118     2.90e-01         2.53e+00
-ieee300     1.74e+00         5.70e+00
+ieee9       1.71e-02         7.26e-01
+ieee14      2.83e-02         8.95e-01 
+ieee30      6.00e-02         1.26e+00 
+ieee57      1.41e-01         1.46e+00
+ieee118     3.11e-01         2.48e+00
+ieee300     1.76e+00         5.78e+00
 ========== =============== ===============
 
 
@@ -273,9 +280,10 @@ compute the flows from the resulting voltages.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.55e-02         6.35e-01
-ieee14      2.28e-02         1.74e-01
-ieee57      1.36e-01         1.86e-01
-ieee118     2.04e-01         3.41e-01
-ieee300     9.99e-01         1.30e+00
+ieee9       2.29e-02         3.03e-01
+ieee14      2.92e-02         1.97e-01
+ieee30      4.85e-02         1.68e-01
+ieee57      1.32e-01         1.81e-01
+ieee118     2.05e-01         3.38e-01
+ieee300     9.95e-01         1.31e+00
 ========== =============== ===============
