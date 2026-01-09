@@ -49,7 +49,7 @@ compared with pandapower and pypowsybl when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- date: 2026-01-07 18:54  CET
+- date: 2026-01-09 10:46  CET
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -58,7 +58,7 @@ All of them has been run on a computer with a the following characteristics:
 - pandas version: 2.3.3
 - pandapower version: 3.2.1
 - grid2op version: 1.12.2
-- lightsim2grid version: 0.12.0
+- lightsim2grid version: 0.12.1
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -93,16 +93,16 @@ For an environment based on the IEEE case 14:
 ========================  ======================  ========================================  ==========================
 case14_sandbox              grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
 ========================  ======================  ========================================  ==========================
-PP DC                                        181                               4.14                        0.572
-pypowsybl                                    889                               0.779                       0.711
-DC                                          2740                               0.059                       0.00565
-DC (KLU)                                    2790                               0.0549                      0.00174
-DC (NICSLU *)                               2810                               0.0545                      0.00174
-DC (CKTSO *)                                2790                               0.0547                      0.00157
-time serie **                               NA                                 0.00124285                  0.000461874
-PTDF **                                     NA                                 7.17958e-05                 7.09618e-05
-contingency analysis ***                    NA                                 0.0050062                   0.0010606
-LODF ***                                    NA                                 0.0004046                   0.00035865
+PP DC                                        179                               4.16                        0.576
+pypowsybl                                   1090                               0.572                       0.506
+DC                                          2700                               0.0599                      0.00601
+DC (KLU)                                    2740                               0.0553                      0.00181
+DC (NICSLU *)                               2770                               0.0549                      0.00182
+DC (CKTSO *)                                2760                               0.0547                      0.00158
+time serie **                                 NA                               0.00128204                  0.000474507
+PTDF **                                       NA                               7.34754e-05                 7.26855e-05
+contingency analysis ***                      NA                               0.00339865                  0.0006291
+LODF ***                                      NA                               0.0003282                   0.0002985
 ========================  ======================  ========================================  ==========================
 
 And for an environment based on the IEEE case 118:
@@ -110,15 +110,15 @@ And for an environment based on the IEEE case 118:
 ========================  ======================  ========================================  ==========================
 neurips_2020_track2         grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
 ========================  ======================  ========================================  ==========================
-PP DC                                        164                               4.62                        0.75
-DC                                          2080                               0.107                       0.0426
-DC (KLU)                                    2330                               0.0686                      0.00734
-DC (NICSLU *)                               2320                               0.0681                      0.00674
-DC (CKTSO *)                                2330                               0.0674                      0.00585
-time serie **                               NA                                 0.0110865                   0.00310855
-PTDF **                                     NA                                 0.00082077                  0.000803991
-contingency analysis ***                    NA                                 0.00804911                  0.00303248
-LODF ***                                    NA                                 0.000455909                 0.000304995
+PP DC                                        164                               4.63                        0.75
+DC                                          2100                               0.107                       0.0426
+DC (KLU)                                    2360                               0.0681                      0.00721
+DC (NICSLU *)                               2380                               0.0673                      0.00661
+DC (CKTSO *)                                2390                               0.0663                      0.00575
+time serie **                                 NA                               0.0112263                   0.00311001
+PTDF **                                       NA                               0.000833965                 0.000816435
+contingency analysis ***                      NA                               0.00778658                  0.00304041
+LODF ***                                      NA                               0.000416366                 0.00026614
 ========================  ======================  ========================================  ==========================
 
 (see the section "Comments" below for details and especially the meaning of \*, \*\* and \*\*\*)
