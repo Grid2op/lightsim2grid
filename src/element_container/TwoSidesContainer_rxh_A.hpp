@@ -178,6 +178,19 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 std::get<3>(side_2_res));
         }
 
+        void init_fdpf_coeffs(){
+            if(BX_fpdf_coeffs_.are_cached() && XB_fpdf_coeffs_.are_cached()) return;  // coefficients have already been computed
+            
+            BX_fpdf_coeffs_.init(nb());
+            XB_fpdf_coeffs_.init(nb());
+            for(int el_id = 0; el_id < nb(); ++el_id){
+                BX_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::BX));
+                XB_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::XB));
+            }
+            BX_fpdf_coeffs_.set_computed(true);
+            XB_fpdf_coeffs_.set_computed(true);
+        }
+
         void compute_results_tsc_rxha_no_amps(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
@@ -493,7 +506,16 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             // if alg == 3:                               ## if BX method
             //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
             const Eigen::Index nb_trafo = nb();
+            const FDPFCoeffsContainer & fdpf_coeffs = xb_or_bx == FDPFMethod::XB ? XB_fpdf_coeffs_ : BX_fpdf_coeffs_;
 
+            if(!fdpf_coeffs.are_cached()){
+                std::ostringstream exc_;
+                exc_ << "TwoSidesContainer_rxh_A::fillBp_Bpp: the FDPF ";
+                exc_ << "coefficients are not cached, you need to call ";
+                exc_ << "the method gridmodel.init_fdpf_coeffs() before ";
+                exc_ << "computing a powerflow with the FDPF method";
+                throw std::runtime_error(exc_.str());
+            }
             for(Eigen::Index el_id=0; el_id < nb_trafo; ++el_id){
                 // i only add this if the powerline is connected
                 if(!status_global_[el_id]) continue;
@@ -543,8 +565,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }else{
                     throw std::runtime_error("FDPF algorithm does not handle lines / trafos disconnected at only one side at the moment.");
                 }
-
-                const FDPFCoeffs & coeffs = this->get_fdpf_coeffs(el_id, xb_or_bx);
+                
+                const FDPFCoeffs & coeffs = fdpf_coeffs[el_id];
 
                 // and now add them
                 if(side_1_.get_status(el_id)){
@@ -685,6 +707,30 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             real_type ytt_bpp;
         };
 
+        class FDPFCoeffsContainer final
+        {
+            private:
+                std::vector<FDPFCoeffs> m_coeffs;
+                bool is_computed;
+            
+            public:
+                FDPFCoeffsContainer() noexcept: m_coeffs(), is_computed(false){}
+                bool are_cached() const { return is_computed; }
+                void set_computed(bool comp_) { is_computed = comp_; }
+
+                void init(int size){
+                    m_coeffs.clear();
+                    m_coeffs = std::vector<FDPFCoeffs>(size);
+                }
+                void assign_el(int el_id, const FDPFCoeffs & coeff){
+                    m_coeffs[el_id] = coeff;
+                    // TODO only in debug MODE: use at here instead
+                }
+                const FDPFCoeffs & operator[](int el_id) const {
+                    return m_coeffs[el_id];
+                }
+        };
+
         StateRes get_tsc_rxha_state() const  // tsc: two sides container
         {
             std::vector<real_type> branch_r(r_.begin(), r_.end());
@@ -779,6 +825,68 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             return res;
         }
 
+        void _update_model_coeffs()
+        {
+            const Eigen::Index my_size = nb();
+
+            yac_11_ = CplxVect::Zero(my_size);
+            yac_12_ = CplxVect::Zero(my_size);
+            yac_21_ = CplxVect::Zero(my_size);
+            yac_22_ = CplxVect::Zero(my_size);
+
+            ydc_11_ = CplxVect::Zero(my_size);
+            ydc_12_ = CplxVect::Zero(my_size);
+            ydc_21_ = CplxVect::Zero(my_size);
+            ydc_22_ = CplxVect::Zero(my_size);
+            this->_update_other_model_coeffs();
+            for(Eigen::Index i = 0; i < my_size; ++i)
+            {
+                // coeff for Ybus matrices (AC and DC)
+                _update_internal_coeffs(i);
+            }
+        }
+
+        /**
+         * Used to update "dcx_tau_shift" in trafo for example
+         */
+        virtual void _update_other_model_coeffs() {}
+
+        void _update_internal_coeffs(int el_id){
+            // update coeffs for Ybus (AC and DC)
+            this->_update_model_coeffs_one_el(el_id);
+
+            // for FDPF matrices (if cached)
+            if(BX_fpdf_coeffs_.are_cached()){
+                // update the cache in this case
+                BX_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::BX));
+            }
+            if(XB_fpdf_coeffs_.are_cached()){
+                // update the cache in this case
+                XB_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::XB));
+            }
+        }
+
+        virtual void _update_model_coeffs_one_el(int el_id){
+            // for AC
+            // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
+            const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));
+            const cplx_type h_or = h_side_1_(el_id);
+            const cplx_type h_ex = h_side_2_(el_id);
+            yac_11_(el_id) = (ys + h_or);
+            yac_22_(el_id) = (ys + h_ex);
+            yac_12_(el_id) = -ys;
+            yac_21_(el_id) = -ys;
+
+            // for DC
+            // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
+            // except here I only care about the real part, so I remove the "1/j"
+            cplx_type tmp = 1. / cplx_type(x_(el_id), 0.);
+            ydc_11_(el_id) = tmp;
+            ydc_22_(el_id) = tmp;
+            ydc_21_(el_id) = -tmp;
+            ydc_12_(el_id) = -tmp;
+        }
+
     protected:        
         // physical properties
         RealVect r_;  // in pu
@@ -800,5 +908,9 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         CplxVect ydc_12_;
         CplxVect ydc_21_;
         CplxVect ydc_22_;
+
+        // For FDPF
+        FDPFCoeffsContainer BX_fpdf_coeffs_;
+        FDPFCoeffsContainer XB_fpdf_coeffs_;
 };
 #endif  // TWO_SIDES_CONTAINER_RXH_A_H

@@ -41,7 +41,7 @@
 #include "ChooseSolver.hpp"
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
-class GridModel final : public GenericContainer
+class GridModel final
 {
     public:
         typedef Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> IntVectRowMaj;
@@ -53,7 +53,6 @@ class GridModel final : public GenericContainer
                 std::vector<int>, // ls_to_orig
                 real_type,  // init_vm_pu
                 real_type, //sn_mva
-                // std::vector<real_type>,  // bus_vn_kv
                 std::vector<bool>,  // bus_status
                 SubstationContainer::StateRes,
                 // powerlines
@@ -188,8 +187,12 @@ class GridModel final : public GenericContainer
         // solver "control"
         void change_solver(const SolverType & type){
             solver_control_.tell_all_changed();
+            
+            if(_solver.is_fdpf(type)) init_fdpf_coeffs();
+
             if(_solver.is_dc(type)) _dc_solver.change_solver(type);
             else _solver.change_solver(type);
+            
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
         SolverType get_solver_type() const {return _solver.get_type(); }
@@ -241,10 +244,11 @@ class GridModel final : public GenericContainer
                                    const RealVect & trafo_shift_degree,
                                    const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                                    const Eigen::VectorXi & bus1_id,
-                                   const Eigen::VectorXi & bus2_id
+                                   const Eigen::VectorXi & bus2_id,
+                                   bool ignore_tap_side_for_shift
                                    ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
-                         trafo_tap_hv, bus1_id, bus2_id);
+                         trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
         void init_trafo(const RealVect & trafo_r,
                         const RealVect & trafo_x,
@@ -253,10 +257,11 @@ class GridModel final : public GenericContainer
                         const RealVect & trafo_shift_degree,
                         const std::vector<bool> & trafo_tap_hv,  // is tap on high voltage (true) or low voltate
                         const Eigen::VectorXi & bus1_id,
-                        const Eigen::VectorXi & bus2_id
+                        const Eigen::VectorXi & bus2_id,
+                        bool ignore_tap_side_for_shift
                            ){
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
-                         trafo_tap_hv, bus1_id, bus2_id);
+                         trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
         }
 
         void init_generators(const RealVect & generators_p,
@@ -448,7 +453,7 @@ class GridModel final : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _generic_deactivate(global_bus_id, substations_);
+                GenericContainer::_generic_deactivate(global_bus_id, substations_);
             }
         }
         void deactivate_bus_python(int global_bus_id) {
@@ -463,7 +468,7 @@ class GridModel final : public GenericContainer
                 solver_control_.need_recompute_sbus();
                 solver_control_.need_recompute_ybus();
                 solver_control_.ybus_change_sparsity_pattern();
-                _generic_reactivate(global_bus_id, substations_); 
+                GenericContainer::_generic_reactivate(global_bus_id, substations_); 
             }
         }
         void reactivate_bus_python(int global_bus_id) {
@@ -608,8 +613,16 @@ class GridModel final : public GenericContainer
         void change_ratio_trafo(int trafo_id, real_type new_ratio){
             trafos_.change_ratio(trafo_id, new_ratio, solver_control_);
         }
-        void change_shift_trafo(int trafo_id, real_type new_shift){
-            trafos_.change_shift(trafo_id, new_shift, solver_control_);
+
+        /**
+         * The shift is in radian (not degree !)
+         */
+        void change_shift_trafo(int trafo_id, real_type new_shift_rad){
+            trafos_.change_shift(trafo_id, new_shift_rad, solver_control_);
+        }
+        void change_shift_trafo_deg(int trafo_id, real_type new_shift_deg){
+            real_type new_shift_rad = new_shift_deg / BaseConstants::my_180_pi_;
+            change_shift_trafo(trafo_id, new_shift_rad);
         }
 
         //load
@@ -1176,11 +1189,6 @@ class GridModel final : public GenericContainer
         real_type get_computation_time() const{ return _solver.get_computation_time();}
         real_type get_dc_computation_time() const{ return _dc_solver.get_computation_time();}
 
-    // private:
-    //     using GenericContainer::update_bus_status;  // to silence clang warnings (overload-virtual)
-    // public:
-    //     void update_bus_status(int nb_bus_before,
-    //                            Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 2, Eigen::RowMajor> > active_bus);
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
         void update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
@@ -1311,39 +1319,32 @@ class GridModel final : public GenericContainer
                                     const SolverControl & solver_control);
 
         //for FDPF
-    private:
-        using GenericContainer::fillBp_Bpp;  // silence clang warning overload-virtual
-    public:
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                         Eigen::SparseMatrix<real_type> & Bpp, 
                         FDPFMethod xb_or_bx) const;
-
-    private:
-        using GenericContainer::fillBf_for_PTDF;  // silence clang warning overload-virtual
-    public:
+        void init_fdpf_coeffs(){
+            powerlines_.init_fdpf_coeffs();
+            trafos_.init_fdpf_coeffs();
+        }
         void fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose=false) const;
 
         Eigen::SparseMatrix<real_type> debug_get_Bp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
             Eigen::SparseMatrix<real_type> Bpp;
+            init_fdpf_coeffs();
             fillBp_Bpp(Bp, Bpp, xb_or_bx);
             return Bp;
         }
         Eigen::SparseMatrix<real_type> debug_get_Bpp_python(FDPFMethod xb_or_bx){
             Eigen::SparseMatrix<real_type> Bp;
             Eigen::SparseMatrix<real_type> Bpp;
+            init_fdpf_coeffs();
             fillBp_Bpp(Bp, Bpp, xb_or_bx);
             return Bpp;
         }
 
     protected:
-        void set_ls_to_orig_internal(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
-
-        // compute admittance matrix
-        // dc powerflow
-        // void init_dcY(Eigen::SparseMatrix<real_type> & dcYbus);
-
-        // ac powerflows
+        void set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept;  // set both _ls_to_orig and _orig_to_ls
 
         // init the Ybus matrix (its size, it is filled up elsewhere) and also the 
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
@@ -1468,9 +1469,6 @@ class GridModel final : public GenericContainer
             }
             return res;
         }
-
-    private:
-        using GenericContainer::fillYbus;  // to silence the overload-virtual warning in clang
     
     protected:
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const std::vector<SolverBusId>& id_me_to_solver);

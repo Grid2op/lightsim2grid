@@ -8,11 +8,8 @@
 
 import unittest
 import numpy as np
-import pandas as pd
-from packaging import version as version_packaging 
 
 import pypowsybl.network as pp_network
-import pypowsybl as pp
 import pypowsybl.loadflow as pp_lf
 
 from lightsim2grid.gridmodel import init_from_pypowsybl
@@ -535,6 +532,8 @@ class BaseTests:
         # check it has an impact on the load flow
         Vfinal = self._run_both_pf(self.net_ref)
         with self.assertRaises(AssertionError):
+            # this checks the results are not the same
+            # when pypowsybl grid is not updated
             self.check_res(Vfinal, self.net_ref)
             
         self.skipTest("Hard to change the alpha of phase tap changer in pypowsbl")

@@ -219,7 +219,9 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         bus_pq_,
         max_iter,
         tol);
-
+    // check if we init the n-1 cases with results from the n cases
+    // or not
+    if(_init_from_n_powerflow) Vinit_solver = _solver.get_V();
     // end of pre processing
     _timer_pre_proc = timer_preproc.duration();
     if(!conv) return;

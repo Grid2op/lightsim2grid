@@ -369,7 +369,8 @@ def init(net : pypo.network.Network,
                                "of the net (once per unit). Please upgrade pypowsybl."
                                "NB: phase tap change are handled by lightsim2grid)")
         shift_ = np.zeros(df_trafo.shape[0])
-    is_tap_hv_side = np.zeros(df_trafo.shape[0], dtype=bool)  # TODO    
+    # tap is side 2 in IIDM
+    is_tap_side1 = np.zeros(df_trafo.shape[0], dtype=bool)   
     trafo_r = df_trafo_pu["r"].values
     trafo_x = df_trafo_pu["x"].values
     trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values)
@@ -398,9 +399,11 @@ def init(net : pypo.network.Network,
                      trafo_h,
                      ratio,
                      shift_,  # in degree !
-                     is_tap_hv_side,
+                     is_tap_side1,
                      tor_bus,
-                     tex_bus)    
+                     tex_bus,
+                     False,  # ignore_tap_side_for_phase_shift is False for pypowsybl
+                     )    
     for t_id, (is_or_disc, is_ex_disc) in enumerate(zip(tor_disco, tex_disco)):
         if is_or_disc or is_ex_disc:
             model.deactivate_trafo(t_id)

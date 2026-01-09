@@ -85,12 +85,25 @@ class ChooseSolver final
             return res;
         }
         
-        bool is_dc(const SolverType & type){
-            bool res;
+        bool is_dc(const SolverType & type) const noexcept{
+            bool res = false;
             res = (type == SolverType::DC) || 
                   (type == SolverType::KLUDC) || 
                   (type == SolverType::NICSLUDC) ||
                   (type == SolverType::CKTSODC);
+            return res;
+        }
+        bool is_fdpf(const SolverType & type) const noexcept{
+            bool res = false;
+            res = (type == SolverType::FDPF_XB_SparseLU) || 
+                  (type == SolverType::FDPF_BX_SparseLU) || 
+                  (type == SolverType::FDPF_XB_KLU) ||
+                  (type == SolverType::FDPF_BX_KLU) ||
+                  (type == SolverType::FDPF_XB_NICSLU) ||
+                  (type == SolverType::FDPF_BX_NICSLU) ||
+                  (type == SolverType::FDPF_XB_CKTSO) ||
+                  (type == SolverType::FDPF_BX_CKTSO)
+                  ;
             return res;
         }
         SolverType get_type() const {return _solver_type;}

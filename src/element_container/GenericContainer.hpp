@@ -106,14 +106,38 @@ class GenericContainer : public BaseConstants
         GenericContainer() noexcept = default;
         virtual ~GenericContainer() noexcept = default;
         
-    protected:
-        std::vector<std::string> names_;
+        /**
+        check the size of the elements
+        **/
+        template<class T, class intType>
+        static void check_size(const T & container, intType size, const std::string & container_name)
+        {
+            if(static_cast<intType>(container.size()) != size) throw std::runtime_error(container_name + " do not have the proper size");
+        }
 
-    protected:
+        /**
+        activation / deactivation of elements
+        **/
+        static void _generic_reactivate(int el_id, std::vector<bool> & status);
+        static void _generic_deactivate(int el_id, std::vector<bool> & status);
+
+        static void _generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
+        static void _generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
+
+        /**
+        check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)
+        **/
+        template<class ScalarCLS, class VectCLS>  // a std::vector, or an Eigen::Vector                                                 
+        static bool is_in_vect(const ScalarCLS & val, const VectCLS & cont) {
+            return std::find(
+                cont.begin(),
+                cont.end(),
+                static_cast<typename VectCLS::value_type>(val)) != cont.end();}
+
         template<typename Cont, typename FunName, typename IntType>
         // todo automatically "unwrap" IntType to be either cont::size_type for stl container and
         // Eigen::Index for Eigen containers
-        void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="") const
+        static void _check_in_range(IntType el_id, const Cont & cont, FunName fun_name="")
         {
             // TODO debug mode: only in debug mode
             if(el_id >= cont.size())
@@ -138,14 +162,10 @@ class GenericContainer : public BaseConstants
             }
         }
 
-        /**
-        activation / deactivation of elements
-        **/
-        void _generic_reactivate(int el_id, std::vector<bool> & status);
-        void _generic_deactivate(int el_id, std::vector<bool> & status);
+    protected:
+        std::vector<std::string> names_;
 
-        void _generic_reactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
-        void _generic_deactivate(const GlobalBusId & global_bus_id, SubstationContainer & substation);
+    protected:
         
         /**
          * Change the bus of the element "el_id" and performs some basic check that the new bus is valid.
@@ -189,25 +209,6 @@ class GenericContainer : public BaseConstants
                            const std::vector<SolverBusId> & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
                            RealVect & v) const;
-
-        /**
-        check the size of the elements
-        **/
-        template<class T, class intType>
-        void check_size(const T & container, intType size, const std::string & container_name) const
-        {
-            if(static_cast<intType>(container.size()) != size) throw std::runtime_error(container_name + " do not have the proper size");
-        }
-
-        /**
-        check if an element is in a vector or an Eigen Vector, do not use for other types of containers (might not be efficient at all)
-        **/
-        template<class ScalarCLS, class VectCLS>  // a std::vector, or an Eigen::Vector                                                 
-        bool is_in_vect(const ScalarCLS & val, const VectCLS & cont) const {
-            return std::find(
-                cont.begin(),
-                cont.end(),
-                static_cast<typename VectCLS::value_type>(val)) != cont.end();}
 };
 
 #endif // GENERIC_CONTAINER_H

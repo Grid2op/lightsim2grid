@@ -29,6 +29,25 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.12.1]  2026-01-09
+---------------------
+- [FIXED] phase shift transformers are now properly modeled
+  for both pandapower (new in this version) and pypowsybl (already
+  the case in previous version)
+- [FIXED] a performance issue for all "XXXSingleSlack" (*eg* KLUSingleSlack) algorithm (filling of the initial
+  Jacobian matrix was extremly slow due to the massive 'insert' of data in the eigen sparse matrix instead 
+  of relying on the "setFromTriplets" method)
+- [FIXED] an normal "exception" was not catched in the `close()` method of LightSimBackend in case the
+  backend was closed before any grid was loaded.
+- [ADDED] possibility to pickle independantly all part of the grid (*eg* gridmodel.get_lines()
+  can be pickled independantly from anything else) **NB** pickling and un-pickling 
+  lightsim2grid objects can only be used for the same lightsim2grid version.
+- [ADDED] the `init_from_n_powerflow` property for ContingencyAnalysis (and 
+  ContingencyAnalysisCPP). It allows to chose if the computation of the contingencies
+  are initialized with the complex voltages resulting of the powerflow in N 
+  (`init_from_n_powerflow=True`) or if they are initialized from the 
+  given input vector (`init_from_n_powerflow=False`). Defaults to `False`
+
 [0.12.0] 2026-01-06
 --------------------
 - [BREAKING] for better consistency, and following pypowsybl convention, trafo and lines "side"

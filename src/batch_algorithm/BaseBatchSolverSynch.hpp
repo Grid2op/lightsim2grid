@@ -217,7 +217,7 @@ class BaseBatchSolverSynch : protected BaseConstants
             int tmp;
             for(Eigen::Index bus_id_grid = 0; bus_id_grid < nb_total_bus; ++bus_id_grid){
                 tmp = static_cast<int>(id_me_to_ac_solver[bus_id_grid]);
-                if(tmp == GridModel::_deactivated_bus_id) continue;
+                if(tmp == BaseConstants::_deactivated_bus_id) continue;
                 Vinit_solver[tmp] = Vinit[bus_id_grid];
             }
             return Vinit_solver;

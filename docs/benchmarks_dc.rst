@@ -49,17 +49,16 @@ compared with pandapower and pypowsybl when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- system: Linux 6.5.0-1024-oem
+- date: 2026-01-09 10:46  CET
+- system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.9.21.final.0 (64 bit)
-- numpy version: 1.26.4
-- pandas version: 2.2.3
-- pandapower version: 2.14.10
-- pywposybl version: 1.9.0.dev1
-- pypowsybl2grid version: 0.1.0
-- grid2op version: 1.10.5
-- lightsim2grid version: 0.10.0
+- python version: 3.12.8.final.0 (64 bit)
+- numpy version: 2.0.2
+- pandas version: 2.3.3
+- pandapower version: 3.2.1
+- grid2op version: 1.12.2
+- lightsim2grid version: 0.12.1
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -91,37 +90,36 @@ Results
 
 For an environment based on the IEEE case 14:
 
-===========================  ======================  ========================================  ==========================
-case14_sandbox                 grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
-===========================  ======================  ========================================  ==========================
-PP DC                                        204                               3.58                        0.624
-pypowsybl                                   1020                               0.609                       0.558
-DC                                          2330                               0.0481                      0.0057
-DC (KLU)                                    2380                               0.0437                      0.00174
-DC (NICSLU \*)                              2370                               0.0437                      0.00178
-DC (CKTSO \*)                               2370                               0.0436                      0.00165
-time serie \*\*                       NA                                       0.00122758                  0.000456796
-PTDF \*\*                             NA                                       7.46892e-05                 7.3936e-05
-contingency analysis \*\*\*           NA                                       0.00455775                  0.0010859
-LODF \*\*\*                           NA                                       0.0004457                   0.0003768
-===========================  ======================  ========================================  ==========================
+========================  ======================  ========================================  ==========================
+case14_sandbox              grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
+========================  ======================  ========================================  ==========================
+PP DC                                        179                               4.16                        0.576
+pypowsybl                                   1090                               0.572                       0.506
+DC                                          2700                               0.0599                      0.00601
+DC (KLU)                                    2740                               0.0553                      0.00181
+DC (NICSLU *)                               2770                               0.0549                      0.00182
+DC (CKTSO *)                                2760                               0.0547                      0.00158
+time serie **                                 NA                               0.00128204                  0.000474507
+PTDF **                                       NA                               7.34754e-05                 7.26855e-05
+contingency analysis ***                      NA                               0.00339865                  0.0006291
+LODF ***                                      NA                               0.0003282                   0.0002985
+========================  ======================  ========================================  ==========================
 
 And for an environment based on the IEEE case 118:
 
-===========================  ======================  ========================================  ==========================
-neurips_2020_track2            grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
-===========================  ======================  ========================================  ==========================
-PP DC                                        184                               4.01                        0.8
-pypowsybl                                    655                               1.1                         1.02
-DC                                          1850                               0.0919                      0.0423
-DC (KLU)                                    2050                               0.054                       0.00677
-DC (NICSLU \*)                              2050                               0.0538                      0.00658
-DC (CKTSO \*)                               2060                               0.0529                      0.00576
-time serie \*\*                        NA                                      0.0113052                   0.00314729
-PTDF \*\*                              NA                                      0.000755997                 0.000739758
-contingency analysis \*\*\*            NA                                      0.00826261                  0.00303673
-LODF \*\*\*                            NA                                      0.000479167                 0.000297538
-===========================  ======================  ========================================  ==========================
+========================  ======================  ========================================  ==========================
+neurips_2020_track2         grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
+========================  ======================  ========================================  ==========================
+PP DC                                        164                               4.63                        0.75
+DC                                          2100                               0.107                       0.0426
+DC (KLU)                                    2360                               0.0681                      0.00721
+DC (NICSLU *)                               2380                               0.0673                      0.00661
+DC (CKTSO *)                                2390                               0.0663                      0.00575
+time serie **                                 NA                               0.0112263                   0.00311001
+PTDF **                                       NA                               0.000833965                 0.000816435
+contingency analysis ***                      NA                               0.00778658                  0.00304041
+LODF ***                                      NA                               0.000416366                 0.00026614
+========================  ======================  ========================================  ==========================
 
 (see the section "Comments" below for details and especially the meaning of \*, \*\* and \*\*\*)
 
