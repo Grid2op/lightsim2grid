@@ -1458,7 +1458,12 @@ class LightSimBackend(Backend):
             # self.init_pp_backend.close()  # should not close it, the same init_pp_backend is used when copied
             self._init_pp_backend = None
         self._reset_res_pointers()
-        self._fill_nans()
+        try:
+            self._fill_nans()
+        except AttributeError:
+            # some attributes are not completely filled
+            
+            pass
         self._grid = None
         self.__me_at_init = None
 

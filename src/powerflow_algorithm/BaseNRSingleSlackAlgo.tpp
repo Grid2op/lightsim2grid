@@ -279,6 +279,8 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_p
     const Eigen::SparseMatrix<real_type> dS_dVm_r = BaseNRAlgo<LinearSolver>::dS_dVm_.real();
     const Eigen::SparseMatrix<real_type> dS_dVm_i = BaseNRAlgo<LinearSolver>::dS_dVm_.imag();
 
+    using StorageIndex = Eigen::SparseMatrix<cplx_type>::StorageIndex;
+
     // Method (1) seems to be faster than the others
 
     // optim : if the matrix was already computed, i don't initialize it, i instead reuse as much as i can
@@ -294,8 +296,8 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_p
         // innerIndexPtr and valuePtr are not.
     }
 
-    // std::vector<Eigen::Triplet<double> >coeffs;  // HERE FOR PERF OPTIM (3)
-    // coeffs.reserve(2*(dS_dVa_.nonZeros()+dS_dVm_.nonZeros()));  // HERE FOR PERF OPTIM (3)
+    std::vector<Eigen::Triplet<double> >coeffs;  // HERE FOR PERF OPTIM (3)
+    coeffs.reserve(2*(BaseNRAlgo<LinearSolver>::dS_dVa_.nonZeros() + BaseNRAlgo<LinearSolver>::dS_dVm_.nonZeros()));  // HERE FOR PERF OPTIM (3)
 
     // i fill the buffer columns per columns
     int nb_obj_this_col = 0;
@@ -329,10 +331,10 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_p
         // "efficient" insert of the element in the matrix
         for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             int row_id = inner_index[in_ind];
-            if(need_insert) BaseNRAlgo<LinearSolver>::J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
-            else BaseNRAlgo<LinearSolver>::J_.coeffRef(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            // if(need_insert) BaseNRAlgo<LinearSolver>::J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            // else BaseNRAlgo<LinearSolver>::J_.coeffRef(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (1)
             // J_.insert(row_id, col_id) = values[in_ind];  // HERE FOR PERF OPTIM (2)
-            // coeffs.push_back(Eigen::Triplet<double>(row_id, col_id, values[in_ind]));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(row_id, col_id, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
 
@@ -364,13 +366,13 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_p
         // "efficient" insert of the element in the matrix
         for(int in_ind=0; in_ind < nb_obj_this_col; ++in_ind){
             int row_id = inner_index[in_ind];
-            if(need_insert) BaseNRAlgo<LinearSolver>::J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
-            else BaseNRAlgo<LinearSolver>::J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            // if(need_insert) BaseNRAlgo<LinearSolver>::J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
+            // else BaseNRAlgo<LinearSolver>::J_.coeffRef(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (1)
             // J_.insert(row_id, col_id + n_pvpq) = values[in_ind];  // HERE FOR PERF OPTIM (2)
-            // coeffs.push_back(Eigen::Triplet<double>(row_id, col_id + n_pvpq, values[in_ind]));   // HERE FOR PERF OPTIM (3)
+            coeffs.push_back(Eigen::Triplet<double>(row_id, col_id + n_pvpq, values[in_ind]));   // HERE FOR PERF OPTIM (3)
         }
     }
-    // J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
+    BaseNRAlgo<LinearSolver>::J_.setFromTriplets(coeffs.begin(), coeffs.end());  // HERE FOR PERF OPTIM (3)
     BaseNRAlgo<LinearSolver>::J_.makeCompressed();
 }
 

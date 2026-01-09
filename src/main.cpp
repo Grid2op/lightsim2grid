@@ -1421,6 +1421,15 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
         .def(py::init<const GridModel &>())
+        .def_property("init_from_n_powerflow",
+                      &ContingencyAnalysis::get_init_from_n_powerflow,
+                      &ContingencyAnalysis::set_init_from_n_powerflow,
+                      R"mydelim(Whether to initialize the complex voltages of "
+                      "each contingencies with the results of a n-powerflow "
+                      "(*ie* a powerflow without any line disconnection) or not. "
+                      "Default: false, meaning each simulation is initialized "
+                      "with the given input vector)mydelim")
+
         // solver control
         .def("change_solver", &ContingencyAnalysis::change_solver, DocGridModel::change_solver.c_str())
         .def("available_solvers", &ContingencyAnalysis::available_solvers, DocGridModel::available_solvers.c_str())
