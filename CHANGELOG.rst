@@ -33,8 +33,10 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 ----------------------
 - [FIXED] an issue with shunt buses (was set to 1 even if they were disconnected)
 - [FIXED] a warning when applying actions on generator votlage setpoints (due to NaN)
+- [FIXED] pandapower grid could be modified when importing a grid from pandapower.
 - [IMPROVED] add a test to make sure generator types are available if using
   `dist_slack_non_renew` information.
+- [IMPROVED] test coverage on shunts (a test needed to be skipped due to float comparison in grid2op)
 
 [0.12.1]  2026-01-09
 ---------------------
