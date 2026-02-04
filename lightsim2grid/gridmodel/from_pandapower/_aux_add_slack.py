@@ -96,7 +96,7 @@ def _aux_add_slack(
             # so I assume i need to add as many generators as number of slack bus
             nb_slack = len(slack_bus_ids)
             if "slack_weight" in pp_net.ext_grid:
-                slack_coeff = 1.0 * pp_net.ext_grid["slack_weight"].values
+                slack_coeff = 1.0 * pp_net.ext_grid["slack_weight"].values.copy()
             else:
                 slack_coeff = np.ones(nb_slack)
             slack_coeff_norm = slack_coeff / slack_coeff.sum()

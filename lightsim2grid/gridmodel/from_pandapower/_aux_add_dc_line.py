@@ -38,7 +38,7 @@ def _aux_add_dc_line(model, pp_net, pp_to_ls):
     branch_from_id = pp_bus_to_ls(pp_net.dcline["from_bus"].values, pp_to_ls)
     branch_to_id = pp_bus_to_ls(pp_net.dcline["to_bus"].values, pp_to_ls)
     p_mw = -pp_net.dcline["p_mw"].values
-    if np.any(~np.isfinite(p_mw)):
+    if (~np.isfinite(p_mw)).any():
         warnings.warn("Some non finite values are found for p_mw, they have been replaced by 0.")
         p_mw[~np.isfinite(p_mw)] = 0.
         
@@ -47,20 +47,20 @@ def _aux_add_dc_line(model, pp_net, pp_to_ls):
     vm_or_pu = pp_net.dcline["vm_from_pu"].values
     vm_ex_pu = pp_net.dcline["vm_to_pu"].values
     
-    min_q_or = pp_net.dcline["min_q_from_mvar"].values
-    if np.any(~np.isfinite(min_q_or)):
+    min_q_or = pp_net.dcline["min_q_from_mvar"].values.copy()
+    if (~np.isfinite(min_q_or)).any():
         min_q_or[~np.isfinite(min_q_or)] = -SOME_KIND_OF_INF_FOR_PMIN_PMAX
         
-    max_q_or = pp_net.dcline["max_q_from_mvar"].values
-    if np.any(~np.isfinite(max_q_or)):
+    max_q_or = pp_net.dcline["max_q_from_mvar"].values.copy()
+    if (~np.isfinite(max_q_or)).any():
         max_q_or[~np.isfinite(max_q_or)] = SOME_KIND_OF_INF_FOR_PMIN_PMAX
         
-    min_q_ex = pp_net.dcline["min_q_to_mvar"].values
-    if np.any(~np.isfinite(min_q_ex)):
+    min_q_ex = pp_net.dcline["min_q_to_mvar"].values.copy()
+    if (~np.isfinite(min_q_ex)).any():
         min_q_ex[~np.isfinite(min_q_ex)] = -SOME_KIND_OF_INF_FOR_PMIN_PMAX
         
-    max_q_ex = pp_net.dcline["max_q_to_mvar"].values
-    if np.any(~np.isfinite(max_q_ex)):
+    max_q_ex = pp_net.dcline["max_q_to_mvar"].values.copy()
+    if (~np.isfinite(max_q_ex)).any():
         max_q_ex[~np.isfinite(max_q_ex)] = +SOME_KIND_OF_INF_FOR_PMIN_PMAX
                           
     model.init_dclines(branch_from_id.astype(np.int32),

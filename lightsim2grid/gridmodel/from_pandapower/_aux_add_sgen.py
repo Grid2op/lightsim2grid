@@ -35,7 +35,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
         return
 
     if "min_p_mw" in pp_net.sgen:
-        min_p_mw = pp_net.sgen["min_p_mw"].values
+        min_p_mw = pp_net.sgen["min_p_mw"].values.copy()
     else:
         min_p_mw = np.zeros(pp_net.sgen.shape[0]) - SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(min_p_mw)):
@@ -43,7 +43,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     min_p_mw[~np.isfinite(min_p_mw)] = 0.
 
     if "max_p_mw" in pp_net.sgen:
-        max_p_mw = pp_net.sgen["max_p_mw"].values
+        max_p_mw = pp_net.sgen["max_p_mw"].values.copy()
     else:
         max_p_mw = np.zeros(pp_net.sgen.shape[0]) + SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(max_p_mw)):
@@ -51,7 +51,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     max_p_mw[~np.isfinite(max_p_mw)] = 0.
 
     if "min_q_mvar" in pp_net.sgen:
-        min_q_mvar = pp_net.sgen["min_q_mvar"].values
+        min_q_mvar = pp_net.sgen["min_q_mvar"].values.copy()
     else:
         min_q_mvar = np.zeros(pp_net.sgen.shape[0]) - SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(min_q_mvar)):
@@ -59,7 +59,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     min_q_mvar[~np.isfinite(min_q_mvar)] = 0.
 
     if "max_q_mvar" in pp_net.sgen:
-        max_q_mvar = pp_net.sgen["max_q_mvar"].values
+        max_q_mvar = pp_net.sgen["max_q_mvar"].values.copy()
     else:
         max_q_mvar = np.zeros(pp_net.sgen.shape[0]) + SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(max_q_mvar)):
