@@ -29,6 +29,13 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.12.2] 2026-02-xx
+----------------------
+- [FIXED] an issue with shunt buses (was set to 1 even if they were disconnected)
+- [FIXED] a warning when applying actions on generator votlage setpoints (due to NaN)
+- [IMPROVED] add a test to make sure generator types are available if using
+  `dist_slack_non_renew` information.
+
 [0.12.1]  2026-01-09
 ---------------------
 - [FIXED] phase shift transformers are now properly modeled
