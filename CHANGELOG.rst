@@ -29,6 +29,10 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
+[0.12.3] 2026-xx-yy
+--------------------
+
+
 [0.12.2] 2026-02-05
 ----------------------
 - [FIXED] an issue with shunt buses (was set to 1 even if they were disconnected)
