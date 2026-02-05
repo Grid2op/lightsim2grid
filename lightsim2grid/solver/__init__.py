@@ -17,9 +17,9 @@ __all__ = ["SolverType",
            "FDPF_XB_SparseLUSolver",
            "FDPF_BX_SparseLUSolver"]
 
-from lightsim2grid_cpp import SolverType
-from lightsim2grid_cpp import ErrorType
-from lightsim2grid_cpp import AnySolver
+from ..lightsim2grid_cpp import SolverType
+from ..lightsim2grid_cpp import ErrorType
+from ..lightsim2grid_cpp import AnySolver
                
 from lightsim2grid_cpp import GaussSeidelSolver  # SolverType.GaussSeidel
 from lightsim2grid_cpp import GaussSeidelSynchSolver  # SolverType.GaussSeidelSynch

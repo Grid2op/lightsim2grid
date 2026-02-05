@@ -1,8 +1,48 @@
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel",
-    "pybind11>=2.4",
-    "numpy"
+# On utilise scikit-build-core qui est fait pour piloter CMake depuis pyproject.toml
+requires = ["scikit-build-core>=0.5.0", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "lightsim2grid"
+dynamic = ["version"]
+description = "LightSim2grid implements a c++ backend targeting the Grid2Op platform."
+readme = "README.md"
+requires-python = ">=3.7"
+authors = [
+  { name = "Benjamin Donnot", email = "benjamin.donnot@rte-france.com" },
 ]
-build-backend = "setuptools.build_meta"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "numpy",
+]
+
+[project.urls]
+Homepage = "https://github.com/Grid2op/lightsim2grid"
+Repository = "https://github.com/Grid2op/lightsim2grid"
+
+# Configuration spécifique à scikit-build-core
+[tool.scikit-build]
+# Répertoire où CMake va chercher le CMakeLists.txt (par défaut la racine)
+cmake.source-dir = "."
+# La destination d'installation doit correspondre au nom du package importable
+wheel.packages = ["lightsim2grid"] 
+# Pour un build verbose lors du debug
+cmake.verbose = true
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "./lightsim2grid/__init__.py"
+regex = '''^__version__\s*=\s*"(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:[-\.](?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?"$'''
+result = "{major}.{minor}.{patch}.{prerelease}"
+
+# On peut passer des arguments à CMake si nécessaire
+[tool.scikit-build.cmake.define]
+CMAKE_BUILD_TYPE = "Release"
