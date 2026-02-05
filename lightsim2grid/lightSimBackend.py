@@ -1165,10 +1165,10 @@ class LightSimBackend(Backend):
         self.name_sub = pp_cls.name_sub
         self._grid.set_substation_names(self.name_sub)
 
-        self.prod_pu_to_kv = self._init_pp_backend.prod_pu_to_kv
-        self.load_pu_to_kv = self._init_pp_backend.load_pu_to_kv
-        self.lines_or_pu_to_kv = self._init_pp_backend.lines_or_pu_to_kv
-        self.lines_ex_pu_to_kv = self._init_pp_backend.lines_ex_pu_to_kv
+        self.prod_pu_to_kv = self._init_pp_backend.prod_pu_to_kv.copy()
+        self.load_pu_to_kv = self._init_pp_backend.load_pu_to_kv.copy()
+        self.lines_or_pu_to_kv = self._init_pp_backend.lines_or_pu_to_kv.copy()
+        self.lines_ex_pu_to_kv = self._init_pp_backend.lines_ex_pu_to_kv.copy()
 
         # TODO storage check grid2op version and see if storage is available !
         if self.__has_storage:
@@ -1364,13 +1364,14 @@ class LightSimBackend(Backend):
         # TODO speed optimization here to read it "better"
         cls = type(self)
         # handle object in topo vect
-        res[cls.load_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_loads()]),
-                                                                        cls.load_to_subid)
-        res[cls.gen_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_generators()]),
-                                                                        cls.gen_to_subid)
+        res[cls.load_pos_topo_vect] = cls.global_bus_to_local(
+            np.array([el.bus_id for el in self._grid.get_loads()]), cls.load_to_subid)
+        res[cls.gen_pos_topo_vect] = cls.global_bus_to_local(
+            np.array([el.bus_id for el in self._grid.get_generators()]), cls.gen_to_subid)
         if self.__has_storage:
-            res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(np.array([el.bus_id for el in self._grid.get_storages()]),
-                                                                                cls.storage_to_subid)
+            res[cls.storage_pos_topo_vect] = cls.global_bus_to_local(
+                np.array([el.bus_id for el in self._grid.get_storages()]), cls.storage_to_subid)
+            
         lor_glob_bus = np.concatenate((np.array([el.bus1_id for el in self._grid.get_lines()]),
                                         np.array([el.bus1_id for el in self._grid.get_trafos()])))
         res[cls.line_or_pos_topo_vect] = cls.global_bus_to_local(lor_glob_bus, cls.line_or_to_subid)
@@ -1382,7 +1383,8 @@ class LightSimBackend(Backend):
         # handle shunts (not in topo vect)
         if cls.shunts_data_available:
             self.sh_bus.flags.writeable = True
-            self.sh_bus[:] = cls.global_bus_to_local(self._grid.get_shunts().get_bus_id(),
+            sh_bus_global = np.asarray([el.bus_id for el in self._grid.get_shunts()])
+            self.sh_bus[:] = cls.global_bus_to_local(sh_bus_global,
                                                      cls.shunt_to_subid).copy()
             self.sh_bus.flags.writeable = False
         
@@ -1402,14 +1404,6 @@ class LightSimBackend(Backend):
             self._init_pp_backend.__class__ = type(self._init_pp_backend).init_grid(type(self))
         self._backend_action_class = _BackendAction.init_grid(type(self))
         
-        # self._init_action_to_set = self._backend_action_class()
-        # try:
-        #     _init_action_to_set = self.get_action_to_set()
-        # except TypeError:
-        #     # I am in legacy grid2op version...
-        #     _init_action_to_set = _dont_use_get_action_to_set_legacy(self)
-            
-        # self._init_action_to_set += _init_action_to_set
         if self.prod_pu_to_kv is not None:
             assert np.isfinite(self.prod_pu_to_kv).all()
         if self.load_pu_to_kv is not None:
@@ -1421,6 +1415,13 @@ class LightSimBackend(Backend):
         if self.__has_storage and self.n_storage > 0 and self.storage_pu_to_kv is not None:
             assert np.isfinite(self.storage_pu_to_kv).all()
 
+        if self._dist_slack_non_renew and not type(self).redispatching_unit_commitment_availble:
+            raise Grid2OpException("You asked to distribute the slack on renewable generators, "
+                                   "yet the environment does not seem to know which generators are "
+                                   "renewables or not. Make sure env.redispatching_unit_commitment_availble is True "
+                                   "(this include having a 'prods_charac.csv' properly formatted and "
+                                   "at the right location)")
+            
     def _count_object_per_bus(self):
         # should be called only when self.topo_vect and self.shunt_topo_vect are set
         # todo factor that more properly to update it when it's modified, and not each time
@@ -1491,11 +1492,14 @@ class LightSimBackend(Backend):
                 self._need_islanding_detection = True
         
         # update the injections
+        gen_v = backendAction.prod_v.values.copy()
+        gen_v[~backendAction.prod_v.changed] = 0.  # sometimes there were nan here, which lead to a warnings
+        gen_v /= self.prod_pu_to_kv
         try:
             self._grid.update_gens_p(backendAction.prod_p.changed,
                                      backendAction.prod_p.values)
             self._grid.update_gens_v(backendAction.prod_v.changed,
-                                     backendAction.prod_v.values / self.prod_pu_to_kv)
+                                     gen_v)
             self._grid.update_loads_p(backendAction.load_p.changed,
                                       backendAction.load_p.values)
             self._grid.update_loads_q(backendAction.load_q.changed,

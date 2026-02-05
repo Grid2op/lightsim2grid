@@ -40,7 +40,7 @@ def _aux_add_trafo(
                            "Some pp_net.trafo[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     # fix the missing values
-    tap_neutral = 1.0 * pp_net.trafo["tap_neutral"].values
+    tap_neutral = pp_net.trafo["tap_neutral"].values.copy()
     if np.any(~np.isfinite(tap_neutral)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_neutral\"], they have been replaced by 0")
     tap_neutral[~np.isfinite(tap_neutral)] = 0.
@@ -48,17 +48,17 @@ def _aux_add_trafo(
     if np.any(tap_neutral != 0.):
         raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
 
-    tap_step_pct = 1.0 * pp_net.trafo["tap_step_percent"].values
+    tap_step_pct = pp_net.trafo["tap_step_percent"].values.copy()
     if np.any(~np.isfinite(tap_step_pct)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_percent\"], they have been replaced by 0")
     tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
 
-    tap_pos = 1.0 * pp_net.trafo["tap_pos"].values
+    tap_pos = pp_net.trafo["tap_pos"].values.copy()
     if np.any(~np.isfinite(tap_pos)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_pos\"], they have been replaced by 0")
     tap_pos[~np.isfinite(tap_pos)] = 0.
 
-    shift_ = 1.0 * pp_net.trafo["shift_degree"].values
+    shift_ = pp_net.trafo["shift_degree"].values.copy()
     if np.any(~np.isfinite(tap_pos)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
@@ -81,7 +81,7 @@ def _aux_add_trafo(
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
             
-    tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
+    tap_angles_ = pp_net.trafo["tap_step_degree"].values
     if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
     tap_angles_[~np.isfinite(tap_angles_)] = 0.

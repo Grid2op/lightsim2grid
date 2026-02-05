@@ -27,12 +27,12 @@ It can be used as:
 .. code-block:: python
 
     import grid2op
-    from lightsim2grid import SecurityAnalysis
+    from lightsim2grid import ContingencyAnalysis
     from lightsim2grid import LightSimBackend
     env_name = ...
     env = grid2op.make(env_name, backend=LightSimBackend())
 
-    security_analysis = SecurityAnalysis(env)
+    security_analysis = ContingencyAnalysis(env)
     security_analysis.add_multiple_contingencies(...) # or security_analysis.add_single_contingency(...)
     res_p, res_a, res_v = security_analysis.get_flows()
 

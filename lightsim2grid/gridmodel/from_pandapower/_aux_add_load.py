@@ -29,7 +29,7 @@ def _aux_add_load(model, pp_net, pp_to_ls):
 
     ratio = 1.0
     if "scaling" in pp_net.load:
-        ratio = pp_net.load["scaling"].values
+        ratio = pp_net.load["scaling"].values.copy()
         ratio[~np.isfinite(ratio)] = 1.0
         
     model.init_loads(pp_net.load["p_mw"].values * ratio,
