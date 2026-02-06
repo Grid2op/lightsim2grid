@@ -18,7 +18,7 @@ include_directories("eigen")
 # --- Détection de KLU (SuiteSparse) ---
 # set(SUITESPARSE_ENABLE_PROJECTS "klu;btf;amd;colamd;cxsparse")
 # add_subdirectory("SuiteSparse")
-
+# install(TARGETS klu btf amd colamd cxsparse DESTINATION ${SKBUILD_PROJECT_NAME})
 
 # --- Gestion des Options & Variables d'Environnement ---
 
@@ -27,8 +27,21 @@ set(PATH_NICSLU "$ENV{PATH_NICSLU}" CACHE PATH "Path to NICSLU root directory")
 option(ENABLE_NICSLU "Enable NICSLU solver" OFF)
 
 if(PATH_NICSLU)
-    set(ENABLE_NICSLU ON)
-    message(STATUS "NICSLU enabled via path: ${PATH_NICSLU}")
+    if(WIN32)
+        set(LIB_MAYBE_NICSLU ${PATH_NICSLU}/windows/lib_win7_x64_fma/int32)
+    else()
+        set(LIB_MAYBE_NICSLU ${PATH_NICSLU}/linux/lib_centos6_x64_gcc482_fma/int32)
+    endif()
+
+    find_library(LIB_NICSLU 
+                 NAMES nicslu
+                 HINTS ${LIB_MAYBE_NICSLU})
+    if(LIB_NICSLU)
+        set(ENABLE_NICSLU ON)
+        message(STATUS "NICSLU enabled via path: ${LIB_NICSLU}")
+    else()
+        message(WARNING "NICSLU disable no library found at ${LIB_MAYBE_NICSLU}")
+    endif()
 endif()
 
 # 2. CKTSO
@@ -92,19 +105,11 @@ add_subdirectory("src")
 
 # 1. Configuration NICSLU
 if(ENABLE_NICSLU)
-    target_compile_definitions(lightsim2grid_cpp PRIVATE NICSLU_SOLVER_AVAILABLE)
-    
-    # Ajout des headers et libs externes
+    target_link_directories(lightsim2grid_cpp PRIVATE ${LIB_MAYBE_NICSLU})
+    target_link_libraries(lightsim2grid_cpp PRIVATE nicslu)
     target_include_directories(lightsim2grid_cpp PRIVATE ${PATH_NICSLU}/include)
-    
-    # Configuration du Linker
-    # Similaire à ce que faisait setup.py avec library_dirs
-    target_link_directories(lightsim2grid_cpp PRIVATE ${PATH_NICSLU}/lib)
-    # Assurez-vous de linker la lib nicslu (ajustez le nom 'nicslu' selon le nom réel du fichier .so/.a)
-    target_link_libraries(lightsim2grid_cpp PRIVATE nicslu) 
-    
-    # Ajout d'un fichier source supplémentaire si nécessaire
-    # target_sources(lightsim2grid_cpp PRIVATE src/NicsluInterface.cpp)
+    target_compile_definitions(lightsim2grid_cpp PRIVATE NICSLU_PATH="${LIB_MAYBE_NICSLU}")
+    target_compile_definitions(lightsim2grid_cpp PRIVATE NICSLU_SOLVER_AVAILABLE)
 endif()
 
 # 2. Configuration CKTSO

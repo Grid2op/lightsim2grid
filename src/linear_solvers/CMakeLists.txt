@@ -12,4 +12,11 @@ if(LIB_CKTSO)
     )
 endif()
 
+if(LIB_NICSLU)
+    LIST(APPEND 
+        SOURCES 
+        "${_relPath}/NICSLUSolver.cpp"
+    )
+endif()
+
 set (SOURCES ${SOURCES} PARENT_SCOPE)
