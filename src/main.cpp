@@ -473,15 +473,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -537,15 +537,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -600,15 +600,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -659,15 +659,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -724,15 +724,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -814,15 +814,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -902,15 +902,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -976,15 +976,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }
@@ -1075,15 +1075,15 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
                     // TODO check the size of the input tuple!
 
                     // now set the status
-                    int major = py_state[0].cast<int>();
+                    std::string major = py_state[0].cast<std::string>();
                     if (major != VERSION_MAJOR){
                         throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int minor = py_state[1].cast<int>();
+                    std::string minor = py_state[1].cast<std::string>();
                     if (minor != VERSION_MEDIUM){
                         throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
                     }
-                    int patch = py_state[2].cast<int>();
+                    std::string patch = py_state[2].cast<std::string>();
                     if (patch != VERSION_MINOR){
                         throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
                     }

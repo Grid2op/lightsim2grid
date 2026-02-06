@@ -65,9 +65,9 @@ GridModel::GridModel(const GridModel & other) noexcept
 GridModel::StateRes GridModel::get_state() const 
 {
     std::vector<int> ls_to_orig(_ls_to_orig.begin(), _ls_to_orig.end());
-    int version_major = VERSION_MAJOR;
-    int version_medium = VERSION_MEDIUM;
-    int version_minor = VERSION_MINOR;
+    std::string version_major = VERSION_MAJOR;
+    std::string version_medium = VERSION_MEDIUM;
+    std::string version_minor = VERSION_MINOR;
     auto res_substation = substations_.get_state();
     auto res_line = powerlines_.get_state();
     auto res_shunt = shunts_.get_state();
@@ -108,9 +108,9 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     compute_results_ = true;
 
     // extract data from the state
-    int version_major = std::get<0>(my_state);
-    int version_medium = std::get<1>(my_state);
-    int version_minor = std::get<2>(my_state);
+    std::string version_major = std::get<0>(my_state);
+    std::string version_medium = std::get<1>(my_state);
+    std::string version_minor = std::get<2>(my_state);
     if((version_major != VERSION_MAJOR )| (version_medium != VERSION_MEDIUM) | (version_minor != VERSION_MINOR))
     {
         std::ostringstream exc_;

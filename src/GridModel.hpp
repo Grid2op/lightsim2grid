@@ -47,9 +47,9 @@ class GridModel final
         typedef Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> IntVectRowMaj;
 
         typedef std::tuple<
-                int, // version major
-                int, // version medium
-                int, // version minor
+                std::string, // version major
+                std::string, // version medium
+                std::string, // version minor
                 std::vector<int>, // ls_to_orig
                 real_type,  // init_vm_pu
                 real_type, //sn_mva

@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.15...4.0)
-project(lightsim2grid LANGUAGES CXX)
+
+project(lightsim2grid 
+        VERSION "${SKBUILD_PROJECT_VERSION}"
+        LANGUAGES CXX)
 
 # --- Dépendances ---
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
@@ -110,7 +113,16 @@ endif()
 
 # version
 target_compile_definitions(lightsim2grid_cpp PRIVATE 
-    VERSION="${PROJECT_VERSION}"
+    VERSION="${SKBUILD_PROJECT_VERSION_FULL}"
+)
+target_compile_definitions(lightsim2grid_cpp PRIVATE 
+    VERSION_MAJOR="${CMAKE_PROJECT_VERSION_MAJOR}"
+)
+target_compile_definitions(lightsim2grid_cpp PRIVATE 
+    VERSION_MEDIUM="${CMAKE_PROJECT_VERSION_MINOR}"
+)
+target_compile_definitions(lightsim2grid_cpp PRIVATE 
+    VERSION_MINOR="${CMAKE_PROJECT_VERSION_PATCH}"
 )
 
 # --- Compilation options

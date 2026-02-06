@@ -41,7 +41,7 @@ cmake.verbose = true
 provider = "scikit_build_core.metadata.regex"
 input = "./lightsim2grid/__init__.py"
 regex = '''^__version__\s*=\s*"(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:[-\.](?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?"$'''
-result = "{major}.{minor}.{patch}.{prerelease}"
+result = "{major}.{minor}.{patch}-{prerelease}"
 
 # On peut passer des arguments à CMake si nécessaire
 [tool.scikit-build.cmake.define]
