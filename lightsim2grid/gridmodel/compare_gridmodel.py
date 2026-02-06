@@ -10,7 +10,7 @@ from functools import partial
 import numpy as np
 
 
-from lightsim2grid_cpp import GridModel
+from ..lightsim2grid_cpp import GridModel # type: ignore
 
 
 ATTR_SUBSTATIONS_INPUT = [

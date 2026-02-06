@@ -14,23 +14,23 @@ __all__ = ["klu_solver_available",
            "version",
            "lightsim2grid_lib"]
 
-from lightsim2grid_cpp import klu_solver_available
-from lightsim2grid_cpp import nicslu_solver_available
-from lightsim2grid_cpp import cktso_solver_available
-from lightsim2grid_cpp import compiled_march_native
-from lightsim2grid_cpp import compiled_o3_optim
-from lightsim2grid_cpp import version
-from lightsim2grid_cpp import __file__ as lightsim2grid_lib
+from ..lightsim2grid_cpp import klu_solver_available # type: ignore
+from ..lightsim2grid_cpp import nicslu_solver_available # type: ignore
+from ..lightsim2grid_cpp import cktso_solver_available # type: ignore
+from ..lightsim2grid_cpp import compiled_march_native # type: ignore
+from ..lightsim2grid_cpp import compiled_o3_optim # type: ignore
+from ..lightsim2grid_cpp import version # type: ignore
+from ..lightsim2grid_cpp import __file__ as lightsim2grid_lib # type: ignore
 
 try:
-    from lightsim2grid_cpp import nicslu_lib
+    from lightsim2grid_cpp import nicslu_lib  # noqa: F401
     __all__.append("nicslu_lib")
 except ImportError :
     # NICSLU linear solver is not available
     pass
 
 try:
-    from lightsim2grid_cpp import cktso_lib
+    from lightsim2grid_cpp import cktso_lib  # noqa: F401
     __all__.append("cktso_lib")
 except ImportError :
     # CKTSO linear solver is not available

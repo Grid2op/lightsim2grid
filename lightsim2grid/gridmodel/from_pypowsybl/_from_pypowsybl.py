@@ -13,7 +13,7 @@ import pandas as pd
 import pypowsybl as pypo
 from typing import Dict, Iterable, Optional, Union
 from packaging import version
-from lightsim2grid_cpp import GridModel
+from ..lightsim2grid_cpp import GridModel # type: ignore
 
 
 from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el

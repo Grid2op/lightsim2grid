@@ -15,7 +15,7 @@ import numpy as np
 from numbers import Number
 
 import pandapower
-from lightsim2grid_cpp import GridModel, PandaPowerConverter
+from ..lightsim2grid_cpp import GridModel, PandaPowerConverter
 from ._aux_add_sgen import _aux_add_sgen
 from ._aux_add_load import _aux_add_load
 from ._aux_add_trafo import _aux_add_trafo

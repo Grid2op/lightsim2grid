@@ -13,13 +13,13 @@ import numpy as np
 from collections.abc import Iterable
 
 from lightsim2grid.solver import SolverType
-from lightsim2grid_cpp import ContingencyAnalysisCPP
+from ..lightsim2grid_cpp import ContingencyAnalysisCPP
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend
     __all__.append("ContingencyAnalysis")
     GRID2OP_INSTALLED = True
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2op is not installed
     GRID2OP_INSTALLED = False
 
@@ -86,7 +86,7 @@ class __ContingencyAnalysis(object):
                                "c++ version (available in python) with:\n"
                                "\tfrom lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP\n"
                                "and refer to the appropriate documentation.")
-        from grid2op.Environment import Environment
+        from grid2op.Environment import Environment # type: ignore
         self.__is_closed = False
         if isinstance(grid2op_env, Environment):    
             if not isinstance(grid2op_env.backend, LightSimBackend):

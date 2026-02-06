@@ -15,16 +15,16 @@ import warnings
 
 
 try:
-    from grid2op.Chronics import Multifolder, GridStateFromFile
+    from grid2op.Chronics import Multifolder, GridStateFromFile # type: ignore
     from lightsim2grid.lightSimBackend import LightSimBackend
     __all__.append("TimeSerie")
     GRID2OP_INSTALLED = True
-except ImportError as exc_:
+except ImportError as exc_:  # noqa: F841
     # grid2Op is not installed
     GRID2OP_INSTALLED = False
 
 from lightsim2grid.solver import SolverType
-from lightsim2grid_cpp import TimeSeriesCPP
+from ..lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated
 Computers = TimeSeriesCPP
@@ -91,7 +91,7 @@ class ___TimeSerie:
                                "\tfrom lightsim2grid.timeSerie import TimeSerieCPP\n"
                                "and refer to the appropriate documentation.")
             
-        from grid2op.Environment import Environment  # otherwise i got issues...
+        from grid2op.Environment import Environment  # type: ignore # otherwise i got issues...
         if not isinstance(grid2op_env.backend, LightSimBackend):
             raise RuntimeError("This class only works with LightSimBackend")
         if not isinstance(grid2op_env, Environment):
@@ -118,7 +118,7 @@ class ___TimeSerie:
             self.grid2op_env.set_id(scenario_id)
         if seed is not None:
             self.grid2op_env.seed(seed)
-        obs = self.grid2op_env.reset()
+        _ = self.grid2op_env.reset()
         self.__computed = False
         return self._extract_inj()
 
