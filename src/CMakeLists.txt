@@ -10,9 +10,7 @@ set(SOURCES
     "DataConverter.cpp"
     "SubstationContainer.cpp"
 )
-message(SOURCES 1="${SOURCES}")
 add_subdirectory(linear_solvers)
-message(SOURCES 2="${SOURCES}")
 add_subdirectory(batch_algorithm)
 add_subdirectory(element_container)
 add_subdirectory(powerflow_algorithm)

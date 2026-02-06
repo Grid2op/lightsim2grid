@@ -23,14 +23,14 @@ from ..lightsim2grid_cpp import version # type: ignore
 from ..lightsim2grid_cpp import __file__ as lightsim2grid_lib # type: ignore
 
 try:
-    from lightsim2grid_cpp import nicslu_lib  # noqa: F401
+    from ..lightsim2grid_cpp import nicslu_lib  # noqa: F401  # type: ignore
     __all__.append("nicslu_lib")
 except ImportError :
     # NICSLU linear solver is not available
     pass
 
 try:
-    from lightsim2grid_cpp import cktso_lib  # noqa: F401
+    from ..lightsim2grid_cpp import cktso_lib  # noqa: F401  # type: ignore
     __all__.append("cktso_lib")
 except ImportError :
     # CKTSO linear solver is not available

@@ -36,8 +36,22 @@ set(PATH_CKTSO "$ENV{PATH_CKTSO}" CACHE PATH "Path to CKTSO root directory")
 option(ENABLE_CKTSO "Enable CKTSO solver" OFF)
 
 if(PATH_CKTSO)
-    set(ENABLE_CKTSO ON)
-    message(STATUS "CKTSO enabled via path: ${PATH_CKTSO}")
+    if(WIN32)
+        set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/windows_x64)
+    else()
+        set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/ubuntu2004_x64_gcc940)
+    endif()
+
+    find_library(LIB_CKTSO 
+                 NAMES cktso
+                 HINTS ${LIB_MAYBE_CKTSO})
+    if(LIB_CKTSO)
+        # add_library(libcktso SHARED IMPORTED)
+        set(ENABLE_CKTSO ON)
+        message(STATUS "CKTSO enabled via path: ${LIB_CKTSO}")
+    else()
+        message(WARNING "CKTSO disable no library found at ${LIB_MAYBE_CKTSO}")
+    endif()
 endif()
 
 # 3. Flags divers
@@ -94,11 +108,12 @@ if(ENABLE_NICSLU)
 endif()
 
 # 2. Configuration CKTSO
-if(ENABLE_CKTSO)
-    target_compile_definitions(lightsim2grid_cpp PRIVATE CKTSO_SOLVER_AVAILABLE)
+if(LIB_CKTSO)
+    target_link_directories(lightsim2grid_cpp PRIVATE ${LIB_MAYBE_CKTSO})
+    target_link_libraries(lightsim2grid_cpp PRIVATE cktso)
     target_include_directories(lightsim2grid_cpp PRIVATE ${PATH_CKTSO}/include)
-    target_link_directories(lightsim2grid_cpp PRIVATE ${PATH_CKTSO}/lib)
-    target_link_libraries(lightsim2grid_cpp PRIVATE cktso) # Nom de lib à vérifier
+    target_compile_definitions(lightsim2grid_cpp PRIVATE CKTSO_PATH="${LIB_MAYBE_CKTSO}")
+    target_compile_definitions(lightsim2grid_cpp PRIVATE CKTSO_SOLVER_AVAILABLE)
 endif()
 
 # 3. Read The Docs
@@ -128,6 +143,12 @@ target_compile_definitions(lightsim2grid_cpp PRIVATE
 # --- Compilation options
 
 # 5. Optimisations
+if(USE_O3_OPTIM)
+    target_compile_definitions(lightsim2grid_cpp PRIVATE 
+        __O3_OPTIM
+    )
+endif()
+
 if(NOT MSVC)
     if(USE_O3_OPTIM)
         target_compile_options(lightsim2grid_cpp PRIVATE -O3)

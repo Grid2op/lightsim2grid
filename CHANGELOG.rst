@@ -31,6 +31,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 
 [0.12.3] 2026-xx-yy
 --------------------
+- [IMPROVED] cktso lib (`from lightsim2grid.compilation_options import cktso_lib`) now only contains the PP_BUG_RATIO_TAP_CHANGER
+  to the library and not the full library (the file name and extension are omitted)
 
 
 [0.12.2] 2026-02-05
