@@ -37,7 +37,7 @@ def _aux_add_dc_line(model, pp_net, pp_to_ls):
     
     branch_from_id = pp_bus_to_ls(pp_net.dcline["from_bus"].values, pp_to_ls)
     branch_to_id = pp_bus_to_ls(pp_net.dcline["to_bus"].values, pp_to_ls)
-    p_mw = -pp_net.dcline["p_mw"].values
+    p_mw = -pp_net.dcline["p_mw"].values.copy()
     if (~np.isfinite(p_mw)).any():
         warnings.warn("Some non finite values are found for p_mw, they have been replaced by 0.")
         p_mw[~np.isfinite(p_mw)] = 0.
