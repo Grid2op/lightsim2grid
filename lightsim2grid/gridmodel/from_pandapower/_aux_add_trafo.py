@@ -81,7 +81,7 @@ def _aux_add_trafo(
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
             
-    tap_angles_ = pp_net.trafo["tap_step_degree"].values
+    tap_angles_ = pp_net.trafo["tap_step_degree"].values.copy()
     if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
     tap_angles_[~np.isfinite(tap_angles_)] = 0.
