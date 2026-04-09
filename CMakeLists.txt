@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15...4.0)
 
-project(lightsim2grid 
+project(lightsim2grid
         VERSION "${SKBUILD_PROJECT_VERSION}"
         LANGUAGES CXX)
 
@@ -14,11 +14,114 @@ find_package(pybind11 CONFIG REQUIRED)
 # add_subdirectory("eigen")
 include_directories("eigen")
 
-# KLU TODO
 # --- Détection de KLU (SuiteSparse) ---
-# set(SUITESPARSE_ENABLE_PROJECTS "klu;btf;amd;colamd;cxsparse")
-# add_subdirectory("SuiteSparse")
-# install(TARGETS klu btf amd colamd cxsparse DESTINATION ${SKBUILD_PROJECT_NAME})
+# Strategy 1: modern CMake config (e.g. from libsuitesparse-dev on Debian/Ubuntu)
+set(KLU_SOLVER_FOUND FALSE)
+find_package(KLU QUIET)
+if(KLU_FOUND)
+    set(KLU_SOLVER_FOUND TRUE)
+    message(STATUS "KLU: found via system CMake config")
+    if(TARGET SuiteSparse::KLU_static)
+        set(KLU_LINK_TARGET SuiteSparse::KLU_static)
+    elseif(TARGET SuiteSparse::KLU)
+        set(KLU_LINK_TARGET SuiteSparse::KLU)
+    endif()
+    # CXSparse provides cs.h used by KLUSolver.hpp
+    find_package(CXSparse QUIET)
+    if(TARGET SuiteSparse::CXSparse_static)
+        set(CXSPARSE_LINK_TARGET SuiteSparse::CXSparse_static)
+    elseif(TARGET SuiteSparse::CXSparse)
+        set(CXSPARSE_LINK_TARGET SuiteSparse::CXSparse)
+    else()
+        find_library(CXSPARSE_FALLBACK_LIB NAMES cxsparse)
+        find_path(CXSPARSE_FALLBACK_INCLUDE NAMES cs.h PATH_SUFFIXES suitesparse)
+        if(CXSPARSE_FALLBACK_LIB AND CXSPARSE_FALLBACK_INCLUDE)
+            add_library(CXSparse_fallback UNKNOWN IMPORTED)
+            set_target_properties(CXSparse_fallback PROPERTIES
+                IMPORTED_LOCATION "${CXSPARSE_FALLBACK_LIB}"
+                INTERFACE_INCLUDE_DIRECTORIES "${CXSPARSE_FALLBACK_INCLUDE}")
+            set(CXSPARSE_LINK_TARGET CXSparse_fallback)
+        endif()
+    endif()
+endif()
+
+# Strategy 2: legacy find_library (older SuiteSparse without CMake config files)
+if(NOT KLU_SOLVER_FOUND)
+    find_library(KLU_SYSTEM_LIB NAMES klu)
+    find_path(KLU_SYSTEM_INCLUDE NAMES klu.h PATH_SUFFIXES suitesparse)
+    if(KLU_SYSTEM_LIB AND KLU_SYSTEM_INCLUDE)
+        set(KLU_SOLVER_FOUND TRUE)
+        message(STATUS "KLU: found via system libraries (${KLU_SYSTEM_LIB})")
+        add_library(KLU_system UNKNOWN IMPORTED)
+        set_target_properties(KLU_system PROPERTIES
+            IMPORTED_LOCATION "${KLU_SYSTEM_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${KLU_SYSTEM_INCLUDE}")
+        set(KLU_LINK_TARGET KLU_system)
+        find_library(CXSPARSE_SYSTEM_LIB NAMES cxsparse)
+        find_path(CXSPARSE_SYSTEM_INCLUDE NAMES cs.h PATH_SUFFIXES suitesparse)
+        if(CXSPARSE_SYSTEM_LIB AND CXSPARSE_SYSTEM_INCLUDE)
+            add_library(CXSparse_system UNKNOWN IMPORTED)
+            set_target_properties(CXSparse_system PROPERTIES
+                IMPORTED_LOCATION "${CXSPARSE_SYSTEM_LIB}"
+                INTERFACE_INCLUDE_DIRECTORIES "${CXSPARSE_SYSTEM_INCLUDE}")
+            set(CXSPARSE_LINK_TARGET CXSparse_system)
+        endif()
+    endif()
+endif()
+
+# Strategy 3: build KLU from the SuiteSparse git submodule
+if(NOT KLU_SOLVER_FOUND)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse/KLU/CMakeLists.txt")
+        if(CMAKE_VERSION VERSION_LESS "3.22")
+            message(FATAL_ERROR
+                "Building KLU from the SuiteSparse submodule requires CMake >= 3.22. "
+                "Either upgrade CMake or install SuiteSparse system-wide "
+                "(e.g. apt install libsuitesparse-dev).")
+        endif()
+        message(STATUS "KLU: building static libraries from SuiteSparse submodule")
+        # Force static-only build for all SuiteSparse components
+        set(BUILD_SHARED_LIBS   OFF CACHE BOOL "Build shared libraries"  FORCE)
+        set(BUILD_STATIC_LIBS   ON  CACHE BOOL "Build static libraries"  FORCE)
+        # Tell each component it is being built from a parent CMakeLists so it
+        # skips its internal find_package() calls for sibling dependencies.
+        set(SUITESPARSE_ROOT_CMAKELISTS ON)
+        # Disable the optional CHOLMOD dependency inside KLU.
+        set(KLU_USE_CHOLMOD OFF CACHE BOOL "" FORCE)
+
+        # Build components in dependency order and expose SuiteSparse:: aliases
+        # so that later components can reference them via target_link_libraries.
+        add_subdirectory(SuiteSparse/SuiteSparse_config EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::SuiteSparseConfig        ALIAS SuiteSparseConfig_static)
+        add_library(SuiteSparse::SuiteSparseConfig_static ALIAS SuiteSparseConfig_static)
+
+        add_subdirectory(SuiteSparse/AMD EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::AMD        ALIAS AMD_static)
+        add_library(SuiteSparse::AMD_static ALIAS AMD_static)
+
+        add_subdirectory(SuiteSparse/BTF EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::BTF        ALIAS BTF_static)
+        add_library(SuiteSparse::BTF_static ALIAS BTF_static)
+
+        add_subdirectory(SuiteSparse/COLAMD EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::COLAMD        ALIAS COLAMD_static)
+        add_library(SuiteSparse::COLAMD_static ALIAS COLAMD_static)
+
+        add_subdirectory(SuiteSparse/CXSparse EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::CXSparse        ALIAS CXSparse_static)
+        add_library(SuiteSparse::CXSparse_static ALIAS CXSparse_static)
+
+        add_subdirectory(SuiteSparse/KLU EXCLUDE_FROM_ALL)
+
+        set(KLU_SOLVER_FOUND    TRUE)
+        set(KLU_LINK_TARGET     KLU_static)
+        set(CXSPARSE_LINK_TARGET CXSparse_static)
+    else()
+        message(WARNING
+            "KLU not found system-wide and the SuiteSparse submodule is not initialised. "
+            "Run: git submodule update --init SuiteSparse\n"
+            "The KLU solver will not be available.")
+    endif()
+endif()
 
 # --- Gestion des Options & Variables d'Environnement ---
 
@@ -121,12 +224,21 @@ if(LIB_CKTSO)
     target_compile_definitions(lightsim2grid_cpp PRIVATE CKTSO_SOLVER_AVAILABLE)
 endif()
 
-# 3. Read The Docs
+# 3. Configuration KLU (SuiteSparse)
+if(KLU_SOLVER_FOUND)
+    target_compile_definitions(lightsim2grid_cpp PRIVATE KLU_SOLVER_AVAILABLE)
+    target_link_libraries(lightsim2grid_cpp PRIVATE ${KLU_LINK_TARGET})
+    if(DEFINED CXSPARSE_LINK_TARGET)
+        target_link_libraries(lightsim2grid_cpp PRIVATE ${CXSPARSE_LINK_TARGET})
+    endif()
+endif()
+
+# 5. Read The Docs
 if(BUILD_DOCS_ONLY)
     target_compile_definitions(lightsim2grid_cpp PRIVATE _READ_THE_DOCS)
 endif()
 
-# 4. Cout Times
+# 6. Cout Times
 if(ENABLE_COUT_TIMES)
     target_compile_definitions(lightsim2grid_cpp PRIVATE __COUT_TIMES)
 endif()
@@ -147,7 +259,7 @@ target_compile_definitions(lightsim2grid_cpp PRIVATE
 
 # --- Compilation options
 
-# 5. Optimisations
+# 7. Optimisations
 if(USE_O3_OPTIM)
     target_compile_definitions(lightsim2grid_cpp PRIVATE 
         __O3_OPTIM
