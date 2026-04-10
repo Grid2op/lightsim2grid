@@ -116,11 +116,69 @@ if(NOT KLU_SOLVER_FOUND)
         set(KLU_LINK_TARGET     KLU_static)
         set(CXSPARSE_LINK_TARGET CXSparse_static)
     else()
+        message(STATUS "KLU: SuiteSparse submodule has no CMakeLists.txt (older Makefile-based layout); checking for pre-built static libraries")
+    endif()
+endif()
+
+# Strategy 4: pre-built static libraries in the SuiteSparse submodule
+#   (older SuiteSparse layout that uses Makefiles rather than CMake)
+if(NOT KLU_SOLVER_FOUND)
+    set(_SS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse")
+    set(_KLU_PREBUILT_LIB  "${_SS}/KLU/Lib/libklu.a")
+    set(_KLU_PREBUILT_INC  "${_SS}/KLU/Include")
+    if(EXISTS "${_KLU_PREBUILT_LIB}" AND EXISTS "${_KLU_PREBUILT_INC}/klu.h")
+        message(STATUS "KLU: found pre-built static library in SuiteSparse submodule (${_KLU_PREBUILT_LIB})")
+        set(KLU_SOLVER_FOUND TRUE)
+
+        add_library(KLU_submodule STATIC IMPORTED)
+        set_target_properties(KLU_submodule PROPERTIES
+            IMPORTED_LOCATION "${_KLU_PREBUILT_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${_KLU_PREBUILT_INC}")
+        set(KLU_LINK_TARGET KLU_submodule)
+
+        # Wire up the sibling static libs that KLU depends on
+        foreach(_dep AMD BTF COLAMD)
+            string(TOLOWER "${_dep}" _dep_lc)
+            set(_lib "${_SS}/${_dep}/Lib/lib${_dep_lc}.a")
+            set(_inc "${_SS}/${_dep}/Include")
+            if(EXISTS "${_lib}")
+                add_library(${_dep}_submodule STATIC IMPORTED)
+                set_target_properties(${_dep}_submodule PROPERTIES
+                    IMPORTED_LOCATION "${_lib}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${_inc}")
+                target_link_libraries(KLU_submodule INTERFACE ${_dep}_submodule)
+            endif()
+        endforeach()
+
+        set(_ss_config_lib "${_SS}/SuiteSparse_config/libsuitesparseconfig.a")
+        set(_ss_config_inc "${_SS}/SuiteSparse_config")
+        if(EXISTS "${_ss_config_lib}")
+            add_library(SuiteSparseConfig_submodule STATIC IMPORTED)
+            set_target_properties(SuiteSparseConfig_submodule PROPERTIES
+                IMPORTED_LOCATION "${_ss_config_lib}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_ss_config_inc}")
+            target_link_libraries(KLU_submodule INTERFACE SuiteSparseConfig_submodule)
+        endif()
+
+        # CXSparse provides cs.h used by KLUSolver.hpp
+        set(_cxsparse_lib "${_SS}/CXSparse/Lib/libcxsparse.a")
+        set(_cxsparse_inc "${_SS}/CXSparse/Include")
+        if(EXISTS "${_cxsparse_lib}")
+            add_library(CXSparse_submodule STATIC IMPORTED)
+            set_target_properties(CXSparse_submodule PROPERTIES
+                IMPORTED_LOCATION "${_cxsparse_lib}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_cxsparse_inc}")
+            set(CXSPARSE_LINK_TARGET CXSparse_submodule)
+        endif()
+    else()
         message(WARNING
-            "KLU not found system-wide and the SuiteSparse submodule is not initialised. "
+            "KLU not found system-wide and no usable SuiteSparse libraries were found. "
             "Run: git submodule update --init SuiteSparse\n"
             "The KLU solver will not be available.")
     endif()
+    unset(_SS)
+    unset(_KLU_PREBUILT_LIB)
+    unset(_KLU_PREBUILT_INC)
 endif()
 
 # --- Gestion des Options & Variables d'Environnement ---
