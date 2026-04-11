@@ -1549,6 +1549,7 @@ class LightSimBackend(Backend):
         
         self._handle_dist_slack()
         self._timer_apply_act += time.perf_counter() - tick
+        # self._grid.tell_solver_need_reset()  # bug 128 added
         
     def _handle_dist_slack(self):
         if self._dist_slack_non_renew:

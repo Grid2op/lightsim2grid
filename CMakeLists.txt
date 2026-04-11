@@ -69,59 +69,9 @@ if(NOT KLU_SOLVER_FOUND)
     endif()
 endif()
 
-# Strategy 3: build KLU from the SuiteSparse git submodule
-if(NOT KLU_SOLVER_FOUND)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse/KLU/CMakeLists.txt")
-        if(CMAKE_VERSION VERSION_LESS "3.22")
-            message(FATAL_ERROR
-                "Building KLU from the SuiteSparse submodule requires CMake >= 3.22. "
-                "Either upgrade CMake or install SuiteSparse system-wide "
-                "(e.g. apt install libsuitesparse-dev).")
-        endif()
-        message(STATUS "KLU: building static libraries from SuiteSparse submodule")
-        # Force static-only build for all SuiteSparse components
-        set(BUILD_SHARED_LIBS   OFF CACHE BOOL "Build shared libraries"  FORCE)
-        set(BUILD_STATIC_LIBS   ON  CACHE BOOL "Build static libraries"  FORCE)
-        # Tell each component it is being built from a parent CMakeLists so it
-        # skips its internal find_package() calls for sibling dependencies.
-        set(SUITESPARSE_ROOT_CMAKELISTS ON)
-        # Disable the optional CHOLMOD dependency inside KLU.
-        set(KLU_USE_CHOLMOD OFF CACHE BOOL "" FORCE)
-
-        # Build components in dependency order and expose SuiteSparse:: aliases
-        # so that later components can reference them via target_link_libraries.
-        add_subdirectory(SuiteSparse/SuiteSparse_config EXCLUDE_FROM_ALL)
-        add_library(SuiteSparse::SuiteSparseConfig        ALIAS SuiteSparseConfig_static)
-        add_library(SuiteSparse::SuiteSparseConfig_static ALIAS SuiteSparseConfig_static)
-
-        add_subdirectory(SuiteSparse/AMD EXCLUDE_FROM_ALL)
-        add_library(SuiteSparse::AMD        ALIAS AMD_static)
-        add_library(SuiteSparse::AMD_static ALIAS AMD_static)
-
-        add_subdirectory(SuiteSparse/BTF EXCLUDE_FROM_ALL)
-        add_library(SuiteSparse::BTF        ALIAS BTF_static)
-        add_library(SuiteSparse::BTF_static ALIAS BTF_static)
-
-        add_subdirectory(SuiteSparse/COLAMD EXCLUDE_FROM_ALL)
-        add_library(SuiteSparse::COLAMD        ALIAS COLAMD_static)
-        add_library(SuiteSparse::COLAMD_static ALIAS COLAMD_static)
-
-        add_subdirectory(SuiteSparse/CXSparse EXCLUDE_FROM_ALL)
-        add_library(SuiteSparse::CXSparse        ALIAS CXSparse_static)
-        add_library(SuiteSparse::CXSparse_static ALIAS CXSparse_static)
-
-        add_subdirectory(SuiteSparse/KLU EXCLUDE_FROM_ALL)
-
-        set(KLU_SOLVER_FOUND    TRUE)
-        set(KLU_LINK_TARGET     KLU_static)
-        set(CXSPARSE_LINK_TARGET CXSparse_static)
-    else()
-        message(STATUS "KLU: SuiteSparse submodule has no CMakeLists.txt (older Makefile-based layout); checking for pre-built static libraries")
-    endif()
-endif()
-
-# Strategy 4: pre-built static libraries in the SuiteSparse submodule
-#   (older SuiteSparse layout that uses Makefiles rather than CMake)
+# Strategy 3: pre-built static libraries in the SuiteSparse submodule
+#   Preferred over cmake-based build to avoid BLAS/OpenMP detection issues
+#   in the SuiteSparse cmake scripts (e.g. with CMake >= 4.x).
 if(NOT KLU_SOLVER_FOUND)
     set(_SS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse")
     set(_KLU_PREBUILT_LIB  "${_SS}/KLU/Lib/libklu.a")
@@ -170,15 +120,78 @@ if(NOT KLU_SOLVER_FOUND)
                 INTERFACE_INCLUDE_DIRECTORIES "${_cxsparse_inc}")
             set(CXSPARSE_LINK_TARGET CXSparse_submodule)
         endif()
+    endif()
+    unset(_SS)
+    unset(_KLU_PREBUILT_LIB)
+    unset(_KLU_PREBUILT_INC)
+endif()
+
+# Strategy 4: build KLU from the SuiteSparse git submodule via CMake
+#   Only used when no pre-built libs exist (e.g. fresh submodule checkout).
+if(NOT KLU_SOLVER_FOUND)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse/KLU/CMakeLists.txt")
+        if(CMAKE_VERSION VERSION_LESS "3.22")
+            message(FATAL_ERROR
+                "Building KLU from the SuiteSparse submodule requires CMake >= 3.22. "
+                "Either upgrade CMake or install SuiteSparse system-wide "
+                "(e.g. apt install libsuitesparse-dev).")
+        endif()
+        message(STATUS "KLU: building static libraries from SuiteSparse submodule")
+        # Force static-only build for all SuiteSparse components
+        set(BUILD_SHARED_LIBS   OFF CACHE BOOL "Build shared libraries"  FORCE)
+        set(BUILD_STATIC_LIBS   ON  CACHE BOOL "Build static libraries"  FORCE)
+        # Tell each component it is being built from a parent CMakeLists so it
+        # skips its internal find_package() calls for sibling dependencies.
+        set(SUITESPARSE_USE_OPENMP OFF CACHE BOOL "" FORCE)
+        set(SUITESPARSE_REQUIRE_BLAS OFF CACHE BOOL "" FORCE)
+        set(SUITESPARSE_USE_CUDA OFF CACHE BOOL "" FORCE)
+        # BLA_VENDOR must be non-empty: SuiteSparseBLAS32.cmake passes it to
+        # string(REGEX MATCH ...) unconditionally; an empty value gives CMake 4.x
+        # a "needs at least 5 arguments" error.
+        if(NOT BLA_VENDOR)
+            set(BLA_VENDOR "Generic" CACHE STRING "" FORCE)
+        endif()
+
+        set(SUITESPARSE_ROOT_CMAKELISTS ON)
+        # Disable the optional CHOLMOD dependency inside KLU.
+        set(KLU_USE_CHOLMOD OFF CACHE BOOL "" FORCE)
+        # The static libs are linked into a Python extension (.so), so they
+        # must be compiled as position-independent code.
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+        # Build components in dependency order and expose SuiteSparse:: aliases
+        # so that later components can reference them via target_link_libraries.
+        add_subdirectory(SuiteSparse/SuiteSparse_config EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::SuiteSparseConfig        ALIAS SuiteSparseConfig_static)
+        add_library(SuiteSparse::SuiteSparseConfig_static ALIAS SuiteSparseConfig_static)
+
+        add_subdirectory(SuiteSparse/AMD EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::AMD        ALIAS AMD_static)
+        add_library(SuiteSparse::AMD_static ALIAS AMD_static)
+
+        add_subdirectory(SuiteSparse/BTF EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::BTF        ALIAS BTF_static)
+        add_library(SuiteSparse::BTF_static ALIAS BTF_static)
+
+        add_subdirectory(SuiteSparse/COLAMD EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::COLAMD        ALIAS COLAMD_static)
+        add_library(SuiteSparse::COLAMD_static ALIAS COLAMD_static)
+
+        add_subdirectory(SuiteSparse/CXSparse EXCLUDE_FROM_ALL)
+        add_library(SuiteSparse::CXSparse        ALIAS CXSparse_static)
+        add_library(SuiteSparse::CXSparse_static ALIAS CXSparse_static)
+
+        add_subdirectory(SuiteSparse/KLU EXCLUDE_FROM_ALL)
+
+        set(KLU_SOLVER_FOUND    TRUE)
+        set(KLU_LINK_TARGET     KLU_static)
+        set(CXSPARSE_LINK_TARGET CXSparse_static)
     else()
         message(WARNING
             "KLU not found system-wide and no usable SuiteSparse libraries were found. "
             "Run: git submodule update --init SuiteSparse\n"
             "The KLU solver will not be available.")
     endif()
-    unset(_SS)
-    unset(_KLU_PREBUILT_LIB)
-    unset(_KLU_PREBUILT_INC)
 endif()
 
 # --- Gestion des Options & Variables d'Environnement ---
