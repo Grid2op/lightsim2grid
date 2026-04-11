@@ -9,7 +9,7 @@
 import warnings
 import numpy as np
 
-from lightsim2grid_cpp import FDPFMethod
+from lightsim2grid.lightsim2grid_cpp import FDPFMethod
 from lightsim2grid.gridmodel import init_from_pandapower
 from lightsim2grid.solver import SolverType 
 

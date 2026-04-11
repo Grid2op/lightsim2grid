@@ -10,7 +10,7 @@ import unittest
 import numpy as np
 import grid2op
 
-from lightsim2grid_cpp import ContingencyAnalysisCPP
+from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb

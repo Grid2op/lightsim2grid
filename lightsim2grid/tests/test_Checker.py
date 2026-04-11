@@ -17,7 +17,7 @@ from lightsim2grid import LightSimBackend
 
 SparseLUSolver_AVAILBLE = False
 try:
-    from lightsim2grid_cpp import SparseLUSolver
+    from lightsim2grid.lightsim2grid_cpp import SparseLUSolver
     SparseLUSolver_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out

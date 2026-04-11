@@ -272,6 +272,13 @@ else()
     option(USE_O3_OPTIM "Enable O3 optimization" ON)
 endif()
 
+# also install at site-packages root for legacy compatibility:
+# from lightsim2grid_cpp import XXX
+# Default is ON for now; will be switched to OFF in a future release.
+option(INSTALL_LEGACY_LIGHTSIM2GRID_CPP
+    "Also install lightsim2grid_cpp at site-packages root for legacy 'from lightsim2grid_cpp import XXX' compatibility (deprecated, will default to OFF in a future release)"
+    ON)
+    
 # --- Compile lightsim2grid sources ---
 add_subdirectory("src")
 
@@ -354,5 +361,8 @@ endif()
 # tells cmake to install the cpp extension within the python project
 # so that we can do things (from python) like
 # from lightsim2grid.lightsim2grid_cpp import XXX
-# instead of from lightsim2grid_cpp import XXX
 install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
+
+if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
+    install(TARGETS lightsim2grid_cpp DESTINATION .)
+endif()
