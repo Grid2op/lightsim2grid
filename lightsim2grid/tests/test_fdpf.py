@@ -76,7 +76,10 @@ class BaseFDPFTester:
     
     def _aux_get_Bp_Bpp(self):
         # init pp options
-        _init_runpp_options(self.net, **self.get_pp_options())
+        try:
+            _init_runpp_options(self.net, **self.get_pp_options(), enforce_p_lims=False)
+        except TypeError:
+            _init_runpp_options(self.net, **self.get_pp_options())
         
         # clear lookups
         self.net._pd2ppc_lookups = {"bus": np.array([], dtype=np.int64), "ext_grid": np.array([], dtype=np.int64),
