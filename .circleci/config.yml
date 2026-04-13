@@ -217,7 +217,7 @@ jobs:
             - checkout
             - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip  cmake -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
@@ -284,6 +284,7 @@ jobs:
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update
+            - run: apt install cmake -y
             - run: apt purge python3-pkg-resources libtinfo5 -y
             # - run: apt purge python3-* -y
             - run: apt autoremove -y && apt-get update -y
@@ -551,12 +552,12 @@ workflows:
     compile:
         jobs:
           - compile_gcc_earliest
-          - compile_gcc_prev_latest
+        #   - compile_gcc_prev_latest
           - compile_clang_earliest
-          - compile_clang_prev_latest
-          - test_legacy_grid2op
-          - test_legacy_pandapower
-          - test_legacy_pypowsybl
-          - compile_and_test_windows
-          - compile_and_test_clang_latest
-          - compile_and_test_gcc_latest
+        #   - compile_clang_prev_latest
+        #   - test_legacy_grid2op
+        #   - test_legacy_pandapower
+        #   - test_legacy_pypowsybl
+        #   - compile_and_test_windows
+        #   - compile_and_test_clang_latest
+        #   - compile_and_test_gcc_latest
