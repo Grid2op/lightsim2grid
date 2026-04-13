@@ -99,11 +99,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements_compile_ci.txt
           python3 -m pip freeze
 
       - name: Build lightsim2grid wheel
         run: |
-          python3 -m pip wheel . --no-deps -w dist
+          python3 -m pip wheel --verbose . --no-deps -w dist
           auditwheel repair dist/*.whl
 
       - name: Build source archive
@@ -256,10 +257,12 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements_compile_ci.txt
+          python3 -m pip freeze
 
       - name: Build wheel
-        run: python -m pip wheel . --no-deps -w dist
+        run: python -m pip wheel --verbose . --no-deps -w dist
 
       - name: Install wheel
         shell: bash
@@ -401,9 +404,11 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+          python -m pip freeze
 
       - name: Build wheel
-        run: python -m pip wheel . --no-deps -w dist
+        run: python -m pip wheel --verbose . --no-deps -w dist
 
       - name: Install wheel
         shell: bash
