@@ -416,17 +416,21 @@ jobs:
           python -m pip install dist/*.whl --user
           python -m pip freeze
 
+      - name: Install packaging (python 3.8)
+        if: matrix.python.name != 'cp38'
+        run: python -m pip install packaging
+        
       - name: Check package can be imported (bare install, default numpy)
         run: |
           mkdir tmp_for_import_checking
           cd tmp_for_import_checking
-          python3 -c "import lightsim2grid"
-          python3 -c "from lightsim2grid import *"
-          python3 -c "from lightsim2grid.newtonpf import newtonpf"
-          python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
-          python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
-          python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python -c "import lightsim2grid"
+          python -c "from lightsim2grid import *"
+          python -c "from lightsim2grid.newtonpf import newtonpf"
+          python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
+          python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
+          python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
+          python -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check package can be imported (bare install)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
