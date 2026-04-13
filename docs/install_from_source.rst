@@ -1,3 +1,5 @@
+.. _page_install_from_source:
+
 Installation from source
 ==========================
 
@@ -10,12 +12,27 @@ At a glance, to install from source you will have to:
 
 - :ref:`clone_repo` clone this repository and get the code of Eigen (mandatory for compilation) and SparseSuite (optional, but recommended)
 
-  - :ref:`compile_suitesparse` compile a piece of SparseSuite
+  - :ref:`compile_suitesparse` compile a piece of SparseSuite (lightsim2grid <= 0.13)
   - :ref:`include_nicslu`: retrieve and get a proper license for the NICSLU linear solver (see https://github.com/chenxm1986/nicslu)
   - :ref:`include_cktso`: retrieve and get a proper license for the CKTSO linear solver (see https://github.com/chenxm1986/cktso)
   - :ref:`other_customization` specify some compilation flags to make the package run faster on your machine see 
 
 - :ref:`install_python`: install the python package see 
+
+.. warning::
+    Everything here is better done inside a python "virtual environment" (also known as `venv`) or even better
+    using the excellent uv package. 
+
+    We only provide the commands related to lightsim2grid in this documentation. 
+
+    It's probably safer and better to execute them in a venv, *eg* (on macos / linux) with :
+
+    .. code-block::
+
+        uv venv
+        source .venv/bin/activate
+
+    And then proceed as described below.
 
 
 Important note
@@ -42,9 +59,6 @@ First, you can download it with git with:
 
     git clone https://github.com/Grid2Op/lightsim2grid.git
     cd lightsim2grid
-    # it is recommended to do a python virtual environment
-    python -m virtualenv venv  # optional
-    source venv/bin/activate  # optional
 
     # retrieve the code of SparseSuite and Eigen (dependencies, mandatory)
     git submodule init
@@ -55,6 +69,18 @@ First, you can download it with git with:
 (optional, recommended) Compilation of SuiteSparse
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+For lightsim2grid >= 0.13
+****************************
+
+When sources are available and cmake meets the correct requirements (cmake >=3.22)
+lightsim2grid will automatically compile SuiteSparse when invoking 
+`pip install .` 
+
+You don't have anything more to do.
+
+
+For lightsim2grid < 0.13
+****************************
 SuiteSparse comes with the faster KLU linear solver. 
 
 Since version 0.3.0 this requirement has been removed. This entails
@@ -70,8 +96,14 @@ double float precision, both results (with and without KLU) should match.
 There are 2 ways to install this package. Either you use "make" (preferred method on linux / unix -- including MacOS) or you use "cmake", which works on all platforms but takes more time and is less automatic (mainly because SuiteSparse
 cannot be directly built with "cmake" so we need extra steps to make it possible.)
 
-(optional) option A. Compilation of SuiteSparse using "make"
-**************************************************************
+(optional, lightsim2grid < 0.13) option A. Compilation of SuiteSparse using "make"
+**************************************************************************************
+
+.. note::
+    This is only required if you are building the package from source with a version < 0.13.
+
+    If lightsim2grid >= 0.13 or you install from pip you can safely skip it.
+
 
 This is the easiest method to compile SuiteSparse on your system but unfortunately it only works on OS where "make" is
 available (*eg* Linux or MacOS) but this will not work on Windows... The compilation on windows is covered in the next
@@ -87,8 +119,13 @@ And you are good to go. Nothing more.
 
 .. _optionB:
 
-(optional) option B. Compilation of SuiteSparse using "cmake"
-**************************************************************
+(optional, lightsim2grid < 0.13) option B. Compilation of SuiteSparse using "cmake"
+***************************************************************************************
+
+.. note::
+    This is only required if you are building the package from source with a version < 0.13.
+
+    If lightsim2grid >= 0.13 or you install from pip you can safely skip it.
 
 This works on most platform including MacOS, Linux and Windows.
 
@@ -180,6 +217,9 @@ And example to do such things on a linux based machine is:
 
 If you want to disable them, you simply need to set their respective value to 0.
 
+.. note::
+    By default the package on pypi is compiled with 03 optimization activated.
+
 .. _install_python:
 
 2. Installation of the python package
@@ -189,9 +229,19 @@ Now you simply need to install the lightsim2grid package this way, like any pyth
 
 .. code-block::
 
-    # install the dependency
-    pip install -U pybind11
     # compile and install the python package
     pip install -U .
 
 And you are done :-)
+
+.. note::
+    If you are building lightsim2grid < 0.13, you might also need to install the `pybind11` package beforehand. This gives:
+    
+    .. code-block::
+
+        # install pybind11
+        pip install pybind11
+
+        # compile and install the python package
+        pip install -U .
+

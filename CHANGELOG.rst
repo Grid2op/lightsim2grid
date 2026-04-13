@@ -28,7 +28,7 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.12.3] 2026-04-xx
+[0.13.0] 2026-04-xx
 --------------------
 - [PENDING DEPRECATION] the cpp module (lightsim2grid_cpp) will not be usable directly anymore.
   This means that calls like "from lightsim2grid_cpp import XXX" will not work. To replace them 
@@ -36,6 +36,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] some compilation issues on some systems (*eg* windows when using c++23 standard)
 - [IMPROVED] cleaner `cktso_lib` (`from lightsim2grid.compilation_options import cktso_lib`) : the file name and extension are omitted
 - [IMPROVED] easier build by relying on cmake and scikit_build_core to build the cpp part
+- [IMPROVED] SuiteSparse to version 7.12.2 (2026-02-05)
 
 [0.12.2] 2026-02-05
 ----------------------
