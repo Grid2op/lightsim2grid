@@ -11,7 +11,7 @@ def main():
         env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())    
     gridmodel = env.backend._grid
     
-    with open(os.path.join("test_pickle.pickle"), "wb") as f:
+    with open(os.path.join("test_pickle_2.pickle"), "wb") as f:
         pickle.dump(gridmodel, f)
         
     for fun_name in [
@@ -23,7 +23,7 @@ def main():
         "get_shunts",
         "get_substations",
         ]:
-        with open(os.path.join(f"test_pickle_{fun_name}.pickle"), "wb") as f:
+        with open(os.path.join(f"test_pickle_{fun_name}_2.pickle"), "wb") as f:
                 pickle.dump(getattr(gridmodel, fun_name)(), f)
                 
 if __name__ == "__main__":

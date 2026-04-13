@@ -64,7 +64,7 @@ jobs:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -e .
+                      CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .
                       pip freeze
             - run:
                 name: legacy test (grid2op 1.0.0)
@@ -213,7 +213,7 @@ jobs:
                       pip install --upgrade pip
                       pip install -U grid2op
                       git submodule update --init
-                      CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -U .
+                      CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_gcc_earliest:
         executor: gcc_earliest
@@ -233,7 +233,7 @@ jobs:
                     pip install --upgrade pip
                     pip install -U grid2op
                     git submodule update --init
-                    CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -U .
+                    CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_and_test_gcc_latest:
         executor: gcc_latest
@@ -261,7 +261,7 @@ jobs:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -e .
+                      CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -ve .
                       pip freeze
             - run:
                 name: "Install grid2op from source"
@@ -342,7 +342,7 @@ jobs:
                     uv pip install --upgrade pip
                     uv pip install -U grid2op
                     git submodule update --init
-                    CC=clang uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -U .
+                    CC=clang uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
@@ -359,7 +359,7 @@ jobs:
                     pip install --upgrade pip
                     pip install -U grid2op
                     git submodule update --init
-                    CC=clang python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -U .
+                    CC=clang python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_and_test_clang_latest:
         executor: clang_latest
@@ -386,7 +386,7 @@ jobs:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=clang python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -e .
+                      CC=clang python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .
                       pip freeze
             - run:
                 name: "Install grid2op from source"
@@ -436,7 +436,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     git submodule update --init
-                    python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -e .[test]
+                    python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .[test]
                     pip freeze
             - run:
                 name: "Show package versions"
@@ -528,7 +528,7 @@ jobs:
                     source venv_test/bin/activate
                     uv pip install --upgrade pip "numpy<2" scipy "pypowsybl~=1.0.0" grid2op
                     git submodule update --init
-                    uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" .
+                    uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
                     pip freeze
                     
             - run:
