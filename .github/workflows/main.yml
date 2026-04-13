@@ -417,9 +417,9 @@ jobs:
           python -m pip freeze
 
       - name: Install packaging (python 3.8)
-        if: matrix.python.name != 'cp38'
+        if: matrix.python.name == 'cp38'
         run: python -m pip install packaging
-        
+
       - name: Check package can be imported (bare install, default numpy)
         run: |
           mkdir tmp_for_import_checking
