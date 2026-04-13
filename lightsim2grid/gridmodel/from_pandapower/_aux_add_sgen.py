@@ -68,7 +68,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
 
     ratio = 1.0
     if "scaling" in pp_net.sgen:
-        ratio = pp_net.sgen["scaling"].values
+        ratio = pp_net.sgen["scaling"].values.copy()
         ratio[~np.isfinite(ratio)] = 1.0
         
     model.init_sgens(pp_net.sgen["p_mw"].values * ratio,
