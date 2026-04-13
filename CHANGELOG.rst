@@ -34,6 +34,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   This means that calls like "from lightsim2grid_cpp import XXX" will not work. To replace them 
   you  need to perform "from lightsim2grid.lightsim2grid_cpp import XXX"
 - [FIXED] some compilation issues on some systems (*eg* windows when using c++23 standard)
+- [FIXED] some issues with "copy on write" and pandas 3 when init from pandapower grid.
 - [IMPROVED] cleaner `cktso_lib` (`from lightsim2grid.compilation_options import cktso_lib`) : the file name and extension are omitted
 - [IMPROVED] easier build by relying on cmake and scikit_build_core to build the cpp part
 - [IMPROVED] SuiteSparse to version 7.12.2 (2026-02-05)
@@ -41,7 +42,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 [0.12.2] 2026-02-05
 ----------------------
 - [FIXED] an issue with shunt buses (was set to 1 even if they were disconnected)
-- [FIXED] a warning when applying actions on generator votlage setpoints (due to NaN)
+- [FIXED] a warning when applying actions on generator voltage setpoints (due to NaN)
 - [FIXED] pandapower grid could be modified when importing a grid from pandapower.
 - [IMPROVED] add a test to make sure generator types are available if using
   `dist_slack_non_renew` information.
