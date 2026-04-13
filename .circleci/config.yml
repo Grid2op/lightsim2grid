@@ -578,6 +578,6 @@ workflows:
           - test_legacy_grid2op
           - test_legacy_pandapower
           - test_legacy_pypowsybl
-        #   - compile_and_test_windows
-        #   - compile_and_test_clang_latest
-        #   - compile_and_test_gcc_latest
+          - compile_and_test_windows
+          - compile_and_test_clang_latest
+          - compile_and_test_gcc_latest
