@@ -12,7 +12,7 @@ from grid2op.Parameters import Parameters
 import warnings
 import numpy as np
 from lightsim2grid import LightSimBackend
-from lightsim2grid_cpp import TimeSeriesCPP
+from lightsim2grid.lightsim2grid_cpp import TimeSeriesCPP
 
 
 class TestTimeSeriesCPP(unittest.TestCase):

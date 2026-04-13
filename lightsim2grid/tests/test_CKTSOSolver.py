@@ -15,7 +15,7 @@ from scipy import sparse
 import re
 CKTSO_AVAILBLE = False
 try:
-    from lightsim2grid_cpp import CKTSOSolver
+    from lightsim2grid.lightsim2grid_cpp import CKTSOSolver
     CKTSO_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out

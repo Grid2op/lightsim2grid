@@ -614,7 +614,7 @@ else:
 
 print("V - Check trafo proper conversion to r,x, b")
 test_ok = True
-from lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
+from lightsim2grid.lightsim2grid_cpp import GridModel, PandaPowerConverter, SolverType
 from pandapower.build_branch import _calc_branch_values_from_trafo_df, get_trafo_values
 from pandapower.build_branch import _calc_nominal_ratio_from_dataframe, _calc_r_x_y_from_dataframe
 from pandapower.build_branch import _calc_tap_from_dataframe, BASE_KV, _calc_r_x_from_dataframe

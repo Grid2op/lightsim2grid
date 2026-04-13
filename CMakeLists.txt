@@ -4,6 +4,21 @@ project(lightsim2grid
         VERSION "${SKBUILD_PROJECT_VERSION}"
         LANGUAGES CXX)
 
+if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 23)
+elseif("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 20)
+elseif("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 17)
+elseif("cxx_std_14" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 14)
+else()
+    message(FATAL_ERROR "lightsim2grid requires at least C++14, but the compiler does not support it.")
+endif()
+message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # --- Dépendances ---
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
@@ -69,7 +84,65 @@ if(NOT KLU_SOLVER_FOUND)
     endif()
 endif()
 
-# Strategy 3: build KLU from the SuiteSparse git submodule
+# Strategy 3: pre-built static libraries in the SuiteSparse submodule
+#   Preferred over cmake-based build to avoid BLAS/OpenMP detection issues
+#   in the SuiteSparse cmake scripts (e.g. with CMake >= 4.x).
+if(NOT KLU_SOLVER_FOUND)
+    set(_SS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse")
+    set(_KLU_PREBUILT_LIB  "${_SS}/KLU/Lib/libklu.a")
+    set(_KLU_PREBUILT_INC  "${_SS}/KLU/Include")
+    if(EXISTS "${_KLU_PREBUILT_LIB}" AND EXISTS "${_KLU_PREBUILT_INC}/klu.h")
+        message(STATUS "KLU: found pre-built static library in SuiteSparse submodule (${_KLU_PREBUILT_LIB})")
+        set(KLU_SOLVER_FOUND TRUE)
+
+        add_library(KLU_submodule STATIC IMPORTED)
+        set_target_properties(KLU_submodule PROPERTIES
+            IMPORTED_LOCATION "${_KLU_PREBUILT_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES "${_KLU_PREBUILT_INC}")
+        set(KLU_LINK_TARGET KLU_submodule)
+
+        # Wire up the sibling static libs that KLU depends on
+        foreach(_dep AMD BTF COLAMD)
+            string(TOLOWER "${_dep}" _dep_lc)
+            set(_lib "${_SS}/${_dep}/Lib/lib${_dep_lc}.a")
+            set(_inc "${_SS}/${_dep}/Include")
+            if(EXISTS "${_lib}")
+                add_library(${_dep}_submodule STATIC IMPORTED)
+                set_target_properties(${_dep}_submodule PROPERTIES
+                    IMPORTED_LOCATION "${_lib}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${_inc}")
+                target_link_libraries(KLU_submodule INTERFACE ${_dep}_submodule)
+            endif()
+        endforeach()
+
+        set(_ss_config_lib "${_SS}/SuiteSparse_config/libsuitesparseconfig.a")
+        set(_ss_config_inc "${_SS}/SuiteSparse_config")
+        if(EXISTS "${_ss_config_lib}")
+            add_library(SuiteSparseConfig_submodule STATIC IMPORTED)
+            set_target_properties(SuiteSparseConfig_submodule PROPERTIES
+                IMPORTED_LOCATION "${_ss_config_lib}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_ss_config_inc}")
+            target_link_libraries(KLU_submodule INTERFACE SuiteSparseConfig_submodule)
+        endif()
+
+        # CXSparse provides cs.h used by KLUSolver.hpp
+        set(_cxsparse_lib "${_SS}/CXSparse/Lib/libcxsparse.a")
+        set(_cxsparse_inc "${_SS}/CXSparse/Include")
+        if(EXISTS "${_cxsparse_lib}")
+            add_library(CXSparse_submodule STATIC IMPORTED)
+            set_target_properties(CXSparse_submodule PROPERTIES
+                IMPORTED_LOCATION "${_cxsparse_lib}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_cxsparse_inc}")
+            set(CXSPARSE_LINK_TARGET CXSparse_submodule)
+        endif()
+    endif()
+    unset(_SS)
+    unset(_KLU_PREBUILT_LIB)
+    unset(_KLU_PREBUILT_INC)
+endif()
+
+# Strategy 4: build KLU from the SuiteSparse git submodule via CMake
+#   Only used when no pre-built libs exist (e.g. fresh submodule checkout).
 if(NOT KLU_SOLVER_FOUND)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse/KLU/CMakeLists.txt")
         if(CMAKE_VERSION VERSION_LESS "3.22")
@@ -84,19 +157,32 @@ if(NOT KLU_SOLVER_FOUND)
         set(BUILD_STATIC_LIBS        ON  CACHE BOOL "" FORCE)
         # Tell each component it is being built from a parent CMakeLists so it
         # skips its internal find_package() calls for sibling dependencies.
-        set(SUITESPARSE_ROOT_CMAKELISTS ON)
-        # Disable the optional CHOLMOD dependency inside KLU.
-        set(KLU_USE_CHOLMOD          OFF CACHE BOOL "" FORCE)
+
         # Disable OpenMP: SuiteSparse_config's find_package(OpenMP) creates a
         # directory-local target on CMake < 3.24, which is invisible to sibling
         # subdirectories (AMD, BTF, …) and causes generator-expression errors.
         # KLU does not need OpenMP, so this has no functional impact.
-        set(SUITESPARSE_USE_OPENMP   OFF CACHE BOOL "" FORCE)
+        set(SUITESPARSE_USE_OPENMP OFF CACHE BOOL "" FORCE)
+
         # Disable mandatory BLAS: SuiteSparseBLAS.cmake ends with
         # find_package(BLAS REQUIRED) which fails on systems without a BLAS.
         # KLU/AMD/BTF/COLAMD/CXSparse do not use BLAS; it is only needed by
         # CHOLMOD/UMFPACK/SPQR which we are not building.
         set(SUITESPARSE_REQUIRE_BLAS OFF CACHE BOOL "" FORCE)
+
+        set(SUITESPARSE_USE_CUDA OFF CACHE BOOL "" FORCE)
+        # BLA_VENDOR must be non-empty: SuiteSparseBLAS32.cmake passes it to
+        # string(REGEX MATCH ...) unconditionally; an empty value gives CMake 4.x
+        # a "needs at least 5 arguments" error.
+        if(NOT BLA_VENDOR)
+            set(BLA_VENDOR "Generic" CACHE STRING "" FORCE)
+        endif()
+
+        # Disable the optional CHOLMOD dependency inside KLU.
+        set(KLU_USE_CHOLMOD          OFF CACHE BOOL "" FORCE)
+
+        set(SUITESPARSE_ROOT_CMAKELISTS ON)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
         # Build components in dependency order and expose SuiteSparse:: aliases
         # so that later components can reference them via target_link_libraries.
@@ -127,9 +213,9 @@ if(NOT KLU_SOLVER_FOUND)
         set(CXSPARSE_LINK_TARGET CXSparse_static)
     else()
         message(WARNING
-            "KLU not found system-wide and the SuiteSparse submodule is not initialised. "
+            "KLU not found system-wide and no usable SuiteSparse libraries were found. "
             "Run: git submodule update --init SuiteSparse\n"
-            "The KLU solver will not be available.")
+            "The KLU linear solver will not be available.")
     endif()
 endif()
 
@@ -211,6 +297,13 @@ else()
     option(USE_O3_OPTIM "Enable O3 optimization" ON)
 endif()
 
+# also install at site-packages root for legacy compatibility:
+# from lightsim2grid_cpp import XXX
+# Default is ON for now; will be switched to OFF in a future release.
+option(INSTALL_LEGACY_LIGHTSIM2GRID_CPP
+    "Also install lightsim2grid_cpp at site-packages root for legacy 'from lightsim2grid_cpp import XXX' compatibility (deprecated, will default to OFF in a future release)"
+    ON)
+    
 # --- Compile lightsim2grid sources ---
 add_subdirectory("src")
 
@@ -293,5 +386,8 @@ endif()
 # tells cmake to install the cpp extension within the python project
 # so that we can do things (from python) like
 # from lightsim2grid.lightsim2grid_cpp import XXX
-# instead of from lightsim2grid_cpp import XXX
 install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
+
+if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
+    install(TARGETS lightsim2grid_cpp DESTINATION .)
+endif()

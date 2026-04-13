@@ -24,7 +24,7 @@ except ImportError as exc_:  # noqa: F841
     GRID2OP_INSTALLED = False
 
 from lightsim2grid.solver import SolverType
-from ..lightsim2grid_cpp import TimeSeriesCPP
+from .lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated
 Computers = TimeSeriesCPP

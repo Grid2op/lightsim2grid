@@ -5,6 +5,13 @@ LIST(APPEND
     "${_relPath}/SparseLUSolver.cpp"
 )
 
+if(KLU_SOLVER_FOUND)
+    LIST(APPEND
+        SOURCES
+        "${_relPath}/KLUSolver.cpp"
+    )
+endif()
+
 if(LIB_CKTSO)
     LIST(APPEND 
         SOURCES 
