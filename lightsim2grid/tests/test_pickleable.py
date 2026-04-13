@@ -15,7 +15,7 @@ import warnings
 
 import numpy as np
 
-from grid2op import make
+import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.gridmodel.compare_gridmodel import (
     compare_gridmodel_input,
@@ -106,7 +106,7 @@ class TestPickle(unittest.TestCase):
     def test_save_load(self):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
         
         with tempfile.TemporaryDirectory() as tmpdir:
             with open(os.path.join(tmpdir, "test_pickle.pickle"), "wb") as f:
@@ -145,15 +145,20 @@ class TestPickle(unittest.TestCase):
 
     def test_cannot_load_unfit_ls_version(self):
         tmpdir = Path(".") / "old_pickle"
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ImportError):
+            # old pickle made with lightsim2grid_cpp directly accessible from "from lightsim2grid_cpp import XXX"
             with open(tmpdir / "test_pickle.pickle", "rb") as f:
-                pickle.load(f) 
+                pickle.load(f)
+        with self.assertRaises(RuntimeError):
+            # pickle made with lightsim2grid_cpp accessible only with "from lightsim2grid.lightsim2grid_cpp import XXX"
+            with open(tmpdir / "test_pickle_2.pickle", "rb") as f:
+                pickle.load(f)
                         
     def _aux_test_pickle(self, fun_name, fun_comp):
         # test I can reload if saved some the same ls version
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
+            self.env = grid2op.make("l2rpn_idf_2023", test=True, backend=LightSimBackend())
         els = getattr(self.env.backend._grid, fun_name)()
         with tempfile.TemporaryDirectory() as tmpdir:
             with open(os.path.join(tmpdir, f"test_pickle_{fun_name}.pickle"), "wb") as f:
@@ -169,9 +174,14 @@ class TestPickle(unittest.TestCase):
         
         # Test I cannot reload if saved from an old version
         tmpdir = Path(".") / "old_pickle"
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ImportError):
+            # old pickle made with lightsim2grid_cpp directly accessible from "from lightsim2grid_cpp import XXX"
             with open(tmpdir / f"test_pickle_{fun_name}.pickle", "rb") as f:
-                pickle.load(f)  
+                pickle.load(f)
+        with self.assertRaises(RuntimeError):
+            # pickle made with lightsim2grid_cpp accessible only with "from lightsim2grid.lightsim2grid_cpp import XXX"
+            with open(tmpdir / f"test_pickle_{fun_name}_2.pickle", "rb") as f:
+                pickle.load(f)
         
     def test_pickle_loads(self):  
         self._aux_test_pickle("get_loads", _compare_loads)

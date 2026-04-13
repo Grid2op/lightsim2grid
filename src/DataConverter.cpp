@@ -147,7 +147,7 @@ std::tuple<RealVect,
     // g + 1j . b
     CplxVect powerlines_h = CplxVect::Constant(nb_line, 0.);
     powerlines_h.array() += (1e-6 * branch_g.array().cast<cplx_type>() + 
-                             my_i * 2.0 * f_hz_ * M_PI * 1e-9 * branch_c.array().cast<cplx_type>());
+                             my_i * 2.0 * f_hz_ * BaseConstants::my_pi * 1e-9 * branch_c.array().cast<cplx_type>());
     powerlines_h.array() *=  branch_from_pu.array().cast<cplx_type>();
     std::tuple<RealVect, RealVect, CplxVect> res = std::tuple<RealVect,
            RealVect,
@@ -179,7 +179,7 @@ std::tuple<RealVect,
     // g + 1j . b
     CplxVect powerlines_h_or = CplxVect::Constant(nb_line, 0.);
     powerlines_h_or.array() += (1e-6 * branch_g.array().cast<cplx_type>() + 
-                                my_i * 2.0 * f_hz_ * M_PI * 1e-9 * branch_c.array().cast<cplx_type>());
+                                my_i * 2.0 * f_hz_ * BaseConstants::my_pi * 1e-9 * branch_c.array().cast<cplx_type>());
     powerlines_h_or.array() *=  branch_from_pu.array().cast<cplx_type>() * 0.5;
     CplxVect powerlines_h_ex = powerlines_h_or;
     // END TODO

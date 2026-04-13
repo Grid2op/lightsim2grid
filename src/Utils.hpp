@@ -64,15 +64,15 @@ struct Coeff{
 
 // define some constant for compilation outside of "setup.py"
 #ifndef VERSION_MAJOR
-#define VERSION_MAJOR -1
+#define VERSION_MAJOR "-1"
 #endif
 
 #ifndef VERSION_MEDIUM
-#define VERSION_MEDIUM -1
+#define VERSION_MEDIUM "-1"
 #endif
 
 #ifndef VERSION_MINOR
-#define VERSION_MINOR -1
+#define VERSION_MINOR "-1"
 #endif
 
 class SolverControl final

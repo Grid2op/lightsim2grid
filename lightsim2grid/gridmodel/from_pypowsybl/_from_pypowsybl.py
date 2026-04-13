@@ -13,7 +13,7 @@ import pandas as pd
 import pypowsybl as pypo
 from typing import Dict, Iterable, Optional, Union
 from packaging import version
-from lightsim2grid_cpp import GridModel
+from ...lightsim2grid_cpp import GridModel # type: ignore
 
 
 from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
@@ -35,7 +35,7 @@ def _aux_get_bus(vl_df, bus_df, df, conn_key="connected", bus_key="bus_id", vl_k
     tmp_disco = vl_df.loc[df.loc[mask_disco, vl_key], "vl_id"].values
     bus_el_disco = bus_df.iloc[tmp_disco]
     tmp_bus_id[mask_disco] = bus_el_disco.index
-    bus_id = bus_df.loc[tmp_bus_id.values]["bus_global_id"].values
+    bus_id = bus_df.loc[tmp_bus_id.values]["bus_global_id"].values.copy()
     # deactivate the element not on the main component
     # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
     # mask_disco[wrong_component] = True

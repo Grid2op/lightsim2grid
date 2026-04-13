@@ -8,17 +8,18 @@
 
 __all__ = ["GridModel"]
 
-from lightsim2grid_cpp import GridModel
+from .. import lightsim2grid_cpp as lightsim2grid_cpp
+from ..lightsim2grid_cpp import GridModel # type: ignore
 
 try:
-    from lightsim2grid.gridmodel.from_pandapower import init as init_from_pandapower
+    from lightsim2grid.gridmodel.from_pandapower import init as init_from_pandapower  # noqa
     __all__.append("init_from_pandapower")
 except ImportError:
     # pandapower is not installed
     pass
 
 try:
-    from lightsim2grid.gridmodel.from_pypowsybl import init as init_from_pypowsybl
+    from lightsim2grid.gridmodel.from_pypowsybl import init as init_from_pypowsybl  # noqa
     __all__.append("init_from_pypowsybl")
 except ImportError:
     # pandapower is not installed

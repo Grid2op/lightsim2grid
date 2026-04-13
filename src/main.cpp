@@ -58,6 +58,39 @@
 
 namespace py = pybind11;
 
+// Helper: attach __getstate__/__setstate__ pickle support to any container
+// that exposes get_state()/set_state() and a nested StateRes type.
+template<typename T>
+void add_pickle(py::class_<T>& cls, const char* class_name) {
+    cls.def(py::pickle(
+        [](const T& obj) {
+            return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, obj.get_state());
+        },
+        [class_name](py::tuple py_state) {
+            if (py_state.size() != 4) {
+                std::cout << class_name << ".__setstate__ : state size " << py_state.size() << std::endl;
+                throw std::runtime_error(std::string("Invalid state size when loading ") + class_name);
+            }
+            T res{};
+            std::string major = py_state[0].cast<std::string>();
+            if (major != VERSION_MAJOR)
+                throw std::runtime_error(std::string("Invalid state size when loading ") + class_name +
+                    ": wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
+            std::string minor = py_state[1].cast<std::string>();
+            if (minor != VERSION_MEDIUM)
+                throw std::runtime_error(std::string("Invalid state size when loading ") + class_name +
+                    ": wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
+            std::string patch = py_state[2].cast<std::string>();
+            if (patch != VERSION_MINOR)
+                throw std::runtime_error(std::string("Invalid state size when loading ") + class_name +
+                    ": wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
+            auto state = py_state[3].cast<typename T::StateRes>();
+            res.set_state(state);
+            return res;
+        }
+    ));
+}
+
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
 
@@ -451,45 +484,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("get_fdpf_bx_lu", &ChooseSolver::get_fdpf_bx_lu, py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 
     // iterator for generators
-    py::class_<GeneratorContainer>(m, "GeneratorContainer", DocIterator::GeneratorContainer.c_str())
+    auto gen_cls = py::class_<GeneratorContainer>(m, "GeneratorContainer", DocIterator::GeneratorContainer.c_str())
         .def("__len__", [](const GeneratorContainer & data) { return data.nb(); })
         .def("__getitem__", [](const GeneratorContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const GeneratorContainer & data)  {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def(py::pickle(
-                [](const GeneratorContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "GeneratorContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading GeneratorContainer");
-                        }
-                    // Create a new C++ instance
-                    GeneratorContainer res = GeneratorContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading GeneratorContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    GeneratorContainer::StateRes state = py_state[3].cast<GeneratorContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        })) 
-        ; 
+        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(gen_cls, "GeneratorContainer"); 
 
     py::class_<GenInfo>(m, "GenInfo", DocIterator::GenInfo.c_str())
         .def_readonly("id", &GenInfo::id, DocIterator::id.c_str())
@@ -515,45 +517,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("voltage_level_id", &GenInfo::sub_id, DocIterator::sub_id.c_str());
 
     // iterator for sgens
-    py::class_<SGenContainer>(m, "SGenContainer", DocIterator::SGenContainer.c_str())
+    auto sgen_cls = py::class_<SGenContainer>(m, "SGenContainer", DocIterator::SGenContainer.c_str())
         .def("__len__", [](const SGenContainer & data) { return data.nb(); })
         .def("__getitem__", [](const SGenContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const SGenContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def(py::pickle(
-                [](const SGenContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "SGenContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading SGenContainer");
-                        }
-                    // Create a new C++ instance
-                    SGenContainer res = SGenContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading SGenContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    SGenContainer::StateRes state = py_state[3].cast<SGenContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        })) 
-        ; 
+        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(sgen_cls, "SGenContainer"); 
 
     py::class_<SGenInfo>(m, "SGenInfo", DocIterator::SGenInfo.c_str())
         .def_readonly("id", &SGenInfo::id, DocIterator::id.c_str())
@@ -578,45 +549,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         ;
 
     // iterator for loads (and storage units)
-    py::class_<LoadContainer>(m, "LoadContainer", DocIterator::LoadContainer.c_str())
+    auto load_cls = py::class_<LoadContainer>(m, "LoadContainer", DocIterator::LoadContainer.c_str())
         .def("__len__", [](const LoadContainer & data) { return data.nb(); })
         .def("__getitem__", [](const LoadContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const LoadContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def(py::pickle(
-                [](const LoadContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "LoadContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading LoadContainer");
-                        }
-                    // Create a new C++ instance
-                    LoadContainer res = LoadContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading LoadContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    LoadContainer::StateRes state = py_state[3].cast<LoadContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        })) 
-        ; 
+        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(load_cls, "LoadContainer"); 
 
     py::class_<LoadInfo>(m, "LoadInfo", DocIterator::LoadInfo.c_str())
         .def_readonly("id", &LoadInfo::id, DocIterator::id.c_str())
@@ -637,45 +577,14 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         ;
 
     // iterator for shunts
-    py::class_<ShuntContainer>(m, "ShuntContainer", DocIterator::ShuntContainer.c_str())
+    auto shunt_cls = py::class_<ShuntContainer>(m, "ShuntContainer", DocIterator::ShuntContainer.c_str())
         .def("__len__", [](const ShuntContainer & data) { return data.nb(); })
         .def("__getitem__", [](const ShuntContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const ShuntContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def(py::pickle(
-                [](const ShuntContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "ShuntContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading ShuntContainer");
-                        }
-                    // Create a new C++ instance
-                    ShuntContainer res = ShuntContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading ShuntContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    ShuntContainer::StateRes state = py_state[3].cast<ShuntContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        }))      
-        ; 
+        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(shunt_cls, "ShuntContainer"); 
 
     py::class_<ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
         .def_readonly("id", &ShuntInfo::id, DocIterator::id.c_str())
@@ -696,51 +605,20 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         ;
 
     // iterator for trafos
-    py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
+    auto trafo_cls = py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
         .def("__len__", [](const TrafoContainer & data) { return data.nb(); })
         .def("__getitem__", [](const TrafoContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const TrafoContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
-        .def_property_readonly("ignore_tap_side_for_shift", &TrafoContainer::ignore_tap_side_for_shift, 
+        .def_property_readonly("ignore_tap_side_for_shift", &TrafoContainer::ignore_tap_side_for_shift,
             R"mydelimiter(
-            Whether ignore the tap side is ignored when using the 
-            'shift' attribute (should be True for pandapower, 
+            Whether ignore the tap side is ignored when using the
+            'shift' attribute (should be True for pandapower,
             where it is ignored and False otherwise).)mydelimiter")
         .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def(py::pickle(
-                [](const TrafoContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "TrafoContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading TrafoContainer");
-                        }
-                    // Create a new C++ instance
-                    TrafoContainer res = TrafoContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading TrafoContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    TrafoContainer::StateRes state = py_state[3].cast<TrafoContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        }))       
-        ; 
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(trafo_cls, "TrafoContainer"); 
 
     py::class_<TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
         .def_readonly("id", &TrafoInfo::id, DocIterator::id.c_str())
@@ -790,47 +668,16 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("voltage_level2_id", &TrafoInfo::sub_2_id, DocIterator::sub_id.c_str())
         ;
 
-    // iterator for trafos
-    py::class_<LineContainer>(m, "LineContainer", DocIterator::LineContainer.c_str())
+    // iterator for lines
+    auto line_cls = py::class_<LineContainer>(m, "LineContainer", DocIterator::LineContainer.c_str())
         .def("__len__", [](const LineContainer & data) { return data.nb(); })
         .def("__getitem__", [](const LineContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const LineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def(py::pickle(
-                [](const LineContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "LineContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading LineContainer");
-                        }
-                    // Create a new C++ instance
-                    LineContainer res = LineContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading LineContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    LineContainer::StateRes state = py_state[3].cast<LineContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        }))  
-        ;
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(line_cls, "LineContainer");
 
     py::class_<LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
         .def_readonly("id", &LineInfo::id, DocIterator::id.c_str())
@@ -879,46 +726,15 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         ;
 
     // iterator for dc lines
-    py::class_<DCLineContainer>(m, "DCLineContainer", DocIterator::DCLineContainer.c_str())
+    auto dcline_cls = py::class_<DCLineContainer>(m, "DCLineContainer", DocIterator::DCLineContainer.c_str())
         .def("__len__", [](const DCLineContainer & data) { return data.nb(); })
         .def("__getitem__", [](const DCLineContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const DCLineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id_side_1", &DCLineContainer::get_bus_id_side_1_numpy)
-        .def("get_bus_id_side_2", &DCLineContainer::get_bus_id_side_2_numpy)
-        .def(py::pickle(
-                [](const DCLineContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "DCLineContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading DCLineContainer");
-                        }
-                    // Create a new C++ instance
-                    DCLineContainer res = DCLineContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading DCLineContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    DCLineContainer::StateRes state = py_state[3].cast<DCLineContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        }))  
-        ;
+        .def("get_bus_id_side_2", &DCLineContainer::get_bus_id_side_2_numpy);
+    add_pickle(dcline_cls, "DCLineContainer");
 
     py::class_<DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
         .def_readonly("id", &DCLineInfo::id, DocIterator::id.c_str())
@@ -955,44 +771,13 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("voltage_level2_id", &DCLineInfo::sub_2_id, DocIterator::sub_id.c_str())
         ;
 
-    py::class_<SubstationContainer>(m, "SubstationContainer", "TODO")
+    auto sub_cls = py::class_<SubstationContainer>(m, "SubstationContainer", "TODO")
         .def("__len__", [](const SubstationContainer & data) { return data.nb(); })
         .def("__getitem__", [](const SubstationContainer & data, int k){return data[k]; } )
         .def("__iter__", [](const SubstationContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
-            }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */        // pickle
-        .def(py::pickle(
-                [](const SubstationContainer &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "SubstationContainer.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading SubstationContainer");
-                        }
-                    // Create a new C++ instance
-                    SubstationContainer res = SubstationContainer();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading SubstationContainer: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    SubstationContainer::StateRes state = py_state[3].cast<SubstationContainer::StateRes>();
-                    res.set_state(state);
-                    return res;
-        })) 
-        ;
+            }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+    add_pickle(sub_cls, "SubstationContainer");
 
     py::class_<SubstationInfo>(m, "SubstationInfo", "TODO")
         .def_readonly("id", &SubstationInfo::id, DocIterator::id.c_str())
@@ -1027,18 +812,18 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def("has_one_el_changed_bus", &SolverControl::has_one_el_changed_bus, "TODO")
         ;
 
-    py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
+    auto gridmodel_cls = py::class_<GridModel>(m, "GridModel", DocGridModel::GridModel.c_str())
         .def(py::init<>())
         .def("copy", &GridModel::copy, "TODO", py::return_value_policy::take_ownership)
         .def_property("_ls_to_orig",
                       &GridModel::get_ls_to_orig,
                       &GridModel::set_ls_to_orig,
                       R"mydelimiter(
-_ls_to_orig: has the size of the number of possible buses in lightsim2grid 
+_ls_to_orig: has the size of the number of possible buses in lightsim2grid
 (*ie* `n_sub_ * max_nb_bus_per_sub_` ) and gives the id of the corresponding
 bus in the original grid (pandapower or pypowsybl).
 
-If a "-1" is present, then this bus does not exist in the original grid, 
+If a "-1" is present, then this bus does not exist in the original grid,
 it is only present in the lightsim2grid gridmodel.
 )mydelimiter")
         .def_property("_orig_to_ls",
@@ -1046,7 +831,7 @@ it is only present in the lightsim2grid gridmodel.
                       &GridModel::set_orig_to_ls,
                       R"mydelimiter(
 Opposite to _ls_to_orig. The vector _orig_to_ls has the size of the number
-of buses in the original grid (pandapower or pypowsybl) and tells 
+of buses in the original grid (pandapower or pypowsybl) and tells
 to which bus of lightsim2grid it corresponds. It should be a >= integer
 between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
@@ -1057,41 +842,9 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
                       &GridModel::set_max_nb_bus_per_sub,
                       "do not modify it after loading !")
         .def_property_readonly("timer_last_ac_pf", &GridModel::timer_last_ac_pf, "TODO")
-        .def_property_readonly("timer_last_dc_pf", &GridModel::timer_last_dc_pf, "TODO")
-
-        // pickle
-        .def(py::pickle(
-                [](const GridModel &sub) { // __getstate__
-                    // Return a tuple that fully encodes the state of the object
-                    return py::make_tuple(VERSION_MAJOR, VERSION_MEDIUM, VERSION_MINOR, sub.get_state());
-                },
-                [](py::tuple py_state) { // __setstate__
-                    if (py_state.size() != 4){
-                        std::cout << "GridModel.__setstate__ : state size " << py_state.size() << std::endl;
-                        throw std::runtime_error("Invalid state size when loading GridModel");
-                        }
-                    // Create a new C++ instance
-                    GridModel res = GridModel();
-                    // TODO check the size of the input tuple!
-
-                    // now set the status
-                    int major = py_state[0].cast<int>();
-                    if (major != VERSION_MAJOR){
-                        throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid MAJOR.minor.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int minor = py_state[1].cast<int>();
-                    if (minor != VERSION_MEDIUM){
-                        throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid major.MINOR.patch version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    int patch = py_state[2].cast<int>();
-                    if (patch != VERSION_MINOR){
-                        throw std::runtime_error("Invalid state size when loading GridModel: wrong lightsim2grid major.minor.PATCH version (you can only load pickle from same lightsim2grid version)");
-                    }
-                    GridModel::StateRes state = py_state[3].cast<GridModel::StateRes>();
-                    res.set_state(state);
-                    return res;
-        })) 
-
+        .def_property_readonly("timer_last_dc_pf", &GridModel::timer_last_dc_pf, "TODO");
+    add_pickle(gridmodel_cls, "GridModel");
+    gridmodel_cls
         // general parameters
         // solver control
         .def("change_solver", &GridModel::change_solver, DocGridModel::change_solver.c_str())
