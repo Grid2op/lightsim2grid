@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15...4.0)
+cmake_minimum_required(VERSION 3.15...4.99)
 
 project(lightsim2grid
         VERSION "${SKBUILD_PROJECT_VERSION}"
@@ -146,11 +146,13 @@ endif()
 if(NOT KLU_SOLVER_FOUND)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SuiteSparse/KLU/CMakeLists.txt")
         if(CMAKE_VERSION VERSION_LESS "3.22")
-            message(FATAL_ERROR
-                "Building KLU from the SuiteSparse submodule requires CMake >= 3.22. "
+            message(WARNING
+                "Building KLU from the SuiteSparse submodule requires CMake >= 3.22 "
+                "(current: ${CMAKE_VERSION}). Skipping Strategy 4. "
                 "Either upgrade CMake or install SuiteSparse system-wide "
-                "(e.g. apt install libsuitesparse-dev).")
-        endif()
+                "(e.g. apt install libsuitesparse-dev). "
+                "The KLU linear solver will not be available.")
+        else()
         message(STATUS "KLU: building static libraries from SuiteSparse submodule")
         # Force static-only build for all SuiteSparse components
         set(BUILD_SHARED_LIBS        OFF CACHE BOOL "" FORCE)
@@ -211,6 +213,7 @@ if(NOT KLU_SOLVER_FOUND)
         set(KLU_SOLVER_FOUND    TRUE)
         set(KLU_LINK_TARGET     KLU_static)
         set(CXSPARSE_LINK_TARGET CXSparse_static)
+        endif()  # CMAKE_VERSION >= 3.22
     else()
         message(WARNING
             "KLU not found system-wide and no usable SuiteSparse libraries were found. "

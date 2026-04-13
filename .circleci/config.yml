@@ -226,7 +226,7 @@ jobs:
                     pip install --upgrade pip
                     pip install -U grid2op
                     git submodule update --init
-                    CC=gcc python -m pip install -U .
+                    CC=gcc python -m pip install -v -U .
 
     compile_and_test_gcc_latest:
         executor: gcc_latest
@@ -331,7 +331,7 @@ jobs:
                     uv pip install --upgrade pip
                     uv pip install -U grid2op
                     git submodule update --init
-                    CC=clang uv pip install -U .
+                    CC=clang uv pip install -v -U .
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
@@ -555,9 +555,9 @@ workflows:
         #   - compile_gcc_prev_latest
           - compile_clang_earliest
         #   - compile_clang_prev_latest
-        #   - test_legacy_grid2op
-        #   - test_legacy_pandapower
-        #   - test_legacy_pypowsybl
+          - test_legacy_grid2op
+          - test_legacy_pandapower
+          - test_legacy_pypowsybl
         #   - compile_and_test_windows
         #   - compile_and_test_clang_latest
         #   - compile_and_test_gcc_latest
