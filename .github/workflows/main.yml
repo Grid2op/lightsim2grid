@@ -131,7 +131,7 @@ jobs:
           python3 -c "from lightsim2grid.gridmodel import GridModel"
 
       - name: Check package can be imported (bare install, numpy < 2)
-        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313'
+        if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
         run: |
           python3 -m pip install "numpy<2"
           cd tmp_for_import_checking
