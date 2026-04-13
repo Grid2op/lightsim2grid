@@ -7,14 +7,15 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "BaseConstants.hpp"
+#include <cmath>
 
 const cplx_type BaseConstants::my_i = {0., 1.};
-const real_type BaseConstants::my_pi = M_PI;
+const real_type BaseConstants::my_pi = std::acos((real_type)-1.);
 const real_type BaseConstants::my_one_ = 1.0;
 const real_type BaseConstants::my_two_ = 2.0;
 const real_type BaseConstants::my_half_ = 0.5;
 const real_type BaseConstants::my_zero_ = 0.;
-const real_type BaseConstants::my_180_pi_ = 180. / M_PI;
+const real_type BaseConstants::my_180_pi_ = 180. / std::acos((real_type)-1.);
 const real_type BaseConstants::v_disco_el_ = 0.0;
 const real_type BaseConstants::theta_disco_el_ = 0.0;
 const int BaseConstants::_deactivated_bus_id = -1;

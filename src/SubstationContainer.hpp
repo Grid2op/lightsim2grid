@@ -81,7 +81,7 @@ class SubstationContainer final : public IteratorAdder<SubstationContainer, Subs
         ~SubstationContainer() noexcept = default;
 
         void reset_bus_status(){
-            for(auto i = 0; i < n_bus_max_; ++ i) bus_status_[i] = -1;
+            for(auto i = 0; i < n_bus_max_; ++ i) bus_status_[i] = false;
         }
 
         void init_sub(const RealVect & sub_vn_kv){
