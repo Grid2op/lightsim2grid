@@ -342,7 +342,7 @@ jobs:
                     uv pip install --upgrade pip
                     uv pip install -U grid2op
                     git submodule update --init
-                    CC=clang uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
+                    CC=clang CXX=clang++ uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_C_COMPILER=clang" -C "cmake.define.CMAKE_CXX_COMPILER=clang++" -v .
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
@@ -359,7 +359,7 @@ jobs:
                     pip install --upgrade pip
                     pip install -U grid2op
                     git submodule update --init
-                    CC=clang python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
+                    CC=clang CXX=clang++ python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_C_COMPILER=clang" -C "cmake.define.CMAKE_CXX_COMPILER=clang++" -v .
 
     compile_and_test_clang_latest:
         executor: clang_latest
@@ -386,7 +386,7 @@ jobs:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=clang python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .
+                      CC=clang CXX=clang++ python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_C_COMPILER=clang" -C "cmake.define.CMAKE_CXX_COMPILER=clang++" -v -e .
                       pip freeze
             - run:
                 name: "Install grid2op from source"
