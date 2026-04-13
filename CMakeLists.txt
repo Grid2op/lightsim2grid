@@ -80,13 +80,23 @@ if(NOT KLU_SOLVER_FOUND)
         endif()
         message(STATUS "KLU: building static libraries from SuiteSparse submodule")
         # Force static-only build for all SuiteSparse components
-        set(BUILD_SHARED_LIBS   OFF CACHE BOOL "Build shared libraries"  FORCE)
-        set(BUILD_STATIC_LIBS   ON  CACHE BOOL "Build static libraries"  FORCE)
+        set(BUILD_SHARED_LIBS        OFF CACHE BOOL "" FORCE)
+        set(BUILD_STATIC_LIBS        ON  CACHE BOOL "" FORCE)
         # Tell each component it is being built from a parent CMakeLists so it
         # skips its internal find_package() calls for sibling dependencies.
         set(SUITESPARSE_ROOT_CMAKELISTS ON)
         # Disable the optional CHOLMOD dependency inside KLU.
-        set(KLU_USE_CHOLMOD OFF CACHE BOOL "" FORCE)
+        set(KLU_USE_CHOLMOD          OFF CACHE BOOL "" FORCE)
+        # Disable OpenMP: SuiteSparse_config's find_package(OpenMP) creates a
+        # directory-local target on CMake < 3.24, which is invisible to sibling
+        # subdirectories (AMD, BTF, …) and causes generator-expression errors.
+        # KLU does not need OpenMP, so this has no functional impact.
+        set(SUITESPARSE_USE_OPENMP   OFF CACHE BOOL "" FORCE)
+        # Disable mandatory BLAS: SuiteSparseBLAS.cmake ends with
+        # find_package(BLAS REQUIRED) which fails on systems without a BLAS.
+        # KLU/AMD/BTF/COLAMD/CXSparse do not use BLAS; it is only needed by
+        # CHOLMOD/UMFPACK/SPQR which we are not building.
+        set(SUITESPARSE_REQUIRE_BLAS OFF CACHE BOOL "" FORCE)
 
         # Build components in dependency order and expose SuiteSparse:: aliases
         # so that later components can reference them via target_link_libraries.
