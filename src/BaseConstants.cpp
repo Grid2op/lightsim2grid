@@ -10,7 +10,7 @@
 #include <cmath>
 
 const cplx_type BaseConstants::my_i = {0., 1.};
-const real_type BaseConstants::my_pi = std::acos((real_type)-1.);
+const real_type BaseConstants::my_pi = std::acos((real_type)-1.);  // M_PI is not defined everywhere (especially on windows, std::acos((real_type)-1.) evaluates to pi)
 const real_type BaseConstants::my_one_ = 1.0;
 const real_type BaseConstants::my_two_ = 2.0;
 const real_type BaseConstants::my_half_ = 0.5;
