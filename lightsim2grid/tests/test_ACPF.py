@@ -18,7 +18,7 @@ import warnings
 
 from lightsim2grid import LightSimBackend
 import lightsim2grid
-from lightsim2grid_cpp import PandaPowerConverter
+from lightsim2grid.lightsim2grid_cpp import PandaPowerConverter
 from pandapower.build_branch import _calc_branch_values_from_trafo_df
 try:
     from lightsim2grid.solver import KLUSolver

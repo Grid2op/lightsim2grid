@@ -20,7 +20,7 @@ import time
 GaussSeidelSolver_AVAILBLE = False
 
 try:
-    from lightsim2grid_cpp import GaussSeidelSolver
+    from lightsim2grid.lightsim2grid_cpp import GaussSeidelSolver
     GaussSeidelSolver_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out

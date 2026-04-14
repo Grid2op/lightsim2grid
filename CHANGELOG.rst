@@ -16,7 +16,6 @@ Change Log
 - code `helm` powerflow method
 - interface with gridpack (to enforce q limits for example)
 - maybe have a look at suitesparse "sliplu" tools ?
-- easier building (get rid of the "make" part)
 
 TODO: speed directly update the pv, pq, Sbus and Ybus part when updating the elements
       (less error prone and faster to recompute). Then what is passed to the solver 
@@ -28,6 +27,16 @@ TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
+
+[0.13.0] 2026-04-xx
+--------------------
+- [PENDING DEPRECATION] the cpp module (lightsim2grid_cpp) will not be usable directly anymore.
+  This means that calls like "from lightsim2grid_cpp import XXX" will not work. To replace them 
+  you  need to perform "from lightsim2grid.lightsim2grid_cpp import XXX"
+- [FIXED] some compilation issues on some systems (*eg* windows when using c++23 standard)
+- [IMPROVED] cleaner `cktso_lib` (`from lightsim2grid.compilation_options import cktso_lib`) : the file name and extension are omitted
+- [IMPROVED] easier build by relying on cmake and scikit_build_core to build the cpp part
+- [IMPROVED] SuiteSparse to version 7.12.2 (2026-02-05)
 
 [0.12.2] 2026-02-05
 ----------------------

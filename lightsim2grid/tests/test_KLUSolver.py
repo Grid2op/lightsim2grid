@@ -14,7 +14,7 @@ import zipfile
 from scipy import sparse
 KLU_AVAILBLE = False
 try:
-    from lightsim2grid_cpp import KLUSolver
+    from lightsim2grid.lightsim2grid_cpp import KLUSolver
     KLU_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out

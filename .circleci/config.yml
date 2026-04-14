@@ -26,8 +26,10 @@ executors:
 
 jobs:
     test_legacy_grid2op:
-        executor: gcc_latest  
+        executor: gcc_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: cat /etc/os-release
@@ -51,20 +53,18 @@ jobs:
                     uv venv venv_test --python 3.11
             - run:
                   name: "Set up virtual environment"
-                  command: |
+                  command: |    # setuptools~=80.10 => otherwise problem with pkg_resources (imported in oldest grid2op version)
                       source venv_test/bin/activate
-                      uv pip install --upgrade pip setuptools wheel gym "numpy<2" pybind11 scipy
+                      uv pip install setuptools~=80.10
+                      uv pip install --upgrade pip gym "numpy<2" scipy 
                       uv pip install "pandapower<3" grid2op==1.0.0 "pandas<3"
-                      git submodule init
-                      git submodule update
-                      make
+                      git submodule update --init
                       pip freeze
             - run:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=gcc python setup.py build
-                      CC=gcc uv pip install -e .
+                      CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .
                       pip freeze
             - run:
                 name: legacy test (grid2op 1.0.0)
@@ -201,6 +201,8 @@ jobs:
     compile_gcc_prev_latest:
         executor: gcc_prev_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
@@ -208,40 +210,36 @@ jobs:
             - run:
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel
+                      pip install --upgrade pip
                       pip install -U grid2op
-                      pip install -U pybind11
-                      git submodule init
-                      git submodule update
-                      make
-                      CC=gcc python setup.py build
-                      python -m pip install -U .
+                      git submodule update --init
+                      CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_gcc_earliest:
         executor: gcc_earliest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: sed -i s/deb.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
-            - run: apt-get update && apt-get install python3-pip -y
+            - run: apt-get update && apt-get install python3-pip  cmake -y
             - run: python3 -m pip install virtualenv
             - run: python3 -m virtualenv venv_test
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install --upgrade pip setuptools wheel
+                    pip install --upgrade pip
                     pip install -U grid2op
-                    pip install -U pybind11
-                    git submodule init
-                    git submodule update
-                    make
-                    CC=gcc python setup.py build
-                    python -m pip install -U .
+                    git submodule update --init
+                    CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
 
     compile_and_test_gcc_latest:
         executor: gcc_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: cat /etc/os-release
@@ -256,17 +254,14 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel gymnasium "numpy<2" pybind11 scipy
-                      git submodule init
-                      git submodule update
-                      make
+                      pip install --upgrade pip gymnasium "numpy<2" scipy
+                      git submodule update --init
                       pip freeze
             - run:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=gcc python setup.py build
-                      CC=gcc python -m pip install -e .
+                      CC=gcc python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -ve .
                       pip freeze
             - run:
                 name: "Install grid2op from source"
@@ -291,6 +286,8 @@ jobs:
     compile_clang_earliest:
         executor: clang_earliest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: cat /etc/os-release
@@ -298,6 +295,7 @@ jobs:
             # - run: sed -i s/security.debian.org/archive.debian.org/g /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             # - run: echo "deb http://archive.debian.org/debian stretch main contrib non-free" > /etc/apt/sources.list  # see https://unix.stackexchange.com/questions/371890/debian-the-repository-does-not-have-a-release-file
             - run: apt-get update
+            - run: apt install cmake -y
             - run: apt purge python3-pkg-resources libtinfo5 -y
             # - run: apt purge python3-* -y
             - run: apt autoremove -y && apt-get update -y
@@ -341,18 +339,16 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    uv pip install --upgrade pip setuptools wheel
+                    uv pip install --upgrade pip
                     uv pip install -U grid2op
-                    uv pip install -U pybind11
-                    git submodule init
-                    git submodule update
-                    make
-                    CC=clang python setup.py build
-                    CC=clang uv pip install -U .
+                    git submodule update --init
+                    CC=clang CXX=clang++ uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_C_COMPILER=clang" -C "cmake.define.CMAKE_CXX_COMPILER=clang++" -v .
 
     compile_clang_prev_latest:
         executor: clang_prev_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: apt-get update && apt-get install python3-full python3-dev python3-pip python3-virtualenv git -y
@@ -360,18 +356,16 @@ jobs:
             - run:
                 command: |
                     source venv_test/bin/activate
-                    pip install --upgrade pip setuptools wheel
+                    pip install --upgrade pip
                     pip install -U grid2op
-                    pip install -U pybind11
-                    git submodule init
-                    git submodule update
-                    make
-                    CC=clang python setup.py build
-                    CC=clang python -m pip install -U .
+                    git submodule update --init
+                    CC=clang CXX=clang++ python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_C_COMPILER=clang" -C "cmake.define.CMAKE_CXX_COMPILER=clang++" -v .
 
     compile_and_test_clang_latest:
         executor: clang_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: apt-get update
@@ -385,18 +379,14 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                       source venv_test/bin/activate
-                      pip install --upgrade pip setuptools wheel 
-                      pip install gymnasium "numpy<2" pybind11 scipy
-                      git submodule init
-                      git submodule update
-                      make
+                      pip install --upgrade pip gymnasium "numpy<2" scipy
+                      git submodule update --init
                       pip freeze
             - run:
                   name: "Compile and install lightsim2grid"
                   command: |
                       source venv_test/bin/activate
-                      CC=clang python setup.py build
-                      CC=clang python -m pip install -e .
+                      CC=clang CXX=clang++ python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_C_COMPILER=clang" -C "cmake.define.CMAKE_CXX_COMPILER=clang++" -v -e .
                       pip freeze
             - run:
                 name: "Install grid2op from source"
@@ -445,10 +435,8 @@ jobs:
                 name: "Install lightsim2grid"
                 command: |
                     .\venv_test\Scripts\activate
-                    git submodule init
-                    git submodule update
-                    python setup.py build
-                    python -m pip install -e .[test]
+                    git submodule update --init
+                    python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .[test]
                     pip freeze
             - run:
                 name: "Show package versions"
@@ -464,8 +452,10 @@ jobs:
                     python -W "ignore" -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control
                     
     test_legacy_pandapower:
-        executor: gcc_latest  
+        executor: gcc_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: cat /etc/os-release
@@ -489,14 +479,12 @@ jobs:
                     uv venv venv_test --python 3.11
             - run:
                   name: "Set up virtual environment"
-                  command: |
+                  command: |  # setuptools~=80.10 => otherwise problem with pkg_resources (imported in oldest grid2op version)
                     source venv_test/bin/activate
-                    uv pip install --upgrade pip setuptools wheel "numpy<2" pybind11 scipy "pandapower<3" grid2op "pandas<3"
-                    git submodule init
-                    git submodule update
-                    make
-                    python setup.py build
-                    uv pip install .
+                    uv pip install setuptools~=80.10
+                    uv pip install --upgrade pip "numpy<2" scipy "pandapower<3" grid2op "pandas<3"
+                    git submodule update --init
+                    uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
                     pip freeze
                     
             - run:
@@ -509,8 +497,10 @@ jobs:
                     python -m unittest test_GridModel_pandapower.py
 
     test_legacy_pypowsybl:
-        executor: gcc_latest  
+        executor: gcc_latest
         resource_class: medium
+        environment:
+            CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
             - checkout
             - run: cat /etc/os-release
@@ -536,12 +526,9 @@ jobs:
                   name: "Set up virtual environment"
                   command: |
                     source venv_test/bin/activate
-                    uv pip install --upgrade pip setuptools wheel "numpy<2" pybind11 scipy "pypowsybl~=1.0.0" grid2op
-                    git submodule init
-                    git submodule update
-                    make
-                    python setup.py build
-                    uv pip install .
+                    uv pip install --upgrade pip "numpy<2" scipy "pypowsybl~=1.0.0" grid2op
+                    git submodule update --init
+                    uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v .
                     pip freeze
                     
             - run:

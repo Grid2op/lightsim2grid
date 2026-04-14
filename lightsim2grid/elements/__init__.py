@@ -22,17 +22,17 @@ __all__ = ["GeneratorContainer",
            "DCLineInfo",
            ]
 
-from lightsim2grid_cpp import GeneratorContainer
-from lightsim2grid_cpp import GenInfo
-from lightsim2grid_cpp import SGenContainer
-from lightsim2grid_cpp import SGenInfo
-from lightsim2grid_cpp import LoadContainer
-from lightsim2grid_cpp import LoadInfo
-from lightsim2grid_cpp import ShuntContainer
-from lightsim2grid_cpp import ShuntInfo
-from lightsim2grid_cpp import TrafoContainer
-from lightsim2grid_cpp import TrafoInfo
-from lightsim2grid_cpp import LineContainer
-from lightsim2grid_cpp import LineInfo
-from lightsim2grid_cpp import DCLineContainer
-from lightsim2grid_cpp import DCLineInfo
+from ..lightsim2grid_cpp import GeneratorContainer # type: ignore
+from ..lightsim2grid_cpp import GenInfo # type: ignore
+from ..lightsim2grid_cpp import SGenContainer # type: ignore
+from ..lightsim2grid_cpp import SGenInfo # type: ignore
+from ..lightsim2grid_cpp import LoadContainer # type: ignore
+from ..lightsim2grid_cpp import LoadInfo # type: ignore
+from ..lightsim2grid_cpp import ShuntContainer # type: ignore
+from ..lightsim2grid_cpp import ShuntInfo # type: ignore
+from ..lightsim2grid_cpp import TrafoContainer # type: ignore
+from ..lightsim2grid_cpp import TrafoInfo # type: ignore
+from ..lightsim2grid_cpp import LineContainer # type: ignore
+from ..lightsim2grid_cpp import LineInfo # type: ignore
+from ..lightsim2grid_cpp import DCLineContainer # type: ignore
+from ..lightsim2grid_cpp import DCLineInfo # type: ignore
