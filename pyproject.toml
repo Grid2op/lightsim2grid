@@ -46,3 +46,124 @@ result = "{version}"
 # On peut passer des arguments à CMake si nécessaire
 [tool.scikit-build.cmake.define]
 CMAKE_BUILD_TYPE = "Release"
+
+# Control what lands in the source distribution (sdist / .tar.gz).
+# scikit-build-core uses `git ls-files --recurse-submodules` as the file list,
+# so MANIFEST.in is *not* read — all filtering must be done here.
+[tool.scikit-build.sdist]
+exclude = [
+    # files in git not usefull for release
+    ".gitignore",
+    ".gitmodules",
+    ".readthedocs.yml",
+    "basic_perf.py",
+    "compare_pandapower.py",
+    "env_compile_all.sh",
+    "Makefile",
+    "old_setup.py.bk",
+    "pyproject.toml.bk",
+    "requirements.txt",
+    "requirements_compile_cli.txt",
+
+    # CI configuration — irrelevant to end users building from source
+    ".github",
+    ".circleci",
+
+    # Developer-only directories
+    "benchmarks",
+    "docs",
+    "documentation",
+    "examples",
+    "build_cmake",
+    "old",
+    "wheelhouse",
+
+    # SuiteSparse submodule — only KLU and its direct dependencies are used
+    # (SuiteSparse_config, AMD, BTF, COLAMD, CXSparse, KLU are kept).
+    "SuiteSparse/CAMD",
+    "SuiteSparse/CCOLAMD",
+    "SuiteSparse/CHOLMOD",
+    "SuiteSparse/CSparse",
+    "SuiteSparse/Example",
+    "SuiteSparse/GraphBLAS",
+    "SuiteSparse/LAGraph",
+    "SuiteSparse/LDL",
+    "SuiteSparse/MATLAB_Tools",
+    "SuiteSparse/Mongoose",
+    "SuiteSparse/ParU",
+    "SuiteSparse/RBio",
+    "SuiteSparse/SPEX",
+    "SuiteSparse/SPQR",
+    "SuiteSparse/TestConfig",
+    "SuiteSparse/UMFPACK",
+    "SuiteSparse/ssget",
+    # Generated / installed output directories inside the submodule
+    "SuiteSparse/bin",
+    "SuiteSparse/build",
+    "SuiteSparse/include",
+    "SuiteSparse/lib",
+    "SuiteSparse/share",
+
+    # SuiteSparse kept components — trim generated output, demos, docs,
+    # MATLAB interfaces, and test data from each; keep Source/, Include/,
+    # Config/ (used by cmake configure_file), CMakeLists.txt, Makefile, README.
+    "SuiteSparse/SuiteSparse_config/build",
+    "SuiteSparse/AMD/build",
+    "SuiteSparse/AMD/Demo",
+    "SuiteSparse/AMD/Doc",
+    "SuiteSparse/AMD/Lib",
+    "SuiteSparse/AMD/MATLAB",
+    "SuiteSparse/BTF/build",
+    "SuiteSparse/BTF/Doc",
+    "SuiteSparse/BTF/Lib",
+    "SuiteSparse/BTF/MATLAB",
+    "SuiteSparse/COLAMD/build",
+    "SuiteSparse/COLAMD/Demo",
+    "SuiteSparse/COLAMD/Doc",
+    "SuiteSparse/COLAMD/Lib",
+    "SuiteSparse/COLAMD/MATLAB",
+    "SuiteSparse/CXSparse/build",
+    "SuiteSparse/CXSparse/Demo",
+    "SuiteSparse/CXSparse/Doc",
+    "SuiteSparse/CXSparse/Lib",
+    "SuiteSparse/CXSparse/MATLAB",
+    "SuiteSparse/CXSparse/Matrix",
+    "SuiteSparse/CXSparse/Tcov",
+    "SuiteSparse/KLU/build",
+    "SuiteSparse/KLU/Demo",
+    "SuiteSparse/KLU/Doc",
+    "SuiteSparse/KLU/Lib",
+    "SuiteSparse/KLU/MATLAB",
+    "SuiteSparse/KLU/Matrix",
+    "SuiteSparse/KLU/Tcov",
+    "SuiteSparse/KLU/User",
+
+    # Eigen submodule — only eigen/Eigen/ headers + licenses + README are needed.
+    # Exclude everything else: build tooling, tests, demos, docs, BLAS/LAPACK
+    # plugins (not used by lightsim2grid), and all VCS/CI dotfiles.
+    "eigen/bench",
+    "eigen/blas",
+    "eigen/ci",
+    "eigen/cmake",
+    "eigen/debug",
+    "eigen/demos",
+    "eigen/doc",
+    "eigen/failtest",
+    "eigen/lapack",
+    "eigen/scripts",
+    "eigen/test",
+    "eigen/unsupported",
+    "eigen/.gitlab",
+    "eigen/.clang-format",
+    "eigen/.git-blame-ignore-revs",
+    "eigen/.gitattributes",
+    "eigen/.gitignore",
+    "eigen/.gitlab-ci.yml",
+    "eigen/CHANGELOG.md",
+    "eigen/CMakeLists.txt",
+    "eigen/CTestConfig.cmake",
+    "eigen/CTestCustom.cmake.in",
+    "eigen/eigen3.pc.in",
+    "eigen/INSTALL",
+    "eigen/signature_of_eigen3_matrix_library",
+]

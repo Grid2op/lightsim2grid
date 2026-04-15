@@ -136,7 +136,6 @@ old/J_*.npy
 old/dx_*.npy
 tmp/
 pandapower/
-eigen/
 Sbus.npy
 old/V0.npy
 old/Ybus.npy
