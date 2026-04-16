@@ -28,7 +28,11 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.13.0] 2026-04-xx
+[0.13.1]  2006-xx-yy
+--------------------
+
+
+[0.13.0] 2026-04-15
 --------------------
 - [PENDING DEPRECATION] the cpp module (lightsim2grid_cpp) will not be usable directly anymore.
   This means that calls like "from lightsim2grid_cpp import XXX" will not work. To replace them 
