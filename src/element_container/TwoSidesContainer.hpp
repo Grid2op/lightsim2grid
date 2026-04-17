@@ -117,7 +117,7 @@ class TwoSidesContainer : public GenericContainer
         virtual ~TwoSidesContainer() noexcept = default;
 
         // public generic API
-        int nb() const { return side_1_.nb(); }
+        size_t nb() const { return side_1_.nb(); }
         GridModelBusId get_bus_side_1(int el_id) const {return side_1_.get_bus(el_id);}
         GridModelBusId get_bus_side_2(int el_id) const {return side_2_.get_bus(el_id);}
 
@@ -134,8 +134,8 @@ class TwoSidesContainer : public GenericContainer
             status_global_ = std::vector<bool>(els_bus1_id.size(), true);
         }
 
-        Eigen::Ref<const GlobalBusIdVect> get_buses_side_1() const {return side_1_.get_buses();}
-        Eigen::Ref<const GlobalBusIdVect> get_buses_side_2() const {return side_2_.get_buses();}
+        const GlobalBusIdVect & get_buses_side_1() const {return side_1_.get_buses();}
+        const GlobalBusIdVect & get_buses_side_2() const {return side_2_.get_buses();}
 
         tuple3d get_res_side_1() const {return side_1_.get_res();}
         tuple3d get_res_side_2() const {return side_2_.get_res();}
@@ -150,8 +150,8 @@ class TwoSidesContainer : public GenericContainer
         const std::vector<bool>& get_status_side_1() const {return side_1_.get_status();}
         const std::vector<bool>& get_status_side_2() const {return side_2_.get_status();}
 
-        Eigen::Ref<const GlobalBusIdVect> get_bus_id_side_1() const {return side_1_.get_bus_id();}
-        Eigen::Ref<const GlobalBusIdVect> get_bus_id_side_2() const {return side_2_.get_bus_id();}
+        const GlobalBusIdVect & get_bus_id_side_1() const {return side_1_.get_bus_id();}
+        const GlobalBusIdVect & get_bus_id_side_2() const {return side_2_.get_bus_id();}
 
         Eigen::Ref<const IntVect> get_bus_id_side_1_numpy() const {return side_1_.get_bus_id_numpy();}
         Eigen::Ref<const IntVect> get_bus_id_side_2_numpy() const {return side_2_.get_bus_id_numpy();}
@@ -167,8 +167,8 @@ class TwoSidesContainer : public GenericContainer
         virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
             const int nb_el = nb();
             SolverControl unused_solver_control;
-            Eigen::Ref<const GlobalBusIdVect> bus_side_1_id_ = get_buses_side_1();
-            Eigen::Ref<const GlobalBusIdVect> bus_side_2_id_ = get_buses_side_2();
+            const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
+            const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
             for(int i = 0; i < nb_el; ++i){
                 if(!status_global_[i]){
                     side_1_.deactivate(i, unused_solver_control);
@@ -177,8 +177,19 @@ class TwoSidesContainer : public GenericContainer
                 }
                 GlobalBusId bus_side_1 = bus_side_1_id_(i);
                 GlobalBusId bus_side_2 = bus_side_2_id_(i);
-                if(!busbar_in_main_component[bus_side_1.cast_int()]) side_1_.deactivate(i, unused_solver_control);
-                if(!busbar_in_main_component[bus_side_2.cast_int()]) side_2_.deactivate(i, unused_solver_control);
+                if(!busbar_in_main_component[bus_side_1.cast_int()])
+                {
+                    side_1_.deactivate(i, unused_solver_control);
+                    side_2_.deactivate(i, unused_solver_control);
+                    if(!ignore_status_global_) status_global_[i] = false;
+                    if(busbar_in_main_component[bus_side_2.cast_int()]){
+                        // a powerline is connected, both its ends should be on the same connected component
+                        throw std::runtime_error("A connected line has an end connected to a given connected component, and another one in another. This should not happen.");
+                    }
+                }
+                if(!busbar_in_main_component[bus_side_2.cast_int()] && busbar_in_main_component[bus_side_1.cast_int()]){
+                    throw std::runtime_error("A connected line has an end connected to a given connected component, and another one in another. This should not happen.");
+                }
             }
         }
         virtual void nb_line_end(std::vector<int> & res) const{

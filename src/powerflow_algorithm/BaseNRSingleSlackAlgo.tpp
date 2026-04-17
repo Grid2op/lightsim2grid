@@ -13,10 +13,10 @@ template<class LinearSolver>
 bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                      CplxVect & V,
                                                      const CplxVect & Sbus,
-                                                     const Eigen::VectorXi & slack_ids,
+                                                     Eigen::Ref<const IntVect> slack_ids,
                                                      const RealVect & slack_weights,  // unused here
-                                                     const Eigen::VectorXi & pv,
-                                                     const Eigen::VectorXi & pq,
+                                                     Eigen::Ref<const IntVect> pv,
+                                                     Eigen::Ref<const IntVect> pq,
                                                      int max_iter,
                                                      real_type tol
                                                      )

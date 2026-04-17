@@ -160,7 +160,7 @@ class OneSideContainer : public GenericContainer
         // public generic API
         int nb() const { return static_cast<int>(bus_id_.size()); }
         GridModelBusId get_bus(int el_id) const {return _get_bus(el_id, status_, bus_id_);}
-        Eigen::Ref<const GlobalBusIdVect> get_buses() const {return bus_id_;}
+        const GlobalBusIdVect & get_buses() const {return bus_id_;}
 
         tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
         tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
@@ -168,9 +168,9 @@ class OneSideContainer : public GenericContainer
         Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
         const std::vector<bool>& get_status() const {return status_;}
         bool get_status(int el_id) const {return status_.at(el_id);}
-        Eigen::Ref<const GlobalBusIdVect> get_bus_id() const {return bus_id_;}
+        const GlobalBusIdVect & get_bus_id() const {return bus_id_;}
         Eigen::Ref<const IntVect> get_bus_id_numpy() const {
-            return IntVect::Map(reinterpret_cast<const int *>(&bus_id_(0)), bus_id_.size());
+            return bus_id_.as_eigen();
         }
 
         void reconnect_connected_buses(SubstationContainer & substation) const{
@@ -231,7 +231,7 @@ class OneSideContainer : public GenericContainer
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
-                             const std::vector<SolverBusId> & id_grid_to_solver,
+                             const SolverBusIdVect & id_grid_to_solver,
                              const RealVect & bus_vn_kv,
                              real_type sn_mva,
                              bool ac)
@@ -326,7 +326,7 @@ class OneSideContainer : public GenericContainer
 
         OneSideContainer::StateRes get_osc_state() const  // osc: one side element
         {
-            std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
+            std::vector<int> bus_id(bus_id_.to_int_vector());
             std::vector<bool> status = status_;
             bool has_subid_info = subid_.size();
             std::vector<int> subid(subid_.begin(), subid_.end());
@@ -371,7 +371,7 @@ class OneSideContainer : public GenericContainer
             }
 
             // input data
-            bus_id_ = GlobalBusIdVect::Map(reinterpret_cast<GlobalBusId *>(&bus_id[0]), bus_id.size());
+            bus_id_ = GlobalBusIdVect(bus_id);
             status_ = status;
         }
         
@@ -379,7 +379,7 @@ class OneSideContainer : public GenericContainer
             const Eigen::VectorXi & els_bus_id
         )  // osc: one side container
         {
-            bus_id_ = els_bus_id.cast<GridModelBusId>();
+            bus_id_ = GlobalBusIdVect(els_bus_id);
             status_ = std::vector<bool>(els_bus_id.size(), true);
         }
 
@@ -419,7 +419,7 @@ class OneSideContainer : public GenericContainer
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<SolverBusId> & id_grid_to_solver,
+                                      const SolverBusIdVect & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac) {
@@ -458,7 +458,7 @@ class OneSideContainer : public GenericContainer
         }
     protected:
         // used for example when trafo.change_bus_hv need to access 
-        Eigen::Ref<GlobalBusIdVect> get_buses_not_const() {return bus_id_;}
+        GlobalBusIdVect & get_buses_not_const() {return bus_id_;}
 
         // DANGER zone, neede for trafoContainer and lineContainer
         // because TwoSidesContainer is not fully made

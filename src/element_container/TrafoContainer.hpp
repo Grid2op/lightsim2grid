@@ -106,12 +106,12 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         virtual void hack_Sbus_for_dc_phase_shifter(
             CplxVect & Sbus,
             bool ac,
-            const std::vector<SolverBusId> & id_grid_to_solver);  // needed for dc mode  
+            const SolverBusIdVect & id_grid_to_solver);  // needed for dc mode  
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
-                             const std::vector<SolverBusId> & id_grid_to_solver,
+                             const SolverBusIdVect & id_grid_to_solver,
                              const RealVect & bus_vn_kv,
                              real_type sn_mva,
                              bool ac)

@@ -87,24 +87,24 @@ class BaseBatchSolverSynch : protected BaseConstants
         template<class T>
         void compute_amps_flows(const T & structure_data,
                                 real_type sn_mva,
-                                Eigen::Index lag_id,
+                                size_t lag_id,
                                 bool is_trafo) 
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
-            const Eigen::Ref<const GlobalBusIdVect> & bus_from = structure_data.get_bus_id_side_1();
-            const Eigen::Ref<const GlobalBusIdVect> & bus_to = structure_data.get_bus_id_side_2();
+            const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
+            const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             bool is_ac = _solver.ac_solver_used();
 
             const auto & vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
             const auto & vect_y_ft = is_ac ? structure_data.yac_12() : structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
-            Eigen::Index nb_el = structure_data.nb();
+            size_t nb_el = structure_data.nb();
             real_type sqrt_3 = sqrt(3.);
 
             RealVect res;
-            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+            for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 // TODO connected one side only !
 
@@ -144,13 +144,13 @@ class BaseBatchSolverSynch : protected BaseConstants
         template<class T>
         void compute_active_power_flows(const T & structure_data,
                                         real_type sn_mva,
-                                        Eigen::Index lag_id,
+                                        size_t lag_id,
                                         bool is_trafo) 
         {
             const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
-            const Eigen::Ref<const GlobalBusIdVect> & bus_from = structure_data.get_bus_id_side_1();
-            const Eigen::Ref<const GlobalBusIdVect> & bus_to = structure_data.get_bus_id_side_2();
+            const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
+            const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             const bool is_ac = _solver.ac_solver_used();
 
             Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
@@ -160,7 +160,7 @@ class BaseBatchSolverSynch : protected BaseConstants
             Eigen::Index nb_el = structure_data.nb();
 
             RealVect res;
-            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+            for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
 
                 // retrieve which buses are used
@@ -198,10 +198,10 @@ class BaseBatchSolverSynch : protected BaseConstants
         bool compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                    CplxVect & V,
                                    const CplxVect & Sbus,
-                                   const IntVect & slack_ids,
+                                   Eigen::Ref<const IntVect> slack_ids,
                                    const RealVect & slack_weights,
-                                   const IntVect & bus_pv,
-                                   const IntVect & bus_pq,
+                                   Eigen::Ref<const IntVect> bus_pv,
+                                   Eigen::Ref<const IntVect> bus_pq,
                                    int max_iter,
                                    double tol
                                    );
@@ -209,13 +209,13 @@ class BaseBatchSolverSynch : protected BaseConstants
         void compute_flows_from_Vs(bool amps=true);
 
         CplxVect extract_Vsolver_from_Vinit(const CplxVect& Vinit,
-                                            Eigen::Index nb_buses_solver,
-                                            Eigen::Index nb_total_bus,
-                                            const std::vector<SolverBusId> & id_me_to_ac_solver){
+                                            size_t nb_buses_solver,
+                                            size_t nb_total_bus,
+                                            const SolverBusIdVect & id_me_to_ac_solver){
             // extract V solver from the given V
             CplxVect Vinit_solver = CplxVect::Constant(nb_buses_solver, {_grid_model.get_init_vm_pu(), 0.});
             int tmp;
-            for(Eigen::Index bus_id_grid = 0; bus_id_grid < nb_total_bus; ++bus_id_grid){
+            for(size_t bus_id_grid = 0; bus_id_grid < nb_total_bus; ++bus_id_grid){
                 tmp = static_cast<int>(id_me_to_ac_solver[bus_id_grid]);
                 if(tmp == BaseConstants::_deactivated_bus_id) continue;
                 Vinit_solver[tmp] = Vinit[bus_id_grid];
@@ -252,10 +252,10 @@ class BaseBatchSolverSynch : protected BaseConstants
             const SolverBusIdVect & gm_bus_pv = _grid_model.get_pv_solver();
             const SolverBusIdVect & gm_bus_pq = _grid_model.get_pq_solver();
             const RealVect & gm_bus_sw = _grid_model.get_slack_weights_solver();
+
             // TODO copies are made here, which is not ideal
-            bus_pv_ = _to_intvect(gm_bus_pv);
-            bus_pq_ = _to_intvect(gm_bus_pq);
-            slack_ids_ = _to_intvect(slack_ids_solver_);
+            bus_pv_ = gm_bus_pv;  // was _to_intvect()
+            bus_pq_ = gm_bus_pq;  // was _to_intvect()
             slack_weights_ = gm_bus_sw;
             return res;
         }
@@ -265,9 +265,9 @@ class BaseBatchSolverSynch : protected BaseConstants
         GridModel _grid_model;
 
         // properties of the grid
-        const Eigen::Index n_line_;
-        const Eigen::Index n_trafos_;
-        const Eigen::Index n_total_;
+        const size_t n_line_;
+        const size_t n_trafos_;
+        const size_t n_total_;
 
         // solver
         ChooseSolver _solver;
@@ -289,17 +289,16 @@ class BaseBatchSolverSynch : protected BaseConstants
         // internal data
         CplxVect Sbus_;
         Eigen::SparseMatrix<cplx_type> Ybus_;
-        std::vector<GlobalBusId> id_solver_to_me_;
-        std::vector<SolverBusId> id_me_to_solver_;
+        GlobalBusIdVect id_solver_to_me_;
+        SolverBusIdVect id_me_to_solver_;
         SolverBusIdVect slack_ids_solver_;
         GlobalBusIdVect slack_ids_me_;
         int nb_buses_solver_;
 
         // TODO everything is copied here
         // not optimal...
-        IntVect bus_pv_;
-        IntVect bus_pq_;
-        IntVect slack_ids_;
+        SolverBusIdVect bus_pv_;
+        SolverBusIdVect bus_pq_;
         RealVect slack_weights_;
 
 };

@@ -117,8 +117,8 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
 }
 
 RealVect GeneratorContainer::get_slack_weights_solver(
-    Eigen::Index nb_bus_solver,
-    const std::vector<SolverBusId> & id_grid_to_solver){
+    size_t nb_bus_solver,
+    const SolverBusIdVect & id_grid_to_solver){
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -155,7 +155,7 @@ RealVect GeneratorContainer::get_slack_weights_solver(
     return res;
 }
 
-void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
+void GeneratorContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
     SolverBusId bus_id_solver;
@@ -197,7 +197,7 @@ void GeneratorContainer::fillSbus(CplxVect & Sbus, const std::vector<SolverBusId
 void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
                                 std::vector<bool> & has_bus_been_added,
                                 const SolverBusIdVect & slack_bus_id_solver,
-                                const std::vector<SolverBusId> & id_grid_to_solver) const
+                                const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
@@ -234,7 +234,7 @@ void GeneratorContainer::fillpv(std::vector<int> & bus_pv,
             throw std::runtime_error(exc_.str());
         }
 
-        if(is_in_vect(bus_id_solver.cast_int(), slack_bus_id_solver)) continue;  // slack bus is not PV
+        if(is_in_vect(bus_id_solver.cast_int(), slack_bus_id_solver.to_int_vector())) continue;  // slack bus is not PV
         if(has_bus_been_added[bus_id_solver.cast_int()]) continue; // i already added this bus
         bus_pv.push_back(bus_id_solver.cast_int());
         has_bus_been_added[bus_id_solver.cast_int()] = true;  // don't add it a second time
@@ -321,7 +321,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
     }
 }
 
-void GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+void GeneratorContainer::_change_bus(int el_id, GlobalBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
     if(bus_id_(el_id) == new_bus_id) return;  // nothing to do if the bus did not changed
     solver_control.tell_recompute_sbus();
     solver_control.tell_one_el_changed_bus();
@@ -329,7 +329,7 @@ void GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, Solve
     if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
 };
 
-void GeneratorContainer::set_vm(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const
+void GeneratorContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
 {
     const int nb_gen = nb();
     GlobalBusId bus_id_me;
@@ -389,14 +389,12 @@ GlobalBusIdVect GeneratorContainer::get_slack_bus_id() const{
         }
     }
     if(tmp.empty()) throw std::runtime_error("GeneratorContainer::get_slack_bus_id: no generator are tagged slack bus for this grid.");
-    res = GlobalBusIdVect::Map(
-        reinterpret_cast<GlobalBusId *>(tmp.data()),
-        tmp.size());  // force the copy of the data apparently
+    res = GlobalBusIdVect(tmp);
     return res;
 }
 
 void GeneratorContainer::set_p_slack(const RealVect& node_mismatch,
-                                     const std::vector<SolverBusId> & id_grid_to_solver)
+                                     const SolverBusIdVect & id_grid_to_solver)
 {
     if(bus_slack_weight_.size() == 0){
         // TODO DEBUG MODE: perform this check only in debug mode
@@ -439,7 +437,7 @@ void GeneratorContainer::init_q_vector(int nb_bus,
 
 void GeneratorContainer::set_q(
     const RealVect & reactive_mismatch,
-    const std::vector<SolverBusId> & id_grid_to_solver,
+    const SolverBusIdVect & id_grid_to_solver,
     bool ac,
     const Eigen::VectorXi & total_gen_per_bus,
     const RealVect & total_q_min_per_bus,

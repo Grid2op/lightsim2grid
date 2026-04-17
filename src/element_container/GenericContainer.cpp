@@ -59,7 +59,7 @@ void GenericContainer::_generic_deactivate(int el_id, std::vector<bool> & eltype
 void GenericContainer::_generic_change_bus(
     int el_id,
     const GridModelBusId & new_gridmodel_bus_id,
-    Eigen::Ref<GlobalBusIdVect> el_bus_ids,
+    GlobalBusIdVect & el_bus_ids,
     SolverControl & solver_control,
     int nb_max_bus) const {
     // bus id here "me_id" and NOT "solver_id"
@@ -89,7 +89,7 @@ void GenericContainer::_generic_change_bus(
         exc_ << new_gridmodel_bus_id.cast_int();
         throw std::out_of_range(exc_.str());
     }
-    GlobalBusId & bus_me_id = el_bus_ids(el_id);
+    auto bus_me_id = el_bus_ids(el_id);
     bus_me_id = new_gridmodel_bus_id;
 }
 
@@ -112,7 +112,7 @@ void GenericContainer::v_kv_from_vpu(const Eigen::Ref<const RealVect> & Va,
                                      const std::vector<bool> & status,
                                      int nb_element,
                                      const GlobalBusIdVect & bus_me_id,
-                                     const std::vector<SolverBusId> & id_grid_to_solver,
+                                     const SolverBusIdVect & id_grid_to_solver,
                                      const RealVect & bus_vn_kv,
                                      RealVect & v) const
 {
@@ -150,7 +150,7 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
                                      const std::vector<bool> & status,
                                      int nb_element,
                                      const GlobalBusIdVect & bus_me_id,
-                                     const std::vector<SolverBusId> & id_grid_to_solver,
+                                     const SolverBusIdVect & id_grid_to_solver,
                                      const RealVect & bus_vn_kv,
                                      RealVect & theta) const
 {

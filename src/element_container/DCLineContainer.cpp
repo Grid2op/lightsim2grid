@@ -47,8 +47,8 @@ void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
 
     side_1_.init(p_mw, vm_or_pu, min_q_or, max_q_or, branch_from_id);
     RealVect p_ex = p_mw;
-    Eigen::Index size_ = p_mw.size();
-    for(Eigen::Index i = 0; i < size_; ++i){
+    size_t size_ = p_mw.size();
+    for(size_t i = 0; i < size_; ++i){
         p_ex(i) = get_to_mw(i, p_ex(i));
     }
     side_2_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);

@@ -15,7 +15,7 @@ bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> 
     std::vector<bool> visited(Ybus.cols(), false); 
     std::vector<bool> already_added(Ybus.cols(), false);
     std::queue<Eigen::Index> neighborhood;
-    Eigen::Index col_id = 0;  // start by node 0, why not
+    size_t col_id = 0;  // start by node 0, why not
     while (true)
     {
         visited[col_id] = true;
@@ -46,7 +46,7 @@ bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> 
 
 void ContingencyAnalysis::init_li_coeffs(
     bool ac_solver_used,
-    const std::vector<SolverBusId> &id_me_to_solver)
+    const SolverBusIdVect &id_me_to_solver)
 {
     _li_coeffs.clear();
     _li_coeffs.reserve(_li_defaults.size());
@@ -174,7 +174,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     _timer_total = 0.;
     _timer_solver = 0.;
 
-    const Eigen::Index nb_total_bus = _grid_model.total_bus();
+    const size_t nb_total_bus = _grid_model.total_bus();
     if(Vinit.size() != nb_total_bus){
         std::ostringstream exc_;
         exc_ << "SecurityAnalysis::compute: Size of the Vinit should be the same as the total number of buses. Currently:  ";
@@ -192,7 +192,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     // initialize properly the coefficients that I will need to remove
     init_li_coeffs(ac_solver_used, id_me_to_solver_);
-    Eigen::Index nb_steps = _li_defaults.size();
+    size_t nb_steps = _li_defaults.size();
 
     // init the results matrices
     _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
@@ -213,10 +213,10 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         Ybus_,
         Vinit_solver2,
         Sbus_,
-        slack_ids_,
+        slack_ids_me_.as_eigen(),
         slack_weights_,
-        bus_pv_,
-        bus_pq_,
+        bus_pv_.as_eigen(),
+        bus_pq_.as_eigen(),
         max_iter,
         tol);
     // check if we init the n-1 cases with results from the n cases
@@ -228,7 +228,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     _solver_control.tell_none_changed();
 
     // now perform the security analysis
-    Eigen::Index cont_id = 0;
+    size_t cont_id = 0;
     CplxVect V;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
@@ -246,10 +246,10 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
                 Ybus_,
                 V,
                 Sbus_,
-                slack_ids_,
+                slack_ids_me_.as_eigen(),
                 slack_weights_,
-                bus_pv_,
-                bus_pq_,
+                bus_pv_.as_eigen(),
+                bus_pq_.as_eigen(),
                 max_iter,
                 tol / sn_mva);
         }
@@ -257,7 +257,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         timer_modif_Ybus = CustTimer();
         readd_to_Ybus(Ybus_, coeffs_modif, ac_solver_used); 
         _timer_modif_Ybus += timer_modif_Ybus.duration();
-        if (conv && invertible) _voltages.row(cont_id)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
+        if (conv && invertible) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
         ++cont_id;
     }
     _timer_total = timer.duration();
@@ -268,7 +268,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 void ContingencyAnalysis::clean_flows(bool is_amps)
 {
     auto timer = CustTimer();
-    Eigen::Index cont_id = 0;
+    size_t cont_id = 0;
     for(const auto & l_id_this_cont: _li_defaults){
         for(auto l_id : l_id_this_cont){
             real_type & el = is_amps ? _amps_flows(cont_id, l_id): _active_power_flows(cont_id, l_id);

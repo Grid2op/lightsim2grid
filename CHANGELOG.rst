@@ -28,9 +28,19 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.13.1]  2006-xx-yy
+[0.13.1]  2026-xx-yy
 --------------------
-
+- [FIXED] an issue where disconnected powerlines could be tagged as "fakely connected"
+- [FIXED] some issues when loading a grid from pypowsybl in case of disconnected elements.
+- [FIXED] remove the undefined behaviour while maintaining compile time check to prevent 
+  wrong conversion from different bus labelling.
+- [IMPROVED] the CI to allow automatic push on pypi on new version tag (introduced in version 0.12.0)
+TODO:
+- CONCAT of two TaggedIdStdVec using "<<" (really handy)
+- check that the compute_pf method of all algos does not perform any copies (with the change to Eigen:Ref<> for bus_pv etc.)
+- consistency int / size_t in change_v_nothrow, change_bus etc (for element id)
+- add the "factorization" of the coeff in the TwoSidesElements (compute the Kron reduction if only connected one side)
+- add a method to retrieve the coeff used for the Jacobian (python side) and also use it in Batch solver
 
 [0.13.0] 2026-04-15
 --------------------

@@ -11,16 +11,17 @@
 /**
  V is modified at each call !
 **/
-bool BaseBatchSolverSynch::compute_one_powerflow(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                                                  CplxVect & V,
-                                                  const CplxVect & Sbus,
-                                                  const IntVect & slack_ids,
-                                                  const RealVect & slack_weights,
-                                                  const IntVect & bus_pv,
-                                                  const IntVect & bus_pq,
-                                                  int max_iter,
-                                                  double tol
-                                                  )
+bool BaseBatchSolverSynch::compute_one_powerflow(
+    const Eigen::SparseMatrix<cplx_type> & Ybus,
+    CplxVect & V,
+    const CplxVect & Sbus,
+    Eigen::Ref<const IntVect> slack_ids,
+    const RealVect & slack_weights,
+    Eigen::Ref<const IntVect> bus_pv,
+    Eigen::Ref<const IntVect> bus_pq,
+    int max_iter,
+    double tol
+)
 {
     _solver.tell_solver_control(_solver_control);
     bool conv = _solver.compute_pf(
@@ -63,7 +64,7 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
     else _active_power_flows = RealMat::Zero(nb_steps, n_total_);
     
     // compute the flows for the powerlines
-    Eigen::Index lag_id = 0;
+    size_t lag_id = 0;
     if (amps) compute_amps_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id, false);
     else compute_active_power_flows(_grid_model.get_powerlines_as_data(), sn_mva, lag_id, false);
 

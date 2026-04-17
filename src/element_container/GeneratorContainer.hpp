@@ -147,7 +147,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
-            const std::vector<SolverBusId> & id_grid_to_solver,
+            const SolverBusIdVect & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
             bool ac){
@@ -173,10 +173,10 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         /**
         Retrieve the normalized (=sum to 1.000) slack weights for all the buses
         **/
-        RealVect get_slack_weights_solver(Eigen::Index nb_bus_solver, const std::vector<SolverBusId> & id_grid_to_solver);
+        RealVect get_slack_weights_solver(size_t nb_bus_solver, const SolverBusIdVect & id_grid_to_solver);
     
         GlobalBusIdVect get_slack_bus_id() const;
-        virtual void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver);
+        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver);
     
         // modification
         void turnedoff_no_pv(SolverControl & solver_control){
@@ -201,18 +201,18 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         void change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control);
         void change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control);
         
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const;
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect & slack_bus_id_solver,
-                            const std::vector<SolverBusId> & id_grid_to_solver) const;
+                            const SolverBusIdVect & id_grid_to_solver) const;
         void init_q_vector(int nb_bus,
                            Eigen::VectorXi & total_gen_per_bus,
                            RealVect & total_q_min_per_bus,
                            RealVect & total_q_max_per_bus) const; // delta_q_per_gen_
         
         void set_q(const RealVect & reactive_mismatch,
-                   const std::vector<SolverBusId> & id_grid_to_solver,
+                   const SolverBusIdVect & id_grid_to_solver,
                    bool ac,
                    const Eigen::VectorXi & total_gen_per_bus,
                    const RealVect & total_q_min_per_bus,
@@ -224,7 +224,7 @@ class GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<Gener
         this functions makes sure that the voltage magnitude of every connected bus is properly used to initialize
         the ac powerflow
         **/
-        void set_vm(CplxVect & V, const std::vector<SolverBusId> & id_grid_to_solver) const;
+        void set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const;
         
         void cout_v(){
             for(const auto & el : target_vm_pu_){

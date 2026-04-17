@@ -15,6 +15,7 @@ Some typedef and other structures define here and used everywhere else
 #include <iostream>
 #include <complex>
 #include "Eigen/Core"
+#include "TaggedIdVec.hpp"
 
 // typedef float real_type;  // type for real numbers: can be changed if installed from source
 typedef double real_type;  // type for real numbers: can be changed if installed from source
@@ -232,7 +233,7 @@ class IntClass
  * 
  * It is typically between -1 (for disconnected) or between 1 and "n_max_busbar_per_sub"
  */
-typedef IntClass<0> LocalBusId;
+typedef IntClass<LOCAL_BUS> LocalBusId;
 static_assert(sizeof(LocalBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" LocalBusId to int and vice versa
 
 /**
@@ -241,30 +242,27 @@ static_assert(sizeof(LocalBusId)==sizeof(int));  // make sure I can safely "rein
  * 
  * GlobalBus / GridModelBus are typically between 0 and `n_sub * n_max_busbar_per_sub`
  */
-typedef IntClass<1> GridModelBusId;
-typedef IntClass<1> GlobalBusId;
+typedef IntClass<GRIDMODEL_BUS> GridModelBusId;
+typedef IntClass<GLOBAL_BUS> GlobalBusId;
 static_assert(sizeof(GlobalBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" GlobalBusId to int and vice versa
 
-typedef Eigen::Matrix<GlobalBusId, Eigen::Dynamic, 1> GlobalBusIdVect;
-typedef GlobalBusIdVect GridModelBusIdVect;
+// now defined in TaggedIdVec.hpp
+// typedef Eigen::Matrix<GlobalBusId, Eigen::Dynamic, 1> GlobalBusIdVect;
+// now defined in TaggedIdVec.hpp
+// typedef GlobalBusIdVect GridModelBusIdVect;
 
 /**
  * These are "solver bus id". They depends on the actuall topolgy of the grid.
- * 
- * They are used to pass information from the gridmodel to the solver and should not be 
+ *
+ * They are used to pass information from the gridmodel to the solver and should not be
  * used anywhere else.
  */
-typedef IntClass<2> SolverBusId;
+typedef IntClass<SOLVER_BUS> SolverBusId;
 static_assert(sizeof(SolverBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" SolverBusId to int and vice versa
 
-typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
+// now defined in TaggedIdVec.hpp
+// typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
 
-
-template<class BusId>
-const IntVect & _to_intvect(
-    const Eigen::Matrix<BusId, Eigen::Dynamic, 1> & strongly_typed_vect
-){
-    return reinterpret_cast<const IntVect &>(strongly_typed_vect);
-}
+// _to_intvect removed: use .raw() on TaggedIdVec instead.
 
 #endif // UTILS_H

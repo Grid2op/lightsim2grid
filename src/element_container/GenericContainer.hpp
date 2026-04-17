@@ -30,7 +30,7 @@ class GenericContainer : public BaseConstants
 
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,
-                              const std::vector<SolverBusId> & id_grid_to_solver,
+                              const SolverBusIdVect & id_grid_to_solver,
                               real_type sn_mva) const {
                                 // nothing to do by default
                                 // is overriden mainly for "branches" (lines, transformers etc.)
@@ -38,7 +38,7 @@ class GenericContainer : public BaseConstants
 
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<SolverBusId> & id_grid_to_solver,
+                                const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const {
                                 // nothing to do by default
@@ -46,7 +46,7 @@ class GenericContainer : public BaseConstants
                                 };
                                 
         virtual void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                                     const std::vector<SolverBusId> & id_grid_to_solver,
+                                     const SolverBusIdVect & id_grid_to_solver,
                                      real_type sn_mva,
                                      int nb_line,
                                      bool transpose) const {
@@ -54,14 +54,14 @@ class GenericContainer : public BaseConstants
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                                 };
 
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const {
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const {
                                 // nothing to do by default
                                 // is overriden mainly for "one side elements" (loads, generators etc.)
                                 };
         virtual void fillpv(std::vector<int>& bus_pv,
                             std::vector<bool> & has_bus_been_added,
                             const SolverBusIdVect& slack_bus_id_solver,
-                            const std::vector<SolverBusId> & id_grid_to_solver) const {
+                            const SolverBusIdVect & id_grid_to_solver) const {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                             };
@@ -71,7 +71,7 @@ class GenericContainer : public BaseConstants
                                 // is overriden mainly for "generators"
                                 };
         
-        virtual void set_p_slack(const RealVect& node_mismatch, const std::vector<SolverBusId> & id_grid_to_solver) {
+        virtual void set_p_slack(const RealVect& node_mismatch, const SolverBusIdVect & id_grid_to_solver) {
                                 // nothing to do by default
                                 // is overriden mainly for "generators"
                                 };
@@ -175,7 +175,7 @@ class GenericContainer : public BaseConstants
         void _generic_change_bus(
             int el_id,
             const GridModelBusId & new_gridmodel_bus_id,
-            Eigen::Ref<GlobalBusIdVect>  el_bus_ids,
+            GlobalBusIdVect &  el_bus_ids,
             SolverControl & solver_control,
             int nb_bus) const;
         GridModelBusId _get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const;
@@ -193,7 +193,7 @@ class GenericContainer : public BaseConstants
                            const std::vector<bool> & status,
                            int nb_element,
                            const GlobalBusIdVect & bus_me_id,
-                           const std::vector<SolverBusId> & id_grid_to_solver,
+                           const SolverBusIdVect & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
                            RealVect & v) const;
 
@@ -206,7 +206,7 @@ class GenericContainer : public BaseConstants
                            const std::vector<bool> & status,
                            int nb_element,
                            const GlobalBusIdVect & bus_me_id,
-                           const std::vector<SolverBusId> & id_grid_to_solver,
+                           const SolverBusIdVect & id_grid_to_solver,
                            const RealVect & bus_vn_kv,
                            RealVect & v) const;
 };

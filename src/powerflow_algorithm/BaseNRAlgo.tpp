@@ -15,10 +15,10 @@ template<class LinearSolver>
 bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                           CplxVect & V,
                                           const CplxVect & Sbus,
-                                          const Eigen::VectorXi & slack_ids,
+                                          Eigen::Ref<const IntVect> slack_ids,
                                           const RealVect & slack_weights,
-                                          const Eigen::VectorXi & pv,
-                                          const Eigen::VectorXi & pq,
+                                          Eigen::Ref<const IntVect> pv,
+                                          Eigen::Ref<const IntVect> pq,
                                           int max_iter,
                                           real_type tol
                                           )
@@ -258,9 +258,9 @@ void BaseNRAlgo<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                                  const std::vector<int> & index_row_inv, // ex. pvpq_inv
                                  const Eigen::VectorXi & index_col, // ex. pvpq
-                                 Eigen::Index col_id,
-                                 Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
-                                 Eigen::Index col_lag  // to remove the ref slack bus from this
+                                 size_t col_id,
+                                 size_t row_lag,  // 0 for J11 for example, n_pvpq for J12
+                                 size_t col_lag  // to remove the ref slack bus from this
                                  )
 {
     /**
@@ -284,9 +284,9 @@ void BaseNRAlgo<LinearSolver>::_get_values_J(int & nb_obj_this_col,
                                  std::vector<real_type> & values,
                                  const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                                  const std::vector<int> & index_row_inv, // ex. pvpq_inv
-                                 Eigen::Index col_id_mat, // ex. pvpq
-                                 Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
-                                 Eigen::Index col_lag  // to remove the ref slack bus from this
+                                 size_t col_id_mat, // ex. pvpq
+                                 size_t row_lag,  // 0 for J11 for example, n_pvpq for J12
+                                 size_t col_lag  // to remove the ref slack bus from this
                                  )
 {
     /**
@@ -298,14 +298,14 @@ void BaseNRAlgo<LinearSolver>::_get_values_J(int & nb_obj_this_col,
     Hence, we pass as the argument of this function the "inverse" of index_row, which is such
     that : "j = index_row_inv[k]" is easily computable given k.
     **/
-    const Eigen::Index start_id = mat.outerIndexPtr()[col_id_mat];
-    const Eigen::Index end_id = mat.outerIndexPtr()[col_id_mat+1];
+    const int start_id = mat.outerIndexPtr()[col_id_mat];
+    const int end_id = mat.outerIndexPtr()[col_id_mat+1];
     const real_type * val_prt = mat.valuePtr();
-    for(Eigen::Index obj_id = start_id; obj_id < end_id; ++obj_id)
+    for(size_t obj_id = start_id; obj_id < end_id; ++obj_id)
     {
-        const Eigen::Index row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
+        const int row_id_dS_dVa = mat.innerIndexPtr()[obj_id];
         // I add the value only if the rows was selected in the indexes
-        const Eigen::Index row_id = index_row_inv[row_id_dS_dVa];
+        const int row_id = index_row_inv[row_id_dS_dVa];
         if(row_id >= 0)
         {
             inner_index.push_back(row_id+row_lag);
@@ -318,7 +318,7 @@ void BaseNRAlgo<LinearSolver>::_get_values_J(int & nb_obj_this_col,
 template<class LinearSolver>
 void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                       const CplxVect & V,
-                                                      Eigen::Index slack_bus_id,
+                                                      size_t slack_bus_id,
                                                       const RealVect & slack_weights,
                                                       const Eigen::VectorXi & pq,
                                                       const Eigen::VectorXi & pvpq,
@@ -389,7 +389,7 @@ template<class LinearSolver>
 void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
         const Eigen::SparseMatrix<cplx_type> & Ybus,
         const CplxVect & V,
-        Eigen::Index slack_bus_id,
+        size_t slack_bus_id,
         const RealVect & slack_weights,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq,
@@ -425,8 +425,8 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
     **/
    typedef Eigen::SparseMatrix<cplx_type>::StorageIndex StorageIndex;
 
-    const Eigen::Index n_pvpq = pvpq.size();
-    const Eigen::Index n_pq = pq.size();
+    const size_t n_pvpq = pvpq.size();
+    const size_t n_pq = pq.size();
     const auto size_j = n_pvpq + n_pq + 1;  // the +1 here to represent the equation for slack bus
 
     const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
@@ -553,7 +553,7 @@ it requires that J_ is initialized, in compressed mode.
 **/
 template<class LinearSolver>
 void BaseNRAlgo<LinearSolver>::fill_value_map(
-        Eigen::Index slack_bus_id,
+        size_t slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq,
         bool reset_J
@@ -574,7 +574,7 @@ void BaseNRAlgo<LinearSolver>::fill_value_map(
 
             if(row_id==0){
                 // this is the row of the slack bus
-                const Eigen::Index row_id_dS_dVx_r = slack_bus_id;  // same for both matrices
+                const size_t row_id_dS_dVx_r = slack_bus_id;  // same for both matrices
                 if(col_id < n_pvpq){
                     const int col_id_dS_dVa_r = pvpq[col_id];
                     value_map_.push_back(&dS_dVa_.coeffRef(row_id_dS_dVx_r, col_id_dS_dVa_r));
@@ -628,7 +628,7 @@ void BaseNRAlgo<LinearSolver>::fill_value_map(
 
 template<class LinearSolver>
 void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pattern(
-        Eigen::Index slack_bus_id,
+        size_t slack_bus_id,
         const Eigen::VectorXi & pq,
         const Eigen::VectorXi & pvpq
     )

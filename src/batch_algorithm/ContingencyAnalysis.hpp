@@ -150,7 +150,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
 
     protected:
         // prevent the insertion of "out of range" elements
-        void check_ok_el(Eigen::Index el){
+        void check_ok_el(size_t el){
             if(el < 0){
                 std::ostringstream exc_;
                 exc_ << "SecurityAnalysis: cannot add the contingency with id ";
@@ -164,7 +164,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
-        void init_li_coeffs(bool ac_solver_used, const std::vector<SolverBusId> &id_me_to_solver);
+        void init_li_coeffs(bool ac_solver_used, const SolverBusIdVect &id_me_to_solver);
         // remove the line parameters from Ybus, this is to emulate its disconnection
         bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used);
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus

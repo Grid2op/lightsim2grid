@@ -20,7 +20,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                            const real_type tol)
 {
     auto timer = CustTimer();
-    const Eigen::Index nb_total_bus = _grid_model.total_bus();
+    const size_t nb_total_bus = _grid_model.total_bus();
     if(Vinit.size() != nb_total_bus){
         std::ostringstream exc_;
         exc_ << "TimeSeries::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
@@ -73,20 +73,20 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     CplxVect V = Vinit_solver;
     _grid_model.get_generators().set_vm(V, id_me_to_solver_);
 
-    Eigen::Index step_diverge = -1;
+    size_t step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
     bool conv;
     // do the computation for each step
     _solver_control.tell_all_changed();  // recompute everything at the first iteration
-    for(Eigen::Index i = 0; i < nb_steps; ++i){
+    for(size_t i = 0; i < nb_steps; ++i){
         conv = false;
         conv = compute_one_powerflow(Ybus_,
                                      V, 
                                      _Sbuses.row(i),
-                                     slack_ids_,
+                                     slack_ids_me_.as_eigen(),
                                      slack_weights_,
-                                     bus_pv_,
-                                     bus_pq_,
+                                     bus_pv_.as_eigen(),
+                                     bus_pq_.as_eigen(),
                                      max_iter,
                                      tol_);
         // nothing changes
@@ -98,7 +98,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
             _status = 0;
             return _status;
         }
-        if(conv && step_diverge < 0) _voltages.row(i)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
+        if(conv && step_diverge < 0) _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
     }
 
     // If i reached there, it means it is succesfull

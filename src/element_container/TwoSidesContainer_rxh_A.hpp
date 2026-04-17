@@ -195,7 +195,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
-            const std::vector<SolverBusId> & id_grid_to_solver,
+            const SolverBusIdVect & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
             bool ac
@@ -352,7 +352,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         void compute_results_tsc_rxha(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<SolverBusId> & id_grid_to_solver,
+                                      const SolverBusIdVect & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac
@@ -366,7 +366,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         virtual void get_graph(std::vector<Eigen::Triplet<real_type> > & res) const
         {
             const auto my_size = nb();
-            for(Eigen::Index el_id = 0; el_id < my_size; ++el_id){
+            for(size_t el_id = 0; el_id < my_size; ++el_id){
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
                 const GridModelBusId bus_or = get_bus_side_1(el_id);
@@ -394,15 +394,15 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         virtual void fillYbus(
             std::vector<Eigen::Triplet<cplx_type> > & res,
             bool ac,
-            const std::vector<SolverBusId> & id_grid_to_solver,
+            const SolverBusIdVect & id_grid_to_solver,
             real_type sn_mva) const
         {
-            const Eigen::Index nb_els = nb();
+            const size_t nb_els = nb();
             const std::vector<bool> & status1 = side_1_.get_status();
             const std::vector<bool> & status2 = side_2_.get_status();
 
             cplx_type yft, ytf, yff, ytt;
-            for(Eigen::Index el_id =0; el_id < nb_els; ++el_id){
+            for(size_t el_id =0; el_id < nb_els; ++el_id){
                 // i don't do anything if the trafo is disconnected
                 if(!status_global_[el_id]  || (!status1[el_id] && !status2[el_id])) continue;
 
@@ -490,7 +490,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<SolverBusId> & id_grid_to_solver,
+                                const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const
         {
@@ -505,7 +505,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             // temp_branch[:, SHIFT] = zeros(nl)          ## zero out phase shifters
             // if alg == 3:                               ## if BX method
             //     temp_branch[:, BR_R] = zeros(nl)    ## zero out line resistance
-            const Eigen::Index nb_trafo = nb();
+            const size_t nb_trafo = nb();
             const FDPFCoeffsContainer & fdpf_coeffs = xb_or_bx == FDPFMethod::XB ? XB_fpdf_coeffs_ : BX_fpdf_coeffs_;
 
             if(!fdpf_coeffs.are_cached()){
@@ -516,7 +516,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 exc_ << "computing a powerflow with the FDPF method";
                 throw std::runtime_error(exc_.str());
             }
-            for(Eigen::Index el_id=0; el_id < nb_trafo; ++el_id){
+            for(size_t el_id=0; el_id < nb_trafo; ++el_id){
                 // i only add this if the powerline is connected
                 if(!status_global_[el_id]) continue;
 
@@ -587,15 +587,15 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
 
         void fillBf_for_PTDF(std::vector<Eigen::Triplet<real_type> > & Bf,
-                             const std::vector<SolverBusId> & id_grid_to_solver,
+                             const SolverBusIdVect & id_grid_to_solver,
                              real_type sn_mva,
                              int nb_powerline,
                              bool transpose) const
         {
-            const Eigen::Index nb_line = nb();
+            const size_t nb_line = nb();
             const std::vector<bool> & side1_conn = side_1_.get_status();
             const std::vector<bool> & side2_conn = side_2_.get_status();
-            for(Eigen::Index line_id=0; line_id < nb_line; ++line_id){
+            for(size_t line_id=0; line_id < nb_line; ++line_id){
                 // i only add this if the powerline is connected
                 if(!status_global_[line_id]) continue;
                 if(!side1_conn[line_id]) continue;
@@ -653,10 +653,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         // gridmodel utilities
         void reconnect_connected_buses(SubstationContainer & substation) const{
-            const Eigen::Index nb_els = nb();
+            const size_t nb_els = nb();
             const std::vector<bool>& status_side_1_ = get_status_side_1();
             const std::vector<bool>& status_side_2_ = get_status_side_2();
-            for(Eigen::Index el_id = 0; el_id < nb_els; ++el_id){
+            for(size_t el_id = 0; el_id < nb_els; ++el_id){
                 // don't do anything if the element is disconnected
                 if(!status_global_[el_id]) continue;
                 
@@ -827,7 +827,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         void _update_model_coeffs()
         {
-            const Eigen::Index my_size = nb();
+            const size_t my_size = nb();
 
             yac_11_ = CplxVect::Zero(my_size);
             yac_12_ = CplxVect::Zero(my_size);
@@ -839,7 +839,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             ydc_21_ = CplxVect::Zero(my_size);
             ydc_22_ = CplxVect::Zero(my_size);
             this->_update_other_model_coeffs();
-            for(Eigen::Index i = 0; i < my_size; ++i)
+            for(size_t i = 0; i < my_size; ++i)
             {
                 // coeff for Ybus matrices (AC and DC)
                 _update_internal_coeffs(i);

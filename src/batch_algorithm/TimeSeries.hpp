@@ -82,7 +82,7 @@ class TimeSeries final: public BaseBatchSolverSynch
         void fill_SBus_real(CplxMat & Sbuses,
                             const T & structure_data,
                             const RealMat & temporal_data,
-                            const std::vector<SolverBusId> & id_me_to_ac_solver,
+                            const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 
         {
@@ -91,7 +91,7 @@ class TimeSeries final: public BaseBatchSolverSynch
             const auto & el_bus_id = structure_data.get_bus_id();
             SolverBusId bus_id_solver;
             GlobalBusId bus_id_me;
-            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+            for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);
                 if(bus_id_me.cast_int() == _deactivated_bus_id){
@@ -119,7 +119,7 @@ class TimeSeries final: public BaseBatchSolverSynch
         void fill_SBus_imag(CplxMat & Sbuses,
                             const T & structure_data,
                             const RealMat & temporal_data,
-                            const std::vector<SolverBusId> & id_me_to_ac_solver,
+                            const SolverBusIdVect & id_me_to_ac_solver,
                             bool add  // if true call += else calls -=
                             ) const 
         {
@@ -128,7 +128,7 @@ class TimeSeries final: public BaseBatchSolverSynch
             const auto & el_bus_id = structure_data.get_bus_id();
             SolverBusId  bus_id_solver;
             GlobalBusId bus_id_me;
-            for(Eigen::Index el_id = 0; el_id < nb_el; ++el_id){
+            for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
                 bus_id_me = el_bus_id(el_id);
                 if(bus_id_me.cast_int() == _deactivated_bus_id){

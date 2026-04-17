@@ -15,10 +15,10 @@ template<class LinearSolver>
 bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                           CplxVect & V,
                                           const CplxVect & Sbus,
-                                          const Eigen::VectorXi & slack_ids,
+                                          Eigen::Ref<const IntVect> slack_ids,
                                           const RealVect & slack_weights,
-                                          const Eigen::VectorXi & pv,
-                                          const Eigen::VectorXi & pq,
+                                          Eigen::Ref<const IntVect> pv,
+                                          Eigen::Ref<const IntVect> pq,
                                           int max_iter,
                                           real_type tol
                                           )
@@ -202,13 +202,13 @@ void BaseDCAlgo<LinearSolver>::remove_slack_buses(int nb_bus_solver, const Eigen
     res_mat = Eigen::SparseMatrix<real_type>(sizeYbus_without_slack_, sizeYbus_without_slack_);  // TODO dist slack: -1 or -mat_bus_id_.size() here ????
     std::vector<Eigen::Triplet<real_type> > tripletList;
     tripletList.reserve(ref_mat.nonZeros());
-    for (int k=0; k < nb_bus_solver; ++k){
+    for (size_t k=0; k < nb_bus_solver; ++k){
         if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
         for (typename Eigen::SparseMatrix<ref_mat_type>::InnerIterator it(ref_mat, k); it; ++it)
         {
-            int row_res = static_cast<int>(it.row());  // TODO Eigen::Index here ?
+            size_t row_res = static_cast<size_t>(it.row());  // TODO Eigen::Index here ?
             row_res = mat_bus_id_(row_res);
-            int col_res = static_cast<int>(it.col());  // should be k   // TODO Eigen::Index here ?
+            size_t col_res = static_cast<size_t>(it.col());  // should be k   // TODO Eigen::Index here ?
             col_res = mat_bus_id_(col_res);
             if(row_res == -1) continue;
             if(col_res == -1) continue;
@@ -291,7 +291,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_lodf(const IntVect & from_bus,
     const RealMat PTDF = get_ptdf();  // size n_line x n_bus
     RealMat LODF = RealMat::Zero(from_bus.size(), from_bus.rows());  // nb_line, nb_line
     const real_type tol_equal_float = _tol_equal_float;
-    for(Eigen::Index line_id=0; line_id < from_bus.size(); ++line_id){
+    for(size_t line_id=0; line_id < from_bus.size(); ++line_id){
         auto f_bus = from_bus(line_id);
         auto t_bus = to_bus(line_id);
         if ((f_bus == BaseConstants::_deactivated_bus_id) || (t_bus == BaseConstants::_deactivated_bus_id)){

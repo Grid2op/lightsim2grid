@@ -12,10 +12,10 @@ template<class LinearSolver, FDPFMethod XB_BX>
 bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                                    CplxVect & V,
                                                    const CplxVect & Sbus,
-                                                   const Eigen::VectorXi & slack_ids,
+                                                   Eigen::Ref<const IntVect> slack_ids,
                                                    const RealVect & slack_weights,
-                                                   const Eigen::VectorXi & pv,
-                                                   const Eigen::VectorXi & pq,
+                                                   Eigen::Ref<const IntVect> pv,
+                                                   Eigen::Ref<const IntVect> pq,
                                                    int max_iter,
                                                    real_type tol
                                                    )
@@ -177,8 +177,8 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::Sparse
                                                              const Eigen::SparseMatrix<real_type> & grid_Bpp,
                                                              const std::vector<int> & pvpq_inv,
                                                              const std::vector<int> & pq_inv,
-                                                             Eigen::Index n_pvpq,
-                                                             Eigen::Index n_pq)
+                                                             size_t n_pvpq,
+                                                             size_t n_pq)
 {
   /**
    Init Bp_ and Bpp_ such that:
@@ -191,9 +191,9 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fill_sparse_matrices(const Eigen::Sparse
 
 template<class LinearSolver, FDPFMethod XB_BX>
 void BaseFDPFAlgo<LinearSolver, XB_BX>::aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
-                                                                   const std::vector<int> & ind_inv,
-                                                                   Eigen::Index mat_dim,
-                                                                   Eigen::SparseMatrix<real_type> & res)
+                                                                 const std::vector<int> & ind_inv,
+                                                                 size_t mat_dim,
+                                                                 Eigen::SparseMatrix<real_type> & res)
 {
     // clear previous matrix
     res = Eigen::SparseMatrix<real_type>(mat_dim, mat_dim);

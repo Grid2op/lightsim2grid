@@ -113,13 +113,14 @@ class SubstationContainer final : public IteratorAdder<SubstationContainer, Subs
         int nb_sub() const {return n_sub_;}
 
         // return the maximum number of possible buses on the grid
-        unsigned int nb_bus() const {return bus_vn_kv_.size();}
+        size_t nb_bus() const {return bus_vn_kv_.size();}
+        
         /**
         Retrieve the number of connected buses
         **/
-        int nb_connected_bus() const
+        size_t nb_connected_bus() const
         {
-            int res = 0;
+            size_t res = 0;
             for(const auto & el : bus_status_)
             {
                 if(el) ++res;
@@ -156,9 +157,9 @@ class SubstationContainer final : public IteratorAdder<SubstationContainer, Subs
             bus_status_ = std::vector<bool>(nb_bus(), true); // by default everything is connected
 
             // check that a "substation" always has the same vn_kv for all of its buses
-            for(int sub_id=0; sub_id < n_sub; sub_id++){
+            for(size_t sub_id=0; sub_id < n_sub; sub_id++){
                 real_type ref_vn_kv = bus_vn_kv(sub_id);
-                for(int bus_id=1; bus_id < nmax_busbar_per_sub; bus_id++)
+                for(size_t bus_id=1; bus_id < nmax_busbar_per_sub; bus_id++)
                 {
                     real_type this_bus_vn_kv = bus_vn_kv(local_to_gridmodel(sub_id, LocalBusId(bus_id)).cast_int());
                     if(abs(this_bus_vn_kv - ref_vn_kv) > BaseConstants::_tol_equal_float){

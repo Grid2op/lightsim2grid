@@ -56,7 +56,7 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   const CplxVect & V,
                                   const CplxVect & Sbus,
-                                  Eigen::Index slack_id,  // id of the ref slack bus
+                                  size_t slack_id,  // id of the ref slack bus
                                   real_type slack_absorbed,
                                   const RealVect & slack_weights,
                                   const Eigen::VectorXi & pv,
@@ -154,7 +154,7 @@ Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::VectorXi & pv,
         throw std::runtime_error("BaseAlgo::extract_slack_bus_id: All buses are tagged as PV or PQ, there can be no slack.");
     }
     Eigen::VectorXi res(nb_slacks);
-    Eigen::Index i_res = 0;
+    size_t i_res = 0;
     // run through both pv and pq nodes and declare they are not slack bus
     std::vector<bool> tmp(nb_bus, true);
     for(auto pv_i : pv) tmp[pv_i] = false;

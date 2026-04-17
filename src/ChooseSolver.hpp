@@ -210,10 +210,10 @@ class ChooseSolver final
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,  // size (nb_bus, nb_bus)
                         CplxVect & V,  // size nb_bus
                         const CplxVect & Sbus,  // size nb_bus
-                        const Eigen::VectorXi & slack_ids,  // bus ids where thare are slack bus
+                        Eigen::Ref<const IntVect> slack_ids,  // bus ids where thare are slack bus
                         const RealVect & slack_weights,  // slack weights (size nb_bus)
-                        const Eigen::VectorXi & pv,
-                        const Eigen::VectorXi & pq,
+                        Eigen::Ref<const IntVect> pv,
+                        Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
                         )
