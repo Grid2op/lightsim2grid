@@ -7,6 +7,23 @@ on:
     tags:
       - 'v*.*.*'
 
+env:
+  # ── Wheel count guard ─────────────────────────────────────────────────────
+  # Must be updated in sync with the build matrix whenever a Python version
+  # is added or removed. A mismatch blocks the lightsim2grid-wheels artifact
+  # from being created, which in turn prevents the PyPI release workflow
+  # (publish.yml) from running at all.
+  #
+  #   manylinux x86_64  (cp38–cp314 × 1 container)            →  7
+  #   windows   x64     (cp38–cp314 × AMD64)                   →  7
+  #   macos     x86_64  (cp38–cp314, native on macos-15-intel) →  7
+  #   macos     arm64   (cp310–cp314, native on macos-14)      →  5
+  #   exotic    macos arm64  via cibuildwheel (cp38, cp39)     →  2
+  #   exotic    windows ARM64 via cibuildwheel (cp39–cp314)    →  6
+  #                                                total:        34
+  EXPECTED_WHEELS: 34
+  EXPECTED_SDIST: 1
+
 jobs:
   manylinux_build:
     # build wheels for some linux
@@ -616,10 +633,38 @@ jobs:
         with:
           path: download
 
+      - name: Verify wheel and sdist count
+        run: |
+          WHEEL_COUNT=$(find download/ -name "*.whl" | wc -l | tr -d ' ')
+          SDIST_COUNT=$(find download/ -name "*.tar.gz" | wc -l | tr -d ' ')
+
+          echo "Found ${WHEEL_COUNT} wheel(s), expected ${{ env.EXPECTED_WHEELS }}."
+          echo "Found ${SDIST_COUNT} sdist(s),  expected ${{ env.EXPECTED_SDIST }}."
+
+          if [ "${WHEEL_COUNT}" -ne "${{ env.EXPECTED_WHEELS }}" ] || \
+             [ "${SDIST_COUNT}" -ne "${{ env.EXPECTED_SDIST }}" ]; then
+            echo "::error::Wheel count mismatch: found ${WHEEL_COUNT} wheels \
+          and ${SDIST_COUNT} sdist(s), expected ${{ env.EXPECTED_WHEELS }} wheels \
+          and ${{ env.EXPECTED_SDIST }} sdist(s). A Python version was probably \
+          added or removed from the build matrix without updating EXPECTED_WHEELS, \
+          or one of the build jobs silently failed and produced no wheel. \
+          Fix the matrix and the EXPECTED_WHEELS constant together — this mismatch \
+          will prevent the PyPI release workflow (publish.yml) from running."
+            echo ""
+            echo "--- Wheels found ---"
+            find download/ -name "*.whl" | sort
+            echo "--- Sdists found ---"
+            find download/ -name "*.tar.gz" | sort
+            exit 1
+          fi
+
+          echo "✓ All ${{ env.EXPECTED_WHEELS }} wheels and ${{ env.EXPECTED_SDIST }} sdist accounted for."
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: lightsim2grid-wheels
+          retention-days: 90
           path: |
             download/**/*.whl
             download/**/*.tar.gz
