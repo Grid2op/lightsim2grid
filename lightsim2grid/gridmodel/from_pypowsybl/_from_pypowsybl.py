@@ -22,20 +22,26 @@ PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
 
 
-def _aux_get_bus(vl_df, bus_df, df, conn_key="connected", bus_key="bus_id", vl_key="voltage_level_id"):
+def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connected", bus_key="bus_id", vl_key="voltage_level_id"):
     if df.shape[0] == 0:
         # no element of this type so no problem
         return np.zeros(0, dtype=int), np.ones(0, dtype=bool), np.zeros(0, dtype=int)
     # retrieve which elements are disconnected 
     mask_disco = ~df[conn_key]
-    
+    if mask_disco.any() and first_bus_per_vl is None:
+        raise RuntimeError(f"Some elements of type {el_type} are disconnected (no bus attached to them) and you "
+                           "are in 'use pypowsybl bus as grid2op substation' mode. The converter cannot assign "
+                           f"substation for {el_type}:\n {mask_disco[mask_disco].index.to_numpy()}\n, this is not supported. "
+                           "Please upgrade the pypowsybl grid (*eg* grid.xiidm of the grid2op env) "
+                           "and manually reconnect any non connected elements there.")
     # retrieve the bus where the element are
     tmp_bus_id = df[bus_key].copy()
+    
     # element disconnected are, by default assigned to first bus of their substation
-    tmp_disco = vl_df.loc[df.loc[mask_disco, vl_key], "vl_id"].values
-    bus_el_disco = bus_df.iloc[tmp_disco]
-    tmp_bus_id[mask_disco] = bus_el_disco.index
+    el_disco = vl_df.loc[df.loc[mask_disco, vl_key]].index
+    tmp_bus_id.loc[mask_disco] = first_bus_per_vl.loc[el_disco, "first_bus_name"].values
     bus_id = bus_df.loc[tmp_bus_id.values]["bus_global_id"].values.copy()
+    
     # deactivate the element not on the main component
     # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
     # mask_disco[wrong_component] = True
@@ -166,8 +172,6 @@ def init(net : pypo.network.Network,
         voltage_levels = net.get_voltage_levels()
     
     all_buses_vn_kv = voltage_levels.loc[bus_df["voltage_level_id"].values]["nominal_v"].values
-    sub_unique = None
-    sub_unique_id = None
     nb_bus_per_vl = bus_df[["voltage_level_id", "name"]].groupby("voltage_level_id").count()
     
     if buses_for_sub is not None and buses_for_sub:
@@ -192,6 +196,7 @@ def init(net : pypo.network.Network,
         bus_df["glop_sub_id"] = np.arange(n_sub_ls)  # np.concatenate([np.arange(n_sub_ls) for _ in range(n_busbar_per_sub)])
         sub_names = bus_df.index.values.astype(str)
         voltage_levels["vl_id"] = bus_df[["voltage_level_id", "bus_global_id"]].groupby("voltage_level_id").min()
+        first_bus_per_vl = None
     else:        
         # the "substation" in lightsim2grid
         voltage_levels["nb_bus_per_vl"] = nb_bus_per_vl["name"]        
@@ -230,6 +235,36 @@ def init(net : pypo.network.Network,
         sub_names = voltage_levels.index.values.astype(str)
         bus_df["glop_sub_id"] = voltage_levels.loc[bus_df["voltage_level_id"].values, "glop_sub_id"].values
         
+        # retrieve the "first bus of every substation"
+        # this is used to connected reconnected element
+        first_bus_per_vl = bus_df[["glop_sub_id", "voltage_level_id", "name"]].groupby("glop_sub_id").first().reset_index().set_index("voltage_level_id")
+        first_bus_per_vl["first_bus_name"] = [el[0] for el in first_bus_per_vl["name"].values]
+        first_bus_per_vl.drop(["glop_sub_id", "name"], axis=1, inplace=True)
+        
+        # make sure every voltage level as a "first bus"
+        # I would raise an error in the case a voltage is fully disconnected but...
+        check_grid_ok = voltage_levels.index.isin(first_bus_per_vl.index)
+        if np.any(~check_grid_ok):
+            warnings.warn("There are some voltage levels without any connected buses. "
+                          f"Check voltage levels {voltage_levels[~check_grid_ok].index}")
+            # name_added_bus = voltage_levels[~check_grid_ok].index
+            nm_vl_without_bus = voltage_levels.loc[~check_grid_ok, ["vl_id", "glop_sub_id"]]
+            to_add = voltage_levels.loc[~check_grid_ok, ["vl_id", "glop_sub_id"]].copy()
+            to_add.index = to_add.index.astype(str) + "added_bus"
+            to_add["name"] = [[el] for el in to_add.index.astype(str)]
+            to_add["v_mag"] = np.nan
+            to_add["v_angle"] = np.nan
+            to_add["connected_component"] = 99999
+            to_add["synchronous_component"] = 99999
+            to_add["voltage_level_id"] = nm_vl_without_bus.index
+            to_add["orig_id"] = 9999
+            to_add["local_id"] = 1
+            to_add["bus_global_id"] = to_add["glop_sub_id"]
+            for added_bus_nm in to_add.index:
+                bus_df.loc[added_bus_nm] = to_add.loc[added_bus_nm]
+            for vl_bus_added in nm_vl_without_bus.index:
+                first_bus_per_vl.loc[vl_bus_added, "first_bus_name"] = vl_bus_added + "added_bus"
+            
     # all_buses_vn_kv = np.concatenate([all_buses_vn_kv for _ in range(n_busbar_per_sub)])
     model.init_bus(n_sub_ls,
                    n_busbar_per_sub_ls,
@@ -260,7 +295,7 @@ def init(net : pypo.network.Network,
     max_q = max_q_aux.astype(np.float32)
     min_q[~np.isfinite(min_q)] = min_float_value
     max_q[~np.isfinite(max_q)] = max_float_value
-    gen_bus, gen_disco, gen_sub = _aux_get_bus(voltage_levels, bus_df, df_gen)
+    gen_bus, gen_disco, gen_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "gen", df_gen)
 
     # dirty fix for when regulating elements are not the same
     bus_reg = copy.deepcopy(df_gen["regulated_element_id"].values)
@@ -294,7 +329,7 @@ def init(net : pypo.network.Network,
         df_load = net.get_loads().sort_index()
     else:
         df_load = net.get_loads()
-    load_bus, load_disco, load_sub = _aux_get_bus(voltage_levels, bus_df, df_load)
+    load_bus, load_disco, load_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "load", df_load)
     model.init_loads(df_load["p0"].values,
                      df_load["q0"].values,
                      load_bus
@@ -326,8 +361,8 @@ def init(net : pypo.network.Network,
     line_x = df_line_pu["x"].values
     line_h_or = (df_line_pu["g1"].values + 1j * df_line_pu["b1"].values)
     line_h_ex = (df_line_pu["g2"].values + 1j * df_line_pu["b2"].values)
-    lor_bus, lor_disco, lor_sub = _aux_get_bus(voltage_levels, bus_df, df_line, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
-    lex_bus, lex_disco, lex_sub = _aux_get_bus(voltage_levels, bus_df, df_line, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
+    lor_bus, lor_disco, lor_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "line (side 1)", df_line, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
+    lex_bus, lex_disco, lex_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "line (side 2)", df_line, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
     model.init_powerlines_full(line_r,
                                line_x,
                                line_h_or,
@@ -392,8 +427,8 @@ def init(net : pypo.network.Network,
             # bug in per unit view in both python and java
             ratio[has_r_tap_changer] = 1. * ratio_tap_changer.loc[df_trafo_pu.loc[has_r_tap_changer].index, "rho"].values
 
-    tor_bus, tor_disco, tor_sub = _aux_get_bus(voltage_levels, bus_df, df_trafo, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
-    tex_bus, tex_disco, tex_sub = _aux_get_bus(voltage_levels, bus_df, df_trafo, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
+    tor_bus, tor_disco, tor_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "trafo (side 1)", df_trafo, conn_key="connected1", bus_key="bus1_id", vl_key="voltage_level1_id")
+    tex_bus, tex_disco, tex_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "trafo (side 2)", df_trafo, conn_key="connected2", bus_key="bus2_id", vl_key="voltage_level2_id")
     model.init_trafo(trafo_r,
                      trafo_x,
                      trafo_h,
@@ -415,7 +450,7 @@ def init(net : pypo.network.Network,
     else:
         df_shunt = net.get_shunt_compensators()
         
-    sh_bus, sh_disco, sh_sub = _aux_get_bus(voltage_levels, bus_df, df_shunt)    
+    sh_bus, sh_disco, sh_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "shunts", df_shunt)    
     shunt_kv = voltage_levels.loc[df_shunt["voltage_level_id"].values]["nominal_v"].values
     model.init_shunt(df_shunt["g"].values * shunt_kv**2,
                      -df_shunt["b"].values * shunt_kv**2,
@@ -433,8 +468,8 @@ def init(net : pypo.network.Network,
     else:
         df_dc = net.get_hvdc_lines()
         df_sations = net.get_vsc_converter_stations()
-    hvdc_bus_from_id, hvdc_from_disco, hvdc_sub_from_id  = _aux_get_bus(voltage_levels, bus_df, df_sations.loc[df_dc["converter_station1_id"].values]) 
-    hvdc_bus_to_id, hvdc_to_disco, hvdc_sub_to_id = _aux_get_bus(voltage_levels, bus_df, df_sations.loc[df_dc["converter_station2_id"].values]) 
+    hvdc_bus_from_id, hvdc_from_disco, hvdc_sub_from_id  = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "hvdc (side 1)", df_sations.loc[df_dc["converter_station1_id"].values]) 
+    hvdc_bus_to_id, hvdc_to_disco, hvdc_sub_to_id = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "hvdc (side 2)", df_sations.loc[df_dc["converter_station2_id"].values]) 
     loss_percent = np.zeros(df_dc.shape[0])  # TODO 
     loss_mw = np.zeros(df_dc.shape[0])  # TODO
     model.init_dclines(hvdc_bus_from_id,
@@ -460,7 +495,7 @@ def init(net : pypo.network.Network,
         df_batt = net.get_batteries().sort_index()
     else:
         df_batt = net.get_batteries()
-    batt_bus, batt_disco, batt_sub = _aux_get_bus(voltage_levels, bus_df, df_batt)
+    batt_bus, batt_disco, batt_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "storage", df_batt)
     model.init_storages(df_batt["target_p"].values,
                         df_batt["target_q"].values,
                         batt_bus
