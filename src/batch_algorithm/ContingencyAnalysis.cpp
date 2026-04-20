@@ -82,12 +82,11 @@ void ContingencyAnalysis::init_li_coeffs(
                 GenericContainer::_deactivated_bus_id : 
                 id_me_to_solver[glob_bus_2.cast_int()].cast_int();
             status = p_branch->get_status_global()[el_id];
-            // TODO disconnected one side !
             if(ac_solver_used){
-                y_ff = p_branch->yac_11()[el_id];
-                y_ft = p_branch->yac_12()[el_id];
-                y_tf = p_branch->yac_21()[el_id];
-                y_tt = p_branch->yac_22()[el_id];
+                y_ff = p_branch->yac_eff_11()[el_id];
+                y_ft = p_branch->yac_eff_12()[el_id];
+                y_tf = p_branch->yac_eff_21()[el_id];
+                y_tt = p_branch->yac_eff_22()[el_id];
             }else{
                 y_ff = p_branch->ydc_11()[el_id];
                 y_ft = p_branch->ydc_12()[el_id];

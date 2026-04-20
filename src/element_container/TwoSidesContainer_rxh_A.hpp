@@ -75,6 +75,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 cplx_type yac_12;
                 cplx_type yac_21;
                 cplx_type yac_22;
+                cplx_type yac_eff_11;
+                cplx_type yac_eff_12;
+                cplx_type yac_eff_21;
+                cplx_type yac_eff_22;
                 cplx_type ydc_11;
                 cplx_type ydc_12;
                 cplx_type ydc_21;
@@ -93,6 +97,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 yac_12(0., 0.),
                 yac_21(0., 0.),
                 yac_22(0., 0.),
+                yac_eff_11(0., 0.),
+                yac_eff_12(0., 0.),
+                yac_eff_21(0., 0.),
+                yac_eff_22(0., 0.),
                 ydc_11(0., 0.),
                 ydc_12(0., 0.),
                 ydc_21(0., 0.),
@@ -117,6 +125,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     yac_12 = r_data.yac_12_.coeff(my_id);
                     yac_21 = r_data.yac_21_.coeff(my_id);
                     yac_22 = r_data.yac_22_.coeff(my_id);
+                    yac_eff_11 = r_data.yac_eff_11_.coeff(my_id);
+                    yac_eff_12 = r_data.yac_eff_12_.coeff(my_id);
+                    yac_eff_21 = r_data.yac_eff_21_.coeff(my_id);
+                    yac_eff_22 = r_data.yac_eff_22_.coeff(my_id);
                     ydc_11 = r_data.ydc_11_.coeff(my_id);
                     ydc_12 = r_data.ydc_12_.coeff(my_id);
                     ydc_21 = r_data.ydc_21_.coeff(my_id);
@@ -302,13 +314,14 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                 if(ac){
                     // results of the ac powerflow
-                    cplx_type Ehv = status1[el_id] ? V(bus_hv_solver_id.cast_int()) : - yac_12_(el_id) *  V(bus_lv_solver_id.cast_int()) / yac_11_(el_id);
-                    cplx_type Elv = status2[el_id] ? V(bus_lv_solver_id.cast_int()) : - yac_21_(el_id) *  V(bus_hv_solver_id.cast_int()) / yac_22_(el_id);
+                    // open-end voltage is 0; yac_eff_* already encodes the Kron-reduced contribution
+                    const cplx_type Ehv = status1[el_id] ? V(bus_hv_solver_id.cast_int()) : cplx_type(0., 0.);
+                    const cplx_type Elv = status2[el_id] ? V(bus_lv_solver_id.cast_int()) : cplx_type(0., 0.);
 
                     // TODO for DC with yff, ...
                     // trafo equations
-                    cplx_type I_hvlv =  (yac_11_(el_id) * Ehv + yac_12_(el_id) * Elv);
-                    cplx_type I_lvhv =  (yac_22_(el_id) * Elv + yac_21_(el_id) * Ehv);
+                    cplx_type I_hvlv =  (yac_eff_11_(el_id) * Ehv + yac_eff_12_(el_id) * Elv);
+                    cplx_type I_lvhv =  (yac_eff_22_(el_id) * Elv + yac_eff_21_(el_id) * Ehv);
 
                     I_hvlv = std::conj(I_hvlv);
                     I_lvhv = std::conj(I_lvhv);
@@ -379,16 +392,27 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
-        // model paramters
+        // model paramters (raw)
         Eigen::Ref<const CplxVect> yac_11() const {return yac_11_;}
         Eigen::Ref<const CplxVect> yac_12() const {return yac_12_;}
         Eigen::Ref<const CplxVect> yac_21() const {return yac_21_;}
         Eigen::Ref<const CplxVect> yac_22() const {return yac_22_;}
 
+        // model parameters (Kron-reduced, accounting for per-side connection status)
+        Eigen::Ref<const CplxVect> yac_eff_11() const {return yac_eff_11_;}
+        Eigen::Ref<const CplxVect> yac_eff_12() const {return yac_eff_12_;}
+        Eigen::Ref<const CplxVect> yac_eff_21() const {return yac_eff_21_;}
+        Eigen::Ref<const CplxVect> yac_eff_22() const {return yac_eff_22_;}
+
         Eigen::Ref<const CplxVect> ydc_11() const {return ydc_11_;}
         Eigen::Ref<const CplxVect> ydc_12() const {return ydc_12_;}
         Eigen::Ref<const CplxVect> ydc_21() const {return ydc_21_;}
         Eigen::Ref<const CplxVect> ydc_22() const {return ydc_22_;}
+
+        // connection status accessors (explicit, needed by external Ybus builders)
+        const std::vector<bool>& get_status_side_1() const { return side_1_.get_status(); }
+        const std::vector<bool>& get_status_side_2() const { return side_2_.get_status(); }
+        const std::vector<bool>& get_status_global()  const { return status_global_; }
 
         // solver interface
         virtual void fillYbus(
@@ -450,23 +474,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                 }
                 
                 if(ac){
-                    // ac mode
-                    yft = yac_12_(el_id);
-                    ytf = yac_21_(el_id);
-                    yff = yac_11_(el_id);
-                    ytt = yac_22_(el_id);
-                    if(!status1_me){
-                        // I know that the powerline is connected on side 2 
-                        // otherwise I would not be here
-                        // (nothing is done if neither side 1 nor side 2 are connected)
-                        ytt -= ytf * yft / yff;
-                    }
-                    if(!status2_me){
-                        // I know that the powerline is connected on side 1
-                        // otherwise I would not be here
-                        // (nothing is done if neither side 1 nor side 2 are connected)
-                        yff -= ytf * yft / ytt;
-                    }
+                    // ac mode — use pre-computed Kron-reduced coefficients
+                    yff = yac_eff_11_(el_id);
+                    yft = yac_eff_12_(el_id);
+                    ytf = yac_eff_21_(el_id);
+                    ytt = yac_eff_22_(el_id);
                 }else{
                     // dc mode
                     yft = ydc_12_(el_id);
@@ -775,6 +787,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
         virtual void _deactivate(int el_id, SolverControl & solver_control) {
             if(status_global_[el_id]){
+                // update coefficient for Ybus
+                _update_effective_coeffs_one_el(el_id);
+
+                // update solver control
                 solver_control.tell_recompute_ybus();
                 // but sparsity pattern do not change here (possibly one more coeff at 0.)
                 solver_control.tell_ybus_some_coeffs_zero();
@@ -783,10 +799,25 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         }
         virtual void _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_global_[el_id]){
+                // update coefficient for Ybus
+                _update_effective_coeffs_one_el(el_id);
+
+                // update solver control
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_ybus_change_sparsity_pattern();  // this might change
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
             }
+        }
+
+
+        // status change hooks — keep yac_eff_* in sync after any topology mutation
+        virtual void _change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
+            // TODO speed optim actually only needed if the bus is being reconnected or disconnected
+            if((new_gridmodel_bus_id != side_1_.get_buses()[el_id])) _update_effective_coeffs_one_el(el_id);
+        }
+        virtual void _change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
+            // TODO speed optim actually only needed if the bus is being reconnected or disconnected
+            if((new_gridmodel_bus_id != side_2_.get_buses()[el_id])) _update_effective_coeffs_one_el(el_id);
         }
 
         virtual real_type fillBf_for_PTDF_coeff(int el_id) const{
@@ -834,6 +865,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             yac_21_ = CplxVect::Zero(my_size);
             yac_22_ = CplxVect::Zero(my_size);
 
+            yac_eff_11_ = CplxVect::Zero(my_size);
+            yac_eff_12_ = CplxVect::Zero(my_size);
+            yac_eff_21_ = CplxVect::Zero(my_size);
+            yac_eff_22_ = CplxVect::Zero(my_size);
+
             ydc_11_ = CplxVect::Zero(my_size);
             ydc_12_ = CplxVect::Zero(my_size);
             ydc_21_ = CplxVect::Zero(my_size);
@@ -854,6 +890,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         void _update_internal_coeffs(int el_id){
             // update coeffs for Ybus (AC and DC)
             this->_update_model_coeffs_one_el(el_id);
+            // update Kron-reduced effective coefficients
+            _update_effective_coeffs_one_el(el_id);
 
             // for FDPF matrices (if cached)
             if(BX_fpdf_coeffs_.are_cached()){
@@ -863,6 +901,29 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             if(XB_fpdf_coeffs_.are_cached()){
                 // update the cache in this case
                 XB_fpdf_coeffs_.assign_el(el_id, this->get_fdpf_coeffs(el_id, FDPFMethod::XB));
+            }
+        }
+
+        virtual void _update_effective_coeffs_one_el(int el_id) {
+            const bool s1 = side_1_.get_status(el_id);
+            const bool s2 = side_2_.get_status(el_id);
+            if (!status_global_[el_id] || (!s1 && !s2)) {
+                yac_eff_11_(el_id) = yac_eff_12_(el_id) = 0.;
+                yac_eff_21_(el_id) = yac_eff_22_(el_id) = 0.;
+            } else if (!s1) {
+                // side 1 open, side 2 connected: Kron-reduce out the open end
+                yac_eff_11_(el_id) = yac_eff_12_(el_id) = yac_eff_21_(el_id) = 0.;
+                yac_eff_22_(el_id) = yac_22_(el_id) - yac_21_(el_id) * yac_12_(el_id) / yac_11_(el_id);
+            } else if (!s2) {
+                // side 1 connected, side 2 open: Kron-reduce out the open end
+                yac_eff_12_(el_id) = yac_eff_21_(el_id) = yac_eff_22_(el_id) = 0.;
+                yac_eff_11_(el_id) = yac_11_(el_id) - yac_21_(el_id) * yac_12_(el_id) / yac_22_(el_id);
+            } else {
+                // both sides connected
+                yac_eff_11_(el_id) = yac_11_(el_id);
+                yac_eff_12_(el_id) = yac_12_(el_id);
+                yac_eff_21_(el_id) = yac_21_(el_id);
+                yac_eff_22_(el_id) = yac_22_(el_id);
             }
         }
 
@@ -898,11 +959,17 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         RealVect res_a_side_1_;  // in kA
         RealVect res_a_side_2_;  // in kA
 
-        // model coefficients
+        // model coefficients (raw)
         CplxVect yac_11_;
         CplxVect yac_12_;
         CplxVect yac_21_;
         CplxVect yac_22_;
+
+        // model coefficients (Kron-reduced for per-side connection state; derived, not pickled)
+        CplxVect yac_eff_11_;
+        CplxVect yac_eff_12_;
+        CplxVect yac_eff_21_;
+        CplxVect yac_eff_22_;
 
         CplxVect ydc_11_;
         CplxVect ydc_12_;

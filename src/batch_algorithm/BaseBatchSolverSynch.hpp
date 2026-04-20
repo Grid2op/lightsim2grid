@@ -102,8 +102,8 @@ class BaseBatchSolverSynch : protected BaseConstants
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             bool is_ac = _solver.ac_solver_used();
 
-            const auto & vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
-            const auto & vect_y_ft = is_ac ? structure_data.yac_12() : structure_data.ydc_12();
+            const auto & vect_y_ff = is_ac ? structure_data.yac_eff_11() : structure_data.ydc_11();
+            const auto & vect_y_ft = is_ac ? structure_data.yac_eff_12() : structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             size_t nb_el = structure_data.nb();
@@ -112,7 +112,6 @@ class BaseBatchSolverSynch : protected BaseConstants
             RealVect res;
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
                 if(!el_status[el_id]) continue;
-                // TODO connected one side only !
 
                 // retrieve which buses are used
                 GlobalBusId bus_from_me = bus_from(el_id);
@@ -128,7 +127,6 @@ class BaseBatchSolverSynch : protected BaseConstants
                 // retrieve physical parameters
                 const cplx_type y_ff = vect_y_ff(el_id);  // scalar
                 const cplx_type y_ft = vect_y_ft(el_id);
-                // TODO disconnected one side !
 
                 if(is_ac){
                     // trafo equations (to get the power at the "from" side)
@@ -159,8 +157,8 @@ class BaseBatchSolverSynch : protected BaseConstants
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             const bool is_ac = _solver.ac_solver_used();
 
-            Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_11() : structure_data.ydc_11();
-            Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_12() : structure_data.ydc_12();
+            Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_eff_11() : structure_data.ydc_11();
+            Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_eff_12() : structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             Eigen::Index nb_el = structure_data.nb();
@@ -183,7 +181,6 @@ class BaseBatchSolverSynch : protected BaseConstants
                 // retrieve physical parameters
                 const cplx_type y_ff = vect_y_ff(el_id);  // scalar
                 const cplx_type y_ft = vect_y_ft(el_id);
-                // TODO disconnected one side !
 
                 // trafo equations (to get the power at the "from" side)
                 if(is_ac){

@@ -73,16 +73,16 @@ class TestTSDC_14(unittest.TestCase):
             if len(res):
                 # model has converged, I check the results are the same
                 # check voltages
-                assert np.allclose(res_v_dc[ts, :nb_bus], res[:nb_bus]), f"error for step {ts}"
+                assert np.allclose(res_v_dc[ts, :nb_bus], res[:nb_bus]), f"error for step {ts}, max error {np.abs(res_v_dc[ts, :nb_bus] - res[:nb_bus]).max()}"
                 # now check the flows
                 pl_dc, ql_dc, vl_dc, al_dc = grid_model.get_line_res1()
                 pt_dc, qt_dc, vt_dc, at_dc = grid_model.get_trafo_res1()
                 # check active power
                 p_dc_ref = np.concatenate((pl_dc, pt_dc))
-                assert np.allclose(res_p_dc[ts], p_dc_ref), f"error for step {ts}"
+                assert np.allclose(res_p_dc[ts], p_dc_ref), f"error for step {ts}, max error {np.abs(res_p_dc[ts, :nb_bus] - p_dc_ref[:nb_bus]).max()}"
                 # check amps
                 a_dc_ref = np.concatenate((al_dc, at_dc)) * 1000.
-                assert np.allclose(res_a_dc[ts], a_dc_ref), f"error for step {ts}"
+                assert np.allclose(res_a_dc[ts], a_dc_ref), f"error for step {ts}, max error {np.abs(res_a_dc[ts, :nb_bus] - a_dc_ref[:nb_bus]).max()}"
             else:
                 # model has diverged, I check that it has diverge the same way in the security_analysis
                 raise AssertionError("The DC computation should have reached the end.")

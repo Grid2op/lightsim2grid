@@ -12,9 +12,8 @@ import tempfile
 import unittest
 import warnings
 import numpy as np
-import pypowsybl
+
 import pypowsybl.network as pp_network
-import pypowsybl as pp
 import pypowsybl.loadflow as pp_lf
 
 import grid2op
@@ -89,26 +88,104 @@ class BaseDiscoOneSide:
         if self.ignore_status_global():
             assert self.model.get_lines()[el_id].connected_global
         assert not self.model.get_lines()[el_id].connected1
-        
+
         if self.synch_status_both_side():
             if not self.ignore_status_global():
                 assert not self.model.get_lines()[el_id].connected_global
             assert not self.model.get_lines()[el_id].connected2
         else:
             assert self.model.get_lines()[el_id].connected2
-        
+
+        line = self.model.get_lines()[el_id]
+        if self.synch_status_both_side():
+            # both sides disconnected: all effective coeffs must be zero
+            assert np.isclose(line.yac_eff_11, 0.)
+            assert np.isclose(line.yac_eff_12, 0.)
+            assert np.isclose(line.yac_eff_21, 0.)
+            assert np.isclose(line.yac_eff_22, 0.)
+        else:
+            # side 1 open, side 2 connected: Kron-reduce the open end out
+            assert np.isclose(line.yac_eff_11, 0.)
+            assert np.isclose(line.yac_eff_12, 0.)
+            assert np.isclose(line.yac_eff_21, 0.)
+            assert np.isclose(line.yac_eff_22,
+                              line.yac_22 - line.yac_21 * line.yac_12 / line.yac_11)
+
         # now reconnects it
         new_values[el_tp] = 1
         self.model.update_topo(change, new_values)
         if self.ignore_status_global():
             assert self.model.get_lines()[el_id].connected_global
         assert self.model.get_lines()[el_id].connected1
-        
+
         if self.synch_status_both_side():
             assert self.model.get_lines()[el_id].connected_global
             assert self.model.get_lines()[el_id].connected2
         else:
             assert self.model.get_lines()[el_id].connected2
+
+        line = self.model.get_lines()[el_id]
+        # both sides connected: effective coeffs must equal raw coeffs
+        assert np.isclose(line.yac_eff_11, line.yac_11)
+        assert np.isclose(line.yac_eff_12, line.yac_12)
+        assert np.isclose(line.yac_eff_21, line.yac_21)
+        assert np.isclose(line.yac_eff_22, line.yac_22)
+
+    def test_gridmodel_line_side2_topo(self):
+        """test disconnecting the line side2 when updated from topology"""
+        el_id = 0
+        change = np.zeros(self.env.dim_topo, dtype=bool)
+        new_values = np.zeros(self.env.dim_topo, dtype=int)
+        el_tp = self.env.line_ex_pos_topo_vect[el_id]
+        change[el_tp] = True
+        new_values[el_tp] = -1
+        
+        self.model.update_topo(change, new_values)
+        if self.ignore_status_global():
+            assert self.model.get_lines()[el_id].connected_global
+        assert not self.model.get_lines()[el_id].connected2
+
+        if self.synch_status_both_side():
+            if not self.ignore_status_global():
+                assert not self.model.get_lines()[el_id].connected_global
+            assert not self.model.get_lines()[el_id].connected1
+        else:
+            assert self.model.get_lines()[el_id].connected1
+
+        line = self.model.get_lines()[el_id]
+        if self.synch_status_both_side():
+            # both sides disconnected: all effective coeffs must be zero
+            assert np.isclose(line.yac_eff_11, 0.)
+            assert np.isclose(line.yac_eff_12, 0.)
+            assert np.isclose(line.yac_eff_21, 0.)
+            assert np.isclose(line.yac_eff_22, 0.)
+        else:
+            # side 1 connected, side 2 open: Kron-reduce the open end out
+            assert np.isclose(line.yac_eff_11,
+                              line.yac_11 - line.yac_21 * line.yac_12 / line.yac_22)
+            assert np.isclose(line.yac_eff_12, 0.)
+            assert np.isclose(line.yac_eff_21, 0.)
+            assert np.isclose(line.yac_eff_22, 0.)
+
+        # now reconnects it
+        new_values[el_tp] = 1
+        self.model.update_topo(change, new_values)
+        if self.ignore_status_global():
+            assert self.model.get_lines()[el_id].connected_global
+        assert self.model.get_lines()[el_id].connected2
+
+        if self.synch_status_both_side():
+            assert self.model.get_lines()[el_id].connected_global
+            assert self.model.get_lines()[el_id].connected1
+        else:
+            assert self.model.get_lines()[el_id].connected1
+
+        line = self.model.get_lines()[el_id]
+        # both sides connected: effective coeffs must equal raw coeffs
+        assert np.isclose(line.yac_eff_11, line.yac_11)
+        assert np.isclose(line.yac_eff_12, line.yac_12)
+        assert np.isclose(line.yac_eff_21, line.yac_21)
+        assert np.isclose(line.yac_eff_22, line.yac_22)
             
     # def test_gridmodel_line_side1_changebus(self):
     #     """test disconnecting the line side1, when updated from change_bus"""
@@ -159,7 +236,14 @@ class BaseDiscoOneSide:
         else:
             # automatic disconnection: both sides are disconnected
             assert not self.model.get_lines()[el_id].connected_global
-        
+
+        line = self.model.get_lines()[el_id]
+        # both sides disconnected: all effective coeffs must be zero
+        assert np.isclose(line.yac_eff_11, 0.)
+        assert np.isclose(line.yac_eff_12, 0.)
+        assert np.isclose(line.yac_eff_21, 0.)
+        assert np.isclose(line.yac_eff_22, 0.)
+
         # now reconnects it
         new_values[el_tp1] = 1
         new_values[el_tp2] = 1
@@ -169,6 +253,13 @@ class BaseDiscoOneSide:
         # both sides are reconnected, so this should reconnect this automatically
         # if it was disconnected
         assert self.model.get_lines()[el_id].connected_global
+
+        line = self.model.get_lines()[el_id]
+        # both sides connected: effective coeffs must equal raw coeffs
+        assert np.isclose(line.yac_eff_11, line.yac_11)
+        assert np.isclose(line.yac_eff_12, line.yac_12)
+        assert np.isclose(line.yac_eff_21, line.yac_21)
+        assert np.isclose(line.yac_eff_22, line.yac_22)
         
     
 class GridModelDiscoOneSideTF(BaseDiscoOneSide, unittest.TestCase):
