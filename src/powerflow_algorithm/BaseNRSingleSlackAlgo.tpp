@@ -72,8 +72,6 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     bool converged = BaseNRAlgo<LinearSolver>::_check_for_convergence(F, tol);
     BaseNRAlgo<LinearSolver>::nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
-    bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
-
     const cplx_type m_i = BaseNRAlgo<LinearSolver>::my_i;  // otherwise it does not compile
     if(BaseNRAlgo<LinearSolver>::need_factorize_ ||
        BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() || 
@@ -108,15 +106,20 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
                 res = false;
                 break;
             }
-            has_just_been_initialized = true;
-            // std::cout << "I just factorized" << std::endl;
-        }else{
-            // std::cout << "no need to factorize" << std::endl;
+        } else {
+            auto timer_s = CustTimer();
+            BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.refactor(BaseNRAlgo<LinearSolver>::J_);
+            BaseNRAlgo<LinearSolver>::timer_refactor_ += timer_s.duration();
+            if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
+                res = false;
+                break;
+            }
         }
-
-        BaseNRAlgo<LinearSolver>::solve(F, has_just_been_initialized);
-
-        has_just_been_initialized = false;
+        {
+            auto timer_s = CustTimer();
+            BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.solve(F);
+            BaseNRAlgo<LinearSolver>::timer_solve_ += timer_s.duration();
+        }
         if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             // std::cout << BaseNRAlgo<LinearSolver>::err_ << std::endl;

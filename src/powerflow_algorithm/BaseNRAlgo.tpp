@@ -86,7 +86,6 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
-    bool has_just_been_initialized = false;  // to avoid a call to klu_refactor follow a call to klu_factor in the same loop
     if(need_factorize_ ||
        _solver_control.need_reset_solver() || 
        _solver_control.has_dimension_changed() ||
@@ -115,11 +114,20 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
                 res = false;
                 break;
             }
-            has_just_been_initialized = true;
+        } else {
+            auto timer_s = CustTimer();
+            err_ = _linear_solver.refactor(J_);
+            timer_refactor_ += timer_s.duration();
+            if(err_ != ErrorType::NoError){
+                res = false;
+                break;
+            }
         }
-        solve(F, has_just_been_initialized);
-
-        has_just_been_initialized = false;
+        {
+            auto timer_s = CustTimer();
+            err_ = _linear_solver.solve(F);
+            timer_solve_ += timer_s.duration();
+        }
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;

@@ -90,8 +90,8 @@ def main(case_name,
     end_ls = time.perf_counter()
     ls_grid.unset_changes()
     if verbose_lightsim2grid_timing:
-        (timer_Fx_, timer_solve_, timer_initialize_, 
-         timer_check_, timer_dSbus_, timer_fillJ_, 
+        (timer_Fx_, timer_solve_, timer_refactor_, timer_initialize_,
+         timer_check_, timer_dSbus_, timer_fillJ_,
          timer_Va_Vm_, timer_pre_proc_, timer_total_nr_
          ) = ls_grid.get_solver().get_timers_jacobian()
         tot_time = end_ls - beg_ls
@@ -102,6 +102,7 @@ def main(case_name,
         print(f"\t Time to initialize linear solver {1e3 * timer_initialize_:.2e} ms ({100. * timer_initialize_ / timer_total_nr_:.0f} % of time in solver)")
         print(f"\t Time to compute dS/dV {1e3 * timer_dSbus_ : .2e} ms ({100. * timer_dSbus_ / timer_total_nr_:.0f} % of time in solver)")
         print(f"\t Time to fill the Jacobian {1e3 * timer_fillJ_:.2e} ms ({100. * timer_fillJ_ / timer_total_nr_:.0f} % of time in solver)")
+        print(f"\t Time to refactor the Jacobian linear system: {1e3 * timer_refactor_:.2e} ms ({100. * timer_refactor_ / timer_total_nr_:.0f} % of time in solver)")
         print(f"\t Time to solve the Jacobian linear system: {1e3 * timer_solve_:.2e} ms ({100. * timer_solve_ / timer_total_nr_:.0f} % of time in solver)")
         print(f"\t Time to update Va and Vm {1e3*timer_Va_Vm_:.2e} ms ({100. * timer_Va_Vm_ / timer_total_nr_:.0f} % of time in solver)")
         print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*timer_Fx_:.2e} ms ({100. * timer_Fx_ / timer_total_nr_:.0f} % of time in solver)")
@@ -153,6 +154,7 @@ def main(case_name,
     time_ls = 0.
     ls_timer_Fx = 0.
     ls_timer_solve = 0.
+    ls_timer_refactor = 0.
     ls_timer_initialize = 0.
     ls_timer_check = 0.
     ls_timer_dSbus = 0.
@@ -175,8 +177,8 @@ def main(case_name,
         end_ls = time.perf_counter()
         time_ls += end_ls - beg_ls
         
-        (timer_Fx_, timer_solve_, timer_initialize_, 
-         timer_check_, timer_dSbus_, timer_fillJ_, 
+        (timer_Fx_, timer_solve_, timer_refactor_, timer_initialize_,
+         timer_check_, timer_dSbus_, timer_fillJ_,
          timer_Va_Vm_, timer_pre_proc_, timer_total_nr_
          ) = ls_grid.get_solver().get_timers_jacobian()
         ls_grid.unset_changes()
@@ -189,6 +191,7 @@ def main(case_name,
         ls_timer_Va_Vm += timer_Va_Vm_
         ls_timer_pre_proc += timer_pre_proc_
         ls_timer_total_nr += timer_total_nr_
+        ls_timer_refactor += timer_refactor_
         
     print(f"\tLightsim2grid computation time: {1000.*(time_ls / nb_extra_powerflow):.2e} ms / pf")
     print(f"\tPypowsybl computation time: {1000.*(time_pypow / nb_extra_powerflow):.2e} ms / pf")
@@ -202,6 +205,7 @@ def main(case_name,
         print(f"\t Time to compute dS/dV {1e3 * ls_timer_dSbus : .2e} ms ({100. * ls_timer_dSbus / ls_timer_total_nr:.0f} % of time in solver)")
         print(f"\t Time to fill the Jacobian {1e3 * ls_timer_fillJ:.2e} ms ({100. * ls_timer_fillJ / ls_timer_total_nr:.0f} % of time in solver)")
         print(f"\t Time to solve the Jacobian linear system: {1e3 * ls_timer_solve:.2e} ms ({100. * ls_timer_solve / ls_timer_total_nr:.0f} % of time in solver)")
+        print(f"\t Time to refactor the Jacobian linear system: {1e3 * ls_timer_refactor:.2e} ms ({100. * ls_timer_refactor / ls_timer_total_nr:.0f} % of time in solver)")
         print(f"\t Time to update Va and Vm {1e3*ls_timer_Va_Vm:.2e} ms ({100. * ls_timer_Va_Vm / ls_timer_total_nr:.0f} % of time in solver)")
         print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*ls_timer_Fx:.2e} ms ({100. * ls_timer_Fx / ls_timer_total_nr:.0f} % of time in solver)")
         print(f"\t Time to evaluate cvg criteria {1e3*ls_timer_check:.2e} ms ({100. * ls_timer_check / ls_timer_total_nr:.0f} % of time in solver)")

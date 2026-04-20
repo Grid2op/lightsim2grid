@@ -37,7 +37,8 @@ class SparseLULinearSolver final
         
         // public api
         ErrorType initialize(const Eigen::SparseMatrix<real_type> & J);
-        ErrorType solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor);
+        ErrorType refactor(const Eigen::SparseMatrix<real_type> & J);
+        ErrorType solve(RealVect & b);
         ErrorType reset(){
             return ErrorType::NoError;
         }

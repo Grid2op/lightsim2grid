@@ -107,10 +107,9 @@ class BaseFDPFAlgo: public BaseAlgo
 
         virtual
         void solve(LinearSolver& linear_solver,
-                   Eigen::SparseMatrix<real_type>& mat,
                    RealVect & b){
             auto timer = CustTimer();
-            const ErrorType solve_status = linear_solver.solve(mat, b, true);  // true because i don't need to refactorize the matrix
+            const ErrorType solve_status = linear_solver.solve(b);
             if(solve_status != ErrorType::NoError){
                 // std::cout << "solve error: " << solve_status << std::endl;
                 err_ = solve_status;

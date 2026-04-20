@@ -21,6 +21,7 @@ class BaseNRAlgo : public BaseAlgo
         BaseNRAlgo() noexcept :
             BaseAlgo(true),
             need_factorize_(true),
+            timer_refactor_(0.),
             timer_initialize_(0.),
             timer_dSbus_(0.),
             timer_fillJ_(0.),
@@ -49,6 +50,7 @@ class BaseNRAlgo : public BaseAlgo
             // TODO refacto that, and change the order
             auto res = TimerJacType(timer_Fx_,
                                     timer_solve_,
+                                    timer_refactor_,
                                     timer_initialize_,
                                     timer_check_,
                                     timer_dSbus_,
@@ -76,6 +78,7 @@ class BaseNRAlgo : public BaseAlgo
     protected:
         virtual void reset_timer(){
             BaseAlgo::reset_timer();
+            timer_refactor_ = 0.;
             timer_dSbus_ = 0.;
             timer_fillJ_ = 0.;
             timer_Va_Vm_ = 0.;
@@ -94,17 +97,6 @@ class BaseNRAlgo : public BaseAlgo
             }
             need_factorize_ = false;
             timer_initialize_ += timer.duration();
-        }
-
-        virtual
-        void solve(RealVect & b, bool has_just_been_inialized){
-            auto timer = CustTimer();
-            const ErrorType solve_status = _linear_solver.solve(J_, b, has_just_been_inialized);
-            if(solve_status != ErrorType::NoError){
-                // std::cout << "solve error: " << solve_status << std::endl;
-                err_ = solve_status;
-            }
-            timer_solve_ += timer.duration();
         }
 
         void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
@@ -189,6 +181,7 @@ class BaseNRAlgo : public BaseAlgo
         // std::vector<int> row_map_;
 
         // timers
+        double timer_refactor_;
         double timer_initialize_;
         double timer_dSbus_;
         double timer_fillJ_;

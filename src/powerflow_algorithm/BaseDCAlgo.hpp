@@ -20,6 +20,7 @@ class BaseDCAlgo final: public BaseAlgo
             _linear_solver(),
             need_factorize_(true),
             need_refactor_(true),
+            timer_refactor_(0.),
             timer_ptdf_(0.),
             timer_lodf_(0.),
             sizeYbus_with_slack_(0),
@@ -30,8 +31,26 @@ class BaseDCAlgo final: public BaseAlgo
         virtual void reset();
         virtual void reset_timer(){
             BaseAlgo::reset_timer();
+            timer_refactor_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
+        }
+
+        virtual TimerJacType get_timers_jacobian() const
+        {
+            TimerJacType res = {
+                timer_Fx_,
+                timer_solve_,
+                timer_refactor_,
+                -1.,  // timer_initialize_: not applicable to DC solver
+                timer_check_,
+                -1.,  // timer_dSbus_: not applicable to DC solver
+                -1.,  // timer_fillJ_: not applicable to DC solver
+                -1.,  // timer_Va_Vm_: not applicable to DC solver
+                -1.,  // timer_pre_proc_: not applicable to DC solver
+                timer_total_nr_
+            };
+            return res;
         }
 
         virtual TimerPTDFLODFType get_timers_ptdf_lodf() const
@@ -96,6 +115,7 @@ class BaseDCAlgo final: public BaseAlgo
         bool need_factorize_;
         bool need_refactor_;
 
+        double timer_refactor_;
         double timer_ptdf_;
         double timer_lodf_;
 

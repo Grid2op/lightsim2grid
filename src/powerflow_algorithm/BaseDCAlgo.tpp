@@ -118,16 +118,25 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
-    bool doesnt_need_refactor = true;
     if(need_refactor_){
-        // I need to make a call to "refactor"
-        doesnt_need_refactor = false;
+        auto timer_s = CustTimer();
+        ErrorType error = _linear_solver.refactor(dcYbus_noslack_);
+        timer_refactor_ += timer_s.duration();
+        if(error != ErrorType::NoError){
+            err_ = error;
+            timer_total_nr_ += timer.duration();
+            return false;
+        }
     }
-    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, doesnt_need_refactor);
-    if(error != ErrorType::NoError){
-        err_ = error;
-        timer_total_nr_ += timer.duration();
-        return false;
+    {
+        auto timer_s = CustTimer();
+        ErrorType error = _linear_solver.solve(Va_dc_without_slack);
+        timer_solve_ += timer_s.duration();
+        if(error != ErrorType::NoError){
+            err_ = error;
+            timer_total_nr_ += timer.duration();
+            return false;
+        }
     }
     
     if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
@@ -276,7 +285,7 @@ RealMat BaseDCAlgo<LinearSolver>::get_ptdf(){
             rhs[col_res] = it.value();
         }
         // solve the linear system
-        _linear_solver.solve(dcYbus_noslack_, rhs, true);  // I don't need to refactorize the matrix (hence the `true`)
+        _linear_solver.solve(rhs);
 
         // assign results to the PTDF matrix
         PTDF(row_id, ind_no_slack) = rhs;

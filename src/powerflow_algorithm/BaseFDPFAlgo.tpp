@@ -132,7 +132,7 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
 
         // do the P iteration (for Va)
         RealVect x = p_;
-        solve(_linear_solver_Bp, Bp_, x);  //  dVa = -Bp_solver.solve(P)     
+        solve(_linear_solver_Bp, x);  //  dVa = -Bp_solver.solve(P)
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;
@@ -145,7 +145,7 @@ bool BaseFDPFAlgo<LinearSolver, XB_BX>::compute_pf(const Eigen::SparseMatrix<cpl
             break;
         }
         // do the Q iterations (for Vm)
-        solve(_linear_solver_Bpp, Bpp_, q_);  //  dVm = -Bpp_solver.solve(Q)   
+        solve(_linear_solver_Bpp, q_);  //  dVm = -Bpp_solver.solve(Q)
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
             res = false;

@@ -34,6 +34,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   and disconnected element on the grid will now raise a RuntimeError. Before there were
   some "automatic" bahaviour to try to find a possible bus which could lead to 
   error afterwards.
+- [BREAKING] adding a more precise information about linear solvers. The "refactor" timings
+  are now also available in solver.get_timers_jacobian() which now returns a tuple of size 10
 - [FIXED] an issue where disconnected powerlines could be tagged as "fakely connected"
 - [FIXED] some issues when loading a grid from pypowsybl in case of disconnected elements.
 - [FIXED] remove the undefined behaviour while maintaining compile time check to prevent 
@@ -44,6 +46,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   it should be working with TimeSeries and ContingencyAnalysis
 - [IMPROVED] speed (DC mode): avoid the systematic call to "refactor" when Ybus is not changed
   when using DC approximation.
+- [IMPROVED] simplify the future integration of other linear solvers and the logic when linear_solvers
+  are called by decoupling "refactor" steps from "solve" steps (they used to be all under the same
+  "solve" method).
 
 TODO:
 - consistency int / size_t in change_v_nothrow, change_bus etc (for element id)

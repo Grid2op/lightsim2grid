@@ -30,9 +30,9 @@
 
 class GridModel;
 
-typedef std::tuple<double, double, double, double, 
-                   double, double, double, double, 
-                   double> TimerJacType;
+typedef std::tuple<double, double, double, double,
+                   double, double, double, double,
+                   double, double> TimerJacType;
 typedef std::tuple<double, double, double> TimerPTDFLODFType;
 
 /**
@@ -101,7 +101,8 @@ class BaseAlgo : public BaseConstants
             TimerJacType res = {
                 timer_Fx_,
                 timer_solve_,
-                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // timer_refactor_: not available for non NR solver, so I put -1
+                -1.,  // timer_initialize_: not available for non NR solver, so I put -1
                 timer_check_,
                 -1.,  // not available for non NR solver, so I put -1
                 -1.,  // not available for non NR solver, so I put -1

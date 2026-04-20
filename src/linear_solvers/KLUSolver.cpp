@@ -44,35 +44,26 @@ ErrorType KLULinearSolver::initialize(const Eigen::SparseMatrix<real_type>&  J){
     return res;
 }
 
-ErrorType KLULinearSolver::solve(const Eigen::SparseMatrix<real_type>& J, RealVect & b, bool doesnt_need_refactor){
-    // solves (for x) the linear system J.x = b
-    // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
+ErrorType KLULinearSolver::refactor(const Eigen::SparseMatrix<real_type>& J){
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
-    int ok;
-    ErrorType err = ErrorType::NoError;
-    bool stop = false;
-    if(!doesnt_need_refactor){
-        // if the call to "klu_factor" has been made this iteration, there is no need
-        // to re factor again the matrix
-        // i'm in the case where it has not
-        ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
+    int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
                           const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
                           const_cast<real_type*>(J.valuePtr()),
                           symbolic_, numeric_, &common_);
-        if (ok != 1) {
-            // std::cout << "\t KLU: refactor error" << std::endl;
-            err = ErrorType::SolverReFactor;
-            stop = true;
-        }
+    if(ok != 1){
+        // std::cout << "\t KLU: refactor error" << std::endl;
+        return ErrorType::SolverReFactor;
     }
-    if(!stop){
-        const auto n = J.cols();
-        ok = klu_solve(symbolic_, numeric_, n, 1, &b(0), &common_);
-        if (ok != 1) {
-            // std::cout << "\t KLU: klu_solve error" << std::endl;
-            err = ErrorType::SolverSolve;
-        }
+    return ErrorType::NoError;
+}
+
+ErrorType KLULinearSolver::solve(RealVect & b){
+    const int n = static_cast<int>(b.size());
+    int ok = klu_solve(symbolic_, numeric_, n, 1, &b(0), &common_);
+    if(ok != 1){
+        // std::cout << "\t KLU: klu_solve error" << std::endl;
+        return ErrorType::SolverSolve;
     }
-    return err;
+    return ErrorType::NoError;
 }
