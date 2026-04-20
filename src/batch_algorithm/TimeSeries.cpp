@@ -73,7 +73,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     CplxVect V = Vinit_solver;
     _grid_model.get_generators().set_vm(V, id_me_to_solver_);
 
-    size_t step_diverge = -1;
+    int step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
     bool conv;
     // do the computation for each step
@@ -94,11 +94,19 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
         if(!ac_solver_used) _solver_control.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
         if(!conv){
             _timer_total = timer.duration();
+            // std::cout << "encountering a divergence at step "<< i<< "stopping here\n";
             step_diverge = i;
             _status = 0;
             return _status;
         }
-        if(conv && step_diverge < 0) _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
+        if(conv && step_diverge < 0) {
+            // std::cout << "filling V.row("<< i<<") \n";
+            _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
+        }
+        // else{
+        //     if(conv) std::cout << "why conv is true but I don't fill it for " << i <<" ?\n";
+        //     else std::cout << "this case is even weirder !";
+        // }
     }
 
     // If i reached there, it means it is succesfull
