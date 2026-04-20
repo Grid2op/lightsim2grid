@@ -1390,10 +1390,10 @@ class GridModel final
                 for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
                 {
                     if(relabel_row) tripletList.push_back({static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())]),
-                                                           static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())]),
+                                                           static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())]),
                                                            it.value()});
                     else tripletList.push_back({static_cast<index_type>(it.row()), 
-                                                static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())]),
+                                                static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())]),
                                                 it.value()});
                 }
             }
