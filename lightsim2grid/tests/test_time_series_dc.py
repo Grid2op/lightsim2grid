@@ -54,9 +54,9 @@ class TestTSDC_14(unittest.TestCase):
                                                           v_init=V_init)
         assert np.any(np.abs(res_p) > 1e-5), "all flows are 0. for time series in DC, this should not be the case"
         assert self.ts.computer.get_solver_type() == SolverType.DC
-        assert (np.abs(res_p - res_p_dc) > 1e-5), "There should be some differences between AC and DC computation for p"
-        assert (np.abs(res_a - res_a_dc) > 1e-5), "There should be some differences between AC and DC computation for a"
-        assert (np.abs(res_v - res_v_dc) > 1e-5), "There should be some differences between AC and DC computation for v"
+        assert (np.abs(res_p - res_p_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for p"
+        assert (np.abs(res_a - res_a_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for a"
+        assert (np.abs(res_v - res_v_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for v"
             
         nb_bus = self.env.n_sub
         

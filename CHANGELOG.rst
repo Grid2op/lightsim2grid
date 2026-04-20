@@ -39,12 +39,14 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [FIXED] remove the undefined behaviour while maintaining compile time check to prevent 
   wrong conversion from different bus labelling.
 - [IMPROVED] the CI to allow automatic push on pypi on new version tag (introduced in version 0.12.0)
+- [IMPROVED] reduce code duplication between ContingencyAnalysis and TimeSerie (cpp side)
 
 TODO:
 - doesnt_need_refactor in DC PF when not needed (if matrix did not change)
 - consistency int / size_t in change_v_nothrow, change_bus etc (for element id)
 - add the "factorization" of the coeff in the TwoSidesElements (compute the Kron reduction if only connected one side)
 - add a method to retrieve the coeff used for the Jacobian (python side) and also use it in Batch solver
+- re run the benchmarks
 
 [0.13.0] 2026-04-15
 --------------------
