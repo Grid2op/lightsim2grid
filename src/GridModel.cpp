@@ -902,11 +902,9 @@ RealMat GridModel::get_lodf(){
         throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const size_t nb_el = powerlines_.nb() + trafos_.nb();
-    GlobalBusIdVect from_bus(nb_el, GlobalBusId(0));
-    GlobalBusIdVect to_bus(nb_el, GlobalBusId(0));
     // retrieve the from_bus / to_bus from the grid
-    from_bus << powerlines_.get_bus_id_side_1(), trafos_.get_bus_id_side_1();
-    to_bus << powerlines_.get_bus_id_side_2(), trafos_.get_bus_id_side_2();
+    GlobalBusIdVect from_bus = GlobalBusIdVect::concat(powerlines_.get_bus_id_side_1(), trafos_.get_bus_id_side_1());
+    GlobalBusIdVect to_bus   = GlobalBusIdVect::concat(powerlines_.get_bus_id_side_2(), trafos_.get_bus_id_side_2());
 
     // convert it to solver bus id
     IntVect from_bus_solver(nb_el);  // TODO : SolverBusIdVect here

@@ -193,6 +193,15 @@ public:
     const_iterator begin() const noexcept { return const_iterator(data_.data()); }
     const_iterator end()   const noexcept { return const_iterator(data_.data() + data_.size()); }
 
+    // ----- static helpers --------------------------------------------------
+    static TaggedIdStdVec concat(const TaggedIdStdVec& a, const TaggedIdStdVec& b) {
+        TaggedIdStdVec r;
+        r.data_.reserve(a.data_.size() + b.data_.size());
+        r.data_.insert(r.data_.end(), a.data_.begin(), a.data_.end());
+        r.data_.insert(r.data_.end(), b.data_.begin(), b.data_.end());
+        return r;
+    }
+
     // ----- UB-free accessors -----------------------------------------------
     // Returns an Eigen Map for Eigen fancy indexing (voltage scatter, etc.)
     Eigen::Map<const IntVect> as_eigen() const noexcept {
