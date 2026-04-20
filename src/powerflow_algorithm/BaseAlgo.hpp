@@ -173,14 +173,14 @@ class BaseAlgo : public BaseConstants
                               size_t slack_id,  // id of the slack bus
                               real_type slack_absorbed,
                               const RealVect & slack_weights,
-                              const Eigen::VectorXi & pv,
-                              const Eigen::VectorXi & pq);
+                              Eigen::Ref<const IntVect> pv,
+                              Eigen::Ref<const IntVect> pq);
 
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
                               const CplxVect & Sbus,
-                              const Eigen::VectorXi & pv,
-                              const Eigen::VectorXi & pq);
+                              Eigen::Ref<const IntVect> pv,
+                              Eigen::Ref<const IntVect> pq);
 
         bool _check_for_convergence(const RealVect & F,
                                     real_type tol);
@@ -189,16 +189,16 @@ class BaseAlgo : public BaseConstants
                                     const RealVect & q,
                                     real_type tol);
 
-        Eigen::VectorXi extract_slack_bus_id(const Eigen::VectorXi & pv,
-                                             const Eigen::VectorXi & pq,
+        Eigen::VectorXi extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
+                                             Eigen::Ref<const IntVect> pq,
                                              unsigned int nb_bus);
 
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
         (behaves as if only the first element is used for the slack !!!, called "ref slack")
         **/
-        Eigen::VectorXi retrieve_pv_with_slack(const Eigen::VectorXi & slack_ids, 
-                                               const Eigen::VectorXi & pv) const {
+        Eigen::VectorXi retrieve_pv_with_slack(Eigen::Ref<const IntVect> slack_ids,
+                                               Eigen::Ref<const IntVect> pv) const {
             if(slack_ids.size() > 1){
                 const auto nb_slack_added = slack_ids.size() - 1;
                 Eigen::VectorXi my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
@@ -217,8 +217,8 @@ class BaseAlgo : public BaseConstants
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
         **/
-        Eigen::VectorXi add_slack_to_pv(const Eigen::VectorXi & slack_ids, 
-                                        const Eigen::VectorXi & pv) const {
+        Eigen::VectorXi add_slack_to_pv(Eigen::Ref<const IntVect> slack_ids,
+                                        Eigen::Ref<const IntVect> pv) const {
             Eigen::VectorXi my_pv = Eigen::VectorXi(slack_ids.size() + pv.size());
             my_pv << slack_ids, pv;
             return my_pv;

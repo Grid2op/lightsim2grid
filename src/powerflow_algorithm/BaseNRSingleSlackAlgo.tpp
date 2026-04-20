@@ -50,9 +50,7 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     auto timer = CustTimer();
     auto timer_pre_proc = CustTimer();
     // initialize once and for all the "inverse" of these vectors
-    // Eigen::VectorXi my_pv = BaseNRAlgo<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
-    Eigen::VectorXi my_pv = pv;
-    // Eigen::VectorXi my_pv = pv; // BaseNRAlgo<LinearSolver>::retrieve_pv_with_slack(slack_ids, pv);
+    const auto& my_pv = pv;
 
     const int n_pv = static_cast<int>(my_pv.size());
     const int n_pq = static_cast<int>(pq.size());

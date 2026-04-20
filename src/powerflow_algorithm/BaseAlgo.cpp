@@ -30,8 +30,8 @@ void BaseAlgo::reset(){
 RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                 const CplxVect & V,
                                 const CplxVect & Sbus,
-                                const Eigen::VectorXi & pv,
-                                const Eigen::VectorXi & pq)
+                                Eigen::Ref<const IntVect> pv,
+                                Eigen::Ref<const IntVect> pq)
 {
     auto timer = CustTimer();
     auto npv = pv.size();
@@ -59,8 +59,8 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                   size_t slack_id,  // id of the ref slack bus
                                   real_type slack_absorbed,
                                   const RealVect & slack_weights,
-                                  const Eigen::VectorXi & pv,
-                                  const Eigen::VectorXi & pq)
+                                  Eigen::Ref<const IntVect> pv,
+                                  Eigen::Ref<const IntVect> pq)
 {
     /**
     Remember, when this function is used:
@@ -140,8 +140,8 @@ bool BaseAlgo::_check_for_convergence(const RealVect & p,
     return res;
 }
 
-Eigen::VectorXi BaseAlgo::extract_slack_bus_id(const Eigen::VectorXi & pv,
-                                                 const Eigen::VectorXi & pq,
+Eigen::VectorXi BaseAlgo::extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
+                                                 Eigen::Ref<const IntVect> pq,
                                                  unsigned int nb_bus)
 {
     // pv: list of index of pv nodes

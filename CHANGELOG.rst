@@ -30,14 +30,17 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 
 [0.13.1]  2026-xx-yy
 --------------------
+- [BREAKING] when loading a powergrid from pypowsybl with "use_buses_for_sub" tagged
+  and disconnected element on the grid will now raise a RuntimeError. Before there were
+  some "automatic" bahaviour to try to find a possible bus which could lead to 
+  error afterwards.
 - [FIXED] an issue where disconnected powerlines could be tagged as "fakely connected"
 - [FIXED] some issues when loading a grid from pypowsybl in case of disconnected elements.
 - [FIXED] remove the undefined behaviour while maintaining compile time check to prevent 
   wrong conversion from different bus labelling.
 - [IMPROVED] the CI to allow automatic push on pypi on new version tag (introduced in version 0.12.0)
+
 TODO:
-- CONCAT of two TaggedIdStdVec using "<<" (really handy)
-- check that the compute_pf method of all algos does not perform any copies (with the change to Eigen:Ref<> for bus_pv etc.)
 - consistency int / size_t in change_v_nothrow, change_bus etc (for element id)
 - add the "factorization" of the coeff in the TwoSidesElements (compute the Kron reduction if only connected one side)
 - add a method to retrieve the coeff used for the Jacobian (python side) and also use it in Batch solver
