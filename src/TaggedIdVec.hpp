@@ -128,6 +128,10 @@ public:
         operator IntClass<Tag>() const noexcept { return IntClass<Tag>(v_); }
         explicit operator int() const noexcept  { return v_; }
         int cast_int()          const noexcept  { return v_; }
+        bool operator==(IntClass<Tag> x) const noexcept { return v_ == x.cast_int(); }
+        bool operator!=(IntClass<Tag> x) const noexcept { return v_ != x.cast_int(); }
+        bool operator==(int x)           const noexcept { return v_ == x; }
+        bool operator!=(int x)           const noexcept { return v_ != x; }
     };
 
     // ----- forward const iterator ------------------------------------------
