@@ -1141,6 +1141,13 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const GridModel &>())
+        .def_property("init_from_n_powerflow",
+                      &ContingencyAnalysis::get_init_from_n_powerflow,
+                      &ContingencyAnalysis::set_init_from_n_powerflow,
+                      R"mydelim(Whether to initialize the complex voltages of "
+                      "the first time series with the results of a n-powerflow "
+                      "(*ie* a powerflow at the start the simulation) or not. "
+                      "Default: false)mydelim")
 
         // solver control
         .def("change_solver", &TimeSeries::change_solver, DocGridModel::change_solver.c_str())

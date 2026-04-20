@@ -27,6 +27,7 @@ class BaseBatchSolverSynch : protected BaseConstants
         typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
         
         explicit BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
+            _init_from_n_powerflow(false),
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -47,6 +48,9 @@ class BaseBatchSolverSynch : protected BaseConstants
         BaseBatchSolverSynch & operator=(BaseBatchSolverSynch&&) = delete;
         BaseBatchSolverSynch & operator=(const BaseBatchSolverSynch&) = delete;
     
+        bool get_init_from_n_powerflow() const noexcept {return _init_from_n_powerflow;}
+        void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
+
         // solver "control"
         virtual void change_solver(const SolverType & type){
             _solver.change_solver(type);
@@ -261,6 +265,8 @@ class BaseBatchSolverSynch : protected BaseConstants
         }
 
     protected:
+        bool _init_from_n_powerflow;
+
         // inputs
         GridModel _grid_model;
 

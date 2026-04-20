@@ -25,8 +25,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                             _li_coeffs(),
                             _timer_total(0.),
                             _timer_modif_Ybus(0.),
-                            _timer_pre_proc(0.),
-                            _init_from_n_powerflow(false)
+                            _timer_pre_proc(0.)
                             { }
 
         ~ContingencyAnalysis() noexcept = default;
@@ -34,9 +33,6 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(const ContingencyAnalysis&) = delete;
-
-        bool get_init_from_n_powerflow() const noexcept {return _init_from_n_powerflow;}
-        void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
 
         // utilities to add defaults to simulate
         void add_all_n1(){
@@ -187,7 +183,5 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         double _timer_total;  // total time spent in "compute"
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation
         double _timer_pre_proc;  // time to compute the coefficients of the Ybus
-
-        bool _init_from_n_powerflow;
 };
 #endif  //COMPUTERS_H

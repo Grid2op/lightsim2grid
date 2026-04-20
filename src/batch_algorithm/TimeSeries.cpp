@@ -20,6 +20,8 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                            const real_type tol)
 {
     auto timer = CustTimer();
+    auto timer_preproc = CustTimer();
+
     const size_t nb_total_bus = _grid_model.total_bus();
     if(Vinit.size() != nb_total_bus){
         std::ostringstream exc_;
@@ -29,25 +31,27 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
         throw std::runtime_error(exc_.str());
     }
 
-    // init everything
+    // reset timers
     _status = 0;
     _nb_solved = 0;
     _timer_pre_proc = 0.;
     _timer_total = 0.;
     _timer_solver = 0.;
 
-    auto timer_preproc = CustTimer();
-
-    // init the computations
+    // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
+    size_t nb_steps = gen_p.rows();
+
+    // prepare the gridmodel (compute Ybus, Sbus etc.)
     CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);   
 
+    ///////////////////////////////////////////
+    // initialize what will change (here Sbus)
     // retrieve necessary data
     const auto & generators = _grid_model.get_generators_as_data();
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
-    const Eigen::Index nb_steps = gen_p.rows();
 
     // now build the Sbus
     _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver_);
@@ -60,22 +64,50 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver_, add_);
     if(abs(sn_mva - 1.0) > _tol_equal_float) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
     // TODO trafo hack for Sbus !
+    //////////////////////////////////////////
 
     // init the results matrices
     _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
     _amps_flows = RealMat::Zero(0, n_total_);
+    _active_power_flows = RealMat::Zero(0, n_total_);
+
+    // reset the solver
+    _solver.reset();
+
+    // perform the initial powerflow / "powerflow in n"
+    // (needed to init the underlying solver with the correct sparsity pattern in particular)
+    _solver_control.tell_all_changed();
+    _solver.tell_solver_control(_solver_control);
+    _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
+    CplxVect Vinit_solver2 = Vinit_solver;
+    bool conv = _solver.compute_pf(
+        Ybus_,
+        Vinit_solver2,
+        Sbus_,
+        slack_ids_me_.as_eigen(),
+        slack_weights_,
+        bus_pv_.as_eigen(),
+        bus_pq_.as_eigen(),
+        max_iter,
+        tol);
+
+    // check if we init the n-1 cases with results from the n cases
+    // or not
+    if(_init_from_n_powerflow) Vinit_solver = _solver.get_V();
 
     // end of the pre processing steps
     _timer_pre_proc = timer_preproc.duration();
+    if(!conv) return -1;
+
+    // everything init from n-case above
+    _solver_control.tell_none_changed();
 
     // compute the powerflows
     // set the "right" init vector
     CplxVect V = Vinit_solver;
-    _grid_model.get_generators().set_vm(V, id_me_to_solver_);
 
     int step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
-    bool conv;
     // do the computation for each step
     _solver_control.tell_all_changed();  // recompute everything at the first iteration
     for(size_t i = 0; i < nb_steps; ++i){
@@ -94,19 +126,13 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
         if(!ac_solver_used) _solver_control.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
         if(!conv){
             _timer_total = timer.duration();
-            // std::cout << "encountering a divergence at step "<< i<< "stopping here\n";
             step_diverge = i;
             _status = 0;
             return _status;
         }
         if(conv && step_diverge < 0) {
-            // std::cout << "filling V.row("<< i<<") \n";
             _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
         }
-        // else{
-        //     if(conv) std::cout << "why conv is true but I don't fill it for " << i <<" ?\n";
-        //     else std::cout << "this case is even weirder !";
-        // }
     }
 
     // If i reached there, it means it is succesfull
