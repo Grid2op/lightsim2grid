@@ -37,16 +37,20 @@ def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connect
     # retrieve the bus where the element are
     tmp_bus_id = df[bus_key].copy()
     
-    # element disconnected are, by default assigned to first bus of their substation
-    el_disco = vl_df.loc[df.loc[mask_disco, vl_key]].index
-    tmp_bus_id.loc[mask_disco] = first_bus_per_vl.loc[el_disco, "first_bus_name"].values
+    if mask_disco.any():
+        # element disconnected are, by default assigned to first bus of their substation
+        el_disco = vl_df.loc[df.loc[mask_disco, vl_key]].index
+        tmp_bus_id.loc[mask_disco] = first_bus_per_vl.loc[el_disco, "first_bus_name"].values
+        
+    # assign bus id
     bus_id = bus_df.loc[tmp_bus_id.values]["bus_global_id"].values.copy()
-    
-    # deactivate the element not on the main component
-    # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
-    # mask_disco[wrong_component] = True
-    # assign bus -1 to disconnected elements
-    bus_id[mask_disco] = -1
+        
+    if mask_disco.any():
+        # deactivate the element not on the main component
+        # wrong_component = bus_df.loc[tmp_bus_id.values]["connected_component"].values != 0
+        # mask_disco[wrong_component] = True
+        # assign bus -1 to disconnected elements
+        bus_id[mask_disco] = -1
     
     sub_id = bus_df.loc[tmp_bus_id.values]["glop_sub_id"].values
     return bus_id, mask_disco.values, sub_id
