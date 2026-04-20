@@ -243,12 +243,12 @@ class TwoSidesContainer : public GenericContainer
                 int pos1 = side_1_.pos_topo_vect_(el_id);
                 int pos2 = side_2_.pos_topo_vect_(el_id);
                 if(has_changed(pos1)){
-                    resolve_status(el_id, true, solver_control);
-                    this->_update_effective_coeffs_one_el(el_id);
+                    bool real_change = resolve_status(el_id, true, solver_control);
+                    if(real_change) this->_update_effective_coeffs_one_el(el_id);
                 }
                 if(has_changed(pos2)){
-                    resolve_status(el_id, false, solver_control);
-                    this->_update_effective_coeffs_one_el(el_id);
+                    bool real_change = resolve_status(el_id, false, solver_control);
+                    if(real_change) this->_update_effective_coeffs_one_el(el_id);
                 }
             }
         }
@@ -256,17 +256,27 @@ class TwoSidesContainer : public GenericContainer
         // setter (states)
         // methods used within lightsim
         void deactivate(int el_id, SolverControl & solver_control) {
-            this->_deactivate(el_id, solver_control);
+            bool one_changed = false;
+            one_changed = side_1_.deactivate(el_id, solver_control) || one_changed;
+            one_changed = side_2_.deactivate(el_id, solver_control) || one_changed;
+            one_changed = this->_deactivate(el_id, solver_control) || one_changed;
             _generic_deactivate(el_id, status_global_);
-            side_1_.deactivate(el_id, solver_control);
-            side_2_.deactivate(el_id, solver_control);
             if(ignore_status_global_) status_global_[el_id] = true;
+            if(one_changed){
+                // update coefficient for Ybus
+                _update_effective_coeffs_one_el(el_id);
+            }
         }
         void reactivate(int el_id, SolverControl & solver_control) {
-            this->_reactivate(el_id, solver_control);
+            bool one_changed = false;
+            one_changed = side_1_.reactivate(el_id, solver_control) || one_changed;
+            one_changed = side_2_.reactivate(el_id, solver_control) || one_changed;
+            one_changed = this->_reactivate(el_id, solver_control) || one_changed;
             _generic_reactivate(el_id, status_global_);
-            side_1_.reactivate(el_id, solver_control);
-            side_2_.reactivate(el_id, solver_control);
+            if(one_changed){
+                // update coefficient for Ybus
+                _update_effective_coeffs_one_el(el_id);
+            }
         }
 
         void reset_results_tsc(){
@@ -281,9 +291,13 @@ class TwoSidesContainer : public GenericContainer
          */        
         void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
+            bool one_changed = side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
             this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation);
-            side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
-            resolve_status(el_id, true, solver_control);
+            one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            if(one_changed){
+                // update coefficient for Ybus
+                _update_effective_coeffs_one_el(el_id);
+            }
         }
         /**
          * Change the bus on "side 2" of the element el_id.
@@ -292,9 +306,13 @@ class TwoSidesContainer : public GenericContainer
          */  
         void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
+            bool one_changed = side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
             this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation);
-            side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
-            resolve_status(el_id, false, solver_control);
+            one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            if(one_changed){
+                // update coefficient for Ybus
+                _update_effective_coeffs_one_el(el_id);
+            }
         }
 
         typedef std::tuple<
@@ -356,26 +374,30 @@ class TwoSidesContainer : public GenericContainer
             if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
         }
 
-        void resolve_status(int el_id, bool side_1_modif, SolverControl & solver_control){
+        bool resolve_status(int el_id, bool side_1_modif, SolverControl & solver_control){
             OneSideType & side_modified = side_1_modif ? side_1_: side_2_;
             OneSideType & side_to_update = side_1_modif ? side_2_: side_1_;
+            bool res = false;
             if(synch_status_both_side_){
                 if(side_modified.get_status(el_id)){
                     // element has been reconnected
                     // I need to reconnect other side
-                    side_to_update.reactivate(el_id, solver_control);
+                    res = res || side_to_update.reactivate(el_id, solver_control);
                     status_global_[el_id] = true;
+                    res = true;
                 }else{
-                    side_to_update.deactivate(el_id, solver_control);
+                    res = res || side_to_update.deactivate(el_id, solver_control);
                     status_global_[el_id] = false;
                 }
             }
             if(ignore_status_global_) status_global_[el_id] = true;  // always true in this case
             else{
                 if(side_modified.get_status(el_id) == side_to_update.get_status(el_id)){
+                    res = res || (status_global_[el_id] != side_modified.get_status(el_id));
                     status_global_[el_id] = side_modified.get_status(el_id);
                 }
             }
+            return res;
         }
 
         // hook when disconnecting or changing the bus a given element
@@ -385,11 +407,15 @@ class TwoSidesContainer : public GenericContainer
             // nothing to do by default
         }
 
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
             // nothing to do by default: handled in derived class
+            if(status_global_[el_id]) return true;
+            return false;
         }
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
             // nothing to do by default: handled in derived class
+            if(!status_global_[el_id]) return true;
+            return false;
         }
 
         virtual void _change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {

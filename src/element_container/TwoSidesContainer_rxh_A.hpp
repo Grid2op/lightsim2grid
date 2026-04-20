@@ -785,39 +785,26 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             res_a_side_2_ = RealVect(nb());  // in kA
         }
 
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
             if(status_global_[el_id]){
-                // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
-
                 // update solver control
                 solver_control.tell_recompute_ybus();
                 // but sparsity pattern do not change here (possibly one more coeff at 0.)
                 solver_control.tell_ybus_some_coeffs_zero();
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                return true;
             }
+            return false;
         }
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
             if(!status_global_[el_id]){
-                // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
-
                 // update solver control
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_ybus_change_sparsity_pattern();  // this might change
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                return true;
             }
-        }
-
-
-        // status change hooks — keep yac_eff_* in sync after any topology mutation
-        virtual void _change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
-            // TODO speed optim actually only needed if the bus is being reconnected or disconnected
-            if((new_gridmodel_bus_id != side_1_.get_buses()[el_id])) _update_effective_coeffs_one_el(el_id);
-        }
-        virtual void _change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
-            // TODO speed optim actually only needed if the bus is being reconnected or disconnected
-            if((new_gridmodel_bus_id != side_2_.get_buses()[el_id])) _update_effective_coeffs_one_el(el_id);
+            return false;
         }
 
         virtual real_type fillBf_for_PTDF_coeff(int el_id) const{
@@ -904,6 +891,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
         }
 
+        /**
+         * This requires that status_global, status of side 1 and status of side 2 
+         * are set correctly
+         */
         virtual void _update_effective_coeffs_one_el(int el_id) {
             const bool s1 = side_1_.get_status(el_id);
             const bool s2 = side_2_.get_status(el_id);

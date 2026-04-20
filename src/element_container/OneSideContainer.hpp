@@ -204,13 +204,15 @@ class OneSideContainer : public GenericContainer
             }    
         }
 
-        void deactivate(int el_id, SolverControl & solver_control) {
-            this->_deactivate(el_id, solver_control);
+        bool deactivate(int el_id, SolverControl & solver_control) {
+            bool res = this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
+            return res;
         }
-        void reactivate(int el_id, SolverControl & solver_control) {
-            this->_reactivate(el_id, solver_control);
+        bool reactivate(int el_id, SolverControl & solver_control) {
+            bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
+            return res;
         }
 
         /**
@@ -219,13 +221,14 @@ class OneSideContainer : public GenericContainer
          * 
          * Not the "solver" bus, nor the "substation" / "local" bus.
          */
-        void change_bus(
+        bool change_bus(
             int load_id,
             GridModelBusId new_gridmodel_bus_id,
             SolverControl & solver_control,
             const SubstationContainer & substation){
-                this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
+                bool res = this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
                 _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
+                return res;
         }
 
         void compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -425,14 +428,20 @@ class OneSideContainer : public GenericContainer
                                       bool ac) {
                                         // nothing to do by default
                                       };
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
             // nothing do to by default
+            if(status_[el_id]) return true;
+            return false;
         };
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
             // nothing to do by default
+            if(!status_[el_id]) return false;
+            return true;
         };
-        virtual void _change_bus(int load_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
             // nothing to do by default
+            if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
+            return true;
         };
         virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {
             // nothing to do by default

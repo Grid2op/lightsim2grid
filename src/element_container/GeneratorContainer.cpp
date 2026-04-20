@@ -280,20 +280,22 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, 
     }
 }
 
-void GeneratorContainer::_deactivate(int el_id, SolverControl & solver_control) {
-    if(!status_[el_id]) return;  // nothing to do if it was already deactivated
+bool GeneratorContainer::_deactivate(int el_id, SolverControl & solver_control) {
+    if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
     solver_control.tell_recompute_sbus();
     if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
     if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
     if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+    return true;
 };
 
-void GeneratorContainer::_reactivate(int el_id, SolverControl & solver_control) {
-    if(status_[el_id]) return;  // nothing to do if gen already connected
+bool GeneratorContainer::_reactivate(int el_id, SolverControl & solver_control) {
+    if(status_[el_id]) return false;  // nothing to do if gen already connected
     solver_control.tell_recompute_sbus();
     if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
     if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
     if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+    return true;
 };
 
 void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
@@ -321,12 +323,13 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
     }
 }
 
-void GeneratorContainer::_change_bus(int el_id, GlobalBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
-    if(bus_id_(el_id) == new_bus_id) return;  // nothing to do if the bus did not changed
+bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+    if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
     solver_control.tell_recompute_sbus();
     solver_control.tell_one_el_changed_bus();
     if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
     if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+    return true;
 };
 
 void GeneratorContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
