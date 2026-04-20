@@ -265,13 +265,14 @@ class OneSideContainer : public GenericContainer
          * 
          * The bus labelling in "new_values" are local bus (between 1 and n_max_busbar_per_sub).
          */
-        void update_topo(
+        std::vector<bool> update_topo(
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             SolverControl & solver_control,
             SubstationContainer & substations
         )
         {
+            std::vector<bool> res(nb(), false);
             _check_pos_topo_vect_filled();
             for(int el_id = 0; el_id < nb(); ++el_id)
             {
@@ -303,16 +304,19 @@ class OneSideContainer : public GenericContainer
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
                     int sub_id = subid_(el_id);
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
-                    reactivate(el_id, solver_control); // eg reactivate_load(load_id);
-                    change_bus(el_id, new_bus_backend, solver_control, substations); // eg change_bus_load(load_id, new_bus_backend);
+                    bool change_effective = reactivate(el_id, solver_control); // eg reactivate_load(load_id);
+                    change_effective = change_bus(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
+                    if(change_effective) res[el_id] = true;
                 } else if (new_bus.cast_int() == _deactivated_bus_id){
                     // new bus is negative, we deactivate it
-                    deactivate(el_id, solver_control);// eg deactivate_load(load_id);
+                    bool change_effective = deactivate(el_id, solver_control);// eg deactivate_load(load_id);
                     // bus_status_ is set to "false" in GridModel.update_topo
                     // and a bus is activated if (and only if) one element is connected to it.
                     // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+                    if(change_effective) res[el_id] = true;
                 }
             }
+            return res;
         }
 
         typedef std::tuple<

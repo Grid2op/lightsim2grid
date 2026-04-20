@@ -233,8 +233,8 @@ class TwoSidesContainer : public GenericContainer
             side_1_._check_pos_topo_vect_filled();
             side_2_._check_pos_topo_vect_filled();
 
-            side_1_.update_topo(has_changed, new_values, solver_control, substations);
-            side_2_.update_topo(has_changed, new_values, solver_control, substations);
+            std::vector<bool> side1_changed = side_1_.update_topo(has_changed, new_values, solver_control, substations);
+            std::vector<bool> side2_changed = side_2_.update_topo(has_changed, new_values, solver_control, substations);
 
             // set the global status
             int nb_el = nb();
@@ -242,14 +242,14 @@ class TwoSidesContainer : public GenericContainer
             {
                 int pos1 = side_1_.pos_topo_vect_(el_id);
                 int pos2 = side_2_.pos_topo_vect_(el_id);
+                bool real_change = side1_changed[el_id] || side2_changed[el_id];
                 if(has_changed(pos1)){
-                    bool real_change = resolve_status(el_id, true, solver_control);
-                    if(real_change) this->_update_effective_coeffs_one_el(el_id);
+                    real_change = resolve_status(el_id, true, solver_control) || real_change;
                 }
                 if(has_changed(pos2)){
-                    bool real_change = resolve_status(el_id, false, solver_control);
-                    if(real_change) this->_update_effective_coeffs_one_el(el_id);
+                    real_change = resolve_status(el_id, false, solver_control) || real_change;
                 }
+                if(real_change) this->_update_effective_coeffs_one_el(el_id);
             }
         }
 
