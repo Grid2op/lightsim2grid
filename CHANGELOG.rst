@@ -42,9 +42,10 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] reduce code duplication between ContingencyAnalysis and TimeSerie (cpp side)
 - [IMPROVED] handling of branches disconnected at only one side: less code duplication and
   it should be working with TimeSeries and ContingencyAnalysis
+- [IMPROVED] speed (DC mode): avoid the systematic call to "refactor" when Ybus is not changed
+  when using DC approximation.
 
 TODO:
-- doesnt_need_refactor in DC PF when not needed (if matrix did not change)
 - consistency int / size_t in change_v_nothrow, change_bus etc (for element id)
 - re run the benchmarks
 

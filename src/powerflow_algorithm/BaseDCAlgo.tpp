@@ -32,7 +32,6 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         return false;
     }
     BaseAlgo::reset_timer();
-    bool has_just_been_factorized = false;
 
     auto timer = CustTimer();
     if(need_factorize_ ||
@@ -75,7 +74,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
-        has_just_been_factorized = false;  // force a call to "factor" the linear solver as the lhs (ybus) changed
+        need_factorize_ = true;  // force a call to "factor" the linear solver as the lhs (ybus) changed
         // no need to refactor if ybus did not change
     }
     
@@ -108,7 +107,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
             return false;
         }
         need_factorize_ = false;
-        has_just_been_factorized = true;
+        need_refactor_ = false;
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
@@ -119,7 +118,12 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (l1 norm): " << Va_dc_without_slack.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
-    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, has_just_been_factorized);
+    bool doesnt_need_refactor = true;
+    if(need_refactor_){
+        // I need to make a call to "refactor"
+        doesnt_need_refactor = false;
+    }
+    ErrorType error = _linear_solver.solve(dcYbus_noslack_, Va_dc_without_slack, doesnt_need_refactor);
     if(error != ErrorType::NoError){
         err_ = error;
         timer_total_nr_ += timer.duration();
@@ -171,6 +175,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
     V = V_;
+    need_refactor_ = false;  // powerflow is a success, no need to refactor it next time.
     
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;
@@ -224,6 +229,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
     BaseAlgo::reset();
     _linear_solver.reset();
     need_factorize_ = true;
+    need_refactor_ = true;
     sizeYbus_with_slack_ = 0;
     sizeYbus_without_slack_ = 0;
     dcSbus_noslack_ = RealVect();

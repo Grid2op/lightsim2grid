@@ -19,6 +19,7 @@ class BaseDCAlgo final: public BaseAlgo
             BaseAlgo(false),
             _linear_solver(),
             need_factorize_(true),
+            need_refactor_(true),
             timer_ptdf_(0.),
             timer_lodf_(0.),
             sizeYbus_with_slack_(0),
@@ -70,6 +71,9 @@ class BaseDCAlgo final: public BaseAlgo
             if(col_res == -1) return;
             real_type val = add ? std::real(coeff.value) : - std::real(coeff.value);
             dcYbus_noslack_.coeffRef(row_res, col_res) += val;
+
+            // need to refactor the linear solver (Ybus changed)
+            if(!add) need_refactor_ = true;
         }
 
     private:
@@ -90,6 +94,7 @@ class BaseDCAlgo final: public BaseAlgo
     protected:
         LinearSolver  _linear_solver;
         bool need_factorize_;
+        bool need_refactor_;
 
         double timer_ptdf_;
         double timer_lodf_;

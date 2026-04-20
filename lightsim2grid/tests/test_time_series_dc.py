@@ -49,9 +49,12 @@ class TestTSDC_14(unittest.TestCase):
         assert self.ts.computer.get_solver_type() == SolverType.SparseLUSingleSlack
         self.ts.clear()
         self.ts.computer.change_solver(SolverType.DC)
+        print("========================================")
+        print("HERE HERE HERE")
         res_p_dc, res_a_dc, res_v_dc  = self.ts.get_flows(scenario_id=self.scenario_id,
                                                           seed=self.seed,
                                                           v_init=V_init)
+        print("END=====================================")
         assert np.any(np.abs(res_p) > 1e-5), "all flows are 0. for time series in DC, this should not be the case"
         assert self.ts.computer.get_solver_type() == SolverType.DC
         assert (np.abs(res_p - res_p_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for p"

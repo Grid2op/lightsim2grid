@@ -137,11 +137,6 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         double preprocessing_time() const {return _timer_pre_proc;}
         double modif_Ybus_time() const {return _timer_modif_Ybus;}
 
-        virtual void change_solver(const SolverType & type){
-            BaseBatchSolverSynch::change_solver(type);
-            // init_li_coeffs(_solver.ac_solver_used());
-        }
-
     protected:
         // prevent the insertion of "out of range" elements
         void check_ok_el(size_t el){
