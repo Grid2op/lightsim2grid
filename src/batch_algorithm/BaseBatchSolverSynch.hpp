@@ -28,6 +28,8 @@ class BaseBatchSolverSynch : protected BaseConstants
         
         explicit BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
             _init_from_n_powerflow(false),
+            _timer_total(0.),
+            _timer_pre_proc(0.),
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -264,8 +266,75 @@ class BaseBatchSolverSynch : protected BaseConstants
             return res;
         }
 
+        size_t _reset_data_and_check_vinit(const CplxVect & Vinit){
+            const size_t nb_total_bus = _grid_model.total_bus();
+            if(Vinit.size() != nb_total_bus){
+                std::ostringstream exc_;
+                exc_ << "TimeSeries::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+                exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_total_bus << " buses.";
+                exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
+                throw std::runtime_error(exc_.str());
+            }
+
+            // reset timers
+            _nb_solved = 0;
+            _timer_pre_proc = 0.;
+            _timer_total = 0.;
+            _timer_solver = 0.;
+            return nb_total_bus;
+        }
+
+        bool _finish_preprocessing(
+            size_t nb_steps,
+            size_t nb_total_bus,
+            CplxVect & Vinit_solver,  // is modified if _init_from_n_powerflow is true !
+            size_t max_iter,
+            real_type tol,
+            CustTimer  & timer_preproc  // non const because double duration() is not const
+        ){
+
+                // init the results matrices
+                _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
+                _amps_flows = RealMat::Zero(0, n_total_);
+                _active_power_flows = RealMat::Zero(0, n_total_);
+
+                // reset the solver
+                _solver.reset();
+
+                // perform the initial powerflow / "powerflow in n"
+                // (needed to init the underlying solver with the correct sparsity pattern in particular)
+                _solver_control.tell_all_changed();
+                _solver.tell_solver_control(_solver_control);
+                _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
+                CplxVect Vinit_solver2 = Vinit_solver;
+                bool conv = _solver.compute_pf(
+                    Ybus_,
+                    Vinit_solver2,
+                    Sbus_,
+                    slack_ids_me_.as_eigen(),
+                    slack_weights_,
+                    bus_pv_.as_eigen(),
+                    bus_pq_.as_eigen(),
+                    max_iter,
+                    tol);
+
+                // check if we init the n-1 cases with results from the n cases
+                // or not
+                if(_init_from_n_powerflow) Vinit_solver = _solver.get_V();
+
+                // everything init from n-case above
+                _solver_control.tell_none_changed();
+                
+                // end of pre processing
+                _timer_pre_proc = timer_preproc.duration();
+                return conv;
+        }
+
     protected:
         bool _init_from_n_powerflow;
+        //timers
+        double _timer_total;
+        double _timer_pre_proc;
 
         // inputs
         GridModel _grid_model;

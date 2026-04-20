@@ -23,9 +23,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),
-                            _timer_total(0.),
-                            _timer_modif_Ybus(0.),
-                            _timer_pre_proc(0.)
+                            _timer_modif_Ybus(0.)
                             { }
 
         ~ContingencyAnalysis() noexcept = default;
@@ -180,8 +178,6 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         std::vector<std::vector<Coeff> > _li_coeffs;  // for each n-k, stores the coefficients I need to modify in the Ybus
 
         //timers
-        double _timer_total;  // total time spent in "compute"
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation
-        double _timer_pre_proc;  // time to compute the coefficients of the Ybus
 };
 #endif  //COMPUTERS_H

@@ -22,9 +22,7 @@ class TimeSeries final: public BaseBatchSolverSynch
             BaseBatchSolverSynch(init_grid_model),
             _Sbuses(),
             _status(1), // 1: success, 0: failure
-            _compute_flows(true),
-            _timer_total(0.) ,
-            _timer_pre_proc(0.)
+            _compute_flows(true)
             {}
         ~TimeSeries() noexcept = default;
 
@@ -162,8 +160,5 @@ class TimeSeries final: public BaseBatchSolverSynch
         // parameters
         bool _compute_flows;
 
-        //timers
-        double _timer_total;
-        double _timer_pre_proc;
 };
 #endif  //COMPUTERS_H

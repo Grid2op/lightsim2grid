@@ -22,21 +22,9 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     auto timer = CustTimer();
     auto timer_preproc = CustTimer();
 
-    const size_t nb_total_bus = _grid_model.total_bus();
-    if(Vinit.size() != nb_total_bus){
-        std::ostringstream exc_;
-        exc_ << "TimeSeries::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
-        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_total_bus << " buses.";
-        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
-        throw std::runtime_error(exc_.str());
-    }
-
-    // reset timers
+    // perform some initial checks and reset timers
+    size_t nb_total_bus = _reset_data_and_check_vinit(Vinit);
     _status = 0;
-    _nb_solved = 0;
-    _timer_pre_proc = 0.;
-    _timer_total = 0.;
-    _timer_solver = 0.;
 
     // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
@@ -66,50 +54,28 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     // TODO trafo hack for Sbus !
     //////////////////////////////////////////
 
-    // init the results matrices
-    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
-    _amps_flows = RealMat::Zero(0, n_total_);
-    _active_power_flows = RealMat::Zero(0, n_total_);
-
-    // reset the solver
-    _solver.reset();
-
-    // perform the initial powerflow / "powerflow in n"
-    // (needed to init the underlying solver with the correct sparsity pattern in particular)
-    _solver_control.tell_all_changed();
-    _solver.tell_solver_control(_solver_control);
-    _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
-    CplxVect Vinit_solver2 = Vinit_solver;
-    bool conv = _solver.compute_pf(
-        Ybus_,
-        Vinit_solver2,
-        Sbus_,
-        slack_ids_me_.as_eigen(),
-        slack_weights_,
-        bus_pv_.as_eigen(),
-        bus_pq_.as_eigen(),
+    bool init_powerflow_has_conv = _finish_preprocessing(
+        nb_steps,
+        nb_total_bus,
+        Vinit_solver,  // is modified if _init_from_n_powerflow is true
         max_iter,
-        tol);
+        tol,
+        timer_preproc
+    );
 
-    // check if we init the n-1 cases with results from the n cases
-    // or not
-    if(_init_from_n_powerflow) Vinit_solver = _solver.get_V();
-
-    // end of the pre processing steps
-    _timer_pre_proc = timer_preproc.duration();
-    if(!conv) return -1;
-
-    // everything init from n-case above
-    _solver_control.tell_none_changed();
+    if(!init_powerflow_has_conv){
+        _status = 0;
+        return -1;
+    }
 
     // compute the powerflows
-    // set the "right" init vector
+    // set the "right" init vector (either the one provided by the user or the one
+    // after the initial powerflow)
     CplxVect V = Vinit_solver;
 
     int step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
-    // do the computation for each step
-    _solver_control.tell_all_changed();  // recompute everything at the first iteration
+    bool conv;
     for(size_t i = 0; i < nb_steps; ++i){
         conv = false;
         conv = compute_one_powerflow(Ybus_,
