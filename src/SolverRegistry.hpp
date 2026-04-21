@@ -39,7 +39,7 @@ private:
 // Helper for plugins: declare a static instance of this class in an anonymous
 // namespace inside one translation unit to register a solver at load time.
 // No macro needed — the static constructor fires when the .so is dlopen'd.
-class SolverRegistrar {
+class LS2G_API SolverRegistrar {
 public:
     SolverRegistrar(const std::string& name, SolverRegistry::Factory f) {
         SolverRegistry::instance().register_solver(name, std::move(f));

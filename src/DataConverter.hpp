@@ -24,7 +24,7 @@ This class and all that are in there are provided as examples.
 It allows conversion of "higher level" data, such as pandapower into a format that can be
 digested by DataModel further used to compute powerflows thanks to KLUSolver.
 **/
-class PandaPowerConverter final : public BaseConstants
+class LS2G_API PandaPowerConverter final : public BaseConstants
 {
 
     public:

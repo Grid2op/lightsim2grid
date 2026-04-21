@@ -207,8 +207,9 @@ class BaseNRAlgo : public BaseAlgo
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
             // TODO if bug when using it, check the "pvpq" below, 
             // in theory its "pv" !
-            size_t slack_bus_id = extract_slack_bus_id(pvpq, pq, static_cast<unsigned int>(V.size()));
-            fill_jacobian_matrix(Ybus, V, static_cast<size_t>(slack_bus_id),
+            const auto slack_ids_vec = extract_slack_bus_id(pvpq, pq, static_cast<unsigned int>(V.size()));
+            const size_t slack_bus_id = static_cast<size_t>(slack_ids_vec(0));
+            fill_jacobian_matrix(Ybus, V, slack_bus_id,
                                  slack_weights, pq, pvpq, pq_inv, pvpq_inv);
             return J_;
         }

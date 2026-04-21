@@ -26,7 +26,7 @@ namespace ls2g {
 /**
 Base class for every object that can be manipulated
 **/
-class GenericContainer : public BaseConstants
+class LS2G_API GenericContainer : public BaseConstants
 {
     public:
 

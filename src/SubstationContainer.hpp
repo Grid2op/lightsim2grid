@@ -44,7 +44,7 @@ class SubstationInfo
         inline SubstationInfo(const SubstationContainer & r_data, int my_id);
 };
 
-class SubstationContainer final : public IteratorAdder<SubstationContainer, SubstationInfo>
+class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContainer, SubstationInfo>
 {
     friend class SubstationInfo;
 

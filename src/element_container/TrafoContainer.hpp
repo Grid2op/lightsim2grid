@@ -45,7 +45,7 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 **/
-class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
+class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
 {
     //////////////////////////////
     // access data from base class

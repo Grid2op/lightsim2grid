@@ -34,7 +34,7 @@ class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::Two
 This class is a container for all the powerlines on the grid.
 
 **/
-class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<LineContainer, LineInfo>
+class LS2G_API LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<LineContainer, LineInfo>
 {
     friend class LineInfo;
     public:

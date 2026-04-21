@@ -42,7 +42,7 @@ class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
 };
 
 
-class DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, public IteratorAdder<DCLineContainer, DCLineInfo>
+class LS2G_API DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, public IteratorAdder<DCLineContainer, DCLineInfo>
 {
     friend class DCLineInfo;
 

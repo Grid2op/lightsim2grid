@@ -34,7 +34,7 @@ enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
 
 std::ostream& operator<<(std::ostream& out, const SolverType& solver_type);
 
-class ChooseSolver final
+class LS2G_API ChooseSolver final
 {
     public:
         // Default-constructs a SparseLU solver via the registry.
