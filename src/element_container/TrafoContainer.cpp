@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 
+namespace ls2g {
+
 void TrafoContainer::init(
     const RealVect & trafo_r,
     const RealVect & trafo_x,
@@ -260,3 +262,5 @@ TrafoContainer::FDPFCoeffs TrafoContainer::get_fdpf_coeffs(int tr_id, FDPFMethod
     res.yft_bpp = -ys_bpp_r / tau_bpp;
     return res;
 }
+
+} // namespace ls2g

@@ -11,6 +11,8 @@
 
 #include "Utils.hpp"
 
+namespace ls2g {
+
 /**
 Definition of some basic constants, because sometimes Eigen cannot deduce types.
 Eg if I type "1.0" then Eigen cast it to "double" and i cannot use it with real_type = float for example
@@ -35,5 +37,8 @@ class BaseConstants
 enum class FDPFMethod {XB, BX};  // Different type of FDPF powerflow
 // FDPFMethod::XB => alg = 2 in pypower / pandapower
 // FDPFMethod::BX => alg = 3 in pypower / pandapower
+
+
+} // namespace ls2g
 
 #endif // BASECONSTANTS_H

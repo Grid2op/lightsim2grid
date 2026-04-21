@@ -18,6 +18,8 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+namespace ls2g {
+
 
 class LoadContainer;
 class LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
@@ -91,5 +93,8 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
 
 inline LoadInfo::LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept: 
         OneSidePQInfo(r_data_load, my_id) {}
+
+
+} // namespace ls2g
 
 #endif  //LOAD_CONTAINER_H

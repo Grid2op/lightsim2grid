@@ -21,6 +21,8 @@
 // import nicslu package
 #include "nicslu_cpp.inl"
 
+namespace ls2g {
+
 /**
 class to handle the solver using newton-raphson method, using NICSLU algorithm and sparse matrices.
 
@@ -96,4 +98,7 @@ class NICSLULinearSolver final
 };
 
 #endif // NICSLUSOLVER_H
+
+} // namespace ls2g
+
 #endif  // NICSLU_SOLVER_AVAILABLE

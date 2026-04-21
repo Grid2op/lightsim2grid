@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 
+namespace ls2g {
+
 const int GenericContainer::_deactivated_bus_id = BaseConstants::_deactivated_bus_id;
 
 // TODO all functions bellow are generic ! Make a base class for that
@@ -181,3 +183,5 @@ void GenericContainer::v_deg_from_va(const Eigen::Ref<const RealVect> & Va,
         theta(el_id) = Va(bus_solver_id.cast_int()) * my_180_pi_;
     }
 }
+
+} // namespace ls2g

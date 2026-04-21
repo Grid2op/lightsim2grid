@@ -21,6 +21,8 @@
 #include "TwoSidesContainer.hpp"
 #include "GeneratorContainer.hpp"
 
+namespace ls2g {
+
 
 class DCLineContainer;
 class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
@@ -233,5 +235,8 @@ inline DCLineInfo::DCLineInfo(const DCLineContainer & r_data_dcline, int my_id) 
     target_vm_1_pu = gen_side_1.target_vm_pu;
     target_vm_2_pu = gen_side_2.target_vm_pu;
 }
+
+
+} // namespace ls2g
 
 #endif  //DCLINECONTAINER_H

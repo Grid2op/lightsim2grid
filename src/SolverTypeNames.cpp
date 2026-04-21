@@ -10,6 +10,8 @@
 #include "SolverTypeNames.hpp"
 #include <stdexcept>
 
+namespace ls2g {
+
 std::string solver_type_to_name(SolverType t) {
     switch (t) {
         case SolverType::SparseLU:          return "SparseLU";
@@ -81,3 +83,5 @@ SolverType name_to_solver_type(const std::string& name) {
     // Unknown names are plugin / external solvers
     return SolverType::Custom;
 }
+
+} // namespace ls2g

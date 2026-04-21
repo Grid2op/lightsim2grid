@@ -18,6 +18,8 @@
 
 #include "powerflow_algorithm/BaseAlgo.hpp"
 
+namespace ls2g {
+
 class LS2G_API SolverRegistry {
 public:
     typedef std::function<std::unique_ptr<BaseAlgo>()> Factory;
@@ -43,5 +45,8 @@ public:
         SolverRegistry::instance().register_solver(name, std::move(f));
     }
 };
+
+
+} // namespace ls2g
 
 #endif // SOLVER_REGISTRY_H

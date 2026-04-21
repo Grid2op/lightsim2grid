@@ -11,6 +11,8 @@
 
 #include "BaseNRAlgo.hpp"
 
+namespace ls2g {
+
 /**
 Base class for Newton Raphson based solver (only interesting for single slack)
 **/
@@ -64,5 +66,8 @@ class BaseNRSingleSlackAlgo final : public BaseNRAlgo<LinearSolver>
 };
 
 #include "BaseNRSingleSlackAlgo.tpp"
+
+
+} // namespace ls2g
 
 #endif // BASE_NR_SINGLESLACK_ALGO_H

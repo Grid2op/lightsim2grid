@@ -11,6 +11,8 @@
 
 #include "GridModel.hpp"
 
+namespace ls2g {
+
 /**
 This is a utility class, used for TimeSeries and SecurityAnalysis that abstract some computations when
 the same solver is re used multiple times.
@@ -374,5 +376,8 @@ class BaseBatchSolverSynch : protected BaseConstants
         RealVect slack_weights_;
 
 };
+
+
+} // namespace ls2g
 
 #endif // BASEMULTIPLEPOWERFLOW_H

@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 
+namespace ls2g {
+
 DCLineContainer::StateRes DCLineContainer::get_state() const
 {
     std::vector<real_type> loss_percent(loss_percent_.begin(), loss_percent_.end());
@@ -53,3 +55,5 @@ void DCLineContainer::init(const Eigen::VectorXi & branch_from_id,
     }
     side_2_.init(p_ex, vm_ex_pu, min_q_ex, max_q_ex, branch_to_id);
 }
+
+} // namespace ls2g

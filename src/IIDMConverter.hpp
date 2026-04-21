@@ -18,6 +18,8 @@
 #include "powsybl/PowsyblException.hpp"
 #include "powsybl/iidm/Network.hpp"
 
+namespace ls2g {
+
 /**
 Supposes that, at the init of the file, every element on the same substation is connected on the same busbar !
 **/
@@ -42,4 +44,7 @@ class GridModelFromIIDM
 };
 
 #endif  // IIDMCONVERTER_H
+
+} // namespace ls2g
+
 #endif // IIDM_CONVERTER_AVAILABLE

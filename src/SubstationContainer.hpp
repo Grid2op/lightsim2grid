@@ -28,6 +28,8 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+namespace ls2g {
+
 
 class SubstationContainer;
 
@@ -240,5 +242,8 @@ inline SubstationInfo::SubstationInfo(const SubstationContainer & r_data, int my
     nb_max_busbars = r_data.nmax_busbar_per_sub_;
     vn_kv = r_data.bus_vn_kv_[my_id];
 }
+
+
+} // namespace ls2g
 
 #endif // SUBSTATIONCONTAINER_H

@@ -46,6 +46,8 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+namespace ls2g {
+
 class GridModel;
 
 typedef std::tuple<double, double, double, double,
@@ -286,5 +288,8 @@ class LS2G_API BaseAlgo : public BaseConstants
         SolverControl _solver_control;
 
 };
+
+
+} // namespace ls2g
 
 #endif // BASEALGO_H

@@ -19,6 +19,8 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+namespace ls2g {
+
 /**
 class to handle the solver using newton-raphson method, using a "SparseLU" algorithm from Eigen
 and sparse matrices.
@@ -55,5 +57,8 @@ class SparseLULinearSolver final
         SparseLULinearSolver & operator=(SparseLULinearSolver&&) = delete;
         SparseLULinearSolver & operator=(const SparseLULinearSolver&) = delete;
 };
+
+
+} // namespace ls2g
 
 #endif // SPARSELUSOLVER_H

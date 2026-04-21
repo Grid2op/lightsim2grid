@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 const bool KLULinearSolver::CAN_SOLVE_MAT = false;
 
 ErrorType KLULinearSolver::reset(){
@@ -67,3 +69,5 @@ ErrorType KLULinearSolver::solve(RealVect & b){
     }
     return ErrorType::NoError;
 }
+
+} // namespace ls2g

@@ -19,6 +19,8 @@
 // Registry for solver creation by name
 #include "SolverRegistry.hpp"
 
+namespace ls2g {
+
 enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
                        SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack,
                        KLUDC, NICSLUDC,
@@ -257,5 +259,8 @@ class ChooseSolver final
         SolverType _type_used_for_nr;
         const GridModel* _gridmodel_ptr;
 };
+
+
+} // namespace ls2g
 
 #endif  // CHOOSESOLVER_H

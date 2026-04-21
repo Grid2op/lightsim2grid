@@ -11,6 +11,8 @@
 
 #include <string>
 
+namespace ls2g {
+
 // Forward-declare to avoid including ChooseSolver.hpp here.
 // SolverType is defined in ChooseSolver.hpp; callers must include it first.
 enum class SolverType;
@@ -22,5 +24,8 @@ std::string solver_type_to_name(SolverType t);
 // Returns the SolverType for a known registry name.
 // Returns SolverType::Custom for names not in the known enum set.
 SolverType name_to_solver_type(const std::string& name);
+
+
+} // namespace ls2g
 
 #endif // SOLVER_TYPE_NAMES_H

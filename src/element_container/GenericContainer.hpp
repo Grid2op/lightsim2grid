@@ -21,6 +21,8 @@
 #include "Container_IteratorUtils.hpp"
 #include "SubstationContainer.hpp"
 
+namespace ls2g {
+
 /**
 Base class for every object that can be manipulated
 **/
@@ -211,5 +213,7 @@ class GenericContainer : public BaseConstants
                            RealVect & v) const;
 };
 
-#endif // GENERIC_CONTAINER_H
 
+} // namespace ls2g
+
+#endif // GENERIC_CONTAINER_H

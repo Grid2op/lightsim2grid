@@ -16,6 +16,8 @@
 #include "Eigen/Core"
 #include "Eigen/Dense"
 
+namespace ls2g {
+
 /**
 This class and all that are in there are provided as examples.
 
@@ -106,5 +108,8 @@ class PandaPowerConverter final : public BaseConstants
 };
 
 // TODO have a converter from ppc !
+
+
+} // namespace ls2g
 
 #endif // DATACONVERTER_H

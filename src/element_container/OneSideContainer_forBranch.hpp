@@ -18,6 +18,8 @@
 #include "Utils.hpp"
 #include "OneSideContainer.hpp"
 
+namespace ls2g {
+
 
 /**
  * This class represents a "one side container". It handles "properly"
@@ -164,5 +166,8 @@ class OneSideContainer_ForBranch : public OneSideContainer
         // input data
 
 };
+
+
+} // namespace ls2g
 
 #endif  //ONE_SIDE_CONTAINER_FORBRANCH_H

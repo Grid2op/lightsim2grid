@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 void SGenContainer::init(const RealVect & sgen_p,
                          const RealVect & sgen_q,
                          const RealVect & sgen_pmin,
@@ -94,3 +96,5 @@ void SGenContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to
         Sbus.coeffRef(bus_id_solver.cast_int()) += tmp;
     }
 }
+
+} // namespace ls2g

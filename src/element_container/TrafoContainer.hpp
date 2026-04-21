@@ -20,6 +20,8 @@
 #include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
+namespace ls2g {
+
 class TrafoContainer;
 class TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
 {
@@ -230,5 +232,8 @@ is_tap_side1(true)
     ratio = r_data_trafo.ratio_.coeff(my_id);
     shift_rad = r_data_trafo.shift_.coeff(my_id);
 }
+
+
+} // namespace ls2g
 
 #endif  //TRAFO_CONTAINER_H

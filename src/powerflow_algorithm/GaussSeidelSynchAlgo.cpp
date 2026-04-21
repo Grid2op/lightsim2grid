@@ -8,6 +8,8 @@
 
 #include "GaussSeidelSynchAlgo.hpp"
 
+namespace ls2g {
+
 void GaussSeidelSynchAlgo::one_iter(CplxVect & tmp_Sbus,
                                       const Eigen::SparseMatrix<cplx_type> & Ybus,
                                       const Eigen::VectorXi & pv,
@@ -56,3 +58,5 @@ void GaussSeidelSynchAlgo::one_iter(CplxVect & tmp_Sbus,
         V_.coeffRef(k) *= Vm_.coeff(k) / std::abs(V_.coeff(k));
     }
 }
+
+} // namespace ls2g

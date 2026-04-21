@@ -17,6 +17,8 @@
 #include "powsybl/iidm/Branch.hpp"
 #include "powsybl/iidm/TwoWindingsTransformer.hpp"
 
+namespace ls2g {
+
 GridModel GridModelFromIIDM::get_grid_model() const {
     GridModel res;
 
@@ -155,3 +157,5 @@ void GridModelFromIIDM::init_trafos(GridModel & grid_model,
     grid_model.init_trafo(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
                           trafo_tap_hv, trafo_hv_id, trafo_lv_id);
 }
+
+} // namespace ls2g

@@ -11,6 +11,8 @@
 
 #include "GaussSeidelAlgo.hpp"
 
+namespace ls2g {
+
 /**
 The gauss seidel method, where all the updates are happening in a synchronous way, instead of
 in a asynchronous way (like for standard gauss seidel)
@@ -37,5 +39,8 @@ class GaussSeidelSynchAlgo final: public GaussSeidelAlgo
         GaussSeidelSynchAlgo & operator=(const GaussSeidelSynchAlgo&) = delete;
 
 };
+
+
+} // namespace ls2g
 
 #endif // GAUSSSEIDELSYNCH_ALGO_H

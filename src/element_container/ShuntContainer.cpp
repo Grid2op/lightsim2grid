@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 ShuntContainer::StateRes ShuntContainer::get_state() const
 {
      ShuntContainer::StateRes res(get_osc_pq_state());
@@ -164,3 +166,5 @@ void ShuntContainer::_compute_results(const Eigen::Ref<const RealVect> & Va,
         else res_q_(shunt_id) = my_zero_;
     }
 }
+
+} // namespace ls2g

@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 
+namespace ls2g {
+
 int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                            Eigen::Ref<const RealMat> sgen_p,
                            Eigen::Ref<const RealMat> load_p,
@@ -107,3 +109,5 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     _timer_total = timer.duration();
     return _status;
 }
+
+} // namespace ls2g

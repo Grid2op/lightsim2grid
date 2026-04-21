@@ -11,6 +11,8 @@
 #include <queue>
 #include <math.h>       /* isfinite */
 
+namespace ls2g {
+
 bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
     std::vector<bool> visited(Ybus.cols(), false); 
     std::vector<bool> already_added(Ybus.cols(), false);
@@ -248,3 +250,5 @@ void ContingencyAnalysis::clean_flows(bool is_amps)
     if (is_amps) _timer_compute_A += timer.duration();
     else _timer_compute_P += timer.duration();
 }
+
+} // namespace ls2g

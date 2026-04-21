@@ -40,6 +40,8 @@
 // import newton raphson solvers using different linear algebra solvers
 #include "ChooseSolver.hpp"
 
+namespace ls2g {
+
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
 class GridModel final
 {
@@ -1632,5 +1634,8 @@ class GridModel final
         ChooseSolver _solver;
         ChooseSolver _dc_solver;
 };
+
+
+} // namespace ls2g
 
 #endif  //GRIDMODEL_H

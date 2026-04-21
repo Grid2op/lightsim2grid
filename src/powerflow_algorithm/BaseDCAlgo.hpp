@@ -11,6 +11,8 @@
 
 #include "BaseAlgo.hpp"
 
+namespace ls2g {
+
 template<class LinearSolver>
 class BaseDCAlgo final: public BaseAlgo
 {
@@ -132,5 +134,8 @@ class BaseDCAlgo final: public BaseAlgo
 };
 
 #include "BaseDCAlgo.tpp"
+
+
+} // namespace ls2g
 
 #endif // BASE_DC_ALGO_H

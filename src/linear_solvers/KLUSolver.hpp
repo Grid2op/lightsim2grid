@@ -19,6 +19,8 @@
 #include "Eigen/Dense"
 #include "Eigen/SparseCore"
 
+namespace ls2g {
+
 // import klu package
 extern "C" {
     #include "cs.h"
@@ -84,4 +86,7 @@ class KLULinearSolver final
 };
 
 #endif // KLSOLVER_H
+
+} // namespace ls2g
+
 #endif // KLU_SOLVER_AVAILABLE
