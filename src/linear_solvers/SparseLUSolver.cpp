@@ -23,28 +23,17 @@ ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> 
     return res;
 }
 
-ErrorType SparseLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
-    // solves (for x) the linear system J.x = b
-    // supposes that the solver has been initialized (call sparselu_solver.analyzePattern() before calling that)
+ErrorType SparseLULinearSolver::refactor(const Eigen::SparseMatrix<real_type> & J){
+    solver_.factorize(J);
+    if(solver_.info() != Eigen::Success) return ErrorType::SolverFactor;
+    return ErrorType::NoError;
+}
+
+ErrorType SparseLULinearSolver::solve(RealVect & b){
     ErrorType err = ErrorType::NoError;
-    bool stop = false;
-    if(!doesnt_need_refactor){
-        // if the call to "solver_.factorize" has been made this iteration, there is no need
-        // to re factor again the matrix
-        // i'm in the case where it has not
-        solver_.factorize(J);
-        if (solver_.info() != Eigen::Success) {
-            err = ErrorType::SolverFactor;
-            stop = true;
-        }
-    }
-    if(!stop){
-        RealVect Va = solver_.solve(b);
-        // std::cout << "\t\tSparseLUSolver.cpp: solver_.info: " << solver_.info() << std::endl;  // TODO DEBUG WINDOWS
-        if (solver_.info() != Eigen::Success) {
-            err = ErrorType::SolverSolve;
-        }
-        b = Va;
-    }
+    RealVect Va = solver_.solve(b);
+    // std::cout << "\t\tSparseLUSolver.cpp: solver_.info: " << solver_.info() << std::endl;  // TODO DEBUG WINDOWS
+    if(solver_.info() != Eigen::Success) err = ErrorType::SolverSolve;
+    b = Va;
     return err;
 }

@@ -20,34 +20,26 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                            const real_type tol)
 {
     auto timer = CustTimer();
-    const Eigen::Index nb_total_bus = _grid_model.total_bus();
-    if(Vinit.size() != nb_total_bus){
-        std::ostringstream exc_;
-        exc_ << "TimeSeries::compute_Sbuses: Size of the Vinit should be the same as the total number of buses. Currently:  ";
-        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_total_bus << " buses.";
-        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
-        throw std::runtime_error(exc_.str());
-    }
-
-    // init everything
-    _status = 0;
-    _nb_solved = 0;
-    _timer_pre_proc = 0.;
-    _timer_total = 0.;
-    _timer_solver = 0.;
-
     auto timer_preproc = CustTimer();
 
-    // init the computations
+    // perform some initial checks and reset timers
+    size_t nb_total_bus = _reset_data_and_check_vinit(Vinit);
+    _status = 0;
+
+    // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
+    size_t nb_steps = gen_p.rows();
+
+    // prepare the gridmodel (compute Ybus, Sbus etc.)
     CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);   
 
+    ///////////////////////////////////////////
+    // initialize what will change (here Sbus)
     // retrieve necessary data
     const auto & generators = _grid_model.get_generators_as_data();
     const auto & s_generators = _grid_model.get_static_generators_as_data();
     const auto & loads = _grid_model.get_loads_as_data();
-    const Eigen::Index nb_steps = gen_p.rows();
 
     // now build the Sbus
     _Sbuses = CplxMat::Zero(nb_steps, nb_buses_solver_);
@@ -60,33 +52,40 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver_, add_);
     if(abs(sn_mva - 1.0) > _tol_equal_float) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
     // TODO trafo hack for Sbus !
+    //////////////////////////////////////////
 
-    // init the results matrices
-    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
-    _amps_flows = RealMat::Zero(0, n_total_);
+    bool init_powerflow_has_conv = _finish_preprocessing(
+        nb_steps,
+        nb_total_bus,
+        Vinit_solver,  // is modified if _init_from_n_powerflow is true
+        max_iter,
+        tol,
+        timer_preproc
+    );
 
-    // end of the pre processing steps
-    _timer_pre_proc = timer_preproc.duration();
+    if(!init_powerflow_has_conv){
+        _status = 0;
+        return -1;
+    }
 
     // compute the powerflows
-    // set the "right" init vector
+    // set the "right" init vector (either the one provided by the user or the one
+    // after the initial powerflow)
     CplxVect V = Vinit_solver;
-    _grid_model.get_generators().set_vm(V, id_me_to_solver_);
 
-    Eigen::Index step_diverge = -1;
+    int step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
     bool conv;
-    // do the computation for each step
-    _solver_control.tell_all_changed();  // recompute everything at the first iteration
-    for(Eigen::Index i = 0; i < nb_steps; ++i){
+    if(!ac_solver_used) _solver_control.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
+    for(size_t i = 0; i < nb_steps; ++i){
         conv = false;
         conv = compute_one_powerflow(Ybus_,
                                      V, 
                                      _Sbuses.row(i),
-                                     slack_ids_,
+                                     slack_ids_me_.as_eigen(),
                                      slack_weights_,
-                                     bus_pv_,
-                                     bus_pq_,
+                                     bus_pv_.as_eigen(),
+                                     bus_pq_.as_eigen(),
                                      max_iter,
                                      tol_);
         // nothing changes
@@ -98,7 +97,9 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
             _status = 0;
             return _status;
         }
-        if(conv && step_diverge < 0) _voltages.row(i)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
+        if(conv && step_diverge < 0) {
+            _voltages.row(i)(id_solver_to_me_.as_eigen()) = V.array();
+        }
     }
 
     // If i reached there, it means it is succesfull

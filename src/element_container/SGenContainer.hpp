@@ -78,14 +78,14 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
                   const Eigen::VectorXi & sgen_bus_id
                   );
               
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const ;
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const ;
 
     protected:
         virtual void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
-            const std::vector<SolverBusId> & id_grid_to_solver,
+            const SolverBusIdVect & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
             bool ac)

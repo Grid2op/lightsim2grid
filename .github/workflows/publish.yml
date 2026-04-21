@@ -1,0 +1,131 @@
+name: Publish to PyPI
+
+# Triggered when you click "Publish release" in the GitHub UI on a
+# draft release that points to a v*.*.* tag. The wheels were already
+# built and validated by main.yml when the tag was pushed.
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    # Only run on releases that point to a version tag.
+    # A release on a non-version tag (e.g. a "latest" pointer) is ignored.
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/lightsim2grid
+
+    permissions:
+      id-token: write   # required for OIDC trusted publishing
+      actions: read     # required to download artifacts from main.yml
+
+    steps:
+      # Checkout is needed to read setup.py for the version consistency check.
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      # ── GUARD 1: version in setup.py must match the release tag ──────────
+      - name: Check version consistency (tag vs setup.py)
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          SETUP_VERSION=$(python3 - <<'EOF'
+          import re, sys
+          content = open("setup.py").read()
+          m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']',
+                        content, re.MULTILINE)
+          if not m:
+              print("ERROR: __version__ not found in setup.py", file=sys.stderr)
+              sys.exit(1)
+          print(m.group(1))
+          EOF
+          )
+          EXPECTED_TAG="v${SETUP_VERSION}"
+          echo "Git tag              : ${TAG}"
+          echo "setup.py __version__ : ${SETUP_VERSION}"
+          echo "Expected tag         : ${EXPECTED_TAG}"
+          if [ "${TAG}" != "${EXPECTED_TAG}" ]; then
+            echo "::error::Tag '${TAG}' does not match __version__ = \
+          '${SETUP_VERSION}' in setup.py. Did you forget to bump the version \
+          before tagging?"
+            exit 1
+          fi
+          echo "✓ Tag matches setup.py version."
+
+      # ── Wait for CircleCI to be green on this commit ─────────────────────
+      # Pinned to a full commit SHA to prevent supply-chain attacks via tag
+      # mutation. Check https://github.com/lewagon/wait-on-check-action for
+      # the latest SHA if you need to upgrade.
+      - name: Wait for CircleCI checks to pass
+        uses: lewagon/wait-on-check-action@2e90808f0512b6a04f8eb50e3fcbf6e9d7a4d79c
+        with:
+          ref: ${{ github.sha }}
+          check-regexp: 'ci/circleci:.*'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          allowed-conclusions: success
+
+      # ── Download pre-built wheels from the main.yml run ──────────────────
+      # The artifact was created (and its count validated) by the `package`
+      # job in main.yml when the tag was pushed. If that job failed, the
+      # artifact does not exist and this step fails cleanly here.
+      # Pinned to a full commit SHA. Check https://github.com/dawidd6/action-download-artifact
+      # for the latest SHA if you need to upgrade.
+      - name: Download wheels from CI run
+        uses: dawidd6/action-download-artifact@09f2f74827fd3a8607589e5ad7f9398816f540fe
+        with:
+          workflow: main.yml
+          commit: ${{ github.sha }}
+          name: lightsim2grid-wheels
+          path: dist/
+
+      # ── GUARD 2: re-verify count after cross-workflow download ────────────
+      # The count was already verified by main.yml's package job, but we
+      # re-check here as a belt-and-suspenders measure: we are now in a
+      # separate workflow run with a separate download.
+      #
+      # IMPORTANT: keep these two values in sync with the env: block at the
+      # top of main.yml.
+      - name: Re-verify wheel and sdist count
+        env:
+          EXPECTED_WHEELS: 34
+          EXPECTED_SDIST: 1
+        run: |
+          WHEEL_COUNT=$(find dist/ -name "*.whl" | wc -l | tr -d ' ')
+          SDIST_COUNT=$(find dist/ -name "*.tar.gz" | wc -l | tr -d ' ')
+
+          echo "Found ${WHEEL_COUNT} wheel(s), expected ${EXPECTED_WHEELS}."
+          echo "Found ${SDIST_COUNT} sdist(s),  expected ${EXPECTED_SDIST}."
+
+          if [ "${WHEEL_COUNT}" -ne "${EXPECTED_WHEELS}" ] || \
+             [ "${SDIST_COUNT}" -ne "${EXPECTED_SDIST}" ]; then
+            echo "::error::Wheel count mismatch after download: found \
+          ${WHEEL_COUNT} wheels and ${SDIST_COUNT} sdist(s), expected \
+          ${EXPECTED_WHEELS} and ${EXPECTED_SDIST}. This should not happen \
+          if main.yml's package job succeeded — the artifact may be corrupted \
+          or the download was partial. Do NOT re-run this publish job manually; \
+          investigate main.yml first."
+            echo ""
+            echo "--- Wheels found ---"
+            find dist/ -name "*.whl" | sort
+            echo "--- Sdists found ---"
+            find dist/ -name "*.tar.gz" | sort
+            exit 1
+          fi
+
+          echo "✓ All ${EXPECTED_WHEELS} wheels and ${EXPECTED_SDIST} sdist accounted for. Proceeding to upload."
+
+      # ── Publish to PyPI via OIDC trusted publishing ───────────────────────
+      # No token needed. Configure trusted publishing on PyPI:
+      #   Owner:     Grid2Op
+      #   Repo:      lightsim2grid
+      #   Workflow:  publish.yml
+      #   Env name:  pypi
+      # Uncomment `password` below if you prefer a token instead of OIDC.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # with:
+        #   password: ${{ secrets.PYPI_API_TOKEN }}

@@ -26,7 +26,7 @@ class CustTimer final{
         CustTimer& operator=(const CustTimer & other) noexcept = default;
         CustTimer& operator=(CustTimer && other) noexcept = default;
 
-        double duration(){
+        double duration() {
             end_ = std::chrono::steady_clock::now();
             std::chrono::duration<double> res = end_ - start_;
             return res.count();

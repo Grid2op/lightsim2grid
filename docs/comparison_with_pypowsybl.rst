@@ -132,25 +132,24 @@ Results
 
 The benchmarks were run on:
 
-- date: 2026-01-09 10:46  CET
+- date: 2026-04-21 09:05  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.0.2
+- python version: 3.13.5.final.0 (64 bit)
+- numpy version: 2.3.5
 - pandas version: 2.3.3
-- pandapower version: 3.2.1
-- pypowsybl version: 1.13.0
-- grid2op version: 1.12.2
-- lightsim2grid version: 0.12.1
+- pandapower version: 3.4.0
+- pypowsybl version: 1.15.0
+- grid2op version: 1.12.4.dev0
+- lightsim2grid version: 0.13.1
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: True 
 	- cktso_solver_available: True 
-	- compiled_march_native: True 
+	- compiled_march_native: False 
 	- compiled_o3_optim: True 
-
 
 The results were obtained by launching:
 
@@ -216,12 +215,12 @@ Times are expressed in ms.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.29e-01         3.56e+00
-ieee14      1.75e-01         3.98e+00 
-ieee30      2.96e-01         3.92e+00 
-ieee57      4.77e-01         5.44e+00
-ieee118     6.74e-01         6.12e+00
-ieee300     2.51e+00         1.28e+01
+ieee9       1.10e-01         4.02e+00
+ieee14      1.48e-01         3.82e+00
+ieee30      2.61e-01         5.19e+00 
+ieee57      4.24e-01         5.28e+00 
+ieee118     6.78e-01         6.11e+00
+ieee300     1.73e+00         1.15e+01
 ========== =============== ===============
 
 For this initial computation, lightsim2grid seems to be between 30 and 5x faster 
@@ -254,12 +253,12 @@ time it took to perform the 100 powerflows.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       1.71e-02         7.26e-01
-ieee14      2.83e-02         8.95e-01 
-ieee30      6.00e-02         1.26e+00 
-ieee57      1.41e-01         1.46e+00
-ieee118     3.11e-01         2.48e+00
-ieee300     1.76e+00         5.78e+00
+ieee9       1.64e-02         9.23e-01
+ieee14      2.68e-02         1.14e+00 
+ieee30      5.81e-02         1.44e+00 
+ieee57      1.37e-01         1.56e+00
+ieee118     3.04e-01         3.02e+00
+ieee300     1.73e+00         5.71e+00
 ========== =============== ===============
 
 
@@ -280,10 +279,10 @@ compute the flows from the resulting voltages.
 ========== =============== ===============
 case name   lightsim2grid    pypowsybl
 ========== =============== ===============
-ieee9       2.29e-02         3.03e-01
-ieee14      2.92e-02         1.97e-01
-ieee30      4.85e-02         1.68e-01
-ieee57      1.32e-01         1.81e-01
-ieee118     2.05e-01         3.38e-01
-ieee300     9.95e-01         1.31e+00
+ieee9       2.15e-02         3.47e-01
+ieee14      2.72e-02         2.01e-01
+ieee30      4.73e-02         1.45e-01
+ieee57      1.32e-01         1.86e-01
+ieee118     2.04e-01         3.84e-01
+ieee300     9.91e-01         1.23e+00
 ========== =============== ===============

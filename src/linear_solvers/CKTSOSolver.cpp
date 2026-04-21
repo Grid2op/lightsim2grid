@@ -90,31 +90,23 @@ ErrorType CKTSOLinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J
     return err;
 }
 
-ErrorType CKTSOLinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
-    // solves (for x) the linear system J.x = b
-    // with standard use of lightsim2grid, the solver should have already been initialized
-    int ret;
-    bool stop = false;
-    RealVect x;
-    ErrorType err = ErrorType::NoError;
-    if(!doesnt_need_refactor){
-        ret  = solver_->Refactorize(J.valuePtr()); 
-        if (ret < 0) {
-            // std::cout << "CKTSOLinearSolver::solve solver_->Refactorize error: " << ret << std::endl;
-            // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
-            err = ErrorType::SolverReFactor;
-            stop = true;
-        }
+ErrorType CKTSOLinearSolver::refactor(const Eigen::SparseMatrix<real_type> & J){
+    int ret = solver_->Refactorize(J.valuePtr());
+    if(ret < 0){
+        // std::cout << "CKTSOLinearSolver::refactor solver_->Refactorize error: " << ret << std::endl;
+        // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
+        return ErrorType::SolverReFactor;
     }
-    if(!stop){
-        const auto n = J.cols(); // should be equal to J_.nrows()
-        x = RealVect(n);
-        ret = solver_->Solve(&b(0), &x(0), false, 1);
-        if (ret < 0) {
-            // std::cout << "CKTSOLinearSolver::solve solver_.Solve error: " << ret << std::endl;
-            err = ErrorType::SolverSolve;
-        }
-        b = x;
+    return ErrorType::NoError;
+}
+
+ErrorType CKTSOLinearSolver::solve(RealVect & b){
+    RealVect x(b.size());
+    int ret = solver_->Solve(&b(0), &x(0), false, 1);
+    if(ret < 0){
+        // std::cout << "CKTSOLinearSolver::solve solver_->Solve error: " << ret << std::endl;
+        return ErrorType::SolverSolve;
     }
-    return err;
+    b = x;
+    return ErrorType::NoError;
 }

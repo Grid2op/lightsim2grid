@@ -57,17 +57,24 @@ Benchmarks (Contingency Analysis)
 
 Here are some benchmarks made with:
 
-- system: Linux 5.11.0-40-generic
-- OS: ubuntu 20.04
-- processor: Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz
-- python version: 3.8.10.final.0 (64 bit)
-- numpy version: 1.18.5
-- pandas version: 1.1.4
-- pandapower version: 2.7.0
-- lightsim2grid version: 0.6.0
-- grid2op version: 1.6.4
+- date: 2026-04-21 09:05  CEST
+- system: Linux 6.8.0-60-generic
+- OS: ubuntu 22.04
+- processor: 13th Gen Intel(R) Core(TM) i7-13700H
+- python version: 3.13.5.final.0 (64 bit)
+- numpy version: 2.3.5
+- pandas version: 2.3.3
+- pandapower version: 3.4.0
+- pypowsybl version: 1.15.0
+- grid2op version: 1.12.4.dev0
+- lightsim2grid version: 0.13.1
+- lightsim2grid extra information: 
 
-Where lightsim2grid has been installed from source with all optimization enabled.
+	- klu_solver_available: True 
+	- nicslu_solver_available: True 
+	- cktso_solver_available: True 
+	- compiled_march_native: False 
+	- compiled_o3_optim: True 
 
 This benchmark is available by running, from the root of the lightsim2grid repository:
 
@@ -82,17 +89,17 @@ For this setting the outputs are:
 .. code-block:: bash
 
     For environment: l2rpn_neurips_2020_track2_small (177 n-1 simulated)
-    Total time spent in "computer" to solve everything: 18.5ms (9573 pf / s), 0.10 ms / pf)
-        - time to compute the coefficients to simulate line disconnection: 0.04ms
-        - time to pre process Ybus: 2.50ms
-        - time to perform powerflows: 15.84ms (11172 pf / s, 0.09 ms / pf)
-    In addition, it took 0.83 ms to retrieve the current from the complex voltages (in total 9160.4 pf /s, 0.11 ms / pf)
+    Total time spent in "computer" to solve everything: 11.1ms (15913 pf / s), 0.06 ms / pf)
+        - time to compute the coefficients to simulate line disconnection: 0.28ms
+        - time to pre process Ybus: 0.30ms
+        - time to perform powerflows: 10.25ms (17276 pf / s, 0.06 ms / pf)
+    In addition, it took 0.50 ms to retrieve the current from the complex voltages (in total 15229.8 pf /s, 0.07 ms / pf)
 
     Comparison with raw grid2op timings
-    It took grid2op (with lightsim2grid, using obs.simulate): 0.42s to perform the same computation
-        This is a 21.6 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
-    It took grid2op (with pandapower, using obs.simulate): 6.39s to perform the same computation
-        This is a 330.9 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)
+    It took grid2op (with lightsim2grid, using obs.simulate): 0.28s to perform the same computation
+        This is a 24.2 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+    It took grid2op (with pandapower, using obs.simulate): 9.94s to perform the same computation
+        This is a 855.2 speed up from SecurityAnalysis over raw grid2op (using obs.simulate and pandapower)
     All results match !
 
 
