@@ -28,7 +28,7 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.13.1]  2026-xx-yy
+[0.13.1]  2026-04-21
 --------------------
 - [BREAKING] when loading a powergrid from pypowsybl with "use_buses_for_sub" tagged
   and disconnected element on the grid will now raise a RuntimeError. Before there were
@@ -49,11 +49,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] simplify the future integration of other linear solvers and the logic when linear_solvers
   are called by decoupling "refactor" steps from "solve" steps (they used to be all under the same
   "solve" method).
-
-TODO:
-- consistency int / size_t in change_v_nothrow, change_bus etc (for element id)
-- re run the benchmarks
-
+  
 [0.13.0] 2026-04-15
 --------------------
 - [PENDING DEPRECATION] the cpp module (lightsim2grid_cpp) will not be usable directly anymore.
