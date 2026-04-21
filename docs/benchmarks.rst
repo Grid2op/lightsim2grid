@@ -56,24 +56,22 @@ compared with pandapower and pypowsybl when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- date: 2026-01-09 10:35  CET
+- date: 2026-04-21 08:58  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
-- python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.0.2
+- python version: 3.13.5.final.0 (64 bit)
+- numpy version: 2.3.5
 - pandas version: 2.3.3
-- pandapower version: 3.2.1
-- pypowsybl version: 1.13.0
-- pypowsybl2grid version: 0.3.0
-- grid2op version: 1.12.2
-- lightsim2grid version: 0.12.1
+- pandapower version: 3.4.0
+- grid2op version: 1.12.4.dev0
+- lightsim2grid version: 0.13.1
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
 	- nicslu_solver_available: True 
 	- cktso_solver_available: True 
-	- compiled_march_native: True 
+	- compiled_march_native: False 
 	- compiled_o3_optim: True 
 
 To run the benchmark `cd` in the [benchmark](./benchmarks) folder and install the dependencies
@@ -204,28 +202,27 @@ First on an environment based on the IEEE case 14 grid:
 ====================  ======================  ===================================  ==========================
 case14_sandbox          grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    time in 'algo' (ms / pf)
 ====================  ======================  ===================================  ==========================
-PP                                       116                               7.21                        2.93
-PP (no numba)                             81                              10.9                         6.65
-PP (with lightsim)                       113                               7.46                        1.4
-pypowsybl                                691                               1.1                         1.03
-GS                                      1430                               0.424                       0.362
-GS synch                                1210                               0.548                       0.485
-NR single (SLU)                         2630                               0.0988                      0.0354
-NR (SLU)                                2600                               0.0999                      0.0355
-NR single (KLU)                         2860                               0.0745                      0.0125
-NR (KLU)                                2870                               0.0731                      0.0113
-NR single (NICSLU *)                    2870                               0.0742                      0.0125
-NR (NICSLU *)                           2880                               0.0731                      0.0113
-NR single (CKTSO *)                     2890                               0.0733                      0.0121
-NR (CKTSO *)                            2900                               0.072                       0.0108
-FDPF XB (SLU)                           2850                               0.0767                      0.0153
-FDPF BX (SLU)                           2790                               0.0838                      0.0223
-FDPF XB (KLU)                           2870                               0.0742                      0.0126
-FDPF BX (KLU)                           2840                               0.0797                      0.0185
-FDPF XB (NICSLU *)                      2910                               0.073                       0.0127
-FDPF BX (NICSLU *)                      2840                               0.0797                      0.0189
-FDPF XB (CKTSO *)                       2910                               0.0732                      0.0127
-FDPF BX (CKTSO *)                       2850                               0.0794                      0.0188
+PP                                     102                                 8.54                        2.91
+PP (no numba)                           78.5                              11.5                         5.96
+PP (with lightsim)                     103                                 8.5                         1.56
+GS                                    1440                                 0.422                       0.364
+GS synch                              1210                                 0.553                       0.494
+NR single (SLU)                       2680                                 0.094                       0.0346
+NR (SLU)                              2670                                 0.0941                      0.0344
+NR single (KLU)                       2930                                 0.0696                      0.0121
+NR (KLU)                              2920                                 0.0689                      0.0112
+NR single (NICSLU *)                  2930                                 0.0696                      0.0121
+NR (NICSLU *)                         2930                                 0.0691                      0.0111
+NR single (CKTSO *)                   2940                                 0.0689                      0.0116
+NR (CKTSO *)                          2930                                 0.0685                      0.0107
+FDPF XB (SLU)                         2900                                 0.073                       0.0154
+FDPF BX (SLU)                         2840                                 0.0802                      0.0225
+FDPF XB (KLU)                         2940                                 0.0696                      0.0124
+FDPF BX (KLU)                         2890                                 0.0754                      0.0183
+FDPF XB (NICSLU *)                    2930                                 0.0696                      0.0124
+FDPF BX (NICSLU *)                    2930                                 0.0744                      0.0183
+FDPF XB (CKTSO *)                     2930                                 0.0696                      0.0124
+FDPF BX (CKTSO *)                     2900                                 0.0751                      0.0182
 ====================  ======================  ===================================  ==========================
 
 From a grid2op perspective, lightsim2grid allows to compute up to ~2900 steps each second (column `grid2op speed`, rows `NR XXX`) 
@@ -262,28 +259,27 @@ Then on an environment based on the IEEE case 118:
 =====================  ======================  ===================================  ==========================
 neurips_2020_track2      grid2op speed (it/s)    grid2op 'backend.runpf' time (ms)    time in 'algo' (ms / pf)
 =====================  ======================  ===================================  ==========================
-PP                                     104                                   8.18                       3.94
-PP (no numba)                           71.5                                12.5                        8.12
-PP (with lightsim)                     102                                   8.43                       1.84
-pypowsybl                              253                                   3.53                       3.42
-GS                                       7.18                              139                        138
-GS synch                                24.4                                40.5                       40.4
-NR single (SLU)                       1170                                   0.514                      0.423
-NR (SLU)                              1160                                   0.522                      0.431
-NR single (KLU)                       2050                                   0.167                      0.0855
-NR (KLU)                              2090                                   0.157                      0.0759
-NR single (NICSLU *)                  2070                                   0.162                      0.0811
-NR (NICSLU *)                         2120                                   0.152                      0.0703
-NR single (CKTSO *)                   2070                                   0.162                      0.0801
-NR (CKTSO *)                          2140                                   0.149                      0.0676
-FDPF XB (SLU)                         1930                                   0.201                      0.122
-FDPF BX (SLU)                         1880                                   0.216                      0.137
-FDPF XB (KLU)                         2020                                   0.18                       0.101
-FDPF BX (KLU)                         1980                                   0.191                      0.114
-FDPF XB (NICSLU *)                    2030                                   0.18                       0.102
-FDPF BX (NICSLU *)                    1970                                   0.193                      0.114
-FDPF XB (CKTSO *)                     2030                                   0.179                      0.101
-FDPF BX (CKTSO *)                     1980                                   0.192                      0.114
+PP                                      88.6                                 9.94                       4.06
+PP (no numba)                           65.8                                13.8                        7.76
+PP (with lightsim)                      90.4                                 9.74                       2.06
+GS                                       7.84                              127                        127
+GS synch                                25.5                                38.8                       38.7
+NR single (SLU)                       1190                                   0.502                      0.42
+NR (SLU)                              1170                                   0.512                      0.429
+NR single (KLU)                       2110                                   0.158                      0.0834
+NR (KLU)                              2160                                   0.147                      0.0712
+NR single (NICSLU *)                  2120                                   0.155                      0.0796
+NR (NICSLU *)                         2180                                   0.143                      0.0678
+NR single (CKTSO *)                   2130                                   0.153                      0.0778
+NR (CKTSO *)                          2170                                   0.141                      0.0658
+FDPF XB (SLU)                         1980                                   0.193                      0.12
+FDPF BX (SLU)                         1920                                   0.208                      0.135
+FDPF XB (KLU)                         2060                                   0.172                      0.0994
+FDPF BX (KLU)                         2030                                   0.183                      0.11
+FDPF XB (NICSLU *)                    2080                                   0.171                      0.0984
+FDPF BX (NICSLU *)                    2030                                   0.183                      0.111
+FDPF XB (CKTSO *)                     2070                                   0.171                      0.0984
+FDPF BX (CKTSO *)                     2020                                   0.183                      0.111
 =====================  ======================  ===================================  ==========================
 
 For an environment based on the IEEE 118, the speed up in using lightsim + KLU (LS+KLU) is **~21** time faster than
