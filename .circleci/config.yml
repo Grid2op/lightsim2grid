@@ -277,6 +277,14 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
+                name: "Build external solver plugin"
+                command: |
+                    source venv_test/bin/activate
+                    cd examples/external_solver
+                    mkdir build && cd build
+                    cmake ..
+                    make -j$(nproc)
+            - run:
                 name: "make tests"
                 command: |
                     source venv_test/bin/activate
@@ -402,6 +410,14 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
+                name: "Build external solver plugin"
+                command: |
+                    source venv_test/bin/activate
+                    cd examples/external_solver
+                    mkdir build && cd build
+                    cmake ..
+                    make -j$(nproc)
+            - run:
                 name: "make tests"
                 command: |
                     source venv_test/bin/activate
@@ -445,11 +461,21 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
-                name: "make basic tests" # otherwise it takes too long (time out)  
+                name: "Build external solver plugin"
+                command: |
+                    .\venv_test\Scripts\activate
+                    $ls2g_lib = python -c "import importlib.util, pathlib; spec = importlib.util.find_spec('lightsim2grid.lightsim2grid_cpp'); print(pathlib.Path(spec.origin).parent / 'lightsim2grid_cpp.lib')"
+                    mkdir examples\external_solver\build -Force
+                    Set-Location examples\external_solver\build
+                    cmake .. "-DLIGHTSIM2GRID_CPP_LIB=$ls2g_lib"
+                    cmake --build . --config Release
+                    Set-Location ..\..\..
+            - run:
+                name: "make basic tests" # otherwise it takes too long (time out)
                 command: |
                     .\venv_test\Scripts\activate
                     cd lightsim2grid\tests
-                    python -W "ignore" -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control
+                    python -W "ignore" -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control test_solver_registry
                     
     test_legacy_pandapower:
         executor: gcc_latest

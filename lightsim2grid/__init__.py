@@ -24,14 +24,19 @@ import sys as _sys
 # etc.) are visible to solver plugins loaded later via load_solver_plugin().
 # This is the standard pattern for extension modules that support dlopen plugins
 # (used by PyTorch, JAX, and others for the same reason).
-_old_dlopen_flags = _sys.getdlopenflags()
-_sys.setdlopenflags(_old_dlopen_flags | _os.RTLD_GLOBAL)
-try:
-    # import directly from c++ module
+if hasattr(_sys, "getdlopenflags"):
+    # Unix only: load with RTLD_GLOBAL so symbols are visible to dlopen'd plugins.
+    _old_dlopen_flags = _sys.getdlopenflags()
+    _sys.setdlopenflags(_old_dlopen_flags | _os.RTLD_GLOBAL)
+    try:
+        from lightsim2grid.solver import SolverType
+        from lightsim2grid.solver import ErrorType
+    finally:
+        _sys.setdlopenflags(_old_dlopen_flags)
+else:
+    # Windows: no dlopen flags; just import normally.
     from lightsim2grid.solver import SolverType
     from lightsim2grid.solver import ErrorType
-finally:
-    _sys.setdlopenflags(_old_dlopen_flags)
 
 
 def load_solver_plugin(path: str) -> None:

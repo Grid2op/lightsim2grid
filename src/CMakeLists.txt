@@ -30,6 +30,13 @@ include_directories(".")
 
 pybind11_add_module(lightsim2grid_cpp ${SOURCES})
 
+# Windows: mark exported symbols with __declspec(dllexport) and generate an
+# import library (.lib) so that plugin DLLs can link against this module.
+if(WIN32)
+    target_compile_definitions(lightsim2grid_cpp PRIVATE LS2G_BUILDING_DLL)
+    set_target_properties(lightsim2grid_cpp PROPERTIES ENABLE_EXPORTS ON)
+endif()
+
 # target_link_libraries(lightsim2grid_cpp PRIVATE pybind11::headers)
 
 

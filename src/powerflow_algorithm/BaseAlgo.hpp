@@ -9,9 +9,18 @@
 #ifndef BASEALGO_H
 #define BASEALGO_H
 
-// Symbols that external solver plugins need must be visible across .so boundaries.
+// Symbols that external solver plugins need must be visible across .so/.dll boundaries.
+// On Linux/macOS: visibility("default") overrides -fvisibility=hidden.
+// On Windows/MSVC: dllexport when building the main library, dllimport when included
+//   by a plugin (i.e. when LS2G_BUILDING_DLL is not defined).
 #ifndef LS2G_API
-#  if defined(__GNUC__) || defined(__clang__)
+#  if defined(_MSC_VER)
+#    ifdef LS2G_BUILDING_DLL
+#      define LS2G_API __declspec(dllexport)
+#    else
+#      define LS2G_API __declspec(dllimport)
+#    endif
+#  elif defined(__GNUC__) || defined(__clang__)
 #    define LS2G_API __attribute__((visibility("default")))
 #  else
 #    define LS2G_API

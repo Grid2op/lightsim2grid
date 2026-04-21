@@ -391,6 +391,13 @@ endif()
 # from lightsim2grid.lightsim2grid_cpp import XXX
 install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
 
+# Windows: install the import library (.lib) alongside the .pyd so that plugin
+# authors can link against it via find_spec('lightsim2grid.lightsim2grid_cpp').
+if(WIN32)
+    install(TARGETS lightsim2grid_cpp
+            ARCHIVE DESTINATION ${SKBUILD_PROJECT_NAME})
+endif()
+
 if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
     install(TARGETS lightsim2grid_cpp DESTINATION .)
 endif()
