@@ -270,16 +270,39 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
         "${Eigen3_INCLUDE}"
     )
 
-    # Allow undefined symbols: the main lightsim2grid .so provides them.
-    if(UNIX AND NOT APPLE)
+    if(WIN32)
+        # Link against lightsim2grid_cpp's import library (.lib), which is
+        # installed alongside lightsim2grid_cpp.pyd.  Auto-detected via Python;
+        # override with -DLIGHTSIM2GRID_CPP_LIB=<path> if needed.
+        if(NOT DEFINED LIGHTSIM2GRID_CPP_LIB)
+            find_package(Python REQUIRED COMPONENTS Interpreter)
+            execute_process(
+                COMMAND "${Python_EXECUTABLE}" -c
+                    "import importlib.util, pathlib; \
+                     spec = importlib.util.find_spec('lightsim2grid.lightsim2grid_cpp'); \
+                     print(pathlib.Path(spec.origin).parent / 'lightsim2grid_cpp.lib')"
+                OUTPUT_VARIABLE _ls2g_lib
+                OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            if(EXISTS "${_ls2g_lib}")
+                set(LIGHTSIM2GRID_CPP_LIB "${_ls2g_lib}")
+            else()
+                message(FATAL_ERROR "lightsim2grid_cpp.lib not found. "
+                    "Pass -DLIGHTSIM2GRID_CPP_LIB=<path> to cmake.")
+            endif()
+        endif()
+        target_link_libraries(my_solver PRIVATE "${LIGHTSIM2GRID_CPP_LIB}")
+    elseif(UNIX AND NOT APPLE)
+        # Undefined symbols are resolved at load time from the main .so.
         target_link_options(my_solver PRIVATE -Wl,--allow-shlib-undefined)
+        set_target_properties(my_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
     elseif(APPLE)
         target_link_options(my_solver PRIVATE -undefined dynamic_lookup)
+        set_target_properties(my_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
     endif()
 
-    set_target_properties(my_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
-
 **3 — Build**
+
+Linux / macOS:
 
 .. code-block:: bash
 
@@ -288,6 +311,24 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
         -DLIGHTSIM2GRID_SRC=/path/to/lightsim2grid/src \
         -DEigen3_INCLUDE=/path/to/lightsim2grid/eigen
     make
+
+Windows (MSVC, from a Developer Command Prompt):
+
+.. code-block:: bat
+
+    mkdir build && cd build
+    cmake .. ^
+        -DLIGHTSIM2GRID_SRC=C:\path\to\lightsim2grid\src ^
+        -DEigen3_INCLUDE=C:\path\to\lightsim2grid\eigen
+    cmake --build . --config Release
+
+The Windows build links the plugin against ``lightsim2grid_cpp.lib``, which is
+installed alongside ``lightsim2grid_cpp.pyd`` in the ``lightsim2grid`` package
+directory.  The CMakeLists.txt locates it automatically via Python's
+``importlib``; pass ``-DLIGHTSIM2GRID_CPP_LIB=<path>`` to override.
+
+The resulting file is ``Release\my_solver.dll`` (no ``lib`` prefix, ``.dll``
+suffix).  Pass that path to :func:`~lightsim2grid.load_solver_plugin`.
 
 
 Loading and using the plugin from Python
@@ -368,10 +409,14 @@ Python API reference
 
 .. warning::
 
-    The plugin ``.so`` must be compiled against the **same version** of
-    lightsim2grid headers that is installed at runtime.  ABI mismatches
-    (different ``BaseAlgo`` layout, different Eigen version) will cause
-    undefined behaviour or a load-time error.
+    The plugin (``.so`` / ``.dll``) must be compiled against the **same
+    version** of lightsim2grid headers that is installed at runtime.  ABI
+    mismatches (different ``BaseAlgo`` layout, different Eigen version) will
+    cause undefined behaviour or a load-time error.
+
+    On Windows the plugin also links against ``lightsim2grid_cpp.lib``.  This
+    import library must match the ``lightsim2grid_cpp.pyd`` that will be loaded
+    at runtime — i.e. both must come from the same lightsim2grid build.
 
 
 Worked example (``examples/external_solver/``)
