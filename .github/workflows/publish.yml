@@ -60,7 +60,7 @@ jobs:
       # mutation. Check https://github.com/lewagon/wait-on-check-action for
       # the latest SHA if you need to upgrade.
       - name: Wait for CircleCI checks to pass
-        uses: lewagon/wait-on-check-action@2e90808f0512b6a04f8eb50e3fcbf6e9d7a4d79c
+        uses: lewagon/wait-on-check-action@9312864dfbc9fd208e9c0417843430751c042800
         with:
           ref: ${{ github.sha }}
           check-regexp: 'ci/circleci:.*'
@@ -126,6 +126,6 @@ jobs:
       #   Env name:  pypi
       # Uncomment `password` below if you prefer a token instead of OIDC.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@release/cef221092ed1bacb1cc03d23a2d87d1d172e277b
         # with:
         #   password: ${{ secrets.PYPI_API_TOKEN }}
