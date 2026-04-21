@@ -42,7 +42,7 @@ https://pandapower.readthedocs.io/en/latest/elements/sgen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/sgen.html#electric-model
 **/
-class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContainer, SGenInfo>
+class SGenContainer final: public OneSideContainer_PQ, public IteratorAdder<SGenContainer, SGenInfo>
 {
     // TODO make a single class for load and shunt and just specialize the part where the
     // TODO powerflow equations are located (when i update the Y matrix)
@@ -88,7 +88,7 @@ class SGenContainer: public OneSideContainer_PQ, public IteratorAdder<SGenContai
             const SolverBusIdVect & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
-            bool ac)
+            bool ac) override
             {
                 set_osc_pq_res_p();
                 set_osc_pq_res_q(ac);

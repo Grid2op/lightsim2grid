@@ -43,7 +43,7 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 **/
-class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
+class TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
 {
     //////////////////////////////
     // access data from base class
@@ -177,8 +177,8 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
         
     protected:
         // void _update_model_coeffs();
-        virtual void _update_model_coeffs_one_el(int el_id);
-        virtual void _update_other_model_coeffs(){
+        virtual void _update_model_coeffs_one_el(int el_id) override;
+        virtual void _update_other_model_coeffs() override {
             dc_x_tau_shift_ = RealVect::Zero(nb());
         }
 
@@ -205,17 +205,17 @@ class TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch
 
     protected:
 
-        virtual real_type fillBf_for_PTDF_coeff(int tr_id) const{
+        virtual real_type fillBf_for_PTDF_coeff(int tr_id) const override {
             real_type res = x_(tr_id);
             real_type tau = is_tap_side1_[tr_id] ? ratio_(tr_id) : 1. / ratio_(tr_id);
             return res * tau;
         }
 
-        virtual int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const{
+        virtual int fillBf_for_PTDF_id(int tr_id, int nb_powerline) const override {
             return tr_id + nb_powerline;
         }
 
-        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const;
+        virtual FDPFCoeffs get_fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept:

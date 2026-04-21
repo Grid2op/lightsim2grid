@@ -71,7 +71,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
         }
 
-        void change_p(int el_id, real_type new_p, SolverControl & solver_control){
+        virtual void change_p(int el_id, real_type new_p, SolverControl & solver_control) final {
             bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
             if(!my_status)
             {
@@ -83,7 +83,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             change_p_nothrow(el_id, new_p, solver_control);
         }
-        void change_p_nothrow(int el_id, real_type new_p, SolverControl & solver_control)
+        virtual void change_p_nothrow(int el_id, real_type new_p, SolverControl & solver_control) final
         {
             bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
             this->_change_p(el_id, new_p, my_status, solver_control);
@@ -91,7 +91,7 @@ class OneSideContainer_PQ : public OneSideContainer
                 target_p_mw_(el_id) = new_p;
             }
         }
-        void change_q(int el_id, real_type new_q, SolverControl & solver_control)
+        virtual void change_q(int el_id, real_type new_q, SolverControl & solver_control) final
         {
             bool my_status = status_.at(el_id); // and this check that el_id is not out of bound
             if(!my_status)
@@ -104,7 +104,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             change_q_nothrow(el_id, new_q, solver_control);
         }
-        void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control)
+        virtual void change_q_nothrow(int load_id, real_type new_q, SolverControl & solver_control) final
         {
             bool my_status = status_.at(load_id); // and this check that el_id is not out of bound
             this->_change_q(load_id, new_q, my_status, solver_control);
@@ -192,8 +192,8 @@ class OneSideContainer_PQ : public OneSideContainer
         }
 
     protected:
-        virtual void _reset_results() {
-            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators) 
+        virtual void _reset_results() override {
+            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
             // elements
         };
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
@@ -202,12 +202,12 @@ class OneSideContainer_PQ : public OneSideContainer
                                       const SolverBusIdVect & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
-                                      bool ac) {
-            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators) 
+                                      bool ac) override {
+            // nothing to do by default, as this class should be used as template for "one side" (eg loads or generators)
             // elements
                                       };
 
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
             if(status_[el_id]){
                 solver_control.tell_recompute_sbus();
                 solver_control.tell_one_el_changed_bus();
@@ -215,7 +215,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             return false;
         };
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
             if(!status_[el_id]){
                 solver_control.tell_recompute_sbus();
                 solver_control.tell_one_el_changed_bus();
@@ -223,7 +223,7 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) override {
             if(bus_id_(el_id) != new_bus_id){
                 solver_control.tell_recompute_sbus();
                 solver_control.tell_one_el_changed_bus();
@@ -231,12 +231,12 @@ class OneSideContainer_PQ : public OneSideContainer
             }
             return false;
         };
-        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {
+        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) override {
             if (abs(target_p_mw_(el_id) - new_p) > _tol_equal_float) {
                 solver_control.tell_recompute_sbus();
             }
         };
-        virtual void _change_q(int el_id, real_type new_q, bool my_status,SolverControl & solver_control) {
+        virtual void _change_q(int el_id, real_type new_q, bool my_status,SolverControl & solver_control) override {
             if (abs(target_q_mvar_(el_id) - new_q) > _tol_equal_float) {
                 solver_control.tell_recompute_sbus();
             }

@@ -79,17 +79,6 @@ class DCLineContainer final : public TwoSidesContainer<GeneratorContainer>, publ
                 );
 
         // accessor / modifiers
-        void deactivate(int dcline_id, SolverControl & solver_control) {  // TODO this in TwoSidesCOntainer !
-            _generic_deactivate(dcline_id, status_global_);
-            side_1_.deactivate(dcline_id, solver_control);
-            side_2_.deactivate(dcline_id, solver_control);
-        }
-        void reactivate(int dcline_id, SolverControl & solver_control) {  // TODO this in TwoSidesCOntainer !
-            _generic_reactivate(dcline_id, status_global_);
-            side_1_.reactivate(dcline_id, solver_control);
-            side_2_.reactivate(dcline_id, solver_control);
-        }
-
         virtual void reconnect_connected_buses(SubstationContainer & Substation) const {
             side_1_.reconnect_connected_buses(Substation);
             side_2_.reconnect_connected_buses(Substation);
