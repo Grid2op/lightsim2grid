@@ -60,6 +60,7 @@ This is a work in progress at the moment
    solvers
    time_series
    security_analysis
+   solver_plugin
 
 
 Indices and tables

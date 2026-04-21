@@ -9,6 +9,15 @@
 #ifndef BASEALGO_H
 #define BASEALGO_H
 
+// Symbols that external solver plugins need must be visible across .so boundaries.
+#ifndef LS2G_API
+#  if defined(__GNUC__) || defined(__clang__)
+#    define LS2G_API __attribute__((visibility("default")))
+#  else
+#    define LS2G_API
+#  endif
+#endif
+
 #include <iostream>
 #include <vector>
 #include <stdio.h>
@@ -40,7 +49,7 @@ This class represents a algorithm to compute powerflow.
 
 It can be derived for different usecase, for example for DC powerflow, AC powerflow using Newton Raphson method etc.
 **/
-class BaseAlgo : public BaseConstants
+class LS2G_API BaseAlgo : public BaseConstants
 {
     public:
         const bool IS_AC;  // should be static ideally...
@@ -64,8 +73,12 @@ class BaseAlgo : public BaseConstants
         BaseAlgo & operator=(BaseAlgo&&) = delete;
         BaseAlgo & operator=(const BaseAlgo&) = delete;
 
-        void set_gridmodel(const GridModel * gridmodel){
+        virtual void set_gridmodel(const GridModel * gridmodel){
             gridmodel_ptr_ = gridmodel;
+        }
+
+        virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
+            throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for this solver type.");
         }
 
         Eigen::Ref<const RealVect> get_Va() const{

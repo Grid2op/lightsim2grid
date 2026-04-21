@@ -76,7 +76,7 @@ class GridModel final
                 SolverType // dc_solver
                 >  StateRes;
 
-        GridModel() noexcept:
+        GridModel():
           timer_last_ac_pf_(0.),
           timer_last_dc_pf_(0.),
           solver_control_(),
@@ -90,9 +90,9 @@ class GridModel final
             _dc_solver.set_gridmodel(this);
             solver_control_.tell_all_changed();
         }
-        GridModel(const GridModel & other) noexcept;
-        // GridModel(GridModel && other) noexcept = default;  // TODO 
-        GridModel copy() const noexcept{
+        GridModel(const GridModel & other);
+        // GridModel(GridModel && other) noexcept = default;  // TODO
+        GridModel copy() const {
             GridModel res(*this);
             return res;
         }
@@ -186,14 +186,27 @@ class GridModel final
         // solver "control"
         void change_solver(const SolverType & type){
             solver_control_.tell_all_changed();
-            
+
             if(_solver.is_fdpf(type)) init_fdpf_coeffs();
 
             if(_solver.is_dc(type)) _dc_solver.change_solver(type);
             else _solver.change_solver(type);
-            
+        }
+        // String-based overload: looks up the solver by registry name.
+        // For known built-in names the enum-based routing applies;
+        // for plugin names the solver always goes to the AC solver slot.
+        void change_solver(const std::string& name) {
+            solver_control_.tell_all_changed();
+            // Peek at IS_AC to decide which slot to update.
+            std::unique_ptr<BaseAlgo> tmp = SolverRegistry::instance().make(name);
+            if (tmp->IS_AC) _solver.change_solver(name);
+            else _dc_solver.change_solver(name);
         }
         std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
+        // Returns all solver names currently registered (built-in + plugins).
+        std::vector<std::string> available_solver_names() const {
+            return SolverRegistry::instance().available_solvers();
+        }
         SolverType get_solver_type() const {return _solver.get_type(); }
         SolverType get_dc_solver_type() const {return _dc_solver.get_type(); }
         const ChooseSolver & get_solver() const {return _solver;}

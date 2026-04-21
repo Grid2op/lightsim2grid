@@ -13,6 +13,8 @@
 #include "ChooseSolver.hpp"
 #include "DataConverter.hpp"
 #include "GridModel.hpp"
+#include "BuiltinSolversRegistration.hpp"
+#include "SolverRegistry.hpp"
 
 #include "batch_algorithm/TimeSeries.hpp"
 #include "batch_algorithm/ContingencyAnalysis.hpp"
@@ -93,6 +95,9 @@ void add_pickle(py::class_<T>& cls, const char* class_name) {
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
+    // Register all built-in solvers into the singleton registry.
+    // Must happen before any GridModel instance is created.
+    register_builtin_solvers(SolverRegistry::instance());
 
     // constant and compilation information
     m.attr("klu_solver_available") = py::bool_(this_KLU_SOLVER_AVAILABLE);
@@ -138,6 +143,7 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .value("FDPF_BX_NICSLU", SolverType::FDPF_BX_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_NICSLUSolver`")
         .value("FDPF_XB_CKTSO", SolverType::FDPF_XB_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_XB_CKTSOSolver`")
         .value("FDPF_BX_CKTSO", SolverType::FDPF_BX_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_BX_CKTSOSolver`")
+        .value("Custom", SolverType::Custom, "sentinel value for external/plugin solvers loaded via load_solver_plugin()")
         .export_values();
 
     py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")
@@ -863,8 +869,10 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
     gridmodel_cls
         // general parameters
         // solver control
-        .def("change_solver", &GridModel::change_solver, DocGridModel::change_solver.c_str())
+        .def("change_solver", py::overload_cast<const SolverType&>(&GridModel::change_solver), DocGridModel::change_solver.c_str())
+        .def("change_solver", py::overload_cast<const std::string&>(&GridModel::change_solver), "Change the AC (or DC) solver by registry name. Accepts built-in names and plugin names registered via load_solver_plugin().")
         .def("available_solvers", &GridModel::available_solvers, DocGridModel::available_solvers.c_str())  // retrieve the solver available for your installation
+        .def("available_solver_names", &GridModel::available_solver_names, "Returns names of all registered solvers, including any loaded plugins.")  // registry-based list
         .def("get_computation_time", &GridModel::get_computation_time, DocGridModel::get_computation_time.c_str())  // get the computation time spent in the solver
         .def("get_dc_computation_time", &GridModel::get_dc_computation_time, DocGridModel::get_dc_computation_time.c_str())  // get the computation time spent in the solver
         .def("get_solver_type", &GridModel::get_solver_type, DocGridModel::get_solver_type.c_str())  // get the type of solver used
