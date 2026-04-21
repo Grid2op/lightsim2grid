@@ -23,10 +23,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),
-                            _timer_total(0.),
-                            _timer_modif_Ybus(0.),
-                            _timer_pre_proc(0.),
-                            _init_from_n_powerflow(false)
+                            _timer_modif_Ybus(0.)
                             { }
 
         ~ContingencyAnalysis() noexcept = default;
@@ -34,9 +31,6 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         ContingencyAnalysis(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(ContingencyAnalysis&&) = delete;
         ContingencyAnalysis & operator=(const ContingencyAnalysis&) = delete;
-
-        bool get_init_from_n_powerflow() const noexcept {return _init_from_n_powerflow;}
-        void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
 
         // utilities to add defaults to simulate
         void add_all_n1(){
@@ -143,11 +137,6 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         double preprocessing_time() const {return _timer_pre_proc;}
         double modif_Ybus_time() const {return _timer_modif_Ybus;}
 
-        virtual void change_solver(const SolverType & type){
-            BaseBatchSolverSynch::change_solver(type);
-            // init_li_coeffs(_solver.ac_solver_used());
-        }
-
     protected:
         // prevent the insertion of "out of range" elements
         void check_ok_el(Eigen::Index el){
@@ -164,7 +153,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
-        void init_li_coeffs(bool ac_solver_used, const std::vector<SolverBusId> &id_me_to_solver);
+        void init_li_coeffs(bool ac_solver_used, const SolverBusIdVect &id_me_to_solver);
         // remove the line parameters from Ybus, this is to emulate its disconnection
         bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used);
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus
@@ -184,10 +173,6 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         std::vector<std::vector<Coeff> > _li_coeffs;  // for each n-k, stores the coefficients I need to modify in the Ybus
 
         //timers
-        double _timer_total;  // total time spent in "compute"
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation
-        double _timer_pre_proc;  // time to compute the coefficients of the Ybus
-
-        bool _init_from_n_powerflow;
 };
 #endif  //COMPUTERS_H

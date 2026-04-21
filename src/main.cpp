@@ -617,8 +617,12 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
             'shift' attribute (should be True for pandapower,
             where it is ignored and False otherwise).)mydelimiter")
         .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>());
-    add_pickle(trafo_cls, "TrafoContainer"); 
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(trafo_cls, "TrafoContainer");
 
     py::class_<TrafoInfo>(m, "TrafoInfo", DocIterator::TrafoInfo.c_str())
         .def_readonly("id", &TrafoInfo::id, DocIterator::id.c_str())
@@ -658,6 +662,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("yac_12", &TrafoInfo::yac_12, "TODO doc")
         .def_readonly("yac_21", &TrafoInfo::yac_21, "TODO doc")
         .def_readonly("yac_22", &TrafoInfo::yac_22, "TODO doc")
+        .def_readonly("yac_eff_11", &TrafoInfo::yac_eff_11, "TODO doc")
+        .def_readonly("yac_eff_12", &TrafoInfo::yac_eff_12, "TODO doc")
+        .def_readonly("yac_eff_21", &TrafoInfo::yac_eff_21, "TODO doc")
+        .def_readonly("yac_eff_22", &TrafoInfo::yac_eff_22, "TODO doc")
         .def_readonly("ydc_11", &TrafoInfo::ydc_11, "TODO doc")
         .def_readonly("ydc_12", &TrafoInfo::ydc_12, "TODO doc")
         .def_readonly("ydc_21", &TrafoInfo::ydc_21, "TODO doc")
@@ -676,7 +684,11 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>()) /* Keep vector alive while iterator is used */
         .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, "TODO doc", py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>());
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, "TODO doc", py::keep_alive<0, 1>())
+        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, "TODO doc", py::keep_alive<0, 1>());
     add_pickle(line_cls, "LineContainer");
 
     py::class_<LineInfo>(m, "LineInfo", DocIterator::LineInfo.c_str())
@@ -715,6 +727,10 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
         .def_readonly("yac_12", &LineInfo::yac_12, "TODO doc")
         .def_readonly("yac_21", &LineInfo::yac_21, "TODO doc")
         .def_readonly("yac_22", &LineInfo::yac_22, "TODO doc")
+        .def_readonly("yac_eff_11", &LineInfo::yac_eff_11, "TODO doc")
+        .def_readonly("yac_eff_12", &LineInfo::yac_eff_12, "TODO doc")
+        .def_readonly("yac_eff_21", &LineInfo::yac_eff_21, "TODO doc")
+        .def_readonly("yac_eff_22", &LineInfo::yac_eff_22, "TODO doc")
         .def_readonly("ydc_11", &LineInfo::ydc_11, "TODO doc")
         .def_readonly("ydc_12", &LineInfo::ydc_12, "TODO doc")
         .def_readonly("ydc_21", &LineInfo::ydc_21, "TODO doc")
@@ -1141,6 +1157,13 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const GridModel &>())
+        .def_property("init_from_n_powerflow",
+                      &ContingencyAnalysis::get_init_from_n_powerflow,
+                      &ContingencyAnalysis::set_init_from_n_powerflow,
+                      R"mydelim(Whether to initialize the complex voltages of "
+                      "the first time series with the results of a n-powerflow "
+                      "(*ie* a powerflow at the start the simulation) or not. "
+                      "Default: false)mydelim")
 
         // solver control
         .def("change_solver", &TimeSeries::change_solver, DocGridModel::change_solver.c_str())

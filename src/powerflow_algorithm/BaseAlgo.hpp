@@ -30,9 +30,9 @@
 
 class GridModel;
 
-typedef std::tuple<double, double, double, double, 
-                   double, double, double, double, 
-                   double> TimerJacType;
+typedef std::tuple<double, double, double, double,
+                   double, double, double, double,
+                   double, double> TimerJacType;
 typedef std::tuple<double, double, double> TimerPTDFLODFType;
 
 /**
@@ -101,7 +101,8 @@ class BaseAlgo : public BaseConstants
             TimerJacType res = {
                 timer_Fx_,
                 timer_solve_,
-                -1.,  // not available for non NR solver, so I put -1
+                -1.,  // timer_refactor_: not available for non NR solver, so I put -1
+                -1.,  // timer_initialize_: not available for non NR solver, so I put -1
                 timer_check_,
                 -1.,  // not available for non NR solver, so I put -1
                 -1.,  // not available for non NR solver, so I put -1
@@ -126,10 +127,10 @@ class BaseAlgo : public BaseConstants
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,  // store the results of the powerflow and the Vinit !
                         const CplxVect & Sbus,
-                        const Eigen::VectorXi & slack_ids,
+                        Eigen::Ref<const IntVect> slack_ids,
                         const RealVect & slack_weights,
-                        const Eigen::VectorXi & pv,
-                        const Eigen::VectorXi & pq,
+                        Eigen::Ref<const IntVect> pv,
+                        Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
                         ) = 0 ;
@@ -170,17 +171,17 @@ class BaseAlgo : public BaseConstants
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
                               const CplxVect & Sbus,
-                              Eigen::Index slack_id,  // id of the slack bus
+                              size_t slack_id,  // id of the slack bus
                               real_type slack_absorbed,
                               const RealVect & slack_weights,
-                              const Eigen::VectorXi & pv,
-                              const Eigen::VectorXi & pq);
+                              Eigen::Ref<const IntVect> pv,
+                              Eigen::Ref<const IntVect> pq);
 
         RealVect _evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                               const CplxVect & V,
                               const CplxVect & Sbus,
-                              const Eigen::VectorXi & pv,
-                              const Eigen::VectorXi & pq);
+                              Eigen::Ref<const IntVect> pv,
+                              Eigen::Ref<const IntVect> pq);
 
         bool _check_for_convergence(const RealVect & F,
                                     real_type tol);
@@ -189,16 +190,16 @@ class BaseAlgo : public BaseConstants
                                     const RealVect & q,
                                     real_type tol);
 
-        Eigen::VectorXi extract_slack_bus_id(const Eigen::VectorXi & pv,
-                                             const Eigen::VectorXi & pq,
+        Eigen::VectorXi extract_slack_bus_id(Eigen::Ref<const IntVect> pv,
+                                             Eigen::Ref<const IntVect> pq,
                                              unsigned int nb_bus);
 
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
         (behaves as if only the first element is used for the slack !!!, called "ref slack")
         **/
-        Eigen::VectorXi retrieve_pv_with_slack(const Eigen::VectorXi & slack_ids, 
-                                               const Eigen::VectorXi & pv) const {
+        Eigen::VectorXi retrieve_pv_with_slack(Eigen::Ref<const IntVect> slack_ids,
+                                               Eigen::Ref<const IntVect> pv) const {
             if(slack_ids.size() > 1){
                 const auto nb_slack_added = slack_ids.size() - 1;
                 Eigen::VectorXi my_pv = Eigen::VectorXi(pv.size() + nb_slack_added);
@@ -217,8 +218,8 @@ class BaseAlgo : public BaseConstants
         /**
         When there are multiple slacks, add the other "slack buses" in the PV buses indexes
         **/
-        Eigen::VectorXi add_slack_to_pv(const Eigen::VectorXi & slack_ids, 
-                                        const Eigen::VectorXi & pv) const {
+        Eigen::VectorXi add_slack_to_pv(Eigen::Ref<const IntVect> slack_ids,
+                                        Eigen::Ref<const IntVect> pv) const {
             Eigen::VectorXi my_pv = Eigen::VectorXi(slack_ids.size() + pv.size());
             my_pv << slack_ids, pv;
             return my_pv;

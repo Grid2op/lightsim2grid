@@ -11,6 +11,7 @@ import numpy as np
 import grid2op
 
 from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
+from lightsim2grid.solver import SolverType
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb
@@ -23,6 +24,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+        _ = self.env.reset(seed=0, options={"time serie id": 0})
     
     def tearDown(self) -> None:
         self.env.close()
@@ -187,10 +189,36 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         all_def = SA.my_defaults()
         assert len(all_def) == 2
 
-    def test_compute(self):
+    def test_compute_ac(self):
         SA = ContingencyAnalysisCPP(self.env.backend._grid)
         lid_cont = [0, 1, 2, 3]
         nb_sub = self.env.n_sub
+        SA.add_multiple_n1(lid_cont)
+        SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
+        res_SA = SA.get_voltages()
+        res_flows = SA.compute_flows()
+        assert res_SA.shape[0] == len(lid_cont)
+
+        # now check the voltages are correctly computed
+        obs = self.env.get_obs()
+        for cont_id, l_id in enumerate(lid_cont):
+            sim_obs, *_ = obs.simulate(self.env.action_space({"set_line_status": [(l_id, -1)]}),
+                                       time_step=0)
+            Vref = obs._obs_env.backend.V
+            assert np.max(np.abs(Vref[:nb_sub] - res_SA[cont_id, :nb_sub])) <= 1e-6, f"error in V when disconnecting line {l_id} (contingency nb {cont_id})"
+            assert np.max(np.abs(res_flows[cont_id] - sim_obs.a_or*1e-3)) <= 1e-6, f"error in flows when disconnecting line {l_id} (contingency nb {cont_id})"
+            
+    def test_compute_dc(self):
+        params = self.env.parameters
+        params.ENV_DC = True
+        self.env.change_parameters(params)
+        self.env.change_forecast_parameters(params)
+        _ = self.env.reset(seed=0, options={"time serie id": 0})
+        
+        SA = ContingencyAnalysisCPP(self.env.backend._grid)
+        lid_cont = [0, 1, 2, 3]
+        nb_sub = self.env.n_sub
+        SA.change_solver(SolverType.DC)
         SA.add_multiple_n1(lid_cont)
         SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
         res_SA = SA.get_voltages()

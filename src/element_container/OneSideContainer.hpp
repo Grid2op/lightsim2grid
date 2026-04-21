@@ -160,7 +160,7 @@ class OneSideContainer : public GenericContainer
         // public generic API
         int nb() const { return static_cast<int>(bus_id_.size()); }
         GridModelBusId get_bus(int el_id) const {return _get_bus(el_id, status_, bus_id_);}
-        Eigen::Ref<const GlobalBusIdVect> get_buses() const {return bus_id_;}
+        const GlobalBusIdVect & get_buses() const {return bus_id_;}
 
         tuple3d get_res() const {return tuple3d(res_p_, res_q_, res_v_);}
         tuple4d get_res_full() const {return tuple4d(res_p_, res_q_, res_v_, res_theta_);}
@@ -168,9 +168,9 @@ class OneSideContainer : public GenericContainer
         Eigen::Ref<const RealVect> get_theta() const {return res_theta_;}
         const std::vector<bool>& get_status() const {return status_;}
         bool get_status(int el_id) const {return status_.at(el_id);}
-        Eigen::Ref<const GlobalBusIdVect> get_bus_id() const {return bus_id_;}
+        const GlobalBusIdVect & get_bus_id() const {return bus_id_;}
         Eigen::Ref<const IntVect> get_bus_id_numpy() const {
-            return IntVect::Map(reinterpret_cast<const int *>(&bus_id_(0)), bus_id_.size());
+            return bus_id_.as_eigen();
         }
 
         void reconnect_connected_buses(SubstationContainer & substation) const{
@@ -191,7 +191,7 @@ class OneSideContainer : public GenericContainer
             }
         }
 
-        void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
             const int nb_el = nb();
             SolverControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)
@@ -204,13 +204,15 @@ class OneSideContainer : public GenericContainer
             }    
         }
 
-        void deactivate(int el_id, SolverControl & solver_control) {
-            this->_deactivate(el_id, solver_control);
+        virtual bool deactivate(int el_id, SolverControl & solver_control) final {
+            bool res = this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
+            return res;
         }
-        void reactivate(int el_id, SolverControl & solver_control) {
-            this->_reactivate(el_id, solver_control);
+        virtual bool reactivate(int el_id, SolverControl & solver_control) final {
+            bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
+            return res;
         }
 
         /**
@@ -219,22 +221,23 @@ class OneSideContainer : public GenericContainer
          * 
          * Not the "solver" bus, nor the "substation" / "local" bus.
          */
-        void change_bus(
+        virtual bool change_bus(
             int load_id,
             GridModelBusId new_gridmodel_bus_id,
             SolverControl & solver_control,
-            const SubstationContainer & substation){
-                this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
+            const SubstationContainer & substation) final {
+                bool res = this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
                 _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
+                return res;
         }
 
-        void compute_results(const Eigen::Ref<const RealVect> & Va,
-                             const Eigen::Ref<const RealVect> & Vm,
-                             const Eigen::Ref<const CplxVect> & V,
-                             const std::vector<SolverBusId> & id_grid_to_solver,
-                             const RealVect & bus_vn_kv,
-                             real_type sn_mva,
-                             bool ac)
+        virtual void compute_results(const Eigen::Ref<const RealVect> & Va,
+                                     const Eigen::Ref<const RealVect> & Vm,
+                                     const Eigen::Ref<const CplxVect> & V,
+                                     const SolverBusIdVect & id_grid_to_solver,
+                                     const RealVect & bus_vn_kv,
+                                     real_type sn_mva,
+                                     bool ac) final
         {
             const int nb_els = nb();
             v_kv_from_vpu(Va, Vm, status_, nb_els, bus_id_, id_grid_to_solver, bus_vn_kv, res_v_);
@@ -242,8 +245,7 @@ class OneSideContainer : public GenericContainer
             this->_compute_results(Va, Vm, V, id_grid_to_solver, bus_vn_kv, sn_mva, ac);
         }
 
-        // can be overriden, but has a default behaviour
-        virtual void reset_results(){
+        virtual void reset_results() final {
             reset_osc_results();
         }
 
@@ -262,13 +264,14 @@ class OneSideContainer : public GenericContainer
          * 
          * The bus labelling in "new_values" are local bus (between 1 and n_max_busbar_per_sub).
          */
-        void update_topo(
+        virtual std::vector<bool> update_topo(
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             SolverControl & solver_control,
             SubstationContainer & substations
-        )
+        ) final
         {
+            std::vector<bool> res(nb(), false);
             _check_pos_topo_vect_filled();
             for(int el_id = 0; el_id < nb(); ++el_id)
             {
@@ -300,16 +303,19 @@ class OneSideContainer : public GenericContainer
                     // new bus is a real bus, so i need to make sure to have it turned on, and then change the bus
                     int sub_id = subid_(el_id);
                     GridModelBusId new_bus_backend = substations.local_to_gridmodel(sub_id, new_bus);
-                    reactivate(el_id, solver_control); // eg reactivate_load(load_id);
-                    change_bus(el_id, new_bus_backend, solver_control, substations); // eg change_bus_load(load_id, new_bus_backend);
+                    bool change_effective = reactivate(el_id, solver_control); // eg reactivate_load(load_id);
+                    change_effective = change_bus(el_id, new_bus_backend, solver_control, substations) || change_effective; // eg change_bus_load(load_id, new_bus_backend);
+                    if(change_effective) res[el_id] = true;
                 } else if (new_bus.cast_int() == _deactivated_bus_id){
                     // new bus is negative, we deactivate it
-                    deactivate(el_id, solver_control);// eg deactivate_load(load_id);
+                    bool change_effective = deactivate(el_id, solver_control);// eg deactivate_load(load_id);
                     // bus_status_ is set to "false" in GridModel.update_topo
                     // and a bus is activated if (and only if) one element is connected to it.
                     // I must not set `bus_status_[new_bus_backend] = false;` in this case !
+                    if(change_effective) res[el_id] = true;
                 }
             }
+            return res;
         }
 
         typedef std::tuple<
@@ -326,7 +332,7 @@ class OneSideContainer : public GenericContainer
 
         OneSideContainer::StateRes get_osc_state() const  // osc: one side element
         {
-            std::vector<int> bus_id(bus_id_.begin(), bus_id_.end());
+            std::vector<int> bus_id(bus_id_.to_int_vector());
             std::vector<bool> status = status_;
             bool has_subid_info = subid_.size();
             std::vector<int> subid(subid_.begin(), subid_.end());
@@ -371,7 +377,7 @@ class OneSideContainer : public GenericContainer
             }
 
             // input data
-            bus_id_ = GlobalBusIdVect::Map(reinterpret_cast<GlobalBusId *>(&bus_id[0]), bus_id.size());
+            bus_id_ = GlobalBusIdVect(bus_id);
             status_ = status;
         }
         
@@ -379,7 +385,7 @@ class OneSideContainer : public GenericContainer
             const Eigen::VectorXi & els_bus_id
         )  // osc: one side container
         {
-            bus_id_ = els_bus_id.cast<GridModelBusId>();
+            bus_id_ = GlobalBusIdVect(els_bus_id);
             status_ = std::vector<bool>(els_bus_id.size(), true);
         }
 
@@ -419,20 +425,26 @@ class OneSideContainer : public GenericContainer
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<SolverBusId> & id_grid_to_solver,
+                                      const SolverBusIdVect & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
                                       bool ac) {
                                         // nothing to do by default
                                       };
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
             // nothing do to by default
+            if(status_[el_id]) return true;
+            return false;
         };
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
             // nothing to do by default
+            if(!status_[el_id]) return false;
+            return true;
         };
-        virtual void _change_bus(int load_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
             // nothing to do by default
+            if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
+            return true;
         };
         virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {
             // nothing to do by default
@@ -458,7 +470,7 @@ class OneSideContainer : public GenericContainer
         }
     protected:
         // used for example when trafo.change_bus_hv need to access 
-        Eigen::Ref<GlobalBusIdVect> get_buses_not_const() {return bus_id_;}
+        GlobalBusIdVect & get_buses_not_const() {return bus_id_;}
 
         // DANGER zone, neede for trafoContainer and lineContainer
         // because TwoSidesContainer is not fully made

@@ -21,6 +21,7 @@ class BaseNRAlgo : public BaseAlgo
         BaseNRAlgo() noexcept :
             BaseAlgo(true),
             need_factorize_(true),
+            timer_refactor_(0.),
             timer_initialize_(0.),
             timer_dSbus_(0.),
             timer_fillJ_(0.),
@@ -49,6 +50,7 @@ class BaseNRAlgo : public BaseAlgo
             // TODO refacto that, and change the order
             auto res = TimerJacType(timer_Fx_,
                                     timer_solve_,
+                                    timer_refactor_,
                                     timer_initialize_,
                                     timer_check_,
                                     timer_dSbus_,
@@ -63,10 +65,10 @@ class BaseNRAlgo : public BaseAlgo
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         const CplxVect & Sbus,
-                        const Eigen::VectorXi & slack_ids,
+                        Eigen::Ref<const IntVect> slack_ids,
                         const RealVect & slack_weights,
-                        const Eigen::VectorXi & pv,
-                        const Eigen::VectorXi & pq,
+                        Eigen::Ref<const IntVect> pv,
+                        Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
                         ) ;
@@ -76,6 +78,7 @@ class BaseNRAlgo : public BaseAlgo
     protected:
         virtual void reset_timer(){
             BaseAlgo::reset_timer();
+            timer_refactor_ = 0.;
             timer_dSbus_ = 0.;
             timer_fillJ_ = 0.;
             timer_Va_Vm_ = 0.;
@@ -96,17 +99,6 @@ class BaseNRAlgo : public BaseAlgo
             timer_initialize_ += timer.duration();
         }
 
-        virtual
-        void solve(RealVect & b, bool has_just_been_inialized){
-            auto timer = CustTimer();
-            const ErrorType solve_status = _linear_solver.solve(J_, b, has_just_been_inialized);
-            if(solve_status != ErrorType::NoError){
-                // std::cout << "solve error: " << solve_status << std::endl;
-                err_ = solve_status;
-            }
-            timer_solve_ += timer.duration();
-        }
-
         void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
                        const Eigen::Ref<const CplxVect > & V);
 
@@ -116,23 +108,23 @@ class BaseNRAlgo : public BaseAlgo
                            const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                            const std::vector<int> & index_row_inv, // ex. pvpq_inv
                            const Eigen::VectorXi & index_col, // ex. pvpq
-                           Eigen::Index col_id,
-                           Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
-                           Eigen::Index col_lag
+                           size_t col_id,
+                           size_t row_lag,  // 0 for J11 for example, n_pvpq for J12
+                           size_t col_lag
                            );
         void _get_values_J(int & nb_obj_this_col,
                            std::vector<Eigen::Index> & inner_index,
                            std::vector<real_type> & values,
                            const Eigen::Ref<const Eigen::SparseMatrix<real_type> > & mat,  // ex. dS_dVa_r
                            const std::vector<int> & index_row_inv, // ex. pvpq_inv
-                           Eigen::Index col_id_mat, // ex. pvpq(col_id)
-                           Eigen::Index row_lag,  // 0 for J11 for example, n_pvpq for J12
-                           Eigen::Index col_lag  // to remove the ref slack bus from this
+                           size_t col_id_mat, // ex. pvpq(col_id)
+                           size_t row_lag,  // 0 for J11 for example, n_pvpq for J12
+                           size_t col_lag  // to remove the ref slack bus from this
                            );
 
         void fill_jacobian_matrix(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                   const CplxVect & V,
-                                  Eigen::Index slack_bus_id,
+                                  size_t slack_bus_id,
                                   const RealVect & slack_weights,
                                   const Eigen::VectorXi & pq,
                                   const Eigen::VectorXi & pvpq,
@@ -140,14 +132,14 @@ class BaseNRAlgo : public BaseAlgo
                                   const std::vector<int> & pvpq_inv
                                   );
         void fill_jacobian_matrix_kown_sparsity_pattern(
-                 Eigen::Index slack_bus_id,
+                 size_t slack_bus_id,
                  const Eigen::VectorXi & pq,
                  const Eigen::VectorXi & pvpq
                  );
         void fill_jacobian_matrix_unkown_sparsity_pattern(
                  const Eigen::SparseMatrix<cplx_type> & Ybus,
                  const CplxVect & V,
-                 Eigen::Index slack_bus_id,
+                 size_t slack_bus_id,
                  const RealVect & slack_weights,
                  const Eigen::VectorXi & pq,
                  const Eigen::VectorXi & pvpq,
@@ -155,7 +147,7 @@ class BaseNRAlgo : public BaseAlgo
                  const std::vector<int> & pvpq_inv
                  );
 
-        void fill_value_map(Eigen::Index slack_bus_id,
+        void fill_value_map(size_t slack_bus_id,
                             const Eigen::VectorXi & pq,
                             const Eigen::VectorXi & pvpq,
                             bool reset_J);
@@ -189,6 +181,7 @@ class BaseNRAlgo : public BaseAlgo
         // std::vector<int> row_map_;
 
         // timers
+        double timer_refactor_;
         double timer_initialize_;
         double timer_dSbus_;
         double timer_fillJ_;
@@ -212,10 +205,8 @@ class BaseNRAlgo : public BaseAlgo
             for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
             // TODO if bug when using it, check the "pvpq" below, 
             // in theory its "pv" !
-            int slack_bus_id = extract_slack_bus_id(pvpq, pq,
-                                                    static_cast<unsigned int>(V.size())
-                                                    );
-            fill_jacobian_matrix(Ybus, V, static_cast<Eigen::Index>(slack_bus_id),
+            size_t slack_bus_id = extract_slack_bus_id(pvpq, pq, static_cast<unsigned int>(V.size()));
+            fill_jacobian_matrix(Ybus, V, static_cast<size_t>(slack_bus_id),
                                  slack_weights, pq, pvpq, pq_inv, pvpq_inv);
             return J_;
         }

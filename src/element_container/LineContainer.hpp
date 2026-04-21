@@ -32,7 +32,7 @@ class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::Two
 This class is a container for all the powerlines on the grid.
 
 **/
-class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<LineContainer, LineInfo>
+class LineContainer final : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<LineContainer, LineInfo>
 {
     friend class LineInfo;
     public:
@@ -77,7 +77,7 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
         void compute_results(const Eigen::Ref<const RealVect> & Va,
                              const Eigen::Ref<const RealVect> & Vm,
                              const Eigen::Ref<const CplxVect> & V,
-                             const std::vector<SolverBusId> & id_grid_to_solver,
+                             const SolverBusIdVect & id_grid_to_solver,
                              const RealVect & bus_vn_kv,
                              real_type sn_mva,
                              bool ac){

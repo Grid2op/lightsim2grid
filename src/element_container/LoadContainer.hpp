@@ -40,7 +40,7 @@ NOTE: this class is also used for the storage units! So storage units are modele
 which entails that negative storage: the unit is discharging, power is injected in the grid,
 positive storage: the unit is charging, power is taken from the grid.
 **/
-class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadContainer, LoadInfo>
+class LoadContainer final : public OneSideContainer_PQ, public IteratorAdder<LoadContainer, LoadInfo>
 {
     friend class LoadInfo;
 
@@ -72,16 +72,16 @@ class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadConta
             reset_results();
         }
     
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const;
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;
 
     protected:
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                     const Eigen::Ref<const RealVect> & Vm,
                                     const Eigen::Ref<const CplxVect> & V,
-                                    const std::vector<SolverBusId> & id_grid_to_solver,
+                                    const SolverBusIdVect & id_grid_to_solver,
                                     const RealVect & bus_vn_kv,
                                     real_type sn_mva,
-                                    bool ac)
+                                    bool ac) override
                                     {
 
                                             set_osc_pq_res_p();

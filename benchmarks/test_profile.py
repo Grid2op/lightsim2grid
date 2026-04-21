@@ -88,6 +88,7 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
     ls_timer_Va_Vm = 0.
     ls_timer_pre_proc = 0.
     ls_timer_total_nr = 0.
+    ls_timer_refactor = 0.
     try:
         with open(f"gridmodel_{case_name}.pickle", "rb") as f:
             ls_grid = pickle.load(f)
@@ -107,8 +108,8 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
         if V.shape[0] == 0:
             raise RuntimeError("Divergence")
         
-        (timer_Fx_, timer_solve_, timer_initialize_, 
-         timer_check_, timer_dSbus_, timer_fillJ_, 
+        (timer_Fx_, timer_solve_, timer_refactor_, timer_initialize_,
+         timer_check_, timer_dSbus_, timer_fillJ_,
          timer_Va_Vm_, timer_pre_proc_, timer_total_nr_
          ) = ls_grid.get_solver().get_timers_jacobian()
         ls_grid.unset_changes()  # tell lightsim2grid that the state of the grid is consistent
@@ -121,6 +122,7 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
         ls_timer_Va_Vm += timer_Va_Vm_
         ls_timer_pre_proc += timer_pre_proc_
         ls_timer_total_nr += timer_total_nr_
+        ls_timer_refactor += timer_refactor_
     print(f"Solver used: {solver_used}")
     print(f"Nb iter: {nb_ts}")
     print(f"Do reset each step: {reset_algo}")
@@ -132,6 +134,7 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
     print(f"\t Time to initialize linear solver {1e3 * ls_timer_initialize:.2e} ms ({100. * ls_timer_initialize / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to compute dS/dV {1e3 * ls_timer_dSbus : .2e} ms ({100. * ls_timer_dSbus / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to fill the Jacobian {1e3 * ls_timer_fillJ:.2e} ms ({100. * ls_timer_fillJ / ls_timer_total_nr:.0f} % of time in solver)")
+    print(f"\t Time to refactor the Jacobian linear system: {1e3 * ls_timer_refactor:.2e} ms ({100. * ls_timer_refactor / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to solve the Jacobian linear system: {1e3 * ls_timer_solve:.2e} ms ({100. * ls_timer_solve / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to update Va and Vm {1e3*ls_timer_Va_Vm:.2e} ms ({100. * ls_timer_Va_Vm / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*ls_timer_Fx:.2e} ms ({100. * ls_timer_Fx / ls_timer_total_nr:.0f} % of time in solver)")

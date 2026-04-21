@@ -28,7 +28,30 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.13.0] 2026-04-xx
+[0.13.1]  2026-04-21
+--------------------
+- [BREAKING] when loading a powergrid from pypowsybl with "use_buses_for_sub" tagged
+  and disconnected element on the grid will now raise a RuntimeError. Before there were
+  some "automatic" bahaviour to try to find a possible bus which could lead to 
+  error afterwards.
+- [BREAKING] adding a more precise information about linear solvers. The "refactor" timings
+  are now also available in solver.get_timers_jacobian() which now returns a tuple of size 10
+- [FIXED] an issue where disconnected powerlines could be tagged as "fakely connected"
+- [FIXED] some issues when loading a grid from pypowsybl in case of disconnected elements.
+- [FIXED] remove the undefined behaviour while maintaining compile time check to prevent 
+  wrong conversion from different bus labelling.
+- [IMPROVED] the CI to allow automatic push on pypi on new version tag (introduced in version 0.12.0)
+- [IMPROVED] reduce code duplication between ContingencyAnalysis and TimeSerie (cpp side)
+- [IMPROVED] handling of branches disconnected at only one side: less code duplication and
+  it should be working with TimeSeries and ContingencyAnalysis
+- [IMPROVED] speed (DC mode): avoid the systematic call to "refactor" when Ybus is not changed
+  when using DC approximation.
+- [IMPROVED] simplify the future integration of other linear solvers and the logic when linear_solvers
+  are called by decoupling "refactor" steps from "solve" steps (they used to be all under the same
+  "solve" method).
+- [IMPROVED] added "final" and "override" key-words on some methods in src/element_container
+  
+[0.13.0] 2026-04-15
 --------------------
 - [PENDING DEPRECATION] the cpp module (lightsim2grid_cpp) will not be usable directly anymore.
   This means that calls like "from lightsim2grid_cpp import XXX" will not work. To replace them 

@@ -25,10 +25,10 @@ class BaseFDPFAlgo: public BaseAlgo
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         const CplxVect & Sbus,
-                        const Eigen::VectorXi & slack_ids,
+                        Eigen::Ref<const IntVect> slack_ids,
                         const RealVect & slack_weights,
-                        const Eigen::VectorXi & pv,
-                        const Eigen::VectorXi & pq,
+                        Eigen::Ref<const IntVect> pv,
+                        Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
                         ) ;  // requires a gridmodel !
@@ -63,7 +63,7 @@ class BaseFDPFAlgo: public BaseAlgo
         CplxVect evaluate_mismatch(const Eigen::SparseMatrix<cplx_type> &  Ybus,
                                    const CplxVect & V,
                                    const CplxVect & Sbus,
-                                   Eigen::Index slack_id,  // id of the ref slack bus
+                                   size_t slack_id,  // id of the ref slack bus
                                    real_type slack_absorbed,
                                    const RealVect & slack_weights)
         {
@@ -107,10 +107,9 @@ class BaseFDPFAlgo: public BaseAlgo
 
         virtual
         void solve(LinearSolver& linear_solver,
-                   Eigen::SparseMatrix<real_type>& mat,
                    RealVect & b){
             auto timer = CustTimer();
-            const ErrorType solve_status = linear_solver.solve(mat, b, true);  // true because i don't need to refactorize the matrix
+            const ErrorType solve_status = linear_solver.solve(b);
             if(solve_status != ErrorType::NoError){
                 // std::cout << "solve error: " << solve_status << std::endl;
                 err_ = solve_status;
@@ -121,7 +120,7 @@ class BaseFDPFAlgo: public BaseAlgo
         bool has_converged(const Eigen::Ref<const CplxVect > & tmp_va,
                            const Eigen::SparseMatrix<cplx_type> & Ybus,
                            const CplxVect & Sbus,
-                           Eigen::Index slack_bus_id,
+                           size_t slack_bus_id,
                            real_type & slack_absorbed,
                            const RealVect & slack_weights,
                            const Eigen::Ref<const Eigen::VectorXi> & pvpq,
@@ -174,12 +173,12 @@ class BaseFDPFAlgo: public BaseAlgo
                                   const Eigen::SparseMatrix<real_type> & grid_Bpp,
                                   const std::vector<int> & pvpq_inv,
                                   const std::vector<int> & pq_inv,
-                                  Eigen::Index n_pvpq,
-                                  Eigen::Index n_pq);
+                                  size_t n_pvpq,
+                                  size_t n_pq);
 
         void aux_fill_sparse_matrices(const Eigen::SparseMatrix<real_type> & grid_Bp_Bpp,
                                       const std::vector<int> & ind_inv,
-                                      Eigen::Index mat_dim,
+                                      size_t mat_dim,
                                       Eigen::SparseMatrix<real_type> & res);
 
     protected:

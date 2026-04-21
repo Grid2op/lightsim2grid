@@ -76,31 +76,23 @@ ErrorType NICSLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & 
     return err;
 }
 
-ErrorType NICSLULinearSolver::solve(const Eigen::SparseMatrix<real_type> & J, RealVect & b, bool doesnt_need_refactor){
-    // solves (for x) the linear system J.x = b
-    // supposes that the solver has been initialized (call klu_solver.analyze() before calling that)
-    int ret;
-    bool stop = false;
-    RealVect x;
-    ErrorType err = ErrorType::NoError;
-    if(!doesnt_need_refactor){
-        ret  = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
-        if (ret < 0) {
-            // std::cout << "NICSLULinearSolver::solve solver_.FactorizeMatrix error: " << ret << std::endl;
-            // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
-            err = ErrorType::SolverReFactor;
-            stop = true;
-        }
+ErrorType NICSLULinearSolver::refactor(const Eigen::SparseMatrix<real_type> & J){
+    int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
+    if(ret < 0){
+        // std::cout << "NICSLULinearSolver::refactor solver_.FactorizeMatrix error: " << ret << std::endl;
+        // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
+        return ErrorType::SolverReFactor;
     }
-    if(!stop){
-        const auto n = J.cols(); // should be equal to J_.nrows()
-        x = RealVect(n);
-        ret = solver_.Solve(&b(0), &x(0));
-        if (ret < 0) {
-            // std::cout << "NICSLULinearSolver::solve solver_.Solve error: " << ret << std::endl;
-            err = ErrorType::SolverSolve;
-        }
-        b = x;
+    return ErrorType::NoError;
+}
+
+ErrorType NICSLULinearSolver::solve(RealVect & b){
+    RealVect x(b.size());
+    int ret = solver_.Solve(&b(0), &x(0));
+    if(ret < 0){
+        // std::cout << "NICSLULinearSolver::solve solver_.Solve error: " << ret << std::endl;
+        return ErrorType::SolverSolve;
     }
-    return err;
+    b = x;
+    return ErrorType::NoError;
 }

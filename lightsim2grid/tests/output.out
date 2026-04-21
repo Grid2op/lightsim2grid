@@ -1,0 +1,320 @@
+/home/donnotben/Documents/grid2op_dev/grid2op/Backend/pandaPowerBackend.py:38: UserWarning: Numba cannot be loaded. You will gain possibly massive speed if installing it by 
+	/home/donnotben/Documents/lightsim2grid/venv_ls/bin/python -m pip install numba
+
+  warnings.warn(
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf5050ea0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf5050bb0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf5050bb0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf5050ea0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf5050bb0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf5050bb0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf50511c0
+GridModel destructor: 0x1c8377d0
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+		 GridModel Copy
+		 1
+		 2
+		 3
+		 4
+		 5
+		 6
+		 7
+		 8
+		 9
+GridModel destructor: 0x7ffdf50511c0
+GridModel destructor: 0x1ce5ef00
+GridModel destructor: 0x1d142410
+GridModel destructor: 0x1c846990
+GridModel destructor: 0x1c8792a0
+GridModel destructor: 0x1c8b2650
+GridModel destructor: 0x1d129990
+GridModel destructor: 0x1ce64bd0
+GridModel destructor: 0x1cfd3ba0
+GridModel destructor: 0x1cf26de0
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.016s
+
+OK
+
+
+Beginning test debug in CI...
+test_shunt_effect 1.
+load grid
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+beginning copy
+end copy
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+test_shunt_effect 2.
+load grid
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+beginning copy
+end copy
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+test_shunt_effect 3.
+beginning reset
+	reset 1.
+	reset 2.
+	reset 3.
+	reset 4.
+	reset 5.
+end reset 
+
+
+
+
+
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+beginning reset
+	reset 1.
+	reset 2.
+	reset 3.
+	reset 4.
+	reset 5.
+end reset 
+
+
+
+
+
+
+
+
+
+ beginning runpf
+	 runpf 1.
+	 runpf 2.
+	 runpf 3.
+end runpf
+
+
+
+test_shunt_effect 4.

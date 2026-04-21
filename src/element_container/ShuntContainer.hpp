@@ -34,7 +34,7 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
-class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntContainer, ShuntInfo>
+class ShuntContainer final : public OneSideContainer_PQ, public IteratorAdder<ShuntContainer, ShuntInfo>
 {
     friend class ShuntInfo;
     public:
@@ -65,17 +65,17 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
         
         virtual void fillYbus(std::vector<Eigen::Triplet<cplx_type> > & res,
                               bool ac,
-                              const std::vector<SolverBusId> & id_grid_to_solver,
+                              const SolverBusIdVect & id_grid_to_solver,
                               real_type sn_mva) const;
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
-                                const std::vector<SolverBusId> & id_grid_to_solver,
+                                const SolverBusIdVect & id_grid_to_solver,
                                 real_type sn_mva,
                                 FDPFMethod xb_or_bx) const;
-        virtual void fillSbus(CplxVect & Sbus, const std::vector<SolverBusId> & id_grid_to_solver, bool ac) const;  // in DC i need that
+        virtual void fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_to_solver, bool ac) const;  // in DC i need that
         
     protected:
-        virtual void _change_p(int shunt_id, real_type new_p, bool my_status, SolverControl & solver_control)
+        virtual void _change_p(int shunt_id, real_type new_p, bool my_status, SolverControl & solver_control) override
         {
             if(abs(target_p_mw_(shunt_id) - new_p) > _tol_equal_float){
                 solver_control.tell_recompute_ybus();
@@ -83,42 +83,49 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
             }
         }
 
-        virtual void _change_q(int shunt_id, real_type new_q, bool my_status, SolverControl & solver_control)
+        virtual void _change_q(int shunt_id, real_type new_q, bool my_status, SolverControl & solver_control) override
         {
             if(abs(target_q_mvar_(shunt_id) - new_q) > _tol_equal_float){
                 solver_control.tell_recompute_ybus();
             }
         }
 
-        virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) override {
             if(bus_id_(el_id) != new_bus_id){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_one_el_changed_bus();
                 solver_control.tell_recompute_sbus();  // needed for DC
+                return true;
             }
+            return false;
         };
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
             if(status_[el_id]){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_one_el_changed_bus();
                 solver_control.tell_recompute_sbus();  // needed for DC
+                return true;
             }
+            return false;
         };
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
             if(!status_[el_id]){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_one_el_changed_bus();
                 solver_control.tell_recompute_sbus();  // needed for DC
+                return true;
             }
+            return false;
         };
+
         virtual void _compute_results(
             const Eigen::Ref<const RealVect> & Va,
             const Eigen::Ref<const RealVect> & Vm,
             const Eigen::Ref<const CplxVect> & V,
-            const std::vector<SolverBusId> & id_grid_to_solver,
+            const SolverBusIdVect & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
-            bool ac);
+            bool ac) override;
 
     protected:
         // physical properties

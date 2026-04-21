@@ -15,7 +15,7 @@ bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> 
     std::vector<bool> visited(Ybus.cols(), false); 
     std::vector<bool> already_added(Ybus.cols(), false);
     std::queue<Eigen::Index> neighborhood;
-    Eigen::Index col_id = 0;  // start by node 0, why not
+    size_t col_id = 0;  // start by node 0, why not
     while (true)
     {
         visited[col_id] = true;
@@ -46,7 +46,7 @@ bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> 
 
 void ContingencyAnalysis::init_li_coeffs(
     bool ac_solver_used,
-    const std::vector<SolverBusId> &id_me_to_solver)
+    const SolverBusIdVect &id_me_to_solver)
 {
     _li_coeffs.clear();
     _li_coeffs.reserve(_li_defaults.size());
@@ -82,12 +82,11 @@ void ContingencyAnalysis::init_li_coeffs(
                 GenericContainer::_deactivated_bus_id : 
                 id_me_to_solver[glob_bus_2.cast_int()].cast_int();
             status = p_branch->get_status_global()[el_id];
-            // TODO disconnected one side !
             if(ac_solver_used){
-                y_ff = p_branch->yac_11()[el_id];
-                y_ft = p_branch->yac_12()[el_id];
-                y_tf = p_branch->yac_21()[el_id];
-                y_tt = p_branch->yac_22()[el_id];
+                y_ff = p_branch->yac_eff_11()[el_id];
+                y_ft = p_branch->yac_eff_12()[el_id];
+                y_tf = p_branch->yac_eff_21()[el_id];
+                y_tt = p_branch->yac_eff_22()[el_id];
             }else{
                 y_ff = p_branch->ydc_11()[el_id];
                 y_ft = p_branch->ydc_12()[el_id];
@@ -169,67 +168,39 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     auto timer = CustTimer();
     auto timer_preproc = CustTimer();
 
+    // perform some initial checks and reset timers
+    size_t nb_total_bus = _reset_data_and_check_vinit(Vinit);
     _timer_modif_Ybus = 0.;
-    _timer_pre_proc = 0.;
-    _timer_total = 0.;
-    _timer_solver = 0.;
-
-    const Eigen::Index nb_total_bus = _grid_model.total_bus();
-    if(Vinit.size() != nb_total_bus){
-        std::ostringstream exc_;
-        exc_ << "SecurityAnalysis::compute: Size of the Vinit should be the same as the total number of buses. Currently:  ";
-        exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_total_bus << " buses.";
-        exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
-        throw std::runtime_error(exc_.str());
-    }
 
     // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _solver.ac_solver_used();
+    size_t nb_steps = _li_defaults.size();
 
     // prepare the gridmodel (compute Ybus, Sbus etc.)
     CplxVect Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used);
 
+    ///////////////////////////////////////
+    // initialize what will change (here Ybus)
     // initialize properly the coefficients that I will need to remove
     init_li_coeffs(ac_solver_used, id_me_to_solver_);
-    Eigen::Index nb_steps = _li_defaults.size();
+    ////////////////////////////////////
 
-    // init the results matrices
-    _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus); 
-    _amps_flows = RealMat::Zero(0, n_total_);
-
-    // reset the solver
-    _solver.reset();
-
-    // compute the right Vinit to send to the solver
-    // CplxVect Vinit_solver = extract_Vsolver_from_Vinit(Vinit, nb_buses_solver, nb_total_bus, id_me_to_solver);
-
-    // perform the initial powerflow / "powerflow in n"
-    _solver_control.tell_all_changed();
-    _solver.tell_solver_control(_solver_control);
-    _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
-    CplxVect Vinit_solver2 = Vinit_solver;
-    bool conv = _solver.compute_pf(
-        Ybus_,
-        Vinit_solver2,
-        Sbus_,
-        slack_ids_,
-        slack_weights_,
-        bus_pv_,
-        bus_pq_,
+    bool n_powerflow_has_conv = _finish_preprocessing(
+        nb_steps,
+        nb_total_bus,
+        Vinit_solver,  // is modified if _init_from_n_powerflow is true
         max_iter,
-        tol);
-    // check if we init the n-1 cases with results from the n cases
-    // or not
-    if(_init_from_n_powerflow) Vinit_solver = _solver.get_V();
-    // end of pre processing
-    _timer_pre_proc = timer_preproc.duration();
-    if(!conv) return;
-    _solver_control.tell_none_changed();
+        tol,
+        timer_preproc
+    );
+
+    if(!n_powerflow_has_conv) return;
 
     // now perform the security analysis
-    Eigen::Index cont_id = 0;
+    size_t cont_id = 0;
     CplxVect V;
+    bool conv;
     for(const auto & coeffs_modif: _li_coeffs){
         auto timer_modif_Ybus = CustTimer();
         bool invertible = true;
@@ -240,16 +211,14 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         if(invertible)
         {
             V = Vinit_solver; // Vinit is reused for each contingencies
-            // _solver_control.tell_all_changed();
-            // _solver_control.tell_solver_need_reset();
             conv = compute_one_powerflow(
                 Ybus_,
                 V,
                 Sbus_,
-                slack_ids_,
+                slack_ids_me_.as_eigen(),
                 slack_weights_,
-                bus_pv_,
-                bus_pq_,
+                bus_pv_.as_eigen(),
+                bus_pq_.as_eigen(),
                 max_iter,
                 tol / sn_mva);
         }
@@ -257,7 +226,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         timer_modif_Ybus = CustTimer();
         readd_to_Ybus(Ybus_, coeffs_modif, ac_solver_used); 
         _timer_modif_Ybus += timer_modif_Ybus.duration();
-        if (conv && invertible) _voltages.row(cont_id)(reinterpret_cast<const std::vector<int> & >(id_solver_to_me_)) = V.array();
+        if (conv && invertible) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
         ++cont_id;
     }
     _timer_total = timer.duration();
@@ -268,7 +237,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 void ContingencyAnalysis::clean_flows(bool is_amps)
 {
     auto timer = CustTimer();
-    Eigen::Index cont_id = 0;
+    size_t cont_id = 0;
     for(const auto & l_id_this_cont: _li_defaults){
         for(auto l_id : l_id_this_cont){
             real_type & el = is_amps ? _amps_flows(cont_id, l_id): _active_power_flows(cont_id, l_id);

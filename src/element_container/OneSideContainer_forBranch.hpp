@@ -104,39 +104,43 @@ class OneSideContainer_ForBranch : public OneSideContainer
         }
 
     protected:
-        virtual void _reset_results() {
-            // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos) 
+        virtual void _reset_results() override {
+            // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
         };
         virtual void _compute_results(const Eigen::Ref<const RealVect> & Va,
                                       const Eigen::Ref<const RealVect> & Vm,
                                       const Eigen::Ref<const CplxVect> & V,
-                                      const std::vector<SolverBusId> & id_grid_to_solver,
+                                      const SolverBusIdVect & id_grid_to_solver,
                                       const RealVect & bus_vn_kv,
                                       real_type sn_mva,
-                                      bool ac) {
+                                      bool ac) override {
 
-            // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos) 
+            // nothing to do by default, as this class should be used as template for "branch" (eg lines or trafos)
             // elements
             };
 
-        virtual void _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
             if(status_[el_id]){
                 solver_control.tell_ybus_some_coeffs_zero();
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_recompute_sbus();  // only for trafo in DC
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                return true;
             }
+            return false;
         };
-        virtual void _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
             if(!status_[el_id]){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_recompute_sbus();  // only for trafo in DC
                 solver_control.tell_ybus_change_sparsity_pattern();
                 solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                return true;
             }
+            return false;
         };
-        virtual void _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) override {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
@@ -147,7 +151,9 @@ class OneSideContainer_ForBranch : public OneSideContainer
                 solver_control.tell_ybus_change_sparsity_pattern();
                 solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
                 solver_control.tell_recompute_sbus();  // only for trafo in DC
+                return true;
             }
+            return false;
         };
 
     protected:

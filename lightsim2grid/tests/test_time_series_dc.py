@@ -16,7 +16,6 @@ import numpy as np
 import grid2op
 from lightsim2grid import LightSimBackend, SolverType
 from lightsim2grid.timeSerie import TimeSerie
-import pdb
 
 
 class TestTSDC_14(unittest.TestCase):
@@ -38,6 +37,7 @@ class TestTSDC_14(unittest.TestCase):
         return super().tearDown()
     
     def test_dc(self):
+        """test results when computing with AC or with DC are different"""
         V_init = 1.0 * np.abs(self.env.backend.V) + 0j
         
         self.ts.computer.change_solver(SolverType.SparseLUSingleSlack)
@@ -45,16 +45,21 @@ class TestTSDC_14(unittest.TestCase):
         res_p, res_a, res_v = self.ts.get_flows(scenario_id=self.scenario_id,
                                                 seed=self.seed,
                                                 v_init=V_init)
+        assert np.any(np.abs(res_p) > 1e-5), "all flows are 0. for time series in AC, this should not be the case"
         assert self.ts.computer.get_solver_type() == SolverType.SparseLUSingleSlack
         self.ts.clear()
         self.ts.computer.change_solver(SolverType.DC)
+        print("========================================")
+        print("HERE HERE HERE")
         res_p_dc, res_a_dc, res_v_dc  = self.ts.get_flows(scenario_id=self.scenario_id,
                                                           seed=self.seed,
                                                           v_init=V_init)
+        print("END=====================================")
+        assert np.any(np.abs(res_p) > 1e-5), "all flows are 0. for time series in DC, this should not be the case"
         assert self.ts.computer.get_solver_type() == SolverType.DC
-        assert np.any(res_p != res_p_dc)
-        assert np.any(res_a != res_a_dc)
-        assert np.any(res_v != res_v_dc)
+        assert (np.abs(res_p - res_p_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for p"
+        assert (np.abs(res_a - res_a_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for a"
+        assert (np.abs(res_v - res_v_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for v"
             
         nb_bus = self.env.n_sub
         
@@ -71,16 +76,16 @@ class TestTSDC_14(unittest.TestCase):
             if len(res):
                 # model has converged, I check the results are the same
                 # check voltages
-                assert np.allclose(res_v_dc[ts, :nb_bus], res[:nb_bus]), f"error for step {ts}"
+                assert np.allclose(res_v_dc[ts, :nb_bus], res[:nb_bus]), f"error for step {ts}, max error {np.abs(res_v_dc[ts, :nb_bus] - res[:nb_bus]).max()}"
                 # now check the flows
                 pl_dc, ql_dc, vl_dc, al_dc = grid_model.get_line_res1()
                 pt_dc, qt_dc, vt_dc, at_dc = grid_model.get_trafo_res1()
                 # check active power
                 p_dc_ref = np.concatenate((pl_dc, pt_dc))
-                assert np.allclose(res_p_dc[ts], p_dc_ref), f"error for step {ts}"
+                assert np.allclose(res_p_dc[ts], p_dc_ref), f"error for step {ts}, max error {np.abs(res_p_dc[ts, :nb_bus] - p_dc_ref[:nb_bus]).max()}"
                 # check amps
                 a_dc_ref = np.concatenate((al_dc, at_dc)) * 1000.
-                assert np.allclose(res_a_dc[ts], a_dc_ref), f"error for step {ts}"
+                assert np.allclose(res_a_dc[ts], a_dc_ref), f"error for step {ts}, max error {np.abs(res_a_dc[ts, :nb_bus] - a_dc_ref[:nb_bus]).max()}"
             else:
                 # model has diverged, I check that it has diverge the same way in the security_analysis
                 raise AssertionError("The DC computation should have reached the end.")

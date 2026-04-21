@@ -196,7 +196,7 @@ def main(max_ts,
                                     real_env_ls.backend.max_it,
                                     real_env_ls.backend.tol)
     time_serie._TimeSerie__computed = True
-    a_or = time_serie.compute_A()
+    a_or = time_serie.compute_A()  # noqa: F841
     p_or = time_serie.compute_P()
     assert status, f"some powerflow diverge for Time Series for {env_name}: {computer_ts.nb_solved()} "
     ts_time = 1e3 * (computer_ts.total_time() + computer_ts.amps_computation_time()) / computer_ts.nb_solved()
@@ -213,7 +213,7 @@ def main(max_ts,
     
     PTDF_ = 1.0 * real_env_ls.backend._grid.get_ptdf()
     beg_ = time.perf_counter()
-    flows = np.dot(PTDF_, T_Sbus).T
+    flows = np.dot(PTDF_, T_Sbus).T  # noqa: F841
     end_ = time.perf_counter()
     time_only_ptdf, *_ = real_env_ls.backend._grid.get_dc_solver().get_timers_ptdf_lodf()
     time_only_ptdf *= 1000. / Sbus.shape[0]
@@ -239,7 +239,7 @@ def main(max_ts,
     init_powerflow_diag = np.diag(init_powerflow)
     LODF_mat = 1.0 * real_env_ls.backend._grid.get_lodf()
     beg_ = time.perf_counter()
-    por_lodf = init_powerflow + LODF_mat * init_powerflow_diag
+    por_lodf = init_powerflow + LODF_mat * init_powerflow_diag  # noqa: F841
     end_ = time.perf_counter()
     _, time_only_lodf, _ = real_env_ls.backend._grid.get_dc_solver().get_timers_ptdf_lodf()
     time_only_lodf *= 1000. / init_powerflow.shape[0]
@@ -254,7 +254,7 @@ def main(max_ts,
     # order on which the solvers will be 
     this_order =  [el for el in res_times.keys() if el not in order_solver_print] + order_solver_print
 
-    hds = [f"{env_name}", f"grid2op speed (it/s)", f"grid2op 'backend.runpf' time (ms / pf)", f"time in 'algo' (ms / pf)"]
+    hds = [f"{env_name}", "grid2op speed (it/s)", "grid2op 'backend.runpf' time (ms / pf)", "time in 'algo' (ms / pf)"]
     tab = []
     if no_pp is False:
         tab.append(["PP DC", f"{nb_ts_pp/time_pp:.2e}",
@@ -299,7 +299,7 @@ def main(max_ts,
     print()
 
     if no_pp is False:
-        hds = [f"{env_name} ({nb_ts_pp} iter)", f"Δ aor (amps)", f"Δ gen_p (MW)", f"Δ gen_q (MVAr)"]
+        hds = [f"{env_name} ({nb_ts_pp} iter)", "Δ aor (amps)", "Δ gen_p (MW)", "Δ gen_q (MVAr)"]
         tab = [["PP (ref)", "0.00", "0.00", "0.00"]]
 
     for key in this_order:
