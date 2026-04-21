@@ -1,6 +1,15 @@
 
+set(BINDING_SOURCES
+    "bindings/binding_module.cpp"
+    "bindings/binding_enums.cpp"
+    "bindings/binding_solvers.cpp"
+    "bindings/binding_containers.cpp"
+    "bindings/binding_misc.cpp"
+    "bindings/binding_gridmodel.cpp"
+    "bindings/binding_batch.cpp"
+)
+
 set(SOURCES
-    "main.cpp"
     "help_fun_msg.cpp"
     "BaseConstants.cpp"
     "GridModel.cpp"
@@ -20,6 +29,7 @@ add_subdirectory(powerflow_algorithm)
 
 
 include_directories(".")
+include_directories("bindings")
 
 # python_add_library(lightsim2grid_cpp MODULE ${SOURCES} WITH_SOABI)
 
@@ -28,7 +38,7 @@ include_directories(".")
 # )
 
 
-pybind11_add_module(lightsim2grid_cpp ${SOURCES})
+pybind11_add_module(lightsim2grid_cpp ${BINDING_SOURCES} ${SOURCES})
 
 # Windows: mark exported symbols with __declspec(dllexport) and generate an
 # import library (.lib) so that plugin DLLs can link against this module.
