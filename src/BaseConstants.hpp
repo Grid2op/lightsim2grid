@@ -9,6 +9,7 @@
 #ifndef BASECONSTANTS_H
 #define BASECONSTANTS_H
 
+#include "ls2g_api.hpp"
 #include "Utils.hpp"
 
 namespace ls2g {
@@ -17,7 +18,7 @@ namespace ls2g {
 Definition of some basic constants, because sometimes Eigen cannot deduce types.
 Eg if I type "1.0" then Eigen cast it to "double" and i cannot use it with real_type = float for example
 **/
-class BaseConstants
+class LS2G_API BaseConstants
 {
     public:
         static const cplx_type my_i;

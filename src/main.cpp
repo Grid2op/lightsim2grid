@@ -96,10 +96,6 @@ void add_pickle(py::class_<T>& cls, const char* class_name) {
 
 PYBIND11_MODULE(lightsim2grid_cpp, m)
 {
-    // Register all built-in solvers into the singleton registry.
-    // Must happen before any GridModel instance is created.
-    register_builtin_solvers(SolverRegistry::instance());
-
     // constant and compilation information
     m.attr("klu_solver_available") = py::bool_(this_KLU_SOLVER_AVAILABLE);
     m.attr("nicslu_solver_available") = py::bool_(this_NICSLU_SOLVER_AVAILABLE);

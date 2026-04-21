@@ -68,4 +68,11 @@ void register_builtin_solvers(SolverRegistry& reg) {
 #endif // CKTSO_SOLVER_AVAILABLE
 }
 
+namespace {
+    struct _AutoRegister {
+        _AutoRegister() { register_builtin_solvers(SolverRegistry::instance()); }
+    };
+    static const _AutoRegister _auto_reg;
+}
+
 } // namespace ls2g

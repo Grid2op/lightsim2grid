@@ -17,7 +17,7 @@ namespace ls2g {
 Allws the computation of time series, that is, the same grid topology is used along with time
 series of injections (productions and loads) to compute powerflows/
  **/
-class TimeSeries final: public BaseBatchSolverSynch
+class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 {
     public:
         explicit TimeSeries(const GridModel & init_grid_model) noexcept:

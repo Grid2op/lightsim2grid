@@ -36,7 +36,7 @@ https://pandapower.readthedocs.io/en/latest/elements/shunt.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/shunt.html#electric-model
 **/
-class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntContainer, ShuntInfo>
+class LS2G_API ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntContainer, ShuntInfo>
 {
     friend class ShuntInfo;
     public:

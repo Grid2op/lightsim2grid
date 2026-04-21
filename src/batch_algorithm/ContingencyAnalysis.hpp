@@ -18,7 +18,7 @@ namespace ls2g {
 Class to perform a contingency analysis (security analysis), which consist of performing some powerflow after some powerlines
 have been disconnected 
  **/
-class ContingencyAnalysis final: public BaseBatchSolverSynch
+class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 {
     public:
         explicit  ContingencyAnalysis(const GridModel & init_grid_model) noexcept:

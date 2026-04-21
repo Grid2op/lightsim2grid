@@ -42,7 +42,7 @@ NOTE: this class is also used for the storage units! So storage units are modele
 which entails that negative storage: the unit is discharging, power is injected in the grid,
 positive storage: the unit is charging, power is taken from the grid.
 **/
-class LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadContainer, LoadInfo>
+class LS2G_API LoadContainer : public OneSideContainer_PQ, public IteratorAdder<LoadContainer, LoadInfo>
 {
     friend class LoadInfo;
 

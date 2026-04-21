@@ -22,7 +22,7 @@ It allows to perform "batch" powerflow one a time in a synchronous manner.
 The "solver" of the gridmodel is never really used to perform powerflows.
 
 **/
-class BaseBatchSolverSynch : protected BaseConstants
+class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 {
     public:
         typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
