@@ -12,7 +12,7 @@
 #include <queue>
 
 
-GridModel::GridModel(const GridModel & other) noexcept
+GridModel::GridModel(const GridModel & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
