@@ -18,6 +18,8 @@
 #include "Utils.hpp"
 #include "OneSideContainer.hpp"
 
+namespace ls2g {
+
 
 /**
  * This class represents a "one side container"
@@ -252,5 +254,8 @@ class OneSideContainer_PQ : public OneSideContainer
         RealVect target_q_mvar_;
 
 };
+
+
+} // namespace ls2g
 
 #endif  //ONE_SIDE_CONTAINER_PQ_H

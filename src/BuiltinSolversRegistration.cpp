@@ -10,6 +10,8 @@
 #include "SolverRegistry.hpp"
 #include "Solvers.hpp"   // all concrete solver typedefs + #ifdef guards
 
+namespace ls2g {
+
 void register_builtin_solvers(SolverRegistry& reg) {
     reg.register_solver("SparseLU",
         []{ return std::unique_ptr<BaseAlgo>(new SparseLUSolver()); });
@@ -65,3 +67,5 @@ void register_builtin_solvers(SolverRegistry& reg) {
         []{ return std::unique_ptr<BaseAlgo>(new FDPF_BX_CKTSOSolver()); });
 #endif // CKTSO_SOLVER_AVAILABLE
 }
+
+} // namespace ls2g

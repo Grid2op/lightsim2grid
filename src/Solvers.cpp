@@ -9,6 +9,8 @@
 #include "Solvers.hpp"
 #include "GridModel.hpp"
 
+namespace ls2g {
+
 // these functions use the _gridmodel that is a not a real type in the template class declaration.
 // this is why i need to define them here for every specialization.
 
@@ -35,3 +37,5 @@ template void FDPF_BX_NICSLUSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & 
 template void FDPF_XB_CKTSOSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 template void FDPF_BX_CKTSOSolver::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;
 #endif  // CKTSO_SOLVER_AVAILABLE
+
+} // namespace ls2g

@@ -8,6 +8,8 @@
 
 #include "BaseBatchSolverSynch.hpp"
 
+namespace ls2g {
+
 /**
  V is modified at each call !
 **/
@@ -76,3 +78,5 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
     if (amps) _timer_compute_A = timer_compute.duration();
     else _timer_compute_P = timer_compute.duration();
 }
+
+} // namespace ls2g

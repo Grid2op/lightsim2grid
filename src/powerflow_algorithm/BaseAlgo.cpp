@@ -9,6 +9,8 @@
 #include "BaseAlgo.hpp"
 #include "GridModel.hpp"  // needs to be included here because of the forward declaration
 
+namespace ls2g {
+
 
 void BaseAlgo::reset(){
     // reset timers
@@ -190,3 +192,5 @@ void BaseAlgo::get_Bf_transpose(Eigen::SparseMatrix<real_type> & Bf_T) const {
     if(IS_AC) throw std::runtime_error("get_Bf: impossible to use this in AC mode for now");
     gridmodel_ptr_->fillBf_for_PTDF(Bf_T, true);
 }
+
+} // namespace ls2g

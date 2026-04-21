@@ -11,6 +11,8 @@
 
 #include <chrono>
 
+namespace ls2g {
+
 /**
 
 This class presents a basic timer that is used in KLUSolver to know on which part of the solver
@@ -35,5 +37,8 @@ class CustTimer final{
         std::chrono::time_point<std::chrono::steady_clock> start_;
         std::chrono::time_point<std::chrono::steady_clock> end_;
 };
+
+
+} // namespace ls2g
 
 #endif //CUSTTIMER_H

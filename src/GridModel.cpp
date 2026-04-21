@@ -11,6 +11,8 @@
 
 #include <queue>
 
+namespace ls2g {
+
 
 GridModel::GridModel(const GridModel & other)
 {
@@ -1246,3 +1248,5 @@ void GridModel::consider_only_main_component(){
     // and finally deal with the buses
     init_bus_status();
 }
+
+} // namespace ls2g

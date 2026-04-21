@@ -12,6 +12,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 const bool CKTSOLinearSolver::CAN_SOLVE_MAT = false;
 
 
@@ -110,3 +112,5 @@ ErrorType CKTSOLinearSolver::solve(RealVect & b){
     b = x;
     return ErrorType::NoError;
 }
+
+} // namespace ls2g

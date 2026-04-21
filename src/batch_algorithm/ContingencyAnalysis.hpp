@@ -12,6 +12,8 @@
 #include "BaseBatchSolverSynch.hpp"
 #include <set>
 
+namespace ls2g {
+
 /**
 Class to perform a contingency analysis (security analysis), which consist of performing some powerflow after some powerlines
 have been disconnected 
@@ -175,4 +177,7 @@ class ContingencyAnalysis final: public BaseBatchSolverSynch
         //timers
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation
 };
+
+} // namespace ls2g
+
 #endif  //COMPUTERS_H

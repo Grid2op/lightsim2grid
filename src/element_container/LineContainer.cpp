@@ -10,6 +10,8 @@
 
 #include <sstream>
 
+namespace ls2g {
+
 void LineContainer::init(
     const RealVect & branch_r,
     const RealVect & branch_x,
@@ -69,3 +71,5 @@ void LineContainer::init(const RealVect & branch_r,
     _update_model_coeffs();
     reset_results();
 }
+
+} // namespace ls2g

@@ -19,6 +19,8 @@
 #include "GenericContainer.hpp"
 #include "SubstationContainer.hpp"
 
+namespace ls2g {
+
 // same for all
 // - X nb 
 // - X get_bus
@@ -497,5 +499,8 @@ class OneSideContainer : public GenericContainer
         RealVect res_v_;  // in kV
         RealVect res_theta_;  // in degree
 };
+
+
+} // namespace ls2g
 
 #endif  //ONE_SIDE_CONTAINER_H

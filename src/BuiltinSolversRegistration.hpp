@@ -9,6 +9,8 @@
 #ifndef BUILTIN_SOLVERS_REGISTRATION_H
 #define BUILTIN_SOLVERS_REGISTRATION_H
 
+namespace ls2g {
+
 class SolverRegistry;
 
 // Register every in-tree solver into `reg`.
@@ -16,5 +18,8 @@ class SolverRegistry;
 // To add a new built-in solver: add one register_solver(...) call here, guarded
 // by the same #ifdef as the solver class itself.
 void register_builtin_solvers(SolverRegistry& reg);
+
+
+} // namespace ls2g
 
 #endif // BUILTIN_SOLVERS_REGISTRATION_H

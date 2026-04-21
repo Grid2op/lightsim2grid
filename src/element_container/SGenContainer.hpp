@@ -18,6 +18,8 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+namespace ls2g {
+
 
 class SGenContainer;
 class SGenInfo  : public OneSideContainer_PQ::OneSidePQInfo
@@ -121,5 +123,8 @@ max_p_mw(0.)
         max_p_mw = r_data_sgen.p_max_mw_(my_id);
     }
 }
+
+
+} // namespace ls2g
 
 #endif  //SGEN_CONTAINER_H

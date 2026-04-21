@@ -8,6 +8,8 @@
 
 #include "SolverRegistry.hpp"
 
+namespace ls2g {
+
 SolverRegistry& SolverRegistry::instance() {
     static SolverRegistry reg;
     return reg;
@@ -38,3 +40,5 @@ std::vector<std::string> SolverRegistry::available_solvers() const {
     }
     return names;
 }
+
+} // namespace ls2g

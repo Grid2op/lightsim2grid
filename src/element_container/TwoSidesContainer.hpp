@@ -18,6 +18,8 @@
 #include "Utils.hpp"
 #include "GenericContainer.hpp"
 
+namespace ls2g {
+
 // TODO other part of the API, like deactivate, reactivate etc.
 template<class OneSideType>
 class TwoSidesContainer : public GenericContainer
@@ -438,5 +440,8 @@ class TwoSidesContainer : public GenericContainer
 
 };
 
+
+
+} // namespace ls2g
 
 #endif  // TWO_SIDES_CONTAINER_H

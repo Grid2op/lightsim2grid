@@ -11,6 +11,8 @@
 
 #include "BaseAlgo.hpp"
 
+namespace ls2g {
+
 class GaussSeidelAlgo : public BaseAlgo
 {
     public:
@@ -53,5 +55,8 @@ class GaussSeidelAlgo : public BaseAlgo
         GaussSeidelAlgo & operator=(const GaussSeidelAlgo&) = delete;
 
 };
+
+
+} // namespace ls2g
 
 #endif // GAUSSSEIDEL_ALGO_H

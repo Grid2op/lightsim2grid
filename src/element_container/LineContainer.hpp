@@ -21,6 +21,8 @@
 #include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
+namespace ls2g {
+
 class LineContainer;
 class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
 {
@@ -103,5 +105,8 @@ class LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>
 
 inline LineInfo::LineInfo(const LineContainer & r_data, int my_id) noexcept:
 TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo(r_data, my_id) {}
+
+
+} // namespace ls2g
 
 #endif  //LINE_CONTAINER_H

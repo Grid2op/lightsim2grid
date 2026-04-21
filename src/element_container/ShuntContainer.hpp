@@ -17,6 +17,8 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+namespace ls2g {
+
 class ShuntContainer;
 class ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
@@ -138,5 +140,8 @@ class ShuntContainer : public OneSideContainer_PQ, public IteratorAdder<ShuntCon
 
 inline ShuntInfo::ShuntInfo(const ShuntContainer & r_data_shunt, int my_id) noexcept:
 OneSidePQInfo(r_data_shunt, my_id){}
+
+
+} // namespace ls2g
 
 #endif  //SHUNT_CONTAINER_H

@@ -20,6 +20,8 @@
 // import cktso package
 #include "cktso.h"
 
+namespace ls2g {
+
 /**
 class to handle the solver using newton-raphson method, using CKTSO algorithm and sparse matrices.
 CKTSO, according to https://github.com/Grid2Op/lightsim2grid/issues/52
@@ -105,4 +107,7 @@ class CKTSOLinearSolver final
 };
 
 #endif // CKTSOSOLVER_H
+
+} // namespace ls2g
+
 #endif  // CKTSO_SOLVER_AVAILABLE

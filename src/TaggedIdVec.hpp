@@ -12,6 +12,8 @@
 #include <vector>
 #include "Eigen/Core"
 
+namespace ls2g {
+
 const int LOCAL_BUS = 0;
 const int GLOBAL_BUS = 1;
 const int GRIDMODEL_BUS = GLOBAL_BUS;
@@ -234,5 +236,8 @@ private:
 using GlobalBusIdVect    = TaggedIdStdVec<GLOBAL_BUS>;
 using GridModelBusIdVect = TaggedIdStdVec<GRIDMODEL_BUS>;
 using SolverBusIdVect    = TaggedIdStdVec<SOLVER_BUS>;
+
+
+} // namespace ls2g
 
 #endif // TAGGEDIDVEC_HPP

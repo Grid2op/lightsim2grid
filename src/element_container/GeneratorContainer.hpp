@@ -20,6 +20,8 @@
 #include "Utils.hpp"
 #include "OneSideContainer_PQ.hpp"
 
+namespace ls2g {
+
 class GeneratorContainer;
 class GenInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
@@ -291,5 +293,8 @@ max_q_mvar(0.)
         max_q_mvar = r_data_gen.max_q_.coeff(my_id);
     }
 }
+
+
+} // namespace ls2g
 
 #endif  //GENERATORCONTAINER_H

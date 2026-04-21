@@ -11,6 +11,8 @@
 
 #include "TwoSidesContainer.hpp"
 
+namespace ls2g {
+
 /**
  * Type of container to represent a line or a transformer.
  * 
@@ -971,4 +973,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         FDPFCoeffsContainer BX_fpdf_coeffs_;
         FDPFCoeffsContainer XB_fpdf_coeffs_;
 };
+
+} // namespace ls2g
+
 #endif  // TWO_SIDES_CONTAINER_RXH_A_H

@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 const bool SparseLULinearSolver::CAN_SOLVE_MAT = true;
 
 ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
@@ -37,3 +39,5 @@ ErrorType SparseLULinearSolver::solve(RealVect & b){
     b = Va;
     return err;
 }
+
+} // namespace ls2g

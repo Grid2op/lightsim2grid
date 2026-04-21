@@ -21,6 +21,8 @@
 #include "linear_solvers/NICSLUSolver.hpp"
 #include "linear_solvers/CKTSOSolver.hpp"
 
+namespace ls2g {
+
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen**/
 typedef BaseNRAlgo<SparseLULinearSolver> SparseLUSolver;
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, do not consider multiple slack bus**/
@@ -99,5 +101,8 @@ typedef BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX> FDPF_BX_SparseLUSolve
     class FDPF_XB_CKTSOSolver : public FDPF_XB_SparseLUSolver {};
     class FDPF_BX_CKTSOSolver : public FDPF_BX_SparseLUSolver {};
 #endif  // CKTSO_SOLVER_AVAILABLE
+
+
+} // namespace ls2g
 
 #endif // SOLVERS_H

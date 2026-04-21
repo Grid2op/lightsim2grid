@@ -14,6 +14,8 @@
 
 #include<string>
 
+namespace ls2g {
+
 struct DocSolver
 {
     // generic functions
@@ -288,5 +290,8 @@ struct DocSecurityAnalysis
     static const std::string get_voltages;
     static const std::string get_power_flows;
 };
+
+
+} // namespace ls2g
 
 #endif  // HELP_FUN_MSG_H

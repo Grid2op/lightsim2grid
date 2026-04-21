@@ -19,6 +19,8 @@
 #include "Utils.hpp"
 #include "BaseConstants.hpp"
 
+namespace ls2g {
+
 // TODO simplify this iterator classes
 
 // iterator type
@@ -104,5 +106,7 @@ class IteratorAdder
         }
 };
 
-#endif // CONTAINER_ITERATOR_UTILS_H
 
+} // namespace ls2g
+
+#endif // CONTAINER_ITERATOR_UTILS_H

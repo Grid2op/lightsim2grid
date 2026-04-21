@@ -10,6 +10,8 @@
 
 #include "help_fun_msg.hpp"
 
+namespace ls2g {
+
 const std::string DocSolver::get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
 
@@ -3664,3 +3666,5 @@ const std::string DocSecurityAnalysis::get_power_flows = R"mydelimiter(
         The flows (in kA) at the origin side / high voltage side of each transformers / powerlines.
 
 )mydelimiter";
+
+} // namespace ls2g

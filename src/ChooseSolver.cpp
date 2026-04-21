@@ -9,6 +9,8 @@
 #include "ChooseSolver.hpp"
 #include "SolverTypeNames.hpp"  // solver_type_to_name / name_to_solver_type
 
+namespace ls2g {
+
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
@@ -122,3 +124,5 @@ std::ostream& operator<<(std::ostream& out, const SolverType& solver_type)
     }
     return out;
 }
+
+} // namespace ls2g

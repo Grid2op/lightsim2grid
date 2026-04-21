@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 
 void PandaPowerConverter::_check_init(){
     if(sn_mva_ <= 0.){
@@ -327,3 +329,5 @@ std::tuple<RealVect,
 
     return res;
 }
+
+} // namespace ls2g

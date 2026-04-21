@@ -11,6 +11,8 @@
 
 #include "BaseAlgo.hpp"
 
+namespace ls2g {
+
 /**
 Base class for Newton Raphson based solver
 **/
@@ -253,5 +255,8 @@ class BaseNRAlgo : public BaseAlgo
 };
 
 #include "BaseNRAlgo.tpp"
+
+
+} // namespace ls2g
 
 #endif // BASE_NR_ALGO_H

@@ -8,6 +8,8 @@
 
 #include "Utils.hpp"
 
+namespace ls2g {
+
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type){
     switch (error_type)
     {
@@ -47,3 +49,5 @@ std::ostream& operator<<(std::ostream& out, const ErrorType & error_type){
     }
     return out;
 }
+
+} // namespace ls2g

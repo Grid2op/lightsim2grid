@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 
+namespace ls2g {
+
 SubstationContainer::StateRes SubstationContainer::get_state() const
 {
      std::vector<real_type> sub_vn_kv(sub_vn_kv_.begin(), sub_vn_kv_.end());
@@ -45,3 +47,5 @@ void SubstationContainer::set_state(SubstationContainer::StateRes & my_state)
     bus_vn_kv_ = RealVect::Map(&bus_vn_kv[0], bus_vn_kv.size());
     sub_names_ = std::get<5>(my_state);
 }
+
+} // namespace ls2g

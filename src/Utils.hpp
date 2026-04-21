@@ -17,6 +17,8 @@ Some typedef and other structures define here and used everywhere else
 #include "Eigen/Core"
 #include "TaggedIdVec.hpp"
 
+namespace ls2g {
+
 // typedef float real_type;  // type for real numbers: can be changed if installed from source
 typedef double real_type;  // type for real numbers: can be changed if installed from source
 
@@ -264,5 +266,8 @@ static_assert(sizeof(SolverBusId)==sizeof(int));  // make sure I can safely "rei
 // typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
 
 // _to_intvect removed: use .raw() on TaggedIdVec instead.
+
+
+} // namespace ls2g
 
 #endif // UTILS_H

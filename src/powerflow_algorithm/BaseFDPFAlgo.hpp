@@ -11,6 +11,8 @@
 
 #include "BaseAlgo.hpp"
 
+namespace ls2g {
+
 /**
 Base class for Fast Decoupled Powerflow based solver
 **/
@@ -209,5 +211,8 @@ class BaseFDPFAlgo: public BaseAlgo
 };
 
 #include "BaseFDPFAlgo.tpp"
+
+
+} // namespace ls2g
 
 #endif // BASEFDPFALGO_H

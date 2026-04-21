@@ -59,6 +59,7 @@
 #endif
 
 namespace py = pybind11;
+using namespace ls2g;
 
 // Helper: attach __getstate__/__setstate__ pickle support to any container
 // that exposes get_state()/set_state() and a nested StateRes type.

@@ -10,6 +10,8 @@
 
 #include <iostream>
 
+namespace ls2g {
+
 const bool NICSLULinearSolver::CAN_SOLVE_MAT = false;
 
 ErrorType NICSLULinearSolver::reset(){
@@ -96,3 +98,5 @@ ErrorType NICSLULinearSolver::solve(RealVect & b){
     b = x;
     return ErrorType::NoError;
 }
+
+} // namespace ls2g

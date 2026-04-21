@@ -11,6 +11,8 @@
 
 #include "BaseBatchSolverSynch.hpp"
 
+namespace ls2g {
+
 /**
 Allws the computation of time series, that is, the same grid topology is used along with time
 series of injections (productions and loads) to compute powerflows/
@@ -161,4 +163,7 @@ class TimeSeries final: public BaseBatchSolverSynch
         bool _compute_flows;
 
 };
+
+} // namespace ls2g
+
 #endif  //COMPUTERS_H

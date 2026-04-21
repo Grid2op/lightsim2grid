@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 
+namespace ls2g {
+
 void GeneratorContainer::init(const RealVect & generators_p,
                               const RealVect & generators_v,
                               const RealVect & generators_min_q,
@@ -550,3 +552,5 @@ void GeneratorContainer::update_slack_weights_by_id(
         }
     }
 }
+
+} // namespace ls2g
