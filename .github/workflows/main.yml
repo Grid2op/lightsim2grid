@@ -633,10 +633,6 @@ jobs:
         with:
           submodules: true
 
-      - name: Build KLU
-        if: runner.os != 'Windows'
-        run: make
-
       - name: Setup MSVC (windows)
         if: runner.os == 'Windows'
         uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d
@@ -701,10 +697,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Build KLU
-        if: runner.os != 'Windows'
-        run: make
 
       - name: Setup MSVC (windows)
         if: runner.os == 'Windows'

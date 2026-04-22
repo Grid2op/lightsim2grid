@@ -82,11 +82,6 @@ target_compile_definitions(lightsim2grid_cpp PRIVATE
 # Python extension module
 install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
 
-# Windows: install the import library (.lib) so plugin authors can link against it
-if(WIN32)
-    install(TARGETS lightsim2grid_cpp ARCHIVE DESTINATION ${SKBUILD_PROJECT_NAME})
-endif()
-
 if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
     install(TARGETS lightsim2grid_cpp DESTINATION .)
 endif()
