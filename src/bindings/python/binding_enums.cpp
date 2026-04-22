@@ -1,0 +1,60 @@
+// Copyright (c) 2020-2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#include "binding_declarations.hpp"
+#include "BaseConstants.hpp"
+#include "ChooseSolver.hpp"
+#include "Utils.hpp"
+
+using namespace ls2g;
+
+void bind_enums(py::module_& m) {
+    py::enum_<FDPFMethod>(m, "FDPFMethod", "This enum controls the type of method you can use for Fast Decoupled Powerflow (XB or BX)")
+        .value("XB", FDPFMethod::XB, "denotes the XB method")
+        .value("BX", FDPFMethod::BX, "denotes the BX method")
+        .export_values();
+
+    py::enum_<SolverType>(m, "SolverType", "This enum controls the solver you want to use.")
+        .value("GaussSeidel", SolverType::GaussSeidel, "denotes the :class:`lightsim2grid.solver.GaussSeidelSolver`")
+        .value("GaussSeidelSynch", SolverType::GaussSeidelSynch, "denotes the :class:`lightsim2grid.solver.GaussSeidelSynchSolver`")
+        .value("SparseLU", SolverType::SparseLU, "denotes the :class:`lightsim2grid.solver.SparseLUSolver`")
+        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack, "denotes the :class:`lightsim2grid.solver.SparseLUSolverSingleSlack`")
+        .value("DC", SolverType::DC, "denotes the :class:`lightsim2grid.solver.DCSolver`")
+        .value("KLU", SolverType::KLU, "denotes the :class:`lightsim2grid.solver.KLUSolver`")
+        .value("KLUSingleSlack", SolverType::KLUSingleSlack, "denotes the :class:`lightsim2grid.solver.KLUSolverSingleSlack`")
+        .value("KLUDC", SolverType::KLUDC, "denotes the :class:`lightsim2grid.solver.KLUDCSolver`")
+        .value("NICSLU", SolverType::NICSLU, "denotes the :class:`lightsim2grid.solver.NICSLUSolver`")
+        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack, "denotes the :class:`lightsim2grid.solver.NICSLUSolverSingleSlack`")
+        .value("NICSLUDC", SolverType::NICSLUDC, "denotes the :class:`lightsim2grid.solver.NICSLUDCSolver`")
+        .value("CKTSO", SolverType::CKTSO, "denotes the :class:`lightsim2grid.solver.CKTSOSolver`")
+        .value("CKTSOSingleSlack", SolverType::CKTSOSingleSlack, "denotes the :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`")
+        .value("CKTSODC", SolverType::CKTSODC, "denotes the :class:`lightsim2grid.solver.CKTSODCSolver`")
+        .value("FDPF_XB_SparseLU", SolverType::FDPF_XB_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_SparseLUSolver`")
+        .value("FDPF_BX_SparseLU", SolverType::FDPF_BX_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_SparseLUSolver`")
+        .value("FDPF_XB_KLU", SolverType::FDPF_XB_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_KLUSolver`")
+        .value("FDPF_BX_KLU", SolverType::FDPF_BX_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_KLUSolver`")
+        .value("FDPF_XB_NICSLU", SolverType::FDPF_XB_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_NICSLUSolver`")
+        .value("FDPF_BX_NICSLU", SolverType::FDPF_BX_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_NICSLUSolver`")
+        .value("FDPF_XB_CKTSO", SolverType::FDPF_XB_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_XB_CKTSOSolver`")
+        .value("FDPF_BX_CKTSO", SolverType::FDPF_BX_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_BX_CKTSOSolver`")
+        .value("Custom", SolverType::Custom, "sentinel value for external/plugin solvers loaded via load_solver_plugin()")
+        .export_values();
+
+    py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")
+        .value("NoError", ErrorType::NoError, "No error were encountered")
+        .value("SingularMatrix", ErrorType::SingularMatrix, "The Jacobian matrix was singular and could not be factorized (most likely, the grid is not connex)")
+        .value("TooManyIterations", ErrorType::TooManyIterations, "The solver reached the maximum number of iterations allowed")
+        .value("InifiniteValue", ErrorType::InifiniteValue, "Some infinite values were encountered in the update vector (to update Vm or Va)")
+        .value("SolverAnalyze", ErrorType::SolverAnalyze, "The linear solver failed at the 'analyze' step (*eg* `analyzePattern` for Eigen, `klu_analyze` for KLU or `Initialize` for NICSLU")
+        .value("SolverFactor", ErrorType::SolverFactor, "The linear solver failed to factor the jacobian matrix (*eg* `factorize` for Eigen (first call), `klu_factor` for KLU or `FactorizeMatrix` for NICSLU (first call)")
+        .value("SolverReFactor", ErrorType::SolverReFactor, "The linear solver failed to (re)factor the jacobian matrix (*eg* `factorize` for Eigen (later calls), `klu_refactor` for KLU or `FactorizeMatrix` for NICSLU (later calls)")
+        .value("SolverSolve", ErrorType::SolverSolve, "The linear solve failed to solve the linear system J.X = b (*eg* `solve` for Eigen, `klu_solve` for KLU or `Solve` for NICSLU")
+        .value("NotInitError", ErrorType::NotInitError, "Attempt to perform some powerflow computation when the linear solver is not initiliazed")
+        .value("LicenseError", ErrorType::LicenseError, "Impossible to use the linear solver as the license cannot be found (*eg* unable to locate the `nicslu.lic` file")
+        .export_values();
+}
