@@ -1,75 +1,61 @@
 cmake_minimum_required(VERSION 3.15)
 project(dummy_solver CXX)
-
-# -----------------------------------------------------------------------
-# Locate the installed lightsim2grid headers.
-# Pass -DLIGHTSIM2GRID_SRC=<path> on the cmake command line if the source
-# tree is not at the default relative location.
-# -----------------------------------------------------------------------
-if(NOT DEFINED LIGHTSIM2GRID_SRC)
-    # Default: two levels up from this CMakeLists.txt, then into src/
-    set(LIGHTSIM2GRID_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../src")
-endif()
-
-if(NOT DEFINED Eigen3_INCLUDE)
-    set(Eigen3_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen")
-endif()
-
-if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/SolverRegistry.hpp")
-    message(FATAL_ERROR
-        "lightsim2grid src headers not found at '${LIGHTSIM2GRID_SRC}'.\n"
-        "Pass -DLIGHTSIM2GRID_SRC=<path> to cmake.")
-endif()
-
-# Use the same C++ standard as the parent build.
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# The plugin is a MODULE (loadable at runtime via dlopen).
-add_library(dummy_solver MODULE DummyExternalSolver.cpp)
+# -----------------------------------------------------------------------
+# Strategy 1: find via installed CMake config
+#   pip install lightsim2grid  →  lightsim2grid.get_cmake_dir()
+#   cmake --install             →  _install/lib/cmake/lightsim2grid_core/
+# Pass -DLIGHTSIM2GRID_CMAKE_DIR=<path> to hint the location, or rely on
+# CMAKE_PREFIX_PATH.
+# -----------------------------------------------------------------------
+find_package(lightsim2grid_core CONFIG QUIET
+    HINTS "${LIGHTSIM2GRID_CMAKE_DIR}")
 
-# Expose lightsim2grid src/ headers directly so #include <SolverRegistry.hpp> works,
-# and expose the repo root so #include <src/SolverRegistry.hpp> also works.
-target_include_directories(dummy_solver PRIVATE
-    "${LIGHTSIM2GRID_SRC}"               # #include <SolverRegistry.hpp>
-    "${CMAKE_CURRENT_SOURCE_DIR}/../.."  # #include <src/SolverRegistry.hpp>
-    "${Eigen3_INCLUDE}"
-)
+# -----------------------------------------------------------------------
+# Strategy 2: fall back to source tree (in-repo development builds).
+# -----------------------------------------------------------------------
+if(NOT lightsim2grid_core_FOUND)
+    if(NOT DEFINED LIGHTSIM2GRID_SRC)
+        set(LIGHTSIM2GRID_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../src/core")
+    endif()
+    if(NOT DEFINED Eigen3_INCLUDE)
+        set(Eigen3_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen")
+    endif()
+    if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/SolverRegistry.hpp")
+        message(FATAL_ERROR
+            "lightsim2grid_core not found.\n"
+            "Either install lightsim2grid and pass:\n"
+            "  -DLIGHTSIM2GRID_CMAKE_DIR=<cmake-dir>\n"
+            "(obtain the path via: python -c \"import lightsim2grid; print(lightsim2grid.get_cmake_dir())\")\n"
+            "or pass -DLIGHTSIM2GRID_SRC=<path/to/src/core> for a source-tree build.")
+    endif()
+    add_library(lightsim2grid_core_iface INTERFACE)
+    target_include_directories(lightsim2grid_core_iface INTERFACE
+        "${LIGHTSIM2GRID_SRC}"
+        "${Eigen3_INCLUDE}"
+    )
+    add_library(lightsim2grid::core ALIAS lightsim2grid_core_iface)
+    message(STATUS "lightsim2grid_core: using source tree at ${LIGHTSIM2GRID_SRC}")
+endif()
+
+# The plugin is a MODULE (loadable at runtime via dlopen/LoadLibrary).
+add_library(dummy_solver MODULE DummyExternalSolver.cpp)
+target_link_libraries(dummy_solver PRIVATE lightsim2grid::core)
 
 if(WIN32)
-    # On Windows the plugin DLL must link against lightsim2grid_cpp's import
-    # library (.lib), which is installed alongside lightsim2grid_cpp.pyd.
-    # We try to locate it automatically via Python; override with
-    # -DLIGHTSIM2GRID_CPP_LIB=<path> if auto-detection fails.
-    if(NOT DEFINED LIGHTSIM2GRID_CPP_LIB)
-        find_package(Python REQUIRED COMPONENTS Interpreter)
-        execute_process(
-            COMMAND "${Python_EXECUTABLE}" -c
-                "import importlib.util, pathlib; \
-                 spec = importlib.util.find_spec('lightsim2grid.lightsim2grid_cpp'); \
-                 print(pathlib.Path(spec.origin).parent / 'lightsim2grid_cpp.lib')"
-            OUTPUT_VARIABLE _ls2g_lib
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-        if(EXISTS "${_ls2g_lib}")
-            set(LIGHTSIM2GRID_CPP_LIB "${_ls2g_lib}")
-            message(STATUS "lightsim2grid_cpp.lib found at: ${LIGHTSIM2GRID_CPP_LIB}")
-        else()
-            message(FATAL_ERROR
-                "lightsim2grid_cpp.lib not found (tried '${_ls2g_lib}').\n"
-                "Pass -DLIGHTSIM2GRID_CPP_LIB=<path> to cmake.\n"
-                "The .lib is installed alongside lightsim2grid_cpp.pyd when "
-                "lightsim2grid is built from source on Windows.")
-        endif()
-    endif()
-    target_link_libraries(dummy_solver PRIVATE "${LIGHTSIM2GRID_CPP_LIB}")
-    # Windows default: no prefix, .dll suffix — no extra properties needed.
+    # find_package provides the import lib via the IMPORTED target — nothing extra needed.
 elseif(UNIX AND NOT APPLE)
-    # Undefined symbols are resolved at load time from the main .so.
-    target_link_options(dummy_solver PRIVATE -Wl,--allow-shlib-undefined)
+    if(NOT lightsim2grid_core_FOUND)
+        # Source-tree mode: no shared library to link against.
+        # Symbols are resolved from the already-loaded lightsim2grid_cpp.so at runtime.
+        target_link_options(dummy_solver PRIVATE -Wl,--allow-shlib-undefined)
+    endif()
     set_target_properties(dummy_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
 elseif(APPLE)
-    target_link_options(dummy_solver PRIVATE -undefined dynamic_lookup)
+    if(NOT lightsim2grid_core_FOUND)
+        target_link_options(dummy_solver PRIVATE -undefined dynamic_lookup)
+    endif()
     set_target_properties(dummy_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
 endif()

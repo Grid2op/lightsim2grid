@@ -40,7 +40,7 @@ The lookup flow is:
            └─ SolverRegistry::instance().make("MySolver")
                 └─ factory()  →  unique_ptr<BaseAlgo>
 
-The ``SolverRegistry`` C++ API (defined in ``src/SolverRegistry.hpp``):
+The ``SolverRegistry`` C++ API (defined in ``SolverRegistry.hpp``, installed to ``include/lightsim2grid/``):
 
 .. code-block:: cpp
 
@@ -74,7 +74,8 @@ The ``BaseAlgo`` C++ interface
 -------------------------------
 
 Every solver — built-in or plugin — must publicly inherit from
-``BaseAlgo`` (defined in ``src/powerflow_algorithm/BaseAlgo.hpp``).
+``ls2g::BaseAlgo`` (defined in ``powerflow_algorithm/BaseAlgo.hpp``,
+installed to ``include/lightsim2grid/powerflow_algorithm/``).
 
 Constructor
 ~~~~~~~~~~~
@@ -208,20 +209,20 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
     #include <SolverRegistry.hpp>
     #include <powerflow_algorithm/BaseAlgo.hpp>
 
-    class MySolver : public BaseAlgo {
+    class MySolver : public ls2g::BaseAlgo {
     public:
-        MySolver() : BaseAlgo(/*is_ac=*/true) {}
+        MySolver() : ls2g::BaseAlgo(/*is_ac=*/true) {}
 
         bool compute_pf(
-            const Eigen::SparseMatrix<cplx_type>& Ybus,
-            CplxVect& V,
-            const CplxVect& Sbus,
-            Eigen::Ref<const IntVect> slack_ids,
-            const RealVect& slack_weights,
-            Eigen::Ref<const IntVect> pv,
-            Eigen::Ref<const IntVect> pq,
+            const Eigen::SparseMatrix<ls2g::cplx_type>& Ybus,
+            ls2g::CplxVect& V,
+            const ls2g::CplxVect& Sbus,
+            Eigen::Ref<const ls2g::IntVect> slack_ids,
+            const ls2g::RealVect& slack_weights,
+            Eigen::Ref<const ls2g::IntVect> pv,
+            Eigen::Ref<const ls2g::IntVect> pq,
             int max_iter,
-            real_type tol) override
+            ls2g::real_type tol) override
         {
             // ... your algorithm here ...
 
@@ -231,84 +232,98 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
             Vm_     = V.array().abs();
             n_      = static_cast<int>(V.size());
             nr_iter_= 1;
-            err_    = ErrorType::NoError;
+            err_    = ls2g::ErrorType::NoError;
             return true;
         }
     };
 
     // Self-registration — fires when the .so is dlopen'd.
     namespace {
-        SolverRegistrar _reg(
+        ls2g::SolverRegistrar _reg(
             "MySolver",
-            []{ return std::unique_ptr<BaseAlgo>(new MySolver()); }
+            []{ return std::unique_ptr<ls2g::BaseAlgo>(new MySolver()); }
         );
     }
 
 **2 — Write a CMakeLists.txt**
 
+The recommended approach uses ``find_package(lightsim2grid_core)`` to locate the
+installed headers and library.  A source-tree fallback is provided for in-repo
+development without a full ``pip install``.
+
 .. code-block:: cmake
 
     cmake_minimum_required(VERSION 3.15)
     project(my_solver CXX)
-
-    # Path to lightsim2grid's src/ directory
-    if(NOT DEFINED LIGHTSIM2GRID_SRC)
-        set(LIGHTSIM2GRID_SRC "/path/to/lightsim2grid/src")
-    endif()
-    if(NOT DEFINED Eigen3_INCLUDE)
-        set(Eigen3_INCLUDE "/path/to/lightsim2grid/eigen")
-    endif()
-
     set(CMAKE_CXX_STANDARD 14)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+    # Strategy 1 — installed package (preferred).
+    # Get the hint path via:
+    #   python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())"
+    # then pass it as:
+    #   cmake -DLIGHTSIM2GRID_CMAKE_DIR=<path> ...
+    find_package(lightsim2grid_core CONFIG QUIET
+        HINTS "${LIGHTSIM2GRID_CMAKE_DIR}")
+
+    # Strategy 2 — source tree (in-repo development without pip install).
+    if(NOT lightsim2grid_core_FOUND)
+        if(NOT DEFINED LIGHTSIM2GRID_SRC)
+            set(LIGHTSIM2GRID_SRC "/path/to/lightsim2grid/src/core")
+        endif()
+        if(NOT DEFINED Eigen3_INCLUDE)
+            set(Eigen3_INCLUDE "/path/to/lightsim2grid/eigen")
+        endif()
+        if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/SolverRegistry.hpp")
+            message(FATAL_ERROR
+                "lightsim2grid_core not found.\n"
+                "Install lightsim2grid and pass:\n"
+                "  -DLIGHTSIM2GRID_CMAKE_DIR=<cmake-dir>\n"
+                "or pass -DLIGHTSIM2GRID_SRC=<path/to/src/core> for a source build.")
+        endif()
+        add_library(lightsim2grid_core_iface INTERFACE)
+        target_include_directories(lightsim2grid_core_iface INTERFACE
+            "${LIGHTSIM2GRID_SRC}" "${Eigen3_INCLUDE}")
+        add_library(lightsim2grid::core ALIAS lightsim2grid_core_iface)
+    endif()
+
     # Build as a MODULE (dlopen-able at runtime, not linked at build time).
     add_library(my_solver MODULE my_solver_plugin.cpp)
-
-    target_include_directories(my_solver PRIVATE
-        "${LIGHTSIM2GRID_SRC}"
-        "${Eigen3_INCLUDE}"
-    )
+    target_link_libraries(my_solver PRIVATE lightsim2grid::core)
 
     if(WIN32)
-        # Link against lightsim2grid_cpp's import library (.lib), which is
-        # installed alongside lightsim2grid_cpp.pyd.  Auto-detected via Python;
-        # override with -DLIGHTSIM2GRID_CPP_LIB=<path> if needed.
-        if(NOT DEFINED LIGHTSIM2GRID_CPP_LIB)
-            find_package(Python REQUIRED COMPONENTS Interpreter)
-            execute_process(
-                COMMAND "${Python_EXECUTABLE}" -c
-                    "import importlib.util, pathlib; \
-                     spec = importlib.util.find_spec('lightsim2grid.lightsim2grid_cpp'); \
-                     print(pathlib.Path(spec.origin).parent / 'lightsim2grid_cpp.lib')"
-                OUTPUT_VARIABLE _ls2g_lib
-                OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-            if(EXISTS "${_ls2g_lib}")
-                set(LIGHTSIM2GRID_CPP_LIB "${_ls2g_lib}")
-            else()
-                message(FATAL_ERROR "lightsim2grid_cpp.lib not found. "
-                    "Pass -DLIGHTSIM2GRID_CPP_LIB=<path> to cmake.")
-            endif()
-        endif()
-        target_link_libraries(my_solver PRIVATE "${LIGHTSIM2GRID_CPP_LIB}")
+        # find_package provides the import lib via the IMPORTED target.
     elseif(UNIX AND NOT APPLE)
-        # Undefined symbols are resolved at load time from the main .so.
-        target_link_options(my_solver PRIVATE -Wl,--allow-shlib-undefined)
+        if(NOT lightsim2grid_core_FOUND)
+            target_link_options(my_solver PRIVATE -Wl,--allow-shlib-undefined)
+        endif()
         set_target_properties(my_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
     elseif(APPLE)
-        target_link_options(my_solver PRIVATE -undefined dynamic_lookup)
+        if(NOT lightsim2grid_core_FOUND)
+            target_link_options(my_solver PRIVATE -undefined dynamic_lookup)
+        endif()
         set_target_properties(my_solver PROPERTIES PREFIX "lib" SUFFIX ".so")
     endif()
 
 **3 — Build**
 
-Linux / macOS:
+After ``pip install lightsim2grid``, obtain the CMake directory and pass it:
+
+.. code-block:: bash
+
+    LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+
+    mkdir build && cd build
+    cmake .. -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE"
+    make
+
+Or without a pip install (source tree, Linux / macOS):
 
 .. code-block:: bash
 
     mkdir build && cd build
     cmake .. \
-        -DLIGHTSIM2GRID_SRC=/path/to/lightsim2grid/src \
+        -DLIGHTSIM2GRID_SRC=/path/to/lightsim2grid/src/core \
         -DEigen3_INCLUDE=/path/to/lightsim2grid/eigen
     make
 
@@ -316,19 +331,15 @@ Windows (MSVC, from a Developer Command Prompt):
 
 .. code-block:: bat
 
+    for /f "delims=" %i in ('python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())"') do set LS2G_CMAKE=%i
+
     mkdir build && cd build
-    cmake .. ^
-        -DLIGHTSIM2GRID_SRC=C:\path\to\lightsim2grid\src ^
-        -DEigen3_INCLUDE=C:\path\to\lightsim2grid\eigen
+    cmake .. -DLIGHTSIM2GRID_CMAKE_DIR="%LS2G_CMAKE%"
     cmake --build . --config Release
 
-The Windows build links the plugin against ``lightsim2grid_cpp.lib``, which is
-installed alongside ``lightsim2grid_cpp.pyd`` in the ``lightsim2grid`` package
-directory.  The CMakeLists.txt locates it automatically via Python's
-``importlib``; pass ``-DLIGHTSIM2GRID_CPP_LIB=<path>`` to override.
-
-The resulting file is ``Release\my_solver.dll`` (no ``lib`` prefix, ``.dll``
-suffix).  Pass that path to :func:`~lightsim2grid.load_solver_plugin`.
+The resulting file is ``Release\my_solver.dll`` on Windows (no ``lib`` prefix)
+and ``libmy_solver.so`` on Linux / macOS.
+Pass that path to :func:`~lightsim2grid.load_solver_plugin`.
 
 
 Loading and using the plugin from Python
@@ -428,16 +439,23 @@ an AC solver that always "converges" on the first call by returning the
 initial voltage vector unchanged — useful as a smoke test for the plugin
 mechanism.
 
-Build and run:
+Build and run (after ``pip install lightsim2grid``):
+
+.. code-block:: bash
+
+    LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+    cd examples/external_solver
+    cmake -S . -B build -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE"
+    cmake --build build
+    python test_plugin.py
+
+Or from the source tree without a pip install:
 
 .. code-block:: bash
 
     cd examples/external_solver
-    mkdir build && cd build
-    cmake ..        # uses the repo's own src/ and eigen/ by default
-    make
-
-    cd ..
+    cmake -S . -B build   # falls back to ../../src/core and ../../eigen
+    cmake --build build
     python test_plugin.py
 
 Expected output::
