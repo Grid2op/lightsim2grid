@@ -730,6 +730,85 @@ jobs:
       - name: Run plugin test
         run: python examples/external_solver/test_plugin.py
 
+  test_klu_strategies:
+    name: Test KLU detection strategies (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_compile_ci.txt
+
+      # ── Strategy 4: build KLU from SuiteSparse submodule CMakeLists ────────
+      # Submodule present but no pre-built .a files → CMake strategy 4 triggers
+      - name: "[Strategy 4] Install lightsim2grid"
+        run: python -m pip install -v . --no-build-isolation
+
+      - name: "[Strategy 4] Assert KLU solver is available"
+        run: |
+          mkdir -p _klu_check
+          cd _klu_check
+          python -c "
+          from lightsim2grid.lightsim2grid_cpp import klu_solver_available
+          assert klu_solver_available, 'KLU solver not available (strategy 4 failed)'
+          print('Strategy 4 OK: KLU available')
+          "
+
+      - name: "[Strategy 4] Uninstall lightsim2grid"
+        run: pip uninstall lightsim2grid -y
+
+      # ── Strategy 3: pre-built .a files in SuiteSparse submodule ────────────
+      # `make` compiles KLU static libs; CMake finds them via strategy 3
+      - name: "[Strategy 3] Compile KLU static libraries"
+        run: make
+
+      - name: "[Strategy 3] Install lightsim2grid"
+        run: python -m pip install -v . --no-build-isolation
+
+      - name: "[Strategy 3] Assert KLU solver is available"
+        run: |
+          cd _klu_check
+          python -c "
+          from lightsim2grid.lightsim2grid_cpp import klu_solver_available
+          assert klu_solver_available, 'KLU solver not available (strategy 3 failed)'
+          print('Strategy 3 OK: KLU available')
+          "
+
+      - name: "[Strategy 3] Uninstall lightsim2grid"
+        run: pip uninstall lightsim2grid -y
+
+      - name: "[Strategy 3] Clean compiled KLU static libraries"
+        run: make distclean
+
+      # ── Strategy 1: system-wide KLU via apt ────────────────────────────────
+      # libsuitesparse-dev on Ubuntu 24.04 ships CMake config files → strategy 1
+      # SuiteSparse submodule removed so strategies 3 & 4 cannot interfere
+      - name: "[Strategy 1] Install libsuitesparse-dev"
+        run: sudo apt-get install -y libsuitesparse-dev
+
+      - name: "[Strategy 1] Remove SuiteSparse submodule"
+        run: rm -rf SuiteSparse
+
+      - name: "[Strategy 1] Install lightsim2grid"
+        run: python -m pip install -v . --no-build-isolation
+
+      - name: "[Strategy 1] Assert KLU solver is available"
+        run: |
+          cd _klu_check
+          python -c "
+          from lightsim2grid.lightsim2grid_cpp import klu_solver_available
+          assert klu_solver_available, 'KLU solver not available (strategy 1 failed)'
+          print('Strategy 1 OK: KLU available')
+          "
+
   package:
     name: Package wheels
     runs-on: ubuntu-latest
