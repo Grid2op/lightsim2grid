@@ -14,7 +14,9 @@ __all__ = [
     "ErrorType",
     "solver",
     "compilation_options",
-    "load_solver_plugin"]
+    "load_solver_plugin",
+    "get_include",
+    "get_cmake_dir"]
 
 import ctypes as _ctypes
 import os as _os
@@ -96,3 +98,47 @@ try:
 except ImportError as exc_:  # noqa: F841
     # grid2op is not installed, the SecurtiyAnalysis module will not be available
     pass
+
+
+def _installed_pkg_dir() -> str:
+    """Return the *installed* package directory (site-packages/lightsim2grid/).
+
+    For editable installs __file__ points to the source tree, but the compiled
+    extension and installed data (headers, cmake files) live in site-packages.
+    We anchor to the .so extension module, which is always in site-packages.
+    """
+    import importlib.util as _ilu
+    spec = _ilu.find_spec("lightsim2grid.lightsim2grid_cpp")
+    if spec and spec.origin:
+        return _os.path.dirname(spec.origin)
+    return _os.path.dirname(_os.path.abspath(__file__))
+
+
+def get_include() -> str:
+    """Return the path to the lightsim2grid_core public C++ headers.
+
+    Mirrors pybind11.get_include(). Useful for building C++ extensions that
+    depend on lightsim2grid_core without going through CMake find_package.
+    """
+    return _os.path.join(_installed_pkg_dir(), "include")
+
+
+def get_cmake_dir() -> str:
+    """Return the path to the lightsim2grid_core CMake config directory.
+
+    Use this to locate the package when calling cmake::
+
+        cmake -Dlightsim2grid_core_DIR=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+
+    Or from Python::
+
+        import subprocess, lightsim2grid
+        subprocess.run(["cmake", f"-Dlightsim2grid_core_DIR={lightsim2grid.get_cmake_dir()}", ...])
+    """
+    p = _os.path.join(_installed_pkg_dir(), "share", "cmake", "lightsim2grid_core")
+    if not _os.path.exists(p):
+        raise ImportError(
+            "lightsim2grid CMake files not found. "
+            "Reinstall the package: pip install lightsim2grid"
+        )
+    return p

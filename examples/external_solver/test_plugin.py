@@ -5,13 +5,15 @@ Build the plugin first:
     cd examples/external_solver
     mkdir build && cd build
     cmake ..
-    make
+    make  (or: cmake --build . --config Release on Windows)
 
 Then run:
     python test_plugin.py
 """
 import os
 import sys
+import platform
+import pathlib
 
 # Make sure the installed lightsim2grid package is importable.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -19,14 +21,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 import lightsim2grid
 from lightsim2grid.lightsim2grid_cpp import GridModel, SolverType
 
+
+def find_plugin():
+    build = pathlib.Path(__file__).parent / "build"
+    if platform.system() == "Windows":
+        candidates = [
+            build / "Release" / "dummy_solver.dll",
+            build / "dummy_solver.dll",
+        ]
+    else:
+        candidates = [build / "libdummy_solver.so"]
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    raise FileNotFoundError(
+        f"Plugin not found (tried {[str(c) for c in candidates]}). "
+        "Build it first (see CMakeLists.txt)."
+    )
+
+
 # ------------------------------------------------------------------
 # Load the plugin
 # ------------------------------------------------------------------
-plugin_path = os.path.join(os.path.dirname(__file__), "build", "libdummy_solver.so")
-if not os.path.exists(plugin_path):
-    print(f"Plugin not found at {plugin_path}. Build it first (see CMakeLists.txt).")
-    sys.exit(1)
-
+plugin_path = find_plugin()
 lightsim2grid.load_solver_plugin(plugin_path)
 print("Plugin loaded successfully.")
 

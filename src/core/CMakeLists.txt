@@ -5,7 +5,7 @@
 # that pure-C++ users can build and install just the core library.
 if(NOT PROJECT_NAME)
     cmake_minimum_required(VERSION 3.15...4.99)
-    project(lightsim2grid_core LANGUAGES CXX)
+    project(lightsim2grid_core VERSION 0.0.0 LANGUAGES CXX)
 
     if("cxx_std_17" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
         set(CMAKE_CXX_STANDARD 17)
@@ -273,12 +273,21 @@ add_library(lightsim2grid_core SHARED
 
 set_target_properties(lightsim2grid_core PROPERTIES
     POSITION_INDEPENDENT_CODE ON
+    EXPORT_NAME core
 )
+
+# Install-dir variables — can be overridden by a parent CMakeLists (e.g. for wheel builds)
+set(LS2G_INSTALL_LIBDIR     "lib"
+    CACHE STRING "Install destination for the shared library (relative to prefix)")
+set(LS2G_INSTALL_INCLUDEDIR "include/lightsim2grid"
+    CACHE STRING "Install destination for public headers (relative to prefix)")
+set(LS2G_INSTALL_CMAKEDIR   "lib/cmake/lightsim2grid_core"
+    CACHE STRING "Install destination for CMake config files (relative to prefix)")
 
 target_include_directories(lightsim2grid_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<INSTALL_INTERFACE:include/lightsim2grid>
+        $<INSTALL_INTERFACE:${LS2G_INSTALL_INCLUDEDIR}>
 )
 
 target_compile_definitions(lightsim2grid_core PRIVATE LS2G_BUILDING_CORE)
@@ -286,13 +295,20 @@ target_compile_definitions(lightsim2grid_core PRIVATE LS2G_BUILDING_CORE)
 
 # =============================================================================
 # Link optional solvers
-# KLU uses PUBLIC so cs.h include dirs propagate to anything linking core
+# KLU/CXSparse are STATIC libs whose symbols are fully embedded in the
+# lightsim2grid_core SHARED library.  We use $<BUILD_INTERFACE:> so that:
+#   - build-tree consumers (lightsim2grid_cpp bindings) get the include paths
+#     and compile definitions they need to compile KLU-using headers;
+#   - the EXPORTED CMake target does NOT carry KLU_submodule / CXSparse_submodule
+#     in INTERFACE_LINK_LIBRARIES (those internal targets don't exist in an
+#     installed or pre-built context, which would cause find_package consumers
+#     to fail during their configure step).
 # =============================================================================
 if(KLU_SOLVER_FOUND)
     target_compile_definitions(lightsim2grid_core PUBLIC KLU_SOLVER_AVAILABLE)
-    target_link_libraries(lightsim2grid_core PUBLIC ${KLU_LINK_TARGET})
+    target_link_libraries(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${KLU_LINK_TARGET}>)
     if(DEFINED CXSPARSE_LINK_TARGET)
-        target_link_libraries(lightsim2grid_core PUBLIC ${CXSPARSE_LINK_TARGET})
+        target_link_libraries(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${CXSPARSE_LINK_TARGET}>)
     endif()
 endif()
 
@@ -351,3 +367,63 @@ endif()
 if(WIN32)
     set_target_properties(lightsim2grid_core PROPERTIES ENABLE_EXPORTS ON)
 endif()
+
+
+# =============================================================================
+# Install rules + CMake package config
+# =============================================================================
+include(CMakePackageConfigHelpers)
+
+# Library + export set
+install(TARGETS lightsim2grid_core
+    EXPORT  lightsim2grid_coreTargets
+    LIBRARY DESTINATION "${LS2G_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${LS2G_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "bin"
+)
+
+install(EXPORT lightsim2grid_coreTargets
+    FILE      lightsim2grid_coreTargets.cmake
+    NAMESPACE lightsim2grid::
+    DESTINATION "${LS2G_INSTALL_CMAKEDIR}"
+)
+
+# Public headers (.hpp and .tpp template implementations, excluding cmake/)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/"
+    DESTINATION "${LS2G_INSTALL_INCLUDEDIR}"
+    FILES_MATCHING
+        PATTERN "*.hpp"
+        PATTERN "*.tpp"
+    PATTERN "cmake" EXCLUDE
+)
+
+# Bundle the Eigen header-only library alongside the ls2g headers.
+# Eigen is part of the public interface (public headers #include "Eigen/Core"),
+# so consumers need it at the same directory level as the ls2g headers.
+# We install Eigen/ next to the ls2g headers so that the already-set
+# INTERFACE_INCLUDE_DIRECTORIES (LS2G_INSTALL_INCLUDEDIR) covers both.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen/Eigen")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen/Eigen"
+        DESTINATION "${LS2G_INSTALL_INCLUDEDIR}"
+    )
+endif()
+
+# Generate and install Config + ConfigVersion files
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/lightsim2grid_coreConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/lightsim2grid_coreConfig.cmake"
+    INSTALL_DESTINATION "${LS2G_INSTALL_CMAKEDIR}"
+    PATH_VARS LS2G_INSTALL_INCLUDEDIR
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/lightsim2grid_coreConfigVersion.cmake"
+    VERSION       "${CMAKE_PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/lightsim2grid_coreConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/lightsim2grid_coreConfigVersion.cmake"
+    DESTINATION "${LS2G_INSTALL_CMAKEDIR}"
+)

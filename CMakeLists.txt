@@ -41,6 +41,19 @@ option(INSTALL_LEGACY_LIGHTSIM2GRID_CPP
     "Also install lightsim2grid_cpp at site-packages root for legacy compatibility (deprecated)"
     ON)
 
+# --- Core install-dir overrides for Python wheel layout ---
+# src/core/CMakeLists.txt defaults to a standard FHS layout (lib/, include/, ...).
+# When building a wheel via scikit-build-core, everything must land inside the
+# lightsim2grid/ package directory so it's importable after pip install.
+if(SKBUILD)
+    set(LS2G_INSTALL_LIBDIR     "${SKBUILD_PROJECT_NAME}"
+        CACHE STRING "" FORCE)
+    set(LS2G_INSTALL_INCLUDEDIR "${SKBUILD_PROJECT_NAME}/include"
+        CACHE STRING "" FORCE)
+    set(LS2G_INSTALL_CMAKEDIR   "${SKBUILD_PROJECT_NAME}/share/cmake/lightsim2grid_core"
+        CACHE STRING "" FORCE)
+endif()
+
 # --- Build ---
 # All solver detection (KLU/NICSLU/CKTSO), build flags (O3, march-native), and
 # the lightsim2grid_core target are defined in src/core/CMakeLists.txt.
@@ -64,13 +77,7 @@ target_compile_definitions(lightsim2grid_cpp PRIVATE
 )
 
 # --- Install rules ---
-
-# Core shared library — inside the Python wheel (SKBUILD) or lib/ (standalone)
-install(TARGETS lightsim2grid_core
-    LIBRARY DESTINATION $<IF:$<BOOL:${SKBUILD}>,${SKBUILD_PROJECT_NAME},lib>
-    ARCHIVE DESTINATION $<IF:$<BOOL:${SKBUILD}>,${SKBUILD_PROJECT_NAME},lib>
-    RUNTIME DESTINATION $<IF:$<BOOL:${SKBUILD}>,${SKBUILD_PROJECT_NAME},bin>
-)
+# lightsim2grid_core + its headers + CMake config are installed by src/core/CMakeLists.txt.
 
 # Python extension module
 install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})

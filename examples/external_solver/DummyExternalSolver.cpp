@@ -5,11 +5,10 @@
 // needed — the object's constructor fires when the shared library is loaded,
 // which registers "DummyExternal" into the singleton registry.
 //
-// Build:
-//   mkdir build && cd build
-//   cmake .. -DLIGHTSIM2GRID_SRC=<path/to/lightsim2grid/src>
-//              -DEigen3_INCLUDE=<path/to/eigen>
-//   make
+// Build (after pip install lightsim2grid):
+//   LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+//   cmake -S . -B build -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE"
+//   cmake --build build
 //
 // Python usage (from examples/external_solver/):
 //   import lightsim2grid
@@ -24,20 +23,20 @@
 // the initial voltage vector unchanged.  Useful as a smoke-test for the
 // plugin mechanism; not suitable for real power-flow calculations.
 // ---------------------------------------------------------------------------
-class DummyExternalSolver : public BaseAlgo {
+class DummyExternalSolver : public ls2g::BaseAlgo {
 public:
-    DummyExternalSolver() : BaseAlgo(/*is_ac=*/true) {}
+    DummyExternalSolver() : ls2g::BaseAlgo(/*is_ac=*/true) {}
 
     bool compute_pf(
-        const Eigen::SparseMatrix<cplx_type>& /*Ybus*/,
-        CplxVect& V,
-        const CplxVect& /*Sbus*/,
-        Eigen::Ref<const IntVect> /*slack_ids*/,
-        const RealVect& /*slack_weights*/,
-        Eigen::Ref<const IntVect> /*pv*/,
-        Eigen::Ref<const IntVect> /*pq*/,
+        const Eigen::SparseMatrix<ls2g::cplx_type>& /*Ybus*/,
+        ls2g::CplxVect& V,
+        const ls2g::CplxVect& /*Sbus*/,
+        Eigen::Ref<const ls2g::IntVect> /*slack_ids*/,
+        const ls2g::RealVect& /*slack_weights*/,
+        Eigen::Ref<const ls2g::IntVect> /*pv*/,
+        Eigen::Ref<const ls2g::IntVect> /*pq*/,
         int /*max_iter*/,
-        real_type /*tol*/) override
+        ls2g::real_type /*tol*/) override
     {
         // Store V unchanged and claim convergence.
         V_ = V;
@@ -45,7 +44,7 @@ public:
         Vm_ = V.array().abs();
         n_  = static_cast<int>(V.size());
         nr_iter_ = 1;
-        err_ = ErrorType::NoError;
+        err_ = ls2g::ErrorType::NoError;
         return true;
     }
 };
@@ -54,8 +53,8 @@ public:
 // Self-registration: fires when dlopen() / LoadLibrary() maps this .so.
 // ---------------------------------------------------------------------------
 namespace {
-    SolverRegistrar _dummy_registrar(
+    ls2g::SolverRegistrar _dummy_registrar(
         "DummyExternal",
-        []{ return std::unique_ptr<BaseAlgo>(new DummyExternalSolver()); }
+        []{ return std::unique_ptr<ls2g::BaseAlgo>(new DummyExternalSolver()); }
     );
 }
