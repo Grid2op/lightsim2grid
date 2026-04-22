@@ -31,6 +31,8 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 [0.13.2] 2026-xx-yy
 ---------------------
 - [ADDED] Refactored `ChooseSolver` to a plugin-friendly `SolverRegistry` (see doc)
+- [ADDED] installing the python package now also comes with the lightsim2grid_core 
+  header files.
 - [IMPROVED] Removing the "ChooseSolver" API and replacing it with the `SolverRegistry`
 - [IMPROVED] clean separation between lightsim2grid_core the main library that could be
   used from cpp and the python bindings.
