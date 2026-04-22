@@ -286,10 +286,11 @@ else()
 endif()
 
 # Optimisation March Native
-if(DEFINED ENV{__COMPILE_MARCHNATIVE})
-    option(USE_MARCH_NATIVE "Enable -march=native optimization" ON)
+set(ENV_COMPILE_MARCHNATIVE "$ENV{__COMPILE_MARCHNATIVE}")
+if(ENV_COMPILE_MARCHNATIVE STREQUAL "1" OR ENV_COMPILE_MARCHNATIVE STREQUAL "True")
+    option(ENV_COMPILE_MARCHNATIVE "Enable  -march=native optimization" ON)
 else()
-    option(USE_MARCH_NATIVE "Enable -march=native optimization" OFF)
+    option(ENV_COMPILE_MARCHNATIVE "Enable  -march=native optimization" OFF)
 endif()
 
 # Optimisation O3 (activated by default)
@@ -312,83 +313,93 @@ add_subdirectory("src")
 
 # --- Build Options ---
 
-# 1. Configuration NICSLU
+# 1. Configuration NICSLU — links and includes go to the core library
 if(ENABLE_NICSLU)
-    target_link_directories(lightsim2grid_cpp PRIVATE ${LIB_MAYBE_NICSLU})
-    target_link_libraries(lightsim2grid_cpp PRIVATE nicslu)
-    target_include_directories(lightsim2grid_cpp PRIVATE ${PATH_NICSLU}/include)
+    target_link_directories(lightsim2grid_core PRIVATE ${LIB_MAYBE_NICSLU})
+    target_link_libraries(lightsim2grid_core PRIVATE nicslu)
+    target_include_directories(lightsim2grid_core PRIVATE ${PATH_NICSLU}/include)
+    target_compile_definitions(lightsim2grid_core PRIVATE NICSLU_PATH="${LIB_MAYBE_NICSLU}")
+    target_compile_definitions(lightsim2grid_core PRIVATE NICSLU_SOLVER_AVAILABLE)
+    # wrapper needs the availability define for conditional binding of NICSLU solver classes
     target_compile_definitions(lightsim2grid_cpp PRIVATE NICSLU_PATH="${LIB_MAYBE_NICSLU}")
     target_compile_definitions(lightsim2grid_cpp PRIVATE NICSLU_SOLVER_AVAILABLE)
 endif()
 
-# 2. Configuration CKTSO
+# 2. Configuration CKTSO — links and includes go to the core library
 if(LIB_CKTSO)
-    target_link_directories(lightsim2grid_cpp PRIVATE ${LIB_MAYBE_CKTSO})
-    target_link_libraries(lightsim2grid_cpp PRIVATE cktso)
-    target_include_directories(lightsim2grid_cpp PRIVATE ${PATH_CKTSO}/include)
+    target_link_directories(lightsim2grid_core PRIVATE ${LIB_MAYBE_CKTSO})
+    target_link_libraries(lightsim2grid_core PRIVATE cktso)
+    target_include_directories(lightsim2grid_core PRIVATE ${PATH_CKTSO}/include)
+    target_compile_definitions(lightsim2grid_core PRIVATE CKTSO_PATH="${LIB_MAYBE_CKTSO}")
+    target_compile_definitions(lightsim2grid_core PRIVATE CKTSO_SOLVER_AVAILABLE)
+    # wrapper needs the availability define for conditional binding of CKTSO solver classes
     target_compile_definitions(lightsim2grid_cpp PRIVATE CKTSO_PATH="${LIB_MAYBE_CKTSO}")
     target_compile_definitions(lightsim2grid_cpp PRIVATE CKTSO_SOLVER_AVAILABLE)
 endif()
 
-# 3. Configuration KLU (SuiteSparse)
+# 3. Configuration KLU (SuiteSparse) — links go to the core library.
+# PUBLIC is used so that include dirs (cs.h etc.) propagate to lightsim2grid_cpp,
+# which includes ChooseSolver.hpp -> KLUSolver.hpp -> cs.h transitively.
 if(KLU_SOLVER_FOUND)
-    target_compile_definitions(lightsim2grid_cpp PRIVATE KLU_SOLVER_AVAILABLE)
-    target_link_libraries(lightsim2grid_cpp PRIVATE ${KLU_LINK_TARGET})
+    target_compile_definitions(lightsim2grid_core PRIVATE KLU_SOLVER_AVAILABLE)
+    target_link_libraries(lightsim2grid_core PUBLIC ${KLU_LINK_TARGET})
     if(DEFINED CXSPARSE_LINK_TARGET)
-        target_link_libraries(lightsim2grid_cpp PRIVATE ${CXSPARSE_LINK_TARGET})
+        target_link_libraries(lightsim2grid_core PUBLIC ${CXSPARSE_LINK_TARGET})
     endif()
+    # wrapper needs the availability define for conditional binding of KLU solver classes
+    target_compile_definitions(lightsim2grid_cpp PRIVATE KLU_SOLVER_AVAILABLE)
 endif()
 
-# 5. Read The Docs
+# 5. Read The Docs — only affects Python binding stubs
 if(BUILD_DOCS_ONLY)
     target_compile_definitions(lightsim2grid_cpp PRIVATE _READ_THE_DOCS)
 endif()
 
-# 6. Cout Times
+# 6. Cout Times — only the core performs timed computations
 if(ENABLE_COUT_TIMES)
-    target_compile_definitions(lightsim2grid_cpp PRIVATE __COUT_TIMES)
+    target_compile_definitions(lightsim2grid_core PRIVATE __COUT_TIMES)
 endif()
 
-# version
-target_compile_definitions(lightsim2grid_cpp PRIVATE 
+# Version macros — used in pickle_helpers.hpp (binding side only)
+target_compile_definitions(lightsim2grid_cpp PRIVATE
     VERSION="${SKBUILD_PROJECT_VERSION_FULL}"
-)
-target_compile_definitions(lightsim2grid_cpp PRIVATE 
     VERSION_MAJOR="${CMAKE_PROJECT_VERSION_MAJOR}"
-)
-target_compile_definitions(lightsim2grid_cpp PRIVATE 
     VERSION_MEDIUM="${CMAKE_PROJECT_VERSION_MINOR}"
-)
-target_compile_definitions(lightsim2grid_cpp PRIVATE 
     VERSION_MINOR="${CMAKE_PROJECT_VERSION_PATCH}"
 )
 
 # --- Compilation options
 
-# 7. Optimisations
+# 7. Optimisations — applied to the core (where all the heavy math lives)
 if(USE_O3_OPTIM)
-    target_compile_definitions(lightsim2grid_cpp PRIVATE 
-        __O3_OPTIM
-    )
+    target_compile_definitions(lightsim2grid_core PRIVATE __O3_OPTIM)
 endif()
 
 if(NOT MSVC)
     if(USE_O3_OPTIM)
-        target_compile_options(lightsim2grid_cpp PRIVATE -O3)
+        target_compile_options(lightsim2grid_core PRIVATE -O3)
     endif()
-    
+
     if(USE_MARCH_NATIVE)
-        target_compile_options(lightsim2grid_cpp PRIVATE -march=native)
+        target_compile_options(lightsim2grid_core PRIVATE -march=native)
     endif()
 else()
     if(USE_O3_OPTIM)
-        target_compile_options(lightsim2grid_cpp PRIVATE /O2)
+        target_compile_options(lightsim2grid_core PRIVATE /O2)
     endif()
 endif()
 
-# tells cmake to install the cpp extension within the python project
-# so that we can do things (from python) like
-# from lightsim2grid.lightsim2grid_cpp import XXX
+# --- Install rules ---
+
+# Core shared library — inside the Python wheel when built via pip/scikit-build-core,
+# or to lib/ for standalone cmake --install invocations.
+install(TARGETS lightsim2grid_core
+    LIBRARY DESTINATION $<IF:$<BOOL:${SKBUILD}>,${SKBUILD_PROJECT_NAME},lib>
+    ARCHIVE DESTINATION $<IF:$<BOOL:${SKBUILD}>,${SKBUILD_PROJECT_NAME},lib>
+    RUNTIME DESTINATION $<IF:$<BOOL:${SKBUILD}>,${SKBUILD_PROJECT_NAME},bin>
+)
+
+# Python extension module — inside the Python wheel.
 install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
 
 # Windows: install the import library (.lib) alongside the .pyd so that plugin
