@@ -55,9 +55,14 @@ target_include_directories(lightsim2grid_cpp PRIVATE
 
 target_link_libraries(lightsim2grid_cpp PRIVATE lightsim2grid_core)
 
+if(APPLE)
+    set(_LS2G_RPATH "@loader_path")
+elseif(NOT WIN32)
+    set(_LS2G_RPATH "$ORIGIN")
+endif()
 if(NOT WIN32)
     set_target_properties(lightsim2grid_cpp PROPERTIES
-        INSTALL_RPATH "$ORIGIN"
-        BUILD_RPATH   "$ORIGIN"
+        INSTALL_RPATH "${_LS2G_RPATH}"
+        BUILD_RPATH   "${_LS2G_RPATH}"
     )
 endif()

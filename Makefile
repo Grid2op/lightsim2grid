@@ -55,13 +55,15 @@ distclean: purge
 
 all: prelude
 
+SS_CMAKE_OPTIONS = -DSUITESPARSE_REQUIRE_BLAS=OFF -DSUITESPARSE_USE_OPENMP=OFF
+
 prelude:
-	(cd $(LIBPATH)/SuiteSparse_config/ && CC=$(CC) make)
-	(cd $(LIBPATH)/CXSparse/Lib/ && CC=$(CC) make )
-	(cd $(LIBPATH)/AMD/Lib/ && CC=$(CC) make)
-	(cd $(LIBPATH)/BTF/Lib/ && CC=$(CC) make)
-	(cd $(LIBPATH)/COLAMD/Lib/ && CC=$(CC) make)
-	(cd $(LIBPATH)/KLU/Lib/ && CC=$(CC) make)
+	(cd $(LIBPATH)/SuiteSparse_config/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	(cd $(LIBPATH)/CXSparse/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	(cd $(LIBPATH)/AMD/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	(cd $(LIBPATH)/BTF/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	(cd $(LIBPATH)/COLAMD/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	(cd $(LIBPATH)/KLU/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
 
 ##################################
 # this is the documentation

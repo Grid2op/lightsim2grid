@@ -357,10 +357,15 @@ endif()
 # =============================================================================
 # RPATH — both .so files find each other regardless of install location
 # =============================================================================
+if(APPLE)
+    set(_LS2G_RPATH "@loader_path")
+elseif(NOT WIN32)
+    set(_LS2G_RPATH "$ORIGIN")
+endif()
 if(NOT WIN32)
     set_target_properties(lightsim2grid_core PROPERTIES
-        INSTALL_RPATH "$ORIGIN"
-        BUILD_RPATH   "$ORIGIN"
+        INSTALL_RPATH "${_LS2G_RPATH}"
+        BUILD_RPATH   "${_LS2G_RPATH}"
     )
 endif()
 
