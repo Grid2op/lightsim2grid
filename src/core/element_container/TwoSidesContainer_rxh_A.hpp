@@ -787,7 +787,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             res_a_side_2_ = RealVect(nb());  // in kA
         }
 
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
             if(status_global_[el_id]){
                 // update solver control
                 solver_control.tell_recompute_ybus();
@@ -798,7 +798,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
             return false;
         }
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
             if(!status_global_[el_id]){
                 // update solver control
                 solver_control.tell_recompute_ybus();
@@ -897,7 +897,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
          * This requires that status_global, status of side 1 and status of side 2 
          * are set correctly
          */
-        virtual void _update_effective_coeffs_one_el(int el_id) {
+        virtual void _update_effective_coeffs_one_el(int el_id) override {
             const bool s1 = side_1_.get_status(el_id);
             const bool s2 = side_2_.get_status(el_id);
             if (!status_global_[el_id] || (!s1 && !s2)) {

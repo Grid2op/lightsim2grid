@@ -29,9 +29,6 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
         
         explicit BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
-            _init_from_n_powerflow(false),
-            _timer_total(0.),
-            _timer_pre_proc(0.),
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -39,11 +36,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _solver(),
             _voltages(),
             _amps_flows(),
-            _active_power_flows(),
-            _nb_solved(0),
-            _timer_compute_A(0.),
-            _timer_compute_P(0.),
-            _timer_solver(0.)
+            _active_power_flows()
             {
             }
         virtual ~BaseBatchSolverSynch() noexcept = default;  // to avoid warning about overload virtual
@@ -330,10 +323,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         }
 
     protected:
-        bool _init_from_n_powerflow;
+        bool _init_from_n_powerflow = false;
         //timers
-        double _timer_total;
-        double _timer_pre_proc;
+        double _timer_total = 0.;
+        double _timer_pre_proc = 0.;
 
         // inputs
         GridModel _grid_model;
@@ -352,10 +345,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         RealMat _active_power_flows;
         
         // timers
-        int _nb_solved;
-        double _timer_compute_A;
-        double _timer_compute_P;
-        double _timer_solver;
+        int _nb_solved = 0;
+        double _timer_compute_A = 0.;
+        double _timer_compute_P = 0.;
+        double _timer_solver = 0.;
 
         // solver control
         SolverControl _solver_control;

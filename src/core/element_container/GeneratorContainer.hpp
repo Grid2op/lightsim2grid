@@ -152,7 +152,7 @@ class LS2G_API GeneratorContainer: public OneSideContainer_PQ, public IteratorAd
             const SolverBusIdVect & id_grid_to_solver,
             const RealVect & bus_vn_kv,
             real_type sn_mva,
-            bool ac){
+            bool ac) override {
               set_osc_pq_res_p();
               if(ac){
                 int nb_gen = nb();
@@ -255,10 +255,10 @@ class LS2G_API GeneratorContainer: public OneSideContainer_PQ, public IteratorAd
         bool turnedoff_gen_pv_;  // are turned off generators (including one with p=0) pv ?
 
     protected:
-        virtual void _change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control);
-        virtual bool _deactivate(int gen_id, SolverControl & solver_control);
-        virtual bool _reactivate(int gen_id, SolverControl & solver_control);
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus); 
+        void _change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control) final;
+        bool _deactivate(int gen_id, SolverControl & solver_control) final;
+        bool _reactivate(int gen_id, SolverControl & solver_control) final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) final; 
         // usefull things
 
         /**

@@ -141,7 +141,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 
     protected:
         // prevent the insertion of "out of range" elements
-        void check_ok_el(size_t el){
+        void check_ok_el(Eigen::Index el){
             if(el < 0){
                 std::ostringstream exc_;
                 exc_ << "SecurityAnalysis: cannot add the contingency with id ";

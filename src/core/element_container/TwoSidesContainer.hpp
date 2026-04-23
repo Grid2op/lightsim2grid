@@ -166,7 +166,7 @@ class TwoSidesContainer : public GenericContainer
             // (in this case this can do nothing if side_1 or side_2 is not connected)
         }
 
-        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component){
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
             const int nb_el = nb();
             SolverControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
@@ -194,7 +194,7 @@ class TwoSidesContainer : public GenericContainer
                 }
             }
         }
-        virtual void nb_line_end(std::vector<int> & res) const{
+        virtual void nb_line_end(std::vector<int> & res) const final {
             const int nb_el = nb();
             for(int el_id = 0; el_id < nb_el; ++el_id){
                 // don't do anything if the element is disconnected
@@ -225,12 +225,12 @@ class TwoSidesContainer : public GenericContainer
             side_2_.set_subid(subid);
         }
 
-        void update_topo(
+        virtual void update_topo(
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
             SolverControl & solver_control,
             SubstationContainer & substations
-        )
+        ) final
         {
             side_1_._check_pos_topo_vect_filled();
             side_2_._check_pos_topo_vect_filled();
@@ -257,7 +257,7 @@ class TwoSidesContainer : public GenericContainer
 
         // setter (states)
         // methods used within lightsim
-        void deactivate(int el_id, SolverControl & solver_control) {
+        virtual void deactivate(int el_id, SolverControl & solver_control) final {
             bool one_changed = false;
             one_changed = side_1_.deactivate(el_id, solver_control) || one_changed;
             one_changed = side_2_.deactivate(el_id, solver_control) || one_changed;
@@ -269,7 +269,7 @@ class TwoSidesContainer : public GenericContainer
                 _update_effective_coeffs_one_el(el_id);
             }
         }
-        void reactivate(int el_id, SolverControl & solver_control) {
+        virtual void reactivate(int el_id, SolverControl & solver_control) final {
             bool one_changed = false;
             one_changed = side_1_.reactivate(el_id, solver_control) || one_changed;
             one_changed = side_2_.reactivate(el_id, solver_control) || one_changed;
@@ -291,7 +291,7 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */        
-        void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
+        virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) final {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
             bool one_changed = side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
             this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation);
@@ -306,7 +306,7 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */  
-        void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) {
+        virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, SolverControl & solver_control, const SubstationContainer & substation) final {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
             bool one_changed = side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
             this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation);
