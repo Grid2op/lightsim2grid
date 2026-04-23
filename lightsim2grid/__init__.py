@@ -36,7 +36,11 @@ if hasattr(_sys, "getdlopenflags"):
     finally:
         _sys.setdlopenflags(_old_dlopen_flags)
 else:
-    # Windows: no dlopen flags; just import normally.
+    # Windows (Python >= 3.8): the DLL search path no longer includes the
+    # package directory automatically.  Add it so that lightsim2grid_core.dll
+    # (a dependency of lightsim2grid_cpp.pyd) is found before the import.
+    if hasattr(_os, "add_dll_directory"):
+        _os.add_dll_directory(_os.path.dirname(__file__))
     from lightsim2grid.solver import SolverType
     from lightsim2grid.solver import ErrorType
 
