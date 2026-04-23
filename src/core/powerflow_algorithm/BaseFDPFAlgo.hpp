@@ -17,7 +17,7 @@ namespace ls2g {
 Base class for Fast Decoupled Powerflow based solver
 **/
 template<class LinearSolver, FDPFMethod XB_BX>
-class LS2G_API BaseFDPFAlgo: public BaseAlgo
+class BaseFDPFAlgo: public BaseAlgo
 {
     public:
         BaseFDPFAlgo() noexcept :BaseAlgo(true), need_factorize_(true) {}
