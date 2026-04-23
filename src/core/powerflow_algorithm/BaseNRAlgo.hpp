@@ -36,7 +36,7 @@ class BaseNRAlgo : public BaseAlgo
         
 
         virtual
-        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
+        Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
             return J_;
         }
         
@@ -47,7 +47,7 @@ class BaseNRAlgo : public BaseAlgo
         }
 
         virtual
-        TimerJacType get_timers_jacobian() const
+        TimerJacType get_timers_jacobian() const override
         {
             // TODO refacto that, and change the order
             auto res = TimerJacType(timer_Fx_,
@@ -73,12 +73,12 @@ class BaseNRAlgo : public BaseAlgo
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        ) ;
+                        ) override;
 
-        virtual void reset();
+        virtual void reset() override;
 
     protected:
-        virtual void reset_timer(){
+        virtual void reset_timer() override{
             BaseAlgo::reset_timer();
             timer_refactor_ = 0.;
             timer_dSbus_ = 0.;

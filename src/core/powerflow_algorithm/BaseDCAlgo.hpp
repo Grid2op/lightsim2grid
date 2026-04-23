@@ -30,15 +30,15 @@ class BaseDCAlgo final: public BaseAlgo
 
         virtual ~BaseDCAlgo() noexcept = default;
 
-        virtual void reset();
-        virtual void reset_timer(){
+        virtual void reset() final;
+        virtual void reset_timer() final{
             BaseAlgo::reset_timer();
             timer_refactor_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
         }
 
-        virtual TimerJacType get_timers_jacobian() const
+        virtual TimerJacType get_timers_jacobian() const final
         {
             TimerJacType res = {
                 timer_Fx_,
@@ -55,7 +55,7 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const
+        virtual TimerPTDFLODFType get_timers_ptdf_lodf() const final
         {
             TimerPTDFLODFType res = {
                 timer_ptdf_,  
@@ -76,14 +76,14 @@ class BaseDCAlgo final: public BaseAlgo
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        );
+                        ) final;
 
-        virtual RealMat get_ptdf();
+        virtual RealMat get_ptdf() final;
         virtual RealMat get_lodf(const IntVect & from_bus,
-                                 const IntVect & to_bus);
-        virtual Eigen::SparseMatrix<real_type> get_bsdf();  // TODO BSDF
+                                 const IntVect & to_bus) final;
+        virtual Eigen::SparseMatrix<real_type> get_bsdf() final;  // TODO BSDF
         
-        virtual void update_internal_Ybus(const Coeff & coeff, bool add){
+        virtual void update_internal_Ybus(const Coeff & coeff, bool add) final{
             int row_res = static_cast<int>(coeff.row_id);
             row_res = mat_bus_id_(row_res);
             if(row_res == -1) return;

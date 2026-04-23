@@ -33,9 +33,9 @@ class BaseFDPFAlgo: public BaseAlgo
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        ) ;  // requires a gridmodel !
+                        ) override;  // requires a gridmodel !
 
-        virtual void reset()
+        virtual void reset() override
         {   
             BaseAlgo::reset();
             // solution of the problem
@@ -58,7 +58,7 @@ class BaseFDPFAlgo: public BaseAlgo
         Eigen::SparseMatrix<real_type> debug_get_Bpp_python() { return Bpp_;}
 
     protected:
-        virtual void reset_timer(){
+        virtual void reset_timer() override {
             BaseAlgo::reset_timer();
         }
 
@@ -78,7 +78,7 @@ class BaseFDPFAlgo: public BaseAlgo
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, Eigen::SparseMatrix<real_type> & Bpp) const;  // defined in Solvers.cpp !
 
         virtual
-        void initialize(){
+        void initialize() {
             auto timer = CustTimer();
             err_ = ErrorType::NoError; // reset error message
             // init Bp solver
