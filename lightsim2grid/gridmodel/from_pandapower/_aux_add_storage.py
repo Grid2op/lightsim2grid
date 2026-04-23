@@ -23,16 +23,16 @@ def _aux_add_storage(model, pp_net, pp_to_ls):
     -------
 
     """
-    if "parallel" in pp_net.storage and np.any(pp_net.storage["parallel"].values != 1):
+    if "parallel" in pp_net.storage and np.any(pp_net.storage["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' storage columns. "
                            "Please duplicate the rows if that is the case. "
                            "Some pp_net.storage[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
-    model.init_storages(pp_net.storage["p_mw"].values,
-                        pp_net.storage["q_mvar"].values,
-                        pp_bus_to_ls(pp_net.storage["bus"].values, pp_to_ls)
+    model.init_storages(pp_net.storage["p_mw"].to_numpy(),
+                        pp_net.storage["q_mvar"].to_numpy(),
+                        pp_bus_to_ls(pp_net.storage["bus"].to_numpy(), pp_to_ls)
                         )
-    for stor_id, is_connected in enumerate(pp_net.storage["in_service"].values):
+    for stor_id, is_connected in enumerate(pp_net.storage["in_service"].to_numpy()):
         if not is_connected:
             # load is deactivated
             model.deactivate_storage(stor_id)

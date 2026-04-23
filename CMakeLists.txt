@@ -84,4 +84,23 @@ install(TARGETS lightsim2grid_cpp DESTINATION ${SKBUILD_PROJECT_NAME})
 
 if(INSTALL_LEGACY_LIGHTSIM2GRID_CPP)
     install(TARGETS lightsim2grid_cpp DESTINATION .)
+    # On macOS the root-level copy has rpath @loader_path (= site-packages root),
+    # but liblightsim2grid_core.dylib lives in the lightsim2grid/ subdirectory.
+    # Add a second rpath entry so delocate and dyld can find it.
+    if(APPLE)
+        install(CODE "
+            file(GLOB _legacy_sos
+                \"\${CMAKE_INSTALL_PREFIX}/lightsim2grid_cpp*.so\")
+            foreach(_so IN LISTS _legacy_sos)
+                execute_process(
+                    COMMAND install_name_tool
+                        -add_rpath \"@loader_path/${SKBUILD_PROJECT_NAME}\"
+                        \"\${_so}\"
+                    RESULT_VARIABLE _ret)
+                if(NOT _ret EQUAL 0)
+                    message(WARNING \"install_name_tool failed for \${_so}\")
+                endif()
+            endforeach()
+        ")
+    endif()
 endif()

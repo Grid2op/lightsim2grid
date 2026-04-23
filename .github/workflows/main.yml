@@ -713,7 +713,8 @@ jobs:
       - name: Build plugin via get_cmake_dir()
         shell: bash
         run: |
-          LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+          mkdir -p _tmp_cmake_dir
+          LS2G_CMAKE=$(cd _tmp_cmake_dir && python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
           cmake -S examples/external_solver -B examples/external_solver/build \
                 -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" \
                 -DCMAKE_BUILD_TYPE=Release

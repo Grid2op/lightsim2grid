@@ -27,7 +27,7 @@ def _aux_add_line(converter, model, pp_net, pp_to_ls=None):
     -------
 
     """
-    if "parallel" in pp_net.line and np.any(pp_net.line["parallel"].values != 1):
+    if "parallel" in pp_net.line and np.any(pp_net.line["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' lines columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.line[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
@@ -36,38 +36,38 @@ def _aux_add_line(converter, model, pp_net, pp_to_ls=None):
         # new pandapower with support for different h at both side
         line_r, line_x, line_h_or, line_h_ex = \
             converter.get_line_param(
-                pp_net.line["r_ohm_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.line["x_ohm_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.line["g_us_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.line["c_nf_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"], 
-                pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"], 
+                pp_net.line["r_ohm_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.line["x_ohm_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.line["g_us_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.line["c_nf_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"].to_numpy(),
+                pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"].to_numpy(), 
                 )
 
         ### add them to the grid
         model.init_powerlines_full(line_r, line_x, line_h_or, line_h_ex,
-                                   pp_bus_to_ls(pp_net.line["from_bus"].values, pp_to_ls),
-                                   pp_bus_to_ls(pp_net.line["to_bus"].values, pp_to_ls)
+                                   pp_bus_to_ls(pp_net.line["from_bus"].to_numpy(), pp_to_ls),
+                                   pp_bus_to_ls(pp_net.line["to_bus"].to_numpy(), pp_to_ls)
                                   )
         
     else:
         # legacy pandapower, when they did not support lines with different h both side
         line_r, line_x, line_h = \
             converter.get_line_param_legacy(
-                pp_net.line["r_ohm_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.line["x_ohm_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.line["g_us_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.line["c_nf_per_km"].values * pp_net.line["length_km"].values,
-                pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"], 
-                pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"], 
+                pp_net.line["r_ohm_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.line["x_ohm_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.line["g_us_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.line["c_nf_per_km"].to_numpy() * pp_net.line["length_km"].to_numpy(),
+                pp_net.bus.loc[pp_net.line["from_bus"]]["vn_kv"].to_numpy(),
+                pp_net.bus.loc[pp_net.line["to_bus"]]["vn_kv"].to_numpy(), 
                 )
 
         ### add them to the grid
         model.init_powerlines(line_r, line_x, line_h,
-                              pp_bus_to_ls(pp_net.line["from_bus"].values, pp_to_ls),
-                              pp_bus_to_ls(pp_net.line["to_bus"].values, pp_to_ls)
+                              pp_bus_to_ls(pp_net.line["from_bus"].to_numpy(), pp_to_ls),
+                              pp_bus_to_ls(pp_net.line["to_bus"].to_numpy(), pp_to_ls)
                               )
-    for line_id, is_connected in enumerate(pp_net.line["in_service"].values):
+    for line_id, is_connected in enumerate(pp_net.line["in_service"].to_numpy()):
         if not is_connected:
             # powerline is deactivated
             model.deactivate_powerline(line_id)

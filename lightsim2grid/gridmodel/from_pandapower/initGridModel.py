@@ -127,17 +127,17 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     tmp_bus_ind = np.argsort(pp_net.bus.index)
     model.init_bus(n_sub,
                    n_busbar_per_sub,
-                   pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].values,
+                   pp_net.bus.iloc[tmp_bus_ind]["vn_kv"].to_numpy(),
                    pp_net.line.shape[0],
                    pp_net.trafo.shape[0])
     if np.any(np.sort(pp_net.bus.index) != np.arange(pp_net.bus.shape[0])):
-        model._ls_to_orig = 1 * pp_net.bus.index.values.astype(int)
+        model._ls_to_orig = 1 * pp_net.bus.index.to_numpy().astype(int)
         pp_to_ls = {pp_bus: ls_bus for pp_bus, ls_bus in zip(pp_net.bus.index, tmp_bus_ind)}
     else:
         pp_to_ls = None
     # deactivate in lightsim the deactivated bus in pandapower
     for bus_id in range(pp_net.bus.shape[0]):
-        if not pp_net.bus["in_service"].values[bus_id]:
+        if not pp_net.bus["in_service"].to_numpy()[bus_id]:
             if pp_to_ls is None:
                 pp_bus_id = bus_id
             else:

@@ -23,20 +23,20 @@ def _aux_add_load(model, pp_net, pp_to_ls):
     -------
 
     """
-    if "parallel" in pp_net.load and np.any(pp_net.load["parallel"].values != 1):
+    if "parallel" in pp_net.load and np.any(pp_net.load["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' load columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.load[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     ratio = 1.0
     if "scaling" in pp_net.load:
-        ratio = pp_net.load["scaling"].values.copy()
+        ratio = pp_net.load["scaling"].to_numpy().copy()
         ratio[~np.isfinite(ratio)] = 1.0
         
-    model.init_loads(pp_net.load["p_mw"].values * ratio,
-                     pp_net.load["q_mvar"].values * ratio,
-                     pp_bus_to_ls(pp_net.load["bus"].values, pp_to_ls)
+    model.init_loads(pp_net.load["p_mw"].to_numpy() * ratio,
+                     pp_net.load["q_mvar"].to_numpy() * ratio,
+                     pp_bus_to_ls(pp_net.load["bus"].to_numpy(), pp_to_ls)
                      )
-    for load_id, is_connected in enumerate(pp_net.load["in_service"].values):
+    for load_id, is_connected in enumerate(pp_net.load["in_service"].to_numpy()):
         if not is_connected:
             # load is deactivated
             model.deactivate_load(load_id)
