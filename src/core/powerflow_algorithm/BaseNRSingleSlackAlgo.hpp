@@ -17,7 +17,7 @@ namespace ls2g {
 Base class for Newton Raphson based solver (only interesting for single slack)
 **/
 template<class LinearSolver>
-class LS2G_API BaseNRSingleSlackAlgo final : public BaseNRAlgo<LinearSolver>
+class BaseNRSingleSlackAlgo final : public BaseNRAlgo<LinearSolver>
 {
     public:
         BaseNRSingleSlackAlgo() noexcept = default;

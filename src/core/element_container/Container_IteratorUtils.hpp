@@ -82,9 +82,6 @@ class IteratorAdder
 {
     private:
         using DataConstIterator = GenericContainerConstIterator<ConcreteContainer>;
-        // typedef typename ConcreteContainer::DataConstIterator DataConstIterator;
-        // typedef typename ConcreteContainer::DataInfo DataInfo;
-        // using DataContainerImpl::nb; 
 
     public:
         DataConstIterator begin() const {return DataConstIterator(static_cast<const ConcreteContainer*>(this), 0); }

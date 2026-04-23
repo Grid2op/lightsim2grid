@@ -22,37 +22,37 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fillBp_Bpp(
 }
 
 // ---- SparseLU (always available) ----
-template class BaseNRAlgo<SparseLULinearSolver>;
-template class BaseNRSingleSlackAlgo<SparseLULinearSolver>;
-template class BaseDCAlgo<SparseLULinearSolver>;
-template class BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
-template class BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
+template class LS2G_API BaseNRAlgo<SparseLULinearSolver>;
+template class LS2G_API BaseNRSingleSlackAlgo<SparseLULinearSolver>;
+template class LS2G_API BaseDCAlgo<SparseLULinearSolver>;
+template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
+template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
 
 // ---- KLU (optional) ----
 #ifdef KLU_SOLVER_AVAILABLE
-template class BaseNRAlgo<KLULinearSolver>;
-template class BaseNRSingleSlackAlgo<KLULinearSolver>;
-template class BaseDCAlgo<KLULinearSolver>;
-template class BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
-template class BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
+template class LS2G_API BaseNRAlgo<KLULinearSolver>;
+template class LS2G_API BaseNRSingleSlackAlgo<KLULinearSolver>;
+template class LS2G_API BaseDCAlgo<KLULinearSolver>;
+template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
+template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
 #endif
 
 // ---- NICSLU (optional) ----
 #ifdef NICSLU_SOLVER_AVAILABLE
-template class BaseNRAlgo<NICSLULinearSolver>;
-template class BaseNRSingleSlackAlgo<NICSLULinearSolver>;
-template class BaseDCAlgo<NICSLULinearSolver>;
-template class BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
-template class BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
+template class LS2G_API BaseNRAlgo<NICSLULinearSolver>;
+template class LS2G_API BaseNRSingleSlackAlgo<NICSLULinearSolver>;
+template class LS2G_API BaseDCAlgo<NICSLULinearSolver>;
+template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
+template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
 #endif
 
 // ---- CKTSO (optional) ----
 #ifdef CKTSO_SOLVER_AVAILABLE
-template class BaseNRAlgo<CKTSOLinearSolver>;
-template class BaseNRSingleSlackAlgo<CKTSOLinearSolver>;
-template class BaseDCAlgo<CKTSOLinearSolver>;
-template class BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
-template class BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
+template class LS2G_API BaseNRAlgo<CKTSOLinearSolver>;
+template class LS2G_API BaseNRSingleSlackAlgo<CKTSOLinearSolver>;
+template class LS2G_API BaseDCAlgo<CKTSOLinearSolver>;
+template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
+template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
 #endif
 
 } // namespace ls2g

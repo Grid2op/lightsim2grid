@@ -37,8 +37,6 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         inline GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept;
 };
 
-// typedef OneSideContainer_PQ<_GeneratorImpl> _BaseGenClass;
-
 /**
 This class represents the list of all generators.
 

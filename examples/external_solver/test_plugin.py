@@ -10,13 +10,8 @@ Build the plugin first:
 Then run:
     python test_plugin.py
 """
-import os
-import sys
 import platform
 import pathlib
-
-# Make sure the installed lightsim2grid package is importable.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 import lightsim2grid
 from lightsim2grid.lightsim2grid_cpp import GridModel, SolverType

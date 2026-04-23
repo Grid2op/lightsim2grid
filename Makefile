@@ -55,7 +55,7 @@ distclean: purge
 
 all: prelude
 
-SS_CMAKE_OPTIONS = -DSUITESPARSE_REQUIRE_BLAS=OFF -DSUITESPARSE_USE_OPENMP=OFF -DBLA_VENDOR=Generic
+SS_CMAKE_OPTIONS = -DSUITESPARSE_REQUIRE_BLAS=OFF -DSUITESPARSE_USE_OPENMP=OFF -DBLA_VENDOR=Generic -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
 # SuiteSparse v7.x packages no longer have a Lib/ sub-Makefile; their top-level
 # Makefile delegates to cmake (building into <pkg>/build/).  After each build we
