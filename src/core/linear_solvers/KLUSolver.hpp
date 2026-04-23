@@ -36,7 +36,7 @@ Reusing the same solver is possible, but "reset" method must be called.
 Otherwise, unexpected behaviour might follow, including "segfault".
 
 **/
-class KLULinearSolver final
+class LS2G_API KLULinearSolver final
 {
     public:
         KLULinearSolver() noexcept :symbolic_(nullptr),numeric_(nullptr),common_(){}

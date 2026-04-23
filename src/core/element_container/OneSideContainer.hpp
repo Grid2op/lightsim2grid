@@ -130,7 +130,7 @@ class OneSideContainer : public GenericContainer
                     }
                 }
         };
-        typedef OneSideInfo DataInfo;
+        using DataInfo = OneSideInfo;
 
     /////////////////////////////////////
     // iterator
@@ -320,7 +320,7 @@ class OneSideContainer : public GenericContainer
             return res;
         }
 
-        typedef std::tuple<
+        using StateRes = std::tuple<
             std::vector<std::string>,
             std::vector<int>, // bus_id
             std::vector<bool>, // status
@@ -328,7 +328,7 @@ class OneSideContainer : public GenericContainer
             std::vector<int>,  // sub_id
             bool,  // has pos_topo_vect info
             std::vector<int>  // pos_topo_vect
-            >  StateRes;
+            >;
 
     protected:
 

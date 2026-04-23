@@ -23,7 +23,7 @@ namespace ls2g {
 /**
 Supposes that, at the init of the file, every element on the same substation is connected on the same busbar !
 **/
-class GridModelFromIIDM
+class LS2G_API GridModelFromIIDM
 {
     explicit GridModelFromIIDM(const std::string & path):network_("not init", "dont use"){
         xmlInitParser();

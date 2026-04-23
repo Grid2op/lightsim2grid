@@ -35,7 +35,7 @@ class LS2G_API BaseConstants
         static const real_type _1_sqrt_3;
 };
 
-enum class FDPFMethod {XB, BX};  // Different type of FDPF powerflow
+enum class LS2G_API FDPFMethod {XB, BX};  // Different type of FDPF powerflow
 // FDPFMethod::XB => alg = 2 in pypower / pandapower
 // FDPFMethod::BX => alg = 3 in pypower / pandapower
 

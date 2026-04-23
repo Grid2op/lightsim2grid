@@ -13,7 +13,7 @@
 
 namespace ls2g {
 
-class GaussSeidelAlgo : public BaseAlgo
+class LS2G_API GaussSeidelAlgo : public BaseAlgo
 {
     public:
         GaussSeidelAlgo() noexcept :BaseAlgo(true) {};

@@ -23,7 +23,7 @@
 namespace ls2g {
 
 class GeneratorContainer;
-class GenInfo : public OneSideContainer_PQ::OneSidePQInfo
+class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         bool is_slack;
@@ -53,10 +53,10 @@ class LS2G_API GeneratorContainer: public OneSideContainer_PQ, public IteratorAd
     friend class GenInfo;
 
     public:
-        typedef GenInfo DataInfo;
+        using DataInfo = GenInfo;
 
     public:
-        typedef std::tuple<
+        using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            bool,                    // turnedoff_gen_pv_
            std::vector<bool>,       // voltage_regulator_on
@@ -65,7 +65,7 @@ class LS2G_API GeneratorContainer: public OneSideContainer_PQ, public IteratorAd
            std::vector<real_type>,  // max_q_
            std::vector<bool>,       // gen_slackbus
            std::vector<real_type>   // gen_slack_weight_
-        >  StateRes;
+        > ;
         
         GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
         explicit GeneratorContainer(bool turnedoff_gen_pv) noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(turnedoff_gen_pv) {};

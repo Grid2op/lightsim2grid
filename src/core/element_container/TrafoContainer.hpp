@@ -23,7 +23,7 @@
 namespace ls2g {
 
 class TrafoContainer;
-class TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
+class LS2G_API TrafoInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
 {
     public:
         // members
@@ -62,16 +62,16 @@ class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_
     friend class TrafoInfo;
 
     public:
-        typedef TrafoInfo DataInfo;
+        using DataInfo = TrafoInfo;
 
     public:
-        typedef std::tuple<
+        using StateRes = std::tuple<
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes,
                    std::vector<real_type>, // ratio_
                    std::vector<bool> , // is_tap_hv_side
                    std::vector<real_type>, // shift_
                    bool  // ignore_tap_side_for_shift_
-               >  StateRes;
+               >;
 
         TrafoContainer() noexcept = default;
         virtual ~TrafoContainer() noexcept = default;

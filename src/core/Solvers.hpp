@@ -24,83 +24,116 @@
 namespace ls2g {
 
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen**/
-typedef BaseNRAlgo<SparseLULinearSolver> SparseLUSolver;
+using SparseLUSolver = BaseNRAlgo<SparseLULinearSolver>;
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, do not consider multiple slack bus**/
-typedef BaseNRSingleSlackAlgo<SparseLULinearSolver> SparseLUSolverSingleSlack;
+using SparseLUSolverSingleSlack = BaseNRSingleSlackAlgo<SparseLULinearSolver>;
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, only suitable for the DC approximation**/
-typedef BaseDCAlgo<SparseLULinearSolver> DCSolver;
+using DCSolver = BaseDCAlgo<SparseLULinearSolver>;
 /** Solver based on Fast Decoupled, using the SparseLU decomposition of Eigen**/
-typedef BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB> FDPF_XB_SparseLUSolver;
-typedef BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX> FDPF_BX_SparseLUSolver;
+using FDPF_XB_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
+using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
 
 #ifdef KLU_SOLVER_AVAILABLE
     /** Solver based on Newton Raphson, using the KLU linear solver**/
-    typedef BaseNRAlgo<KLULinearSolver> KLUSolver;
+    using KLUSolver = BaseNRAlgo<KLULinearSolver>;
     /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
-    typedef BaseNRSingleSlackAlgo<KLULinearSolver> KLUSolverSingleSlack;
+    using KLUSolverSingleSlack = BaseNRSingleSlackAlgo<KLULinearSolver>;
     /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
-    typedef BaseDCAlgo<KLULinearSolver> KLUDCSolver;
+    using KLUDCSolver = BaseDCAlgo<KLULinearSolver>;
     /** Solver based on Fast Decoupled, using the KLU linear solver**/
-    typedef BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB> FDPF_XB_KLUSolver;
-    typedef BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX> FDPF_BX_KLUSolver;
+    using FDPF_XB_KLUSolver = BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
+    using FDPF_BX_KLUSolver = BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
 #elif defined(_READ_THE_DOCS)
     // hack to display accurately the doc in read the doc even if the models are not compiled
     /** Solver based on Newton Raphson, using the KLU linear solver**/
-    class KLUSolver : public SparseLUSolver {};
+    using KLUSolver = SparseLUSolver;
     /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
-    class KLUSolverSingleSlack : public SparseLUSolverSingleSlack {};
+    using KLUSolverSingleSlack = SparseLUSolverSingleSlack;
     /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
-    class KLUDCSolver : public DCSolver {};
+    using KLUDCSolver = DCSolver;
     /** Solver based on Fast Decoupled, using the KLU linear solver**/
-    class FDPF_XB_KLUSolver : public FDPF_XB_SparseLUSolver {};
-    class FDPF_BX_KLUSolver : public FDPF_BX_SparseLUSolver {};
+    using FDPF_XB_KLUSolver = FDPF_XB_SparseLUSolver;
+    using FDPF_BX_KLUSolver = FDPF_BX_SparseLUSolver;
 #endif  // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license)**/
-    typedef BaseNRAlgo<NICSLULinearSolver> NICSLUSolver;
+    using NICSLUSolver = BaseNRAlgo<NICSLULinearSolver>;
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), do not consider multiple slack bus**/
-    typedef BaseNRSingleSlackAlgo<NICSLULinearSolver> NICSLUSolverSingleSlack;
+    using NICSLUSolverSingleSlack = BaseNRSingleSlackAlgo<NICSLULinearSolver>;
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), only suitable for the DC approximation**/
-    typedef BaseDCAlgo<NICSLULinearSolver> NICSLUDCSolver;
+    using NICSLUDCSolver = BaseDCAlgo<NICSLULinearSolver>;
     /** Solver based on Fast Decoupled, using the NICSLU linear solver (needs a specific license)**/
-    typedef BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB> FDPF_XB_NICSLUSolver;
-    typedef BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX> FDPF_BX_NICSLUSolver;
+    using FDPF_XB_NICSLUSolver = BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
+    using FDPF_BX_NICSLUSolver = BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
 #elif defined(_READ_THE_DOCS)
     // hack to display accurately the doc in read the doc even if the models are not compiled
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license)**/
-    class NICSLUSolver : public SparseLUSolver{};
+    using NICSLUSolver = SparseLUSolver;
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), do not consider multiple slack bus**/
-    class NICSLUSolverSingleSlack : public SparseLUSolverSingleSlack{};
+    using NICSLUSolverSingleSlack = SparseLUSolverSingleSlack;
     /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), only suitable for the DC approximation**/
-    class NICSLUDCSolver : public DCSolver{};
+    using NICSLUDCSolver = DCSolver;
     /** Solver based on Fast Decoupled, using the NICSLU linear solver (needs a specific license)**/
-    class FDPF_XB_NICSLUSolver : public FDPF_XB_SparseLUSolver {};
-    class FDPF_BX_NICSLUSolver : public FDPF_BX_SparseLUSolver {};
+    using FDPF_XB_NICSLUSolver = FDPF_XB_SparseLUSolver;
+    using FDPF_BX_NICSLUSolver = FDPF_BX_SparseLUSolver;
 #endif  // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
     /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license)**/
-    typedef BaseNRAlgo<CKTSOLinearSolver> CKTSOSolver;
+    using CKTSOSolver = BaseNRAlgo<CKTSOLinearSolver>;
     /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), do not consider multiple slack bus**/
-    typedef BaseNRSingleSlackAlgo<CKTSOLinearSolver> CKTSOSolverSingleSlack;
+    using CKTSOSolverSingleSlack = BaseNRSingleSlackAlgo<CKTSOLinearSolver>;
     /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), only suitable for the DC approximation**/
-    typedef BaseDCAlgo<CKTSOLinearSolver> CKTSODCSolver;
+    using CKTSODCSolver = BaseDCAlgo<CKTSOLinearSolver>;
     /** Solver based on Fast Decoupled, using the CKTSO linear solver (needs a specific license)**/
-    typedef BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB> FDPF_XB_CKTSOSolver;
-    typedef BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX> FDPF_BX_CKTSOSolver;
+    using FDPF_XB_CKTSOSolver = BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
+    using FDPF_BX_CKTSOSolver = BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
 #elif defined(_READ_THE_DOCS)
     // hack to display accurately the doc in read the doc even if the models are not compiled
     /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license)**/
-    class CKTSOSolver : public SparseLUSolver{};
+    using CKTSOSolver = SparseLUSolver;
      /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), do not consider multiple slack bus**/
-    class CKTSOSolverSingleSlack : public SparseLUSolverSingleSlack{};
+    using CKTSOSolverSingleSlack = SparseLUSolverSingleSlack;
     /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), only suitable for the DC approximation**/
-    class CKTSODCSolver : public DCSolver{};
+    using CKTSODCSolver = DCSolver;
     /** Solver based on Fast Decoupled, using the CKTSO linear solver (needs a specific license)**/
-    class FDPF_XB_CKTSOSolver : public FDPF_XB_SparseLUSolver {};
-    class FDPF_BX_CKTSOSolver : public FDPF_BX_SparseLUSolver {};
+    using FDPF_XB_CKTSOSolver = FDPF_XB_SparseLUSolver;
+    using FDPF_BX_CKTSOSolver = FDPF_BX_SparseLUSolver;
 #endif  // CKTSO_SOLVER_AVAILABLE
+
+
+#ifndef LS2G_BUILDING_CORE
+    extern template class LS2G_API BaseNRAlgo<SparseLULinearSolver>;
+    extern template class LS2G_API BaseNRSingleSlackAlgo<SparseLULinearSolver>;
+    extern template class LS2G_API BaseDCAlgo<SparseLULinearSolver>;
+    extern template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
+    extern template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
+
+#ifdef KLU_SOLVER_AVAILABLE
+    extern template class LS2G_API BaseNRAlgo<KLULinearSolver>;
+    extern template class LS2G_API BaseNRSingleSlackAlgo<KLULinearSolver>;
+    extern template class LS2G_API BaseDCAlgo<KLULinearSolver>;
+    extern template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
+    extern template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
+#endif
+
+#ifdef NICSLU_SOLVER_AVAILABLE
+    extern template class LS2G_API BaseNRAlgo<NICSLULinearSolver>;
+    extern template class LS2G_API BaseNRSingleSlackAlgo<NICSLULinearSolver>;
+    extern template class LS2G_API BaseDCAlgo<NICSLULinearSolver>;
+    extern template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
+    extern template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
+#endif
+
+#ifdef CKTSO_SOLVER_AVAILABLE
+    extern template class LS2G_API BaseNRAlgo<CKTSOLinearSolver>;
+    extern template class LS2G_API BaseNRSingleSlackAlgo<CKTSOLinearSolver>;
+    extern template class LS2G_API BaseDCAlgo<CKTSOLinearSolver>;
+    extern template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
+    extern template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
+#endif
+#endif // LS2G_BUILDING_CORE
 
 
 } // namespace ls2g

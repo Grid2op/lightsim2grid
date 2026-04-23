@@ -25,7 +25,7 @@ namespace ls2g {
 
 
 class DCLineContainer;
-class DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
+class LS2G_API DCLineInfo : public TwoSidesContainer<GeneratorContainer>::TwoSidesInfo
 {
     public:
         // members
@@ -47,7 +47,7 @@ class LS2G_API DCLineContainer final : public TwoSidesContainer<GeneratorContain
     friend class DCLineInfo;
 
     public:
-        typedef DCLineInfo DataInfo;
+        using DataInfo = DCLineInfo;
 
         // underlying generators are not pv when powerline is off
         DCLineContainer() noexcept {
@@ -58,11 +58,11 @@ class LS2G_API DCLineContainer final : public TwoSidesContainer<GeneratorContain
         virtual ~DCLineContainer() noexcept = default;
 
         // pickle
-        typedef std::tuple<
+        using StateRes = std::tuple<
                 TwoSidesContainer<GeneratorContainer>::StateRes,
                 std::vector<double>, // loss_percent
                 std::vector<double> // loss_mw
-                >  StateRes;
+                > ;
         DCLineContainer::StateRes get_state() const;
         void set_state(DCLineContainer::StateRes & my_state);
 

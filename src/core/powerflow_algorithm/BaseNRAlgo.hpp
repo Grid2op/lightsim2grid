@@ -17,7 +17,7 @@ namespace ls2g {
 Base class for Newton Raphson based solver
 **/
 template<class LinearSolver>
-class BaseNRAlgo : public BaseAlgo
+class LS2G_API BaseNRAlgo : public BaseAlgo
 {
     public:
         BaseNRAlgo() noexcept :

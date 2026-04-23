@@ -25,8 +25,8 @@ The "solver" of the gridmodel is never really used to perform powerflows.
 class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 {
     public:
-        typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RealMat;
-        typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> CplxMat;
+        using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+        using CplxMat =  Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         
         explicit BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
             _grid_model(init_grid_model),

@@ -46,9 +46,9 @@ namespace ls2g {
 class LS2G_API GridModel final
 {
     public:
-        typedef Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> IntVectRowMaj;
+        using IntVectRowMaj = Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor>;
 
-        typedef std::tuple<
+        using StateRes = std::tuple<
                 std::string, // version major
                 std::string, // version medium
                 std::string, // version minor
@@ -76,7 +76,7 @@ class LS2G_API GridModel final
                 // solver types
                 SolverType, // ac_solver
                 SolverType // dc_solver
-                >  StateRes;
+                >;
 
         GridModel():
           timer_last_ac_pf_(0.),
@@ -1391,7 +1391,7 @@ class LS2G_API GridModel final
             // TODO optim : if relabel_row is false, then we can just copy
             // paste the columns easily in the target matrix, which should be
             // way faster than this function.
-            typedef typename Eigen::SparseMatrix<T>::StorageIndex index_type;
+            using index_type = typename Eigen::SparseMatrix<T>::StorageIndex ;
             const int nb_conn_bus = nb_connected_bus();
             if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             if(Ybus.cols() != nb_conn_bus) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");

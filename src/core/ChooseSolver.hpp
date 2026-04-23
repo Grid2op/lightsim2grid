@@ -21,7 +21,7 @@
 
 namespace ls2g {
 
-enum class SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
+enum class LS2G_API SolverType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
                        SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack,
                        KLUDC, NICSLUDC,
                        CKTSO, CKTSOSingleSlack, CKTSODC,

@@ -40,7 +40,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
     /////////////////////////////
     // iterator
     private:
-        typedef GenericContainerConstIterator<OneSideContainer_ForBranch> OSCC4BonstIterator;
+        using OSCC4BonstIterator = GenericContainerConstIterator<OneSideContainer_ForBranch>;
 
     public:
         OSCC4BonstIterator begin() const {return OSCC4BonstIterator(this, 0); }
@@ -67,9 +67,9 @@ class OneSideContainer_ForBranch : public OneSideContainer
 
         // public generic API
 
-        typedef std::tuple<
+        using StateRes = std::tuple<
             OneSideContainer::StateRes
-            >  StateRes;
+            > ;
 
         StateRes get_state() const
         {

@@ -56,7 +56,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         using TwoSidesContainer<OneSideType>::get_res_theta_side_1;
         using TwoSidesContainer<OneSideType>::get_res_theta_side_2;
 
-    typedef typename TwoSidesContainer<OneSideType>::StateRes StateResSuper;
+    using StateResSuper = typename TwoSidesContainer<OneSideType>::StateRes;
     //////////////////////////////
 
     public:
@@ -138,23 +138,23 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
                 }
         };
-        typedef TwoSidesContainer_rxh_AInfo DataInfo;
+        using DataInfo = TwoSidesContainer_rxh_AInfo;
 
     private:
-        typedef GenericContainerConstIterator<TwoSidesContainer_rxh_A> TwoSidesContainer_rxh_AInfoConstIterator;
+        using TwoSidesContainer_rxh_AInfoConstIterator = GenericContainerConstIterator<TwoSidesContainer_rxh_A>;
 
     public:
         TwoSidesContainer_rxh_A() noexcept = default;
         virtual ~TwoSidesContainer_rxh_A() noexcept = default;
         
         // pickle
-        typedef std::tuple<
+        using StateRes = std::tuple<
                    StateResSuper,
                    std::vector<real_type>,  // branch_r
                    std::vector<real_type>,  // branch_x
                    std::vector<cplx_type>,   // branch_h1
                    std::vector<cplx_type>   // branch_h2
-               >  StateRes;
+               >;
 
         // getter (results)
         tuple4d get_res_side_1() const {
