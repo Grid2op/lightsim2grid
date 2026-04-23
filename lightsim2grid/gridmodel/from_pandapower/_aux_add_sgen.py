@@ -26,7 +26,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     -------
 
     """
-    if "parallel" in pp_net.sgen and np.any(pp_net.sgen["parallel"].values != 1):
+    if "parallel" in pp_net.sgen and np.any(pp_net.sgen["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' sgen columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.sgen[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
@@ -35,7 +35,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
         return
 
     if "min_p_mw" in pp_net.sgen:
-        min_p_mw = pp_net.sgen["min_p_mw"].values.copy()
+        min_p_mw = pp_net.sgen["min_p_mw"].to_numpy().copy()
     else:
         min_p_mw = np.zeros(pp_net.sgen.shape[0]) - SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(min_p_mw)):
@@ -43,7 +43,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     min_p_mw[~np.isfinite(min_p_mw)] = 0.
 
     if "max_p_mw" in pp_net.sgen:
-        max_p_mw = pp_net.sgen["max_p_mw"].values.copy()
+        max_p_mw = pp_net.sgen["max_p_mw"].to_numpy().copy()
     else:
         max_p_mw = np.zeros(pp_net.sgen.shape[0]) + SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(max_p_mw)):
@@ -51,7 +51,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     max_p_mw[~np.isfinite(max_p_mw)] = 0.
 
     if "min_q_mvar" in pp_net.sgen:
-        min_q_mvar = pp_net.sgen["min_q_mvar"].values.copy()
+        min_q_mvar = pp_net.sgen["min_q_mvar"].to_numpy().copy()
     else:
         min_q_mvar = np.zeros(pp_net.sgen.shape[0]) - SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(min_q_mvar)):
@@ -59,7 +59,7 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
     min_q_mvar[~np.isfinite(min_q_mvar)] = 0.
 
     if "max_q_mvar" in pp_net.sgen:
-        max_q_mvar = pp_net.sgen["max_q_mvar"].values.copy()
+        max_q_mvar = pp_net.sgen["max_q_mvar"].to_numpy().copy()
     else:
         max_q_mvar = np.zeros(pp_net.sgen.shape[0]) + SOME_KIND_OF_INF_FOR_PMIN_PMAX
     if np.any(~np.isfinite(max_q_mvar)):
@@ -68,18 +68,18 @@ def _aux_add_sgen(model, pp_net, pp_to_ls):
 
     ratio = 1.0
     if "scaling" in pp_net.sgen:
-        ratio = pp_net.sgen["scaling"].values.copy()
+        ratio = pp_net.sgen["scaling"].to_numpy().copy()
         ratio[~np.isfinite(ratio)] = 1.0
         
-    model.init_sgens(pp_net.sgen["p_mw"].values * ratio,
-                     pp_net.sgen["q_mvar"].values * ratio,
+    model.init_sgens(pp_net.sgen["p_mw"].to_numpy() * ratio,
+                     pp_net.sgen["q_mvar"].to_numpy() * ratio,
                      min_p_mw,
                      max_p_mw,
                      min_q_mvar,
                      max_q_mvar,
-                     pp_bus_to_ls(pp_net.sgen["bus"].values, pp_to_ls)
+                     pp_bus_to_ls(pp_net.sgen["bus"].to_numpy(), pp_to_ls)
                      )
-    for sgen_id, is_connected in enumerate(pp_net.sgen["in_service"].values):
+    for sgen_id, is_connected in enumerate(pp_net.sgen["in_service"].to_numpy()):
         if not is_connected:
             # load is deactivated
             model.deactivate_sgen(sgen_id)

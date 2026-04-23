@@ -23,7 +23,7 @@ def _aux_add_shunt(model, pp_net, pp_to_ls):
     -------
 
     """
-    if "parallel" in pp_net.shunt and np.any(pp_net.shunt["parallel"].values != 1):
+    if "parallel" in pp_net.shunt and np.any(pp_net.shunt["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' sgen columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.sgen[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
@@ -31,11 +31,11 @@ def _aux_add_shunt(model, pp_net, pp_to_ls):
         # nothing to do if no shunt
         return
     
-    model.init_shunt(pp_net.shunt["p_mw"].values,
-                     pp_net.shunt["q_mvar"].values,
-                     pp_bus_to_ls(pp_net.shunt["bus"].values, pp_to_ls)
+    model.init_shunt(pp_net.shunt["p_mw"].to_numpy(),
+                     pp_net.shunt["q_mvar"].to_numpy(),
+                     pp_bus_to_ls(pp_net.shunt["bus"].to_numpy(), pp_to_ls)
                      )
-    for sh_id, is_connected in enumerate(pp_net.shunt["in_service"].values):
+    for sh_id, is_connected in enumerate(pp_net.shunt["in_service"].to_numpy()):
         if not is_connected:
             # shunt is deactivated
             model.deactivate_shunt(sh_id)

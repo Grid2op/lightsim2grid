@@ -20,16 +20,16 @@ def _aux_add_gen(model, pp_net, pp_to_ls):
     pp_net
 
     """
-    if "parallel" in pp_net.gen and np.any(pp_net.gen["parallel"].values != 1):
+    if "parallel" in pp_net.gen and np.any(pp_net.gen["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' gen columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.line[\"parallel\"] != 1 it is not handled by lightsim yet.")
-    model.init_generators(pp_net.gen["p_mw"].values,
-                          pp_net.gen["vm_pu"].values,
-                          pp_net.gen["min_q_mvar"].values,
-                          pp_net.gen["max_q_mvar"].values,
-                          pp_bus_to_ls(pp_net.gen["bus"].values, pp_to_ls)
+    model.init_generators(pp_net.gen["p_mw"].to_numpy(),
+                          pp_net.gen["vm_pu"].to_numpy(),
+                          pp_net.gen["min_q_mvar"].to_numpy(),
+                          pp_net.gen["max_q_mvar"].to_numpy(),
+                          pp_bus_to_ls(pp_net.gen["bus"].to_numpy(), pp_to_ls)
                           )
-    for gen_id, is_connected in enumerate(pp_net.gen["in_service"].values):
+    for gen_id, is_connected in enumerate(pp_net.gen["in_service"].to_numpy()):
         if not is_connected:
             # generator is deactivated
             model.deactivate_gen(gen_id)
