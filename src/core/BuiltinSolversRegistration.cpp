@@ -14,57 +14,57 @@ namespace ls2g {
 
 void register_builtin_solvers(SolverRegistry& reg) {
     reg.register_solver("SparseLU",
-        []{ return std::unique_ptr<BaseAlgo>(new SparseLUSolver()); });
+        []{ return std::make_unique<SparseLUSolver>(); });
     reg.register_solver("SparseLUSingleSlack",
-        []{ return std::unique_ptr<BaseAlgo>(new SparseLUSolverSingleSlack()); });
+        []{ return std::make_unique<SparseLUSolverSingleSlack>(); });
     reg.register_solver("DC",
-        []{ return std::unique_ptr<BaseAlgo>(new DCSolver()); });
+        []{ return std::make_unique<DCSolver>(); });
     reg.register_solver("GaussSeidel",
-        []{ return std::unique_ptr<BaseAlgo>(new GaussSeidelAlgo()); });
+        []{ return std::make_unique<GaussSeidelAlgo>(); });
     reg.register_solver("GaussSeidelSynch",
-        []{ return std::unique_ptr<BaseAlgo>(new GaussSeidelSynchAlgo()); });
+        []{ return std::make_unique<GaussSeidelSynchAlgo>(); });
     reg.register_solver("FDPF_XB_SparseLU",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_XB_SparseLUSolver()); });
+        []{ return std::make_unique<FDPF_XB_SparseLUSolver>(); });
     reg.register_solver("FDPF_BX_SparseLU",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_BX_SparseLUSolver()); });
+        []{ return std::make_unique<FDPF_BX_SparseLUSolver>(); });
 
 #ifdef KLU_SOLVER_AVAILABLE
     reg.register_solver("KLU",
-        []{ return std::unique_ptr<BaseAlgo>(new KLUSolver()); });
+        []{ return std::make_unique<KLUSolver>(); });
     reg.register_solver("KLUSingleSlack",
-        []{ return std::unique_ptr<BaseAlgo>(new KLUSolverSingleSlack()); });
+        []{ return std::make_unique<KLUSolverSingleSlack>(); });
     reg.register_solver("KLUDC",
-        []{ return std::unique_ptr<BaseAlgo>(new KLUDCSolver()); });
+        []{ return std::make_unique<KLUDCSolver>(); });
     reg.register_solver("FDPF_XB_KLU",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_XB_KLUSolver()); });
+        []{ return std::make_unique<FDPF_XB_KLUSolver>(); });
     reg.register_solver("FDPF_BX_KLU",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_BX_KLUSolver()); });
+        []{ return std::make_unique<FDPF_BX_KLUSolver>(); });
 #endif // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
     reg.register_solver("NICSLU",
-        []{ return std::unique_ptr<BaseAlgo>(new NICSLUSolver()); });
+        []{ return std::make_unique<NICSLUSolver>(); });
     reg.register_solver("NICSLUSingleSlack",
-        []{ return std::unique_ptr<BaseAlgo>(new NICSLUSolverSingleSlack()); });
+        []{ return std::make_unique<NICSLUSolverSingleSlack>(); });
     reg.register_solver("NICSLUDC",
-        []{ return std::unique_ptr<BaseAlgo>(new NICSLUDCSolver()); });
+        []{ return std::make_unique<NICSLUDCSolver>(); });
     reg.register_solver("FDPF_XB_NICSLU",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_XB_NICSLUSolver()); });
+        []{ return std::make_unique<FDPF_XB_NICSLUSolver>(); });
     reg.register_solver("FDPF_BX_NICSLU",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_BX_NICSLUSolver()); });
+        []{ return std::make_unique<FDPF_BX_NICSLUSolver>(); });
 #endif // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
     reg.register_solver("CKTSO",
-        []{ return std::unique_ptr<BaseAlgo>(new CKTSOSolver()); });
+        []{ return std::make_unique<CKTSOSolver>(); });
     reg.register_solver("CKTSOSingleSlack",
-        []{ return std::unique_ptr<BaseAlgo>(new CKTSOSolverSingleSlack()); });
+        []{ return std::make_unique<CKTSOSolverSingleSlack>(); });
     reg.register_solver("CKTSODC",
-        []{ return std::unique_ptr<BaseAlgo>(new CKTSODCSolver()); });
+        []{ return std::make_unique<CKTSODCSolver>(); });
     reg.register_solver("FDPF_XB_CKTSO",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_XB_CKTSOSolver()); });
+        []{ return std::make_unique<FDPF_XB_CKTSOSolver>(); });
     reg.register_solver("FDPF_BX_CKTSO",
-        []{ return std::unique_ptr<BaseAlgo>(new FDPF_BX_CKTSOSolver()); });
+        []{ return std::make_unique<FDPF_BX_CKTSOSolver>(); });
 #endif // CKTSO_SOLVER_AVAILABLE
 }
 

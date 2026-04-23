@@ -34,7 +34,7 @@ class BaseNRSingleSlackAlgo final : public BaseNRAlgo<LinearSolver>
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        );
+                        ) override;
 
 
     protected:

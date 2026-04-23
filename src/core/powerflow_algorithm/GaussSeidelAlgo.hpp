@@ -21,7 +21,7 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
         virtual ~GaussSeidelAlgo() noexcept = default;
 
         // todo  can be factorized
-        Eigen::SparseMatrix<real_type> get_J(){
+        virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const override {
             throw std::runtime_error("get_J: There is no jacobian in the Gauss Seidel method");
         }
 
@@ -36,7 +36,7 @@ class LS2G_API GaussSeidelAlgo : public BaseAlgo
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        ) ;
+                        ) override;
 
     protected:
 
