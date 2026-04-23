@@ -22,7 +22,7 @@ namespace ls2g {
 
 
 class SGenContainer;
-class SGenInfo  : public OneSideContainer_PQ::OneSidePQInfo
+class LS2G_API SGenInfo  : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         // members
@@ -52,16 +52,16 @@ class LS2G_API SGenContainer: public OneSideContainer_PQ, public IteratorAdder<S
     friend class SGenInfo;
 
     public:
-        typedef SGenInfo DataInfo;
+        using DataInfo = SGenInfo;
 
     public:
-        typedef std::tuple<
+        using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes,
            std::vector<real_type>, // p_min
            std::vector<real_type>, //  p_max
            std::vector<real_type>, //  q_min
            std::vector<real_type> //  q_max
-           >  StateRes;
+           >;
         
         SGenContainer() noexcept = default;
         virtual ~SGenContainer() noexcept = default;

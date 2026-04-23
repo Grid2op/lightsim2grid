@@ -22,7 +22,7 @@ namespace ls2g {
 
 class LS2G_API SolverRegistry {
 public:
-    typedef std::function<std::unique_ptr<BaseAlgo>()> Factory;
+    using Factory = std::function<std::unique_ptr<BaseAlgo>()>;
 
     static SolverRegistry& instance();
 

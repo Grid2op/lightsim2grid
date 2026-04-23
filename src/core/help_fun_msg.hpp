@@ -12,11 +12,14 @@
 #ifndef HELP_FUN_MSG_H
 #define HELP_FUN_MSG_H
 
+#include "ls2g_api.hpp"
+
 #include<string>
+
 
 namespace ls2g {
 
-struct DocSolver
+struct LS2G_API DocSolver
 {
     // generic functions
     static const std::string get_J_python;
@@ -66,7 +69,7 @@ struct DocSolver
 
 };
 
-struct DocIterator
+struct LS2G_API DocIterator
 {
     // generic functions
     static const std::string only_avail_res;
@@ -168,7 +171,7 @@ struct DocIterator
     
 };
 
-struct DocGridModel
+struct LS2G_API DocGridModel
 {
     static const std::string _internal_do_not_use;
     static const std::string J_description;
@@ -243,7 +246,7 @@ struct DocGridModel
     static const std::string dc_pf;
 };
 
-struct DocComputers
+struct LS2G_API DocComputers
 {
     static const std::string Computers;
     static const std::string total_time;
@@ -264,7 +267,7 @@ struct DocComputers
     static const std::string clear;
 };
 
-struct DocSecurityAnalysis
+struct LS2G_API DocSecurityAnalysis
 {
     static const std::string SecurityAnalysis;
 

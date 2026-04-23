@@ -14,7 +14,7 @@
 namespace ls2g {
 
 template<class LinearSolver>
-class BaseDCAlgo final: public BaseAlgo
+class LS2G_API BaseDCAlgo final: public BaseAlgo
 {
     public:
         BaseDCAlgo() noexcept :

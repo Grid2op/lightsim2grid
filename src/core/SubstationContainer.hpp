@@ -49,18 +49,18 @@ class LS2G_API SubstationContainer final : public IteratorAdder<SubstationContai
     friend class SubstationInfo;
 
     public:
-        typedef SubstationInfo DataInfo;
+        using DataInfo = SubstationInfo;
         
     public:
 
-        typedef std::tuple<
+        using StateRes = std::tuple<
             int,  // n_sub_
             int,  // nmax_busbar_per_sub
             std::vector<real_type>, // sub_vn_kv_;
             std::vector<bool>,  // bus_status_;
             std::vector<real_type>,  // bus_vn_kv_;
             std::vector<std::string>  // sub_names_
-            > StateRes;
+            >;
         
         int nb() const {return n_sub_;}
 

@@ -27,7 +27,7 @@ template<int U> class IntClass;
 
 // Self-contained IntVect typedef (identical to the one in Utils.hpp; identical
 // redefinitions are permitted in C++).
-typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
+using IntVect = Eigen::Matrix<int, Eigen::Dynamic, 1>;
 
 
 // ============================================================================

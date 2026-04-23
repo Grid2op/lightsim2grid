@@ -28,7 +28,7 @@ template<class DataType>
 class GenericContainerConstIterator
 {
     protected:
-        typedef typename DataType::DataInfo DataInfo;
+        using DataInfo = typename DataType::DataInfo;
 
         const DataType * const _p_data_;
         int my_id;
@@ -81,7 +81,7 @@ template<class ConcreteContainer, class ConcreteContainerInfo>
 class IteratorAdder
 {
     private:
-        typedef GenericContainerConstIterator<ConcreteContainer> DataConstIterator;
+        using DataConstIterator = GenericContainerConstIterator<ConcreteContainer>;
         // typedef typename ConcreteContainer::DataConstIterator DataConstIterator;
         // typedef typename ConcreteContainer::DataInfo DataInfo;
         // using DataContainerImpl::nb; 

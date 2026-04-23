@@ -37,19 +37,19 @@ LIB = $(LIBPATH)/KLU/Lib/libklu.a \
 
 clean:
 	(cd $(LIBPATH)/SuiteSparse_config/ && make clean)
-	(cd $(LIBPATH)/CXSparse/Lib && make clean)
-	(cd $(LIBPATH)/AMD/Lib/ && make clean)
-	(cd $(LIBPATH)/BTF/Lib/ && make clean)
-	(cd $(LIBPATH)/COLAMD/Lib/ && make clean)
-	(cd $(LIBPATH)/KLU/Lib/ && make clean)
+	(cd $(LIBPATH)/CXSparse/ && make clean)
+	(cd $(LIBPATH)/AMD/ && make clean)
+	(cd $(LIBPATH)/BTF/ && make clean)
+	(cd $(LIBPATH)/COLAMD/ && make clean)
+	(cd $(LIBPATH)/KLU/ && make clean)
 
 purge:
 	(cd $(LIBPATH)/SuiteSparse_config/ && make purge)
-	(cd $(LIBPATH)/CXSparse/Lib && make purge)
-	(cd $(LIBPATH)/AMD/Lib/ && make purge)
-	(cd $(LIBPATH)/BTF/Lib/ && make purge)
-	(cd $(LIBPATH)/COLAMD/Lib/ && make purge)
-	(cd $(LIBPATH)/KLU/Lib/ && make purge)
+	(cd $(LIBPATH)/CXSparse/ && make purge)
+	(cd $(LIBPATH)/AMD/ && make purge)
+	(cd $(LIBPATH)/BTF/ && make purge)
+	(cd $(LIBPATH)/COLAMD/ && make purge)
+	(cd $(LIBPATH)/KLU/ && make purge)
 
 distclean: purge
 
@@ -57,13 +57,29 @@ all: prelude
 
 SS_CMAKE_OPTIONS = -DSUITESPARSE_REQUIRE_BLAS=OFF -DSUITESPARSE_USE_OPENMP=OFF -DBLA_VENDOR=Generic
 
+# SuiteSparse v7.x packages no longer have a Lib/ sub-Makefile; their top-level
+# Makefile delegates to cmake (building into <pkg>/build/).  After each build we
+# copy the resulting static library into the legacy <pkg>/Lib/ location so that
+# the lightsim2grid CMake "strategy 3" detector (which looks for <pkg>/Lib/lib*.a)
+# continues to work.
 prelude:
 	(cd $(LIBPATH)/SuiteSparse_config/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
-	(cd $(LIBPATH)/CXSparse/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
-	(cd $(LIBPATH)/AMD/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
-	(cd $(LIBPATH)/BTF/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
-	(cd $(LIBPATH)/COLAMD/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
-	(cd $(LIBPATH)/KLU/Lib/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	cp $(LIBPATH)/SuiteSparse_config/build/libsuitesparseconfig.a $(LIBPATH)/SuiteSparse_config/libsuitesparseconfig.a
+	(cd $(LIBPATH)/CXSparse/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	mkdir -p $(LIBPATH)/CXSparse/Lib
+	find $(LIBPATH)/CXSparse/build -maxdepth 2 -name "libcxsparse*.a" 2>/dev/null | head -1 | xargs -I{} cp {} $(LIBPATH)/CXSparse/Lib/libcxsparse.a
+	(cd $(LIBPATH)/AMD/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	mkdir -p $(LIBPATH)/AMD/Lib
+	find $(LIBPATH)/AMD/build -maxdepth 2 -name "libamd*.a" 2>/dev/null | head -1 | xargs -I{} cp {} $(LIBPATH)/AMD/Lib/libamd.a
+	(cd $(LIBPATH)/BTF/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	mkdir -p $(LIBPATH)/BTF/Lib
+	find $(LIBPATH)/BTF/build -maxdepth 2 -name "libbtf*.a" 2>/dev/null | head -1 | xargs -I{} cp {} $(LIBPATH)/BTF/Lib/libbtf.a
+	(cd $(LIBPATH)/COLAMD/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	mkdir -p $(LIBPATH)/COLAMD/Lib
+	find $(LIBPATH)/COLAMD/build -maxdepth 2 -name "libcolamd*.a" 2>/dev/null | head -1 | xargs -I{} cp {} $(LIBPATH)/COLAMD/Lib/libcolamd.a
+	(cd $(LIBPATH)/KLU/ && CC=$(CC) make CMAKE_OPTIONS="$(SS_CMAKE_OPTIONS)")
+	mkdir -p $(LIBPATH)/KLU/Lib
+	find $(LIBPATH)/KLU/build -maxdepth 2 -name "libklu*.a" ! -name "*cholmod*" 2>/dev/null | head -1 | xargs -I{} cp {} $(LIBPATH)/KLU/Lib/libklu.a
 
 ##################################
 # this is the documentation

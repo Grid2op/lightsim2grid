@@ -9,6 +9,8 @@
 #ifndef CUSTTIMER_H
 #define CUSTTIMER_H
 
+#include "ls2g_api.hpp"
+
 #include <chrono>
 
 namespace ls2g {
@@ -19,7 +21,7 @@ This class presents a basic timer that is used in KLUSolver to know on which par
 most time were taken.
 
 **/
-class CustTimer final{
+class LS2G_API CustTimer final{
     public:
         CustTimer() noexcept :start_(std::chrono::steady_clock::now()), end_(start_){};
         CustTimer(const CustTimer & other) noexcept = default;

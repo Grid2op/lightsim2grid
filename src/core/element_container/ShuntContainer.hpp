@@ -20,7 +20,7 @@
 namespace ls2g {
 
 class ShuntContainer;
-class ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
+class LS2G_API ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         // no members
@@ -40,10 +40,10 @@ class LS2G_API ShuntContainer : public OneSideContainer_PQ, public IteratorAdder
 {
     friend class ShuntInfo;
     public:
-        typedef ShuntInfo DataInfo;
+        using DataInfo = ShuntInfo;
 
     public:
-        typedef std::tuple<OneSideContainer_PQ::StateRes >  StateRes;
+        using StateRes = std::tuple<OneSideContainer_PQ::StateRes >;
         
         ShuntContainer() noexcept = default;
         virtual ~ShuntContainer() noexcept = default;

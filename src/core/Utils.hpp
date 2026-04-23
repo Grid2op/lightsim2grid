@@ -16,34 +16,35 @@ Some typedef and other structures define here and used everywhere else
 #include <complex>
 #include "Eigen/Core"
 #include "TaggedIdVec.hpp"
+#include "ls2g_api.hpp"
 
 namespace ls2g {
 
-// typedef float real_type;  // type for real numbers: can be changed if installed from source
-typedef double real_type;  // type for real numbers: can be changed if installed from source
+// using real_type = double;  // type for real numbers: can be changed if installed from source
+using real_type = double;  // type for real numbers: can be changed if installed from source
 
-typedef std::complex<real_type> cplx_type;  // type for complex number
+using cplx_type = std::complex<real_type>;  // type for complex number
 
-typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> EigenPythonNumType;  // Eigen::VectorXd
-typedef Eigen::Matrix<int, Eigen::Dynamic, 1> IntVect;
-typedef Eigen::Matrix<real_type, Eigen::Dynamic, 1> RealVect;
-typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, 1> CplxVect;
+using EigenPythonNumType = Eigen::Matrix<real_type, Eigen::Dynamic, 1>;  // Eigen::VectorXd
+using IntVect = Eigen::Matrix<int, Eigen::Dynamic, 1>;
+using RealVect = Eigen::Matrix<real_type, Eigen::Dynamic, 1>;
+using CplxVect = Eigen::Matrix<cplx_type, Eigen::Dynamic, 1>;
 
-typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
+using tuple3d = std::tuple<Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
-                   Eigen::Ref<const EigenPythonNumType> > tuple3d;
-typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
-                   Eigen::Ref<const EigenPythonNumType>,
-                   Eigen::Ref<const EigenPythonNumType>,
-                   Eigen::Ref<const EigenPythonNumType> > tuple4d;
-typedef std::tuple<Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType> >;
+using tuple4d = std::tuple<Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType> >;
+using tuple5d = std::tuple<Eigen::Ref<const EigenPythonNumType>,
                    Eigen::Ref<const EigenPythonNumType>,
-                   Eigen::Ref<const EigenPythonNumType> > tuple5d;
+                   Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType>,
+                   Eigen::Ref<const EigenPythonNumType> >;
 
-typedef Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic> RealMat;
-typedef Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> CplxMat;
+using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic>;
+using CplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic> ;
 
 // type of error in the different solvers
 enum class ErrorType {NoError,
@@ -235,7 +236,7 @@ class IntClass
  * 
  * It is typically between -1 (for disconnected) or between 1 and "n_max_busbar_per_sub"
  */
-typedef IntClass<LOCAL_BUS> LocalBusId;
+using LocalBusId = IntClass<LOCAL_BUS>;
 static_assert(sizeof(LocalBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" LocalBusId to int and vice versa
 
 /**
@@ -244,14 +245,10 @@ static_assert(sizeof(LocalBusId)==sizeof(int));  // make sure I can safely "rein
  * 
  * GlobalBus / GridModelBus are typically between 0 and `n_sub * n_max_busbar_per_sub`
  */
-typedef IntClass<GRIDMODEL_BUS> GridModelBusId;
-typedef IntClass<GLOBAL_BUS> GlobalBusId;
+using GridModelBusId = IntClass<GRIDMODEL_BUS>;
+using GlobalBusId = IntClass<GLOBAL_BUS>;
 static_assert(sizeof(GlobalBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" GlobalBusId to int and vice versa
 
-// now defined in TaggedIdVec.hpp
-// typedef Eigen::Matrix<GlobalBusId, Eigen::Dynamic, 1> GlobalBusIdVect;
-// now defined in TaggedIdVec.hpp
-// typedef GlobalBusIdVect GridModelBusIdVect;
 
 /**
  * These are "solver bus id". They depends on the actuall topolgy of the grid.
@@ -259,14 +256,8 @@ static_assert(sizeof(GlobalBusId)==sizeof(int));  // make sure I can safely "rei
  * They are used to pass information from the gridmodel to the solver and should not be
  * used anywhere else.
  */
-typedef IntClass<SOLVER_BUS> SolverBusId;
+using SolverBusId = IntClass<SOLVER_BUS>;
 static_assert(sizeof(SolverBusId)==sizeof(int));  // make sure I can safely "reinterpret_cast" SolverBusId to int and vice versa
-
-// now defined in TaggedIdVec.hpp
-// typedef Eigen::Matrix<SolverBusId, Eigen::Dynamic, 1> SolverBusIdVect;
-
-// _to_intvect removed: use .raw() on TaggedIdVec instead.
-
 
 } // namespace ls2g
 

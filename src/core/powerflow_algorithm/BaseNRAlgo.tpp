@@ -431,7 +431,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_pattern(
     `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
     the remaining pq components are all 0.
     **/
-   typedef Eigen::SparseMatrix<cplx_type>::StorageIndex StorageIndex;
+   using StorageIndex = Eigen::SparseMatrix<cplx_type>::StorageIndex;
 
     const size_t n_pvpq = pvpq.size();
     const size_t n_pq = pq.size();

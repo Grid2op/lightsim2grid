@@ -24,7 +24,7 @@
 namespace ls2g {
 
 class LineContainer;
-class LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
+class LS2G_API LineInfo : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::TwoSidesContainer_rxh_AInfo
 {
     public:
         inline LineInfo(const LineContainer & r_data, int my_id) noexcept;
@@ -38,12 +38,12 @@ class LS2G_API LineContainer : public TwoSidesContainer_rxh_A<OneSideContainer_F
 {
     friend class LineInfo;
     public:
-        typedef LineInfo DataInfo;
+        using DataInfo = LineInfo;
 
     public:
-        typedef std::tuple<
+        using StateRes =  std::tuple<
                    TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>::StateRes
-                   >  StateRes;
+                   >;
         
         LineContainer() noexcept = default;
         virtual ~LineContainer() noexcept = default;

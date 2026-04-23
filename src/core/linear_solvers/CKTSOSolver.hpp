@@ -37,7 +37,7 @@ can find a version of `https://github.com/chenxm1986/cktso`. Be careful though, 
 specific license.
 
 **/
-class CKTSOLinearSolver final
+class LS2G_API CKTSOLinearSolver final
 {
     public:
         CKTSOLinearSolver() noexcept:

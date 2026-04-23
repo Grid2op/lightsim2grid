@@ -17,7 +17,7 @@ namespace ls2g {
 The gauss seidel method, where all the updates are happening in a synchronous way, instead of
 in a asynchronous way (like for standard gauss seidel)
 **/
-class GaussSeidelSynchAlgo final: public GaussSeidelAlgo
+class LS2G_API GaussSeidelSynchAlgo final: public GaussSeidelAlgo
 {
     public:
         GaussSeidelSynchAlgo() noexcept : GaussSeidelAlgo() {};

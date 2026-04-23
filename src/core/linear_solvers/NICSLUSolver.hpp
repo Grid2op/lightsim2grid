@@ -38,7 +38,7 @@ specific license.
 **/
 
 // TODO use the cpp API instead !
-class NICSLULinearSolver final
+class LS2G_API NICSLULinearSolver final
 {
     public:
         NICSLULinearSolver() noexcept:

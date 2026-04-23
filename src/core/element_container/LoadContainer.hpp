@@ -22,7 +22,7 @@ namespace ls2g {
 
 
 class LoadContainer;
-class LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
+class LS2G_API LoadInfo : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         inline LoadInfo(const LoadContainer & r_data_load, int my_id) noexcept;
@@ -47,13 +47,13 @@ class LS2G_API LoadContainer : public OneSideContainer_PQ, public IteratorAdder<
     friend class LoadInfo;
 
     public:
-        typedef LoadInfo DataInfo;
+        using DataInfo = LoadInfo;
 
     // regular implementation
     public:
-        typedef std::tuple<
+        using StateRes = std::tuple<
            OneSideContainer_PQ::StateRes  // state of the base class 
-           >  StateRes;
+           > ;
         
         LoadContainer() noexcept = default;
         virtual ~LoadContainer() noexcept = default;

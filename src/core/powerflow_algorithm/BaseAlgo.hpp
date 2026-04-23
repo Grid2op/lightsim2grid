@@ -34,10 +34,10 @@ namespace ls2g {
 
 class GridModel;
 
-typedef std::tuple<double, double, double, double,
+using TimerJacType = std::tuple<double, double, double, double,
                    double, double, double, double,
-                   double, double> TimerJacType;
-typedef std::tuple<double, double, double> TimerPTDFLODFType;
+                   double, double>;
+using TimerPTDFLODFType = std::tuple<double, double, double>;
 
 /**
 This class represents a algorithm to compute powerflow.

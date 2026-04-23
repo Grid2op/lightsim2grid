@@ -115,11 +115,11 @@ class OneSideContainer_PQ : public OneSideContainer
             }
         }
 
-        typedef std::tuple<
+        using StateRes = std::tuple<
             OneSideContainer::StateRes,
             std::vector<real_type>, // p_mw
             std::vector<real_type> // q_mvar
-            >  StateRes;
+            >;
 
     protected:
         OneSideContainer_PQ::StateRes get_osc_pq_state() const  // osc: one side element

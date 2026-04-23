@@ -31,7 +31,7 @@ Reusing the same solver is possible, but "reset" method must be called.
 Otherwise, unexpected behaviour might follow, including "segfault".
 
 **/
-class SparseLULinearSolver final
+class LS2G_API SparseLULinearSolver final
 {
     public:
         SparseLULinearSolver() noexcept :solver_(){}

@@ -317,14 +317,14 @@ class TwoSidesContainer : public GenericContainer
             }
         }
 
-        typedef std::tuple<
+        using StateRes = std::tuple<
             bool,  // ignore_status_global_
             bool,  // synch_status_both_side_
             std::vector<std::string>,
             std::vector<bool>,          // status_global
             typename OneSideType::StateRes, // side_1
             typename OneSideType::StateRes  // side_2
-            >  StateRes;
+            >;
 
         void set_ignore_status_global(bool ignore_status_global){
             ignore_status_global_ = ignore_status_global;
