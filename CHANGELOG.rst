@@ -59,6 +59,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] simplify the future integration of other linear solvers and the logic when linear_solvers
   are called by decoupling "refactor" steps from "solve" steps (they used to be all under the same
   "solve" method).
+- [IMPROVED] added "final" and "override" key-words on some methods in src/element_container
   
 [0.13.0] 2026-04-15
 --------------------
