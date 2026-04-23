@@ -281,6 +281,8 @@ set_target_properties(lightsim2grid_core PROPERTIES
 # Install-dir variables — can be overridden by a parent CMakeLists (e.g. for wheel builds)
 set(LS2G_INSTALL_LIBDIR     "lib"
     CACHE STRING "Install destination for the shared library (relative to prefix)")
+set(LS2G_INSTALL_RUNTIMEDIR "bin"
+    CACHE STRING "Install destination for DLLs on Windows (relative to prefix)")
 set(LS2G_INSTALL_INCLUDEDIR "include/lightsim2grid"
     CACHE STRING "Install destination for public headers (relative to prefix)")
 set(LS2G_INSTALL_CMAKEDIR   "lib/cmake/lightsim2grid_core"
@@ -386,7 +388,7 @@ install(TARGETS lightsim2grid_core
     EXPORT  lightsim2grid_coreTargets
     LIBRARY DESTINATION "${LS2G_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${LS2G_INSTALL_LIBDIR}"
-    RUNTIME DESTINATION "bin"
+    RUNTIME DESTINATION "${LS2G_INSTALL_RUNTIMEDIR}"
 )
 
 install(EXPORT lightsim2grid_coreTargets

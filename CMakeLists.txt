@@ -48,6 +48,10 @@ option(INSTALL_LEGACY_LIGHTSIM2GRID_CPP
 if(SKBUILD)
     set(LS2G_INSTALL_LIBDIR     "${SKBUILD_PROJECT_NAME}"
         CACHE STRING "" FORCE)
+    # On Windows, DLLs are RUNTIME targets.  They must land in the Python package
+    # directory (alongside lightsim2grid_cpp.pyd) so the OS loader finds them.
+    set(LS2G_INSTALL_RUNTIMEDIR "${SKBUILD_PROJECT_NAME}"
+        CACHE STRING "" FORCE)
     set(LS2G_INSTALL_INCLUDEDIR "${SKBUILD_PROJECT_NAME}/include"
         CACHE STRING "" FORCE)
     set(LS2G_INSTALL_CMAKEDIR   "${SKBUILD_PROJECT_NAME}/share/cmake/lightsim2grid_core"
