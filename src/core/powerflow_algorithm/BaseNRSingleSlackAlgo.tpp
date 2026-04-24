@@ -62,6 +62,8 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     std::vector<int> pq_inv(V.size(), -1);
     for(int inv_id=0; inv_id < n_pq; ++inv_id) pq_inv[pq(inv_id)] = inv_id;
 
+    BaseNRAlgo<LinearSolver>::_layout = NRLayout(n_pv, n_pq, 0);
+
     BaseNRAlgo<LinearSolver>::V_ = V;
     BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  // update Vm and Va again in case
     BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  // we wrapped around with a negative Vm
@@ -74,42 +76,47 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     bool res = true;  // have i converged or not
     const cplx_type m_i = BaseNRAlgo<LinearSolver>::my_i;  // otherwise it does not compile
     if(BaseNRAlgo<LinearSolver>::need_factorize_ ||
-       BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() || 
+       BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() ||
        BaseNRAlgo<LinearSolver>::_solver_control.has_dimension_changed() ||
-       BaseNRAlgo<LinearSolver>::_solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
+       BaseNRAlgo<LinearSolver>::_solver_control.has_slack_participate_changed() ||
        BaseNRAlgo<LinearSolver>::_solver_control.ybus_change_sparsity_pattern() ||
        BaseNRAlgo<LinearSolver>::_solver_control.has_ybus_some_coeffs_zero() ||
        BaseNRAlgo<LinearSolver>::_solver_control.need_recompute_ybus() ||
-    // BaseNRAlgo<LinearSolver>::   _solver_control.has_slack_participate_changed() ||
        BaseNRAlgo<LinearSolver>::_solver_control.has_pv_changed() ||
        BaseNRAlgo<LinearSolver>::_solver_control.has_pq_changed()
        )
        {
         BaseNRAlgo<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::col_map_.clear();  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::row_map_.clear();  // TODO smarter solver: only needed if ybus has changed
         BaseNRAlgo<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
         BaseNRAlgo<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::dS_dVm_.setZero();  // TODO smarter solver: only needed if ybus has changed
-        // BaseNRAlgo<LinearSolver>::dS_dVa_.setZero();  // TODO smarter solver: only needed if ybus has changed
-
        }
     while ((!converged) & (BaseNRAlgo<LinearSolver>::nr_iter_ < max_iter)){
         BaseNRAlgo<LinearSolver>::nr_iter_++;
-        // std::cout << "\tnr_iter_ " << BaseNRAlgo<LinearSolver>::nr_iter_ << std::endl;
-        fill_jacobian_matrix(Ybus, BaseNRAlgo<LinearSolver>::V_, pq, pvpq, pq_inv, pvpq_inv);
-        if(BaseNRAlgo<LinearSolver>::need_factorize_){
-            BaseNRAlgo<LinearSolver>::initialize();
-            if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
-                // I got an error during the initialization of the linear system, i need to stop here
-                // std::cout << BaseNRAlgo<LinearSolver>::err_ << std::endl;
-                res = false;
-                break;
+
+        const bool do_refactorise =
+            BaseNRAlgo<LinearSolver>::need_factorize_ ||
+            BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.has_dimension_changed() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.ybus_change_sparsity_pattern() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.has_ybus_some_coeffs_zero() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.need_recompute_ybus() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.has_pv_changed() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.has_pq_changed() ||
+            BaseNRAlgo<LinearSolver>::_solver_control.has_slack_participate_changed();
+
+        if(do_refactorise){
+            fill_jacobian_matrix(Ybus, BaseNRAlgo<LinearSolver>::V_, pq, pvpq, pq_inv, pvpq_inv);
+            if(BaseNRAlgo<LinearSolver>::need_factorize_){
+                auto timer_i = CustTimer();
+                BaseNRAlgo<LinearSolver>::n_ = static_cast<int>(BaseNRAlgo<LinearSolver>::J_.cols());
+                BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.initialize(BaseNRAlgo<LinearSolver>::J_);
+                BaseNRAlgo<LinearSolver>::need_factorize_ = false;
+                BaseNRAlgo<LinearSolver>::timer_initialize_ += timer_i.duration();
+            } else {
+                auto timer_r = CustTimer();
+                BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.refactor(BaseNRAlgo<LinearSolver>::J_);
+                BaseNRAlgo<LinearSolver>::timer_refactor_ += timer_r.duration();
             }
-        } else {
-            auto timer_s = CustTimer();
-            BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.refactor(BaseNRAlgo<LinearSolver>::J_);
-            BaseNRAlgo<LinearSolver>::timer_refactor_ += timer_s.duration();
             if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
                 res = false;
                 break;
@@ -121,21 +128,20 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
             BaseNRAlgo<LinearSolver>::timer_solve_ += timer_s.duration();
         }
         if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
-            // I got an error during the solving of the linear system, i need to stop here
-            // std::cout << BaseNRAlgo<LinearSolver>::err_ << std::endl;
             res = false;
             break;
         }
         // auto dx = -F;
         auto timer_va_vm = CustTimer();
+        const NRLayout& _layout = BaseNRAlgo<LinearSolver>::_layout;
         BaseNRAlgo<LinearSolver>::Vm_ = BaseNRAlgo<LinearSolver>::V_.array().abs();  // update Vm and Va again in case
         BaseNRAlgo<LinearSolver>::Va_ = BaseNRAlgo<LinearSolver>::V_.array().arg();  // we wrapped around with a negative Vm
 
         // update voltage (this should be done consistently with "klu_solver._evaluate_Fx")
-        if (n_pv > 0) BaseNRAlgo<LinearSolver>::Va_(my_pv) -= F.segment(0, n_pv);
-        if (n_pq > 0){
-            BaseNRAlgo<LinearSolver>::Va_(pq) -= F.segment(n_pv,n_pq);
-            BaseNRAlgo<LinearSolver>::Vm_(pq) -= F.segment(n_pv+n_pq, n_pq);
+        if (_layout.nb_pv() > 0) BaseNRAlgo<LinearSolver>::Va_(my_pv) -= _layout.theta(F).segment(0, _layout.nb_pv());
+        if (_layout.nb_pq() > 0){
+            BaseNRAlgo<LinearSolver>::Va_(pq) -= _layout.theta(F).segment(_layout.nb_pv(), _layout.nb_pq());
+            BaseNRAlgo<LinearSolver>::Vm_(pq) -= _layout.vm(F);
         }
 
         // TODO change here for not having to cast all the time ... maybe
@@ -319,14 +325,14 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_p
                       dS_dVa_r,
                       pvpq_inv, pvpq,
                       col_id,
-                      0, 
+                      static_cast<size_t>(BaseNRAlgo<LinearSolver>::_layout.J_dP_row()),
                       0);
         // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
         BaseNRAlgo<LinearSolver>::_get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVa_i,
                       pq_inv, pvpq,
                       col_id,
-                      n_pvpq,
+                      static_cast<size_t>(BaseNRAlgo<LinearSolver>::_layout.J_dQ_row()),
                       0);
 
         // "efficient" insert of the element in the matrix
@@ -347,21 +353,21 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_unkown_sparsity_p
         inner_index.clear();
         values.clear();
 
-          // fill with the first column with the column of dS_dVa[:,pvpq[col_id]]
+        // fill with the first column with the column of dS_dVm[:,pq[col_id]]
         // and check the row order !
         BaseNRAlgo<LinearSolver>::_get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVm_r,
                       pvpq_inv, pq,
                       col_id,
-                      0,
+                      static_cast<size_t>(BaseNRAlgo<LinearSolver>::_layout.J_dP_row()),
                       0);
 
-        // fill the rest of the rows with the first column of dS_dVa_imag[:,pq[col_id]]
+        // fill the rest of the rows with the first column of dS_dVm_imag[:,pq[col_id]]
         BaseNRAlgo<LinearSolver>::_get_values_J(nb_obj_this_col, inner_index, values,
                       dS_dVm_i,
                       pq_inv, pq,
                       col_id,
-                      n_pvpq,
+                      static_cast<size_t>(BaseNRAlgo<LinearSolver>::_layout.J_dQ_row()),
                       0);
 
         // "efficient" insert of the element in the matrix
@@ -389,52 +395,37 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_value_map(
         bool reset_J
         )
 {
-    const int n_pvpq = static_cast<int>(pvpq.size());
+    const int n_pvpq = static_cast<int>(pvpq.size());  // = _layout.theta_size() for lag=0
     BaseNRAlgo<LinearSolver>::value_map_.clear();
-    // std::cout << "BaseNRAlgo<LinearSolver>::J_.nonZeros(): " << BaseNRAlgo<LinearSolver>::J_.nonZeros() << std::endl;
     BaseNRAlgo<LinearSolver>::value_map_.reserve(BaseNRAlgo<LinearSolver>::J_.nonZeros());
 
     const int n_col = static_cast<int>(BaseNRAlgo<LinearSolver>::J_.cols());
-    // unsigned int pos_el = 0;
-    for (int col_=0; col_ < n_col; ++col_){
+    const int col_start = BaseNRAlgo<LinearSolver>::_layout.lag();  // 0 for single-slack
+    for (int col_=col_start; col_ < n_col; ++col_){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(BaseNRAlgo<LinearSolver>::J_, col_); it; ++it)
         {
             const int row_id = static_cast<int>(it.row());
             const int col_id = static_cast<int>(it.col());  // it's equal to "col_"
             if(reset_J) it.valueRef() = 0.; // "forget" previous J value in this setting
-            // real_type & this_el = J_x_ptr[pos_el];
             if((col_id < n_pvpq) && (row_id < n_pvpq)){
-                // this is the J11 part (dS_dVa_r)
+                // J11 (dS_dVa_r)
                 const int row_id_dS_dVa_r = pvpq[row_id];
                 const int col_id_dS_dVa_r = pvpq[col_id];
-                // this_el = dS_dVa_r.coeff(row_id_dS_dVa_r, col_id_dS_dVa_r);
                 BaseNRAlgo<LinearSolver>::value_map_.push_back(&BaseNRAlgo<LinearSolver>::dS_dVa_.coeffRef(row_id_dS_dVa_r, col_id_dS_dVa_r));
-
-                // I don't need to perform these checks: if they failed, the element would not be in J_ in the first place
-                // const int is_row_non_null = pq_inv[row_id_dS_dVa_r];
-                // const int is_col_non_null = pq_inv[col_id_dS_dVa_r];
-                // if(is_row_non_null >= 0 && is_col_non_null >= 0)
-                //     this_el = dS_dVa_r.coeff(row_id_dS_dVa_r, col_id_dS_dVa_r);
-                // else
-                //     std::cout << "dS_dVa_r: missed" << std::endl;
-
             }else if((col_id < n_pvpq) && (row_id >= n_pvpq)){
-                // this is the J21 part (dS_dVa_i)
+                // J21 (dS_dVa_i)
                 const int row_id_dS_dVa_i = pq[row_id - n_pvpq];
                 const int col_id_dS_dVa_i = pvpq[col_id];
-                // this_el = dS_dVa_i.coeff(row_id_dS_dVa_i, col_id_dS_dVa_i);
                 BaseNRAlgo<LinearSolver>::value_map_.push_back(&BaseNRAlgo<LinearSolver>::dS_dVa_.coeffRef(row_id_dS_dVa_i, col_id_dS_dVa_i));
             }else if((col_id >= n_pvpq) && (row_id < n_pvpq)){
-                // this is the J12 part (dS_dVm_r)
+                // J12 (dS_dVm_r)
                 const int row_id_dS_dVm_r = pvpq[row_id];
                 const int col_id_dS_dVm_r = pq[col_id - n_pvpq];
-                // this_el = dS_dVm_r.coeff(row_id_dS_dVm_r, col_id_dS_dVm_r);
                 BaseNRAlgo<LinearSolver>::value_map_.push_back(&BaseNRAlgo<LinearSolver>::dS_dVm_.coeffRef(row_id_dS_dVm_r, col_id_dS_dVm_r));
             }else if((col_id >= n_pvpq) && (row_id >= n_pvpq)){
-                // this is the J22 part (dS_dVm_i)
+                // J22 (dS_dVm_i)
                 const int row_id_dS_dVm_i = pq[row_id - n_pvpq];
                 const int col_id_dS_dVm_i = pq[col_id - n_pvpq];
-                // this_el = dS_dVm_i.coeff(row_id_dS_dVm_i, col_id_dS_dVm_i);
                 BaseNRAlgo<LinearSolver>::value_map_.push_back(&BaseNRAlgo<LinearSolver>::dS_dVm_.coeffRef(row_id_dS_dVm_i, col_id_dS_dVm_i));
             }
 
@@ -471,18 +462,16 @@ void BaseNRSingleSlackAlgo<LinearSolver>::fill_jacobian_matrix_kown_sparsity_pat
     J22 = dS_dVm[array([pq]).T, pq].imag
     **/
 
-    const int n_pvpq = static_cast<int>(pvpq.size());
+    const int n_pvpq_threshold = BaseNRAlgo<LinearSolver>::_layout.J_dQ_row();  // lag + theta_size = n_pvpq for lag=0
 
-    // real_type * J_x_ptr = J_.valuePtr();
     const int n_cols = static_cast<int>(BaseNRAlgo<LinearSolver>::J_.cols());  // equal to nrow
     unsigned int pos_el = 0;
-    for (int col_id=0; col_id < n_cols; ++col_id){
+    for (int col_id = BaseNRAlgo<LinearSolver>::_layout.lag(); col_id < n_cols; ++col_id){
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(BaseNRAlgo<LinearSolver>::J_, col_id); it; ++it)
         {
             const auto row_id = it.row();
-            // only one if is necessary (magic !)
-            // top rows are "real" part and bottom rows are imaginary part (you can check)
-            it.valueRef() = row_id < n_pvpq ? std::real(*BaseNRAlgo<LinearSolver>::value_map_[pos_el]) : std::imag(*BaseNRAlgo<LinearSolver>::value_map_[pos_el]);
+            // top rows are "real" part and bottom rows are imaginary part
+            it.valueRef() = row_id < n_pvpq_threshold ? std::real(*BaseNRAlgo<LinearSolver>::value_map_[pos_el]) : std::imag(*BaseNRAlgo<LinearSolver>::value_map_[pos_el]);
             // go to the next element
             ++pos_el;
         }
