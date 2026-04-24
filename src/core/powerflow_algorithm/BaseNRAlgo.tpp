@@ -123,14 +123,14 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
             // std::cout << "need update J\n";
             fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
             if(need_factorize_){
-                // std::cout << "\tneed init + factorize\n";
+                std::cout << "\tneed init + factorize\n";
                 auto timer_i = CustTimer();
                 n_ = static_cast<int>(J_.cols());
                 err_ = _linear_solver.initialize(J_);
                 need_factorize_ = false;
                 timer_initialize_ += timer_i.duration();
             } else {
-                // std::cout << "\tneed re factorize\n";
+                std::cout << "\tneed re factorize\n";
                 // std::cout << "RE factorize\n";
                 auto timer_r = CustTimer();
                 err_ = _linear_solver.refactor(J_);
