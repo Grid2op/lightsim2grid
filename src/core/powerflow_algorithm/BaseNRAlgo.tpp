@@ -52,6 +52,12 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     }
     reset_timer();
     reset_if_needed();
+    if(!((err_ == ErrorType::NotInitError) ||
+         (err_ == ErrorType::NoError))){
+        // in case the reset fails
+        return false;
+    }
+
     err_ = ErrorType::NoError;  // reset the error if previous error happened
     auto timer = CustTimer();
     auto timer_pre_proc = CustTimer();
@@ -88,6 +94,8 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     bool converged = _check_for_convergence(F, tol);
     nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
+
+    bool do_refactorize = false; 
     if(need_factorize_ ||
        _solver_control.need_reset_solver() ||
        _solver_control.has_dimension_changed() ||
@@ -102,43 +110,37 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
         dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
         dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+        do_refactorize = true;
        }
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
 
-        // // TODO NR Refacto, I don't understand this
-        // // _solver_control never changes during the loop
-        // const bool do_refactorise =
-        //     need_factorize_ ||
-        //     _solver_control.need_reset_solver() ||
-        //     _solver_control.has_dimension_changed() ||
-        //     _solver_control.ybus_change_sparsity_pattern() ||
-        //     _solver_control.has_ybus_some_coeffs_zero() ||
-        //     _solver_control.need_recompute_ybus() ||
-        //     _solver_control.has_pv_changed() ||
-        //     _solver_control.has_pq_changed() ||
-        //     _solver_control.has_slack_participate_changed();
+        // corresponds to actual policy (always refactor)
+        // but should be updated with the integration of RefactorPolicies
+        do_refactorize = true; 
 
-        // if(do_refactorise){
-        fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-        if(need_factorize_){
-            // std::cout << "need factorize\n";
-            auto timer_i = CustTimer();
-            n_ = static_cast<int>(J_.cols());
-            err_ = _linear_solver.initialize(J_);
-            need_factorize_ = false;
-            timer_initialize_ += timer_i.duration();
-        } else {
-            // std::cout << "RE factorize\n";
-            auto timer_r = CustTimer();
-            err_ = _linear_solver.refactor(J_);
-            timer_refactor_ += timer_r.duration();
+        if(do_refactorize){
+            // std::cout << "need update J\n";
+            fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+            if(need_factorize_){
+                // std::cout << "\tneed init + factorize\n";
+                auto timer_i = CustTimer();
+                n_ = static_cast<int>(J_.cols());
+                err_ = _linear_solver.initialize(J_);
+                need_factorize_ = false;
+                timer_initialize_ += timer_i.duration();
+            } else {
+                // std::cout << "\tneed re factorize\n";
+                // std::cout << "RE factorize\n";
+                auto timer_r = CustTimer();
+                err_ = _linear_solver.refactor(J_);
+                timer_refactor_ += timer_r.duration();
+            }
+            if(err_ != ErrorType::NoError){
+                res = false;
+                break;
+            }
         }
-        if(err_ != ErrorType::NoError){
-            res = false;
-            break;
-        }
-        // }
 
         {
             auto timer_s = CustTimer();
@@ -147,6 +149,7 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         }
         if(err_ != ErrorType::NoError){
             // I got an error during the solving of the linear system, i need to stop here
+            // std::cout << "stopping at solve" << err_ << std::endl;
             res = false;
             break;
         }
@@ -178,12 +181,14 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         bool tmp = F.allFinite();
         if(!tmp){
             err_ = ErrorType::InifiniteValue;
+            // std::cout << "stopping at evaluate Fx infinite value" << std::endl;
             break; // divergence due to Nans
         }
         converged = _check_for_convergence(F, tol);
     }
     if(!converged){
         if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
+            // std::cout << "stopping iteration number" << std::endl;
         res = false;
     }
     timer_total_nr_ += timer.duration();

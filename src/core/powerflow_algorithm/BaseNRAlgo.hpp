@@ -143,7 +143,10 @@ class BaseNRAlgo : public BaseAlgo
                             bool reset_J);
 
         void reset_if_needed(){
-            if(_solver_control.need_reset_solver() || 
+            if( // previous state had an error, I need to reset
+                err_ != ErrorType::NoError || 
+                // in case the "controler" tells me to reset
+               _solver_control.need_reset_solver() ||  
                _solver_control.has_dimension_changed() ||
                _solver_control.ybus_change_sparsity_pattern() ||
                _solver_control.has_ybus_some_coeffs_zero() ||
@@ -151,6 +154,7 @@ class BaseNRAlgo : public BaseAlgo
                _solver_control.has_pv_changed() ||
                _solver_control.has_pq_changed()
                ){
+                // std::cout << "reset the solver\n";
                reset();
             }
         }

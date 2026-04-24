@@ -45,6 +45,11 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     }
     BaseNRAlgo<LinearSolver>::reset_timer();
     BaseNRAlgo<LinearSolver>::reset_if_needed();
+    if(!((BaseNRAlgo<LinearSolver>::err_ == ErrorType::NotInitError) ||
+         (BaseNRAlgo<LinearSolver>::err_ == ErrorType::NoError))){
+        // in case the reset fails
+        return false;
+    }
     BaseNRAlgo<LinearSolver>::err_ = ErrorType::NoError;  // reset the error if previous error happened
     
     auto timer = CustTimer();
@@ -75,6 +80,7 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
     BaseNRAlgo<LinearSolver>::nr_iter_ = 0; //current step
     bool res = true;  // have i converged or not
     const cplx_type m_i = BaseNRAlgo<LinearSolver>::my_i;  // otherwise it does not compile
+    bool do_refactorize = false;
     if(BaseNRAlgo<LinearSolver>::need_factorize_ ||
        BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() ||
        BaseNRAlgo<LinearSolver>::_solver_control.has_dimension_changed() ||
@@ -89,39 +95,38 @@ bool BaseNRSingleSlackAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<c
         BaseNRAlgo<LinearSolver>::value_map_.clear();  // TODO smarter solver: only needed if ybus has changed
         BaseNRAlgo<LinearSolver>::dS_dVm_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
         BaseNRAlgo<LinearSolver>::dS_dVa_.resize(0,0);  // TODO smarter solver: only needed if ybus has changed
+        do_refactorize = true;
        }
+
     while ((!converged) & (BaseNRAlgo<LinearSolver>::nr_iter_ < max_iter)){
         BaseNRAlgo<LinearSolver>::nr_iter_++;
 
-        // const bool do_refactorise =
-        //     BaseNRAlgo<LinearSolver>::need_factorize_ ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.need_reset_solver() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.has_dimension_changed() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.ybus_change_sparsity_pattern() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.has_ybus_some_coeffs_zero() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.need_recompute_ybus() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.has_pv_changed() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.has_pq_changed() ||
-        //     BaseNRAlgo<LinearSolver>::_solver_control.has_slack_participate_changed();
 
-        // if(do_refactorise){
-        fill_jacobian_matrix(Ybus, BaseNRAlgo<LinearSolver>::V_, pq, pvpq, pq_inv, pvpq_inv);
-        if(BaseNRAlgo<LinearSolver>::need_factorize_){
-            auto timer_i = CustTimer();
-            BaseNRAlgo<LinearSolver>::n_ = static_cast<int>(BaseNRAlgo<LinearSolver>::J_.cols());
-            BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.initialize(BaseNRAlgo<LinearSolver>::J_);
-            BaseNRAlgo<LinearSolver>::need_factorize_ = false;
-            BaseNRAlgo<LinearSolver>::timer_initialize_ += timer_i.duration();
-        } else {
-            auto timer_r = CustTimer();
-            BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.refactor(BaseNRAlgo<LinearSolver>::J_);
-            BaseNRAlgo<LinearSolver>::timer_refactor_ += timer_r.duration();
+        // corresponds to actual policy (always refactor)
+        // but should be updated with the integration of RefactorPolicies
+        // something like
+        // do_refactorize = do_refactorize || RefactorPolicies
+        do_refactorize = true;
+
+        if(do_refactorize){
+            fill_jacobian_matrix(Ybus, BaseNRAlgo<LinearSolver>::V_, pq, pvpq, pq_inv, pvpq_inv);
+            if(BaseNRAlgo<LinearSolver>::need_factorize_){
+                auto timer_i = CustTimer();
+                BaseNRAlgo<LinearSolver>::n_ = static_cast<int>(BaseNRAlgo<LinearSolver>::J_.cols());
+                BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.initialize(BaseNRAlgo<LinearSolver>::J_);
+                BaseNRAlgo<LinearSolver>::need_factorize_ = false;
+                BaseNRAlgo<LinearSolver>::timer_initialize_ += timer_i.duration();
+            } else {
+                auto timer_r = CustTimer();
+                BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.refactor(BaseNRAlgo<LinearSolver>::J_);
+                BaseNRAlgo<LinearSolver>::timer_refactor_ += timer_r.duration();
+            }
+            if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
+                res = false;
+                break;
+            }
         }
-        if(BaseNRAlgo<LinearSolver>::err_ != ErrorType::NoError){
-            res = false;
-            break;
-        }
-        // }
+
         {
             auto timer_s = CustTimer();
             BaseNRAlgo<LinearSolver>::err_ = BaseNRAlgo<LinearSolver>::_linear_solver.solve(F);

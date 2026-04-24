@@ -110,10 +110,10 @@ RealVect BaseAlgo::_evaluate_Fx(const Eigen::SparseMatrix<cplx_type> &  Ybus,
 
     // build and fill the result
     RealVect res(npv + 2 * npq + 1); // slack adds one component hence the '+1' also bellow)
+    res(0) = real_(slack_id);  // slack bus is first variable
     res.segment(1, npv) = real_(pv);
     res.segment(npv + 1, npq) = real_(pq);
     res.segment(npv + npq + 1, npq) = imag_(pq);
-    res(0) = real_(slack_id);  // slack bus is first variable
     timer_Fx_ += timer.duration();
     return res;
     
@@ -124,7 +124,6 @@ bool BaseAlgo::_check_for_convergence(const RealVect & F,
 {
     auto timer = CustTimer();
     const auto norm_inf = F.lpNorm<Eigen::Infinity>();
-    // std::cout << "\t\tnorm_inf: " << norm_inf << std::endl;
     bool res =  norm_inf  < tol;
     timer_check_ += timer.duration();
     return res;
