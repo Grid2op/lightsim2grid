@@ -10,6 +10,7 @@
 #define BASE_NR_ALGO_H
 
 #include "BaseAlgo.hpp"
+#include "NRLayout.hpp"
 
 namespace ls2g {
 
@@ -86,19 +87,6 @@ class BaseNRAlgo : public BaseAlgo
             timer_Va_Vm_ = 0.;
             timer_pre_proc_ = 0.;
             timer_initialize_ = 0.;
-        }
-        virtual
-        void initialize(){
-            auto timer = CustTimer();
-            n_ = static_cast<int>(J_.cols()); // should be equal to J_.nrows()
-            err_ = ErrorType::NoError; // reset error message
-            const ErrorType init_status = _linear_solver.initialize(J_);
-            if(init_status != ErrorType::NoError){
-                // std::cout << "init_ok " << init_ok << std::endl;
-                err_ = init_status;
-            }
-            need_factorize_ = false;
-            timer_initialize_ += timer.duration();
         }
 
         void _dSbus_dV(const Eigen::Ref<const Eigen::SparseMatrix<cplx_type> > & Ybus,
@@ -179,6 +167,9 @@ class BaseNRAlgo : public BaseAlgo
         // to store the mapping from the element of J_ in dS_dVm_ and dS_dVa_
         // it does not own any memory at all !
         std::vector<cplx_type*> value_map_;
+
+        // layout of the NR state vector and Jacobian blocks
+        NRLayout _layout;
         // std::vector<int> col_map_;
         // std::vector<int> row_map_;
 
