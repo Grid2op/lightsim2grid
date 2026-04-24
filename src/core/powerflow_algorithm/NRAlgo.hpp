@@ -12,6 +12,7 @@
 #include "BaseAlgo.hpp"
 #include "NRLayout.hpp"
 #include "SlackPolicies.hpp"
+#include "ScalingPolicies.hpp"
 
 namespace ls2g {
 
@@ -22,10 +23,11 @@ namespace ls2g {
  * SingleSlackPolicy (lag=0, traditional single slack).  The policy is granted
  * friend access so its static template methods can reach protected members directly.
  */
-template<class LinearSolver, class SlackPolicy>
+template<class LinearSolver, class SlackPolicy, class ScalingPolicy = NoScalingPolicy>
 class NRAlgo : public BaseAlgo
 {
     friend SlackPolicy;
+    friend ScalingPolicy;
 
 public:
     NRAlgo() noexcept :
@@ -81,6 +83,9 @@ public:
 
     virtual void reset() override;
 
+    ScalingPolicy& get_scaling_policy() { return _scaling_policy_; }
+    const ScalingPolicy& get_scaling_policy() const { return _scaling_policy_; }
+
     Eigen::SparseMatrix<real_type>
     create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type>& Ybus,
                                 const CplxVect& V,
@@ -134,6 +139,10 @@ protected:
                        size_t row_lag,
                        size_t col_lag);
 
+    void _do_voltage_update(const RealVect& dx,
+                            const Eigen::VectorXi& my_pv,
+                            Eigen::Ref<const IntVect> pq);
+
     void reset_if_needed() {
         if(err_ != ErrorType::NoError ||
            _solver_control.need_reset_solver() ||
@@ -163,6 +172,9 @@ protected:
 
     // block-index arithmetic for the NR state vector and Jacobian
     NRLayout _layout;
+
+    // scaling policy instance (configurable at runtime for MaxVoltageChangePolicy)
+    ScalingPolicy _scaling_policy_;
 
     // extra timers (beyond BaseAlgo's four)
     double timer_refactor_;

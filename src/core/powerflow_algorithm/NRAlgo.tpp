@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-template<class LinearSolver, class SlackPolicy>
-bool NRAlgo<LinearSolver, SlackPolicy>::compute_pf(
+template<class LinearSolver, class SlackPolicy, class ScalingPolicy>
+bool NRAlgo<LinearSolver, SlackPolicy, ScalingPolicy>::compute_pf(
         const Eigen::SparseMatrix<cplx_type>& Ybus,
         CplxVect& V,
         const CplxVect& Sbus,
@@ -124,6 +124,10 @@ bool NRAlgo<LinearSolver, SlackPolicy>::compute_pf(
 
         auto timer_va_vm = CustTimer();
 
+        // scale the Newton step (alpha=1.0 for NoScalingPolicy, <1.0 for limiting policies)
+        const real_type alpha = _scaling_policy_.compute_scale(*this, F);
+        F *= alpha;
+
         // policy-dependent slack update (no-op for single-slack)
         SlackPolicy::update_slack_absorbed(*this, F, slack_absorbed);
 
@@ -175,8 +179,8 @@ bool NRAlgo<LinearSolver, SlackPolicy>::compute_pf(
     return res;
 }
 
-template<class LinearSolver, class SlackPolicy>
-void NRAlgo<LinearSolver, SlackPolicy>::reset()
+template<class LinearSolver, class SlackPolicy, class ScalingPolicy>
+void NRAlgo<LinearSolver, SlackPolicy, ScalingPolicy>::reset()
 {
     BaseAlgo::reset();
     J_ = Eigen::SparseMatrix<real_type>();
@@ -188,8 +192,8 @@ void NRAlgo<LinearSolver, SlackPolicy>::reset()
     if(reset_status != ErrorType::NoError) err_ = reset_status;
 }
 
-template<class LinearSolver, class SlackPolicy>
-void NRAlgo<LinearSolver, SlackPolicy>::_dSbus_dV(
+template<class LinearSolver, class SlackPolicy, class ScalingPolicy>
+void NRAlgo<LinearSolver, SlackPolicy, ScalingPolicy>::_dSbus_dV(
         const Eigen::Ref<const Eigen::SparseMatrix<cplx_type>>& Ybus,
         const Eigen::Ref<const CplxVect>& V)
 {
@@ -237,8 +241,8 @@ void NRAlgo<LinearSolver, SlackPolicy>::_dSbus_dV(
     timer_dSbus_ += timer.duration();
 }
 
-template<class LinearSolver, class SlackPolicy>
-void NRAlgo<LinearSolver, SlackPolicy>::_get_values_J(
+template<class LinearSolver, class SlackPolicy, class ScalingPolicy>
+void NRAlgo<LinearSolver, SlackPolicy, ScalingPolicy>::_get_values_J(
         int& nb_obj_this_col,
         std::vector<Eigen::Index>& inner_index,
         std::vector<real_type>& values,
@@ -254,8 +258,8 @@ void NRAlgo<LinearSolver, SlackPolicy>::_get_values_J(
                   col_id_mat, row_lag, col_lag);
 }
 
-template<class LinearSolver, class SlackPolicy>
-void NRAlgo<LinearSolver, SlackPolicy>::_get_values_J(
+template<class LinearSolver, class SlackPolicy, class ScalingPolicy>
+void NRAlgo<LinearSolver, SlackPolicy, ScalingPolicy>::_get_values_J(
         int& nb_obj_this_col,
         std::vector<Eigen::Index>& inner_index,
         std::vector<real_type>& values,

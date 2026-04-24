@@ -28,6 +28,10 @@ namespace ls2g {
 using SparseLUSolver = NRAlgo<SparseLULinearSolver, MultiSlackPolicy>;
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, do not consider multiple slack bus**/
 using SparseLUSolverSingleSlack = NRAlgo<SparseLULinearSolver, SingleSlackPolicy>;
+/** SparseLU NR with max-voltage-change step limiting (multi-slack)**/
+using SparseLUSolverMaxVC = NRAlgo<SparseLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
+/** SparseLU NR with max-voltage-change step limiting (single-slack)**/
+using SparseLUSolverSingleSlackMaxVC = NRAlgo<SparseLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
 /** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, only suitable for the DC approximation**/
 using DCSolver = BaseDCAlgo<SparseLULinearSolver>;
 /** Solver based on Fast Decoupled, using the SparseLU decomposition of Eigen**/
@@ -39,6 +43,10 @@ using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX
     using KLUSolver = NRAlgo<KLULinearSolver, MultiSlackPolicy>;
     /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus**/
     using KLUSolverSingleSlack = NRAlgo<KLULinearSolver, SingleSlackPolicy>;
+    /** KLU NR with max-voltage-change step limiting (multi-slack)**/
+    using KLUSolverMaxVC = NRAlgo<KLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
+    /** KLU NR with max-voltage-change step limiting (single-slack)**/
+    using KLUSolverSingleSlackMaxVC = NRAlgo<KLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
     /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation**/
     using KLUDCSolver = BaseDCAlgo<KLULinearSolver>;
     /** Solver based on Fast Decoupled, using the KLU linear solver**/
@@ -107,6 +115,8 @@ using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX
 #ifndef LS2G_BUILDING_CORE
     extern template class LS2G_API NRAlgo<SparseLULinearSolver, MultiSlackPolicy>;
     extern template class LS2G_API NRAlgo<SparseLULinearSolver, SingleSlackPolicy>;
+    extern template class LS2G_API NRAlgo<SparseLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
+    extern template class LS2G_API NRAlgo<SparseLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
     extern template class LS2G_API BaseDCAlgo<SparseLULinearSolver>;
     extern template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
     extern template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
@@ -114,6 +124,8 @@ using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX
 #ifdef KLU_SOLVER_AVAILABLE
     extern template class LS2G_API NRAlgo<KLULinearSolver, MultiSlackPolicy>;
     extern template class LS2G_API NRAlgo<KLULinearSolver, SingleSlackPolicy>;
+    extern template class LS2G_API NRAlgo<KLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
+    extern template class LS2G_API NRAlgo<KLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
     extern template class LS2G_API BaseDCAlgo<KLULinearSolver>;
     extern template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
     extern template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
@@ -122,6 +134,8 @@ using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX
 #ifdef NICSLU_SOLVER_AVAILABLE
     extern template class LS2G_API NRAlgo<NICSLULinearSolver, MultiSlackPolicy>;
     extern template class LS2G_API NRAlgo<NICSLULinearSolver, SingleSlackPolicy>;
+    extern template class LS2G_API NRAlgo<NICSLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
+    extern template class LS2G_API NRAlgo<NICSLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
     extern template class LS2G_API BaseDCAlgo<NICSLULinearSolver>;
     extern template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
     extern template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
@@ -130,6 +144,8 @@ using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX
 #ifdef CKTSO_SOLVER_AVAILABLE
     extern template class LS2G_API NRAlgo<CKTSOLinearSolver, MultiSlackPolicy>;
     extern template class LS2G_API NRAlgo<CKTSOLinearSolver, SingleSlackPolicy>;
+    extern template class LS2G_API NRAlgo<CKTSOLinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
+    extern template class LS2G_API NRAlgo<CKTSOLinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
     extern template class LS2G_API BaseDCAlgo<CKTSOLinearSolver>;
     extern template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
     extern template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
