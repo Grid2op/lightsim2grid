@@ -28,8 +28,17 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.13.2]  2026-xx-yy
---------------------
+[0.13.2] 2026-xx-yy
+---------------------
+- [ADDED] Refactored `ChooseSolver` to a plugin-friendly `SolverRegistry` (see doc)
+- [ADDED] installing the python package now also comes with the lightsim2grid_core 
+  header files.
+- [IMPROVED] Removing the "ChooseSolver" API and replacing it with the `SolverRegistry`
+- [IMPROVED] clean separation between lightsim2grid_core the main library that could be
+  used from cpp and the python bindings.
+- [IMPROVED] removed the ".values" and replace them by ".to_numpy()" in pandapower converter.
+- [IMPROVED] remove the "typedef" in favor of "using" cpp side (core)
+- [IMPROVED] add some "override" and "final" in the algorithm virtual methods.
 
 [0.13.1]  2026-04-21
 --------------------

@@ -35,12 +35,12 @@ def _aux_add_trafo(
     -------
 
     """
-    if "parallel" in pp_net.trafo and np.any(pp_net.trafo["parallel"].values != 1):
+    if "parallel" in pp_net.trafo and np.any(pp_net.trafo["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' trafo columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.trafo[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
     # fix the missing values
-    tap_neutral = pp_net.trafo["tap_neutral"].values.copy()
+    tap_neutral = pp_net.trafo["tap_neutral"].to_numpy().copy()
     if np.any(~np.isfinite(tap_neutral)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_neutral\"], they have been replaced by 0")
     tap_neutral[~np.isfinite(tap_neutral)] = 0.
@@ -48,46 +48,46 @@ def _aux_add_trafo(
     if np.any(tap_neutral != 0.):
         raise RuntimeError("lightsim converter supposes that tap_neutral is 0 for the transformers")
 
-    tap_step_pct = pp_net.trafo["tap_step_percent"].values.copy()
+    tap_step_pct = pp_net.trafo["tap_step_percent"].to_numpy().copy()
     if np.any(~np.isfinite(tap_step_pct)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_percent\"], they have been replaced by 0")
     tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
 
-    tap_pos = pp_net.trafo["tap_pos"].values.copy()
+    tap_pos = pp_net.trafo["tap_pos"].to_numpy().copy()
     if np.any(~np.isfinite(tap_pos)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_pos\"], they have been replaced by 0")
     tap_pos[~np.isfinite(tap_pos)] = 0.
 
-    shift_ = pp_net.trafo["shift_degree"].values.copy()
+    shift_ = pp_net.trafo["shift_degree"].to_numpy().copy()
     if np.any(~np.isfinite(tap_pos)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
 
-    is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
+    is_tap_hv_side = pp_net.trafo["tap_side"].to_numpy() == "hv"
     if np.any(~np.isfinite(is_tap_hv_side)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
     is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
     
     if "tap_phase_shifter" in pp_net.trafo:
-        if np.any(pp_net.trafo["tap_phase_shifter"].values):
+        if np.any(pp_net.trafo["tap_phase_shifter"].to_numpy()):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all trafos with "
                                "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
     elif "tap_changer_type" in pp_net.trafo:
-        if np.any(pp_net.trafo["tap_changer_type"].values == "Ideal"):
+        if np.any(pp_net.trafo["tap_changer_type"].to_numpy() == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 2-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
     elif "tap_changer_type" in pp_net.trafo3w:
-        if np.any(pp_net.trafo3w["tap_changer_type"].values == "Ideal"):
+        if np.any(pp_net.trafo3w["tap_changer_type"].to_numpy() == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
             
-    tap_angles_ = pp_net.trafo["tap_step_degree"].values.copy()
+    tap_angles_ = pp_net.trafo["tap_step_degree"].to_numpy().copy()
     if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
     tap_angles_[~np.isfinite(tap_angles_)] = 0.
     tap_angles_ = np.deg2rad(tap_angles_)
 
-    if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].values - 0.5) < 1e-7).any():
+    if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].to_numpy() - 0.5) < 1e-7).any():
         warnings.warn("leakage_resistance_ratio_hv != 0.5 is not supported by this converter at the moment. It will be replaced by 0.5")
         
     trafo_model_is_t = True
@@ -107,11 +107,11 @@ def _aux_add_trafo(
                                           is_tap_hv_side,
                                           pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"],
                                           pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"],
-                                          pp_net.trafo["vk_percent"].values,
-                                          pp_net.trafo["vkr_percent"].values,
-                                          pp_net.trafo["sn_mva"].values,
-                                          pp_net.trafo["pfe_kw"].values,
-                                          pp_net.trafo["i0_percent"].values,
+                                          pp_net.trafo["vk_percent"].to_numpy(),
+                                          pp_net.trafo["vkr_percent"].to_numpy(),
+                                          pp_net.trafo["sn_mva"].to_numpy(),
+                                          pp_net.trafo["pfe_kw"].to_numpy(),
+                                          pp_net.trafo["i0_percent"].to_numpy(),
                                           trafo_model_is_t
                                           )
     else:

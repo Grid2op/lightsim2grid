@@ -1,0 +1,6 @@
+list(APPEND SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/GaussSeidelAlgo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GaussSeidelSynchAlgo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BaseAlgo.cpp"
+)
+set(SOURCES ${SOURCES} PARENT_SCOPE)

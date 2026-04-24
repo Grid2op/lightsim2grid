@@ -27,7 +27,7 @@ def _aux_add_dc_line(model, pp_net, pp_to_ls):
     -------
 
     """
-    if "parallel" in pp_net.dcline and np.any(pp_net.dcline["parallel"].values != 1):
+    if "parallel" in pp_net.dcline and np.any(pp_net.dcline["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' dcline columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.dcline[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
@@ -35,31 +35,31 @@ def _aux_add_dc_line(model, pp_net, pp_to_ls):
         # nothing to do if no dc line
         return
     
-    branch_from_id = pp_bus_to_ls(pp_net.dcline["from_bus"].values, pp_to_ls)
-    branch_to_id = pp_bus_to_ls(pp_net.dcline["to_bus"].values, pp_to_ls)
-    p_mw = -pp_net.dcline["p_mw"].values.copy()
+    branch_from_id = pp_bus_to_ls(pp_net.dcline["from_bus"].to_numpy(), pp_to_ls)
+    branch_to_id = pp_bus_to_ls(pp_net.dcline["to_bus"].to_numpy(), pp_to_ls)
+    p_mw = -pp_net.dcline["p_mw"].to_numpy().copy()
     if (~np.isfinite(p_mw)).any():
         warnings.warn("Some non finite values are found for p_mw, they have been replaced by 0.")
         p_mw[~np.isfinite(p_mw)] = 0.
         
-    loss_percent = pp_net.dcline["loss_percent"].values
-    loss_mw = pp_net.dcline["loss_mw"].values
-    vm_or_pu = pp_net.dcline["vm_from_pu"].values
-    vm_ex_pu = pp_net.dcline["vm_to_pu"].values
+    loss_percent = pp_net.dcline["loss_percent"].to_numpy()
+    loss_mw = pp_net.dcline["loss_mw"].to_numpy()
+    vm_or_pu = pp_net.dcline["vm_from_pu"].to_numpy()
+    vm_ex_pu = pp_net.dcline["vm_to_pu"].to_numpy()
     
-    min_q_or = pp_net.dcline["min_q_from_mvar"].values.copy()
+    min_q_or = pp_net.dcline["min_q_from_mvar"].to_numpy().copy()
     if (~np.isfinite(min_q_or)).any():
         min_q_or[~np.isfinite(min_q_or)] = -SOME_KIND_OF_INF_FOR_PMIN_PMAX
         
-    max_q_or = pp_net.dcline["max_q_from_mvar"].values.copy()
+    max_q_or = pp_net.dcline["max_q_from_mvar"].to_numpy().copy()
     if (~np.isfinite(max_q_or)).any():
         max_q_or[~np.isfinite(max_q_or)] = SOME_KIND_OF_INF_FOR_PMIN_PMAX
         
-    min_q_ex = pp_net.dcline["min_q_to_mvar"].values.copy()
+    min_q_ex = pp_net.dcline["min_q_to_mvar"].to_numpy().copy()
     if (~np.isfinite(min_q_ex)).any():
         min_q_ex[~np.isfinite(min_q_ex)] = -SOME_KIND_OF_INF_FOR_PMIN_PMAX
         
-    max_q_ex = pp_net.dcline["max_q_to_mvar"].values.copy()
+    max_q_ex = pp_net.dcline["max_q_to_mvar"].to_numpy().copy()
     if (~np.isfinite(max_q_ex)).any():
         max_q_ex[~np.isfinite(max_q_ex)] = +SOME_KIND_OF_INF_FOR_PMIN_PMAX
                           
