@@ -106,35 +106,40 @@ bool BaseNRAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     while ((!converged) & (nr_iter_ < max_iter)){
         nr_iter_++;
 
-        const bool do_refactorise =
-            need_factorize_ ||
-            _solver_control.need_reset_solver() ||
-            _solver_control.has_dimension_changed() ||
-            _solver_control.ybus_change_sparsity_pattern() ||
-            _solver_control.has_ybus_some_coeffs_zero() ||
-            _solver_control.need_recompute_ybus() ||
-            _solver_control.has_pv_changed() ||
-            _solver_control.has_pq_changed() ||
-            _solver_control.has_slack_participate_changed();
+        // // TODO NR Refacto, I don't understand this
+        // // _solver_control never changes during the loop
+        // const bool do_refactorise =
+        //     need_factorize_ ||
+        //     _solver_control.need_reset_solver() ||
+        //     _solver_control.has_dimension_changed() ||
+        //     _solver_control.ybus_change_sparsity_pattern() ||
+        //     _solver_control.has_ybus_some_coeffs_zero() ||
+        //     _solver_control.need_recompute_ybus() ||
+        //     _solver_control.has_pv_changed() ||
+        //     _solver_control.has_pq_changed() ||
+        //     _solver_control.has_slack_participate_changed();
 
-        if(do_refactorise){
-            fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
-            if(need_factorize_){
-                auto timer_i = CustTimer();
-                n_ = static_cast<int>(J_.cols());
-                err_ = _linear_solver.initialize(J_);
-                need_factorize_ = false;
-                timer_initialize_ += timer_i.duration();
-            } else {
-                auto timer_r = CustTimer();
-                err_ = _linear_solver.refactor(J_);
-                timer_refactor_ += timer_r.duration();
-            }
-            if(err_ != ErrorType::NoError){
-                res = false;
-                break;
-            }
+        // if(do_refactorise){
+        fill_jacobian_matrix(Ybus, V_, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
+        if(need_factorize_){
+            // std::cout << "need factorize\n";
+            auto timer_i = CustTimer();
+            n_ = static_cast<int>(J_.cols());
+            err_ = _linear_solver.initialize(J_);
+            need_factorize_ = false;
+            timer_initialize_ += timer_i.duration();
+        } else {
+            // std::cout << "RE factorize\n";
+            auto timer_r = CustTimer();
+            err_ = _linear_solver.refactor(J_);
+            timer_refactor_ += timer_r.duration();
         }
+        if(err_ != ErrorType::NoError){
+            res = false;
+            break;
+        }
+        // }
+
         {
             auto timer_s = CustTimer();
             err_ = _linear_solver.solve(F);
@@ -383,6 +388,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cp
             auto timer2 = CustTimer();
         #endif  // __COUT_TIMES
         // first time i initialized the matrix, so i need to compute its sparsity pattern
+        // std::cout << "\t\t fill_jacobian_matrix UNKNOWN\n";
         fill_jacobian_matrix_unkown_sparsity_pattern(Ybus, V, slack_bus_id, slack_weights, pq, pvpq, pq_inv, pvpq_inv);
         fill_value_map(slack_bus_id, pq, pvpq, false);
         #ifdef __COUT_TIMES
@@ -394,6 +400,7 @@ void BaseNRAlgo<LinearSolver>::fill_jacobian_matrix(const Eigen::SparseMatrix<cp
         #ifdef __COUT_TIMES
             auto timer3 = CustTimer();
         #endif  // 
+        // std::cout << "\t\t fill_jacobian_matrix KNOWN\n";
         if (BaseNRAlgo<LinearSolver>::value_map_.size() == 0) fill_value_map(slack_bus_id, pq, pvpq, true);
         fill_jacobian_matrix_kown_sparsity_pattern(slack_bus_id,
                                                    pq, pvpq

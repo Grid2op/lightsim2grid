@@ -792,4 +792,8 @@ class TestSolverControlGaussSeidelSynch(TestSolverControl):
                
                
 if __name__ == "__main__":
-    unittest.main()
+    # unittest.main()
+    # tester = TestSolverControlNRSing()
+    tester = TestSolverControl()
+    tester.setUp()
+    tester.test_disco_reco_trafo_ac()
