@@ -151,9 +151,10 @@ class TestSolverControl(unittest.TestCase):
                 
         # test "do the action"
         V_init = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
-        Sbus_init = self.gridmodel.get_Sbus_solver().copy()
-        Ybus_init = self.gridmodel.get_Ybus_solver().copy()
+        Sbus_init = self.gridmodel.get_Sbus_solver().copy()  # noqa: F841
+        Ybus_init = self.gridmodel.get_Ybus_solver().copy()  # noqa: F841
         assert len(V_init), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
+        # print("1. ac pf")
         getattr(self, funname_do)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val + to_add_remove)
         V_disc = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         if len(V_disc) > 0:
@@ -176,21 +177,26 @@ class TestSolverControl(unittest.TestCase):
             self.gridmodel.tell_solver_need_reset()
             V_disc2 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
             assert len(V_disc2) == 0, f"error for el_id={el_id}: powerflow should diverge as it did initially in {pf_mode}"
-            
+        
         # test "undo the action"
         self.gridmodel.unset_changes()
         getattr(self, funname_undo)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val)
         sovler_control = self.gridmodel.get_solver_control()
+        # print("2. ac pf")
+        # print("re running powerflow")
         V_reco = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        # print("done")
         assert len(V_reco), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         Sbus_1 = self.gridmodel.get_Sbus_solver()
         Ybus_1 = self.gridmodel.get_Ybus_solver()
         assert np.allclose(V_reco, V_init, rtol=self.tol_equal, atol=self.tol_equal), f"error for el_id={el_id}: do an action and then undo it should not have any impact in {pf_mode}: max {np.abs(V_init - V_reco).max():.2e}"
         self.gridmodel.unset_changes()
+        # print("3. ac pf")
         V_reco1 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V_reco1), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         assert np.allclose(V_reco1, V_reco, rtol=self.tol_equal, atol=self.tol_equal)
         self.gridmodel.tell_solver_need_reset()
+        # print("4. ac pf")
         V_reco2 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         assert len(V_reco2), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         assert np.allclose(V_reco2, V_reco1, rtol=self.tol_equal, atol=self.tol_equal)
@@ -247,12 +253,14 @@ class TestSolverControl(unittest.TestCase):
             if runpf_fun=="_run_ac_pf":
                 if el_id == 1:
                     expected_diff = 1e-2
+            # print(f"for trafo = {el_id}")
             self.aux_do_undo_ac(funname_do="_disco_trafo_action",
                                 funname_undo="_reco_trafo_action",
                                 runpf_fun=runpf_fun,
                                 el_id=el_id,
                                 expected_diff=expected_diff
                                 )
+            # print("done")
             
     def test_disco_reco_trafo_dc(self):   
         """test I have the same results if I disconnect a trafo with and 
@@ -593,7 +601,7 @@ class TestSolverControl(unittest.TestCase):
         [tmp_grid.change_p_load(l_id, val) for l_id, val in enumerate(load_p_div)]
         V_tmp =  tmp_grid.ac_pf(self.v_init, self.iter, self.tol_solver)
         assert len(V_tmp) == 0, "should have diverged !"
-        
+        # print("properly diverged, now test do undo")
         self.aux_do_undo_ac(funname_do="_change_for_divergence_sbus",
                             funname_undo="_unchange_for_divergence_sbus",
                             runpf_fun=runpf_fun,
