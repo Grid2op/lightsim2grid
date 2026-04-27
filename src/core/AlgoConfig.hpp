@@ -6,6 +6,22 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-// ScalingPolicies.tpp is intentionally empty.
-// Step scaling is now dispatched at runtime inside NRAlgo::compute_pf
-// via the ScalingPolicyType enum (see ScalingPolicies.hpp and NRAlgo.tpp).
+#ifndef ALGO_CONFIG_H
+#define ALGO_CONFIG_H
+
+#include <vector>
+
+namespace ls2g {
+
+/**
+ * Serialisable configuration blob for any BaseAlgo subclass.
+ * Used by get_config() / set_config() to support pickling of algorithm parameters.
+ */
+struct AlgoConfig {
+    std::vector<int>    int_params;
+    std::vector<double> real_params;
+};
+
+} // namespace ls2g
+
+#endif // ALGO_CONFIG_H
