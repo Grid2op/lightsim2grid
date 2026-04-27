@@ -96,66 +96,11 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         }
         if (err_ != ErrorType::NoError) { res = false; break; }
 
-        auto timer_va_vm = CustTimer();
-
         // Apply scaling policy (runtime dispatch)
-        switch (scaling_policy_) {
-
-        case ScalingPolicyType::NoScaling:
-            _system.apply_step(F);
-            break;
-
-        case ScalingPolicyType::MaxVoltageChange: {
-            real_type alpha = static_cast<real_type>(1.0);
-            const NRLayout& lyt = _system.layout();
-            if (lyt.theta_size() > 0) {
-                const real_type max_abs_dtheta = lyt.theta(F).array().abs().maxCoeff();
-                if (max_abs_dtheta > max_dVa_)
-                    alpha = std::min(alpha, max_dVa_ / max_abs_dtheta);
-            }
-            if (lyt.vm_size() > 0) {
-                const real_type max_abs_dvm = lyt.vm(F).array().abs().maxCoeff();
-                if (max_abs_dvm > max_dVm_)
-                    alpha = std::min(alpha, max_dVm_ / max_abs_dvm);
-            }
-            F *= alpha;
-            _system.apply_step(F);
-            break;
-        }
-
-        case ScalingPolicyType::LineSearch: {
-            // Save current merit (||mismatch||^2 before step)
-            const real_type F_norm_sq_0 = F.squaredNorm();
-            real_type alpha = static_cast<real_type>(1.0);
-            for (int k = 0; k < ls_max_iter_; ++k) {
-                const real_type threshold =
-                    (static_cast<real_type>(1.0)
-                     - static_cast<real_type>(2.0) * ls_c_ * alpha) * F_norm_sq_0;
-                if (_system.mismatch_sq_norm_at(alpha * F) <= threshold) break;
-                alpha *= ls_rho_;
-            }
-            F *= alpha;
-            _system.apply_step(F);
-            break;
-        }
-
-        case ScalingPolicyType::Iwamoto: {
-            const real_type g0 = F.squaredNorm();
-            const real_type g1 = _system.mismatch_sq_norm_at(F);
-            real_type mu = (g0 + g1 > static_cast<real_type>(0.))
-                           ? g0 / (g0 + g1)
-                           : static_cast<real_type>(1.0);
-            mu = std::max(iw_mu_min_, std::min(iw_mu_max_, mu));
-            F *= mu;
-            _system.apply_step(F);
-            break;
-        }
-
-        default:
-            _system.apply_step(F);
-            break;
-        }
-
+        // scaling_policy_->update(_system, F);
+        real_type coeff = scaling_policy_->scale(_system, F);
+        auto timer_va_vm = CustTimer();
+        _system.apply_step(coeff * F);
         timer_Va_Vm_ += timer_va_vm.duration();
 
         // New mismatch
