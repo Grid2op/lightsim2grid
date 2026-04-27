@@ -18,6 +18,7 @@
 #include "Solvers.hpp"
 // Registry for solver creation by name
 #include "SolverRegistry.hpp"
+#include "AlgoConfig.hpp"
 
 namespace ls2g {
 
@@ -225,6 +226,13 @@ class LS2G_API ChooseSolver final
 
         bool converged() const {
             return get_prt_solver("converged", true)->converged();
+        }
+
+        AlgoConfig get_config() const {
+            return get_prt_solver("get_config", false)->get_config();
+        }
+        void set_config(const AlgoConfig& cfg) {
+            get_prt_solver("set_config", false)->set_config(cfg);
         }
 
     protected:

@@ -140,6 +140,38 @@ public:
     int  get_refactor_every_n() const { return refactor_every_n_; }
     void set_refactor_every_n(int v)  { refactor_every_n_ = v; }
 
+    // ----- AlgoConfig serialization -------------------------------------------
+
+    virtual AlgoConfig get_config() const override {
+        AlgoConfig cfg;
+        cfg.int_params  = { static_cast<int>(scaling_policy_->type()),
+                            static_cast<int>(refactor_policy_),
+                            ls_max_iter_,
+                            refactor_every_n_ };
+        cfg.real_params = { static_cast<double>(max_dVa_),
+                            static_cast<double>(max_dVm_),
+                            static_cast<double>(ls_c_),
+                            static_cast<double>(ls_rho_),
+                            static_cast<double>(iw_mu_min_),
+                            static_cast<double>(iw_mu_max_) };
+        return cfg;
+    }
+
+    virtual void set_config(const AlgoConfig& cfg) override {
+        if (cfg.int_params.size()  < 4) throw std::runtime_error("NRAlgo::set_config: int_params must have at least 4 elements");
+        if (cfg.real_params.size() < 6) throw std::runtime_error("NRAlgo::set_config: real_params must have at least 6 elements");
+        max_dVa_         = static_cast<real_type>(cfg.real_params[0]);
+        max_dVm_         = static_cast<real_type>(cfg.real_params[1]);
+        ls_c_            = static_cast<real_type>(cfg.real_params[2]);
+        ls_rho_          = static_cast<real_type>(cfg.real_params[3]);
+        iw_mu_min_       = static_cast<real_type>(cfg.real_params[4]);
+        iw_mu_max_       = static_cast<real_type>(cfg.real_params[5]);
+        ls_max_iter_     = cfg.int_params[2];
+        refactor_every_n_= cfg.int_params[3];
+        refactor_policy_ = static_cast<RefactorPolicyType>(cfg.int_params[1]);
+        set_scaling_policy(static_cast<ScalingPolicyType>(cfg.int_params[0]));
+    }
+
     // ----- debug ---------------------------------------------------------------
 
     Eigen::SparseMatrix<real_type>

@@ -372,6 +372,12 @@ class LS2G_API GridModel final
         //pickle
         GridModel::StateRes get_state() const ;
         void set_state(GridModel::StateRes & my_state) ;
+
+        // algo config (scaling/refactor policy params) — not part of StateRes pickle
+        AlgoConfig get_ac_algo_config() const { return _solver.get_config(); }
+        void set_ac_algo_config(const AlgoConfig& cfg) { _solver.set_config(cfg); }
+        AlgoConfig get_dc_algo_config() const { return _dc_solver.get_config(); }
+        void set_dc_algo_config(const AlgoConfig& cfg) { _dc_solver.set_config(cfg); }
         template<class T>
         void check_size(const T& my_state)
         {
