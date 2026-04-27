@@ -24,6 +24,7 @@
 #include "Utils.hpp"
 #include "CustTimer.hpp"
 #include "BaseConstants.hpp"
+#include "AlgoConfig.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -161,6 +162,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual void update_internal_Ybus(const Coeff & new_coeffs, bool add){
             throw std::runtime_error("Function update_internal_Ybus not implemented in general.");
         }
+
+        virtual AlgoConfig get_config() const { return AlgoConfig{}; }
+        virtual void set_config(const AlgoConfig&) {}
         
     protected:
         virtual void reset_timer(){

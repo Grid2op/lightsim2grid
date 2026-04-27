@@ -47,6 +47,16 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def_property_readonly("timer_last_dc_pf", &GridModel::timer_last_dc_pf, "TODO");
     add_pickle(gridmodel_cls, "GridModel");
     gridmodel_cls
+        // algo config (scaling/refactor policy params)
+        .def("get_ac_algo_config", &GridModel::get_ac_algo_config,
+            "Return the AC solver's AlgoConfig (scaling/refactor policy type and parameters).")
+        .def("set_ac_algo_config", &GridModel::set_ac_algo_config, py::arg("config"),
+            "Apply an AlgoConfig to the AC solver (restores scaling/refactor policy and parameters).")
+        .def("get_dc_algo_config", &GridModel::get_dc_algo_config,
+            "Return the DC solver's AlgoConfig (no-op for non-NR solvers, returns empty config).")
+        .def("set_dc_algo_config", &GridModel::set_dc_algo_config, py::arg("config"),
+            "Apply an AlgoConfig to the DC solver.")
+
         // solver control
         .def("change_solver", py::overload_cast<const SolverType&>(&GridModel::change_solver), DocGridModel::change_solver.c_str())
         .def("change_solver", py::overload_cast<const std::string&>(&GridModel::change_solver), "Change the AC (or DC) solver by registry name. Accepts built-in names and plugin names registered via load_solver_plugin().")

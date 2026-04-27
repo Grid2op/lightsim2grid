@@ -10,6 +10,8 @@
 #include "BaseConstants.hpp"
 #include "ChooseSolver.hpp"
 #include "Utils.hpp"
+#include "powerflow_algorithm/ScalingPolicies.hpp"
+#include "powerflow_algorithm/RefactorPolicies.hpp"
 
 using namespace ls2g;
 
@@ -43,6 +45,19 @@ void bind_enums(py::module_& m) {
         .value("FDPF_XB_CKTSO", SolverType::FDPF_XB_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_XB_CKTSOSolver`")
         .value("FDPF_BX_CKTSO", SolverType::FDPF_BX_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_BX_CKTSOSolver`")
         .value("Custom", SolverType::Custom, "sentinel value for external/plugin solvers loaded via load_solver_plugin()")
+        .export_values();
+
+    py::enum_<ScalingPolicyType>(m, "ScalingPolicyType", "Step-scaling strategy for the Newton-Raphson loop")
+        .value("NoScaling",        ScalingPolicyType::NoScaling,        "Full Newton step (alpha = 1), zero overhead")
+        .value("MaxVoltageChange", ScalingPolicyType::MaxVoltageChange, "Clamp step so max|dVa| <= max_dVa and max|dVm| <= max_dVm")
+        .value("LineSearch",       ScalingPolicyType::LineSearch,       "Armijo backtracking line search")
+        .value("Iwamoto",          ScalingPolicyType::Iwamoto,          "Iwamoto optimal multiplier")
+        .export_values();
+
+    py::enum_<RefactorPolicyType>(m, "RefactorPolicyType", "Jacobian refactorization strategy for the Newton-Raphson loop")
+        .value("AlwaysRefactor", RefactorPolicyType::AlwaysRefactor, "Rebuild and refactorize J every iteration (default)")
+        .value("EveryN",         RefactorPolicyType::EveryN,         "Refactorize every N iterations; update values only in between")
+        .value("Chord",          RefactorPolicyType::Chord,          "Build J once on the first iteration; reuse factorization throughout")
         .export_values();
 
     py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")

@@ -9,6 +9,7 @@
 #include "binding_declarations.hpp"
 #include "DataConverter.hpp"
 #include "Utils.hpp"
+#include "AlgoConfig.hpp"
 
 using namespace ls2g;
 
@@ -21,6 +22,16 @@ void bind_misc(py::module_& m) {
         .def("get_line_param", &PandaPowerConverter::get_line_param)
         .def("get_trafo_param_pp3", &PandaPowerConverter::get_trafo_param_pp3)
         .def("get_trafo_param_pp2", &PandaPowerConverter::get_trafo_param_pp2);
+
+    py::class_<AlgoConfig>(m, "AlgoConfig",
+        "Serialisable configuration blob for Newton-Raphson algorithm parameters.\n"
+        "Stores scaling/refactor policy type and all associated parameters.\n"
+        "Obtain via solver.get_config() or gridmodel.get_ac_algo_config().")
+        .def(py::init<>())
+        .def_readwrite("int_params",  &AlgoConfig::int_params,
+            "Integer parameters: [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]")
+        .def_readwrite("real_params", &AlgoConfig::real_params,
+            "Real parameters: [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]");
 
     py::class_<SolverControl>(m, "SolverControl", "TODO")
         .def(py::init<>())
