@@ -22,20 +22,16 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fillBp_Bpp(
 }
 
 // ---- SparseLU (always available) ----
-template class LS2G_API NRAlgo<SparseLULinearSolver, MultiSlackPolicy>;
-template class LS2G_API NRAlgo<SparseLULinearSolver, SingleSlackPolicy>;
-template class LS2G_API NRAlgo<SparseLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
-template class LS2G_API NRAlgo<SparseLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
+template class LS2G_API NRAlgo<SparseLULinearSolver, MultiSlackNRSystem>;
+template class LS2G_API NRAlgo<SparseLULinearSolver, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<SparseLULinearSolver>;
 template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
 
 // ---- KLU (optional) ----
 #ifdef KLU_SOLVER_AVAILABLE
-template class LS2G_API NRAlgo<KLULinearSolver, MultiSlackPolicy>;
-template class LS2G_API NRAlgo<KLULinearSolver, SingleSlackPolicy>;
-template class LS2G_API NRAlgo<KLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
-template class LS2G_API NRAlgo<KLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
+template class LS2G_API NRAlgo<KLULinearSolver, MultiSlackNRSystem>;
+template class LS2G_API NRAlgo<KLULinearSolver, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<KLULinearSolver>;
 template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
@@ -43,10 +39,8 @@ template class LS2G_API BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
 
 // ---- NICSLU (optional) ----
 #ifdef NICSLU_SOLVER_AVAILABLE
-template class LS2G_API NRAlgo<NICSLULinearSolver, MultiSlackPolicy>;
-template class LS2G_API NRAlgo<NICSLULinearSolver, SingleSlackPolicy>;
-template class LS2G_API NRAlgo<NICSLULinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
-template class LS2G_API NRAlgo<NICSLULinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
+template class LS2G_API NRAlgo<NICSLULinearSolver, MultiSlackNRSystem>;
+template class LS2G_API NRAlgo<NICSLULinearSolver, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<NICSLULinearSolver>;
 template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
@@ -54,10 +48,8 @@ template class LS2G_API BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
 
 // ---- CKTSO (optional) ----
 #ifdef CKTSO_SOLVER_AVAILABLE
-template class LS2G_API NRAlgo<CKTSOLinearSolver, MultiSlackPolicy>;
-template class LS2G_API NRAlgo<CKTSOLinearSolver, SingleSlackPolicy>;
-template class LS2G_API NRAlgo<CKTSOLinearSolver, MultiSlackPolicy, MaxVoltageChangePolicy>;
-template class LS2G_API NRAlgo<CKTSOLinearSolver, SingleSlackPolicy, MaxVoltageChangePolicy>;
+template class LS2G_API NRAlgo<CKTSOLinearSolver, MultiSlackNRSystem>;
+template class LS2G_API NRAlgo<CKTSOLinearSolver, SingleSlackNRSystem>;
 template class LS2G_API BaseDCAlgo<CKTSOLinearSolver>;
 template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
