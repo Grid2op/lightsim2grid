@@ -34,7 +34,7 @@ public:
     NRAlgo() noexcept :
         BaseAlgo(true),
         need_factorize_(true),
-        scaling_policy_(ScalingPolicyType::NoScaling),
+        scaling_policy_(create_scaling_policy<NRSystem>(ScalingPolicyType::NoScaling)),
         refactor_policy_(RefactorPolicyType::AlwaysRefactor),
         max_dVa_(static_cast<real_type>(0.5)),
         max_dVm_(static_cast<real_type>(0.1)),
@@ -101,8 +101,16 @@ public:
 
     // ----- scaling policy ------------------------------------------------------
 
-    ScalingPolicyType get_scaling_policy()  const { return scaling_policy_; }
-    void set_scaling_policy(ScalingPolicyType t)  { scaling_policy_ = t; }
+    ScalingPolicyType get_scaling_policy()  const { return scaling_policy_->type(); }
+    void set_scaling_policy(ScalingPolicyType t)  { 
+        scaling_policy_ = create_scaling_policy<NRSystem>(t);
+        update_scaling_policy_params<NRSystem>(
+            scaling_policy_.get(),
+            max_dVa_, max_dVm_,
+            ls_c_, ls_rho_, ls_max_iter_,
+            iw_mu_min_, iw_mu_max_
+        );
+    }
 
     // MaxVoltageChange params
     real_type get_max_dVa() const { return max_dVa_; }
@@ -204,7 +212,7 @@ private:
     bool need_factorize_;
 
     // Runtime policy enums
-    ScalingPolicyType  scaling_policy_;
+    std::unique_ptr<ScalingPolicy<NRSystem> >  scaling_policy_;
     RefactorPolicyType refactor_policy_;
 
     // MaxVoltageChange params
