@@ -44,6 +44,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     _system.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq);
 
     // Pre-loop: clear J caches if structural changes detected
+    bool need_factorize = false;
     if (need_factorize_ ||
         _solver_control.need_reset_solver() ||
         _solver_control.has_dimension_changed() ||
@@ -55,6 +56,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         _solver_control.has_pq_changed())
     {
         _system.clear_jacobian();
+        need_factorize = true;
     }
 
     timer_pre_proc_ += timer_pre.duration();
@@ -68,12 +70,16 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     while ((!converged) & (nr_iter_ < max_iter)) {
         nr_iter_++;
 
-        if (should_refactor(nr_iter_)) {
+        need_factorize = (
+            need_factorize || 
+            should_refactor(nr_iter_)  // TODO make a "refactor policy here"
+        );
+        if (need_factorize) {
             // Build / update Jacobian
             _system.assemble_jacobian();
 
             // Factorize: initialize (new pattern) or refactor (same pattern)
-            if (need_factorize_ || _system.pattern_changed()) {
+            if (need_factorize_) {
                 auto timer_i = CustTimer();
                 n_    = static_cast<int>(_system.J().cols());
                 err_  = _linear_solver.initialize(_system.J());
@@ -107,6 +113,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         F = _system.mismatch();
         if (!F.allFinite()) { err_ = ErrorType::InifiniteValue; break; }
         converged = _check_for_convergence(F, tol);
+        need_factorize = false;
     }
 
     if (!converged) {
