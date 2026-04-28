@@ -7,12 +7,12 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "BuiltinSolversRegistration.hpp"
-#include "SolverRegistry.hpp"
+#include "AlgorithmRegistry.hpp"
 #include "Solvers.hpp"   // all concrete solver typedefs + #ifdef guards
 
 namespace ls2g {
 
-void register_builtin_solvers(SolverRegistry& reg) {
+void register_builtin_solvers(AlgorithmRegistry& reg) {
     reg.register_solver("SparseLU",
         []{ return std::make_unique<SparseLUSolver>(); });
     reg.register_solver("SparseLUSingleSlack",
@@ -70,7 +70,7 @@ void register_builtin_solvers(SolverRegistry& reg) {
 
 namespace {
     struct _AutoRegister {
-        _AutoRegister() { register_builtin_solvers(SolverRegistry::instance()); }
+        _AutoRegister() { register_builtin_solvers(AlgorithmRegistry::instance()); }
     };
     static const _AutoRegister _auto_reg;
 }

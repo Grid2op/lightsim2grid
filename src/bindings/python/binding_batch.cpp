@@ -27,7 +27,7 @@ void bind_batch(py::module_& m) {
         // solver control
         .def("change_solver", &TimeSeries::change_solver, DocGridModel::change_solver.c_str())
         .def("available_solvers", &TimeSeries::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("get_solver_type", &TimeSeries::get_solver_type, DocGridModel::get_solver_type.c_str())
+        .def("get_algo_type", &TimeSeries::get_algo_type, DocGridModel::get_algo_type.c_str())
 
         // timers
         .def("total_time", &TimeSeries::total_time, DocComputers::total_time.c_str())
@@ -66,7 +66,7 @@ void bind_batch(py::module_& m) {
         // solver control
         .def("change_solver", &ContingencyAnalysis::change_solver, DocGridModel::change_solver.c_str())
         .def("available_solvers", &ContingencyAnalysis::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("get_solver_type", &ContingencyAnalysis::get_solver_type, DocGridModel::get_solver_type.c_str())
+        .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocGridModel::get_algo_type.c_str())
 
         // add contingencies
         .def("add_all_n1", &ContingencyAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())

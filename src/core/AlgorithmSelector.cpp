@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "ChooseSolver.hpp"
-#include "SolverTypeNames.hpp"  // solver_type_to_name / name_to_solver_type
+#include "AlgorithmSelector.hpp"
+#include "AlgorithmTypeNames.hpp"  // algo_type_to_name / name_to_algo_type
 
 namespace ls2g {
 
@@ -15,40 +15,40 @@ namespace ls2g {
 // Constructor
 // ---------------------------------------------------------------------------
 
-ChooseSolver::ChooseSolver()
-    : _solver_type(SolverType::SparseLU),
-      _type_used_for_nr(SolverType::SparseLU),
+AlgorithmSelector::AlgorithmSelector()
+    : _algo_type(AlgorithmType::SparseLU),
+      _algo_type_used_for_nr(AlgorithmType::SparseLU),
       _gridmodel_ptr(nullptr)
 {
-    _solver = SolverRegistry::instance().make("SparseLU");
+    _algo = AlgorithmRegistry::instance().make("SparseLU");
 }
 
 // ---------------------------------------------------------------------------
 // change_solver overloads
 // ---------------------------------------------------------------------------
 
-void ChooseSolver::change_solver(const SolverType& type)
+void AlgorithmSelector::change_solver(const AlgorithmType& type)
 {
-    if (type == SolverType::Custom) {
+    if (type == AlgorithmType::Custom) {
         throw std::runtime_error(
-            "ChooseSolver::change_solver: SolverType::Custom is not a concrete solver; "
+            "AlgorithmSelector::change_solver: AlgorithmType::Custom is not a concrete solver; "
             "use the string-based change_solver(name) overload instead.");
     }
-    change_solver(solver_type_to_name(type));
+    change_solver(algo_type_to_name(type));
 }
 
-void ChooseSolver::change_solver(const std::string& name)
+void AlgorithmSelector::change_solver(const std::string& name)
 {
-    SolverType type = name_to_solver_type(name);   // SolverType::Custom if plugin
+    AlgorithmType type = name_to_algo_type(name);   // AlgorithmType::Custom if plugin
 
-    if (type == _solver_type && type != SolverType::Custom) return;
+    if (type == _algo_type && type != AlgorithmType::Custom) return;
 
     #ifndef KLU_SOLVER_AVAILABLE
-        if (type == SolverType::KLU ||
-            type == SolverType::KLUDC ||
-            type == SolverType::KLUSingleSlack ||
-            type == SolverType::FDPF_XB_KLU ||
-            type == SolverType::FDPF_BX_KLU) {
+        if (type == AlgorithmType::KLU ||
+            type == AlgorithmType::KLUDC ||
+            type == AlgorithmType::KLUSingleSlack ||
+            type == AlgorithmType::FDPF_XB_KLU ||
+            type == AlgorithmType::FDPF_BX_KLU) {
             throw std::runtime_error(
                 "Impossible to change for a solver using KLU for linear algebra. "
                 "Please compile lightsim2grid from source to benefit from this.");
@@ -56,11 +56,11 @@ void ChooseSolver::change_solver(const std::string& name)
     #endif
 
     #ifndef NICSLU_SOLVER_AVAILABLE
-        if (type == SolverType::NICSLU ||
-            type == SolverType::NICSLUDC ||
-            type == SolverType::NICSLUSingleSlack ||
-            type == SolverType::FDPF_XB_NICSLU ||
-            type == SolverType::FDPF_BX_NICSLU) {
+        if (type == AlgorithmType::NICSLU ||
+            type == AlgorithmType::NICSLUDC ||
+            type == AlgorithmType::NICSLUSingleSlack ||
+            type == AlgorithmType::FDPF_XB_NICSLU ||
+            type == AlgorithmType::FDPF_BX_NICSLU) {
             throw std::runtime_error(
                 "Impossible to change for a solver using NICSLU for linear algebra. "
                 "Please compile lightsim2grid from source to benefit from this.");
@@ -68,59 +68,59 @@ void ChooseSolver::change_solver(const std::string& name)
     #endif
 
     #ifndef CKTSO_SOLVER_AVAILABLE
-        if (type == SolverType::CKTSO ||
-            type == SolverType::CKTSODC ||
-            type == SolverType::CKTSOSingleSlack ||
-            type == SolverType::FDPF_XB_CKTSO ||
-            type == SolverType::FDPF_BX_CKTSO) {
+        if (type == AlgorithmType::CKTSO ||
+            type == AlgorithmType::CKTSODC ||
+            type == AlgorithmType::CKTSOSingleSlack ||
+            type == AlgorithmType::FDPF_XB_CKTSO ||
+            type == AlgorithmType::FDPF_BX_CKTSO) {
             throw std::runtime_error(
                 "Impossible to change for a solver using CKTSO for linear algebra. "
                 "Please compile lightsim2grid from source to benefit from this.");
         }
     #endif
 
-    std::unique_ptr<BaseAlgo> new_solver = SolverRegistry::instance().make(name);
+    std::unique_ptr<BaseAlgo> new_algo = AlgorithmRegistry::instance().make(name);
 
-    _solver = std::move(new_solver);
-    _solver_type = type;
-    _type_used_for_nr = type;
+    _algo = std::move(new_algo);
+    _algo_type = type;
+    _algo_type_used_for_nr = type;
 
-    if (_gridmodel_ptr) _solver->set_gridmodel(_gridmodel_ptr);
-    _solver->reset();
+    if (_gridmodel_ptr) _algo->set_gridmodel(_gridmodel_ptr);
+    _algo->reset();
 }
 
 // ---------------------------------------------------------------------------
 // operator<<
 // ---------------------------------------------------------------------------
 
-std::ostream& operator<<(std::ostream& out, const SolverType& solver_type)
+std::ostream& operator<<(std::ostream& out, const AlgorithmType& algo_type)
 {
-    switch (solver_type)
+    switch (algo_type)
     {
-    case SolverType::SparseLU:            out << "SparseLU";            break;
-    case SolverType::KLU:                 out << "KLU";                 break;
-    case SolverType::GaussSeidel:         out << "GaussSeidel";         break;
-    case SolverType::DC:                  out << "DC";                  break;
-    case SolverType::GaussSeidelSynch:    out << "GaussSeidelSynch";    break;
-    case SolverType::NICSLU:              out << "NICSLU";              break;
-    case SolverType::SparseLUSingleSlack: out << "SparseLUSingleSlack"; break;
-    case SolverType::KLUSingleSlack:      out << "KLUSingleSlack";      break;
-    case SolverType::NICSLUSingleSlack:   out << "NICSLUSingleSlack";   break;
-    case SolverType::KLUDC:               out << "KLUDC";               break;
-    case SolverType::NICSLUDC:            out << "NICSLUDC";            break;
-    case SolverType::CKTSO:               out << "CKTSO";               break;
-    case SolverType::CKTSOSingleSlack:    out << "CKTSOSingleSlack";    break;
-    case SolverType::CKTSODC:             out << "CKTSODC";             break;
-    case SolverType::FDPF_XB_SparseLU:   out << "FDPF_XB_SparseLU";   break;
-    case SolverType::FDPF_BX_SparseLU:   out << "FDPF_BX_SparseLU";   break;
-    case SolverType::FDPF_XB_KLU:        out << "FDPF_XB_KLU";        break;
-    case SolverType::FDPF_BX_KLU:        out << "FDPF_BX_KLU";        break;
-    case SolverType::FDPF_XB_NICSLU:     out << "FDPF_XB_NICSLU";     break;
-    case SolverType::FDPF_BX_NICSLU:     out << "FDPF_BX_NICSLU";     break;
-    case SolverType::FDPF_XB_CKTSO:      out << "FDPF_XB_CKTSO";      break;
-    case SolverType::FDPF_BX_CKTSO:      out << "FDPF_BX_CKTSO";      break;
-    case SolverType::Custom:              out << "Custom";              break;
-    default:                              out << "(unknown)";           break;
+    case AlgorithmType::SparseLU:            out << "SparseLU";            break;
+    case AlgorithmType::KLU:                 out << "KLU";                 break;
+    case AlgorithmType::GaussSeidel:         out << "GaussSeidel";         break;
+    case AlgorithmType::DC:                  out << "DC";                  break;
+    case AlgorithmType::GaussSeidelSynch:    out << "GaussSeidelSynch";    break;
+    case AlgorithmType::NICSLU:              out << "NICSLU";              break;
+    case AlgorithmType::SparseLUSingleSlack: out << "SparseLUSingleSlack"; break;
+    case AlgorithmType::KLUSingleSlack:      out << "KLUSingleSlack";      break;
+    case AlgorithmType::NICSLUSingleSlack:   out << "NICSLUSingleSlack";   break;
+    case AlgorithmType::KLUDC:               out << "KLUDC";               break;
+    case AlgorithmType::NICSLUDC:            out << "NICSLUDC";            break;
+    case AlgorithmType::CKTSO:               out << "CKTSO";               break;
+    case AlgorithmType::CKTSOSingleSlack:    out << "CKTSOSingleSlack";    break;
+    case AlgorithmType::CKTSODC:             out << "CKTSODC";             break;
+    case AlgorithmType::FDPF_XB_SparseLU:   out << "FDPF_XB_SparseLU";   break;
+    case AlgorithmType::FDPF_BX_SparseLU:   out << "FDPF_BX_SparseLU";   break;
+    case AlgorithmType::FDPF_XB_KLU:        out << "FDPF_XB_KLU";        break;
+    case AlgorithmType::FDPF_BX_KLU:        out << "FDPF_BX_KLU";        break;
+    case AlgorithmType::FDPF_XB_NICSLU:     out << "FDPF_XB_NICSLU";     break;
+    case AlgorithmType::FDPF_BX_NICSLU:     out << "FDPF_BX_NICSLU";     break;
+    case AlgorithmType::FDPF_XB_CKTSO:      out << "FDPF_XB_CKTSO";      break;
+    case AlgorithmType::FDPF_BX_CKTSO:      out << "FDPF_BX_CKTSO";      break;
+    case AlgorithmType::Custom:              out << "Custom";              break;
+    default:                                 out << "(unknown)";           break;
     }
     return out;
 }

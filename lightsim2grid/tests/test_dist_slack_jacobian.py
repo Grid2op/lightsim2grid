@@ -40,7 +40,7 @@ class TestIssueJacobian(unittest.TestCase):
                                                                  self.net._ppc["internal"],
                                                                  options)
         assert converged
-        assert iterations == 4 
+        assert iterations == 4, f"{iterations} vs 4"
         assert np.max(np.abs(V - self.net._ppc["internal"]["V"])) <= 1e-6
         if self.net._ppc["internal"]["J"].shape == (4,4):
             # with earlier pandapower version, distributed slack are
@@ -63,7 +63,7 @@ class TestIssueJacobian(unittest.TestCase):
                                                                  self.net._ppc["internal"],
                                                                  options)
         assert converged
-        assert iterations == 4 
+        assert iterations == 4, f"{iterations} vs 4"
         assert np.max(np.abs(V - self.net._ppc["internal"]["V"])) <= 1e-6
         if self.net._ppc["internal"]["J"].shape == (3,3):
             # with earlier pandapower version, distributed slack are

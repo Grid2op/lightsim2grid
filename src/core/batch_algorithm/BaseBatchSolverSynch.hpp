@@ -33,7 +33,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
             n_total_(n_line_ + n_trafos_),
-            _solver(),
+            _algo(),
             _voltages(),
             _amps_flows(),
             _active_power_flows()
@@ -49,12 +49,12 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
 
         // solver "control"
-        virtual void change_solver(const SolverType & type){
-            _solver.change_solver(type);
+        virtual void change_solver(const AlgorithmType & type){
+            _algo.change_solver(type);
             this->clear();
         }
-        std::vector<SolverType> available_solvers() const {return _solver.available_solvers(); }
-        SolverType get_solver_type() const {return _solver.get_type(); }
+        std::vector<AlgorithmType> available_solvers() const {return _algo.available_solvers(); }
+        AlgorithmType get_algo_type() const {return _algo.get_type(); }
 
         // // TODO
         // void change_gridmodel(const GridModel & new_grid_model){
@@ -67,7 +67,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         double solver_time() const {return _timer_solver;}
         int nb_solved() const {return _nb_solved;}
         virtual void clear() {
-            _solver.reset();
+            _algo.reset();
             _amps_flows = RealMat();
             _active_power_flows = RealMat();
             _voltages = CplxMat();
@@ -95,7 +95,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             const auto & el_status = structure_data.get_status_global();
             const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
-            bool is_ac = _solver.ac_solver_used();
+            bool is_ac = _algo.ac_solver_used();
 
             const auto & vect_y_ff = is_ac ? structure_data.yac_eff_11() : structure_data.ydc_11();
             const auto & vect_y_ft = is_ac ? structure_data.yac_eff_12() : structure_data.ydc_12();
@@ -150,7 +150,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             const auto & el_status = structure_data.get_status_global();
             const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
-            const bool is_ac = _solver.ac_solver_used();
+            const bool is_ac = _algo.ac_solver_used();
 
             Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_eff_11() : structure_data.ydc_11();
             Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_eff_12() : structure_data.ydc_12();
@@ -291,15 +291,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _active_power_flows = RealMat::Zero(0, n_total_);
 
                 // reset the solver
-                _solver.reset();
+                _algo.reset();
 
                 // perform the initial powerflow / "powerflow in n"
                 // (needed to init the underlying solver with the correct sparsity pattern in particular)
                 _solver_control.tell_all_changed();
-                _solver.tell_solver_control(_solver_control);
+                _algo.tell_solver_control(_solver_control);
                 _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
                 CplxVect Vinit_solver2 = Vinit_solver;
-                bool conv = _solver.compute_pf(
+                bool conv = _algo.compute_pf(
                     Ybus_,
                     Vinit_solver2,
                     Sbus_,
@@ -312,7 +312,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
                 // check if we init the n-1 cases with results from the n cases
                 // or not
-                if(_init_from_n_powerflow) Vinit_solver = _solver.get_V();
+                if(_init_from_n_powerflow) Vinit_solver = _algo.get_V();
 
                 // everything init from n-case above
                 _solver_control.tell_none_changed();
@@ -336,8 +336,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         const size_t n_trafos_;
         const size_t n_total_;
 
-        // solver
-        ChooseSolver _solver;
+        // algo
+        AlgorithmSelector _algo;
 
         // outputs
         CplxMat _voltages;

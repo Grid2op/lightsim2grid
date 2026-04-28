@@ -74,7 +74,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         }
 
         virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
-            throw std::runtime_error("ChooseSolver::get_J: There is not Jacobian matrix for this solver type.");
+            throw std::runtime_error("AlgorithmSelector::get_J: There is not Jacobian matrix for this solver type.");
         }
 
         Eigen::Ref<const RealVect> get_Va() const{

@@ -38,7 +38,7 @@
 #include "element_container/DCLineContainer.hpp"
 
 // import newton raphson solvers using different linear algebra solvers
-#include "ChooseSolver.hpp"
+#include "AlgorithmSelector.hpp"
 
 namespace ls2g {
 
@@ -73,9 +73,9 @@ class LS2G_API GridModel final
                 LoadContainer::StateRes,
                 //dc lines
                 DCLineContainer::StateRes,
-                // solver types
-                SolverType, // ac_solver
-                SolverType // dc_solver
+                // algo types
+                AlgorithmType, // ac_algo
+                AlgorithmType // dc_algo
                 >;
 
         GridModel():
@@ -86,10 +86,10 @@ class LS2G_API GridModel final
           init_vm_pu_(1.04),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
-            _solver.change_solver(SolverType::SparseLU);
-            _dc_solver.change_solver(SolverType::DC);
-            _solver.set_gridmodel(this);
-            _dc_solver.set_gridmodel(this);
+            _algo.change_solver(AlgorithmType::SparseLU);
+            _dc_algo.change_solver(AlgorithmType::DC);
+            _algo.set_gridmodel(this);
+            _dc_algo.set_gridmodel(this);
             solver_control_.tell_all_changed();
         }
         GridModel(const GridModel & other);
@@ -186,13 +186,13 @@ class LS2G_API GridModel final
         }
 
         // solver "control"
-        void change_solver(const SolverType & type){
+        void change_solver(const AlgorithmType & type){
             solver_control_.tell_all_changed();
 
-            if(_solver.is_fdpf(type)) init_fdpf_coeffs();
+            if(_algo.is_fdpf(type)) init_fdpf_coeffs();
 
-            if(_solver.is_dc(type)) _dc_solver.change_solver(type);
-            else _solver.change_solver(type);
+            if(_algo.is_dc(type)) _dc_algo.change_solver(type);
+            else _algo.change_solver(type);
         }
         // String-based overload: looks up the solver by registry name.
         // For known built-in names the enum-based routing applies;
@@ -200,19 +200,19 @@ class LS2G_API GridModel final
         void change_solver(const std::string& name) {
             solver_control_.tell_all_changed();
             // Peek at IS_AC to decide which slot to update.
-            std::unique_ptr<BaseAlgo> tmp = SolverRegistry::instance().make(name);
-            if (tmp->IS_AC) _solver.change_solver(name);
-            else _dc_solver.change_solver(name);
+            std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
+            if (tmp->IS_AC) _algo.change_solver(name);
+            else _dc_algo.change_solver(name);
         }
-        std::vector<SolverType> available_solvers() {return _solver.available_solvers(); }
+        std::vector<AlgorithmType> available_solvers() {return _algo.available_solvers(); }
         // Returns all solver names currently registered (built-in + plugins).
         std::vector<std::string> available_solver_names() const {
-            return SolverRegistry::instance().available_solvers();
+            return AlgorithmRegistry::instance().available_solvers();
         }
-        SolverType get_solver_type() const {return _solver.get_type(); }
-        SolverType get_dc_solver_type() const {return _dc_solver.get_type(); }
-        const ChooseSolver & get_solver() const {return _solver;}
-        const ChooseSolver & get_dc_solver() const {return _dc_solver;}
+        AlgorithmType get_algo_type() const {return _algo.get_type(); }
+        AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
+        const AlgorithmSelector & get_algo() const {return _algo;}
+        const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
 
         // do i compute the results (in terms of P,Q,V or loads, generators and flows on lines
         void deactivate_result_computation(){compute_results_=false;}
@@ -374,10 +374,10 @@ class LS2G_API GridModel final
         void set_state(GridModel::StateRes & my_state) ;
 
         // algo config (scaling/refactor policy params) — not part of StateRes pickle
-        AlgoConfig get_ac_algo_config() const { return _solver.get_config(); }
-        void set_ac_algo_config(const AlgoConfig& cfg) { _solver.set_config(cfg); }
-        AlgoConfig get_dc_algo_config() const { return _dc_solver.get_config(); }
-        void set_dc_algo_config(const AlgoConfig& cfg) { _dc_solver.set_config(cfg); }
+        AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
+        void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
+        AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
+        void set_dc_algo_config(const AlgoConfig& cfg) { _dc_algo.set_config(cfg); }
         template<class T>
         void check_size(const T& my_state)
         {
@@ -1139,7 +1139,7 @@ class LS2G_API GridModel final
          * @return Eigen::Ref<const CplxVect> 
          */
         Eigen::Ref<const CplxVect> get_V_solver() const{
-            return _solver.get_V();
+            return _algo.get_V();
         }
 
         /**
@@ -1159,7 +1159,7 @@ class LS2G_API GridModel final
          * @return Eigen::Ref<const RealVect> 
          */
         Eigen::Ref<const RealVect> get_Va_solver() const{
-            return _solver.get_Va();
+            return _algo.get_Va();
         }
 
         /**
@@ -1179,7 +1179,7 @@ class LS2G_API GridModel final
          * @return Eigen::Ref<const RealVect> 
          */
         Eigen::Ref<const RealVect> get_Vm_solver() const{
-            return _solver.get_Vm();
+            return _algo.get_Vm();
         }
 
         /**
@@ -1194,7 +1194,7 @@ class LS2G_API GridModel final
         }
 
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J_solver() const{
-            return _solver.get_J();
+            return _algo.get_J();
         }
 
         /**
@@ -1203,11 +1203,11 @@ class LS2G_API GridModel final
          * @return Eigen::SparseMatrix<real_type> 
          */
         Eigen::SparseMatrix<real_type> get_J_python_solver() const{
-            return _solver.get_J_python();  // This is copied to python
+            return _algo.get_J_python();  // This is copied to python
         }
         
-        real_type get_computation_time() const{ return _solver.get_computation_time();}
-        real_type get_dc_computation_time() const{ return _dc_solver.get_computation_time();}
+        real_type get_computation_time() const{ return _algo.get_computation_time();}
+        real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
 
         // part dedicated to grid2op backend, optimized for grid2op data representation (for speed)
         // this is not recommended to use it outside of its intended usage within grid2op !
@@ -1637,8 +1637,8 @@ class LS2G_API GridModel final
         // TODO have version of the stuff above for the public api, indexed with "me" and not "solver"
 
         // to solve the newton raphson
-        ChooseSolver _solver;
-        ChooseSolver _dc_solver;
+        AlgorithmSelector _algo;
+        AlgorithmSelector _dc_algo;
 };
 
 

@@ -30,7 +30,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
 
     // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
-    const bool ac_solver_used = _solver.ac_solver_used();
+    const bool ac_solver_used = _algo.ac_solver_used();
     size_t nb_steps = gen_p.rows();
 
     // prepare the gridmodel (compute Ybus, Sbus etc.)

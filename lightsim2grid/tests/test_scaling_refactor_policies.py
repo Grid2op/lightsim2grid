@@ -90,7 +90,7 @@ class TestDefaultPolicyState(unittest.TestCase):
         self.s = SparseLUSolver()
 
     def test_default_scaling_policy(self):
-        self.assertEqual(self.s.get_scaling_policy(), ScalingPolicyType.NoScaling)
+        self.assertEqual(self.s.get_scaling_policy_type(), ScalingPolicyType.NoScaling)
 
     def test_default_refactor_policy(self):
         self.assertEqual(self.s.get_refactor_policy(), RefactorPolicyType.AlwaysRefactor)
@@ -129,7 +129,7 @@ class TestPolicySetters(unittest.TestCase):
     def test_set_scaling_policy_all_values(self):
         for pol in ScalingPolicyType.__members__.values():
             self.s.set_scaling_policy(pol)
-            self.assertEqual(self.s.get_scaling_policy(), pol)
+            self.assertEqual(self.s.get_scaling_policy_type(), pol)
 
     def test_set_refactor_policy_all_values(self):
         for pol in RefactorPolicyType.__members__.values():
@@ -210,7 +210,7 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
         cfg = self.s.get_config()
         s2 = SparseLUSolver()
         s2.set_config(cfg)
-        self.assertEqual(s2.get_scaling_policy(), ScalingPolicyType.LineSearch)
+        self.assertEqual(s2.get_scaling_policy_type(), ScalingPolicyType.LineSearch)
 
     def test_round_trip_refactor_policy(self):
         self._configure()

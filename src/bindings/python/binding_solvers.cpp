@@ -8,7 +8,7 @@
 
 #include "binding_declarations.hpp"
 #include "Solvers.hpp"
-#include "ChooseSolver.hpp"
+#include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
 #include "powerflow_algorithm/RefactorPolicies.hpp"
@@ -216,20 +216,20 @@ void bind_solvers(py::module_& m) {
     }
 
     // Only "const" methods exported so Python cannot modify the internal solver of a gridmodel
-    py::class_<ChooseSolver>(m, "AnySolver", DocSolver::AnySolver.c_str())
+    py::class_<AlgorithmSelector>(m, "AlgorithmSelector", DocSolver::AlgorithmSelector.c_str())
         .def(py::init<>())
-        .def("get_type",             &ChooseSolver::get_type,             DocSolver::get_type.c_str())
-        .def("get_Va",               &ChooseSolver::get_Va,               DocSolver::get_Va.c_str())
-        .def("get_Vm",               &ChooseSolver::get_Vm,               DocSolver::get_Vm.c_str())
-        .def("get_V",                &ChooseSolver::get_V,                DocSolver::get_V.c_str())
-        .def("get_J",                &ChooseSolver::get_J_python,         DocSolver::chooseSolver_get_J_python.c_str())
-        .def("get_error",            &ChooseSolver::get_error,            DocSolver::get_V.c_str())
-        .def("get_nb_iter",          &ChooseSolver::get_nb_iter,          DocSolver::get_nb_iter.c_str())
-        .def("converged",            &ChooseSolver::converged,            DocSolver::converged.c_str())
-        .def("get_computation_time", &ChooseSolver::get_computation_time, DocSolver::get_computation_time.c_str())
-        .def("get_timers",           &ChooseSolver::get_timers,           "TODO")
-        .def("get_timers_jacobian",  &ChooseSolver::get_timers_jacobian,  "TODO")
-        .def("get_timers_ptdf_lodf", &ChooseSolver::get_timers_ptdf_lodf, "TODO")
-        .def("get_fdpf_xb_lu",       &ChooseSolver::get_fdpf_xb_lu,  py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())
-        .def("get_fdpf_bx_lu",       &ChooseSolver::get_fdpf_bx_lu,  py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
+        .def("get_type",             &AlgorithmSelector::get_type,             DocSolver::get_type.c_str())
+        .def("get_Va",               &AlgorithmSelector::get_Va,               DocSolver::get_Va.c_str())
+        .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str())
+        .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str())
+        .def("get_J",                &AlgorithmSelector::get_J_python,         DocSolver::chooseSolver_get_J_python.c_str())
+        .def("get_error",            &AlgorithmSelector::get_error,            DocSolver::get_V.c_str())
+        .def("get_nb_iter",          &AlgorithmSelector::get_nb_iter,          DocSolver::get_nb_iter.c_str())
+        .def("converged",            &AlgorithmSelector::converged,            DocSolver::converged.c_str())
+        .def("get_computation_time", &AlgorithmSelector::get_computation_time, DocSolver::get_computation_time.c_str())
+        .def("get_timers",           &AlgorithmSelector::get_timers,           "TODO")
+        .def("get_timers_jacobian",  &AlgorithmSelector::get_timers_jacobian,  "TODO")
+        .def("get_timers_ptdf_lodf", &AlgorithmSelector::get_timers_ptdf_lodf, "TODO")
+        .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())
+        .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
 }

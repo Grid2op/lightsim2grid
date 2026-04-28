@@ -14,7 +14,7 @@ import platform
 import pathlib
 
 import lightsim2grid
-from lightsim2grid.lightsim2grid_cpp import GridModel, SolverType
+from lightsim2grid.lightsim2grid_cpp import GridModel, AlgorithmType
 
 
 def find_plugin():
@@ -54,8 +54,8 @@ print(f"Registered solvers: {sorted(names)}")
 # Change to the plugin solver
 # ------------------------------------------------------------------
 gm.change_solver("DummyExternal")
-assert gm.get_solver_type() == SolverType.Custom, \
-    f"Expected SolverType.Custom, got {gm.get_solver_type()}"
+assert gm.get_algo_type() == AlgorithmType.Custom, \
+    f"Expected AlgorithmType.Custom, got {gm.get_algo_type()}"
 print("change_solver('DummyExternal') OK — solver type is Custom as expected.")
 
 print("All checks passed.")

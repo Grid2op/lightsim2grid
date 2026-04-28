@@ -22,7 +22,7 @@ from pandapower.auxiliary import _init_runpp_options
 import unittest
 
 from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 
 
 class BaseMVOberrheinTester(unittest.TestCase):
@@ -108,7 +108,7 @@ class BaseMVOberrheinTester(unittest.TestCase):
 
     def test_ac_solver(self):
         *_, V0 = self._aux_get_init_pp_data()
-        self.gridmodel.change_solver(SolverType.SparseLUSingleSlack)
+        self.gridmodel.change_solver(AlgorithmType.SparseLUSingleSlack)
         V_ls = self.gridmodel.ac_pf(1. * V0, 30, self.tol_solver)
         pp.runpp(self.net, **self.get_pp_options()) 
         assert V_ls.size > 0, f"lightsim2grid powerflow has diverged {self.gridmodel.get_solver().get_error()}"

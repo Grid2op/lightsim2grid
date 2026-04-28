@@ -25,8 +25,8 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     double tol
 )
 {
-    _solver.tell_solver_control(_solver_control);
-    bool conv = _solver.compute_pf(
+    _algo.tell_solver_control(_solver_control);
+    bool conv = _algo.compute_pf(
         Ybus,
         V,
         Sbus,
@@ -37,10 +37,10 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
         max_iter,
         tol);
     if(conv){
-        V = _solver.get_V().array();
+        V = _algo.get_V().array();
     }
     ++_nb_solved;
-    _timer_solver += _solver.get_computation_time(); 
+    _timer_solver += _algo.get_computation_time(); 
     return conv;
 }
 

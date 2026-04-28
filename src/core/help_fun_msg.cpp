@@ -156,11 +156,11 @@ const std::string DocSolver::SparseLUSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `SparseLU`.
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `SparseLU`.
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SparseLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.SparseLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLU)` at creation time    
     
     .. note::
@@ -177,15 +177,15 @@ const std::string DocSolver::SparseLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `SparseLUSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `SparseLUSingleSlack` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.SparseLUSingleSlack)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.SparseLUSingleSlack)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLUSingleSlack)` at creation time
 
     .. note::
-        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.SolverType.KLUSolver`
+        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.AlgorithmType.KLUSolver`
         is not found.
 
 )mydelimiter";
@@ -198,11 +198,11 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `DC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `DC` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.DC)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.DC)` at creation time
 
     .. warning::
@@ -221,11 +221,11 @@ const std::string DocSolver::FDPF_XB_SparseLUSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_SparseLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
 
 )mydelimiter";
@@ -238,11 +238,11 @@ const std::string DocSolver::FDPF_BX_SparseLUSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_SparseLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_SparseLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_SparseLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_SparseLU)` at creation time
 
 )mydelimiter";
@@ -255,11 +255,11 @@ const std::string DocSolver::KLUSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `KLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.KLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.KLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.KLU)` at creation time
 
     .. note::
@@ -275,11 +275,11 @@ const std::string DocSolver::KLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `KLUSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `KLUSingleSlack` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.KLUSingleSlack)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.KLUSingleSlack)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.KLUSingleSlack)` at creation time
 
     .. note::
@@ -295,11 +295,11 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `KLUDC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `KLUDC` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.KLUDC)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.KLUDC)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.KLUDC)` at creation time
 
     .. warning::
@@ -318,11 +318,11 @@ const std::string DocSolver::FDPF_XB_KLUSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_KLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_KLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_KLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
 
 )mydelimiter";
@@ -335,11 +335,11 @@ const std::string DocSolver::FDPF_BX_KLUSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_KLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_KLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_KLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_KLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_KLU)` at creation time
 
 )mydelimiter";
@@ -352,11 +352,11 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `NICSLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NICSLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLU)` at creation time
 
     .. warning::
@@ -377,11 +377,11 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `NICSLUSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NICSLUSingleSlack` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLUSingleSlack)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NICSLUSingleSlack)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUSingleSlack)` at creation time    
 
     .. warning::
@@ -402,11 +402,11 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `NICSLUDC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `NICSLUDC` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.NICSLUDC)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NICSLUDC)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUDC)` at creation time
 
     .. warning::
@@ -433,11 +433,11 @@ const std::string DocSolver::FDPF_XB_NICSLUSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_NICSLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
 
     .. warning::
@@ -458,11 +458,11 @@ const std::string DocSolver::FDPF_BX_NICSLUSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_NICSLU` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_NICSLU` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_NICSLU)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_NICSLU)` at creation time    
 
     .. warning::
@@ -483,11 +483,11 @@ const std::string DocSolver::CKTSOSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `CKTSO` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.CKTSO)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.CKTSO)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSO)` at creation time
 
     .. note::
@@ -504,11 +504,11 @@ const std::string DocSolver::CKTSOSolverSingleSlack = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `CKTSOSingleSlack` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `CKTSOSingleSlack` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.CKTSOSingleSlack)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.CKTSOSingleSlack)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSOSingleSlack)` at creation time
 
     .. note::
@@ -525,11 +525,11 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `CKTSODC` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `CKTSODC` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.CKTSODC)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.CKTSODC)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSODC)` at creation time
 
     .. warning::
@@ -552,11 +552,11 @@ const std::string DocSolver::FDPF_XB_CKTSOSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_CKTSO` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
 
     .. warning::
@@ -577,11 +577,11 @@ const std::string DocSolver::FDPF_BX_CKTSOSolver =  R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `FDPF_CKTSO` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `FDPF_CKTSO` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.FDPF_CKTSO)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.FDPF_CKTSO)` at creation time    
 
     .. warning::
@@ -602,11 +602,11 @@ const std::string DocSolver::GaussSeidelSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it is called `GaussSeidel` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it is called `GaussSeidel` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.GaussSeidel)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.GaussSeidel)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.GaussSeidel)` at creation time
 
     .. warning::
@@ -623,11 +623,11 @@ const std::string DocSolver::GaussSeidelSynchSolver = R"mydelimiter(
 
     .. note::
 
-        In the enum :attr:`lightsim2grid.solver.SolverType`, it called `GaussSeidelSynch` 
+        In the enum :attr:`lightsim2grid.solver.AlgorithmType`, it called `GaussSeidelSynch` 
         
         You can use it with:
         
-        - `env_lightsim.backend.set_solver_type(lightsim2grid.solver.GaussSeidelSynch)` after creation
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.GaussSeidelSynch)` after creation
         - `LightSimBackend(solver_type=lightsim2grid.solver.GaussSeidelSynch)` at creation time
 
     .. warning::
@@ -635,7 +635,7 @@ const std::string DocSolver::GaussSeidelSynchSolver = R"mydelimiter(
         
 )mydelimiter";
 
-const std::string DocSolver::AnySolver = R"mydelimiter(
+const std::string DocSolver::AlgorithmSelector = R"mydelimiter(
     This is a "wrapper" class that allows the user to perform some powerflow using the same API using different solvers. It is not recommended
     to use this wrapper directly. It is rather a class exported to be compatible with the `env_lightsim2grid.backend._grid.get_solver()` method.
 
@@ -659,10 +659,10 @@ const std::string DocSolver::AnySolver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocSolver::get_type = R"mydelimiter(
-    Retrieve the current solver used. This will return an instance of :class:`lightsim2grid.solver.SolverType` indicating which
+    Retrieve the current solver used. This will return an instance of :class:`lightsim2grid.solver.AlgorithmType` indicating which
     is the underlying solver in use.
 
-    This should be equivalent to :func:`lightsim2grid.gridmodel.GridModel.get_solver_type()`
+    This should be equivalent to :func:`lightsim2grid.gridmodel.GridModel.get_algo_type()`
 
 )mydelimiter";
 const std::string DocSolver::chooseSolver_get_J_python = R"mydelimiter(
@@ -1804,10 +1804,10 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
     This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
     more information about them.
 
-    .. seealso:: :attr:`lightsim2grid.solver.SolverType` for a list of the available solver (NB: some solvers might not be available on all platform)
+    .. seealso:: :attr:`lightsim2grid.solver.AlgorithmType` for a list of the available solver (NB: some solvers might not be available on all platform)
 
     .. note::
-        If the solver type entered is a `DC` solver (**eg** from :attr:`lightsim2grid.solver.SolverType`, 
+        If the solver type entered is a `DC` solver (**eg** from :attr:`lightsim2grid.solver.AlgorithmType`, 
         `DC`, `KLUDC` or `NICSLUDC`), it will change the `_dc_solver` otherwise the regular `_solver` 
         is modified.
 
@@ -1816,7 +1816,7 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
 
     .. code-block:: python
         
-        from lightsim2grid.solver import SolverType
+        from lightsim2grid.solver import AlgorithmType
         # init the grid model
         from lightsim2grid.gridmodel import init
         pp_net = ...  # any pandapower grid
@@ -1824,47 +1824,47 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
 
         # change the solver used for the powerflow
         # to use internally a solver based on Newton Raphson algorithme using Eigen sparse LU
-        lightsim_grid_model.change_solver(SolverType.SparseLUSolver)  
+        lightsim_grid_model.change_solver(AlgorithmType.SparseLUSolver)  
 
 )mydelimiter";
 
 const std::string DocGridModel::available_solvers =  R"mydelimiter(
     Return the list of solver available on the current lightsim2grid installation.
 
-    This is a list of :attr:`lightsim2grid.solver.SolverType`.
+    This is a list of :attr:`lightsim2grid.solver.AlgorithmType`.
 
 )mydelimiter";
 const std::string DocGridModel::get_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver when performing a powerflow.
 
-    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
+    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AlgorithmSelector.get_computation_time` of
     the solver used (:func:`lightsim2grid.gridmodel.GridModel.get_solver`)
     
 )mydelimiter";
 const std::string DocGridModel::get_dc_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver (used to perform DC approximation) when performing a DC powerflow.
 
-    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AnySolver.get_computation_time` of
+    This is equivalent to the `get_computation_time` of the :func:`lightsim2grid.solver.AlgorithmSelector.get_computation_time` of
     the DC solver used (:func:`lightsim2grid.gridmodel.GridModel.get_dc_solver`)
     
 )mydelimiter";
-const std::string DocGridModel::get_solver_type = R"mydelimiter(
+const std::string DocGridModel::get_algo_type = R"mydelimiter(
     Return the type of the solver currently used.
 
-    This is equivalent to the `get_type` of the :func:`lightsim2grid.solver.AnySolver.get_type` of
+    This is equivalent to the `get_type` of the :func:`lightsim2grid.solver.AlgorithmSelector.get_type` of
     the solver used.
 
 )mydelimiter";
-const std::string DocGridModel::get_dc_solver_type = R"mydelimiter(
+const std::string DocGridModel::get_dc_algo_type = R"mydelimiter(
     Return the type of the solver currently used to compute DC powerflow.
 
 )mydelimiter";
-const std::string DocGridModel::get_solver = R"mydelimiter(
-    Return the solver currently in use as a :func:`lightsim2grid.solver.AnySolver` instance.
+const std::string DocGridModel::get_algo = R"mydelimiter(
+    Return the solver currently in use as a :func:`lightsim2grid.solver.AlgorithmSelector` instance.
 
 )mydelimiter";
-const std::string DocGridModel::get_dc_solver = R"mydelimiter(
-    Return the solver currently in use as a :func:`lightsim2grid.solver.AnySolver` instance for the dc powerflow.
+const std::string DocGridModel::get_dc_algo = R"mydelimiter(
+    Return the solver currently in use as a :func:`lightsim2grid.solver.AlgorithmSelector` instance for the dc powerflow.
 
 )mydelimiter";
 

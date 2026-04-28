@@ -23,7 +23,7 @@ except ImportError as exc_:  # noqa: F841
     # grid2Op is not installed
     GRID2OP_INSTALLED = False
 
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 from .lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated
@@ -105,9 +105,9 @@ class ___TimeSerie:
         self.__computed = False
         
         self.available_solvers = self.computer.available_solvers()
-        if SolverType.KLU in self.available_solvers:
+        if AlgorithmType.KLU in self.available_solvers:
             # use the faster KLU if available
-            self.computer.change_solver(SolverType.KLU)
+            self.computer.change_solver(AlgorithmType.KLU)
     
     def get_injections(self, scenario_id=None, seed=None):
         """

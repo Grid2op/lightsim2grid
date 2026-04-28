@@ -11,7 +11,7 @@ import numpy as np
 
 from lightsim2grid.lightsim2grid_cpp import FDPFMethod
 from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.solver import SolverType 
+from lightsim2grid.solver import AlgorithmType 
 
 import pandapower.networks as pn
 import pandapower as pp
@@ -119,7 +119,7 @@ class BaseFDPFTester:
     def test_Bp_Bpp_solver(self):
         """test that Bp and Bpp are correct (from the solver: where only some indices are used)"""
         # retrieve the matrix in the solver
-        self.gridmodel.change_solver(SolverType.FDPF_XB_SparseLU if self.fdpf_meth == FDPFMethod.XB else SolverType.FDPF_BX_SparseLU)
+        self.gridmodel.change_solver(AlgorithmType.FDPF_XB_SparseLU if self.fdpf_meth == FDPFMethod.XB else AlgorithmType.FDPF_BX_SparseLU)
         V_ls = self.gridmodel.ac_pf(1.04 * np.ones(self.net.bus.shape[0], dtype=complex), 30, 1e0)  # to ensure it can "converge" to be able to retrieve Bp and Bpp
         used_solver = self.gridmodel.get_solver().get_fdpf_xb_lu() if self.fdpf_meth == FDPFMethod.XB else self.gridmodel.get_solver().get_fdpf_bx_lu() 
         ls_Bp = used_solver.debug_get_Bp_python()
@@ -137,7 +137,7 @@ class BaseFDPFTester:
         assert np.abs(pp_Bpp - ls_Bpp).max() <= self.tol, f"error in Bpp: max {np.abs(pp_Bpp - ls_Bpp).max():.2f}"
         
     def test_solver(self):
-        self.gridmodel.change_solver(SolverType.FDPF_XB_SparseLU if self.fdpf_meth == FDPFMethod.XB else SolverType.FDPF_BX_SparseLU)
+        self.gridmodel.change_solver(AlgorithmType.FDPF_XB_SparseLU if self.fdpf_meth == FDPFMethod.XB else AlgorithmType.FDPF_BX_SparseLU)
         *_, V0 = self._aux_get_Bp_Bpp()
         V_ls = self.gridmodel.ac_pf(1. * V0, 30, self.tol_solver * self.gridmodel.get_sn_mva())  # no division by sn_mva in pypower implementation TODO issue !
         pp.runpp(self.net, algorithm=self.get_algo_pp(), tol=self.tol_solver, init="flat") 

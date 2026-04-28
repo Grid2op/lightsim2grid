@@ -8,7 +8,7 @@
 
 #include "binding_declarations.hpp"
 #include "BaseConstants.hpp"
-#include "ChooseSolver.hpp"
+#include "AlgorithmSelector.hpp"
 #include "Utils.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
 #include "powerflow_algorithm/RefactorPolicies.hpp"
@@ -21,30 +21,30 @@ void bind_enums(py::module_& m) {
         .value("BX", FDPFMethod::BX, "denotes the BX method")
         .export_values();
 
-    py::enum_<SolverType>(m, "SolverType", "This enum controls the solver you want to use.")
-        .value("GaussSeidel", SolverType::GaussSeidel, "denotes the :class:`lightsim2grid.solver.GaussSeidelSolver`")
-        .value("GaussSeidelSynch", SolverType::GaussSeidelSynch, "denotes the :class:`lightsim2grid.solver.GaussSeidelSynchSolver`")
-        .value("SparseLU", SolverType::SparseLU, "denotes the :class:`lightsim2grid.solver.SparseLUSolver`")
-        .value("SparseLUSingleSlack", SolverType::SparseLUSingleSlack, "denotes the :class:`lightsim2grid.solver.SparseLUSolverSingleSlack`")
-        .value("DC", SolverType::DC, "denotes the :class:`lightsim2grid.solver.DCSolver`")
-        .value("KLU", SolverType::KLU, "denotes the :class:`lightsim2grid.solver.KLUSolver`")
-        .value("KLUSingleSlack", SolverType::KLUSingleSlack, "denotes the :class:`lightsim2grid.solver.KLUSolverSingleSlack`")
-        .value("KLUDC", SolverType::KLUDC, "denotes the :class:`lightsim2grid.solver.KLUDCSolver`")
-        .value("NICSLU", SolverType::NICSLU, "denotes the :class:`lightsim2grid.solver.NICSLUSolver`")
-        .value("NICSLUSingleSlack", SolverType::NICSLUSingleSlack, "denotes the :class:`lightsim2grid.solver.NICSLUSolverSingleSlack`")
-        .value("NICSLUDC", SolverType::NICSLUDC, "denotes the :class:`lightsim2grid.solver.NICSLUDCSolver`")
-        .value("CKTSO", SolverType::CKTSO, "denotes the :class:`lightsim2grid.solver.CKTSOSolver`")
-        .value("CKTSOSingleSlack", SolverType::CKTSOSingleSlack, "denotes the :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`")
-        .value("CKTSODC", SolverType::CKTSODC, "denotes the :class:`lightsim2grid.solver.CKTSODCSolver`")
-        .value("FDPF_XB_SparseLU", SolverType::FDPF_XB_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_SparseLUSolver`")
-        .value("FDPF_BX_SparseLU", SolverType::FDPF_BX_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_SparseLUSolver`")
-        .value("FDPF_XB_KLU", SolverType::FDPF_XB_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_KLUSolver`")
-        .value("FDPF_BX_KLU", SolverType::FDPF_BX_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_KLUSolver`")
-        .value("FDPF_XB_NICSLU", SolverType::FDPF_XB_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_NICSLUSolver`")
-        .value("FDPF_BX_NICSLU", SolverType::FDPF_BX_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_NICSLUSolver`")
-        .value("FDPF_XB_CKTSO", SolverType::FDPF_XB_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_XB_CKTSOSolver`")
-        .value("FDPF_BX_CKTSO", SolverType::FDPF_BX_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_BX_CKTSOSolver`")
-        .value("Custom", SolverType::Custom, "sentinel value for external/plugin solvers loaded via load_solver_plugin()")
+    py::enum_<AlgorithmType>(m, "AlgorithmType", "This enum controls the solver you want to use.")
+        .value("GaussSeidel", AlgorithmType::GaussSeidel, "denotes the :class:`lightsim2grid.solver.GaussSeidelSolver`")
+        .value("GaussSeidelSynch", AlgorithmType::GaussSeidelSynch, "denotes the :class:`lightsim2grid.solver.GaussSeidelSynchSolver`")
+        .value("SparseLU", AlgorithmType::SparseLU, "denotes the :class:`lightsim2grid.solver.SparseLUSolver`")
+        .value("SparseLUSingleSlack", AlgorithmType::SparseLUSingleSlack, "denotes the :class:`lightsim2grid.solver.SparseLUSolverSingleSlack`")
+        .value("DC", AlgorithmType::DC, "denotes the :class:`lightsim2grid.solver.DCSolver`")
+        .value("KLU", AlgorithmType::KLU, "denotes the :class:`lightsim2grid.solver.KLUSolver`")
+        .value("KLUSingleSlack", AlgorithmType::KLUSingleSlack, "denotes the :class:`lightsim2grid.solver.KLUSolverSingleSlack`")
+        .value("KLUDC", AlgorithmType::KLUDC, "denotes the :class:`lightsim2grid.solver.KLUDCSolver`")
+        .value("NICSLU", AlgorithmType::NICSLU, "denotes the :class:`lightsim2grid.solver.NICSLUSolver`")
+        .value("NICSLUSingleSlack", AlgorithmType::NICSLUSingleSlack, "denotes the :class:`lightsim2grid.solver.NICSLUSolverSingleSlack`")
+        .value("NICSLUDC", AlgorithmType::NICSLUDC, "denotes the :class:`lightsim2grid.solver.NICSLUDCSolver`")
+        .value("CKTSO", AlgorithmType::CKTSO, "denotes the :class:`lightsim2grid.solver.CKTSOSolver`")
+        .value("CKTSOSingleSlack", AlgorithmType::CKTSOSingleSlack, "denotes the :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`")
+        .value("CKTSODC", AlgorithmType::CKTSODC, "denotes the :class:`lightsim2grid.solver.CKTSODCSolver`")
+        .value("FDPF_XB_SparseLU", AlgorithmType::FDPF_XB_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_SparseLUSolver`")
+        .value("FDPF_BX_SparseLU", AlgorithmType::FDPF_BX_SparseLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_SparseLUSolver`")
+        .value("FDPF_XB_KLU", AlgorithmType::FDPF_XB_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_KLUSolver`")
+        .value("FDPF_BX_KLU", AlgorithmType::FDPF_BX_KLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_KLUSolver`")
+        .value("FDPF_XB_NICSLU", AlgorithmType::FDPF_XB_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_XB_NICSLUSolver`")
+        .value("FDPF_BX_NICSLU", AlgorithmType::FDPF_BX_NICSLU, "denotes the :class:`lightsim2grid.solver.FDPF_BX_NICSLUSolver`")
+        .value("FDPF_XB_CKTSO", AlgorithmType::FDPF_XB_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_XB_CKTSOSolver`")
+        .value("FDPF_BX_CKTSO", AlgorithmType::FDPF_BX_CKTSO, "denotes the :class:`lightsim2grid.solver.FDPF_BX_CKTSOSolver`")
+        .value("Custom", AlgorithmType::Custom, "sentinel value for external/plugin solvers loaded via load_solver_plugin()")
         .export_values();
 
     py::enum_<ScalingPolicyType>(m, "ScalingPolicyType", "Step-scaling strategy for the Newton-Raphson loop")

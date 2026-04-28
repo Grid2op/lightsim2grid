@@ -125,7 +125,7 @@ bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus
         // DC solver stores the ybus internally, I update it
         // instead of building it over and over
         for(const Coeff& coeff : coeffs){
-            _solver.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
+            _algo.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
         }
         // in DC mode the solver takes the responsibility
         // so Ybus is always "connected".
@@ -134,7 +134,7 @@ bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus
 }
 
 IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
-    const bool ac_solver_used = _solver.ac_solver_used();
+    const bool ac_solver_used = _algo.ac_solver_used();
     Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
     int cont_id = 0;
@@ -160,7 +160,7 @@ void ContingencyAnalysis::readd_to_Ybus(
         // DC solver stores the ybus internally, I update it
         // instead of building it over and over
         for(const Coeff& coeff : coeffs){
-            _solver.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
+            _algo.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
         }
     }
 }
@@ -176,7 +176,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     // read from the grid the usefull information
     const auto & sn_mva = _grid_model.get_sn_mva();
-    const bool ac_solver_used = _solver.ac_solver_used();
+    const bool ac_solver_used = _algo.ac_solver_used();
     size_t nb_steps = _li_defaults.size();
 
     // prepare the gridmodel (compute Ybus, Sbus etc.)

@@ -10,7 +10,7 @@ __version__ = "0.13.2.dev0"
 
 __all__ = [
     "newtonpf",
-    "SolverType",
+    "AlgorithmType",
     "ErrorType",
     "solver",
     "compilation_options",
@@ -22,7 +22,7 @@ import ctypes as _ctypes
 import os as _os
 import sys as _sys
 
-# Load the C++ extension with RTLD_GLOBAL so its symbols (BaseAlgo, SolverRegistry,
+# Load the C++ extension with RTLD_GLOBAL so its symbols (BaseAlgo, AlgorithmRegistry,
 # etc.) are visible to solver plugins loaded later via load_solver_plugin().
 # This is the standard pattern for extension modules that support dlopen plugins
 # (used by PyTorch, JAX, and others for the same reason).
@@ -31,7 +31,7 @@ if hasattr(_sys, "getdlopenflags"):
     _old_dlopen_flags = _sys.getdlopenflags()
     _sys.setdlopenflags(_old_dlopen_flags | _os.RTLD_GLOBAL)
     try:
-        from lightsim2grid.solver import SolverType
+        from lightsim2grid.solver import AlgorithmType
         from lightsim2grid.solver import ErrorType
     finally:
         _sys.setdlopenflags(_old_dlopen_flags)
@@ -41,7 +41,7 @@ else:
     # (a dependency of lightsim2grid_cpp.pyd) is found before the import.
     if hasattr(_os, "add_dll_directory"):
         _os.add_dll_directory(_os.path.dirname(__file__))
-    from lightsim2grid.solver import SolverType
+    from lightsim2grid.solver import AlgorithmType
     from lightsim2grid.solver import ErrorType
 
 
@@ -51,7 +51,7 @@ def load_solver_plugin(path: str) -> None:
     The library must contain at least one static ``SolverRegistrar`` object
     in an anonymous namespace (see ``examples/external_solver/`` for a minimal
     example).  Its constructor fires when the library is loaded, which
-    registers the new solver into the C++ ``SolverRegistry`` singleton.
+    registers the new solver into the C++ ``AlgorithmRegistry`` singleton.
 
     After this call the new solver name is usable via::
 

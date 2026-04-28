@@ -48,8 +48,6 @@ class JacobianTester(unittest.TestCase):
             cls.res["init_state"]["tol"])
         
         J = self.solver.get_J()[self.new_to_old_indexes().T, self.new_to_old_indexes()]
-        import pdb
-        pdb.set_trace()
         V = self.solver.get_V()
         assert J.shape == cls.res[f"{iter}"]["J"].shape, f"error for iter {iter}: J.shape = {J.shape} != {cls.res[f'{iter}']['J'].shape}"
         assert J.nnz == cls.res[f"{iter}"]["J"].nnz, f"error for iter {iter}: J.nnz = {J.nnz} != {cls.res[f'{iter}']['J'].nnz}"

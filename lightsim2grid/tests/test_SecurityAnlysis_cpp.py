@@ -11,7 +11,7 @@ import numpy as np
 import grid2op
 
 from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 from lightsim2grid import LightSimBackend
 import warnings
 import pdb
@@ -218,7 +218,7 @@ class TestSecurityAnalysisCPP(unittest.TestCase):
         SA = ContingencyAnalysisCPP(self.env.backend._grid)
         lid_cont = [0, 1, 2, 3]
         nb_sub = self.env.n_sub
-        SA.change_solver(SolverType.DC)
+        SA.change_solver(AlgorithmType.DC)
         SA.add_multiple_n1(lid_cont)
         SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
         res_SA = SA.get_voltages()
