@@ -223,6 +223,7 @@ inline void NRSystem<>::_dSbus_dV(
         // I had to rebuild the system
         dS_dVm_ = Ybus;
         dS_dVa_ = Ybus;
+        // TODO init from Ybus sparsity pattern with all 0 instead
     }
 
     cplx_type* ds_dvm_x = dS_dVm_.valuePtr();
