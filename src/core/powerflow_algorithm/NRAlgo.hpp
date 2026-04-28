@@ -99,7 +99,7 @@ public:
 
     // ----- scaling policy ------------------------------------------------------
 
-    ScalingPolicyType get_scaling_policy()  const { return scaling_policy_->type(); }
+    ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }
     void set_scaling_policy(ScalingPolicyType t)  { 
         scaling_policy_ = create_scaling_policy<NRSystem>(t);
         update_scaling_policy_params<NRSystem>(
@@ -203,20 +203,6 @@ protected:
         timer_pre_proc_   = 0.;
         timer_initialize_ = 0.;
         _system.reset_timers();
-    }
-
-    void reset_if_needed() {
-        if (err_ != ErrorType::NoError ||
-            _solver_control.need_reset_solver() ||
-            _solver_control.has_dimension_changed() ||
-            _solver_control.ybus_change_sparsity_pattern() ||
-            _solver_control.has_ybus_some_coeffs_zero() ||
-            _solver_control.has_slack_participate_changed() ||
-            _solver_control.has_pv_changed() ||
-            _solver_control.has_pq_changed())
-        {
-            reset();
-        }
     }
 
     bool should_refactor(int iter) const {

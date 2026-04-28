@@ -154,8 +154,10 @@ class TestSolverControl(unittest.TestCase):
         Sbus_init = self.gridmodel.get_Sbus_solver().copy()  # noqa: F841
         Ybus_init = self.gridmodel.get_Ybus_solver().copy()  # noqa: F841
         assert len(V_init), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
-        # print("1. ac pf")
+        # print("disconnecting the line")
         getattr(self, funname_do)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val + to_add_remove)
+        # print("1. ac pf")
+        # print("running first powerflow")
         V_disc = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
         if len(V_disc) > 0:
             # powerflow converges, all should converge
@@ -180,6 +182,7 @@ class TestSolverControl(unittest.TestCase):
         
         # test "undo the action"
         self.gridmodel.unset_changes()
+        # print("reco line")
         getattr(self, funname_undo)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val)
         sovler_control = self.gridmodel.get_solver_control()
         # print("2. ac pf")
@@ -192,12 +195,16 @@ class TestSolverControl(unittest.TestCase):
         assert np.allclose(V_reco, V_init, rtol=self.tol_equal, atol=self.tol_equal), f"error for el_id={el_id}: do an action and then undo it should not have any impact in {pf_mode}: max {np.abs(V_init - V_reco).max():.2e}"
         self.gridmodel.unset_changes()
         # print("3. ac pf")
+        # print("re running powerflow (unset_changes)")
         V_reco1 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        # print("done")
         assert len(V_reco1), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         assert np.allclose(V_reco1, V_reco, rtol=self.tol_equal, atol=self.tol_equal)
         self.gridmodel.tell_solver_need_reset()
         # print("4. ac pf")
+        # print("re running powerflow (solver_need_reset)")
         V_reco2 = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
+        # print("done")
         assert len(V_reco2), f"error for el_id={el_id}: gridmodel should converge in {pf_mode}"
         assert np.allclose(V_reco2, V_reco1, rtol=self.tol_equal, atol=self.tol_equal)
         assert np.allclose(V_reco2, V_reco, rtol=self.tol_equal, atol=self.tol_equal)

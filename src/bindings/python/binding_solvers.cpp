@@ -39,7 +39,7 @@ template<typename Solver>
 void bind_nr_algo_policies(py::class_<Solver>& cls) {
     cls
         // scaling policy
-        .def("get_scaling_policy",   &Solver::get_scaling_policy,   "Return the current step-scaling policy (ScalingPolicyType)")
+        .def("get_scaling_policy_type",   &Solver::get_scaling_policy_type,   "Return the current step-scaling policy (ScalingPolicyType)")
         .def("set_scaling_policy",   &Solver::set_scaling_policy,   "Set the step-scaling policy (ScalingPolicyType)",   py::arg("policy"))
         // refactor policy
         .def("get_refactor_policy",  &Solver::get_refactor_policy,  "Return the current Jacobian refactorization policy (RefactorPolicyType)")
