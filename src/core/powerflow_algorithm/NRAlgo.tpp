@@ -100,7 +100,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     while ((!converged) & (nr_iter_ < max_iter)) {
         nr_iter_++;
 
-        need_factorize = (need_factorize || should_refactor(nr_iter_));
+        need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
             _system.fill_J();
@@ -109,7 +109,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
                 // New sparsity pattern: (re-)initialize factorization.
                 auto timer_i = CustTimer();
                 err_ = _linear_solver.initialize(_system.J());
-                need_factorize_ = false;
                 need_init = false;
                 timer_initialize_ += timer_i.duration();
             } else {
@@ -117,8 +116,8 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
                 err_ = _linear_solver.refactor(_system.J());
                 timer_refactor_ += timer_r.duration();
             }
-            need_factorize = false;
             if (err_ != ErrorType::NoError) { res = false; break; }
+            need_factorize = false;
         }
 
         // Solve J * dx = F  (F = mismatch, negated convention; F overwritten with dx)
