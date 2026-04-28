@@ -33,19 +33,13 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     if (!is_linear_solver_valid()) return false;
 
     reset_timer();
-    reset_if_needed();
-    if (!((err_ == ErrorType::NotInitError) || (err_ == ErrorType::NoError))) return false;
-
     err_ = ErrorType::NoError;
     auto timer     = CustTimer();
     auto timer_pre = CustTimer();
 
-    // Build pvpq maps, initialise voltage state
-    _system.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq);
-
-    // Pre-loop: clear J caches if structural changes detected
-    bool need_factorize = false;
-    if (need_factorize_ ||
+    // Determine whether topology rebuild is required.
+    const bool need_rebuild = (
+        need_factorize_ ||
         _solver_control.need_reset_solver() ||
         _solver_control.has_dimension_changed() ||
         _solver_control.has_slack_participate_changed() ||
@@ -53,10 +47,33 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         _solver_control.has_ybus_some_coeffs_zero() ||
         _solver_control.need_recompute_ybus() ||
         _solver_control.has_pv_changed() ||
-        _solver_control.has_pq_changed())
-    {
-        _system.clear_jacobian();
-        need_factorize = true;
+        _solver_control.has_pq_changed()
+    );
+
+    if (need_rebuild) {
+        // Reset linear solver state before re-initialization.
+        ErrorType rs = _linear_solver.reset();
+        if (rs != ErrorType::NoError) err_ = rs;
+    }
+
+    if (!((err_ == ErrorType::NotInitError) || (err_ == ErrorType::NoError))) {
+        timer_pre_proc_ += timer_pre.duration();
+        timer_total_nr_ += timer.duration();
+        return false;
+    }
+
+    // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
+    if (need_rebuild)
+        _system.init_topology(Ybus, Sbus, slack_ids, slack_weights, pv, pq);
+
+    // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
+    _system.update_state(Ybus, V, Sbus);
+
+    // Phase 2: rebuild J sparsity + value_map, then initialize linear solver.
+    bool need_init = need_rebuild;
+    if (need_rebuild) {
+        _system.build_J_sparsity();
+        n_ = static_cast<int>(_system.J().cols());
     }
 
     timer_pre_proc_ += timer_pre.duration();
@@ -66,31 +83,29 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     bool converged = _check_for_convergence(F, tol);
     nr_iter_       = 0;
     bool res       = true;
+    bool need_factorize = true;   // factorize on first iteration
 
     while ((!converged) & (nr_iter_ < max_iter)) {
         nr_iter_++;
 
-        need_factorize = (
-            need_factorize || 
-            should_refactor(nr_iter_)  // TODO make a "refactor policy here"
-        );
+        need_factorize = (need_factorize || should_refactor(nr_iter_));
         if (need_factorize) {
-            // Build / update Jacobian
-            _system.assemble_jacobian();
+            // Phase 3: fill J numerically with current V.
+            _system.fill_J();
 
-            // Factorize: initialize (new pattern) or refactor (same pattern)
-            if (need_factorize_) {
+            if (need_init) {
+                // New sparsity pattern: (re-)initialize factorization.
                 auto timer_i = CustTimer();
-                n_    = static_cast<int>(_system.J().cols());
-                err_  = _linear_solver.initialize(_system.J());
+                err_ = _linear_solver.initialize(_system.J());
                 need_factorize_ = false;
-                _system.clear_pattern_changed();
+                need_init = false;
                 timer_initialize_ += timer_i.duration();
             } else {
                 auto timer_r = CustTimer();
                 err_ = _linear_solver.refactor(_system.J());
                 timer_refactor_ += timer_r.duration();
             }
+            need_factorize = false;
             if (err_ != ErrorType::NoError) { res = false; break; }
         }
 
@@ -103,7 +118,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         if (err_ != ErrorType::NoError) { res = false; break; }
 
         // Apply scaling policy (runtime dispatch)
-        // scaling_policy_->update(_system, F);
         real_type coeff = scaling_policy_->scale(_system, F);
         auto timer_va_vm = CustTimer();
         _system.apply_step(coeff * F);
