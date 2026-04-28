@@ -10,11 +10,9 @@
 #define NR_ALGO_H
 
 #include "BaseAlgo.hpp"
-#include "NRLayout.hpp"
+#include "NRSystem.hpp"
 #include "ScalingPolicies.hpp"
 #include "RefactorPolicies.hpp"
-#include "MultiSlackNRSystem.hpp"
-#include "SingleSlackNRSystem.hpp"
 
 namespace ls2g {
 
@@ -182,23 +180,16 @@ public:
                                 const Eigen::VectorXi& pvpq)
     {
         // DO NOT USE, FOR DEBUG ONLY
-        const auto& n_pvpq = pvpq.size();
-        const auto& n_pq = pq.size();
-        std::vector<int> pvpq_inv(V.size(), -1);
-        for (int i = 0; i < (int)n_pvpq; ++i) pvpq_inv[pvpq(i)] = i;
-        std::vector<int> pq_inv(V.size(), -1);
-        for (int i = 0; i < (int)n_pq;   ++i) pq_inv[pq(i)] = i;
-        (void)slack_weights;
-        // Rebuild a mock pq/pv just to get layout, then call assemble
-        // This function is only for tests – not performance-critical.
-        _system.clear_jacobian();
+        (void)pvpq; (void)slack_weights;
         CplxVect Sbus_dummy(V.size()); Sbus_dummy.setZero();
         Eigen::VectorXi pv_dummy(0);
         IntVect slack_ids_dummy(1); slack_ids_dummy(0) = 0;
         RealVect sw_dummy = RealVect::Ones(V.size());
         sw_dummy /= sw_dummy.sum();
-        _system.setup(Ybus, V, Sbus_dummy, slack_ids_dummy, sw_dummy, pv_dummy, pq);
-        _system.assemble_jacobian();
+        _system.init_topology(Ybus, Sbus_dummy, slack_ids_dummy, sw_dummy, pv_dummy, pq);
+        _system.update_state(Ybus, V, Sbus_dummy);
+        _system.build_J_sparsity();
+        _system.fill_J();
         return _system.J();
     }
 
