@@ -101,9 +101,6 @@ public:
     const RealVect& Va() const { return Va_; }
     const RealVect& Vm() const { return Vm_; }
 
-    bool pattern_changed()        const { return need_full_rebuild_; }
-    void clear_pattern_changed()        { need_full_rebuild_ = false; }
-
     // ----- Size / segment accessors (replace NRLayout) ---------------------------
 
     int nb_pv()      const { return nb_pv_; }

@@ -219,7 +219,8 @@ inline void NRSystem<>::_dSbus_dV(
     const CplxVect Ibus  = Ybus * V;
     const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
 
-    if (dS_dVm_.cols() != Ybus.cols()) {
+    if(need_full_rebuild_){
+        // I had to rebuild the system
         dS_dVm_ = Ybus;
         dS_dVa_ = Ybus;
     }
@@ -340,6 +341,7 @@ void NRSystem<MultiSlack, Rest...>::init_topology(
     Eigen::Ref<const IntVect>              pv,
     Eigen::Ref<const IntVect>              pq)
 {
+    // std::cout << "NRSystem<MultiSlack>::init_topology \n";
     slack_bus_id_  = static_cast<size_t>(slack_ids(0));
     slack_weights_ = slack_weights;
 
