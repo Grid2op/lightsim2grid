@@ -17,6 +17,32 @@
 #include <vector>
 #include <stdexcept>
 
+// TODO need to be cleaned up and simplified
+
+// Public API (used by NRAlgo, in order)
+// init_topology : if Ybus changed
+// update_state : unconditionnally
+// build_J_sparsity : if init_topology was called
+// mismatch (before NR loop)
+// ---------------- ENTERING NR LOOP
+// if need factorize:
+//     fill_J
+// apply_step
+// mismatch
+// ---------------- END NRR LOOP 
+// V(), Vm(), Va()
+// timer_dSbus()
+// timer_fillJ()
+// J()  (public accessor of NRAlgo)
+
+// Public API (used by scaling policy)
+// mismatch_sq_norm_at()
+// theta()
+// vm()
+// theta_size()
+// vm_size()
+
+
 namespace ls2g {
 
 // ---- Extension tag types ------------------------------------------------------

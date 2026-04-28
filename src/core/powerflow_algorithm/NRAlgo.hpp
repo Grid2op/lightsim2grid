@@ -15,7 +15,7 @@
 #include "RefactorPolicies.hpp"
 
 namespace ls2g {
-
+  
 /**
  * Unified Newton-Raphson solver parameterised by LinearSolver and NRSystem.
  *
@@ -205,7 +205,7 @@ protected:
         _system.reset_timers();
     }
 
-    bool should_refactor(int iter) const {
+    bool should_refactor_policy(int iter) const {
         switch (refactor_policy_) {
             case RefactorPolicyType::AlwaysRefactor: return true;
             case RefactorPolicyType::EveryN:         return (iter % refactor_every_n_) == 1;
