@@ -6,9 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__all__ = ["SolverType",
+__all__ = ["AlgorithmType",
            "ErrorType",
-           "AnySolver",  
+           "AlgorithmSelector",  
            "GaussSeidelSolver",
            "GaussSeidelSynchSolver",
            "SparseLUSolver",
@@ -17,24 +17,24 @@ __all__ = ["SolverType",
            "FDPF_XB_SparseLUSolver",
            "FDPF_BX_SparseLUSolver"]
 
-from ..lightsim2grid_cpp import SolverType # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import AlgorithmType # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ErrorType  # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import AnySolver  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import AlgorithmSelector  # pyright: ignore[reportMissingImports]
                
-from ..lightsim2grid_cpp import GaussSeidelSolver  # SolverType.GaussSeidel # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import GaussSeidelSynchSolver  # SolverType.GaussSeidelSynch  # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import SparseLUSolver  # SolverType.SparseLU  # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import SparseLUSolverSingleSlack  # SolverType.SparseLUSingleSlack  # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import DCSolver  # SolverType.DC  # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import FDPF_XB_SparseLUSolver  # SolverType.FDPF_XB_SparseLU  # pyright: ignore[reportMissingImports]
-from ..lightsim2grid_cpp import FDPF_BX_SparseLUSolver  # SolverType.FDPF_BX_SparseLU  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import GaussSeidelSolver  # AlgorithmType.GaussSeidel # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import GaussSeidelSynchSolver  # AlgorithmType.GaussSeidelSynch  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import SparseLUSolver  # AlgorithmType.SparseLU  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import SparseLUSolverSingleSlack  # AlgorithmType.SparseLUSingleSlack  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import DCSolver  # AlgorithmType.DC  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import FDPF_XB_SparseLUSolver  # AlgorithmType.FDPF_XB_SparseLU  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import FDPF_BX_SparseLUSolver  # AlgorithmType.FDPF_BX_SparseLU  # pyright: ignore[reportMissingImports]
 
 try:
-    from ..lightsim2grid_cpp import KLUSolver  # SolverType.KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import KLUSolverSingleSlack  # SolverType.KLUSingleSlack  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import KLUDCSolver  # SolverType.KLUDC  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import FDPF_XB_KLUSolver  # SolverType.FDPF_XB_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import FDPF_BX_KLUSolver  # SolverType.FDPF_BX_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import KLUSolver  # AlgorithmType.KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import KLUSolverSingleSlack  # AlgorithmType.KLUSingleSlack  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import KLUDCSolver  # AlgorithmType.KLUDC  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import FDPF_XB_KLUSolver  # AlgorithmType.FDPF_XB_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import FDPF_BX_KLUSolver  # AlgorithmType.FDPF_BX_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("KLUSolver")
     __all__.append("KLUSolverSingleSlack")
     __all__.append("KLUDCSolver")
@@ -45,11 +45,11 @@ except Exception as exc_:  # noqa: F841
     pass
 
 try:
-    from ..lightsim2grid_cpp import NICSLUSolver  # SolverType.NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import NICSLUSolverSingleSlack  # SolverType.NICSLUSingleSlack  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import NICSLUDCSolver  # SolverType.NICSLUDC  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import FDPF_XB_NICSLUSolver  # SolverType.FDPF_XB_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import FDPF_BX_NICSLUSolver  # SolverType.FDPF_BX_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NICSLUSolver  # AlgorithmType.NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NICSLUSolverSingleSlack  # AlgorithmType.NICSLUSingleSlack  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NICSLUDCSolver  # AlgorithmType.NICSLUDC  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import FDPF_XB_NICSLUSolver  # AlgorithmType.FDPF_XB_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import FDPF_BX_NICSLUSolver  # AlgorithmType.FDPF_BX_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NICSLUSolver")
     __all__.append("NICSLUSolverSingleSlack")
     __all__.append("NICSLUDCSolver")
@@ -60,11 +60,11 @@ except Exception as exc_:  # noqa: F841
     pass
 
 try:
-    from ..lightsim2grid_cpp import CKTSOSolver  # SolverType.CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import CKTSOSolverSingleSlack  # SolverType.CKTSOSingleSlack  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import CKTSODCSolver  # SolverType.CKTSODC  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import FDPF_XB_CKTSOSolver  # SolverType.FDPF_XB_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from ..lightsim2grid_cpp import FDPF_BX_CKTSOSolver  # SolverType.FDPF_BX_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import CKTSOSolver  # AlgorithmType.CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import CKTSOSolverSingleSlack  # AlgorithmType.CKTSOSingleSlack  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import CKTSODCSolver  # AlgorithmType.CKTSODC  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import FDPF_XB_CKTSOSolver  # AlgorithmType.FDPF_XB_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import FDPF_BX_CKTSOSolver  # AlgorithmType.FDPF_BX_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("CKTSOSolver")
     __all__.append("CKTSOSolverSingleSlack")
     __all__.append("CKTSODCSolver")

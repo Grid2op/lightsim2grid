@@ -15,7 +15,7 @@ from grid2op.Action._backendAction import _BackendAction
 
 from lightsim2grid import LightSimBackend, ContingencyAnalysis
 from lightsim2grid.compilation_options import klu_solver_available
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 
 
 class N1ContingencyReward(BaseReward):
@@ -62,14 +62,14 @@ class N1ContingencyReward(BaseReward):
         self._threshold_margin :float = float(threshold_margin)
         if klu_solver_available:
             if self._dc:
-                self._solver_type = SolverType.KLUDC
+                self._algo_type = AlgorithmType.KLUDC
             else:
-                self._solver_type = SolverType.KLU
+                self._algo_type = AlgorithmType.KLU
         else:
             if self._dc:
-                self._solver_type = SolverType.DC
+                self._algo_type = AlgorithmType.DC
             else:
-                self._solver_type = SolverType.SparseLU
+                self._algo_type = AlgorithmType.SparseLU
         self._backend_ls = False
         self._debug_unsafe_conts = None
         self._tol = tol
@@ -104,7 +104,7 @@ class N1ContingencyReward(BaseReward):
         else:
             raise NotImplementedError()
         
-        self._backend.set_solver_type(self._solver_type)
+        self._backend.set_algo_type(self._algo_type)
         conv, exc_ = self._backend.runpf()
         if not conv:
             raise RuntimeError(f"The reward N1ContingencyReward diverge with error {exc_}")
@@ -145,7 +145,7 @@ class N1ContingencyReward(BaseReward):
         
         # synch the contingency analyzer
         contingecy_analyzer = ContingencyAnalysis(self._backend)
-        contingecy_analyzer.computer.change_solver(self._solver_type)
+        contingecy_analyzer.computer.change_solver(self._algo_type)
         contingecy_analyzer.add_multiple_contingencies(*self._l_ids)
         now_ = time.perf_counter()
         self._timer_pre_proc += now_ - beg

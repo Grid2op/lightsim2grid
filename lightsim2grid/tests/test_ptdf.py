@@ -14,7 +14,7 @@ import warnings
 from scipy.sparse.linalg import spsolve
 
 from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 
 import pdb
 
@@ -23,8 +23,8 @@ class TestCase14SLU(unittest.TestCase):
         case14 = pn.case14()
         return case14
 
-    def get_solver_type(self):
-        return SolverType.DC
+    def get_algo_type(self):
+        return AlgorithmType.DC
     
     def setUp(self) -> None:
         self.case = self.make_grid()
@@ -32,7 +32,7 @@ class TestCase14SLU(unittest.TestCase):
             warnings.filterwarnings("ignore")
             self.gridmodel = init_from_pandapower(self.case)
         self.V_init = 1. * self.gridmodel.get_bus_vn_kv()
-        solver_type = self.get_solver_type()
+        solver_type = self.get_algo_type()
         if solver_type not in self.gridmodel.available_solvers():
             self.skipTest("Solver type not supported on this platform")
         self.gridmodel.change_solver(solver_type)
@@ -91,18 +91,18 @@ class TestCase118SLU(TestCase14SLU):
     
     
 class TestCase14KLU(TestCase14SLU):
-    def get_solver_type(self):
-        return SolverType.KLUDC
+    def get_algo_type(self):
+        return AlgorithmType.KLUDC
     
     
 class TestCase30KLU(TestCase30SLU):
-    def get_solver_type(self):
-        return SolverType.KLUDC
+    def get_algo_type(self):
+        return AlgorithmType.KLUDC
     
     
 class TestCase118KLU(TestCase118SLU):
-    def get_solver_type(self):
-        return SolverType.KLUDC
+    def get_algo_type(self):
+        return AlgorithmType.KLUDC
     
     
 if __name__ == "__main__":

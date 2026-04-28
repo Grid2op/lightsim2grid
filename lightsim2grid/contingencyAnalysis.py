@@ -12,7 +12,7 @@ import copy
 import numpy as np
 from collections.abc import Iterable
 
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 from .lightsim2grid_cpp import ContingencyAnalysisCPP
 
 try:
@@ -109,9 +109,9 @@ class __ContingencyAnalysis(object):
         self._mws = None
 
         self.available_solvers = self.computer.available_solvers()
-        if SolverType.KLU in self.available_solvers:
+        if AlgorithmType.KLU in self.available_solvers:
             # use the faster KLU if available
-            self.computer.change_solver(SolverType.KLU)
+            self.computer.change_solver(AlgorithmType.KLU)
 
     @property
     def all_contingencies(self):

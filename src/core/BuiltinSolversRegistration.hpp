@@ -11,13 +11,13 @@
 
 namespace ls2g {
 
-class SolverRegistry;
+class AlgorithmRegistry;
 
 // Register every in-tree solver into `reg`.
 // Call this once from the pybind11 module init before any GridModel is created.
 // To add a new built-in solver: add one register_solver(...) call here, guarded
 // by the same #ifdef as the solver class itself.
-void register_builtin_solvers(SolverRegistry& reg);
+void register_builtin_solvers(AlgorithmRegistry& reg);
 
 
 } // namespace ls2g

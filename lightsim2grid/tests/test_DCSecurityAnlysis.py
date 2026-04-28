@@ -13,7 +13,7 @@ from pandapower.pypower.makeLODF import update_LODF_diag
 
 import grid2op
 
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 from lightsim2grid import ContingencyAnalysis, LightSimBackend
 import warnings
 import pdb
@@ -35,11 +35,11 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_can_create(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
     
     def test_clear(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
 
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
@@ -55,7 +55,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_add_single_contingency(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         
         with self.assertRaises(RuntimeError):
             sa.add_single_contingency("toto")
@@ -75,7 +75,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_add_multiple_contingencies(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         # add simple contingencies
         sa.add_multiple_contingencies(0, 1, 2, 3)
         all_conts = sa.computer.my_defaults()
@@ -103,7 +103,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
 
     def test_add_all_n1_contingencies(self):
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_all_n1_contingencies()
         all_conts = sa.computer.my_defaults()
         assert len(all_conts) == self.env.n_line
@@ -113,7 +113,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: ask for all contingencies,
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -125,7 +125,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: ask for all contingencies , 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows()
         assert res_a.shape == (3, self.env.n_line)
@@ -137,7 +137,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -148,7 +148,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, 1, 2)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -159,7 +159,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method: don't ask for all contingencies (same order as given), 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 2)
         assert res_a.shape == (2, self.env.n_line)
@@ -170,7 +170,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         """test the get_flows method in the most simplest way: not all contingencies (not same order as given), 
         contingencies are NOT given in the right order"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, 2, 1)
         res_p, res_a, res_v = sa.get_flows(0, 1)
         assert res_a.shape == (2, self.env.n_line)
@@ -180,7 +180,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
     def test_get_flows_multiple(self):
         """test the get_flows function when multiple contingencies"""
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_multiple_contingencies(0, [0, 4], [5, 7], 4)
 
         # everything
@@ -217,12 +217,12 @@ class TestDCSecurityAnalysis(unittest.TestCase):
     def test_change_injection(self):
         """test the capacity of the things to handle different steps"""
         sa1 = ContingencyAnalysis(self.env)
-        sa1.change_solver(SolverType.DC)
+        sa1.change_solver(AlgorithmType.DC)
         conts = [0, [0, 4], [5, 7], 4]
         sa1.add_multiple_contingencies(*conts)
         obs = self.env.reset()
         sa2 = ContingencyAnalysis(self.env)
-        sa2.change_solver(SolverType.DC)
+        sa2.change_solver(AlgorithmType.DC)
         sa2.add_multiple_contingencies(*conts)
         
         res_p1, res_a1, res_v1 = sa1.get_flows()
@@ -295,7 +295,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
             assert not info["is_illegal_reco"]
         
         sa = ContingencyAnalysis(self.env)
-        sa.change_solver(SolverType.DC)
+        sa.change_solver(AlgorithmType.DC)
         sa.add_all_n1_contingencies()
         
         # compute with security analysis
@@ -303,7 +303,7 @@ class TestDCSecurityAnalysis(unittest.TestCase):
         
         # compute with LODF
         gridmodel = self.env.backend._grid.copy()
-        gridmodel.change_solver(SolverType.DC)
+        gridmodel.change_solver(AlgorithmType.DC)
         res = gridmodel.dc_pf(1. * self.env.backend._debug_Vdc, 10, 1e-7)   
         lor_p, *_ = gridmodel.get_line_res1()
         tor_p, *_ = gridmodel.get_trafo_res1()

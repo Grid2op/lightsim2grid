@@ -7,7 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "GridModel.hpp"
-#include "ChooseSolver.hpp"  // to avoid circular references
+#include "AlgorithmSelector.hpp"  // to avoid circular references
 
 #include <queue>
 
@@ -59,8 +59,8 @@ GridModel::GridModel(const GridModel & other)
 
     // assign the right solver
     reset(true, true, true);
-    _solver.change_solver(other.get_solver_type());
-    _dc_solver.change_solver(other.get_dc_solver_type());
+    _algo.change_solver(other.get_algo_type());
+    _dc_algo.change_solver(other.get_dc_algo_type());
 }
 
 //pickle
@@ -96,8 +96,8 @@ GridModel::StateRes GridModel::get_state() const
                             res_sgen,
                             res_storage,
                             res_dc_line,
-                            get_solver_type(),
-                            get_dc_solver_type()
+                            get_algo_type(),
+                            get_dc_algo_type()
                             );
     return res;
 };
@@ -180,8 +180,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 
     // handle the solver
     reset(true, true, true);
-    _solver.change_solver(std::get<16>(my_state));
-    _dc_solver.change_solver(std::get<17>(my_state));
+    _algo.change_solver(std::get<16>(my_state));
+    _dc_algo.change_solver(std::get<17>(my_state));
 };
 
 void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
@@ -290,13 +290,13 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 
     // reset the solvers
     if (reset_solver){
-        _solver.reset();
-        _solver.set_gridmodel(this);
-        _solver.tell_solver_control(solver_control_);
+        _algo.reset();
+        _algo.set_gridmodel(this);
+        _algo.tell_solver_control(solver_control_);
 
-        _dc_solver.reset();
-        _dc_solver.set_gridmodel(this);
-        _dc_solver.tell_solver_control(solver_control_);
+        _dc_algo.reset();
+        _dc_algo.set_gridmodel(this);
+        _dc_algo.tell_solver_control(solver_control_);
     }
 }
 
@@ -331,7 +331,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                     solver_control_);
 
     // start the solver
-    conv = _solver.compute_pf(
+    conv = _algo.compute_pf(
         Ybus_ac_,
         V,
         acSbus_,
@@ -463,11 +463,11 @@ CplxVect GridModel::pre_process_solver(
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
     if(is_ac){
         if(solver_control.need_reset_solver()){   
-            _solver.reset();
+            _algo.reset();
         }
     } else {
         if(solver_control.need_reset_solver()){
-            _dc_solver.reset();
+            _dc_algo.reset();
         }
     }
 
@@ -567,8 +567,8 @@ CplxVect GridModel::pre_process_solver(
         slack_weights_ = generators_.get_slack_weights_solver(Ybus.rows(), id_me_to_solver); 
     }
 
-    if(is_ac) _solver.tell_solver_control(solver_control_);
-    else _dc_solver.tell_solver_control(solver_control_);
+    if(is_ac) _algo.tell_solver_control(solver_control_);
+    else _dc_algo.tell_solver_control(solver_control_);
     return V;
 }
 
@@ -605,7 +605,7 @@ void GridModel::process_results(bool conv,
             compute_results(ac);
         }
         // solver_control_.tell_none_changed();  // todo automatically set for ac / dc the `tell_none_changed()`
-        const CplxVect & res_tmp = ac ? _solver.get_V(): _dc_solver.get_V() ;
+        const CplxVect & res_tmp = ac ? _algo.get_V(): _dc_algo.get_V() ;
 
         // convert back the results to "big" vector
         res = _get_results_back_to_orig_nodes(res_tmp,
@@ -762,9 +762,9 @@ void GridModel::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
 
 void GridModel::compute_results(bool ac){
     // retrieve results from powerflow
-    const auto & Va = ac ? _solver.get_Va() : _dc_solver.get_Va();
-    const auto & Vm = ac ? _solver.get_Vm() : _dc_solver.get_Vm();
-    const auto & V = ac ? _solver.get_V() : _dc_solver.get_V();
+    const auto & Va = ac ? _algo.get_Va() : _dc_algo.get_Va();
+    const auto & Vm = ac ? _algo.get_Vm() : _dc_algo.get_Vm();
+    const auto & V = ac ? _algo.get_V() : _dc_algo.get_V();
 
     const SolverBusIdVect & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
     // for powerlines
@@ -860,7 +860,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                                     is_ac,
                                     solver_control_);
     // start the solver
-    conv = _dc_solver.compute_pf(
+    conv = _dc_algo.compute_pf(
         Ybus_dc_,
         V,
         dcSbus_,
@@ -880,7 +880,7 @@ RealMat GridModel::get_ptdf_solver(){
     if(Ybus_dc_.size() == 0){
         throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
-    const RealMat & PTDF_solver = _dc_solver.get_ptdf();
+    const RealMat & PTDF_solver = _dc_algo.get_ptdf();
     return PTDF_solver;
 }
 
@@ -921,7 +921,7 @@ RealMat GridModel::get_lodf(){
         SolverBusId t_solver_bus = id_me_to_dc_solver_[t_grid_bus.cast_int()];
         to_bus_solver[el_id] = t_solver_bus.cast_int();
     }
-    return _dc_solver.get_lodf(from_bus_solver, to_bus_solver);
+    return _dc_algo.get_lodf(from_bus_solver, to_bus_solver);
 }
 
 Eigen::SparseMatrix<real_type> GridModel::get_Bf_solver(){

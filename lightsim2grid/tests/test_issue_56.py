@@ -11,7 +11,7 @@ import warnings
 
 import numpy as np
 import grid2op
-from lightsim2grid import LightSimBackend, SolverType
+from lightsim2grid import LightSimBackend, AlgorithmType
 from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
 import pdb
 
@@ -28,14 +28,14 @@ class TestSADC_14(unittest.TestCase):
         res_p, res_a, res_v  = self.sa.get_flows()
         
         self.sa.clear()
-        self.sa.computer.change_solver(SolverType.DC)
+        self.sa.computer.change_solver(AlgorithmType.DC)
         self.sa.add_all_n1_contingencies()
         res_p_dc, res_a_dc, res_v_dc  = self.sa.get_flows()
         
         assert np.any(res_p != res_p_dc), "DC and AC solver leads to same results"
         assert np.any(res_a != res_a_dc), "DC and AC solver leads to same results"
         assert np.any(res_v != res_v_dc), "DC and AC solver leads to same results"
-        assert self.sa.computer.get_solver_type() == SolverType.DC
+        assert self.sa.computer.get_algo_type() == AlgorithmType.DC
         
         nb_bus = self.env.n_sub
         nb_powerline = len(self.env.backend._grid.get_lines())

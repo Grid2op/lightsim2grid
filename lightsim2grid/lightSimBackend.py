@@ -48,7 +48,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 
 LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
@@ -97,7 +97,7 @@ class LightSimBackend(Backend):
                  can_be_copied: bool=True,
                  max_iter: int=10,
                  tol: float=1e-8,
-                 solver_type: Optional[SolverType]=None,
+                 solver_type: Optional[AlgorithmType]=None,
                  turned_off_pv : bool=True,  # are gen turned off (or with p=0) contributing to voltage or not
                  dist_slack_non_renew: bool=False,  # distribute the slack on non renewable turned on (and with P>0) generators
                  use_static_gen: bool=False, # add the static generators as generator gri2dop side
@@ -118,7 +118,7 @@ class LightSimBackend(Backend):
         self.tol = tol  # tolerance for the solver
         
         self._check_suitable_solver_type(solver_type, check_in_avail_solver=False)
-        self.__current_solver_type = solver_type
+        self.__current_algo_type = solver_type
         
         #: does the "turned off" generators (including when p=0)
         #: are pv buses
@@ -509,7 +509,7 @@ class LightSimBackend(Backend):
                self.cst_1 * self.gen_theta, \
                self.cst_1 * self.storage_theta
 
-    def get_solver_types(self) -> Union[SolverType, SolverType]:
+    def get_algo_types(self) -> Union[AlgorithmType, AlgorithmType]:
         """Return the types of solver that are used in the form a tuple with 2 elements.
         
         The first one is the solver used for AC computation, the second one for DC computation (and also for
@@ -525,17 +525,17 @@ class LightSimBackend(Backend):
             
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
-            print(env.backend.get_solver_types())
-            # >>> (<SolverType.KLUSingleSlack: 7>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            print(env.backend.get_algo_types())
+            # >>> (<AlgorithmType.KLUSingleSlack: 7>, <AlgorithmType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
             
-            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.solver.SolverType.SparseLU))
-            print(env2.backend.get_solver_types())
-            # >>> (<SolverType.SparseLU: 0>, <SolverType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.solver.AlgorithmType.SparseLU))
+            print(env2.backend.get_algo_types())
+            # >>> (<AlgorithmType.SparseLU: 0>, <AlgorithmType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
             
         """
-        return self._grid.get_solver_type(), self._grid.get_dc_solver_type()
+        return self._grid.get_algo_type(), self._grid.get_dc_algo_type()
         
-    def set_solver_type(self, solver_type: SolverType) -> None:
+    def set_algo_type(self, solver_type: AlgorithmType) -> None:
         """
         Change the type of solver you want to use.
 
@@ -555,22 +555,22 @@ class LightSimBackend(Backend):
 
         Parameters
         ----------
-        solver_type: lightsim2grid.SolverType
+        solver_type: lightsim2grid.AlgorithmType
             The new type of solver you want to use. See backend.available_solvers for a list of available solver
             on your machine.
         """
         if solver_type is None:
             raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
         self._check_suitable_solver_type(solver_type)
-        self.__current_solver_type = copy.deepcopy(solver_type)
-        self._grid.change_solver(self.__current_solver_type)
+        self.__current_algo_type = copy.deepcopy(solver_type)
+        self._grid.change_solver(self.__current_algo_type)
 
     def _check_suitable_solver_type(self, solver_type, check_in_avail_solver=True):
         if solver_type is None:
             return
         
-        if not isinstance(solver_type, SolverType):
-            raise BackendError(f"The solver type must be from type \"lightsim2grid.SolverType\" and not "
+        if not isinstance(solver_type, AlgorithmType):
+            raise BackendError(f"The solver type must be from type \"lightsim2grid.AlgorithmType\" and not "
                                f"{type(solver_type)}")
             
         if check_in_avail_solver and solver_type not in self.available_solvers:
@@ -586,9 +586,9 @@ class LightSimBackend(Backend):
 
         Recommendation, for medium sized grid (**eg** based on the ieee 118):
 
-        - for SolverType.SparseLU: 10
-        - for SolverType.GaussSeidel: 10000
-        - for SolverType.SparseKLU: 10
+        - for AlgorithmType.SparseLU: 10
+        - for AlgorithmType.GaussSeidel: 10000
+        - for AlgorithmType.SparseKLU: 10
 
         Parameters
         ----------
@@ -649,18 +649,18 @@ class LightSimBackend(Backend):
         nb_slack_nonzero = (np.abs(slack_weights) > 1e-5).sum()
         has_single_slack = nb_slack_nonzero == 1
         if has_single_slack and not self._dist_slack_non_renew:
-            if SolverType.KLUSingleSlack in self.available_solvers:
+            if AlgorithmType.KLUSingleSlack in self.available_solvers:
                 # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLUSingleSlack)
+                self._grid.change_solver(AlgorithmType.KLUSingleSlack)
             else:
-                self._grid.change_solver(SolverType.SparseLUSingleSlack)
+                self._grid.change_solver(AlgorithmType.SparseLUSingleSlack)
         else:
             # grid has multiple slacks      
-            if SolverType.KLU in self.available_solvers:
+            if AlgorithmType.KLU in self.available_solvers:
                 # use the faster KLU if available
-                self._grid.change_solver(SolverType.KLU)
+                self._grid.change_solver(AlgorithmType.KLU)
             else:
-                self._grid.change_solver(SolverType.SparseLU)
+                self._grid.change_solver(AlgorithmType.SparseLU)
     
     def _aux_set_correct_detach_flags_d_allowed(self):
         # user allowed detachment, I check the correct flags
@@ -1017,21 +1017,21 @@ class LightSimBackend(Backend):
         self._handle_turnedoff_pv()
             
         self.available_solvers = self._grid.available_solvers()
-        if self.__current_solver_type is None:
+        if self.__current_algo_type is None:
             # previous default behaviour (< 0.7)
             # by default it builds the backend with the fastest solver
             # automatically found
             self._assign_right_solver()
             
-            if SolverType.KLUDC in self.available_solvers:
+            if AlgorithmType.KLUDC in self.available_solvers:
                 # use the faster KLU if available even for DC approximation
-                self._grid.change_solver(SolverType.KLUDC)
+                self._grid.change_solver(AlgorithmType.KLUDC)
                 
-            self.__current_solver_type = copy.deepcopy(self._grid.get_solver_type())
+            self.__current_algo_type = copy.deepcopy(self._grid.get_algo_type())
         else:
             # check that the solver type provided is installed with lightsim2grid
-            self._check_suitable_solver_type(self.__current_solver_type)
-            self._grid.change_solver(self.__current_solver_type)
+            self._check_suitable_solver_type(self.__current_algo_type)
+            self._grid.change_solver(self.__current_algo_type)
                     
         # handle multiple busbar per substations
         if hasattr(type(self), "can_handle_more_than_2_busbar") and self._orig_grid_pypowsybl is None:
@@ -1744,7 +1744,7 @@ class LightSimBackend(Backend):
                 my_exc_ = BackendError(f"Converted the error of type {type(my_exc_)}, message was: {my_exc_}")
             if is_dc:
                 # set back the solver to its previous state
-                self._grid.change_solver(self.__current_solver_type)
+                self._grid.change_solver(self.__current_algo_type)
             self._grid.tell_solver_need_reset()
             self._grid.reactivate_result_computation()
             if self._automatically_disconnect:
@@ -1892,7 +1892,7 @@ class LightSimBackend(Backend):
         # in particular with "new" attributes in future grid2op Backend
         res._aux_init_super(self.detailed_infos_for_cascading_failures,
                             self._can_be_copied,
-                            self.__current_solver_type,
+                            self.__current_algo_type,
                             self.max_it,
                             self.tol,
                             self._turned_off_pv,
@@ -1915,7 +1915,7 @@ class LightSimBackend(Backend):
 
         # copy the regular attribute
         res.__has_storage = self.__has_storage
-        res.__current_solver_type = self.__current_solver_type  # forced here because of special `__`
+        res.__current_algo_type = self.__current_algo_type  # forced here because of special `__`
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -2061,8 +2061,8 @@ class LightSimBackend(Backend):
         self.topo_vect[self.line_or_pos_topo_vect[id_]] = -1
         self.topo_vect.flags.writeable = False
 
-    def get_current_solver_type(self) -> SolverType:
-        return self.__current_solver_type
+    def get_current_algo_type(self) -> AlgorithmType:
+        return self.__current_algo_type
 
     def reset(self,
               path : Union[os.PathLike, str],
@@ -2070,7 +2070,7 @@ class LightSimBackend(Backend):
         self._reset_res_pointers()
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
-        self._grid.change_solver(self.__current_solver_type)
+        self._grid.change_solver(self.__current_algo_type)
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.

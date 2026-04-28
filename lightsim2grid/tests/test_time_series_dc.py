@@ -14,7 +14,7 @@ import pdb
 
 import numpy as np
 import grid2op
-from lightsim2grid import LightSimBackend, SolverType
+from lightsim2grid import LightSimBackend, AlgorithmType
 from lightsim2grid.timeSerie import TimeSerie
 
 
@@ -40,15 +40,15 @@ class TestTSDC_14(unittest.TestCase):
         """test results when computing with AC or with DC are different"""
         V_init = 1.0 * np.abs(self.env.backend.V) + 0j
         
-        self.ts.computer.change_solver(SolverType.SparseLUSingleSlack)
+        self.ts.computer.change_solver(AlgorithmType.SparseLUSingleSlack)
         self.ts.clear()
         res_p, res_a, res_v = self.ts.get_flows(scenario_id=self.scenario_id,
                                                 seed=self.seed,
                                                 v_init=V_init)
         assert np.any(np.abs(res_p) > 1e-5), "all flows are 0. for time series in AC, this should not be the case"
-        assert self.ts.computer.get_solver_type() == SolverType.SparseLUSingleSlack
+        assert self.ts.computer.get_algo_type() == AlgorithmType.SparseLUSingleSlack
         self.ts.clear()
-        self.ts.computer.change_solver(SolverType.DC)
+        self.ts.computer.change_solver(AlgorithmType.DC)
         print("========================================")
         print("HERE HERE HERE")
         res_p_dc, res_a_dc, res_v_dc  = self.ts.get_flows(scenario_id=self.scenario_id,
@@ -56,7 +56,7 @@ class TestTSDC_14(unittest.TestCase):
                                                           v_init=V_init)
         print("END=====================================")
         assert np.any(np.abs(res_p) > 1e-5), "all flows are 0. for time series in DC, this should not be the case"
-        assert self.ts.computer.get_solver_type() == SolverType.DC
+        assert self.ts.computer.get_algo_type() == AlgorithmType.DC
         assert (np.abs(res_p - res_p_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for p"
         assert (np.abs(res_a - res_a_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for a"
         assert (np.abs(res_v - res_v_dc) > 1e-5).any(), "There should be some differences between AC and DC computation for v"

@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef SOLVER_REGISTRY_H
-#define SOLVER_REGISTRY_H
+#ifndef ALGORITHM_REGISTRY_H
+#define ALGORITHM_REGISTRY_H
 
 #include <functional>
 #include <memory>
@@ -20,11 +20,11 @@
 
 namespace ls2g {
 
-class LS2G_API SolverRegistry {
+class LS2G_API AlgorithmRegistry {
 public:
     using Factory = std::function<std::unique_ptr<BaseAlgo>()>;
 
-    static SolverRegistry& instance();
+    static AlgorithmRegistry& instance();
 
     void register_solver(const std::string& name, Factory f);
     std::unique_ptr<BaseAlgo> make(const std::string& name) const;
@@ -32,21 +32,21 @@ public:
     std::vector<std::string> available_solvers() const;
 
 private:
-    SolverRegistry() = default;
+    AlgorithmRegistry() = default;
     std::unordered_map<std::string, Factory> _factories;
 };
 
 // Helper for plugins: declare a static instance of this class in an anonymous
 // namespace inside one translation unit to register a solver at load time.
 // No macro needed — the static constructor fires when the .so is dlopen'd.
-class LS2G_API SolverRegistrar {
+class LS2G_API AlgorithmRegistrar {
 public:
-    SolverRegistrar(const std::string& name, SolverRegistry::Factory f) {
-        SolverRegistry::instance().register_solver(name, std::move(f));
+    AlgorithmRegistrar(const std::string& name, AlgorithmRegistry::Factory f) {
+        AlgorithmRegistry::instance().register_solver(name, std::move(f));
     }
 };
 
 
 } // namespace ls2g
 
-#endif // SOLVER_REGISTRY_H
+#endif // ALGORITHM_REGISTRY_H

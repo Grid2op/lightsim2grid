@@ -62,7 +62,7 @@ struct LS2G_API DocSolver
     static const std::string GaussSeidelSynchSolver;
 
     // function to select the solver
-    static const std::string AnySolver;
+    static const std::string AlgorithmSelector;
     static const std::string get_type;
     static const std::string chooseSolver_get_J_python;
     static const std::string get_computation_time;
@@ -182,10 +182,10 @@ struct LS2G_API DocGridModel
     static const std::string available_solvers;
     static const std::string get_computation_time;
     static const std::string get_dc_computation_time;
-    static const std::string get_solver_type;
-    static const std::string get_dc_solver_type;
-    static const std::string get_solver;
-    static const std::string get_dc_solver;
+    static const std::string get_algo_type;
+    static const std::string get_dc_algo_type;
+    static const std::string get_algo;
+    static const std::string get_dc_algo;
 
     // accessor
     static const std::string get_lines;
