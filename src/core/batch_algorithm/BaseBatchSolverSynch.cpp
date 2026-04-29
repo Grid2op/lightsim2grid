@@ -25,7 +25,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     double tol
 )
 {
-    _algo.tell_solver_control(_solver_control);
+    _algo.tell_solver_control(_algo_controler);
     bool conv = _algo.compute_pf(
         Ybus,
         V,

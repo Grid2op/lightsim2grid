@@ -1800,7 +1800,7 @@ const std::string DocGridModel::GridModel = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocGridModel::change_solver =  R"mydelimiter(
+const std::string DocGridModel::change_algorithm =  R"mydelimiter(
     This function allows to control which solver is used during the powerflow. See the section :ref:`available-powerflow-solvers` for 
     more information about them.
 
@@ -1824,16 +1824,25 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
 
         # change the solver used for the powerflow
         # to use internally a solver based on Newton Raphson algorithme using Eigen sparse LU
-        lightsim_grid_model.change_solver(AlgorithmType.NR_SparseLU)  
+        lightsim_grid_model.change_algorithm(AlgorithmType.NR_SparseLU)  
 
 )mydelimiter";
 
-const std::string DocGridModel::available_solvers =  R"mydelimiter(
-    Return the list of solver available on the current lightsim2grid installation.
+const std::string DocGridModel::available_default_algorithms =  R"mydelimiter(
+    Return the list of the names of the algorithm available on the current lightsim2grid installation.
 
-    This is a list of :attr:`lightsim2grid.solver.AlgorithmType`.
+    This is a list of :attr:`lightsim2grid.algorithm.AlgorithmType`.
 
 )mydelimiter";
+
+
+const std::string DocGridModel::available_algorithm_names =  R"mydelimiter(
+    Return the list of the names of the algorithm available on the current lightsim2grid installation.
+
+    This is a list of string.
+
+)mydelimiter";
+
 const std::string DocGridModel::get_computation_time = R"mydelimiter(
     Return the total computation time (in second) spend in the solver when performing a powerflow.
 

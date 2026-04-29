@@ -259,7 +259,7 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, SolverControl & solver_control)
+void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, AlgoControl & solver_control)
 {
     if (abs(target_p_mw_(gen_id) - new_p) > _tol_equal_float) {
         solver_control.tell_recompute_sbus();
@@ -282,7 +282,7 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, 
     }
 }
 
-bool GeneratorContainer::_deactivate(int el_id, SolverControl & solver_control) {
+bool GeneratorContainer::_deactivate(int el_id, AlgoControl & solver_control) {
     if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
     solver_control.tell_recompute_sbus();
     if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
@@ -291,7 +291,7 @@ bool GeneratorContainer::_deactivate(int el_id, SolverControl & solver_control) 
     return true;
 };
 
-bool GeneratorContainer::_reactivate(int el_id, SolverControl & solver_control) {
+bool GeneratorContainer::_reactivate(int el_id, AlgoControl & solver_control) {
     if(status_[el_id]) return false;  // nothing to do if gen already connected
     solver_control.tell_recompute_sbus();
     if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
@@ -300,7 +300,7 @@ bool GeneratorContainer::_reactivate(int el_id, SolverControl & solver_control) 
     return true;
 };
 
-void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl & solver_control)
+void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, AlgoControl & solver_control)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
@@ -315,7 +315,7 @@ void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, SolverControl 
     change_v_nothrow(gen_id, new_v_pu, solver_control);
 }
 
-void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, SolverControl & solver_control)
+void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, AlgoControl & solver_control)
 {
     [[maybe_unused]] bool my_status = status_.at(gen_id); // and this check that gen_id is not out of bound [[maybe_unused]] 
     if (abs(target_vm_pu_(gen_id) - new_v_pu) > _tol_equal_float)
@@ -325,7 +325,7 @@ void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, Solver
     }
 }
 
-bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus) {
     if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
     solver_control.tell_recompute_sbus();
     solver_control.tell_one_el_changed_bus();
@@ -497,7 +497,7 @@ void GeneratorContainer::set_q(
 
 void GeneratorContainer::update_slack_weights(
     Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-    SolverControl & solver_control)
+    AlgoControl & solver_control)
 {
     const int nb_gen = nb();
     std::vector<int> gen_slack_id;
@@ -513,7 +513,7 @@ void GeneratorContainer::update_slack_weights(
 
 void GeneratorContainer::update_slack_weights_by_id(
     Eigen::Ref<const IntVect> gen_slack_id,
-    SolverControl & solver_control)
+    AlgoControl & solver_control)
 {
     // TODO speed: the solver_control will always tell that the slacks changed
     // even if it's not the case.

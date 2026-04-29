@@ -35,7 +35,7 @@ from grid2op.Parameters import Parameters
 from grid2op.dtypes import dt_float
 
 import lightsim2grid
-from lightsim2grid import solver
+from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid import LightSimBackend, TimeSerie
 try:
     from lightsim2grid import ContingencyAnalysis
@@ -52,6 +52,7 @@ except ImportError:
     
 try:
     from pypowsybl2grid import PyPowSyBlBackend
+    PyPowSyBlBackend.shunts_data_available = False
     PYPOW_ERROR = None
 except ImportError as exc_:
     PYPOW_ERROR = exc_
@@ -62,20 +63,20 @@ ENV_NAME = "rte_case14_realistic"
 DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
-solver_names = {lightsim2grid.SolverType.DC: "DC",
-                lightsim2grid.SolverType.KLUDC: "DC (KLU)",
-                lightsim2grid.SolverType.NICSLUDC: "DC (NICSLU *)",
-                lightsim2grid.SolverType.CKTSODC: "DC (CKTSO *)"
+solver_names = {AlgorithmType.DC_SparseLU: "DC (SparseLU)",
+                AlgorithmType.DC_KLU: "DC (KLU)",
+                AlgorithmType.DC_NICSLU: "DC (NICSLU *)",
+                AlgorithmType.DC_CKTSO: "DC (CKTSO *)"
                 }
 solver_gs = {}
 solver_fdpf = {}
 res_times = {}
 
 order_solver_print = [
-    lightsim2grid.SolverType.DC,
-    lightsim2grid.SolverType.KLUDC,
-    lightsim2grid.SolverType.NICSLUDC,
-    lightsim2grid.SolverType.CKTSODC,
+    AlgorithmType.DC_SparseLU,
+    AlgorithmType.DC_KLU,
+    AlgorithmType.DC_NICSLU,
+    AlgorithmType.DC_CKTSO,
     
 ]
 
@@ -101,8 +102,9 @@ def main(max_ts,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             if pypow_error is None:
                 try:
+                    bk = PyPowSyBlBackend()
                     env_pypow = make(env_name_input, param=param, test=test,
-                                    backend=PyPowSyBlBackend(),
+                                    backend=bk,
                                     data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
                 except Grid2OpException as exc_:
                     pypow_error = exc_
@@ -118,14 +120,14 @@ def main(max_ts,
                                 grid_path=env_name_input)
             if pypow_error is None:
                 try:
+                    bk = PyPowSyBlBackend()
                     env_pypow = make("blank", param=param, test=True,
                                     data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                     grid_path=env_name_input,
-                                    backend=PyPowSyBlBackend())
+                                    backend=bk)
                 except Grid2OpException as exc_:
                     pypow_error = exc_
             _, env_name_input = os.path.split(env_name_input)
-
     agent = DoNothingAgent(action_space=env_pp.action_space)
     if no_pp is False:
         print("Start using Pandapower")
@@ -153,10 +155,10 @@ def main(max_ts,
         if solver_type in solver_gs:
             # gauss seidel sovler => more iterations
             env_lightsim.backend.set_solver_max_iter(10000)
-            if lightsim2grid.SolverType.GaussSeidel == solver_type and no_gs:
+            if AlgorithmType.GaussSeidel == solver_type and no_gs:
                 # I don't study the gauss seidel solver
                 continue
-            elif lightsim2grid.SolverType.GaussSeidelSynch  == solver_type and no_gs_synch:
+            elif AlgorithmType.GaussSeidelSynch  == solver_type and no_gs_synch:
                 # I don't study the gauss seidel synch solver
                 continue
         elif solver_type in solver_fdpf:
@@ -186,7 +188,7 @@ def main(max_ts,
     prod_p = 1. * real_env_ls.chronics_handler.real_data.data.prod_p[:nb_ts_gs]
     time_serie = TimeSerie(real_env_ls)
     computer_ts = time_serie.computer
-    computer_ts.change_solver(lightsim2grid.SolverType.KLUDC)
+    computer_ts.change_algorithm(AlgorithmType.DC_KLU)
     v_init = real_env_ls.backend.V
     status = computer_ts.compute_Vs(prod_p,
                                     np.zeros((nb_ts_gs, 0), dtype=dt_float),
@@ -225,7 +227,7 @@ def main(max_ts,
     real_env_ls.reset()
     sa = ContingencyAnalysis(real_env_ls)
     computer_sa = sa.computer
-    computer_sa.change_solver(lightsim2grid.SolverType.KLUDC)
+    computer_sa.change_algorithm(AlgorithmType.DC_KLU)
     for i in range(real_env_ls.n_line):
         sa.add_single_contingency(i)
         if i >= 1000:

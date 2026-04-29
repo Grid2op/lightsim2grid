@@ -13,7 +13,7 @@
 // Python usage (from examples/external_solver/):
 //   import lightsim2grid
 //   lightsim2grid.load_solver_plugin("build/libdummy_solver.so")
-//   grid.change_solver("DummyExternal")
+//   grid.change_algo("DummyExternal")
 
 #include <AlgorithmRegistry.hpp>
 #include <powerflow_algorithm/BaseAlgo.hpp>

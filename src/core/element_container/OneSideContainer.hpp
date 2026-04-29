@@ -195,7 +195,7 @@ class OneSideContainer : public GenericContainer
 
         virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
             const int nb_el = nb();
-            SolverControl unused_solver_control;
+            AlgoControl unused_solver_control;
             for(int el_id = 0; el_id < nb_el; ++el_id)
             {
                 if(!status_[el_id]) continue;
@@ -206,12 +206,12 @@ class OneSideContainer : public GenericContainer
             }    
         }
 
-        virtual bool deactivate(int el_id, SolverControl & solver_control) final {
+        virtual bool deactivate(int el_id, AlgoControl & solver_control) final {
             bool res = this->_deactivate(el_id, solver_control);
             _generic_deactivate(el_id, status_);
             return res;
         }
-        virtual bool reactivate(int el_id, SolverControl & solver_control) final {
+        virtual bool reactivate(int el_id, AlgoControl & solver_control) final {
             bool res = this->_reactivate(el_id, solver_control);
             _generic_reactivate(el_id, status_);
             return res;
@@ -226,7 +226,7 @@ class OneSideContainer : public GenericContainer
         virtual bool change_bus(
             int load_id,
             GridModelBusId new_gridmodel_bus_id,
-            SolverControl & solver_control,
+            AlgoControl & solver_control,
             const SubstationContainer & substation) final {
                 bool res = this->_change_bus(load_id, new_gridmodel_bus_id, solver_control, substation.nb_bus());
                 _generic_change_bus(load_id, new_gridmodel_bus_id, bus_id_, solver_control, substation.nb_bus());
@@ -269,7 +269,7 @@ class OneSideContainer : public GenericContainer
         virtual std::vector<bool> update_topo(
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
-            SolverControl & solver_control,
+            AlgoControl & solver_control,
             SubstationContainer & substations
         ) final
         {
@@ -433,25 +433,25 @@ class OneSideContainer : public GenericContainer
                                       bool ac) {
                                         // nothing to do by default
                                       };
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _deactivate(int el_id, AlgoControl & solver_control) {
             // nothing do to by default
             if(status_[el_id]) return true;
             return false;
         };
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) {
+        virtual bool _reactivate(int el_id, AlgoControl & solver_control) {
             // nothing to do by default
             if(!status_[el_id]) return false;
             return true;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus) {
             // nothing to do by default
             if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
             return true;
         };
-        virtual void _change_p(int el_id, real_type new_p, bool my_status, SolverControl & solver_control) {
+        virtual void _change_p(int el_id, real_type new_p, bool my_status, AlgoControl & solver_control) {
             // nothing to do by default
             };
-        virtual void _change_q(int el_id, real_type new_p, bool my_status,SolverControl & solver_control) {
+        virtual void _change_q(int el_id, real_type new_p, bool my_status,AlgoControl & solver_control) {
             // nothing to do by default
         };
 

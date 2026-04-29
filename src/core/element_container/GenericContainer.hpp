@@ -178,7 +178,7 @@ class LS2G_API GenericContainer : public BaseConstants
             int el_id,
             const GridModelBusId & new_gridmodel_bus_id,
             GlobalBusIdVect &  el_bus_ids,
-            SolverControl & solver_control,
+            AlgoControl & solver_control,
             int nb_bus) const;
         GridModelBusId _get_bus(int el_id, const std::vector<bool> & status_, const GlobalBusIdVect & bus_id_) const;
 

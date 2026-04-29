@@ -47,6 +47,15 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   This includes the "lightsim2grid.solver" which is not "lightsim2grid.algorithm"
   and most of cpp side names. Old python names should still be usable but will be 
   deprecated in future releases. See documentation for an exhaustive migration guide.
+- [DEPRECATION PENDING] the "solver_control" (cpp side and python side) is 
+  renamed "algo_controler" and should be accessed with "get_algo_controler()". 
+  The old "gridmodel.get_solver_control()" is still accessible for backward 
+  compatibility.
+- [DEPRECATION PENDING] lightsim_backend.available_solvers() should be replaced with
+  lightsim_backend.available_algorithms(). "available_solvers" is still present for 
+  backward compatibility.
+- [FIXED] an issue preventing to use the `init_from_n_powerflow` attribute of `TimeSeries`
+- [FIXED] a warning when compiling lightsim2grid_core (redefinition of some classes)
 - [ADDED] Refactored `ChooseAlgorithm` (used to be ChooseSolver) to a plugin-friendly
  `AlgorithmRegistry` (see doc)
 - [ADDED] installing the python package now also comes with the lightsim2grid_core 

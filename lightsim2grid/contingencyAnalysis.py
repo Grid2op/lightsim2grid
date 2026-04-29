@@ -108,10 +108,10 @@ class __ContingencyAnalysis(object):
         self._ampss = None
         self._mws = None
 
-        self.available_solvers = self.computer.available_solvers()
-        if AlgorithmType.KLU in self.available_solvers:
+        self.available_default_algorithms = self.computer.available_default_algorithms()
+        if AlgorithmType.NR_KLU in self.available_default_algorithms:
             # use the faster KLU if available
-            self.computer.change_solver(AlgorithmType.KLU)
+            self.computer.change_algorithm(AlgorithmType.NR_KLU)
 
     @property
     def all_contingencies(self):
@@ -127,7 +127,7 @@ class __ContingencyAnalysis(object):
         return self.computer.init_from_n_powerflow
     
     @init_from_n_powerflow.setter
-    def init_from_n_powerflow(self, val):
+    def init_from_n_powerflow(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
         self.computer.init_from_n_powerflow = bool(val)

@@ -33,18 +33,18 @@ void bind_misc(py::module_& m) {
         .def_readwrite("real_params", &AlgoConfig::real_params,
             "Real parameters: [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]");
 
-    py::class_<SolverControl>(m, "SolverControl", "TODO")
+    py::class_<AlgoControl>(m, "AlgoControl", "TODO")
         .def(py::init<>())
-        .def("has_dimension_changed", &SolverControl::has_dimension_changed, "TODO")
-        .def("has_pv_changed", &SolverControl::has_pv_changed, "TODO")
-        .def("has_pq_changed", &SolverControl::has_pq_changed, "TODO")
-        .def("has_slack_participate_changed", &SolverControl::has_slack_participate_changed, "TODO")
-        .def("need_reset_solver", &SolverControl::need_reset_solver, "TODO")
-        .def("need_recompute_sbus", &SolverControl::need_recompute_sbus, "TODO")
-        .def("need_recompute_ybus", &SolverControl::need_recompute_ybus, "TODO")
-        .def("ybus_change_sparsity_pattern", &SolverControl::ybus_change_sparsity_pattern, "TODO")
-        .def("has_slack_weight_changed", &SolverControl::has_slack_weight_changed, "TODO")
-        .def("has_v_changed", &SolverControl::has_v_changed, "TODO")
-        .def("has_ybus_some_coeffs_zero", &SolverControl::has_ybus_some_coeffs_zero, "TODO")
-        .def("has_one_el_changed_bus", &SolverControl::has_one_el_changed_bus, "TODO");
+        .def("has_dimension_changed", &AlgoControl::has_dimension_changed, "TODO")
+        .def("has_pv_changed", &AlgoControl::has_pv_changed, "TODO")
+        .def("has_pq_changed", &AlgoControl::has_pq_changed, "TODO")
+        .def("has_slack_participate_changed", &AlgoControl::has_slack_participate_changed, "TODO")
+        .def("need_reset_solver", &AlgoControl::need_reset_solver, "TODO")
+        .def("need_recompute_sbus", &AlgoControl::need_recompute_sbus, "TODO")
+        .def("need_recompute_ybus", &AlgoControl::need_recompute_ybus, "TODO")
+        .def("ybus_change_sparsity_pattern", &AlgoControl::ybus_change_sparsity_pattern, "TODO")
+        .def("has_slack_weight_changed", &AlgoControl::has_slack_weight_changed, "TODO")
+        .def("has_v_changed", &AlgoControl::has_v_changed, "TODO")
+        .def("has_ybus_some_coeffs_zero", &AlgoControl::has_ybus_some_coeffs_zero, "TODO")
+        .def("has_one_el_changed_bus", &AlgoControl::has_one_el_changed_bus, "TODO");
 }

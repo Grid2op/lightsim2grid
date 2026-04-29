@@ -122,7 +122,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             // elements
             };
 
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
+        virtual bool _deactivate(int el_id, AlgoControl & solver_control) override {
             if(status_[el_id]){
                 solver_control.tell_ybus_some_coeffs_zero();
                 solver_control.tell_recompute_ybus();
@@ -132,7 +132,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             }
             return false;
         };
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
+        virtual bool _reactivate(int el_id, AlgoControl & solver_control) override {
             if(!status_[el_id]){
                 solver_control.tell_recompute_ybus();
                 solver_control.tell_recompute_sbus();  // only for trafo in DC
@@ -142,7 +142,7 @@ class OneSideContainer_ForBranch : public OneSideContainer
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, SolverControl & solver_control, int nb_bus) override {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus) override {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {

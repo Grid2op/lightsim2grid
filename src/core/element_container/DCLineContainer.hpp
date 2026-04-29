@@ -51,7 +51,7 @@ class LS2G_API DCLineContainer final : public TwoSidesContainer<GeneratorContain
 
         // underlying generators are not pv when powerline is off
         DCLineContainer() noexcept {
-            SolverControl solver_control_not_used;
+            AlgoControl solver_control_not_used;
             side_1_.turnedoff_no_pv(solver_control_not_used);
             side_2_.turnedoff_no_pv(solver_control_not_used);
         };
@@ -104,15 +104,15 @@ class LS2G_API DCLineContainer final : public TwoSidesContainer<GeneratorContain
                                 ;
             return new_p_ext;
         }
-        void change_p(int dcline_id, real_type new_p, SolverControl & sovler_control){
+        void change_p(int dcline_id, real_type new_p, AlgoControl & sovler_control){
             side_1_.change_p(dcline_id, -1.0 * new_p, sovler_control);
 
             side_2_.change_p(dcline_id, -1.0 * get_to_mw(dcline_id, new_p), sovler_control);
         }
-        void change_v_side_1(int dcline_id, real_type new_v_pu, SolverControl & sovler_control){
+        void change_v_side_1(int dcline_id, real_type new_v_pu, AlgoControl & sovler_control){
             side_1_.change_v(dcline_id, new_v_pu, sovler_control);
         }
-        void change_v_side_2(int dcline_id, real_type new_v_pu, SolverControl & sovler_control){
+        void change_v_side_2(int dcline_id, real_type new_v_pu, AlgoControl & sovler_control){
             side_2_.change_v(dcline_id, new_v_pu, sovler_control);
         }
 

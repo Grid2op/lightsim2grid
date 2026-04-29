@@ -78,7 +78,7 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     int step_diverge = -1;
     const real_type tol_ = tol / sn_mva; 
     bool conv;
-    if(!ac_solver_used) _solver_control.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
+    if(!ac_solver_used) _algo_controler.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
     for(size_t i = 0; i < nb_steps; ++i){
         conv = false;
         conv = compute_one_powerflow(Ybus_,
@@ -91,8 +91,8 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
                                      max_iter,
                                      tol_);
         // nothing changes
-        _solver_control.tell_none_changed(); 
-        if(!ac_solver_used) _solver_control.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
+        _algo_controler.tell_none_changed(); 
+        if(!ac_solver_used) _algo_controler.tell_recompute_sbus(); // we need to recompute Sbus (DC case)
         if(!conv){
             _timer_total = timer.duration();
             step_diverge = i;

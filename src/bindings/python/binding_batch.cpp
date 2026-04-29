@@ -17,16 +17,17 @@ void bind_batch(py::module_& m) {
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
         .def(py::init<const GridModel &>())
         .def_property("init_from_n_powerflow",
-                      &ContingencyAnalysis::get_init_from_n_powerflow,
-                      &ContingencyAnalysis::set_init_from_n_powerflow,
+                      [](const TimeSeries & self){ return self.get_init_from_n_powerflow(); },
+                      [](TimeSeries & self, bool val){ self.set_init_from_n_powerflow(val); },
                       R"mydelim(Whether to initialize the complex voltages of "
                       "the first time series with the results of a n-powerflow "
                       "(*ie* a powerflow at the start the simulation) or not. "
                       "Default: false)mydelim")
 
         // solver control
-        .def("change_solver", &TimeSeries::change_solver, DocGridModel::change_solver.c_str())
-        .def("available_solvers", &TimeSeries::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("change_algorithm", &TimeSeries::change_algorithm, DocGridModel::change_algorithm.c_str())
+        .def("change_solver", &TimeSeries::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
+        .def("available_default_algorithms", &TimeSeries::available_default_algorithms, DocGridModel::available_default_algorithms.c_str())
         .def("get_algo_type", &TimeSeries::get_algo_type, DocGridModel::get_algo_type.c_str())
 
         // timers
@@ -55,8 +56,8 @@ void bind_batch(py::module_& m) {
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
         .def(py::init<const GridModel &>())
         .def_property("init_from_n_powerflow",
-                      &ContingencyAnalysis::get_init_from_n_powerflow,
-                      &ContingencyAnalysis::set_init_from_n_powerflow,
+                      [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },
                       R"mydelim(Whether to initialize the complex voltages of "
                       "each contingencies with the results of a n-powerflow "
                       "(*ie* a powerflow without any line disconnection) or not. "
@@ -64,8 +65,9 @@ void bind_batch(py::module_& m) {
                       "with the given input vector)mydelim")
 
         // solver control
-        .def("change_solver", &ContingencyAnalysis::change_solver, DocGridModel::change_solver.c_str())
-        .def("available_solvers", &ContingencyAnalysis::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocGridModel::change_algorithm.c_str())
+        .def("change_solver", &ContingencyAnalysis::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
+        .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocGridModel::available_algorithm_names.c_str())
         .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocGridModel::get_algo_type.c_str())
 
         // add contingencies
