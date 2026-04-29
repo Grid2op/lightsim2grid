@@ -39,7 +39,7 @@ def find_plugin():
 # Load the plugin
 # ------------------------------------------------------------------
 plugin_path = find_plugin()
-lightsim2grid.load_solver_plugin(plugin_path)
+lightsim2grid.load_algorithm_plugin(plugin_path)
 print("Plugin loaded successfully.")
 
 # ------------------------------------------------------------------

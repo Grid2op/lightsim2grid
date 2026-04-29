@@ -1,12 +1,12 @@
 .. _solver_plugin:
 
-External Solver Plugins
-=======================
+External Amgorithm Plugins
+===========================
 
-LightSim2grid supports dynamically-loaded solver plugins.  A plugin is a
+LightSim2grid supports dynamically-loaded algorithm plugins.  A plugin is a
 shared library (``.so`` / ``.dll``) that registers one or more custom
-powerflow solvers at load time.  Once loaded, those solvers behave exactly
-like the built-in ones: they are accessible by name, selectable via
+"powerflow solvers" at load time.  Once loaded, those solvers / algorithms
+behave exactly like the built-in ones: they are accessible by name, selectable via
 :func:`GridModel.change_algorithm`, and appear in
 :func:`GridModel.available_algorithm_names`.
 
@@ -18,8 +18,10 @@ How the registry works
 -----------------------
 
 All solvers are stored in a process-wide singleton called
-``SolverRegistry``.  On startup the built-in solvers (SparseLU, KLU,
-GaussSeidel, DC, …) are registered.  A plugin library extends this table at
+``AlgorithmRegistry``.  On startup the built-in algorithm (NR_SparseLU, NR_KLU,
+GaussSeidel, DC_KLU, …) are registered.  
+
+A plugin library extends this table at
 ``dlopen``/``LoadLibrary`` time by placing a static ``SolverRegistrar``
 object in one of its translation units.  The registrar's constructor fires
 automatically when the library is mapped into the process, calling
@@ -30,7 +32,7 @@ The lookup flow is:
 
 .. code-block:: text
 
-    Python: lightsim2grid.load_solver_plugin("path/to/plugin.so")
+    Python: lightsim2grid.load_algorithm_plugin("path/to/plugin.so")
       └─ ctypes.CDLL(..., RTLD_GLOBAL)          # dlopen fires static ctors
            └─ SolverRegistrar { "MySolver", factory }
                 └─ SolverRegistry::instance().register_solver(...)
@@ -40,14 +42,14 @@ The lookup flow is:
            └─ SolverRegistry::instance().make("MySolver")
                 └─ factory()  →  unique_ptr<BaseAlgo>
 
-The ``SolverRegistry`` C++ API (defined in ``SolverRegistry.hpp``, installed to ``include/lightsim2grid/``):
+The ``AlgorithmRegistry`` C++ API (defined in ``AlgorithmRegistry.hpp``, installed to ``include/lightsim2grid/``):
 
 .. code-block:: cpp
 
-    class SolverRegistry {
+    class AlgorithmRegistry {
     public:
         // Meyers singleton — one instance per process.
-        static SolverRegistry& instance();
+        static AlgorithmRegistry& instance();
 
         // Register a factory under a name.  Called by SolverRegistrar.
         void register_solver(const std::string& name, Factory f);
@@ -64,9 +66,9 @@ The ``SolverRegistry`` C++ API (defined in ``SolverRegistry.hpp``, installed to 
 
     // Drop a static instance of this in an anonymous namespace to
     // register your solver when the .so is loaded — no macro needed.
-    class SolverRegistrar {
+    class AlgorithmRegistrar {
     public:
-        SolverRegistrar(const std::string& name, SolverRegistry::Factory f);
+        AlgorithmRegistrar(const std::string& name, SolverRegistry::Factory f);
     };
 
 
@@ -141,10 +143,10 @@ error code on failure).
 
     virtual void set_gridmodel(const GridModel* gridmodel);
 
-Called by ``ChooseSolver`` after the solver is activated (and again after
-every ``change_solver`` call).  The default implementation stores the
+Called by ``ChooseAlgorithm`` after the solver is activated (and again after
+every ``change_algorithm`` call).  The default implementation stores the
 pointer in the protected member ``gridmodel_ptr_``.  Override only if your
-solver needs to cache additional data derived from the grid topology.
+algorithm / solver needs to cache additional data derived from the grid topology.
 
 ``reset`` *(virtual — override if you carry extra state)*
 
@@ -157,7 +159,7 @@ The base implementation clears all result vectors and resets timers.
 Call ``BaseAlgo::reset()`` from your override if you want that baseline
 behaviour, then clear your own state.
 
-``get_J`` *(virtual — override only for Newton-Raphson solvers)*
+``get_J`` *(virtual — override only for Newton-Raphson algorithms)*
 
 .. code-block:: cpp
 
@@ -206,7 +208,7 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
 .. code-block:: cpp
 
     // my_solver_plugin.cpp
-    #include <SolverRegistry.hpp>
+    #include <AlgorithmRegistry.hpp>
     #include <powerflow_algorithm/BaseAlgo.hpp>
 
     class MySolver : public ls2g::BaseAlgo {
@@ -239,7 +241,7 @@ object ensures the registration fires exactly once, at ``dlopen`` time.
 
     // Self-registration — fires when the .so is dlopen'd.
     namespace {
-        ls2g::SolverRegistrar _reg(
+        ls2g::ALgorithmRegistrar _reg(
             "MySolver",
             []{ return std::unique_ptr<ls2g::BaseAlgo>(new MySolver()); }
         );
@@ -339,7 +341,7 @@ Windows (MSVC, from a Developer Command Prompt):
 
 The resulting file is ``Release\my_solver.dll`` on Windows (no ``lib`` prefix)
 and ``libmy_solver.so`` on Linux / macOS.
-Pass that path to :func:`~lightsim2grid.load_solver_plugin`.
+Pass that path to :func:`~lightsim2grid.load_algorithm_plugin`.
 
 
 Loading and using the plugin from Python
@@ -352,7 +354,7 @@ Loading and using the plugin from Python
 
     # 1. Load the plugin — this fires the C++ static constructors, which
     #    register "MySolver" into the SolverRegistry singleton.
-    lightsim2grid.load_solver_plugin("build/libmy_solver.so")
+    lightsim2grid.load_algorithm_plugin("build/libmy_solver.so")
 
     # 2. Confirm the solver is available.
     gm = GridModel()
@@ -369,18 +371,18 @@ Loading and using the plugin from Python
 Python API reference
 ---------------------
 
-.. py:function:: lightsim2grid.load_solver_plugin(path: str) -> None
+.. py:function:: lightsim2grid.load_algorithm_plugin(path: str) -> None
 
-    Load a shared library containing one or more lightsim2grid solver
+    Load a shared library containing one or more lightsim2grid solver / algorithm
     plugins.
 
-    The library must contain at least one static ``SolverRegistrar``
+    The library must contain at least one static ``AlgorithmRegistrar``
     object in an anonymous namespace (see the example above).  Its
     constructor fires at ``dlopen`` time, registering the new solver name
-    into the ``SolverRegistry`` singleton.
+    into the ``AlgorithmRegistry`` singleton.
 
     After this call the new solver is usable via
-    ``grid.change_algorithm("MySolverName")`` and will appear in
+    ``grid.change_algorithm("MyAlgoName")`` and will appear in
     ``grid.available_algorithm_names()``.
 
     :param path: Absolute or relative path to the ``.so`` / ``.dll`` file.
@@ -407,9 +409,9 @@ Python API reference
     .. code-block:: python
 
         >>> gm.available_algorithm_names()
-        ['SparseLU', 'SparseLUSingleSlack', 'GaussSeidel',
-         'GaussSeidelSynch', 'FDPF_XB_SparseLU', 'FDPF_BX_SparseLU',
-         'DC', 'KLU', 'KLUSingleSlack', 'KLUDC', 'MySolver']
+        ['NR_SparseLU', 'GaussSeidel', 'NRSing_KLU', 
+         # and all other lightsim2grid installed "solver"
+         'MySolver']
 
 .. note::
 
@@ -430,11 +432,11 @@ Python API reference
     at runtime — i.e. both must come from the same lightsim2grid build.
 
 
-Worked example (``examples/external_solver/``)
+Worked example (``examples/external_algorithm/``)
 -----------------------------------------------
 
 A minimal but complete example lives in the repository under
-``examples/external_solver/``.  It implements ``DummyExternalSolver``:
+``examples/external_algorithm/``.  It implements ``DummyExternalAlgo``:
 an AC solver that always "converges" on the first call by returning the
 initial voltage vector unchanged — useful as a smoke test for the plugin
 mechanism.
@@ -444,7 +446,7 @@ Build and run (after ``pip install lightsim2grid``):
 .. code-block:: bash
 
     LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
-    cd examples/external_solver
+    cd examples/external_algorithm
     cmake -S . -B build -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE"
     cmake --build build
     python test_plugin.py
@@ -453,7 +455,7 @@ Or from the source tree without a pip install:
 
 .. code-block:: bash
 
-    cd examples/external_solver
+    cd examples/external_algorithm
     cmake -S . -B build   # falls back to ../../src/core and ../../eigen
     cmake --build build
     python test_plugin.py

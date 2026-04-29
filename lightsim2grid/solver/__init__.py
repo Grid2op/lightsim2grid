@@ -46,7 +46,7 @@ class SolverType(Enum):
     
     NICSLU = AlgorithmType.NR_NICSLU  # noqa: F405
     NICSLUSingleSlack = AlgorithmType.NR_NICSLU  # noqa: F405
-    NICSLUDC = AlgorithmType.NR_NCISLU  # noqa: F405
+    NICSLUDC = AlgorithmType.NR_NICSLU  # noqa: F405
     FDPF_XB_NICSLU = AlgorithmType.NR_NICSLU  # noqa: F405
     FDPF_BX_NICSLU = AlgorithmType.NR_NICSLU  # noqa: F405
     
@@ -55,3 +55,47 @@ class SolverType(Enum):
     CKTSODC = AlgorithmType.NR_CKTSO  # noqa: F405
     FDPF_XB_CKTSO = AlgorithmType.NR_CKTSO  # noqa: F405
     FDPF_BX_CKTSO = AlgorithmType.NR_CKTSO  # noqa: F405
+    
+# also for backward compatibility, some alias of the old "solver" 
+# names
+GaussSeidelSolver = GaussSeidelAlgo  # noqa: F405
+GaussSeidelSynchSolver = GaussSeidelSynchAlgo  # noqa: F405
+
+SparseLUSolver = NR_SparseLU  # noqa: F405
+SparseLUSolverSingleSlack = NRSing_SparseLU  # noqa: F405
+DCSolver = DC_SparseLU  # noqa: F405
+FDPF_XB_SparseLUSolver = FDPF_XB_SparseLU  # noqa: F405
+FDPF_BX_SparseLUSolver = FDPF_BX_SparseLU  # noqa: F405
+
+
+try:
+   KLUSolver = NR_KLU  # noqa: F405
+   KLUSolverSingleSlack = NRSing_KLU  # noqa: F405 
+   KLUDCSolver = DC_KLU  # noqa: F405 
+   FDPF_XB_KLUSolver = FDPF_XB_KLU  # noqa: F405 
+   FDPF_BX_KLUSolver = FDPF_BX_KLU  # noqa: F405 
+except Exception as exc_:  # noqa: F841
+    # KLU is not available
+    pass
+
+
+try:
+    NICSLUSolver = NR_NICSLU  # noqa: F405
+    NICSLUSolverSingleSlack = NRSing_NICSLU  # noqa: F405
+    NICSLUDCSolver = DC_NICSLU  # noqa: F405
+    FDPF_XB_NICSLUSolver = FDPF_XB_NICSLU  # noqa: F405
+    FDPF_BX_NICSLUSolver =  FDPF_BX_NICSLU # noqa: F405
+except Exception as exc_:  # noqa: F841
+    # NICSLU is not available
+    pass
+
+
+try:
+    CKTSOSolver = NR_CKTSO  # noqa: F405
+    CKTSOSolverSingleSlack = NRSing_CKTSO  # noqa: F405
+    CKTSODCSolver = DC_CKTSO  # noqa: F405
+    FDPF_XB_CKTSOSolver = FDPF_XB_CKTSO  # noqa: F405
+    FDPF_BX_CKTSOSolver = FDPF_XB_CKTSO  # noqa: F405
+except Exception as exc_:  # noqa: F841
+    # NICSLU is not available
+    pass
