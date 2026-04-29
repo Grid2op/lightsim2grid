@@ -56,6 +56,7 @@ env_pp = multi_mix_env_pp[key_env]
 # Run the environment on a scenario using the TimeSerie module
 time_serie = TimeSerie(env)
 time_serie.compute_V(scenario_id=scenario_id)
+time_serie.init_from_n_powerflow = True
 a_or = time_serie.compute_A()
 p_or = time_serie.compute_P()
 computer = time_serie.computer

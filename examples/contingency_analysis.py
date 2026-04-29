@@ -45,6 +45,7 @@ env_pp = multi_mix_env_pp[key_env]
 # Run the environment on a scenario using the TimeSerie module
 security_analysis = ContingencyAnalysis(env)
 security_analysis.add_all_n1_contingencies()
+security_analysis.init_from_n_powerflow = True
 p_or, a_or, voltages = security_analysis.get_flows()
 # the 3 lines above are the only lines you need to do to perform a security analysis !
 

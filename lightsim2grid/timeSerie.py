@@ -109,6 +109,15 @@ class ___TimeSerie:
             # use the faster KLU if available
             self.computer.change_solver(AlgorithmType.KLU)
     
+    @property
+    def init_from_n_powerflow(self):
+        return self.computer.init_from_n_powerflow
+    @init_from_n_powerflow.setter
+    
+    def init_from_n_powerflow(self, val: bool):
+        val = bool(val)
+        self.computer.init_from_n_powerflow = val
+        
     def get_injections(self, scenario_id=None, seed=None):
         """
         This function allows to retrieve the injection of the given scenario, for the given seed

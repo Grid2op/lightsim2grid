@@ -46,6 +46,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] removed the ".values" and replace them by ".to_numpy()" in pandapower converter.
 - [IMPROVED] remove the "typedef" in favor of "using" cpp side (core)
 - [IMPROVED] add some "override" and "final" in the algorithm virtual methods.
+- [IMPROVED] file names of some example scripts.
 
 [0.13.1]  2026-04-21
 --------------------
