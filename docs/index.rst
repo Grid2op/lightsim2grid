@@ -58,6 +58,7 @@ This is a work in progress at the moment
    install_from_source
    lightsimbackend
    solvers
+   algorithm_names
    time_series
    security_analysis
    solver_plugin

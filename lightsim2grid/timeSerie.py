@@ -23,7 +23,7 @@ except ImportError as exc_:  # noqa: F841
     # grid2Op is not installed
     GRID2OP_INSTALLED = False
 
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 from .lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated

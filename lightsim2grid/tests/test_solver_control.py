@@ -27,7 +27,7 @@ import grid2op
 from grid2op.Action import CompleteAction
 
 from lightsim2grid import LightSimBackend
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 
 # TODO when line connected alone at one end, starts a Security Analysis
 # to see if it works
@@ -37,8 +37,8 @@ class TestSolverControl(unittest.TestCase):
     def _aux_setup_grid(self):
         self.need_dc = True  # is it worth it to run DC powerflow ?
         self.can_dist_slack = True
-        self.gridmodel.change_solver(AlgorithmType.SparseLU)
-        self.gridmodel.change_solver(AlgorithmType.DC)
+        self.gridmodel.change_algorithm(AlgorithmType.NR_SparseLU)
+        self.gridmodel.change_algorithm(AlgorithmType.DC_SparseLU)
         
     def setUp(self) -> None:
         with warnings.catch_warnings():
@@ -768,16 +768,16 @@ class TestSolverControlNRSing(TestSolverControl):
     def _aux_setup_grid(self):
         self.need_dc = False  # is it worth it to run DC powerflow ?
         self.can_dist_slack = False
-        self.gridmodel.change_solver(AlgorithmType.SparseLUSingleSlack)
-        self.gridmodel.change_solver(AlgorithmType.DC)
+        self.gridmodel.change_algorithm(AlgorithmType.NRSing_SparseLU)
+        self.gridmodel.change_algorithm(AlgorithmType.DC_SparseLU)
  
  
 class TestSolverControlFDPF_XB(TestSolverControl):
     def _aux_setup_grid(self):
         self.need_dc = False  # is it worth it to run DC powerflow ?
         self.can_dist_slack = False
-        self.gridmodel.change_solver(AlgorithmType.FDPF_XB_SparseLU)
-        self.gridmodel.change_solver(AlgorithmType.DC)
+        self.gridmodel.change_algorithm(AlgorithmType.FDPF_XB_SparseLU)
+        self.gridmodel.change_algorithm(AlgorithmType.DC_SparseLU)
         self.iter = 30
  
  
@@ -785,8 +785,8 @@ class TestSolverControlFDPF_BX(TestSolverControl):
     def _aux_setup_grid(self):
         self.need_dc = False  # is it worth it to run DC powerflow ?
         self.can_dist_slack = False
-        self.gridmodel.change_solver(AlgorithmType.FDPF_BX_SparseLU)
-        self.gridmodel.change_solver(AlgorithmType.DC)
+        self.gridmodel.change_algorithm(AlgorithmType.FDPF_BX_SparseLU)
+        self.gridmodel.change_algorithm(AlgorithmType.DC_SparseLU)
         self.iter = 30
                
  
@@ -794,7 +794,7 @@ class TestSolverControlGaussSeidel(TestSolverControl):
     def _aux_setup_grid(self):
         self.need_dc = False  # is it worth it to run DC powerflow ?
         self.can_dist_slack = False
-        self.gridmodel.change_solver(AlgorithmType.GaussSeidel)
+        self.gridmodel.change_algorithm(AlgorithmType.GaussSeidel)
         self.iter = 350
  
  
@@ -802,7 +802,7 @@ class TestSolverControlGaussSeidelSynch(TestSolverControl):
     def _aux_setup_grid(self):
         self.need_dc = False  # is it worth it to run DC powerflow ?
         self.can_dist_slack = False
-        self.gridmodel.change_solver(AlgorithmType.GaussSeidelSynch)
+        self.gridmodel.change_algorithm(AlgorithmType.GaussSeidelSynch)
         self.iter = 1000
                
                

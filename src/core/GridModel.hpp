@@ -86,8 +86,8 @@ class LS2G_API GridModel final
           init_vm_pu_(1.04),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
-            _algo.change_solver(AlgorithmType::SparseLU);
-            _dc_algo.change_solver(AlgorithmType::DC);
+            _algo.change_solver(AlgorithmType::NR_SparseLU);
+            _dc_algo.change_solver(AlgorithmType::DC_SparseLU);
             _algo.set_gridmodel(this);
             _dc_algo.set_gridmodel(this);
             solver_control_.tell_all_changed();

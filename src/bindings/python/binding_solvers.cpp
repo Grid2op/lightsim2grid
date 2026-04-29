@@ -75,66 +75,66 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
 void bind_solvers(py::module_& m) {
     // ---- SparseLU ----
     {
-        auto cls = py::class_<SparseLUSolver>(m, "SparseLUSolver", DocSolver::SparseLUSolver.c_str())
+        auto cls = py::class_<NR_SparseLU>(m, "NR_SparseLU", DocSolver::NR_SparseLU.c_str())
             .def(py::init<>())
-            .def("get_J", &SparseLUSolver::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NR_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<SparseLUSolverSingleSlack>(m, "SparseLUSolverSingleSlack", DocSolver::SparseLUSolverSingleSlack.c_str())
+        auto cls = py::class_<NRSing_SparseLU>(m, "NRSing_SparseLU", DocSolver::NRSing_SparseLU.c_str())
             .def(py::init<>())
-            .def("get_J", &SparseLUSolverSingleSlack::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NRSing_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<DCSolver>(m, "DCSolver", DocSolver::DCSolver.c_str())
+        auto cls = py::class_<DC_SparseLU>(m, "DC_SparseLU", DocSolver::DC_SparseLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_XB_SparseLUSolver>(m, "FDPF_XB_SparseLUSolver", DocSolver::FDPF_XB_SparseLUSolver.c_str())
+        auto cls = py::class_<FDPF_XB_SparseLU>(m, "FDPF_XB_SparseLU", DocSolver::FDPF_XB_SparseLU.c_str())
             .def(py::init<>())
-            .def("debug_get_Bp_python",  &FDPF_XB_SparseLUSolver::debug_get_Bp_python,  DocGridModel::_internal_do_not_use.c_str())
-            .def("debug_get_Bpp_python", &FDPF_XB_SparseLUSolver::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());
+            .def("debug_get_Bp_python",  &FDPF_XB_SparseLU::debug_get_Bp_python,  DocGridModel::_internal_do_not_use.c_str())
+            .def("debug_get_Bpp_python", &FDPF_XB_SparseLU::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_BX_SparseLUSolver>(m, "FDPF_BX_SparseLUSolver", DocSolver::FDPF_BX_SparseLUSolver.c_str())
+        auto cls = py::class_<FDPF_BX_SparseLU>(m, "FDPF_BX_SparseLU", DocSolver::FDPF_BX_SparseLU.c_str())
             .def(py::init<>())
-            .def("debug_get_Bp_python",  &FDPF_BX_SparseLUSolver::debug_get_Bp_python,  DocGridModel::_internal_do_not_use.c_str())
-            .def("debug_get_Bpp_python", &FDPF_BX_SparseLUSolver::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());
+            .def("debug_get_Bp_python",  &FDPF_BX_SparseLU::debug_get_Bp_python,  DocGridModel::_internal_do_not_use.c_str())
+            .def("debug_get_Bpp_python", &FDPF_BX_SparseLU::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());
         bind_algo_methods(cls);
     }
 
 #if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     {
-        auto cls = py::class_<KLUSolver>(m, "KLUSolver", DocSolver::KLUSolver.c_str())
+        auto cls = py::class_<NR_KLU>(m, "NR_KLU", DocSolver::NR_KLU.c_str())
             .def(py::init<>())
-            .def("get_J", &KLUSolver::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NR_KLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<KLUSolverSingleSlack>(m, "KLUSolverSingleSlack", DocSolver::KLUSolverSingleSlack.c_str())
+        auto cls = py::class_<NRSing_KLU>(m, "NRSing_KLU", DocSolver::NRSing_KLU.c_str())
             .def(py::init<>())
-            .def("get_J", &KLUSolverSingleSlack::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NRSing_KLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<KLUDCSolver>(m, "KLUDCSolver", DocSolver::KLUDCSolver.c_str())
+        auto cls = py::class_<DC_KLU>(m, "DC_KLU", DocSolver::DC_KLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_XB_KLUSolver>(m, "FDPF_XB_KLUSolver", DocSolver::FDPF_XB_KLUSolver.c_str())
+        auto cls = py::class_<FDPF_XB_KLU>(m, "FDPF_XB_KLU", DocSolver::FDPF_XB_KLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_BX_KLUSolver>(m, "FDPF_BX_KLUSolver", DocSolver::FDPF_BX_KLUSolver.c_str())
+        auto cls = py::class_<FDPF_BX_KLU>(m, "FDPF_BX_KLU", DocSolver::FDPF_BX_KLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
@@ -142,31 +142,31 @@ void bind_solvers(py::module_& m) {
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     {
-        auto cls = py::class_<NICSLUSolver>(m, "NICSLUSolver", DocSolver::NICSLUSolver.c_str())
+        auto cls = py::class_<NR_NICSLU>(m, "NR_NICSLU", DocSolver::NR_NICSLU.c_str())
             .def(py::init<>())
-            .def("get_J", &NICSLUSolver::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NR_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<NICSLUSolverSingleSlack>(m, "NICSLUSolverSingleSlack", DocSolver::NICSLUSolverSingleSlack.c_str())
+        auto cls = py::class_<NRSing_NICSLU>(m, "NRSing_NICSLU", DocSolver::NRSing_NICSLU.c_str())
             .def(py::init<>())
-            .def("get_J", &NICSLUSolverSingleSlack::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NRSing_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<NICSLUDCSolver>(m, "NICSLUDCSolver", DocSolver::NICSLUDCSolver.c_str())
+        auto cls = py::class_<DC_NICSLU>(m, "DC_NICSLU", DocSolver::DC_NICSLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_XB_NICSLUSolver>(m, "FDPF_XB_NICSLUSolver", DocSolver::FDPF_XB_NICSLUSolver.c_str())
+        auto cls = py::class_<FDPF_XB_NICSLU>(m, "FDPF_XB_NICSLU", DocSolver::FDPF_XB_NICSLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_BX_NICSLUSolver>(m, "FDPF_BX_NICSLUSolver", DocSolver::FDPF_BX_NICSLUSolver.c_str())
+        auto cls = py::class_<FDPF_BX_NICSLU>(m, "FDPF_BX_NICSLU", DocSolver::FDPF_BX_NICSLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
@@ -174,43 +174,43 @@ void bind_solvers(py::module_& m) {
 
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     {
-        auto cls = py::class_<CKTSOSolver>(m, "CKTSOSolver", DocSolver::CKTSOSolver.c_str())
+        auto cls = py::class_<NR_CKTSO>(m, "NR_CKTSO", DocSolver::NR_CKTSO.c_str())
             .def(py::init<>())
-            .def("get_J", &CKTSOSolver::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NR_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<CKTSOSolverSingleSlack>(m, "CKTSOSolverSingleSlack", DocSolver::CKTSOSolverSingleSlack.c_str())
+        auto cls = py::class_<NRSing_CKTSO>(m, "NRSing_CKTSO", DocSolver::NRSing_CKTSO.c_str())
             .def(py::init<>())
-            .def("get_J", &CKTSOSolverSingleSlack::get_J_python, DocSolver::get_J_python.c_str());
+            .def("get_J", &NRSing_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
     }
     {
-        auto cls = py::class_<CKTSODCSolver>(m, "CKTSODCSolver", DocSolver::CKTSODCSolver.c_str())
+        auto cls = py::class_<DC_CKTSO>(m, "DC_CKTSO", DocSolver::DC_CKTSO.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_XB_CKTSOSolver>(m, "FDPF_XB_CKTSOSolver", DocSolver::FDPF_XB_CKTSOSolver.c_str())
+        auto cls = py::class_<FDPF_XB_CKTSO>(m, "FDPF_XB_CKTSO", DocSolver::FDPF_XB_CKTSO.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<FDPF_BX_CKTSOSolver>(m, "FDPF_BX_CKTSOSolver", DocSolver::FDPF_BX_CKTSOSolver.c_str())
+        auto cls = py::class_<FDPF_BX_CKTSO>(m, "FDPF_BX_CKTSO", DocSolver::FDPF_BX_CKTSO.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
 #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
     {
-        auto cls = py::class_<GaussSeidelAlgo>(m, "GaussSeidelSolver", DocSolver::GaussSeidelSolver.c_str())
+        auto cls = py::class_<GaussSeidelAlgo>(m, "GaussSeidelAlgo", DocSolver::GaussSeidelAlgo.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }
     {
-        auto cls = py::class_<GaussSeidelSynchAlgo>(m, "GaussSeidelSynchSolver", DocSolver::GaussSeidelSynchSolver.c_str())
+        auto cls = py::class_<GaussSeidelSynchAlgo>(m, "GaussSeidelSynchAlgo", DocSolver::GaussSeidelSynchAlgo.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
     }

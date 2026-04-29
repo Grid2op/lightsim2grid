@@ -41,7 +41,7 @@ if(NOT lightsim2grid_core_FOUND)
 endif()
 
 # The plugin is a MODULE (loadable at runtime via dlopen/LoadLibrary).
-add_library(dummy_solver MODULE DummyExternalSolver.cpp)
+add_library(dummy_solver MODULE DummyExternalAlgo.cpp)
 target_link_libraries(dummy_solver PRIVATE lightsim2grid::core)
 
 if(WIN32)

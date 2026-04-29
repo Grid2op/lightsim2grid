@@ -27,11 +27,11 @@ class TestDefaultSolver(unittest.TestCase):
 
     def test_default_ac_solver_type(self):
         gm = _make_grid()
-        self.assertEqual(gm.get_algo_type(), AlgorithmType.SparseLU)
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_SparseLU)
 
     def test_default_dc_solver_type(self):
         gm = _make_grid()
-        self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC)
+        self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC_SparseLU)
 
 
 class TestEnumOverload(unittest.TestCase):
@@ -39,20 +39,20 @@ class TestEnumOverload(unittest.TestCase):
 
     def test_change_solver_enum(self):
         gm = _make_grid()
-        gm.change_solver(AlgorithmType.SparseLUSingleSlack)
-        self.assertEqual(gm.get_algo_type(), AlgorithmType.SparseLUSingleSlack)
+        gm.change_algorithm(AlgorithmType.NRSing_SparseLU)
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.NRSing_SparseLU)
 
     def test_change_dc_solver_enum(self):
         gm = _make_grid()
-        gm.change_solver(AlgorithmType.DC)
-        self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC)
+        gm.change_algorithm(AlgorithmType.DC_SparseLU)
+        self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC_SparseLU)
 
     def test_round_trip_enum(self):
         gm = _make_grid()
-        gm.change_solver(AlgorithmType.GaussSeidel)
+        gm.change_algorithm(AlgorithmType.GaussSeidel)
         self.assertEqual(gm.get_algo_type(), AlgorithmType.GaussSeidel)
-        gm.change_solver(AlgorithmType.SparseLU)
-        self.assertEqual(gm.get_algo_type(), AlgorithmType.SparseLU)
+        gm.change_algorithm(AlgorithmType.NR_SparseLU)
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_SparseLU)
 
 
 class TestStringOverload(unittest.TestCase):
@@ -60,24 +60,24 @@ class TestStringOverload(unittest.TestCase):
 
     def test_change_solver_string_sparselU(self):
         gm = _make_grid()
-        gm.change_solver(AlgorithmType.GaussSeidel)   # change away from default
-        gm.change_solver("SparseLU")
-        self.assertEqual(gm.get_algo_type(), AlgorithmType.SparseLU)
+        gm.change_algorithm(AlgorithmType.GaussSeidel)   # change away from default
+        gm.change_algorithm("SparseLU")
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_SparseLU)
 
     def test_change_solver_string_gaussseidel(self):
         gm = _make_grid()
-        gm.change_solver("GaussSeidel")
+        gm.change_algorithm("GaussSeidel")
         self.assertEqual(gm.get_algo_type(), AlgorithmType.GaussSeidel)
 
     def test_change_solver_string_dc(self):
         gm = _make_grid()
-        gm.change_solver("DC")
-        self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC)
+        gm.change_algorithm("DC")
+        self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC_SparseLU)
 
     def test_change_solver_unknown_name_raises(self):
         gm = _make_grid()
         with self.assertRaises(Exception):
-            gm.change_solver("NonExistentSolverXYZ")
+            gm.change_algorithm("NonExistentSolverXYZ")
 
 
 class TestAvailableSolvers(unittest.TestCase):
@@ -85,10 +85,10 @@ class TestAvailableSolvers(unittest.TestCase):
 
     def test_available_solvers_returns_list(self):
         gm = _make_grid()
-        solvers = gm.available_solvers()
+        solvers = gm.available_algorithms()
         self.assertIsInstance(solvers, list)
-        self.assertIn(AlgorithmType.SparseLU, solvers)
-        self.assertIn(AlgorithmType.DC, solvers)
+        self.assertIn(AlgorithmType.NR_SparseLU, solvers)
+        self.assertIn(AlgorithmType.DC_SparseLU, solvers)
 
     def test_available_solver_names_returns_strings(self):
         gm = _make_grid()
@@ -102,14 +102,14 @@ class TestAvailableSolvers(unittest.TestCase):
         """Every enum returned by available_solvers() must have a string counterpart."""
         gm = _make_grid()
         names = set(gm.available_solver_names())
-        for st in gm.available_solvers():
+        for st in gm.available_algorithms():
             # Convert AlgorithmType to its string name by checking all known names
             gm2 = _make_grid()
-            gm2.change_solver(st)
+            gm2.change_algorithm(st)
             # After change, get_algo_type or get_dc_solver_type reflects the change
-            if st in (AlgorithmType.DC, AlgorithmType.KLUDC if hasattr(AlgorithmType, "KLUDC") else None,
-                      AlgorithmType.NICSLUDC if hasattr(AlgorithmType, "NICSLUDC") else None,
-                      AlgorithmType.CKTSODC if hasattr(AlgorithmType, "CKTSODC") else None):
+            if st in (AlgorithmType.DC_SparseLU, AlgorithmType.DC_KLU if hasattr(AlgorithmType, "KLUDC") else None,
+                      AlgorithmType.DC_NICSLU if hasattr(AlgorithmType, "NICSLUDC") else None,
+                      AlgorithmType.DC_CKTSO if hasattr(AlgorithmType, "CKTSODC") else None):
                 pass  # DC solver types
             else:
                 self.assertEqual(gm2.get_algo_type(), st)
@@ -125,13 +125,13 @@ class TestKLUSolver(unittest.TestCase):
 
     def test_change_to_klu_by_enum(self):
         gm = _make_grid()
-        gm.change_solver(AlgorithmType.KLU)
-        self.assertEqual(gm.get_algo_type(), AlgorithmType.KLU)
+        gm.change_algorithm(AlgorithmType.NR_KLU)
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_KLU)
 
     def test_change_to_klu_by_string(self):
         gm = _make_grid()
-        gm.change_solver("KLU")
-        self.assertEqual(gm.get_algo_type(), AlgorithmType.KLU)
+        gm.change_algorithm("KLU")
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_KLU)
 
     def test_klu_in_available_solver_names(self):
         gm = _make_grid()
@@ -172,7 +172,7 @@ class TestPluginLoading(unittest.TestCase):
         gm = _make_grid()
         names = gm.available_solver_names()
         self.assertIn("DummyExternal", names)
-        gm.change_solver("DummyExternal")
+        gm.change_algorithm("DummyExternal")
         self.assertEqual(gm.get_algo_type(), AlgorithmType.Custom)
 
 

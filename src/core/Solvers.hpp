@@ -22,68 +22,72 @@
 
 namespace ls2g {
 
-/** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen **/
-using SparseLUSolver = NRAlgo<SparseLULinearSolver, MultiSlackNRSystem>;
-/** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, do not consider multiple slack bus **/
-using SparseLUSolverSingleSlack = NRAlgo<SparseLULinearSolver, SingleSlackNRSystem>;
-/** Solver based on Newton Raphson, using the SparseLU decomposition of Eigen, only suitable for the DC approximation **/
-using DCSolver = BaseDCAlgo<SparseLULinearSolver>;
-/** Solver based on Fast Decoupled, using the SparseLU decomposition of Eigen **/
-using FDPF_XB_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
-using FDPF_BX_SparseLUSolver = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
+/** Newton-Raphson (multi-slack) with Eigen SparseLU linear solver **/
+using NR_SparseLU = NRAlgo<SparseLULinearSolver, MultiSlackNRSystem>;
+/** Newton-Raphson (single-slack) with Eigen SparseLU linear solver **/
+using NRSing_SparseLU = NRAlgo<SparseLULinearSolver, SingleSlackNRSystem>;
+/** DC approximation with Eigen SparseLU linear solver **/
+using DC_SparseLU = BaseDCAlgo<SparseLULinearSolver>;
+/** Fast-Decoupled Power Flow (XB variant) with Eigen SparseLU linear solver **/
+using FDPF_XB_SparseLU = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::XB>;
+/** Fast-Decoupled Power Flow (BX variant) with Eigen SparseLU linear solver **/
+using FDPF_BX_SparseLU = BaseFDPFAlgo<SparseLULinearSolver, FDPFMethod::BX>;
 
 #ifdef KLU_SOLVER_AVAILABLE
-    /** Solver based on Newton Raphson, using the KLU linear solver **/
-    using KLUSolver = NRAlgo<KLULinearSolver, MultiSlackNRSystem>;
-    /** Solver based on Newton Raphson, using the KLU linear solver, do not consider multiple slack bus **/
-    using KLUSolverSingleSlack = NRAlgo<KLULinearSolver, SingleSlackNRSystem>;
-    /** Solver based on Newton Raphson, using the KLU linear solver, only suitable for the DC approximation **/
-    using KLUDCSolver = BaseDCAlgo<KLULinearSolver>;
-    /** Solver based on Fast Decoupled, using the KLU linear solver **/
-    using FDPF_XB_KLUSolver = BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
-    using FDPF_BX_KLUSolver = BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
+    /** Newton-Raphson (multi-slack) with KLU linear solver **/
+    using NR_KLU = NRAlgo<KLULinearSolver, MultiSlackNRSystem>;
+    /** Newton-Raphson (single-slack) with KLU linear solver **/
+    using NRSing_KLU = NRAlgo<KLULinearSolver, SingleSlackNRSystem>;
+    /** DC approximation with KLU linear solver **/
+    using DC_KLU = BaseDCAlgo<KLULinearSolver>;
+    /** Fast-Decoupled Power Flow (XB variant) with KLU linear solver **/
+    using FDPF_XB_KLU = BaseFDPFAlgo<KLULinearSolver, FDPFMethod::XB>;
+    /** Fast-Decoupled Power Flow (BX variant) with KLU linear solver **/
+    using FDPF_BX_KLU = BaseFDPFAlgo<KLULinearSolver, FDPFMethod::BX>;
 #elif defined(_READ_THE_DOCS)
-    using KLUSolver = SparseLUSolver;
-    using KLUSolverSingleSlack = SparseLUSolverSingleSlack;
-    using KLUDCSolver = DCSolver;
-    using FDPF_XB_KLUSolver = FDPF_XB_SparseLUSolver;
-    using FDPF_BX_KLUSolver = FDPF_BX_SparseLUSolver;
+    using NR_KLU = NR_SparseLU;
+    using NRSing_KLU = NRSing_SparseLU;
+    using DC_KLU = DC_SparseLU;
+    using FDPF_XB_KLU = FDPF_XB_SparseLU;
+    using FDPF_BX_KLU = FDPF_BX_SparseLU;
 #endif  // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
-    /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license) **/
-    using NICSLUSolver = NRAlgo<NICSLULinearSolver, MultiSlackNRSystem>;
-    /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), do not consider multiple slack bus **/
-    using NICSLUSolverSingleSlack = NRAlgo<NICSLULinearSolver, SingleSlackNRSystem>;
-    /** Solver based on Newton Raphson, using the NICSLU linear solver (needs a specific license), only suitable for the DC approximation **/
-    using NICSLUDCSolver = BaseDCAlgo<NICSLULinearSolver>;
-    /** Solver based on Fast Decoupled, using the NICSLU linear solver (needs a specific license) **/
-    using FDPF_XB_NICSLUSolver = BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
-    using FDPF_BX_NICSLUSolver = BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
+    /** Newton-Raphson (multi-slack) with NICSLU linear solver (requires license) **/
+    using NR_NICSLU = NRAlgo<NICSLULinearSolver, MultiSlackNRSystem>;
+    /** Newton-Raphson (single-slack) with NICSLU linear solver (requires license) **/
+    using NRSing_NICSLU = NRAlgo<NICSLULinearSolver, SingleSlackNRSystem>;
+    /** DC approximation with NICSLU linear solver (requires license) **/
+    using DC_NICSLU = BaseDCAlgo<NICSLULinearSolver>;
+    /** Fast-Decoupled Power Flow (XB variant) with NICSLU linear solver (requires license) **/
+    using FDPF_XB_NICSLU = BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::XB>;
+    /** Fast-Decoupled Power Flow (BX variant) with NICSLU linear solver (requires license) **/
+    using FDPF_BX_NICSLU = BaseFDPFAlgo<NICSLULinearSolver, FDPFMethod::BX>;
 #elif defined(_READ_THE_DOCS)
-    using NICSLUSolver = SparseLUSolver;
-    using NICSLUSolverSingleSlack = SparseLUSolverSingleSlack;
-    using NICSLUDCSolver = DCSolver;
-    using FDPF_XB_NICSLUSolver = FDPF_XB_SparseLUSolver;
-    using FDPF_BX_NICSLUSolver = FDPF_BX_SparseLUSolver;
+    using NR_NICSLU = NR_SparseLU;
+    using NRSing_NICSLU = NRSing_SparseLU;
+    using DC_NICSLU = DC_SparseLU;
+    using FDPF_XB_NICSLU = FDPF_XB_SparseLU;
+    using FDPF_BX_NICSLU = FDPF_BX_SparseLU;
 #endif  // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
-    /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license) **/
-    using CKTSOSolver = NRAlgo<CKTSOLinearSolver, MultiSlackNRSystem>;
-    /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), do not consider multiple slack bus **/
-    using CKTSOSolverSingleSlack = NRAlgo<CKTSOLinearSolver, SingleSlackNRSystem>;
-    /** Solver based on Newton Raphson, using the CKTSO linear solver (needs a specific license), only suitable for the DC approximation **/
-    using CKTSODCSolver = BaseDCAlgo<CKTSOLinearSolver>;
-    /** Solver based on Fast Decoupled, using the CKTSO linear solver (needs a specific license) **/
-    using FDPF_XB_CKTSOSolver = BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
-    using FDPF_BX_CKTSOSolver = BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
+    /** Newton-Raphson (multi-slack) with CKTSO linear solver (requires license) **/
+    using NR_CKTSO = NRAlgo<CKTSOLinearSolver, MultiSlackNRSystem>;
+    /** Newton-Raphson (single-slack) with CKTSO linear solver (requires license) **/
+    using NRSing_CKTSO = NRAlgo<CKTSOLinearSolver, SingleSlackNRSystem>;
+    /** DC approximation with CKTSO linear solver (requires license) **/
+    using DC_CKTSO = BaseDCAlgo<CKTSOLinearSolver>;
+    /** Fast-Decoupled Power Flow (XB variant) with CKTSO linear solver (requires license) **/
+    using FDPF_XB_CKTSO = BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::XB>;
+    /** Fast-Decoupled Power Flow (BX variant) with CKTSO linear solver (requires license) **/
+    using FDPF_BX_CKTSO = BaseFDPFAlgo<CKTSOLinearSolver, FDPFMethod::BX>;
 #elif defined(_READ_THE_DOCS)
-    using CKTSOSolver = SparseLUSolver;
-    using CKTSOSolverSingleSlack = SparseLUSolverSingleSlack;
-    using CKTSODCSolver = DCSolver;
-    using FDPF_XB_CKTSOSolver = FDPF_XB_SparseLUSolver;
-    using FDPF_BX_CKTSOSolver = FDPF_BX_SparseLUSolver;
+    using NR_CKTSO = NR_SparseLU;
+    using NRSing_CKTSO = NRSing_SparseLU;
+    using DC_CKTSO = DC_SparseLU;
+    using FDPF_XB_CKTSO = FDPF_XB_SparseLU;
+    using FDPF_BX_CKTSO = FDPF_BX_SparseLU;
 #endif  // CKTSO_SOLVER_AVAILABLE
 
 

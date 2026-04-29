@@ -11,7 +11,7 @@ import unittest
 import pickle
 
 import numpy as np
-from lightsim2grid.solver import KLUSolver
+from lightsim2grid.algorithm import NR_KLU
 
 
 class JacobianTester(unittest.TestCase):
@@ -23,7 +23,7 @@ class JacobianTester(unittest.TestCase):
         return super().setUpClass()
     
     def setUp(self) -> None:
-        self.solver = KLUSolver()
+        self.solver = NR_KLU()
         return super().setUp()    
     
     def new_to_old_indexes(self):

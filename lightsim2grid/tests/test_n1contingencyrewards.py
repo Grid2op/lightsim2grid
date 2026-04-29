@@ -17,7 +17,7 @@ from grid2op.Reward import EpisodeDurationReward
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.rewards import N1ContingencyReward
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 
 
 TH_LIM_A_REF = np.array([
@@ -49,7 +49,7 @@ class TestN1ContingencyReward_Base(unittest.TestCase):
         return "educ_case14_storage"
     
     def init_backend(self):
-        return LightSimBackend(solver_type=AlgorithmType.SparseLUSingleSlack)
+        return LightSimBackend(solver_type=AlgorithmType.NRSing_SparseLU)
     
     def is_dc(self):
         return False

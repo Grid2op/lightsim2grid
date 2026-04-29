@@ -15,7 +15,7 @@ import warnings
 
 from pandapower.pypower.makeLODF import update_LODF_diag
 from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 
 import pdb
 
@@ -25,7 +25,7 @@ class TestLODFCase14SLU(unittest.TestCase):
         return case14
 
     def get_algo_type(self):
-        return AlgorithmType.DC
+        return AlgorithmType.DC_SparseLU
     
     def setUp(self) -> None:
         self.case = self.make_grid()
@@ -34,9 +34,9 @@ class TestLODFCase14SLU(unittest.TestCase):
             self.gridmodel = init_from_pandapower(self.case)
         self.V_init = 1. * self.gridmodel.get_bus_vn_kv()
         solver_type = self.get_algo_type()
-        if solver_type not in self.gridmodel.available_solvers():
+        if solver_type not in self.gridmodel.available_algorithms():
             self.skipTest("Solver type not supported on this platform")
-        self.gridmodel.change_solver(solver_type)
+        self.gridmodel.change_algorithm(solver_type)
         V = self.gridmodel.dc_pf(1. * self.V_init, 1, 1e-8)
         assert len(V), f"dc pf has diverged with error {self.gridmodel.get_dc_solver().get_error()}"
         self.dcYbus = 1.0 * self.gridmodel.get_dcYbus_solver()
@@ -143,17 +143,17 @@ class TestLODFCase118SLU(TestLODFCase14SLU):
     
 class TestLODFCase14KLU(TestLODFCase14SLU):
     def get_algo_type(self):
-        return AlgorithmType.KLUDC
+        return AlgorithmType.DC_KLU
     
     
 class TestLODFCase30KLU(TestLODFCase30SLU):
     def get_algo_type(self):
-        return AlgorithmType.KLUDC
+        return AlgorithmType.DC_KLU
     
     
 class TestLODFCase118KLU(TestLODFCase118SLU):
     def get_algo_type(self):
-        return AlgorithmType.KLUDC
+        return AlgorithmType.DC_KLU
     
     
 if __name__ == "__main__":

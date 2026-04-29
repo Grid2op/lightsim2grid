@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-// Concrete solver typedefs (SparseLUSolver, KLUSolver, …) + Solvers.hpp guards
+// Concrete algorithm typedefs (NR_SparseLU, NR_KLU, …) + Solvers.hpp guards
 #include "Solvers.hpp"
 // Registry for solver creation by name
 #include "AlgorithmRegistry.hpp"
@@ -22,10 +22,10 @@
 
 namespace ls2g {
 
-enum class LS2G_API AlgorithmType {SparseLU, KLU, GaussSeidel, DC, GaussSeidelSynch, NICSLU,
-                       SparseLUSingleSlack, KLUSingleSlack, NICSLUSingleSlack,
-                       KLUDC, NICSLUDC,
-                       CKTSO, CKTSOSingleSlack, CKTSODC,
+enum class LS2G_API AlgorithmType {NR_SparseLU, NR_KLU, GaussSeidel, DC_SparseLU, GaussSeidelSynch, NR_NICSLU,
+                       NRSing_SparseLU, NRSing_KLU, NRSing_NICSLU,
+                       DC_KLU, DC_NICSLU,
+                       NR_CKTSO, NRSing_CKTSO, DC_CKTSO,
                        FDPF_XB_SparseLU, FDPF_BX_SparseLU, // from 0.7.5
                        FDPF_XB_KLU, FDPF_BX_KLU,           // from 0.7.5
                        FDPF_XB_NICSLU, FDPF_BX_NICSLU,     // from 0.7.5
@@ -57,31 +57,31 @@ class LS2G_API AlgorithmSelector final
         {
             std::vector<AlgorithmType> res;
             res.reserve(22);
-            res.push_back(AlgorithmType::SparseLU);
+            res.push_back(AlgorithmType::NR_SparseLU);
             res.push_back(AlgorithmType::GaussSeidel);
-            res.push_back(AlgorithmType::DC);
+            res.push_back(AlgorithmType::DC_SparseLU);
             res.push_back(AlgorithmType::GaussSeidelSynch);
-            res.push_back(AlgorithmType::SparseLUSingleSlack);
+            res.push_back(AlgorithmType::NRSing_SparseLU);
             res.push_back(AlgorithmType::FDPF_XB_SparseLU);
             res.push_back(AlgorithmType::FDPF_BX_SparseLU);
             #ifdef KLU_SOLVER_AVAILABLE
-                res.push_back(AlgorithmType::KLU);
-                res.push_back(AlgorithmType::KLUSingleSlack);
-                res.push_back(AlgorithmType::KLUDC);
+                res.push_back(AlgorithmType::NR_KLU);
+                res.push_back(AlgorithmType::NRSing_KLU);
+                res.push_back(AlgorithmType::DC_KLU);
                 res.push_back(AlgorithmType::FDPF_XB_KLU);
                 res.push_back(AlgorithmType::FDPF_BX_KLU);
             #endif
             #ifdef NICSLU_SOLVER_AVAILABLE
-                res.push_back(AlgorithmType::NICSLU);
-                res.push_back(AlgorithmType::NICSLUSingleSlack);
-                res.push_back(AlgorithmType::NICSLUDC);
+                res.push_back(AlgorithmType::NR_NICSLU);
+                res.push_back(AlgorithmType::NRSing_NICSLU);
+                res.push_back(AlgorithmType::DC_NICSLU);
                 res.push_back(AlgorithmType::FDPF_XB_NICSLU);
                 res.push_back(AlgorithmType::FDPF_BX_NICSLU);
             #endif
             #ifdef CKTSO_SOLVER_AVAILABLE
-                res.push_back(AlgorithmType::CKTSO);
-                res.push_back(AlgorithmType::CKTSOSingleSlack);
-                res.push_back(AlgorithmType::CKTSODC);
+                res.push_back(AlgorithmType::NR_CKTSO);
+                res.push_back(AlgorithmType::NRSing_CKTSO);
+                res.push_back(AlgorithmType::DC_CKTSO);
                 res.push_back(AlgorithmType::FDPF_XB_CKTSO);
                 res.push_back(AlgorithmType::FDPF_BX_CKTSO);
             #endif
@@ -89,10 +89,10 @@ class LS2G_API AlgorithmSelector final
         }
 
         bool is_dc(const AlgorithmType& type) const noexcept {
-            return (type == AlgorithmType::DC) ||
-                   (type == AlgorithmType::KLUDC) ||
-                   (type == AlgorithmType::NICSLUDC) ||
-                   (type == AlgorithmType::CKTSODC);
+            return (type == AlgorithmType::DC_SparseLU) ||
+                   (type == AlgorithmType::DC_KLU) ||
+                   (type == AlgorithmType::DC_NICSLU) ||
+                   (type == AlgorithmType::DC_CKTSO);
         }
         bool is_fdpf(const AlgorithmType& type) const noexcept {
             return (type == AlgorithmType::FDPF_XB_SparseLU) ||
@@ -109,13 +109,13 @@ class LS2G_API AlgorithmSelector final
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).
-        FDPF_XB_SparseLUSolver& get_fdpf_xb_lu() {
-            FDPF_XB_SparseLUSolver* p = dynamic_cast<FDPF_XB_SparseLUSolver*>(_algo.get());
+        FDPF_XB_SparseLU& get_fdpf_xb_lu() {
+            FDPF_XB_SparseLU* p = dynamic_cast<FDPF_XB_SparseLU*>(_algo.get());
             if (!p) throw std::runtime_error("AlgorithmSelector::get_fdpf_xb_lu: current solver is not FDPF_XB_SparseLU");
             return *p;
         }
-        FDPF_BX_SparseLUSolver& get_fdpf_bx_lu() {
-            FDPF_BX_SparseLUSolver* p = dynamic_cast<FDPF_BX_SparseLUSolver*>(_algo.get());
+        FDPF_BX_SparseLU& get_fdpf_bx_lu() {
+            FDPF_BX_SparseLU* p = dynamic_cast<FDPF_BX_SparseLU*>(_algo.get());
             if (!p) throw std::runtime_error("AlgorithmSelector::get_fdpf_bx_lu: current solver is not FDPF_BX_SparseLU");
             return *p;
         }

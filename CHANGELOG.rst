@@ -28,12 +28,19 @@ TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call
 TODO: a cpp class that is able to compute (DC powerflow) ContingencyAnalysis and TimeSeries using PTDF and LODF
 TODO: integration test with pandapower (see `pandapower/contingency/contingency.py` and import `lightsim2grid_installed` and check it's True)
 
-[0.13.2] 2026-xx-yy
+[0.14.0] 2026-xx-yy
 ---------------------
-- [ADDED] Refactored `ChooseSolver` to a plugin-friendly `SolverRegistry` (see doc)
+- [BREAKING] the reference to "solver" are now replaced with equivalent "algorithm"
+  which is clearer and avoid making mistake between linear solver (*eg* SparseLU from 
+  Eigen or KLU) and "method to solve powerflow", such as Newton Raphson. 
+  This includes the "lightsim2grid.solver" which is not "lightsim2grid.algorithm"
+  and most of cpp side names. Old python names should still be usable but will be 
+  deprecated in future releases. See documentation for an exhaustive migration guide.
+- [ADDED] Refactored `ChooseAlgorithm` (used to be ChooseSolver) to a plugin-friendly
+ `AlgorithmRegistry` (see doc)
 - [ADDED] installing the python package now also comes with the lightsim2grid_core 
   header files.
-- [IMPROVED] Removing the "ChooseSolver" API and replacing it with the `SolverRegistry`
+- [IMPROVED] Removing the "ChooseAlgorithm" API and replacing it with the `AlgorithmRegistry`
 - [IMPROVED] clean separation between lightsim2grid_core the main library that could be
   used from cpp and the python bindings.
 - [IMPROVED] removed the ".values" and replace them by ".to_numpy()" in pandapower converter.

@@ -8,11 +8,11 @@ import pdb
 import sys
 import warnings
 try:
-    from lightsim2grid.solver import KLUSolver
-    ClassSolver = KLUSolver
+    from lightsim2grid.algorithm import NR_KLU
+    ClassSolver = NR_KLU
 except ImportError as exc_:
-    from lightsim2grid.solver import SparseLUSolver
-    ClassSolver = SparseLUSolver
+    from lightsim2grid.algorithm import NR_SparseLU
+    ClassSolver = NR_SparseLU
 
 import pandapower.networks as pn
 

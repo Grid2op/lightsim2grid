@@ -14,7 +14,7 @@ import zipfile
 from scipy import sparse
 SparseLUSolver_AVAILBLE = False
 try:
-    from lightsim2grid.lightsim2grid_cpp import SparseLUSolver
+    from lightsim2grid.lightsim2grid_cpp import NR_SparseLU
     SparseLUSolver_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
@@ -32,7 +32,7 @@ class MakeTests(unittest.TestCase):
         if not SparseLUSolver_AVAILBLE:
             return
 
-        self.solver = SparseLUSolver()
+        self.solver = NR_SparseLU()
 
         self.path = None
         self.V_init = None
@@ -116,7 +116,7 @@ class MakeTests(unittest.TestCase):
 
     def test_dir(self):
         if not SparseLUSolver_AVAILBLE:
-            self.skipTest("SparseLUSolver is not installed")
+            self.skipTest("NR_SparseLU is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

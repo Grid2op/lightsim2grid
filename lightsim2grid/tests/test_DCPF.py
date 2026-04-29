@@ -21,11 +21,11 @@ import warnings
 
 from lightsim2grid import LightSimBackend
 try:
-    from lightsim2grid.solver import KLUSolver
-    ClassSolver = KLUSolver
+    from lightsim2grid.algorithm import NR_KLU
+    ClassSolver = NR_KLU
 except ImportError as exc_:
-    from lightsim2grid.solver import SparseLUSolver
-    ClassSolver = SparseLUSolver
+    from lightsim2grid.algorithm import NR_SparseLU
+    ClassSolver = NR_SparseLU
 
 
 from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION

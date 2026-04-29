@@ -15,7 +15,7 @@ from grid2op.Action._backendAction import _BackendAction
 
 from lightsim2grid import LightSimBackend, ContingencyAnalysis
 from lightsim2grid.compilation_options import klu_solver_available
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 
 
 class N1ContingencyReward(BaseReward):
@@ -62,14 +62,14 @@ class N1ContingencyReward(BaseReward):
         self._threshold_margin :float = float(threshold_margin)
         if klu_solver_available:
             if self._dc:
-                self._algo_type = AlgorithmType.KLUDC
+                self._algo_type = AlgorithmType.DC_KLU
             else:
-                self._algo_type = AlgorithmType.KLU
+                self._algo_type = AlgorithmType.NR_KLU
         else:
             if self._dc:
-                self._algo_type = AlgorithmType.DC
+                self._algo_type = AlgorithmType.DC_SparseLU
             else:
-                self._algo_type = AlgorithmType.SparseLU
+                self._algo_type = AlgorithmType.NR_SparseLU
         self._backend_ls = False
         self._debug_unsafe_conts = None
         self._tol = tol
@@ -145,7 +145,7 @@ class N1ContingencyReward(BaseReward):
         
         # synch the contingency analyzer
         contingecy_analyzer = ContingencyAnalysis(self._backend)
-        contingecy_analyzer.computer.change_solver(self._algo_type)
+        contingecy_analyzer.computer.change_algorithm(self._algo_type)
         contingecy_analyzer.add_multiple_contingencies(*self._l_ids)
         now_ = time.perf_counter()
         self._timer_pre_proc += now_ - beg
