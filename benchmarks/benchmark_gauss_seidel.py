@@ -18,6 +18,7 @@ from grid2op.Chronics import FromNPY, ChangeNothing
 from grid2op.Backend import PandaPowerBackend
 from grid2op.Exceptions import Grid2OpException
 import lightsim2grid
+from lightsim2grid import AlgorithmType
 from lightsim2grid import LightSimBackend
 from benchmark_grid_size import (get_loads_gens,
                                  make_grid2op_env_pp,
@@ -97,7 +98,7 @@ if __name__ == "__main__":
                         grid_path=case_name,
                         _add_to_name=f"{case_name}",
                         )
-        env_ls.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidel)
+        env_ls.backend.set_solver_type(AlgorithmType.GaussSeidel)
         all_iters = [1, 3, 10, 30, 100, 300, 1_000, 3_000,
                      10_000, 30_000,
                      100_000, 300_000
@@ -131,7 +132,7 @@ if __name__ == "__main__":
         
     print("Configuration:")
     print_configuration()
-    print(f"Solver used for linear algebra: {lightsim2grid.SolverType.GaussSeidel}")
+    print(f"Solver used for linear algebra: {AlgorithmType.GaussSeidel}")
     print()
     hds = ["grid size (nb bus)", "gauss seidel max iter"]
     tab = []

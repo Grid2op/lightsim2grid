@@ -787,7 +787,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             res_a_side_2_ = RealVect(nb());  // in kA
         }
 
-        virtual bool _deactivate(int el_id, SolverControl & solver_control) override {
+        virtual bool _deactivate(int el_id, AlgoControl & solver_control) override {
             if(status_global_[el_id]){
                 // update solver control
                 solver_control.tell_recompute_ybus();
@@ -798,7 +798,7 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             }
             return false;
         }
-        virtual bool _reactivate(int el_id, SolverControl & solver_control) override {
+        virtual bool _reactivate(int el_id, AlgoControl & solver_control) override {
             if(!status_global_[el_id]){
                 // update solver control
                 solver_control.tell_recompute_ybus();

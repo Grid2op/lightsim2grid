@@ -79,10 +79,10 @@ struct Coeff{
 #define VERSION_MINOR "-1"
 #endif
 
-class SolverControl final
+class AlgoControl final
 {
     public:
-        SolverControl() noexcept: 
+        AlgoControl() noexcept: 
             change_dimension_(true),
             pv_changed_(true),
             pq_changed_(true),
@@ -97,7 +97,7 @@ class SolverControl final
             one_el_change_bus_(true)
             {};
 
-        ~SolverControl() noexcept = default; 
+        ~AlgoControl() noexcept = default; 
 
         void tell_all_changed(){
             change_dimension_ = true;

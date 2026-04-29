@@ -37,6 +37,7 @@ except ImportError as exc_:
  
 from grid2op.Parameters import Parameters
 import lightsim2grid
+from lightsim2grid import AlgorithmType
 from lightsim2grid.lightSimBackend import LightSimBackend
 from utils_benchmark import run_env, str2bool, get_env_name_displayed, print_configuration
 TABULATE_AVAIL = False
@@ -51,55 +52,54 @@ ENV_NAME = "rte_case14_realistic"
 DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
-solver_names = {lightsim2grid.SolverType.GaussSeidel: "GS",
-                lightsim2grid.SolverType.GaussSeidelSynch: "GS synch",
-                lightsim2grid.SolverType.SparseLU: "NR (SLU)",
-                lightsim2grid.SolverType.KLU: "NR (KLU)",
-                lightsim2grid.SolverType.NICSLU: "NR (NICSLU *)",
-                lightsim2grid.SolverType.CKTSO: "NR (CKTSO *)",
-                lightsim2grid.SolverType.SparseLUSingleSlack: "NR single (SLU)",
-                lightsim2grid.SolverType.KLUSingleSlack: "NR single (KLU)",
-                lightsim2grid.SolverType.NICSLUSingleSlack: "NR single (NICSLU *)",
-                lightsim2grid.SolverType.CKTSOSingleSlack: "NR single (CKTSO *)",
-                lightsim2grid.SolverType.FDPF_XB_SparseLU: "FDPF XB (SLU)",
-                lightsim2grid.SolverType.FDPF_BX_SparseLU: "FDPF BX (SLU)",
-                lightsim2grid.SolverType.FDPF_XB_KLU: "FDPF XB (KLU)",
-                lightsim2grid.SolverType.FDPF_BX_KLU: "FDPF BX (KLU)",
-                lightsim2grid.SolverType.FDPF_XB_NICSLU: "FDPF XB (NICSLU *)",
-                lightsim2grid.SolverType.FDPF_BX_NICSLU: "FDPF BX (NICSLU *)",
-                lightsim2grid.SolverType.FDPF_XB_CKTSO: "FDPF XB (CKTSO *)",
-                lightsim2grid.SolverType.FDPF_BX_CKTSO: "FDPF BX (CKTSO *)",
+solver_names = {AlgorithmType.GaussSeidel: "GS",
+                AlgorithmType.GaussSeidelSynch: "GS synch",
+                AlgorithmType.NR_SparseLU: "NR (SLU)",
+                AlgorithmType.NR_KLU: "NR (KLU)",
+                AlgorithmType.NR_NICSLU: "NR (NICSLU *)",
+                AlgorithmType.NR_CKTSO: "NR (CKTSO *)",
+                AlgorithmType.NRSing_SparseLU: "NR single (SLU)",
+                AlgorithmType.NRSing_KLU: "NR single (KLU)",
+                AlgorithmType.NRSing_NICSLU: "NR single (NICSLU *)",
+                AlgorithmType.NRSing_CKTSO: "NR single (CKTSO *)",
+                AlgorithmType.FDPF_XB_SparseLU: "FDPF XB (SLU)",
+                AlgorithmType.FDPF_BX_SparseLU: "FDPF BX (SLU)",
+                AlgorithmType.FDPF_XB_KLU: "FDPF XB (KLU)",
+                AlgorithmType.FDPF_BX_KLU: "FDPF BX (KLU)",
+                AlgorithmType.FDPF_XB_NICSLU: "FDPF XB (NICSLU *)",
+                AlgorithmType.FDPF_BX_NICSLU: "FDPF BX (NICSLU *)",
+                AlgorithmType.FDPF_XB_CKTSO: "FDPF XB (CKTSO *)",
+                AlgorithmType.FDPF_BX_CKTSO: "FDPF BX (CKTSO *)",
                 # lightsim2grid.SolverType.DC: "LS+DC",
                 # lightsim2grid.SolverType.KLUDC: "LS+SLU",
                 # lightsim2grid.SolverType.NICSLUDC: "LS+SLU"
                 }
-solver_gs = {lightsim2grid.SolverType.GaussSeidelSynch, lightsim2grid.SolverType.GaussSeidel}
-solver_fdpf = {lightsim2grid.SolverType.FDPF_XB_SparseLU, lightsim2grid.SolverType.FDPF_BX_SparseLU,
-               lightsim2grid.SolverType.FDPF_XB_KLU, lightsim2grid.SolverType.FDPF_BX_KLU,
-               lightsim2grid.SolverType.FDPF_XB_NICSLU, lightsim2grid.SolverType.FDPF_BX_NICSLU,
-               lightsim2grid.SolverType.FDPF_XB_CKTSO, lightsim2grid.SolverType.FDPF_BX_CKTSO,
+solver_gs = {AlgorithmType.GaussSeidelSynch, AlgorithmType.GaussSeidel}
+solver_fdpf = {AlgorithmType.FDPF_XB_SparseLU, AlgorithmType.FDPF_BX_SparseLU,
+               AlgorithmType.FDPF_XB_KLU, AlgorithmType.FDPF_BX_KLU,
+               AlgorithmType.FDPF_XB_NICSLU, AlgorithmType.FDPF_BX_NICSLU,
+               AlgorithmType.FDPF_XB_CKTSO, AlgorithmType.FDPF_BX_CKTSO,
                }
 res_times = {}
-
 order_solver_print = [
-    lightsim2grid.SolverType.GaussSeidel,
-    lightsim2grid.SolverType.GaussSeidelSynch,
-    lightsim2grid.SolverType.SparseLUSingleSlack,
-    lightsim2grid.SolverType.SparseLU,
-    lightsim2grid.SolverType.KLUSingleSlack,
-    lightsim2grid.SolverType.KLU,
-    lightsim2grid.SolverType.NICSLUSingleSlack,
-    lightsim2grid.SolverType.NICSLU,
-    lightsim2grid.SolverType.CKTSOSingleSlack,
-    lightsim2grid.SolverType.CKTSO,
-    lightsim2grid.SolverType.FDPF_XB_SparseLU,
-    lightsim2grid.SolverType.FDPF_BX_SparseLU,
-    lightsim2grid.SolverType.FDPF_XB_KLU,
-    lightsim2grid.SolverType.FDPF_BX_KLU,
-    lightsim2grid.SolverType.FDPF_XB_NICSLU,
-    lightsim2grid.SolverType.FDPF_BX_NICSLU,
-    lightsim2grid.SolverType.FDPF_XB_CKTSO,
-    lightsim2grid.SolverType.FDPF_BX_CKTSO,
+    AlgorithmType.GaussSeidel,
+    AlgorithmType.GaussSeidelSynch,
+    AlgorithmType.NRSing_SparseLU,
+    AlgorithmType.NR_SparseLU,
+    AlgorithmType.NRSing_KLU,
+    AlgorithmType.NR_KLU,
+    AlgorithmType.NRSing_NICSLU,
+    AlgorithmType.NR_NICSLU,
+    AlgorithmType.NRSing_CKTSO,
+    AlgorithmType.NR_CKTSO,
+    AlgorithmType.FDPF_XB_SparseLU,
+    AlgorithmType.FDPF_BX_SparseLU,
+    AlgorithmType.FDPF_XB_KLU,
+    AlgorithmType.FDPF_BX_KLU,
+    AlgorithmType.FDPF_XB_NICSLU,
+    AlgorithmType.FDPF_BX_NICSLU,
+    AlgorithmType.FDPF_XB_CKTSO,
+    AlgorithmType.FDPF_BX_CKTSO,
 ]
 
 
@@ -206,10 +206,10 @@ def main(max_ts,
         if solver_type in solver_gs:
             # gauss seidel sovler => more iterations
             env_lightsim.backend.set_solver_max_iter(10000)
-            if lightsim2grid.SolverType.GaussSeidel == solver_type and no_gs:
+            if AlgorithmType.GaussSeidel == solver_type and no_gs:
                 # I don't study the gauss seidel solver
                 continue
-            elif lightsim2grid.SolverType.GaussSeidelSynch  == solver_type and no_gs_synch:
+            elif AlgorithmType.GaussSeidelSynch  == solver_type and no_gs_synch:
                 # I don't study the gauss seidel synch solver
                 continue
         elif solver_type in solver_fdpf:

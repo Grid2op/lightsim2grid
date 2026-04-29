@@ -144,7 +144,7 @@ class LS2G_API BaseAlgo : public BaseConstants
                         real_type tol
                         ) = 0 ;
 
-        void tell_solver_control(const SolverControl & solver_control){
+        void tell_solver_control(const AlgoControl & solver_control){
             _solver_control = solver_control;
         }
         virtual void reset();
@@ -273,7 +273,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         double timer_total_nr_;
 
         const GridModel * gridmodel_ptr_;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
-        SolverControl _solver_control;
+        AlgoControl _solver_control;
 
 };
 

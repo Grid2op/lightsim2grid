@@ -49,11 +49,21 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         void set_init_from_n_powerflow(bool do_it) noexcept {_init_from_n_powerflow = do_it;}
 
         // solver "control"
-        virtual void change_solver(const AlgorithmType & type){
-            _algo.change_solver(type);
+        virtual void change_algorithm(const AlgorithmType & type){
+            _algo.change_algorithm(type);
             this->clear();
         }
-        std::vector<AlgorithmType> available_solvers() const {return _algo.available_solvers(); }
+        
+        // Returns the enum-typed solvers available in this build.
+        // Does not include plugin (Custom) solvers; use AlgorithmRegistry::available_default_algorithms()
+        // for the full list.
+        std::vector<AlgorithmType> available_default_algorithms() const {return _algo.available_default_algorithms(); }
+        
+        // Returns all solver names currently registered (built-in + plugins).
+        std::vector<std::string> available_algorithm_names() const {
+            return AlgorithmRegistry::instance().available_algorithm_names();
+        }
+
         AlgorithmType get_algo_type() const {return _algo.get_type(); }
 
         // // TODO
@@ -233,7 +243,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             nb_buses_solver_ = -1;
 
             // fill the data correctly
-            _solver_control.tell_all_changed();
+            _algo_controler.tell_all_changed();
             CplxVect res = _grid_model.pre_process_solver(
                 Vinit, 
                 Sbus_,
@@ -243,7 +253,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 slack_ids_me_,
                 slack_ids_solver_,
                 ac_solver_used,
-                _solver_control);
+                _algo_controler);
 
             // extract relevant information
             nb_buses_solver_ = static_cast<int>(Ybus_.cols());
@@ -295,8 +305,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
                 // perform the initial powerflow / "powerflow in n"
                 // (needed to init the underlying solver with the correct sparsity pattern in particular)
-                _solver_control.tell_all_changed();
-                _algo.tell_solver_control(_solver_control);
+                _algo_controler.tell_all_changed();
+                _algo.tell_solver_control(_algo_controler);
                 _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
                 CplxVect Vinit_solver2 = Vinit_solver;
                 bool conv = _algo.compute_pf(
@@ -315,7 +325,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 if(_init_from_n_powerflow) Vinit_solver = _algo.get_V();
 
                 // everything init from n-case above
-                _solver_control.tell_none_changed();
+                _algo_controler.tell_none_changed();
                 
                 // end of pre processing
                 _timer_pre_proc = timer_preproc.duration();
@@ -351,7 +361,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         double _timer_solver = 0.;
 
         // solver control
-        SolverControl _solver_control;
+        AlgoControl _algo_controler;
 
         // internal data
         CplxVect Sbus_;

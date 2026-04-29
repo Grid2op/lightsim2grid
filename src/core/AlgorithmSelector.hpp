@@ -51,9 +51,9 @@ class LS2G_API AlgorithmSelector final
         AlgorithmSelector& operator=(const AlgorithmSelector&) = delete;
 
         // Returns the enum-typed solvers available in this build.
-        // Does not include plugin (Custom) solvers; use AlgorithmRegistry::available_solvers()
+        // Does not include plugin (Custom) solvers; use AlgorithmRegistry::available_default_algorithms()
         // for the full list.
-        std::vector<AlgorithmType> available_solvers() const
+        std::vector<AlgorithmType> available_default_algorithms() const
         {
             std::vector<AlgorithmType> res;
             res.reserve(22);
@@ -109,16 +109,9 @@ class LS2G_API AlgorithmSelector final
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).
-        FDPF_XB_SparseLU& get_fdpf_xb_lu() {
-            FDPF_XB_SparseLU* p = dynamic_cast<FDPF_XB_SparseLU*>(_algo.get());
-            if (!p) throw std::runtime_error("AlgorithmSelector::get_fdpf_xb_lu: current solver is not FDPF_XB_SparseLU");
-            return *p;
-        }
-        FDPF_BX_SparseLU& get_fdpf_bx_lu() {
-            FDPF_BX_SparseLU* p = dynamic_cast<FDPF_BX_SparseLU*>(_algo.get());
-            if (!p) throw std::runtime_error("AlgorithmSelector::get_fdpf_bx_lu: current solver is not FDPF_BX_SparseLU");
-            return *p;
-        }
+        // Defined in AlgorithmSelector.cpp to avoid implicit instantiation of BaseFDPFAlgo in every TU.
+        FDPF_XB_SparseLU& get_fdpf_xb_lu();
+        FDPF_BX_SparseLU& get_fdpf_bx_lu();
 
         void set_gridmodel(const GridModel* gridmodel) {
             _gridmodel_ptr = gridmodel;
@@ -131,10 +124,10 @@ class LS2G_API AlgorithmSelector final
 
         // Change solver by enum value (backward-compatible API).
         // Converts to the registry name via AlgorithmTypeNames and calls the string overload.
-        void change_solver(const AlgorithmType& type);
+        void change_algorithm(const AlgorithmType& type);
 
         // Change solver by registry name (primary API; supports plugin solvers).
-        void change_solver(const std::string& name);
+        void change_algorithm(const std::string& name);
 
         void reset() {
             get_prt_solver("reset", false)->reset();
@@ -191,7 +184,7 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("update_internal_Ybus", true)->update_internal_Ybus(new_coeffs, add);
         }
 
-        void tell_solver_control(const SolverControl& solver_control) {
+        void tell_solver_control(const AlgoControl& solver_control) {
             get_prt_solver("tell_solver_control", false)->tell_solver_control(solver_control);
         }
 

@@ -178,8 +178,9 @@ struct LS2G_API DocGridModel
     
     static const std::string GridModel;
 
-    static const std::string change_solver;
-    static const std::string available_solvers;
+    static const std::string change_algorithm;
+    static const std::string available_algorithm_names;
+    static const std::string available_default_algorithms;
     static const std::string get_computation_time;
     static const std::string get_dc_computation_time;
     static const std::string get_algo_type;

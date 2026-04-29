@@ -12,6 +12,23 @@
 namespace ls2g {
 
 // ---------------------------------------------------------------------------
+// FDPF SparseLU accessors (defined here to avoid implicit BaseFDPFAlgo
+// instantiation via dynamic_cast in every TU that includes AlgorithmSelector.hpp)
+// ---------------------------------------------------------------------------
+
+FDPF_XB_SparseLU& AlgorithmSelector::get_fdpf_xb_lu() {
+    FDPF_XB_SparseLU* p = dynamic_cast<FDPF_XB_SparseLU*>(_algo.get());
+    if (!p) throw std::runtime_error("AlgorithmSelector::get_fdpf_xb_lu: current solver is not FDPF_XB_SparseLU");
+    return *p;
+}
+
+FDPF_BX_SparseLU& AlgorithmSelector::get_fdpf_bx_lu() {
+    FDPF_BX_SparseLU* p = dynamic_cast<FDPF_BX_SparseLU*>(_algo.get());
+    if (!p) throw std::runtime_error("AlgorithmSelector::get_fdpf_bx_lu: current solver is not FDPF_BX_SparseLU");
+    return *p;
+}
+
+// ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 
@@ -24,20 +41,20 @@ AlgorithmSelector::AlgorithmSelector()
 }
 
 // ---------------------------------------------------------------------------
-// change_solver overloads
+// change_algorithm overloads
 // ---------------------------------------------------------------------------
 
-void AlgorithmSelector::change_solver(const AlgorithmType& type)
+void AlgorithmSelector::change_algorithm(const AlgorithmType& type)
 {
     if (type == AlgorithmType::Custom) {
         throw std::runtime_error(
-            "AlgorithmSelector::change_solver: AlgorithmType::Custom is not a concrete solver; "
-            "use the string-based change_solver(name) overload instead.");
+            "AlgorithmSelector::change_algorithm: AlgorithmType::Custom is not a concrete solver; "
+            "use the string-based change_algorithm(name) overload instead.");
     }
-    change_solver(algo_type_to_name(type));
+    change_algorithm(algo_type_to_name(type));
 }
 
-void AlgorithmSelector::change_solver(const std::string& name)
+void AlgorithmSelector::change_algorithm(const std::string& name)
 {
     AlgorithmType type = name_to_algo_type(name);   // AlgorithmType::Custom if plugin
 

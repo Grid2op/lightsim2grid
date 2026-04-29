@@ -16,6 +16,9 @@ AlgorithmRegistry& AlgorithmRegistry::instance() {
 }
 
 void AlgorithmRegistry::register_solver(const std::string& name, Factory f) {
+    if (_factories.count(name)) {
+        throw std::invalid_argument("AlgorithmRegistry: a solver named '" + name + "' is already registered.");
+    }
     _factories[name] = std::move(f);
 }
 
@@ -32,7 +35,7 @@ bool AlgorithmRegistry::is_registered(const std::string& name) const {
     return _factories.find(name) != _factories.end();
 }
 
-std::vector<std::string> AlgorithmRegistry::available_solvers() const {
+std::vector<std::string> AlgorithmRegistry::available_algorithm_names() const {
     std::vector<std::string> names;
     names.reserve(_factories.size());
     for (auto it = _factories.begin(); it != _factories.end(); ++it) {

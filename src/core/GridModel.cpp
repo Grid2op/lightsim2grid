@@ -59,8 +59,8 @@ GridModel::GridModel(const GridModel & other)
 
     // assign the right solver
     reset(true, true, true);
-    _algo.change_solver(other.get_algo_type());
-    _dc_algo.change_solver(other.get_dc_algo_type());
+    _algo.change_algorithm(other.get_algo_type());
+    _dc_algo.change_algorithm(other.get_dc_algo_type());
 }
 
 //pickle
@@ -106,7 +106,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
-    solver_control_.tell_all_changed();
+    algo_controler_.tell_all_changed();
     compute_results_ = true;
 
     // extract data from the state
@@ -180,8 +180,8 @@ void GridModel::set_state(GridModel::StateRes & my_state)
 
     // handle the solver
     reset(true, true, true);
-    _algo.change_solver(std::get<16>(my_state));
-    _dc_algo.change_solver(std::get<17>(my_state));
+    _algo.change_algorithm(std::get<16>(my_state));
+    _dc_algo.change_algorithm(std::get<17>(my_state));
 };
 
 void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
@@ -279,7 +279,7 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     bus_pv_ = SolverBusIdVect();
     bus_pq_ = SolverBusIdVect();
 
-    solver_control_.tell_all_changed();
+    algo_controler_.tell_all_changed();
     tell_solver_need_reset(); // also handles last_bus_status_saved_
     
     slack_bus_id_ac_me_ = GlobalBusIdVect();  // slack bus id, gridmodel number
@@ -292,11 +292,11 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     if (reset_solver){
         _algo.reset();
         _algo.set_gridmodel(this);
-        _algo.tell_solver_control(solver_control_);
+        _algo.tell_solver_control(algo_controler_);
 
         _dc_algo.reset();
         _dc_algo.set_gridmodel(this);
-        _dc_algo.tell_solver_control(solver_control_);
+        _dc_algo.tell_solver_control(algo_controler_);
     }
 }
 
@@ -328,7 +328,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
                                     slack_bus_id_ac_me_,
                                     slack_bus_id_ac_solver_,
                                     is_ac,
-                                    solver_control_);
+                                    algo_controler_);
 
     // start the solver
     conv = _algo.compute_pf(
@@ -414,7 +414,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
     bool is_ac = true;
-    SolverControl reset_solver;
+    AlgoControl reset_solver;
     reset_solver.tell_none_changed();  // TODO reset solver
     CplxVect V = pre_process_solver(V_proposed, 
                                     acSbus_,
@@ -458,7 +458,7 @@ CplxVect GridModel::pre_process_solver(
     GlobalBusIdVect & slack_bus_id_me,
     SolverBusIdVect & slack_bus_id_solver,
     bool is_ac,
-    const SolverControl & solver_control)
+    const AlgoControl & solver_control)
 {
     // TODO get rid of the "is_ac" argument: this info is available in the _solver already
     if(is_ac){
@@ -559,16 +559,16 @@ CplxVect GridModel::pre_process_solver(
     generators_.set_vm(V, id_me_to_solver);
     dc_lines_.set_vm(V, id_me_to_solver);
 
-    if(solver_control_.need_reset_solver() || 
-       solver_control_.has_dimension_changed() ||
-       solver_control_.has_slack_participate_changed() || 
-       solver_control_.has_pv_changed() || 
-       solver_control_.has_slack_weight_changed()){
+    if(algo_controler_.need_reset_solver() || 
+       algo_controler_.has_dimension_changed() ||
+       algo_controler_.has_slack_participate_changed() || 
+       algo_controler_.has_pv_changed() || 
+       algo_controler_.has_slack_weight_changed()){
         slack_weights_ = generators_.get_slack_weights_solver(Ybus.rows(), id_me_to_solver); 
     }
 
-    if(is_ac) _algo.tell_solver_control(solver_control_);
-    else _dc_algo.tell_solver_control(solver_control_);
+    if(is_ac) _algo.tell_solver_control(algo_controler_);
+    else _dc_algo.tell_solver_control(algo_controler_);
     return V;
 }
 
@@ -720,7 +720,7 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_
 void GridModel::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                           const GlobalBusIdVect& id_solver_to_me,
                           const SolverBusIdVect & slack_bus_id_solver,
-                          const SolverControl & solver_control)
+                          const AlgoControl & solver_control)
 {
     // Nothing to do if neither pv, nor pq nor the dimension of the problem has changed
 
@@ -858,7 +858,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
                                     slack_bus_id_dc_me_,
                                     slack_bus_id_dc_solver_,
                                     is_ac,
-                                    solver_control_);
+                                    algo_controler_);
     // start the solver
     conv = _dc_algo.compute_pf(
         Ybus_dc_,
@@ -961,7 +961,7 @@ void GridModel::add_gen_slackbus(int gen_id, real_type weight){
         exc_ << "GridModel::add_gen_slackbus: please enter a valid weight for the slack bus (> 0.)";
         throw std::runtime_error(exc_.str());
     }
-    generators_.add_slackbus(gen_id, weight, solver_control_);
+    generators_.add_slackbus(gen_id, weight, algo_controler_);
 }
 
 void GridModel::remove_gen_slackbus(int gen_id){
@@ -981,7 +981,7 @@ void GridModel::remove_gen_slackbus(int gen_id){
         exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
         throw std::runtime_error(exc_.str());
     }
-    generators_.remove_slackbus(gen_id, solver_control_);
+    generators_.remove_slackbus(gen_id, algo_controler_);
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
@@ -1024,15 +1024,15 @@ void GridModel::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, 
 void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                             Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    loads_.update_topo(has_changed, new_values, solver_control_, substations_);
-    generators_.update_topo(has_changed, new_values, solver_control_, substations_);
-    storages_.update_topo(has_changed, new_values, solver_control_, substations_);
+    loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
+    generators_.update_topo(has_changed, new_values, algo_controler_, substations_);
+    storages_.update_topo(has_changed, new_values, algo_controler_, substations_);
     // shunts are not in "topo" in grid2op
 
     // NB we suppose that if a powerline (or a trafo) is disconnected, then both its ends are
     // and same for trafo, obviously
-    powerlines_.update_topo(has_changed, new_values, solver_control_, substations_);
-    trafos_.update_topo(has_changed, new_values, solver_control_, substations_);
+    powerlines_.update_topo(has_changed, new_values, algo_controler_, substations_);
+    trafos_.update_topo(has_changed, new_values, algo_controler_, substations_);
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
@@ -1140,7 +1140,7 @@ std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
 
     // and reset the slack bus
     generators_.remove_all_slackbus();
-    res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, solver_control_);
+    res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     std::get<1>(res) = res_gen_id;
     slack_bus_id_ac_solver_ = SolverBusIdVect();
     slack_bus_id_dc_solver_ = SolverBusIdVect();

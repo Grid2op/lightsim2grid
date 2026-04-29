@@ -24,7 +24,7 @@ void BaseAlgo::reset(){
     nr_iter_ = 0;  // number of iteration performs by the algorithm
     err_ = ErrorType::NotInitError; //error message:
 
-    _solver_control = SolverControl();
+    _solver_control = AlgoControl();
     _solver_control.tell_all_changed();
 }
 

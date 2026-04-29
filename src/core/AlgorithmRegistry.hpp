@@ -29,7 +29,7 @@ public:
     void register_solver(const std::string& name, Factory f);
     std::unique_ptr<BaseAlgo> make(const std::string& name) const;
     bool is_registered(const std::string& name) const;
-    std::vector<std::string> available_solvers() const;
+    std::vector<std::string> available_algorithm_names() const;
 
 private:
     AlgorithmRegistry() = default;

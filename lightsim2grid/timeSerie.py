@@ -104,19 +104,20 @@ class ___TimeSerie:
         self.load_q = None
         self.__computed = False
         
-        self.available_solvers = self.computer.available_solvers()
-        if AlgorithmType.KLU in self.available_solvers:
+        self.available_default_algorithms = self.computer.available_default_algorithms()
+        if AlgorithmType.NR_KLU in self.available_default_algorithms:
             # use the faster KLU if available
-            self.computer.change_solver(AlgorithmType.KLU)
+            self.computer.change_algorithm(AlgorithmType.NR_KLU)
     
     @property
     def init_from_n_powerflow(self):
         return self.computer.init_from_n_powerflow
-    @init_from_n_powerflow.setter
     
+    @init_from_n_powerflow.setter
     def init_from_n_powerflow(self, val: bool):
-        val = bool(val)
-        self.computer.init_from_n_powerflow = val
+        if bool(val) != val:
+            raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
+        self.computer.init_from_n_powerflow = bool(val)
         
     def get_injections(self, scenario_id=None, seed=None):
         """

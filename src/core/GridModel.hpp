@@ -81,16 +81,16 @@ class LS2G_API GridModel final
         GridModel():
           timer_last_ac_pf_(0.),
           timer_last_dc_pf_(0.),
-          solver_control_(),
+          algo_controler_(),
           compute_results_(true),
           init_vm_pu_(1.04),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
-            _algo.change_solver(AlgorithmType::NR_SparseLU);
-            _dc_algo.change_solver(AlgorithmType::DC_SparseLU);
+            _algo.change_algorithm(AlgorithmType::NR_SparseLU);
+            _dc_algo.change_algorithm(AlgorithmType::DC_SparseLU);
             _algo.set_gridmodel(this);
             _dc_algo.set_gridmodel(this);
-            solver_control_.tell_all_changed();
+            algo_controler_.tell_all_changed();
         }
         GridModel(const GridModel & other);
         // GridModel(GridModel && other) noexcept = default;  // TODO
@@ -138,20 +138,20 @@ class LS2G_API GridModel final
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
         // turned off generators are not pv
         void turnedoff_no_pv(){
-            solver_control_.has_pv_changed();
-            generators_.turnedoff_no_pv(solver_control_);
+            algo_controler_.has_pv_changed();
+            generators_.turnedoff_no_pv(algo_controler_);
         }  
         // turned off generators are pv
         void turnedoff_pv(){
-            solver_control_.has_pv_changed();
-            generators_.turnedoff_pv(solver_control_);
+            algo_controler_.has_pv_changed();
+            generators_.turnedoff_pv(algo_controler_);
         }  
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
         void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
-            generators_.update_slack_weights(could_be_slack, solver_control_);
+            generators_.update_slack_weights(could_be_slack, algo_controler_);
         }
         void update_slack_weights_by_id(Eigen::Ref<const IntVect> slack_ids){
-            generators_.update_slack_weights_by_id(slack_ids, solver_control_);
+            generators_.update_slack_weights_by_id(slack_ids, algo_controler_);
         }
 
         const SGenContainer & get_static_generators_as_data() const {return sgens_;}
@@ -186,28 +186,28 @@ class LS2G_API GridModel final
         }
 
         // solver "control"
-        void change_solver(const AlgorithmType & type){
-            solver_control_.tell_all_changed();
+        void change_algorithm(const AlgorithmType & type){
+            algo_controler_.tell_all_changed();
 
             if(_algo.is_fdpf(type)) init_fdpf_coeffs();
 
-            if(_algo.is_dc(type)) _dc_algo.change_solver(type);
-            else _algo.change_solver(type);
+            if(_algo.is_dc(type)) _dc_algo.change_algorithm(type);
+            else _algo.change_algorithm(type);
         }
         // String-based overload: looks up the solver by registry name.
         // For known built-in names the enum-based routing applies;
         // for plugin names the solver always goes to the AC solver slot.
-        void change_solver(const std::string& name) {
-            solver_control_.tell_all_changed();
+        void change_algorithm(const std::string& name) {
+            algo_controler_.tell_all_changed();
             // Peek at IS_AC to decide which slot to update.
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
-            if (tmp->IS_AC) _algo.change_solver(name);
-            else _dc_algo.change_solver(name);
+            if (tmp->IS_AC) _algo.change_algorithm(name);
+            else _dc_algo.change_algorithm(name);
         }
-        std::vector<AlgorithmType> available_solvers() {return _algo.available_solvers(); }
+        std::vector<AlgorithmType> available_default_algorithms() {return _algo.available_default_algorithms(); }
         // Returns all solver names currently registered (built-in + plugins).
-        std::vector<std::string> available_solver_names() const {
-            return AlgorithmRegistry::instance().available_solvers();
+        std::vector<std::string> available_algorithm_names() const {
+            return AlgorithmRegistry::instance().available_algorithm_names();
         }
         AlgorithmType get_algo_type() const {return _algo.get_type(); }
         AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
@@ -348,13 +348,13 @@ class LS2G_API GridModel final
                 // this can happen if last_bus_status_saved_ has never been set
                 // for example right after loading
                 // or if `tell_none_changed` has not been called yet.
-                solver_control_.tell_dimension_changed();
+                algo_controler_.tell_dimension_changed();
                 return;
             }
             // NB last_bus_status_saved_ wil be set to the right state after `gridmodel.tell_none_changed` has been called.
             for(int global_bus = 0; global_bus < nb_bus_total; global_bus++){
                 if(last_bus_status_saved_[global_bus] != new_status[global_bus]){
-                    solver_control_.tell_dimension_changed();
+                    algo_controler_.tell_dimension_changed();
                     break;
                 }
             }
@@ -402,18 +402,18 @@ class LS2G_API GridModel final
          * It is not mandatory, and allow to save computation times.
          */
         void unset_changes(){
-            solver_control_.tell_none_changed();
+            algo_controler_.tell_none_changed();
             last_bus_status_saved_ = substations_.get_bus_status();
         }  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
 
-        void tell_recompute_ybus(){solver_control_.tell_recompute_ybus();}
-        void tell_recompute_sbus(){solver_control_.tell_recompute_sbus();}
+        void tell_recompute_ybus(){algo_controler_.tell_recompute_ybus();}
+        void tell_recompute_sbus(){algo_controler_.tell_recompute_sbus();}
         void tell_solver_need_reset(){
             last_bus_status_saved_ = std::vector<bool>(substations_.nb_bus(), false);
-            solver_control_.tell_solver_need_reset();
+            algo_controler_.tell_solver_need_reset();
         }
-        void tell_ybus_change_sparsity_pattern(){solver_control_.tell_ybus_change_sparsity_pattern();} 
-        const SolverControl & get_solver_control() const {return solver_control_;}
+        void tell_ybus_change_sparsity_pattern(){algo_controler_.tell_ybus_change_sparsity_pattern();} 
+        const AlgoControl & get_algo_controler() const {return algo_controler_;}
 
         // dc powerflow
         CplxVect dc_pf(const CplxVect & Vinit,
@@ -469,10 +469,10 @@ class LS2G_API GridModel final
         void deactivate_bus(GlobalBusId global_bus_id) {
             if(substations_.is_bus_connected(global_bus_id)){
                 // bus was connected, dim of matrix change
-                solver_control_.need_reset_solver();
-                solver_control_.need_recompute_sbus();
-                solver_control_.need_recompute_ybus();
-                solver_control_.ybus_change_sparsity_pattern();
+                algo_controler_.need_reset_solver();
+                algo_controler_.need_recompute_sbus();
+                algo_controler_.need_recompute_ybus();
+                algo_controler_.ybus_change_sparsity_pattern();
                 GenericContainer::_generic_deactivate(global_bus_id, substations_);
             }
         }
@@ -484,10 +484,10 @@ class LS2G_API GridModel final
         void reactivate_bus(GlobalBusId global_bus_id) {
             if(!substations_.is_bus_connected(global_bus_id)){
                 // bus was not connected, dim of matrix change
-                solver_control_.need_reset_solver();
-                solver_control_.need_recompute_sbus();
-                solver_control_.need_recompute_ybus();
-                solver_control_.ybus_change_sparsity_pattern();
+                algo_controler_.need_reset_solver();
+                algo_controler_.need_recompute_sbus();
+                algo_controler_.need_recompute_ybus();
+                algo_controler_.ybus_change_sparsity_pattern();
                 GenericContainer::_generic_reactivate(global_bus_id, substations_); 
             }
         }
@@ -553,10 +553,10 @@ class LS2G_API GridModel final
 
         //deactivate a powerline (disconnect it)
         void deactivate_powerline(int powerline_id) {
-            powerlines_.deactivate(powerline_id, solver_control_);
+            powerlines_.deactivate(powerline_id, algo_controler_);
         }
         void reactivate_powerline(int powerline_id) {
-            powerlines_.reactivate(powerline_id, solver_control_);
+            powerlines_.reactivate(powerline_id, algo_controler_);
         }
 
         /**
@@ -568,7 +568,7 @@ class LS2G_API GridModel final
             powerlines_.change_bus_side_1(
                 powerline_id,
                 new_gridmodel_bus_id,
-                solver_control_,    
+                algo_controler_,    
                 substations_);
         }
         void change_bus1_powerline_python(int powerline_id, int new_gridmodel_bus_id) {
@@ -584,7 +584,7 @@ class LS2G_API GridModel final
             powerlines_.change_bus_side_2(
                 powerline_id,
                 new_gridmodel_bus_id,
-                solver_control_,
+                algo_controler_,
                 substations_);
         }
         void change_bus2_powerline_python(int powerline_id, int new_gridmodel_bus_id) {
@@ -594,8 +594,8 @@ class LS2G_API GridModel final
         int get_bus2_powerline(int powerline_id) {return powerlines_.get_bus_side_2(powerline_id).cast_int();}
 
         //deactivate trafo
-        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, solver_control_); }
-        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, solver_control_); }
+        void deactivate_trafo(int trafo_id) {trafos_.deactivate(trafo_id, algo_controler_); }
+        void reactivate_trafo(int trafo_id) {trafos_.reactivate(trafo_id, algo_controler_); }
 
         /**
          * Change the bus on the "side 1" of the trafo trafo_id.
@@ -606,7 +606,7 @@ class LS2G_API GridModel final
             trafos_.change_bus_side_1(
                 trafo_id,
                 new_gridmodel_bus_id,
-                solver_control_,
+                algo_controler_,
                 substations_); 
         }
         void change_bus1_trafo_python(int trafo_id, int new_gridmodel_bus_id) {
@@ -619,7 +619,7 @@ class LS2G_API GridModel final
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus2_trafo(int trafo_id, GridModelBusId new_gridmodel_bus_id) {
-            trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, solver_control_, substations_);
+            trafos_.change_bus_side_2(trafo_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus2_trafo_python(int trafo_id, int new_gridmodel_bus_id) {
             change_bus2_trafo(trafo_id, GridModelBusId(new_gridmodel_bus_id));
@@ -631,14 +631,14 @@ class LS2G_API GridModel final
             return trafos_.get_bus_side_2(trafo_id).cast_int();
         }
         void change_ratio_trafo(int trafo_id, real_type new_ratio){
-            trafos_.change_ratio(trafo_id, new_ratio, solver_control_);
+            trafos_.change_ratio(trafo_id, new_ratio, algo_controler_);
         }
 
         /**
          * The shift is in radian (not degree !)
          */
         void change_shift_trafo(int trafo_id, real_type new_shift_rad){
-            trafos_.change_shift(trafo_id, new_shift_rad, solver_control_);
+            trafos_.change_shift(trafo_id, new_shift_rad, algo_controler_);
         }
         void change_shift_trafo_deg(int trafo_id, real_type new_shift_deg){
             real_type new_shift_rad = new_shift_deg / BaseConstants::my_180_pi_;
@@ -646,8 +646,8 @@ class LS2G_API GridModel final
         }
 
         //load
-        void deactivate_load(int load_id) {loads_.deactivate(load_id, solver_control_); }
-        void reactivate_load(int load_id) {loads_.reactivate(load_id, solver_control_); }
+        void deactivate_load(int load_id) {loads_.deactivate(load_id, algo_controler_); }
+        void reactivate_load(int load_id) {loads_.reactivate(load_id, algo_controler_); }
 
         /**
          * Change the bus on the load load_id.
@@ -655,18 +655,18 @@ class LS2G_API GridModel final
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_load(int load_id, GridModelBusId new_gridmodel_bus_id) {
-            loads_.change_bus(load_id, new_gridmodel_bus_id, solver_control_, substations_);
+            loads_.change_bus(load_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus_load_python(int load_id, int new_gridmodel_bus_id) {
             change_bus_load(load_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, solver_control_); }
-        void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, solver_control_); }
+        void change_p_load(int load_id, real_type new_p) {loads_.change_p_nothrow(load_id, new_p, algo_controler_); }
+        void change_q_load(int load_id, real_type new_q) {loads_.change_q_nothrow(load_id, new_q, algo_controler_); }
         int get_bus_load(int load_id) {return loads_.get_bus(load_id).cast_int();}
 
         //generator
-        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, solver_control_); }
-        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, solver_control_); }
+        void deactivate_gen(int gen_id) {generators_.deactivate(gen_id, algo_controler_); }
+        void reactivate_gen(int gen_id) {generators_.reactivate(gen_id, algo_controler_); }
 
         /**
          * Change the bus on the generator generator_id.
@@ -674,85 +674,85 @@ class LS2G_API GridModel final
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_gen(int gen_id, GridModelBusId new_gridmodel_bus_id) {
-            generators_.change_bus(gen_id, new_gridmodel_bus_id, solver_control_, substations_);
+            generators_.change_bus(gen_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus_gen_python(int gen_id, int new_gridmodel_bus_id) {
             change_bus_gen(gen_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, solver_control_); }
-        void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, solver_control_); }
-        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, solver_control_); }
+        void change_p_gen(int gen_id, real_type new_p) {generators_.change_p_nothrow(gen_id, new_p, algo_controler_); }
+        void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, algo_controler_); }
+        void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, algo_controler_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id).cast_int();}
 
         //shunt
-        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, solver_control_); }
-        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, solver_control_); }
+        void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, algo_controler_); }
+        void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, algo_controler_); }
         /**
          * Change the bus on the shunt shunt_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_shunt(int shunt_id, GridModelBusId new_gridmodel_bus_id) {
-            shunts_.change_bus(shunt_id, new_gridmodel_bus_id, solver_control_, substations_);  
+            shunts_.change_bus(shunt_id, new_gridmodel_bus_id, algo_controler_, substations_);  
         }
         void change_bus_shunt_python(int shunt_id, int new_gridmodel_bus_id) {
             change_bus_shunt(shunt_id, GridModelBusId(new_gridmodel_bus_id));  
         }
-        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, solver_control_); }
-        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, solver_control_); }
+        void change_p_shunt(int shunt_id, real_type new_p) {shunts_.change_p_nothrow(shunt_id, new_p, algo_controler_); }
+        void change_q_shunt(int shunt_id, real_type new_q) {shunts_.change_q_nothrow(shunt_id, new_q, algo_controler_); }
         int get_bus_shunt(int shunt_id) {return shunts_.get_bus(shunt_id).cast_int();}
 
         //static gen
-        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, solver_control_); }
-        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, solver_control_); }
+        void deactivate_sgen(int sgen_id) {sgens_.deactivate(sgen_id, algo_controler_); }
+        void reactivate_sgen(int sgen_id) {sgens_.reactivate(sgen_id, algo_controler_); }
         /**
          * Change the bus on the static generator sgen_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_sgen(int sgen_id, GridModelBusId new_gridmodel_bus_id) {
-            sgens_.change_bus(sgen_id, new_gridmodel_bus_id, solver_control_, substations_);
+            sgens_.change_bus(sgen_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus_sgen_python(int sgen_id, int new_gridmodel_bus_id) {
             change_bus_sgen(sgen_id, GridModelBusId(new_gridmodel_bus_id));
         }
-        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, solver_control_); }
-        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, solver_control_); }
+        void change_p_sgen(int sgen_id, real_type new_p) {sgens_.change_p_nothrow(sgen_id, new_p, algo_controler_); }
+        void change_q_sgen(int sgen_id, real_type new_q) {sgens_.change_q_nothrow(sgen_id, new_q, algo_controler_); }
         int get_bus_sgen(int sgen_id) {return sgens_.get_bus(sgen_id).cast_int();}
 
         //storage units
-        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, solver_control_); }
-        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, solver_control_); }
+        void deactivate_storage(int storage_id) {storages_.deactivate(storage_id, algo_controler_); }
+        void reactivate_storage(int storage_id) {storages_.reactivate(storage_id, algo_controler_); }
         /**
          * Change the bus on the storage storage_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus_storage(int storage_id, GridModelBusId new_gridmodel_bus_id) {
-            storages_.change_bus(storage_id, new_gridmodel_bus_id, solver_control_, substations_);
+            storages_.change_bus(storage_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus_storage_python(int sgen_id, int new_gridmodel_bus_id) {
             change_bus_storage(sgen_id, GridModelBusId(new_gridmodel_bus_id));
         }
         void change_p_storage(int storage_id, real_type new_p) {
-               storages_.change_p_nothrow(storage_id, new_p, solver_control_);
+               storages_.change_p_nothrow(storage_id, new_p, algo_controler_);
             }
-        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, solver_control_); }
+        void change_q_storage(int storage_id, real_type new_q) {storages_.change_q_nothrow(storage_id, new_q, algo_controler_); }
         int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
-        void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, solver_control_); }
-        void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, solver_control_); }
-        void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, solver_control_); }
-        void change_v1_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, solver_control_); }
-        void change_v2_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, solver_control_); }
+        void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, algo_controler_); }
+        void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, algo_controler_); }
+        void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, algo_controler_); }
+        void change_v1_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, algo_controler_); }
+        void change_v2_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, algo_controler_); }
         /**
          * Change the bus on the dc line "side 1" dcline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus1_dcline(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
-            dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
+            dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, algo_controler_, substations_); 
         }
         void change_bus1_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
             change_bus1_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
@@ -763,7 +763,7 @@ class LS2G_API GridModel final
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus2_dcline(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
-            dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, solver_control_, substations_); 
+            dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, algo_controler_, substations_); 
         }
         void change_bus2_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
             change_bus2_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
@@ -1336,7 +1336,7 @@ class LS2G_API GridModel final
                                     GlobalBusIdVect & slack_bus_id_me,
                                     SolverBusIdVect & slack_bus_id_solver,
                                     bool is_ac,
-                                    const SolverControl & solver_control);
+                                    const AlgoControl & solver_control);
 
         //for FDPF
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
@@ -1496,7 +1496,7 @@ class LS2G_API GridModel final
         void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                        const GlobalBusIdVect& id_solver_to_me,
                        const SolverBusIdVect & slack_bus_id_solver,
-                       const SolverControl & solver_control);
+                       const AlgoControl & solver_control);
 
         // results
         /**process the results from the solver to this instance
@@ -1566,7 +1566,7 @@ class LS2G_API GridModel final
         double timer_last_ac_pf_;
         double timer_last_dc_pf_;
 
-        SolverControl solver_control_;
+        AlgoControl algo_controler_;
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         real_type sn_mva_;
