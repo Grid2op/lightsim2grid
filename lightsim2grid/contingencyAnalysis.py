@@ -12,7 +12,7 @@ import copy
 import numpy as np
 from collections.abc import Iterable
 
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 from .lightsim2grid_cpp import ContingencyAnalysisCPP
 
 try:
