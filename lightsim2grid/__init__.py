@@ -46,13 +46,13 @@ else:
     from lightsim2grid.algorithm import ErrorType
 
 
-def load_solver_plugin(path: str) -> None:
-    """Load a shared library containing a lightsim2grid solver plugin.
+def load_algorithm_plugin(path: str) -> None:
+    """Load a shared library containing a lightsim2grid algorithm plugin.
 
-    The library must contain at least one static ``SolverRegistrar`` object
+    The library must contain at least one static ``AlgorithmRegistrar`` object
     in an anonymous namespace (see ``examples/external_solver/`` for a minimal
     example).  Its constructor fires when the library is loaded, which
-    registers the new solver into the C++ ``AlgorithmRegistry`` singleton.
+    registers the new algorithm / solver into the C++ ``AlgorithmRegistry`` singleton.
 
     After this call the new solver name is usable via::
 

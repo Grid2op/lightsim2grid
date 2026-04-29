@@ -30,7 +30,18 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 
 [0.14.0] 2026-xx-yy
 ---------------------
-- [BREAKING] the reference to "solver" are now replaced with equivalent "algorithm"
+- [BREAKING] `lightsim2grid.SolverType` enum is no more accessible. You can migrate 
+  (for now, deprecation pending) to `from lightsim2grid.solver import SolverType` 
+  without any other changes. Or you can see the documentation for the (possible)
+  new enum names of the `lightsim2grid.algorithm.AlgorithmType` enum.
+- [DEPRECATION PENDING] some previous solver names (now called algorithm) were 
+  rather ambiguous and not very clear. For example, it was not clear that "KLU"
+  referenced the Newton Raphson method, with distributed slack variant, that use_buses_for_sub
+  the KLU linear solver. For clarity, it is renamed "NR_KLU" now. Old names 
+  are still accessible within the `lightsim2grid.solver.SolverType` enum but 
+  will be deprecated in the future. Please see the documentation for the full
+  migration guide.
+- [DEPRECATION PENDING] the reference to "solver" are now replaced with equivalent "algorithm"
   which is clearer and avoid making mistake between linear solver (*eg* SparseLU from 
   Eigen or KLU) and "method to solve powerflow", such as Newton Raphson. 
   This includes the "lightsim2grid.solver" which is not "lightsim2grid.algorithm"
@@ -47,6 +58,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] remove the "typedef" in favor of "using" cpp side (core)
 - [IMPROVED] add some "override" and "final" in the algorithm virtual methods.
 - [IMPROVED] file names of some example scripts.
+- [IMPROVED] names in the enum for the solver (*eg* AlgorithmType.NR_KLU) now
+  matches the names of the solver (*eg* NR_KLU). There is no more differences 
+  between the enum and the solver names.
 
 [0.13.1]  2026-04-21
 --------------------
