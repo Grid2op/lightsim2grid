@@ -14,7 +14,7 @@ import zipfile
 from scipy import sparse
 KLU_AVAILBLE = False
 try:
-    from lightsim2grid.lightsim2grid_cpp import KLUSolver
+    from lightsim2grid.lightsim2grid_cpp import NR_KLU
     KLU_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
@@ -31,7 +31,7 @@ class MakeTests(unittest.TestCase):
         self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
         if not KLU_AVAILBLE:
             return
-        self.solver = KLUSolver()
+        self.solver = NR_KLU()
 
         self.path = None
         self.V_init = None

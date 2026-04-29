@@ -7,8 +7,8 @@ LightSim2grid supports dynamically-loaded solver plugins.  A plugin is a
 shared library (``.so`` / ``.dll``) that registers one or more custom
 powerflow solvers at load time.  Once loaded, those solvers behave exactly
 like the built-in ones: they are accessible by name, selectable via
-:func:`GridModel.change_solver`, and appear in
-:func:`GridModel.available_solver_names`.
+:func:`GridModel.change_algorithm`, and appear in
+:func:`GridModel.available_algorithm_names`.
 
 This mechanism lets you add a new solver algorithm — from your own
 repository or a third-party library — **without modifying lightsim2grid's
@@ -35,8 +35,8 @@ The lookup flow is:
            └─ SolverRegistrar { "MySolver", factory }
                 └─ SolverRegistry::instance().register_solver(...)
 
-    Python: grid.change_solver("MySolver")
-      └─ ChooseSolver::change_solver("MySolver")
+    Python: grid.change_algorithm("MySolver")
+      └─ AlgorithmSelector::change_algorithm("MySolver")
            └─ SolverRegistry::instance().make("MySolver")
                 └─ factory()  →  unique_ptr<BaseAlgo>
 
@@ -59,7 +59,7 @@ The ``SolverRegistry`` C++ API (defined in ``SolverRegistry.hpp``, installed to 
         bool is_registered(const std::string& name) const;
 
         // List of all registered names (built-in + plugins).
-        std::vector<std::string> available_solvers() const;
+        std::vector<std::string> available_algorithms() const;
     };
 
     // Drop a static instance of this in an anonymous namespace to
@@ -356,10 +356,10 @@ Loading and using the plugin from Python
 
     # 2. Confirm the solver is available.
     gm = GridModel()
-    print(gm.available_solver_names())   # [..., "MySolver", ...]
+    print(gm.available_algorithm_names())   # [..., "MySolver", ...]
 
     # 3. Activate the solver.
-    gm.change_solver("MySolver")
+    gm.change_algorithm("MySolver")
 
     # 4. Run a powerflow — lightsim2grid now delegates to MySolver.compute_pf().
     # (set up the grid first via gm.init_from_pandapower() or similar)
@@ -380,42 +380,42 @@ Python API reference
     into the ``SolverRegistry`` singleton.
 
     After this call the new solver is usable via
-    ``grid.change_solver("MySolverName")`` and will appear in
-    ``grid.available_solver_names()``.
+    ``grid.change_algorithm("MySolverName")`` and will appear in
+    ``grid.available_algorithm_names()``.
 
     :param path: Absolute or relative path to the ``.so`` / ``.dll`` file.
     :raises OSError: If the library cannot be loaded (missing file,
         ABI mismatch, unresolved symbols, …).
 
-.. py:method:: GridModel.change_solver(name: str) -> None
+.. py:method:: GridModel.change_algorithm(name: str) -> None
 
     Select the active solver by name.  The name must be one of the
-    strings returned by :py:meth:`GridModel.available_solver_names`.
+    strings returned by :py:meth:`GridModel.available_algorithm_names`.
 
     For built-in solvers the enum overload is also available::
 
-        gm.change_solver(SolverType.KLU)
+        gm.change_algorithm(AlgorithmType.NR_KLU)
 
     :param name: Registered solver name (case-sensitive).
     :raises RuntimeError: If *name* is not registered.
 
-.. py:method:: GridModel.available_solver_names() -> list[str]
+.. py:method:: GridModel.available_algorithm_names() -> list[str]
 
     Return all solver names currently registered, including any that were
     added via :func:`~lightsim2grid.load_solver_plugin`.
 
     .. code-block:: python
 
-        >>> gm.available_solver_names()
+        >>> gm.available_algorithm_names()
         ['SparseLU', 'SparseLUSingleSlack', 'GaussSeidel',
          'GaussSeidelSynch', 'FDPF_XB_SparseLU', 'FDPF_BX_SparseLU',
          'DC', 'KLU', 'KLUSingleSlack', 'KLUDC', 'MySolver']
 
 .. note::
 
-    :attr:`SolverType.Custom` is the enum value assigned to any solver
+    :attr:`AlgorithmType.Custom` is the enum value assigned to any solver
     loaded via a plugin.  ``gm.get_solver_type()`` returns
-    ``SolverType.Custom`` whenever the active solver was registered
+    ``AlgorithmType.Custom`` whenever the active solver was registered
     through the plugin mechanism.
 
 .. warning::
@@ -462,7 +462,7 @@ Expected output::
 
     Plugin loaded successfully.
     Registered solvers: ['DC', 'DummyExternal', 'FDPF_BX_SparseLU', ...]
-    change_solver('DummyExternal') OK — solver type is Custom as expected.
+    change_algorithm('DummyExternal') OK — solver type is Custom as expected.
     All checks passed.
 
 The automated regression test is in

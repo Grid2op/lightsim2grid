@@ -12,6 +12,7 @@ __all__ = [
     "newtonpf",
     "AlgorithmType",
     "ErrorType",
+    "algorithm",
     "solver",
     "compilation_options",
     "load_solver_plugin",
@@ -31,8 +32,8 @@ if hasattr(_sys, "getdlopenflags"):
     _old_dlopen_flags = _sys.getdlopenflags()
     _sys.setdlopenflags(_old_dlopen_flags | _os.RTLD_GLOBAL)
     try:
-        from lightsim2grid.solver import AlgorithmType
-        from lightsim2grid.solver import ErrorType
+        from lightsim2grid.algorithm import AlgorithmType
+        from lightsim2grid.algorithm import ErrorType
     finally:
         _sys.setdlopenflags(_old_dlopen_flags)
 else:
@@ -41,8 +42,8 @@ else:
     # (a dependency of lightsim2grid_cpp.pyd) is found before the import.
     if hasattr(_os, "add_dll_directory"):
         _os.add_dll_directory(_os.path.dirname(__file__))
-    from lightsim2grid.solver import AlgorithmType
-    from lightsim2grid.solver import ErrorType
+    from lightsim2grid.algorithm import AlgorithmType
+    from lightsim2grid.algorithm import ErrorType
 
 
 def load_solver_plugin(path: str) -> None:
@@ -55,9 +56,9 @@ def load_solver_plugin(path: str) -> None:
 
     After this call the new solver name is usable via::
 
-        grid.change_solver("MySolverName")
+        grid.change_algorithm("MySolverName")
 
-    and will appear in ``grid.available_solver_names()``.
+    and will appear in ``grid.available_algorithm_names()``.
 
     Parameters
     ----------

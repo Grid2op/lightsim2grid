@@ -15,7 +15,7 @@
 //   lightsim2grid.load_solver_plugin("build/libdummy_solver.so")
 //   grid.change_solver("DummyExternal")
 
-#include <SolverRegistry.hpp>
+#include <AlgorithmRegistry.hpp>
 #include <powerflow_algorithm/BaseAlgo.hpp>
 
 // ---------------------------------------------------------------------------
@@ -23,9 +23,9 @@
 // the initial voltage vector unchanged.  Useful as a smoke-test for the
 // plugin mechanism; not suitable for real power-flow calculations.
 // ---------------------------------------------------------------------------
-class DummyExternalSolver : public ls2g::BaseAlgo {
+class DummyExternalAlgo : public ls2g::BaseAlgo {
 public:
-    DummyExternalSolver() : ls2g::BaseAlgo(/*is_ac=*/true) {}
+    DummyExternalAlgo() : ls2g::BaseAlgo(/*is_ac=*/true) {}
 
     bool compute_pf(
         const Eigen::SparseMatrix<ls2g::cplx_type>& /*Ybus*/,
@@ -53,8 +53,8 @@ public:
 // Self-registration: fires when dlopen() / LoadLibrary() maps this .so.
 // ---------------------------------------------------------------------------
 namespace {
-    ls2g::SolverRegistrar _dummy_registrar(
+    ls2g::AlgorithmRegistrar _dummy_registrar(
         "DummyExternal",
-        []{ return std::unique_ptr<ls2g::BaseAlgo>(new DummyExternalSolver()); }
+        []{ return std::unique_ptr<ls2g::BaseAlgo>(new DummyExternalAlgo()); }
     );
 }

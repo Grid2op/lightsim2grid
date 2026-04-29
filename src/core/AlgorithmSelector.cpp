@@ -16,11 +16,11 @@ namespace ls2g {
 // ---------------------------------------------------------------------------
 
 AlgorithmSelector::AlgorithmSelector()
-    : _algo_type(AlgorithmType::SparseLU),
-      _algo_type_used_for_nr(AlgorithmType::SparseLU),
+    : _algo_type(AlgorithmType::NR_SparseLU),
+      _algo_type_used_for_nr(AlgorithmType::NR_SparseLU),
       _gridmodel_ptr(nullptr)
 {
-    _algo = AlgorithmRegistry::instance().make("SparseLU");
+    _algo = AlgorithmRegistry::instance().make("NR_SparseLU");
 }
 
 // ---------------------------------------------------------------------------
@@ -44,9 +44,9 @@ void AlgorithmSelector::change_solver(const std::string& name)
     if (type == _algo_type && type != AlgorithmType::Custom) return;
 
     #ifndef KLU_SOLVER_AVAILABLE
-        if (type == AlgorithmType::KLU ||
-            type == AlgorithmType::KLUDC ||
-            type == AlgorithmType::KLUSingleSlack ||
+        if (type == AlgorithmType::NR_KLU ||
+            type == AlgorithmType::DC_KLU ||
+            type == AlgorithmType::NRSing_KLU ||
             type == AlgorithmType::FDPF_XB_KLU ||
             type == AlgorithmType::FDPF_BX_KLU) {
             throw std::runtime_error(
@@ -56,9 +56,9 @@ void AlgorithmSelector::change_solver(const std::string& name)
     #endif
 
     #ifndef NICSLU_SOLVER_AVAILABLE
-        if (type == AlgorithmType::NICSLU ||
-            type == AlgorithmType::NICSLUDC ||
-            type == AlgorithmType::NICSLUSingleSlack ||
+        if (type == AlgorithmType::NR_NICSLU ||
+            type == AlgorithmType::DC_NICSLU ||
+            type == AlgorithmType::NRSing_NICSLU ||
             type == AlgorithmType::FDPF_XB_NICSLU ||
             type == AlgorithmType::FDPF_BX_NICSLU) {
             throw std::runtime_error(
@@ -68,9 +68,9 @@ void AlgorithmSelector::change_solver(const std::string& name)
     #endif
 
     #ifndef CKTSO_SOLVER_AVAILABLE
-        if (type == AlgorithmType::CKTSO ||
-            type == AlgorithmType::CKTSODC ||
-            type == AlgorithmType::CKTSOSingleSlack ||
+        if (type == AlgorithmType::NR_CKTSO ||
+            type == AlgorithmType::DC_CKTSO ||
+            type == AlgorithmType::NRSing_CKTSO ||
             type == AlgorithmType::FDPF_XB_CKTSO ||
             type == AlgorithmType::FDPF_BX_CKTSO) {
             throw std::runtime_error(
@@ -97,29 +97,29 @@ std::ostream& operator<<(std::ostream& out, const AlgorithmType& algo_type)
 {
     switch (algo_type)
     {
-    case AlgorithmType::SparseLU:            out << "SparseLU";            break;
-    case AlgorithmType::KLU:                 out << "KLU";                 break;
-    case AlgorithmType::GaussSeidel:         out << "GaussSeidel";         break;
-    case AlgorithmType::DC:                  out << "DC";                  break;
-    case AlgorithmType::GaussSeidelSynch:    out << "GaussSeidelSynch";    break;
-    case AlgorithmType::NICSLU:              out << "NICSLU";              break;
-    case AlgorithmType::SparseLUSingleSlack: out << "SparseLUSingleSlack"; break;
-    case AlgorithmType::KLUSingleSlack:      out << "KLUSingleSlack";      break;
-    case AlgorithmType::NICSLUSingleSlack:   out << "NICSLUSingleSlack";   break;
-    case AlgorithmType::KLUDC:               out << "KLUDC";               break;
-    case AlgorithmType::NICSLUDC:            out << "NICSLUDC";            break;
-    case AlgorithmType::CKTSO:               out << "CKTSO";               break;
-    case AlgorithmType::CKTSOSingleSlack:    out << "CKTSOSingleSlack";    break;
-    case AlgorithmType::CKTSODC:             out << "CKTSODC";             break;
-    case AlgorithmType::FDPF_XB_SparseLU:   out << "FDPF_XB_SparseLU";   break;
-    case AlgorithmType::FDPF_BX_SparseLU:   out << "FDPF_BX_SparseLU";   break;
-    case AlgorithmType::FDPF_XB_KLU:        out << "FDPF_XB_KLU";        break;
-    case AlgorithmType::FDPF_BX_KLU:        out << "FDPF_BX_KLU";        break;
-    case AlgorithmType::FDPF_XB_NICSLU:     out << "FDPF_XB_NICSLU";     break;
-    case AlgorithmType::FDPF_BX_NICSLU:     out << "FDPF_BX_NICSLU";     break;
-    case AlgorithmType::FDPF_XB_CKTSO:      out << "FDPF_XB_CKTSO";      break;
-    case AlgorithmType::FDPF_BX_CKTSO:      out << "FDPF_BX_CKTSO";      break;
-    case AlgorithmType::Custom:              out << "Custom";              break;
+    case AlgorithmType::NR_SparseLU:      out << "NR_SparseLU";      break;
+    case AlgorithmType::NR_KLU:           out << "NR_KLU";           break;
+    case AlgorithmType::GaussSeidel:      out << "GaussSeidel";      break;
+    case AlgorithmType::DC_SparseLU:      out << "DC_SparseLU";      break;
+    case AlgorithmType::GaussSeidelSynch: out << "GaussSeidelSynch"; break;
+    case AlgorithmType::NR_NICSLU:        out << "NR_NICSLU";        break;
+    case AlgorithmType::NRSing_SparseLU:  out << "NRSing_SparseLU";  break;
+    case AlgorithmType::NRSing_KLU:       out << "NRSing_KLU";       break;
+    case AlgorithmType::NRSing_NICSLU:    out << "NRSing_NICSLU";    break;
+    case AlgorithmType::DC_KLU:           out << "DC_KLU";           break;
+    case AlgorithmType::DC_NICSLU:        out << "DC_NICSLU";        break;
+    case AlgorithmType::NR_CKTSO:         out << "NR_CKTSO";         break;
+    case AlgorithmType::NRSing_CKTSO:     out << "NRSing_CKTSO";     break;
+    case AlgorithmType::DC_CKTSO:         out << "DC_CKTSO";         break;
+    case AlgorithmType::FDPF_XB_SparseLU: out << "FDPF_XB_SparseLU"; break;
+    case AlgorithmType::FDPF_BX_SparseLU: out << "FDPF_BX_SparseLU"; break;
+    case AlgorithmType::FDPF_XB_KLU:      out << "FDPF_XB_KLU";      break;
+    case AlgorithmType::FDPF_BX_KLU:      out << "FDPF_BX_KLU";      break;
+    case AlgorithmType::FDPF_XB_NICSLU:   out << "FDPF_XB_NICSLU";   break;
+    case AlgorithmType::FDPF_BX_NICSLU:   out << "FDPF_BX_NICSLU";   break;
+    case AlgorithmType::FDPF_XB_CKTSO:    out << "FDPF_XB_CKTSO";    break;
+    case AlgorithmType::FDPF_BX_CKTSO:    out << "FDPF_BX_CKTSO";    break;
+    case AlgorithmType::Custom:            out << "Custom";            break;
     default:                                 out << "(unknown)";           break;
     }
     return out;

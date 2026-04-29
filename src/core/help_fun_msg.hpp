@@ -34,32 +34,32 @@ struct LS2G_API DocSolver
     static const std::string get_timers;
 
     // solver description
-    static const std::string SparseLUSolver;
-    static const std::string SparseLUSolverSingleSlack;
-    static const std::string DCSolver;
-    static const std::string FDPF_XB_SparseLUSolver;
-    static const std::string FDPF_BX_SparseLUSolver;
+    static const std::string NR_SparseLU;
+    static const std::string NRSing_SparseLU;
+    static const std::string DC_SparseLU;
+    static const std::string FDPF_XB_SparseLU;
+    static const std::string FDPF_BX_SparseLU;
 
-    static const std::string KLUSolver;
-    static const std::string KLUSolverSingleSlack;
-    static const std::string KLUDCSolver;
-    static const std::string FDPF_XB_KLUSolver;
-    static const std::string FDPF_BX_KLUSolver;
+    static const std::string NR_KLU;
+    static const std::string NRSing_KLU;
+    static const std::string DC_KLU;
+    static const std::string FDPF_XB_KLU;
+    static const std::string FDPF_BX_KLU;
 
-    static const std::string NICSLUSolver;
-    static const std::string NICSLUSolverSingleSlack;
-    static const std::string NICSLUDCSolver;
-    static const std::string FDPF_XB_NICSLUSolver;
-    static const std::string FDPF_BX_NICSLUSolver;
+    static const std::string NR_NICSLU;
+    static const std::string NRSing_NICSLU;
+    static const std::string DC_NICSLU;
+    static const std::string FDPF_XB_NICSLU;
+    static const std::string FDPF_BX_NICSLU;
 
-    static const std::string CKTSOSolver;
-    static const std::string CKTSOSolverSingleSlack;
-    static const std::string CKTSODCSolver;
-    static const std::string FDPF_XB_CKTSOSolver;
-    static const std::string FDPF_BX_CKTSOSolver;
+    static const std::string NR_CKTSO;
+    static const std::string NRSing_CKTSO;
+    static const std::string DC_CKTSO;
+    static const std::string FDPF_XB_CKTSO;
+    static const std::string FDPF_BX_CKTSO;
 
-    static const std::string GaussSeidelSolver;
-    static const std::string GaussSeidelSynchSolver;
+    static const std::string GaussSeidelAlgo;
+    static const std::string GaussSeidelSynchAlgo;
 
     // function to select the solver
     static const std::string AlgorithmSelector;

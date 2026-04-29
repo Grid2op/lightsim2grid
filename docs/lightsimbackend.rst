@@ -56,7 +56,7 @@ You can customize the way the backend behaves in different ways:
 - `tol`: During its internal iterations, the underlying solver will say the Kirchhoff Current Laws (KCL) are matched if the 
   maximum value of the difference is lower than this. Default is `1e-8`.
 - `solver_type`: which type of "solver" you want to use. See :ref:`solvers_doc` for more information. By default it uses 
-  what it considers the fastest solver available which is likely to be :class:`lightsim2grid.solver.SolverType.KLUSolverSingleSlack`
+  what it considers the fastest solver available which is likely to be :class:`lightsim2grid.algorithm.NRSing_KLU`
 - `turned_off_pv` : by default (set to `turned_off_pv=True`) all generators partipate in the voltage regulation, which is not completely realistic.
   When you initialize a backend with `turned_off_pv=False` then the generators that do not produce power (*eg* "p=0.") or that are
   turned off are excluded from the voltage regulation.
@@ -82,7 +82,7 @@ The easiest way to customize your backend is when you create the grid2op environ
                        backend=LightSimBackend(
                         max_iter=15,
                         tol=1e-9,
-                        solver_type=lightsim2grid.solver.SolverType.KLUSolverSingleSlack,
+                        algo_type=lightsim2grid.algorithm.AlgorithmType.NRSing_KLU,
                         # etc.
                         )
                       )

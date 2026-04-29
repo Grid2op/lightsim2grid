@@ -25,7 +25,7 @@ from lightsim2grid.lightsim2grid_cpp import (
     ScalingPolicyType,
     RefactorPolicyType,
     AlgoConfig,
-    SparseLUSolver,
+    NR_SparseLU,
 )
 
 try:
@@ -84,10 +84,10 @@ class TestEnumBinding(unittest.TestCase):
 
 
 class TestDefaultPolicyState(unittest.TestCase):
-    """Fresh SparseLUSolver has expected default policy settings."""
+    """Fresh NR_SparseLU has expected default policy settings."""
 
     def setUp(self):
-        self.s = SparseLUSolver()
+        self.s = NR_SparseLU()
 
     def test_default_scaling_policy(self):
         self.assertEqual(self.s.get_scaling_policy_type(), ScalingPolicyType.NoScaling)
@@ -124,7 +124,7 @@ class TestPolicySetters(unittest.TestCase):
     """All parameter setters round-trip correctly."""
 
     def setUp(self):
-        self.s = SparseLUSolver()
+        self.s = NR_SparseLU()
 
     def test_set_scaling_policy_all_values(self):
         for pol in ScalingPolicyType.__members__.values():
@@ -179,7 +179,7 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
     """AlgoConfig get_config/set_config round-trips all parameters."""
 
     def setUp(self):
-        self.s = SparseLUSolver()
+        self.s = NR_SparseLU()
 
     def _configure(self):
         self.s.set_scaling_policy(ScalingPolicyType.LineSearch)
@@ -208,70 +208,70 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
     def test_round_trip_scaling_policy(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertEqual(s2.get_scaling_policy_type(), ScalingPolicyType.LineSearch)
 
     def test_round_trip_refactor_policy(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertEqual(s2.get_refactor_policy(), RefactorPolicyType.EveryN)
 
     def test_round_trip_max_dVa(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertAlmostEqual(s2.get_max_dVa(), 0.3)
 
     def test_round_trip_max_dVm(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertAlmostEqual(s2.get_max_dVm(), 0.05)
 
     def test_round_trip_ls_c(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertAlmostEqual(s2.get_ls_c(), 2e-4, places=10)
 
     def test_round_trip_ls_rho(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertAlmostEqual(s2.get_ls_rho(), 0.6)
 
     def test_round_trip_ls_max_iter(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertEqual(s2.get_ls_max_iter(), 15)
 
     def test_round_trip_iw_mu_min(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertAlmostEqual(s2.get_iw_mu_min(), 5e-4, places=10)
 
     def test_round_trip_iw_mu_max(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertAlmostEqual(s2.get_iw_mu_max(), 0.95)
 
     def test_round_trip_refactor_every_n(self):
         self._configure()
         cfg = self.s.get_config()
-        s2 = SparseLUSolver()
+        s2 = NR_SparseLU()
         s2.set_config(cfg)
         self.assertEqual(s2.get_refactor_every_n(), 3)
 
@@ -314,7 +314,7 @@ class TestConvergenceWithPolicies(unittest.TestCase):
             _load_case(_CASE14_ZIP)
 
         # reference: default policy
-        ref_solver = SparseLUSolver()
+        ref_solver = NR_SparseLU()
         ok = ref_solver.compute_pf(
             cls.Ybus, cls.V_init.copy(), cls.Sbus,
             cls.ref, cls.sw, cls.pv, cls.pq,
@@ -324,7 +324,7 @@ class TestConvergenceWithPolicies(unittest.TestCase):
         cls.Vm_ref = ref_solver.get_Vm().copy()
 
     def _run(self, scaling, refactor, refactor_every_n=4):
-        s = SparseLUSolver()
+        s = NR_SparseLU()
         s.set_scaling_policy(scaling)
         s.set_refactor_policy(refactor)
         s.set_refactor_every_n(refactor_every_n)

@@ -148,7 +148,7 @@ const std::string DocSolver::get_timers = R"mydelimiter(
 
 )mydelimiter";
     
-const std::string DocSolver::SparseLUSolver = R"mydelimiter(
+const std::string DocSolver::NR_SparseLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the default Eigen sparse solver available in Eigen
     for the linear algebra. 
 
@@ -160,18 +160,18 @@ const std::string DocSolver::SparseLUSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.SparseLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLU)` at creation time    
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_SparseLU)` at creation time    
     
     .. note::
-        Available on all plateform, this is the default solver used when :class:`lightsim2grid.solver.KLUSolverSingleSlack`
+        Available on all plateform, this is the default solver used when :class:`lightsim2grid.solver.NRSing_KLU`
         is not found (when a "single slack" is detected).
 
 )mydelimiter";
 
-const std::string DocSolver::SparseLUSolverSingleSlack = R"mydelimiter(
+const std::string DocSolver::NRSing_SparseLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, using the default Eigen sparse solver available in Eigen
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.SparseLUSolver` .
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_SparseLU` .
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -185,12 +185,12 @@ const std::string DocSolver::SparseLUSolverSingleSlack = R"mydelimiter(
         - `LightSimBackend(solver_type=lightsim2grid.solver.SparseLUSingleSlack)` at creation time
 
     .. note::
-        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.AlgorithmType.KLUSolver`
+        Available on all plateform, this is the default solver used when a distributed slack bus is detected and :class:`lightsim2grid.solver.AlgorithmType.NR_KLU`
         is not found.
 
 )mydelimiter";
 
-const std::string DocSolver::DCSolver =  R"mydelimiter(
+const std::string DocSolver::DC_SparseLU =  R"mydelimiter(
     Default implementation of the DC solver, it uses the default Eigen sparse lu decomposition to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes.
 
@@ -202,8 +202,8 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.DC)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_SparseLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_SparseLU)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -213,7 +213,7 @@ const std::string DocSolver::DCSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_XB_SparseLUSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_XB_SparseLU =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
     its underlying sparse matrix manipulation.
 
@@ -230,7 +230,7 @@ const std::string DocSolver::FDPF_XB_SparseLUSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_BX_SparseLUSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_BX_SparseLU =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the default Eigen sparse lu decomposition for 
     its underlying sparse matrix manipulation.
 
@@ -247,9 +247,9 @@ const std::string DocSolver::FDPF_BX_SparseLUSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::KLUSolver = R"mydelimiter(
+const std::string DocSolver::NR_KLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster KLU solver available in the SuiteSparse library
-    for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`.
+    for the linear algebra (can be unavailable if you build lightsim2grid from source). It is usually faster than the :class:`lightsim2grid.solver.NR_SparseLU`.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -259,17 +259,17 @@ const std::string DocSolver::KLUSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.KLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.KLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_KLU)` at creation time
 
     .. note::
-        This is the default solver used when a distributed slack bus is detected (when it's available, otherwise see :class:`lightsim2grid.solver.SparseLUSolver`).
+        This is the default solver used when a distributed slack bus is detected (when it's available, otherwise see :class:`lightsim2grid.solver.NR_SparseLU`).
 
 )mydelimiter";
 
-const std::string DocSolver::KLUSolverSingleSlack = R"mydelimiter(
+const std::string DocSolver::NRSing_KLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm,the faster KLU solver available in the SuiteSparse library
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.KLUSolver`.
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_KLU`.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -287,7 +287,7 @@ const std::string DocSolver::KLUSolverSingleSlack = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::KLUDCSolver = R"mydelimiter(
+const std::string DocSolver::DC_KLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster KLU solver available in the SuiteSparse library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (can be unavailable if you build lightsim2grid from source).
 
@@ -299,8 +299,8 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.KLUDC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.KLUDC)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_KLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_KLU)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -310,7 +310,7 @@ const std::string DocSolver::KLUDCSolver = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_XB_KLUSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_XB_KLU =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdbx"  in pypower / pandapower), it uses the fast KLU library for 
     its underlying sparse matrix manipulation.
 
@@ -327,7 +327,7 @@ const std::string DocSolver::FDPF_XB_KLUSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_BX_KLUSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_BX_KLU =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdxb"  in pypower / pandapower), it uses the fast KLU library for 
     its underlying sparse matrix manipulation.
 
@@ -344,9 +344,9 @@ const std::string DocSolver::FDPF_BX_KLUSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::NICSLUSolver = R"mydelimiter(
+const std::string DocSolver::NR_NICSLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster NICSLU solver available in the NICSLU library
-    for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.SparseLUSolver`. (requires a build from source)
+    for the linear algebra. It is usually faster than the :class:`lightsim2grid.solver.NR_SparseLU`. (requires a build from source)
     
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -356,8 +356,8 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NICSLU)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLU)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_NICSLU)` at creation time
 
     .. warning::
         
@@ -369,9 +369,9 @@ const std::string DocSolver::NICSLUSolver = R"mydelimiter(
         
 )mydelimiter";
 
-const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
+const std::string DocSolver::NRSing_NICSLU = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, the faster NICSLU solver available in the NICSLU library
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NICSLUSolver` .
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_NICSLU` .
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -394,7 +394,7 @@ const std::string DocSolver::NICSLUSolverSingleSlack = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
+const std::string DocSolver::DC_NICSLU = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster NICSLU solver available in the NICSLU library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (requires a build from source).
 
@@ -406,8 +406,8 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NICSLUDC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.NICSLUDC)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_NICSLU)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_NICSLU)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -425,7 +425,7 @@ const std::string DocSolver::NICSLUDCSolver = R"mydelimiter(
  
 )mydelimiter";
 
-const std::string DocSolver::FDPF_XB_NICSLUSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_XB_NICSLU =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast NICSLU library for 
     its underlying sparse matrix manipulation.
 
@@ -450,7 +450,7 @@ const std::string DocSolver::FDPF_XB_NICSLUSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_BX_NICSLUSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_BX_NICSLU =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast NICSLU library for 
     its underlying sparse matrix manipulation.
 
@@ -475,7 +475,7 @@ const std::string DocSolver::FDPF_BX_NICSLUSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::CKTSOSolver = R"mydelimiter(
+const std::string DocSolver::NR_CKTSO = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, allowing for distributed slack and using the faster CKTSO solver available in the CKTSO library
     for the linear algebra (requires a build from source)
     
@@ -487,8 +487,8 @@ const std::string DocSolver::CKTSOSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.CKTSO)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSO)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.NR_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.NR_CKTSO)` at creation time
 
     .. note::
 
@@ -496,9 +496,9 @@ const std::string DocSolver::CKTSOSolver = R"mydelimiter(
  
 )mydelimiter";
 
-const std::string DocSolver::CKTSOSolverSingleSlack = R"mydelimiter(
+const std::string DocSolver::NRSing_CKTSO = R"mydelimiter(
     This classes implements the Newton Raphson algorithm, the faster CKTSO solver available in the CKTSO library
-    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.CKTSOSolver` .
+    for the linear algebra. It does not support the distributed slack, but can be slightly faster than the :class:`lightsim2grid.solver.NR_CKTSO` .
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
 
@@ -517,7 +517,7 @@ const std::string DocSolver::CKTSOSolverSingleSlack = R"mydelimiter(
  
 )mydelimiter";
 
-const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
+const std::string DocSolver::DC_CKTSO = R"mydelimiter(
     Alternative implementation of the DC solver, it uses the faster CKTSO solver available in the CKTSO library to solve for the DC voltage given the DC admitance matrix and
     the power injected at each nodes (requires a build from source).
 
@@ -529,8 +529,8 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
         
         You can use it with:
         
-        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.CKTSODC)` after creation
-        - `LightSimBackend(solver_type=lightsim2grid.solver.CKTSODC)` at creation time
+        - `env_lightsim.backend.set_algo_type(lightsim2grid.solver.DC_CKTSO)` after creation
+        - `LightSimBackend(solver_type=lightsim2grid.solver.DC_CKTSO)` at creation time
 
     .. warning::
         This is a DC solver that uses the DC approximation. If you want to use this approximation, you need to specified
@@ -544,7 +544,7 @@ const std::string DocSolver::CKTSODCSolver = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_XB_CKTSOSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_XB_CKTSO =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 2" / "fdxb"  in pypower / pandapower), it uses the fast CKTSO library for 
     its underlying sparse matrix manipulation.
 
@@ -569,7 +569,7 @@ const std::string DocSolver::FDPF_XB_CKTSOSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::FDPF_BX_CKTSOSolver =  R"mydelimiter(
+const std::string DocSolver::FDPF_BX_CKTSO =  R"mydelimiter(
     Default implementation of the Fast Decoupled Powerflow solver (XB version: "alg 3" / "fdbx"  in pypower / pandapower), it uses the fast CKTSO library for 
     its underlying sparse matrix manipulation.
 
@@ -594,7 +594,7 @@ const std::string DocSolver::FDPF_BX_CKTSOSolver =  R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::GaussSeidelSolver = R"mydelimiter(
+const std::string DocSolver::GaussSeidelAlgo = R"mydelimiter(
     Default implementation of the "Gauss Seidel" powerflow solver. We do not recommend to use it as the Newton Raphson based solvers
     are usually much (much) faster.
 
@@ -614,9 +614,9 @@ const std::string DocSolver::GaussSeidelSolver = R"mydelimiter(
 
 )mydelimiter";
 
-const std::string DocSolver::GaussSeidelSynchSolver = R"mydelimiter(
+const std::string DocSolver::GaussSeidelSynchAlgo = R"mydelimiter(
     Variant implementation of the "Gauss Seidel" powerflow solver, where every buses are updated at once (can be significantly faster than the 
-    :class:`lightsim2grid.solver.GaussSeidelSolver` for larger grid). We still do not recommend to use it as the Newton Raphson based solvers
+    :class:`lightsim2grid.solver.GaussSeidelAlgo` for larger grid). We still do not recommend to use it as the Newton Raphson based solvers
     are usually much (much) faster.
 
     See :ref:`available-powerflow-solvers` for more information on how to use it.
@@ -669,7 +669,7 @@ const std::string DocSolver::chooseSolver_get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
 
     .. note::
-        Depending on the underlying solver used (*eg* :class:`lightsim2grid.solver.DCSolver` or :class:`lightsim2grid.solver.GaussSeidelSolver`)
+        Depending on the underlying solver used (*eg* :class:`lightsim2grid.solver.DC_SparseLU` or :class:`lightsim2grid.solver.GaussSeidelAlgo`)
         the jacobian matrix might be irrelevant and an attempt to use this function will throw a RuntimeError. 
 
 )mydelimiter";
@@ -950,8 +950,8 @@ const std::string DocIterator::is_slack = R"mydelimiter(
         do not participate to it (for example if there is a more than one generator where `is_slack` is ``True`` but the model used
         to computed the powerflow do not support distributed slack buses - **eg** :class:`lightsim2grid.solver.SparseLUSingleSlack`)
 
-        This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.solver.SparseLUSolver` or 
-        :class:`lightsim2grid.solver.KLUSolver` for example.
+        This is why we recommend to use the (slower) but more accurate :class:`lightsim2grid.solver.NR_SparseLU` or 
+        :class:`lightsim2grid.solver.NR_KLU` for example.
 
 )mydelimiter";
 
@@ -1824,7 +1824,7 @@ const std::string DocGridModel::change_solver =  R"mydelimiter(
 
         # change the solver used for the powerflow
         # to use internally a solver based on Newton Raphson algorithme using Eigen sparse LU
-        lightsim_grid_model.change_solver(AlgorithmType.SparseLUSolver)  
+        lightsim_grid_model.change_solver(AlgorithmType.NR_SparseLU)  
 
 )mydelimiter";
 

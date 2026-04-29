@@ -48,7 +48,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 
 LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
@@ -526,11 +526,11 @@ class LightSimBackend(Backend):
             env_name = ...
             env = grid2op.make(env_name, backend=LightSimBackend())
             print(env.backend.get_algo_types())
-            # >>> (<AlgorithmType.KLUSingleSlack: 7>, <AlgorithmType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            # >>> (<AlgorithmType.NRSing_KLU: 7>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
-            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.solver.AlgorithmType.SparseLU))
+            env2 = grid2op.make(env_name, backend=LightSimBackend(solver_type=lightsim2grid.algorithm.AlgorithmType.NR_SparseLU))
             print(env2.backend.get_algo_types())
-            # >>> (<AlgorithmType.SparseLU: 0>, <AlgorithmType.KLUDC: 9>)  [can depend on your installation of lightsim2grid]
+            # >>> (<AlgorithmType.NR_SparseLU: 0>, <AlgorithmType.DC_KLU: 9>)  [can depend on your installation of lightsim2grid]
             
         """
         return self._grid.get_algo_type(), self._grid.get_dc_algo_type()
@@ -563,7 +563,7 @@ class LightSimBackend(Backend):
             raise BackendError("Impossible to change the solver type to None. Please enter a valid solver type.")
         self._check_suitable_solver_type(solver_type)
         self.__current_algo_type = copy.deepcopy(solver_type)
-        self._grid.change_solver(self.__current_algo_type)
+        self._grid.change_algorithm(self.__current_algo_type)
 
     def _check_suitable_solver_type(self, solver_type, check_in_avail_solver=True):
         if solver_type is None:
@@ -586,7 +586,7 @@ class LightSimBackend(Backend):
 
         Recommendation, for medium sized grid (**eg** based on the ieee 118):
 
-        - for AlgorithmType.SparseLU: 10
+        - for AlgorithmType.NR_SparseLU: 10
         - for AlgorithmType.GaussSeidel: 10000
         - for AlgorithmType.SparseKLU: 10
 
@@ -649,18 +649,18 @@ class LightSimBackend(Backend):
         nb_slack_nonzero = (np.abs(slack_weights) > 1e-5).sum()
         has_single_slack = nb_slack_nonzero == 1
         if has_single_slack and not self._dist_slack_non_renew:
-            if AlgorithmType.KLUSingleSlack in self.available_solvers:
+            if AlgorithmType.NRSing_KLU in self.available_solvers:
                 # use the faster KLU if available
-                self._grid.change_solver(AlgorithmType.KLUSingleSlack)
+                self._grid.change_algorithm(AlgorithmType.NRSing_KLU)
             else:
-                self._grid.change_solver(AlgorithmType.SparseLUSingleSlack)
+                self._grid.change_algorithm(AlgorithmType.NRSing_SparseLU)
         else:
             # grid has multiple slacks      
-            if AlgorithmType.KLU in self.available_solvers:
+            if AlgorithmType.NR_KLU in self.available_solvers:
                 # use the faster KLU if available
-                self._grid.change_solver(AlgorithmType.KLU)
+                self._grid.change_algorithm(AlgorithmType.NR_KLU)
             else:
-                self._grid.change_solver(AlgorithmType.SparseLU)
+                self._grid.change_algorithm(AlgorithmType.NR_SparseLU)
     
     def _aux_set_correct_detach_flags_d_allowed(self):
         # user allowed detachment, I check the correct flags
@@ -1016,22 +1016,22 @@ class LightSimBackend(Backend):
             self._grid.set_n_sub(self.__nb_bus_before)
         self._handle_turnedoff_pv()
             
-        self.available_solvers = self._grid.available_solvers()
+        self.available_solvers = self._grid.available_algorithms()
         if self.__current_algo_type is None:
             # previous default behaviour (< 0.7)
             # by default it builds the backend with the fastest solver
             # automatically found
             self._assign_right_solver()
             
-            if AlgorithmType.KLUDC in self.available_solvers:
+            if AlgorithmType.DC_KLU in self.available_solvers:
                 # use the faster KLU if available even for DC approximation
-                self._grid.change_solver(AlgorithmType.KLUDC)
+                self._grid.change_algorithm(AlgorithmType.DC_KLU)
                 
             self.__current_algo_type = copy.deepcopy(self._grid.get_algo_type())
         else:
             # check that the solver type provided is installed with lightsim2grid
             self._check_suitable_solver_type(self.__current_algo_type)
-            self._grid.change_solver(self.__current_algo_type)
+            self._grid.change_algorithm(self.__current_algo_type)
                     
         # handle multiple busbar per substations
         if hasattr(type(self), "can_handle_more_than_2_busbar") and self._orig_grid_pypowsybl is None:
@@ -1744,7 +1744,7 @@ class LightSimBackend(Backend):
                 my_exc_ = BackendError(f"Converted the error of type {type(my_exc_)}, message was: {my_exc_}")
             if is_dc:
                 # set back the solver to its previous state
-                self._grid.change_solver(self.__current_algo_type)
+                self._grid.change_algorithm(self.__current_algo_type)
             self._grid.tell_solver_need_reset()
             self._grid.reactivate_result_computation()
             if self._automatically_disconnect:
@@ -2070,7 +2070,7 @@ class LightSimBackend(Backend):
         self._reset_res_pointers()
         self._fill_nans()
         self._grid = self.__me_at_init.copy()
-        self._grid.change_solver(self.__current_algo_type)
+        self._grid.change_algorithm(self.__current_algo_type)
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.

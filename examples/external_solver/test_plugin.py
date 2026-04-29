@@ -53,7 +53,7 @@ print(f"Registered solvers: {sorted(names)}")
 # ------------------------------------------------------------------
 # Change to the plugin solver
 # ------------------------------------------------------------------
-gm.change_solver("DummyExternal")
+gm.change_algorithm("DummyExternal")
 assert gm.get_algo_type() == AlgorithmType.Custom, \
     f"Expected AlgorithmType.Custom, got {gm.get_algo_type()}"
 print("change_solver('DummyExternal') OK — solver type is Custom as expected.")

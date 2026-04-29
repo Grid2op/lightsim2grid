@@ -16,10 +16,10 @@ except ImportError:
 import numpy as np
 from scipy import sparse
 
-from lightsim2grid.solver import SparseLUSolver, SparseLUSolverSingleSlack
+from lightsim2grid.algorithm import NR_SparseLU, NRSing_SparseLU
 
 try:
-    from lightsim2grid.solver import KLUSolver, KLUSolverSingleSlack
+    from lightsim2grid.algorithm import NR_KLU, NRSing_KLU
     KLU_solver_available = True
 except ImportError:
     KLU_solver_available = False
@@ -41,9 +41,9 @@ def _get_valid_solver(options, Ybus):
     # initialize the solver
     # TODO have that in options maybe (can use GaussSeidel, and NR with KLU -faster- or SparseLU)
     if options.get("distributed_slack", False):
-        solver = KLUSolver() if KLU_solver_available else SparseLUSolver()
+        solver = NR_KLU() if KLU_solver_available else NR_SparseLU()
     else:
-        solver = KLUSolverSingleSlack() if KLU_solver_available else SparseLUSolverSingleSlack()
+        solver = NRSing_KLU() if KLU_solver_available else NRSing_SparseLU()
 
     if not sparse.isspmatrix_csc(Ybus):
         Ybus = sparse.csc_matrix(Ybus)

@@ -45,8 +45,6 @@ and a c++ implementation of a Newton solver for speed.
   The oldest `newtonpf` function compatible with older version of pandapower (*eg* <=2.6.0) can still be accessed with
   `from lightsim2grid.newtonpf import newtonpf_old`
 
-.. _available-powerflow-solvers: 
-
 Even more advanced usage
 --------------------------
 You can customize even more the solvers that you want to use.
@@ -58,23 +56,23 @@ the "enum" of the solvers you want to use as showed bellow:
 
 .. code-block:: python
 
-    from lightsim2grid.solver import SolverType
+    from lightsim2grid.algorithm import AlgorithmType
     # init the grid model
     from lightsim2grid.gridmodel import init
     pp_net = ...  # any pandapower grid
     lightsim_grid_model = init(pp_net)  # some warnings might be issued as well as some warnings
 
     # change the solver used for the powerflow
-    lightsim_grid_model.change_solver(SolverType.KLUSolver)  # change the NR solver that uses KLU
-    # you can replace `SolverType.KLUSolver` by any of the 11 available solvers described bellow, 
-    # for example (and we will not write the 11...) `SolverType.KLUSolverSingleSlack`, `SolverType.SparseLUSolver` 
-    # or even `SolverType.NICSLUSolver`
-        
-All solvers can be accessed with the same API (if you want to use the raw python class, not recommended):
+    lightsim_grid_model.change_algorithm(AlgorithmType.NR_KLU)  # change the NR solver that uses KLU
+    # you can replace `AlgorithmType.NR_KLU` by any of the available algorithms described bellow,
+    # for example `AlgorithmType.NRSing_KLU`, `AlgorithmType.NR_SparseLU`
+    # or even `AlgorithmType.NR_NICSLU`
+
+All algorithms can be accessed with the same API (if you want to use the raw python class, not recommended):
 
 .. code-block:: python
 
-  from lightsim2grid.solver import ASolverAvailable
+  from lightsim2grid.algorithm import NR_KLU  # or any of the names above; here NR_KLU is used as example
   Ybus = ...  # a csc sparse matrix (it's really important that it is a csc and not a csr !)
   V0 = ...  # a complex vector (initial guess)
   Sbus = ...  # a complex vector (power injected at each bus)
@@ -85,7 +83,7 @@ All solvers can be accessed with the same API (if you want to use the raw python
   max_it = ...  # a > 0 integer maximum number of iterations the solver is allowed to perform
   tol = ...  # a > 0. real number giving the maximum KCL violation allowed for a all nodes
 
-  solver = ASolverAvailable()
+  solver = NR_KLU()
   converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
 
   # to retrieve the voltages related information (in case converged is True)
@@ -134,19 +132,19 @@ the first one is used as a real slack bus, the other ones are converted silently
 
 The list is:
 
-- `KLUSolver` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
+- `NR_KLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
   fast `KLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `NICSLUSolver` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
+- `NR_NICSLU` \*: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
   fast `NICSLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `SparseLUSolver`: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
+- `NR_SparseLU`: implementation of the Newton Raphson algorithm supporting the distributed slack bus, where the 
   Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU` or `NICSLU`)
-- `KLUSolverSingleSlack` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
+- `NRSing_KLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
   all elements of `ref` into `pv` except the first one], where the 
   fast `KLU` implementation is used to iteratively update the jacobian matrix `J`
-- `NICSLUSolverSingleSlack` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
+- `NRSing_NICSLU` \*: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
   all elements of `ref` into `pv` except the first one], where the 
   fast `NICSLU` implementation is used to iteratively update the jacobian matrix `J`.
-- `SparseLUSolverSingleSlack`: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
+- `NRSing_SparseLU`: implementation of the Newton Raphson algorithm only supporting single slack bus [ignores `slack_weight`, assign 
   all elements of `ref` into `pv` except the first one], where the 
   Eigen default implementation is used to iteratively update the jacobian matrix `J` (instead of the faster `KLU` or `NICSLU`)
 
@@ -154,10 +152,10 @@ You can use them as:
 
 .. code-block:: python
 
-  from lightsim2grid.solver import KLUSolver  # or any of the names above
+  from lightsim2grid.algorithm import NR_KLU  # or any of the names above
 
   # retrieve some Ybus, V0, etc. as above
-  solver = KLUSolver()
+  solver = NR_KLU()
   converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
   # process the results as above
 
@@ -177,7 +175,7 @@ These solvers use the Gauss Seidel method to compute powerflows. This method wil
 of a bus based on the mismatch of the KCL. The "Gauss Seidel Synch" method is a custom implementation of this method
 that updates every components at once intead of updating them one by one for each iterations.
 
-The two solvers there are `GaussSeidelSolver` and `GaussSeidelSynchSolver`. Unless for some particular use case, we
+The two solvers there are `GaussSeidelAlgo` and `GaussSeidelSynchAlgo`. Unless for some particular use case, we
 do not recommend to use them as they often are slower than the Newton Raphson based solvers above.
 
 DC solvers
@@ -193,16 +191,16 @@ In the current implementation it does not uses `slack_weight` and does not model
 
 There are 3 solvers of this type that are different in the way they solve `Ybus * Theta = Sbus`:
 
-- `DCSolver` uses the default Eigen sparse LU implementation
-- `KLUDCSolver` uses the fast `KLU` solver
-- `NICSLUDCSolver` uses the fast `NICSLU` solver    
+- `DC_SparseLU` uses the default Eigen sparse LU implementation
+- `DC_KLU` uses the fast `KLU` solver
+- `DC_NICSLU` uses the fast `NICSLU` solver    
 
 .. code-block:: python
 
-  from lightsim2grid.solver import DCSolver  # or any of the names above
+  from lightsim2grid.algorithm import DC_SparseLU  # or any of the names above
 
   # retrieve some Ybus, V0, etc. as above
-  dc_solver = DCSolver()
+  dc_solver = DC_SparseLU()
   converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
   # process the results as above
 

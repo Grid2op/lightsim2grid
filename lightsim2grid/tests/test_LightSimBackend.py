@@ -73,7 +73,7 @@ if __has_storage:
 PATH_DATA_TEST_INIT = PATH_DATA_TEST
 PATH_DATA_TEST = PATH_DATA_TEST_PP
 from lightsim2grid.lightSimBackend import LightSimBackend
-from lightsim2grid.solver import AlgorithmType
+from lightsim2grid.algorithm import AlgorithmType
 from grid2op.Runner import Runner
 
         
@@ -275,15 +275,15 @@ class TestBackendArgument(unittest.TestCase):
             warnings.filterwarnings("ignore")
             env = grid2op.make("l2rpn_case14_sandbox",
                                test=True,
-                               backend=LightSimBackend(solver_type=AlgorithmType.SparseLUSingleSlack,
+                               backend=LightSimBackend(solver_type=AlgorithmType.NRSing_SparseLU,
                                                        max_iter=100,
                                                        tol=1e-6))
-        assert env.backend._grid.get_algo_type() == AlgorithmType.SparseLUSingleSlack
+        assert env.backend._grid.get_algo_type() == AlgorithmType.NRSing_SparseLU
         assert env.backend.max_it == 100
         assert env.backend.tol == 1e-6
         runner = Runner(**env.get_params_for_runner())
         env_cpy = runner.init_env()
-        assert env_cpy.backend._grid.get_algo_type() == AlgorithmType.SparseLUSingleSlack
+        assert env_cpy.backend._grid.get_algo_type() == AlgorithmType.NRSing_SparseLU
         assert env_cpy.backend.max_it == 100
         assert env_cpy.backend.tol == 1e-6
             
@@ -293,11 +293,11 @@ class TestBackendArgument(unittest.TestCase):
             env = grid2op.make("l2rpn_case14_sandbox",
                                test=True,
                                backend=LightSimBackend())
-        if AlgorithmType.KLUSingleSlack in env.backend.available_solvers:
+        if AlgorithmType.NRSing_KLU in env.backend.available_solvers:
             # in the test KLU is not available on windows
-            correct_type = AlgorithmType.KLUSingleSlack
+            correct_type = AlgorithmType.NRSing_KLU
         else:
-            correct_type = AlgorithmType.SparseLUSingleSlack
+            correct_type = AlgorithmType.NRSing_SparseLU
             
         assert env.backend._grid.get_algo_type() == correct_type
         assert env.backend.max_it == 10

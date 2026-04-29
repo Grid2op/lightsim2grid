@@ -58,10 +58,10 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
             "Apply an AlgoConfig to the DC solver.")
 
         // solver control
-        .def("change_solver", py::overload_cast<const AlgorithmType&>(&GridModel::change_solver), DocGridModel::change_solver.c_str())
-        .def("change_solver", py::overload_cast<const std::string&>(&GridModel::change_solver), "Change the AC (or DC) solver by registry name. Accepts built-in names and plugin names registered via load_solver_plugin().")
-        .def("available_solvers", &GridModel::available_solvers, DocGridModel::available_solvers.c_str())
-        .def("available_solver_names", &GridModel::available_solver_names, "Returns names of all registered solvers, including any loaded plugins.")
+        .def("change_algorithm", py::overload_cast<const AlgorithmType&>(&GridModel::change_solver), DocGridModel::change_solver.c_str())
+        .def("change_algorithm", py::overload_cast<const std::string&>(&GridModel::change_solver), "Change the AC (or DC) algorithm by registry name. Accepts built-in names and plugin names registered via load_solver_plugin().")
+        .def("available_algorithms", &GridModel::available_solvers, DocGridModel::available_solvers.c_str())
+        .def("available_algorithm_names", &GridModel::available_solver_names, "Returns names of all registered algorithms, including any loaded plugins.")
         .def("get_computation_time", &GridModel::get_computation_time, DocGridModel::get_computation_time.c_str())
         .def("get_dc_computation_time", &GridModel::get_dc_computation_time, DocGridModel::get_dc_computation_time.c_str())
         .def("get_algo_type", &GridModel::get_algo_type, DocGridModel::get_algo_type.c_str())

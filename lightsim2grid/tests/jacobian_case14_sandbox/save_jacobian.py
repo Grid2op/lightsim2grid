@@ -4,7 +4,7 @@ import grid2op
 import numpy as np
 
 from lightsim2grid import LightSimBackend
-from lightsim2grid.solver import KLUSolver
+from lightsim2grid.algorithm import NR_KLU
 env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend(dist_slack_non_renew=True))
 obs = env.reset(seed=0, options={"time serie id": 0})
 
@@ -24,7 +24,7 @@ res = {
     }
 }
 for n_iter in range(5):
-    solver = KLUSolver()
+    solver = NR_KLU()
     solver.compute_pf(
         res["init_state"]["Ybus"],
         res["init_state"]["v_init"],

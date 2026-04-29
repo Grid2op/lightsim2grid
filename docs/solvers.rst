@@ -1,162 +1,190 @@
-.. currentmodule:: lightsim2grid.solver
+.. currentmodule:: lightsim2grid.algorithm
 
 .. _solvers_doc:
 
-Available "solvers" (doc in progress)
-=======================================
+.. _available-powerflow-solvers:
 
-The documentation of this section is in progress. It is rather incomplete for the moment, and only expose the most
+Available powerflow algorithms
+===============================
+
+The documentation of this section is in progress. It is rather incomplete for the moment, and only exposes the most
 basic features.
 
 If you are interested in collaborating to improve this section, let us know.
 
-Type of solvers available
---------------------------
+.. seealso::
 
-In lightsim2grid you can have 4 different types of solvers:
+   :ref:`algorithm_names` — explains the three distinct meanings of "solver" in lightsim2grid,
+   how the :class:`~lightsim2grid.algorithm.AlgorithmType` enum values are named, and the migration
+   table from old names (``KLU``, ``SparseLU``, ``DC``, …) to the new canonical names.
 
-- `GaussSeidel` methods: :class:`lightsim2grid.solver.GaussSeidelSolver` and :class:`lightsim2grid.solver.GaussSeidelSynchSolver`
-  solves the AC powerflow using the Gauss Seidel method (an example of this algorithm is available in the
-  great matpower library here `gausspf <https://matpower.org/docs/ref/matpower5.0/gausspf.html>`_ )
-- `DC` methods: solve the DC approximation of the AC powerflow. To solve them it requires manipulating sparse matrices
-  and you can use different linear algebra library for that. This is why you have up to 4 different DC solvers:
-  :class:`lightsim2grid.solver.DCSolver` (use `Eigen SparseLU <https://eigen.tuxfamily.org/dox/group__SparseLU__Module.html>`_ ),
-  :class:`lightsim2grid.solver.KLUDCSolver` (uses `KLU <https://github.com/DrTimothyAldenDavis/SuiteSparse/tree/dev/KLU>`_ )
-  :class:`lightsim2grid.solver.NICSLUDCSolver` (uses `NICSLU <https://github.com/chenxm1986/nicslu>`_  and requires and license 
-  and to compile lightsim2grid from source)
-  :class:`lightsim2grid.solver.CKTSODCSolver` (uses `CKTSO <https://github.com/chenxm1986/cktso>`_  and requires and license 
-  and to compile lightsim2grid from source)
-- `AC with single slack` methods: solves the AC equations where only one bus is the slack bus (if multiple slack buses are 
-  detected, only the first one will be used as slack bus, the others will be treated as "pv" buses). It also exists
-  in different "flavours" that uses different linear albrea libraries (same as DC) which are: 
-  :class:`lightsim2grid.solver.SparseLUSolverSingleSlack`, :class:`lightsim2grid.solver.KLUSolverSingleSlack`,
-  :class:`lightsim2grid.solver.NICSLUSolverSingleSlack` and :class:`lightsim2grid.solver.CKTSOSolverSingleSlack`
-- `AC with distributed slack` methods: solves the AC equations with multple slack buses. As for DC and AC with single slack,
-  this is avaialble in 4 different flavours (each using internally a different linear albrea solver): 
-  :class:`lightsim2grid.solver.SparseLUSolver`, :class:`lightsim2grid.solver.KLUSolver`,
-  :class:`lightsim2grid.solver.NICSLUSolver` and :class:`lightsim2grid.solver.CKTSOSolver`
+Types of powerflow algorithms
+------------------------------
+
+LightSim2Grid supports four families of powerflow algorithms:
+
+- **Gauss-Seidel**: :class:`lightsim2grid.algorithm.GaussSeidelAlgo` and
+  :class:`lightsim2grid.algorithm.GaussSeidelSynchAlgo`.
+  Solve the AC powerflow using the iterative Gauss-Seidel method (see
+  `gausspf <https://matpower.org/docs/ref/matpower5.0/gausspf.html>`_ in MATPOWER).
+
+- **DC approximation**: solve the linearised (DC) power-flow equations using a direct sparse
+  factorisation.  Up to four linear-solver backends are available:
+
+  - :class:`lightsim2grid.algorithm.DC_SparseLU` — Eigen SparseLU (always available)
+  - :class:`lightsim2grid.algorithm.DC_KLU` — SuiteSparse KLU (when compiled with KLU)
+  - :class:`lightsim2grid.algorithm.DC_NICSLU` — NICSLU (requires license + source build)
+  - :class:`lightsim2grid.algorithm.DC_CKTSO` — CKTSO (requires license + source build)
+
+- **Newton-Raphson (single slack)**: solves the full AC equations with a single slack bus.
+  If multiple slack buses are present only the first is used; the others are treated as PV buses.
+  Available with four linear-solver backends:
+
+  - :class:`lightsim2grid.algorithm.NRSing_SparseLU`
+  - :class:`lightsim2grid.algorithm.NRSing_KLU`
+  - :class:`lightsim2grid.algorithm.NRSing_NICSLU`
+  - :class:`lightsim2grid.algorithm.NRSing_CKTSO`
+
+- **Newton-Raphson (distributed / multi-slack)**: solves the full AC equations with multiple
+  slack buses.  Available with four linear-solver backends:
+
+  - :class:`lightsim2grid.algorithm.NR_SparseLU`
+  - :class:`lightsim2grid.algorithm.NR_KLU`
+  - :class:`lightsim2grid.algorithm.NR_NICSLU`
+  - :class:`lightsim2grid.algorithm.NR_CKTSO`
+
+- **Fast-Decoupled Powerflow (FDPF)**: the XB and BX variants of the fast-decoupled
+  Newton-Raphson method.  Available with four linear-solver backends each:
+
+  - :class:`lightsim2grid.algorithm.FDPF_XB_SparseLU`, :class:`lightsim2grid.algorithm.FDPF_BX_SparseLU`
+  - :class:`lightsim2grid.algorithm.FDPF_XB_KLU`, :class:`lightsim2grid.algorithm.FDPF_BX_KLU`
+  - :class:`lightsim2grid.algorithm.FDPF_XB_NICSLU`, :class:`lightsim2grid.algorithm.FDPF_BX_NICSLU`
+  - :class:`lightsim2grid.algorithm.FDPF_XB_CKTSO`, :class:`lightsim2grid.algorithm.FDPF_BX_CKTSO`
 
 .. warning::
-  Solvers based on `NICSLU` and `CKTSO` require a compilation from source. Solvers based on CKTSO are (for now)
-  only tested on linux.
+   Algorithms based on ``NICSLU`` and ``CKTSO`` require a compilation from source.
+   CKTSO algorithms are (for now) only tested on Linux.
 
-By default, when avaialble, lightsim2grid try to use the `KLU` linear solver, so the :class:`lightsim2grid.solver.KLUDCSolver`,
-:class:`lightsim2grid.solver.KLUSolverSingleSlack` and :class:`lightsim2grid.solver.KLUSolver`. If not available
-(for example if you compiled from source without including the KLU package) it falls back to the "SparseLU" linear solver
-so :class:`lightsim2grid.solver.DCSolver`, :class:`lightsim2grid.solver.SparseLUSolverSingleSlack` and 
-:class:`lightsim2grid.solver.SparseLUSolver`.
+Default algorithm selection
+------------------------------
 
-If it detects that the grid is "single slack" it uses the "SingleSlack" version (:class:`lightsim2grid.solver.KLUSolverSingleSlack` or
-:class:`lightsim2grid.solver.SparseLUSolverSingleSlack`).
+By default, when KLU is available, lightsim2grid uses:
 
-At any moment, you can change the solver used by lightsim2grid with:
+- :class:`~lightsim2grid.algorithm.NR_KLU` (AC multi-slack)
+- :class:`~lightsim2grid.algorithm.NRSing_KLU` (AC single-slack, when only one slack bus is detected)
+- :class:`~lightsim2grid.algorithm.DC_KLU` (DC approximation)
 
-.. code-block:: python
+When KLU is not available (e.g. installed from PyPI without a source build), it falls back to:
 
-    import grid2op
-    import lightsim2grid
-    from lightsim2grid import LightSimBackend
+- :class:`~lightsim2grid.algorithm.NR_SparseLU`
+- :class:`~lightsim2grid.algorithm.NRSing_SparseLU`
+- :class:`~lightsim2grid.algorithm.DC_SparseLU`
 
-    # create an environment
-    env_name = "l2rpn_case14_sandbox"
-    env_lightsim = grid2op.make(env_name, backend=LightSimBackend())
+Correspondence between class and ``AlgorithmType`` enum
+---------------------------------------------------------
 
-    env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.KLU)  # for KLU solver
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
 
-Or alternatively, you can change it when you create the backend:
-
-.. code-block:: python
-
-    import grid2op
-    import lightsim2grid
-    from lightsim2grid import LightSimBackend
-
-    # create an environment
-    env_name = "l2rpn_case14_sandbox"
-    env_lightsim = grid2op.make(env_name,
-                                backend=LightSimBackend(solver_type=lightsim2grid.SolverType.KLU))
-
-The correspondance between the type of solver used (in the above example :class:`lightsim2grid.solver.KLUSolver` )  
-and its "name" in the `lightsim2grid.SolverType` (in the above example `lightsim2grid.SolverType.KLU` ) 
-module is :
-
-========================================================   =============================================================================
-Solver                                                     name in "SolverType"
-========================================================   =============================================================================
-:class:`lightsim2grid.solver.GaussSeidelSolver`            `GaussSeidel` (SolverType.GaussSeidel)
-:class:`lightsim2grid.solver.GaussSeidelSynchSolver`       `GaussSeidelSynch` (SolverType.GaussSeidelSynch)
-:class:`lightsim2grid.solver.DCSolver`                     `DC` (SolverType.DC)
-:class:`lightsim2grid.solver.KLUDCSolver`                  `KLUDC` (SolverType.KLUDC)
-:class:`lightsim2grid.solver.NICSLUDCSolver`               `NICSLUDC` (SolverType.NICSLUDC) 
-:class:`lightsim2grid.solver.CKTSODCSolver`                `CKTSODC` (SolverType.CKTSODC)
-:class:`lightsim2grid.solver.SparseLUSolverSingleSlack`    `SparseLUSingleSlack` (SolverType.SparseLUSingleSlack)
-:class:`lightsim2grid.solver.KLUSolverSingleSlack`         `KLUSingleSlack` (SolverType.KLUSingleSlack)
-:class:`lightsim2grid.solver.NICSLUSolverSingleSlack`      `NICSLUSingleSlack` (SolverType.NICSLUSingleSlack)
-:class:`lightsim2grid.solver.CKTSOSolverSingleSlack`       `CKTSOSingleSlack` (SolverType.CKTSOSingleSlack)
-:class:`lightsim2grid.solver.SparseLUSolver`               `SparseLU` (SolverType.SparseLU)
-:class:`lightsim2grid.solver.KLUSolver`                    `KLU` (SolverType.KLU)
-:class:`lightsim2grid.solver.NICSLUSolver`                 `NICSLU` (SolverType.NICSLU)
-:class:`lightsim2grid.solver.CKTSOSolver`                  `CKTSO` (SolverType.CKTSO)
-========================================================   =============================================================================
+   * - Python class
+     - ``AlgorithmType`` enum value
+   * - :class:`~lightsim2grid.algorithm.GaussSeidelAlgo`
+     - ``AlgorithmType.GaussSeidel``
+   * - :class:`~lightsim2grid.algorithm.GaussSeidelSynchAlgo`
+     - ``AlgorithmType.GaussSeidelSynch``
+   * - :class:`~lightsim2grid.algorithm.DC_SparseLU`
+     - ``AlgorithmType.DC_SparseLU``
+   * - :class:`~lightsim2grid.algorithm.DC_KLU`
+     - ``AlgorithmType.DC_KLU``
+   * - :class:`~lightsim2grid.algorithm.DC_NICSLU`
+     - ``AlgorithmType.DC_NICSLU``
+   * - :class:`~lightsim2grid.algorithm.DC_CKTSO`
+     - ``AlgorithmType.DC_CKTSO``
+   * - :class:`~lightsim2grid.algorithm.NRSing_SparseLU`
+     - ``AlgorithmType.NRSing_SparseLU``
+   * - :class:`~lightsim2grid.algorithm.NRSing_KLU`
+     - ``AlgorithmType.NRSing_KLU``
+   * - :class:`~lightsim2grid.algorithm.NRSing_NICSLU`
+     - ``AlgorithmType.NRSing_NICSLU``
+   * - :class:`~lightsim2grid.algorithm.NRSing_CKTSO`
+     - ``AlgorithmType.NRSing_CKTSO``
+   * - :class:`~lightsim2grid.algorithm.NR_SparseLU`
+     - ``AlgorithmType.NR_SparseLU``
+   * - :class:`~lightsim2grid.algorithm.NR_KLU`
+     - ``AlgorithmType.NR_KLU``
+   * - :class:`~lightsim2grid.algorithm.NR_NICSLU`
+     - ``AlgorithmType.NR_NICSLU``
+   * - :class:`~lightsim2grid.algorithm.NR_CKTSO`
+     - ``AlgorithmType.NR_CKTSO``
+   * - :class:`~lightsim2grid.algorithm.FDPF_XB_SparseLU`
+     - ``AlgorithmType.FDPF_XB_SparseLU``
+   * - :class:`~lightsim2grid.algorithm.FDPF_BX_SparseLU`
+     - ``AlgorithmType.FDPF_BX_SparseLU``
+   * - :class:`~lightsim2grid.algorithm.FDPF_XB_KLU`
+     - ``AlgorithmType.FDPF_XB_KLU``
+   * - :class:`~lightsim2grid.algorithm.FDPF_BX_KLU`
+     - ``AlgorithmType.FDPF_BX_KLU``
+   * - :class:`~lightsim2grid.algorithm.FDPF_XB_NICSLU`
+     - ``AlgorithmType.FDPF_XB_NICSLU``
+   * - :class:`~lightsim2grid.algorithm.FDPF_BX_NICSLU`
+     - ``AlgorithmType.FDPF_BX_NICSLU``
+   * - :class:`~lightsim2grid.algorithm.FDPF_XB_CKTSO`
+     - ``AlgorithmType.FDPF_XB_CKTSO``
+   * - :class:`~lightsim2grid.algorithm.FDPF_BX_CKTSO`
+     - ``AlgorithmType.FDPF_BX_CKTSO``
 
 Usage
---------------------------
-In this section we briefly explain how to switch from one solver to another. An example of code using this feature
-is given in the
-`"benchmark_solvers.py" <https://github.com/Grid2Op/lightsim2grid/blob/master/benchmarks/benchmark_solvers.py>`_
-script available in the `"benchmarks" <https://github.com/Grid2Op/lightsim2grid/tree/master/benchmarks/>`_
-directory of the lightsim2grid repository.
+------
 
-To change the solver used by the backend, the preferred solution is to set it once you create it:
+The preferred way to select an algorithm is to pass ``algo_type`` when creating the backend:
 
 .. code-block:: python
 
     import grid2op
     import lightsim2grid
     from lightsim2grid import LightSimBackend
+    from lightsim2grid.algorithm import AlgorithmType
 
-    # create an environment
     env_name = "l2rpn_case14_sandbox"
-    env_lightsim = grid2op.make(env_name,
-                                backend=LightSimBackend(solver_type=lightsim2grid.SolverType.KLU)
-                               )
+    env = grid2op.make(env_name,
+                       backend=LightSimBackend(algo_type=AlgorithmType.NR_KLU))
+
+You can also change the algorithm after creation (not recommended, but supported):
+
+.. code-block:: python
+
+    import grid2op
+    import lightsim2grid
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.algorithm import AlgorithmType
+
+    env_name = "l2rpn_case14_sandbox"
+    env = grid2op.make(env_name, backend=LightSimBackend())
+
+    # switch to Gauss-Seidel
+    env.backend._grid.change_algorithm(AlgorithmType.GaussSeidel)
+
+    # inspect which algorithms are available in this build
+    print(env.backend._grid.available_algorithm_names())
+
+    # tune solver parameters
+    env.backend.set_solver_max_iter(10000)
+    env.backend.set_tol(1e-7)
+
+    env.reset()  # apply the change
 
 .. note::
 
-  For the list of availbale solvers, you can consult the "enum" :class:`lightsim2grid.solver.SolverType`.
+   For the complete list of available algorithm types, see :class:`lightsim2grid.algorithm.AlgorithmType`.
+   For an explanation of the naming convention and the three distinct meanings of "solver", see
+   :ref:`algorithm_names`.
 
 
-You can also (so it's not recommended) change the solver after the backend is created with:
+Detailed API
+-------------
 
-.. code-block:: python
-
-    import grid2op
-    import lightsim2grid
-    from lightsim2grid import LightSimBackend
-
-    # create an environment
-    env_name = "l2rpn_case14_sandbox"
-    env_lightsim = grid2op.make(env_name, backend=LightSimBackend())
-
-    # retrieve the available solver types
-    available_solvers = env_lightsim.backend.available_solvers
-
-    # change the solver types (for example let's use the Gauss Seidel algorithm)
-    env_lightsim.backend.set_solver_type(lightsim2grid.SolverType.GaussSeidel)
-
-    # customize the solver (available for all solvers)
-    env_lightsim.backend.set_solver_max_iter(10000)  # all solvers here are iterative, this is the maximum number of iterations
-    env_lightsim.backend.set_tol(1e-7)  # change the tolerance (smaller tolerance gives a more accurate results but takes longer to compute)
-    # see the documentation of LightSimBackend for more information
-
-    env_lightsim.reset()  # do not forget to reset
-
-
-
-Detailed usage
---------------------------
-
-.. automodule:: lightsim2grid.solver
+.. automodule:: lightsim2grid.algorithm
     :members:
     :autosummary:
 

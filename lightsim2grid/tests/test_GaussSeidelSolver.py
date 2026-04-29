@@ -20,7 +20,7 @@ import time
 GaussSeidelSolver_AVAILBLE = False
 
 try:
-    from lightsim2grid.lightsim2grid_cpp import GaussSeidelSolver
+    from lightsim2grid.lightsim2grid_cpp import GaussSeidelAlgo
     GaussSeidelSolver_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
@@ -140,7 +140,7 @@ class MakeTests(unittest.TestCase):
         if not GaussSeidelSolver_AVAILBLE:
             return
 
-        self.solver = GaussSeidelSolver()
+        self.solver = GaussSeidelAlgo()
 
         self.path = None
         self.V_init = None
@@ -211,7 +211,7 @@ class MakeTests(unittest.TestCase):
 
     def test_dir(self):
         if not GaussSeidelSolver_AVAILBLE:
-            self.skipTest("GaussSeidelSolver is not installed")
+            self.skipTest("GaussSeidelAlgo is not installed")
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

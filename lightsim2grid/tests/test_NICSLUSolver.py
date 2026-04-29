@@ -15,7 +15,7 @@ from scipy import sparse
 import re
 NICSLU_AVAILBLE = False
 try:
-    from lightsim2grid.lightsim2grid_cpp import NICSLUSolver
+    from lightsim2grid.lightsim2grid_cpp import NR_NICSLU
     NICSLU_AVAILBLE = True
 except ImportError:
     # KLU solver is not available, these tests cannot be carried out
@@ -32,7 +32,7 @@ class MakeTests(unittest.TestCase):
         self.tol_test = 1e-4  # tolerance for the test (2 matrices are equal if the l_1 of their difference is less than this)
         if not NICSLU_AVAILBLE:
             return
-        self.solver = NICSLUSolver()
+        self.solver = NR_NICSLU()
 
         self.path = None
         self.V_init = None
