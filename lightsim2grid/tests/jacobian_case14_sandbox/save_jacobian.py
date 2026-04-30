@@ -4,7 +4,12 @@ import grid2op
 import numpy as np
 
 from lightsim2grid import LightSimBackend
-from lightsim2grid.algorithm import NRSing_KLU
+try:
+    from lightsim2grid.algorithm import NRSing_KLU
+except ImportError:
+    # lightsim2grid version < 0.14
+    from lightsim2grid.solver import KLUSolver as NRSing_KLU
+    
 env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
 obs = env.reset(seed=0, options={"time serie id": 0})
 
@@ -43,5 +48,5 @@ for n_iter in range(5):
     }
 assert solver.converged()
 
-with open("saved_jacobian.pkl", "wb") as f:
+with open("saved_jacobian_single.pkl", "wb") as f:
     pickle.dump(res, f)
