@@ -14,7 +14,7 @@ import platform
 import pathlib
 
 import lightsim2grid
-from lightsim2grid.lightsim2grid_cpp import GridModel, AlgorithmType
+from lightsim2grid.lightsim2grid_cpp import LSGrid, AlgorithmType
 
 
 def find_plugin():
@@ -45,7 +45,7 @@ print("Plugin loaded successfully.")
 # ------------------------------------------------------------------
 # Verify registration
 # ------------------------------------------------------------------
-gm = GridModel()
+gm = LSGrid()
 names = gm.available_solver_names()
 assert "DummyExternal" in names, f"DummyExternal not in {names}"
 print(f"Registered solvers: {sorted(names)}")

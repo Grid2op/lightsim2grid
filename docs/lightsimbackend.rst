@@ -92,7 +92,7 @@ Customization of the input format
 
 For a few versions now, we try to extend the capability of lightsim2grid and make it work
 with other data "reader". We started this process by allowing to initialize a 
-lightsim2grid `GridModel` from a pypowsybl network.
+lightsim2grid `LSGrid` from a pypowsybl network.
 
 For example, if you environment contains a grid in the iidm format (native format of pypowsybl networks), 
 you can load it with:

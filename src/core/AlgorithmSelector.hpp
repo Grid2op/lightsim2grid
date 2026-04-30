@@ -113,9 +113,9 @@ class LS2G_API AlgorithmSelector final
         FDPF_XB_SparseLU& get_fdpf_xb_lu();
         FDPF_BX_SparseLU& get_fdpf_bx_lu();
 
-        void set_gridmodel(const GridModel* gridmodel) {
+        void set_lsgrid(const LSGrid* gridmodel) {
             _gridmodel_ptr = gridmodel;
-            if (_algo) _algo->set_gridmodel(gridmodel);
+            if (_algo) _algo->set_lsgrid(gridmodel);
         }
 
         bool ac_solver_used() const {
@@ -258,7 +258,7 @@ class LS2G_API AlgorithmSelector final
         std::unique_ptr<BaseAlgo> _algo;
         AlgorithmType _algo_type;
         AlgorithmType _algo_type_used_for_nr;
-        const GridModel* _gridmodel_ptr;
+        const LSGrid* _gridmodel_ptr;
 };
 
 

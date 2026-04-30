@@ -8,4 +8,4 @@
 
 __all__ = ["init"]
 
-from lightsim2grid.gridmodel.from_pandapower.initGridModel import init
+from lightsim2grid.network.from_pandapower.initLSGrid import init

@@ -171,12 +171,12 @@ struct LS2G_API DocIterator
     
 };
 
-struct LS2G_API DocGridModel
+struct LS2G_API DocLSGrid
 {
     static const std::string _internal_do_not_use;
     static const std::string J_description;
     
-    static const std::string GridModel;
+    static const std::string LSGrid;
 
     static const std::string change_algorithm;
     static const std::string available_algorithm_names;

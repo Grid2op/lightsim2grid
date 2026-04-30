@@ -12,7 +12,7 @@ import numpy as np
 import pypowsybl.network as pp_network
 import pypowsybl.loadflow as pp_lf
 
-from lightsim2grid.gridmodel import init_from_pypowsybl
+from lightsim2grid.network import init_from_pypowsybl
 
 from global_var_tests import CURRENT_PYPOW_VERSION, VERSION_PHASESHIFT_OK_PYPOW
 from test_match_with_pypowsybl.utils_for_slack import (

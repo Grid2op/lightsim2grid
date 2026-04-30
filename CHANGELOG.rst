@@ -54,6 +54,10 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [DEPRECATION PENDING] lightsim_backend.available_solvers() should be replaced with
   lightsim_backend.available_algorithms(). "available_solvers" is still present for 
   backward compatibility.
+- [DEPRECATION PENDING] The "GridModel" class has been renamed to "LSGrid" (clearer name)
+  The same happened for "lightsim2grid.gridmodel" module which is now "lightsim2grid.network".
+  For now, the "lightsim2grid.gridmodel" is still present, with a deprecation warnings
+  throw, to ensure backward compatibility.
 - [FIXED] an issue preventing to use the `init_from_n_powerflow` attribute of `TimeSeries`
 - [FIXED] a warning when compiling lightsim2grid_core (redefinition of some classes)
 - [ADDED] Refactored `ChooseAlgorithm` (used to be ChooseSolver) to a plugin-friendly

@@ -183,7 +183,7 @@ Usage example
     env.backend._grid.available_algorithm_names()
 
 .. note::
-   The method is called ``change_algorithm(type)`` in the C++ GridModel
+   The method is called ``change_algorithm(type)`` in the C++ LSGrid
    Python binding (``env.backend._grid.change_algorithm(AlgorithmType.NR_KLU)``),
    consistent with pandapower's ``algorithm=`` parameter and MATPOWER's
    ``pf.alg`` option.

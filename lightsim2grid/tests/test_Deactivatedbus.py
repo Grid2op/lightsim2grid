@@ -9,11 +9,11 @@
 import unittest
 import copy
 import numpy as np
-from lightsim2grid.gridmodel import init_from_pandapower
+from lightsim2grid.network import init_from_pandapower
 import pandapower.networks as pn
 import pandapower as pp
 import warnings
-from lightsim2grid.tests.test_GridModel_pandapower import BaseTests
+from lightsim2grid.tests.test_LSGrid_pandapower import BaseTests
 import pdb
 from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 

@@ -11,12 +11,12 @@
 import os
 import unittest
 
-from lightsim2grid.lightsim2grid_cpp import GridModel, AlgorithmType
+from lightsim2grid.lightsim2grid_cpp import LSGrid, AlgorithmType
 
 
 def _make_grid():
-    """Return a minimal GridModel with one bus so powerflows can be run."""
-    gm = GridModel()
+    """Return a minimal LSGrid with one bus so powerflows can be run."""
+    gm = LSGrid()
     gm.set_sn_mva(100.0)
     gm.set_init_vm_pu(1.0)
     return gm

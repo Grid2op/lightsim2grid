@@ -18,12 +18,12 @@ import unittest
 import warnings
 
 from lightsim2grid import gridmodel
-from lightsim2grid.gridmodel import init_from_pypowsybl, GridModel
+from lightsim2grid.network import init_from_pypowsybl, LSGrid
 
 try:
     import pandapower.networks as pn
     import pandapower as pdp
-    from lightsim2grid.gridmodel import init_from_pandapower
+    from lightsim2grid.network import init_from_pandapower
     PDP_AVAIL = True
 except ImportError:
     # pandapower not available, eg if testing with numpy 2
@@ -382,12 +382,12 @@ class TestBusesForSub_dosort(unittest.TestCase):
         # self.pypow_grid = pp.network.load(os.path.join(self.path, self.file_name))
         self.pypo_slack_name, _ = get_same_slack("ieee14")
         self.pypow_grid = pp.network.create_ieee14()
-        self.ls_grid_b4s : GridModel = init_from_pypowsybl(
+        self.ls_grid_b4s : LSGrid = init_from_pypowsybl(
             self.pypow_grid,
             buses_for_sub=True,
             sort_index=self.do_i_sort(), 
             gen_slack_id=0)
-        self.ls_grid : GridModel = init_from_pypowsybl(
+        self.ls_grid : LSGrid = init_from_pypowsybl(
             self.pypow_grid,
             buses_for_sub=False,
             sort_index=self.do_i_sort(), 

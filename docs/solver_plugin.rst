@@ -7,8 +7,8 @@ LightSim2grid supports dynamically-loaded algorithm plugins.  A plugin is a
 shared library (``.so`` / ``.dll``) that registers one or more custom
 "powerflow solvers" at load time.  Once loaded, those solvers / algorithms
 behave exactly like the built-in ones: they are accessible by name, selectable via
-:func:`GridModel.change_algorithm`, and appear in
-:func:`GridModel.available_algorithm_names`.
+:func:`LSGrid.change_algorithm`, and appear in
+:func:`LSGrid.available_algorithm_names`.
 
 This mechanism lets you add a new solver algorithm — from your own
 repository or a third-party library — **without modifying lightsim2grid's
@@ -87,7 +87,7 @@ Constructor
     explicit BaseAlgo(bool is_ac = true);
 
 Pass ``true`` for AC solvers and ``false`` for DC solvers.  This value is
-stored in the public member ``IS_AC``, which GridModel uses to route
+stored in the public member ``IS_AC``, which LSGrid uses to route
 :func:`change_solver` calls to the right slot (AC or DC).
 
 Methods to override
@@ -137,15 +137,15 @@ Return ``true`` on convergence; store results in the protected members
 listed below and set ``err_ = ErrorType::NoError`` (or an appropriate
 error code on failure).
 
-``set_gridmodel`` *(virtual — override if you need grid data)*
+``set_lsgrid`` *(virtual — override if you need grid data)*
 
 .. code-block:: cpp
 
-    virtual void set_gridmodel(const GridModel* gridmodel);
+    virtual void set_lsgrid(const LSGrid* gridmodel);
 
 Called by ``ChooseAlgorithm`` after the solver is activated (and again after
 every ``change_algorithm`` call).  The default implementation stores the
-pointer in the protected member ``gridmodel_ptr_``.  Override only if your
+pointer in the protected member ``lsgrid_ptr_``.  Override only if your
 algorithm / solver needs to cache additional data derived from the grid topology.
 
 ``reset`` *(virtual — override if you carry extra state)*
@@ -173,7 +173,7 @@ Protected result members
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Your ``compute_pf`` implementation must populate these fields so that
-``GridModel`` can extract flows and inject the results back into the grid
+``LSGrid`` can extract flows and inject the results back into the grid
 state.
 
 +--------------------+------------------------------------------------------+
@@ -350,14 +350,14 @@ Loading and using the plugin from Python
 .. code-block:: python
 
     import lightsim2grid
-    from lightsim2grid.lightsim2grid_cpp import GridModel
+    from lightsim2grid.lightsim2grid_cpp import LSGrid
 
     # 1. Load the plugin — this fires the C++ static constructors, which
     #    register "MySolver" into the SolverRegistry singleton.
     lightsim2grid.load_algorithm_plugin("build/libmy_solver.so")
 
     # 2. Confirm the solver is available.
-    gm = GridModel()
+    gm = LSGrid()
     print(gm.available_algorithm_names())   # [..., "MySolver", ...]
 
     # 3. Activate the solver.
@@ -389,10 +389,10 @@ Python API reference
     :raises OSError: If the library cannot be loaded (missing file,
         ABI mismatch, unresolved symbols, …).
 
-.. py:method:: GridModel.change_algorithm(name: str) -> None
+.. py:method:: LSGrid.change_algorithm(name: str) -> None
 
     Select the active solver by name.  The name must be one of the
-    strings returned by :py:meth:`GridModel.available_algorithm_names`.
+    strings returned by :py:meth:`LSGrid.available_algorithm_names`.
 
     For built-in solvers the enum overload is also available::
 
@@ -401,7 +401,7 @@ Python API reference
     :param name: Registered solver name (case-sensitive).
     :raises RuntimeError: If *name* is not registered.
 
-.. py:method:: GridModel.available_algorithm_names() -> list[str]
+.. py:method:: LSGrid.available_algorithm_names() -> list[str]
 
     Return all solver names currently registered, including any that were
     added via :func:`~lightsim2grid.load_solver_plugin`.

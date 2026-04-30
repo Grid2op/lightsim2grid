@@ -4,8 +4,8 @@ import grid2op
 import numpy as np
 
 from lightsim2grid import LightSimBackend
-from lightsim2grid.algorithm import NRSing_KLU
-env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
+from lightsim2grid.algorithm import NR_KLU
+env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend(dist_slack_non_renew=True))
 obs = env.reset(seed=0, options={"time serie id": 0})
 
 n_iter = 0
@@ -24,7 +24,7 @@ res = {
     }
 }
 for n_iter in range(5):
-    solver = NRSing_KLU()
+    solver = NR_KLU()
     solver.compute_pf(
         res["init_state"]["Ybus"],
         res["init_state"]["v_init"],
@@ -43,5 +43,5 @@ for n_iter in range(5):
     }
 assert solver.converged()
 
-with open("saved_jacobian.pkl", "wb") as f:
+with open("saved_jacobian_multi.pkl", "wb") as f:
     pickle.dump(res, f)

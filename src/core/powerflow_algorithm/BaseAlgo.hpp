@@ -33,7 +33,7 @@
 
 namespace ls2g {
 
-class GridModel;
+class LSGrid;
 
 using TimerJacType = std::tuple<double, double, double, double,
                    double, double, double, double,
@@ -69,8 +69,8 @@ class LS2G_API BaseAlgo : public BaseConstants
         BaseAlgo & operator=(BaseAlgo&&) = delete;
         BaseAlgo & operator=(const BaseAlgo&) = delete;
 
-        virtual void set_gridmodel(const GridModel * gridmodel){
-            gridmodel_ptr_ = gridmodel;
+        virtual void set_lsgrid(const LSGrid * gridmodel){
+            lsgrid_ptr_ = gridmodel;
         }
 
         virtual Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J() const {
@@ -272,7 +272,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         double timer_check_;
         double timer_total_nr_;
 
-        const GridModel * gridmodel_ptr_;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
+        const LSGrid * lsgrid_ptr_;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
         AlgoControl _solver_control;
 
 };

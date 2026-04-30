@@ -12,7 +12,7 @@ import numpy as np
 import pandapower.networks as pn
 import pandapower as pp
 
-from lightsim2grid.gridmodel import init_from_pandapower
+from lightsim2grid.network import init_from_pandapower
 import warnings
 from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
 import pdb

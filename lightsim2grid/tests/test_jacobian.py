@@ -11,19 +11,29 @@ import unittest
 import pickle
 
 import numpy as np
-from lightsim2grid.algorithm import NR_KLU
+from lightsim2grid.algorithm import (
+    NR_KLU,
+    NRSing_KLU
+)
 
 
-class JacobianTester(unittest.TestCase):
+class JacobianMultiSlackTester(unittest.TestCase):
+    @classmethod
+    def get_name(cls):
+        return os.path.join("jacobian_case14_sandbox","saved_jacobian_multi.pkl")
+    
+    def get_algo(self):
+        return NR_KLU()
+    
     @classmethod
     def setUpClass(cls) -> None:
-        with open(os.path.join("jacobian_case14_sandbox","saved_jacobian.pkl"), "rb") as f:
+        with open(cls.get_name(), "rb") as f:
             cls.res = pickle.load(f)
             
         return super().setUpClass()
     
     def setUp(self) -> None:
-        self.solver = NR_KLU()
+        self.solver = self.get_algo()
         return super().setUp()    
     
     def new_to_old_indexes(self):
@@ -71,3 +81,12 @@ class JacobianTester(unittest.TestCase):
         
     def test_4_iter(self):
         self._aux_test_iter(4)
+
+class JacobianSingleSlackTester(JacobianMultiSlackTester):
+    @classmethod
+    def get_name(cls):
+        return os.path.join("jacobian_case14_sandbox","saved_jacobian_single.pkl")
+    
+    def get_algo(self):
+        return NRSing_KLU()
+    

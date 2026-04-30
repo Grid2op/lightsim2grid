@@ -12,7 +12,7 @@ Tests for NRAlgo scaling and refactor policies:
   - Per-policy parameter getters/setters
   - AlgoConfig round-trip (get_config -> set_config -> get_config)
   - Convergence with every (scaling policy, refactor policy) combination
-  - GridModel.get_ac_algo_config / set_ac_algo_config
+  - LSGrid.get_ac_algo_config / set_ac_algo_config
 """
 
 import os
@@ -30,7 +30,7 @@ from lightsim2grid.lightsim2grid_cpp import (
 
 try:
     import lightsim2grid
-    from lightsim2grid.gridmodel import init as init_gridmodel
+    from lightsim2grid.network import init as init_gridmodel
     _GRIDMODEL_AVAILABLE = True
 except Exception:
     _GRIDMODEL_AVAILABLE = False
@@ -399,40 +399,40 @@ class TestConvergenceWithPolicies(unittest.TestCase):
 
 
 class TestAlgoConfigViaGridModel(unittest.TestCase):
-    """GridModel.get_ac_algo_config / set_ac_algo_config round-trips."""
+    """LSGrid.get_ac_algo_config / set_ac_algo_config round-trips."""
 
     @unittest.skipUnless(_GRIDMODEL_AVAILABLE, "lightsim2grid gridmodel not available")
     def _make_gridmodel(self):
         import pandapower as pp
         net = pp.networks.case14()
-        from lightsim2grid.gridmodel import init as gm_init
+        from lightsim2grid.network import init as gm_init
         return gm_init(net)
 
     def _try_import_gridmodel_direct(self):
         try:
-            from lightsim2grid.lightsim2grid_cpp import GridModel
-            return GridModel()
+            from lightsim2grid.lightsim2grid_cpp import LSGrid
+            return LSGrid()
         except Exception:
             return None
 
     def test_get_ac_algo_config_returns_AlgoConfig(self):
         gm = self._try_import_gridmodel_direct()
         if gm is None:
-            self.skipTest("GridModel C++ class not directly instantiable without a grid")
+            self.skipTest("LSGrid C++ class not directly instantiable without a grid")
         cfg = gm.get_ac_algo_config()
         self.assertIsInstance(cfg, AlgoConfig)
 
     def test_get_dc_algo_config_returns_AlgoConfig(self):
         gm = self._try_import_gridmodel_direct()
         if gm is None:
-            self.skipTest("GridModel C++ class not directly instantiable without a grid")
+            self.skipTest("LSGrid C++ class not directly instantiable without a grid")
         cfg = gm.get_dc_algo_config()
         self.assertIsInstance(cfg, AlgoConfig)
 
     def test_set_ac_algo_config_round_trip(self):
         gm = self._try_import_gridmodel_direct()
         if gm is None:
-            self.skipTest("GridModel C++ class not directly instantiable without a grid")
+            self.skipTest("LSGrid C++ class not directly instantiable without a grid")
 
         # Build a custom config
         cfg = AlgoConfig()
