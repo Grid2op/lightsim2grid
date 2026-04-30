@@ -30,7 +30,6 @@ inline void NRSystem<>::init_topology(  // TODO rename
 
     nb_pv_ = static_cast<int>(pv_.size());
     nb_pq_ = static_cast<int>(pq_.size());
-    lag_   = 0;
 
     pvpq_.resize(nb_pv_ + nb_pq_);
     pvpq_ << pv_, pq_;
@@ -77,11 +76,14 @@ inline void NRSystem<>::build_J_sparsity()
     // compute its sparsity pattern
     const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
     const int n_bus  = Ybus.rows();
-    const int dim_J  = nb_pvpq_ + nb_pq_;
+    const size_t dim_J  =  this->total_state_variables(); // nb_pvpq_ + nb_pq_;
     const int nnz_Y  = Ybus.nonZeros();
 
     std::vector<Contrib> c11, c12, c21, c22;
-    // c11.reserve()  // TODO !
+    c11.reserve(nnz_Y); // TODO this might be overly pessimistic (only pvpq comp are kept here)
+    c12.reserve(nnz_Y);
+    c21.reserve(nnz_Y); // TODO this might be overly pessimistic (only pq comp are kept here) 
+    c22.reserve(nnz_Y);
     int k = 0;
     for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
         for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
@@ -107,8 +109,6 @@ inline void NRSystem<>::build_J_sparsity()
     J_.resize(dim_J, dim_J);
     J_.setFromTriplets(triplets.begin(), triplets.end());
     J_.makeCompressed();
-    // std::cout << "J.shape " << J_.rows() << " ," << J_.cols() << "\n";
-    // std::cout << "J.nnz " << J_.nonZeros() << "\n";
     _build_value_map(c11, c21, c12, c22);
 }
 
@@ -131,14 +131,6 @@ inline void NRSystem<>::_build_value_map(
     for (auto& c : c12) map_j12_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
     for (auto& c : c21) map_j21_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
     for (auto& c : c22) map_j22_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
-    // std::cout << "J11: \n";
-    // int i = 0;
-    // for(auto & c : map_j11_)
-    // {
-    //     std::cout << "\t map_j11_[" << i << "] =" << c << std::endl;
-    //     i++;
-    // }
-    // std::cout << "-------------------------------\n";
     need_full_rebuild_ = false;
 }
 
@@ -159,9 +151,7 @@ inline void NRSystem<>::fill_J()
             i++;
             continue;
         }
-        // if(map_pos[c] != ref_) throw std::runtime_error("Error in NRSystem::fill_J (J11)");
         J_.valuePtr()[c] = std::real(ds_dva[i]);
-        // map_pos[c] = {0, i};
         i++;
     }
 
@@ -172,9 +162,7 @@ inline void NRSystem<>::fill_J()
             i++;
             continue;
         }
-        // if(map_pos[c] != ref_) throw std::runtime_error("Error in NRSystem::fill_J (J21)");
         J_.valuePtr()[c] = std::imag(ds_dva[i]);
-        // map_pos[c] = {1, i};
         i++;
     }
 
@@ -185,9 +173,7 @@ inline void NRSystem<>::fill_J()
             i++;
             continue;
         }
-        // if(map_pos[c] != ref_) throw std::runtime_error("Error in NRSystem::fill_J (J12)");
         J_.valuePtr()[c] = std::real(ds_dvm[i]);
-        // map_pos[c] = {2, i};
         i++;
     }
 
@@ -198,19 +184,9 @@ inline void NRSystem<>::fill_J()
             i++;
             continue;
         }
-        // if(map_pos[c] != ref_) throw std::runtime_error("Error in NRSystem::fill_J (J22)");
         J_.valuePtr()[c] = std::imag(ds_dvm[i]);
-        // map_pos[c] = {3, i};
         i++;
     }
-    // std::cout << "map_pos: \n";
-    // i = 0;
-    // for(auto & c : map_pos)
-    // {
-    //     std::cout << "\t map_pos[" << i << "] = " << std::get<0>(c) << " " << std::get<1>(c) << std::endl;
-    //     i++;
-    // }
-    // std::cout << "-------------------------------\n";
     timer_fillJ_ += timer.duration();
 }
 
@@ -279,125 +255,6 @@ inline real_type NRSystem<>::mismatch_sq_norm_at(const RealVect& dx) const
     return _mismatch_core(_compute_trial_V(dx)).squaredNorm();
 }
 
-// ---- Virtual hooks -----------------------------------------------------------
-
-// inline void NRSystem<>::_collect_J_triplets(
-//     std::vector<Eigen::Triplet<double>>& coeffs) const
-// {
-//     const int n_pvpq = theta_size();
-
-//     const Eigen::SparseMatrix<real_type> dS_dVa_r = dS_dVa_.real();
-//     const Eigen::SparseMatrix<real_type> dS_dVa_i = dS_dVa_.imag();
-//     const Eigen::SparseMatrix<real_type> dS_dVm_r = dS_dVm_.real();
-//     const Eigen::SparseMatrix<real_type> dS_dVm_i = dS_dVm_.imag();
-
-//     int nb_obj = 0;
-//     std::vector<Eigen::Index> inner_index;
-//     std::vector<real_type> values;
-
-//     // dTheta columns (0..n_pvpq-1)
-//     for (int col_id = 0; col_id < n_pvpq; ++col_id) {
-//         nb_obj = 0; inner_index.clear(); values.clear();
-//         _get_values_J(nb_obj, inner_index, values, dS_dVa_r, pvpq_inv_, pvpq_,
-//                       static_cast<size_t>(col_id), 0, 0);
-//         _get_values_J(nb_obj, inner_index, values, dS_dVa_i, pq_inv_, pvpq_,
-//                       static_cast<size_t>(col_id), static_cast<size_t>(n_pvpq), 0);
-//         for (int k = 0; k < nb_obj; ++k)
-//             coeffs.push_back(Eigen::Triplet<double>(
-//                 static_cast<int>(inner_index[k]), col_id, values[k]));
-//     }
-
-//     // dVm columns (n_pvpq..n_pvpq+n_pq-1)
-//     for (int col_id = 0; col_id < nb_pq_; ++col_id) {
-//         nb_obj = 0; inner_index.clear(); values.clear();
-//         _get_values_J(nb_obj, inner_index, values, dS_dVm_r, pvpq_inv_, pq_,
-//                       static_cast<size_t>(col_id), 0, 0);
-//         _get_values_J(nb_obj, inner_index, values, dS_dVm_i, pq_inv_, pq_,
-//                       static_cast<size_t>(col_id), static_cast<size_t>(n_pvpq), 0);
-//         for (int k = 0; k < nb_obj; ++k)
-//             coeffs.push_back(Eigen::Triplet<double>(
-//                 static_cast<int>(inner_index[k]), col_id + n_pvpq, values[k]));
-//     }
-// }
-
-// inline cplx_type* NRSystem<>::_get_entry_ptr(int row, int col)
-// {
-//     const int n_pvpq = theta_size();
-//     if (col < n_pvpq) {
-//         if (row < n_pvpq)
-//             return &dS_dVa_.coeffRef(pvpq_[row],            pvpq_[col]);
-//         else
-//             return &dS_dVa_.coeffRef(pq_[row - n_pvpq],     pvpq_[col]);
-//     } else {
-//         const int pq_col = col - n_pvpq;
-//         if (row < n_pvpq)
-//             return &dS_dVm_.coeffRef(pvpq_[row],            pq_[pq_col]);
-//         else
-//             return &dS_dVm_.coeffRef(pq_[row - n_pvpq],     pq_[pq_col]);
-//     }
-// }
-
-// ---- Shared helpers (non-virtual) --------------------------------------------
-
-// inline void NRSystem<>::_collect_value_map()
-// {
-//     const int end_col = J_.cols() - lag_;
-//     value_map_.clear();
-//     value_map_.reserve(static_cast<size_t>(J_.nonZeros()));
-
-//     for (int col = 0; col < end_col; ++col) {
-//         for (Eigen::SparseMatrix<real_type>::InnerIterator it(J_, col); it; ++it) {
-//             value_map_.push_back(_get_entry_ptr(static_cast<int>(it.row()), col));
-//         }
-//     }
-//     dS_dVa_.makeCompressed();
-//     dS_dVm_.makeCompressed();
-// }
-
-// inline void NRSystem<>::_dSbus_dV(
-//     const Eigen::SparseMatrix<cplx_type>& Ybus, const CplxVect& V)
-// {
-//     auto timer = CustTimer();
-//     const auto size_dS = V.size();
-//     const CplxVect Vnorm = V.array() / V.array().abs();
-//     const CplxVect Ibus  = Ybus * V;
-//     const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
-
-//     if(need_full_rebuild_){
-//         // I had to rebuild the system
-//         dS_dVm_ = Ybus;
-//         dS_dVa_ = Ybus;
-//         // TODO init from Ybus sparsity pattern with all 0 instead
-//     }
-
-//     cplx_type* ds_dvm_x = dS_dVm_.valuePtr();
-//     cplx_type* ds_dva_x = dS_dVa_.valuePtr();
-
-//     unsigned int pos = 0;
-//     for (int col_id = 0; col_id < size_dS; ++col_id) {
-//         for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_id); it; ++it) {
-//             const int row_id = static_cast<int>(it.row());
-//             const cplx_type el = it.value();
-
-//             cplx_type& dvm = ds_dvm_x[pos];
-//             cplx_type& dva = ds_dva_x[pos];
-
-//             dvm = el * Vnorm(col_id);
-//             dvm = std::conj(dvm) * V(row_id);
-
-//             dva = el * V(col_id);
-//             if (col_id == row_id) {
-//                 dvm += conjIbus_Vnorm(row_id);
-//                 ds_dva_x[pos] -= Ibus(row_id);
-//             }
-//             const cplx_type tmp = BaseConstants::my_i * V(row_id);
-//             dva = std::conj(-dva) * tmp;
-//             ++pos;
-//         }
-//     }
-//     timer_dSbus_ += timer.duration();
-// }
-
 inline CplxVect NRSystem<>::_reconstruct_V(const RealVect& Va, const RealVect& Vm)
 {
     const cplx_type m_i = BaseConstants::my_i;
@@ -431,46 +288,6 @@ inline RealVect NRSystem<>::_mismatch_core(const CplxVect& V_trial) const
     return res;
 }
 
-// inline void NRSystem<>::_get_values_J(
-//     int& nb_obj_this_col,
-//     std::vector<Eigen::Index>& inner_index,
-//     std::vector<real_type>& values,
-//     const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
-//     const std::vector<int>& index_row_inv,
-//     const Eigen::VectorXi& index_col,
-//     size_t col_id,
-//     size_t row_lag,
-//     size_t col_lag) const
-// {
-//     const int col_id_mat = index_col(static_cast<int>(col_id + col_lag));
-//     _get_values_J(nb_obj_this_col, inner_index, values, mat, index_row_inv,
-//                   static_cast<size_t>(col_id_mat), row_lag, col_lag);
-// }
-
-// inline void NRSystem<>::_get_values_J(
-//     int& nb_obj_this_col,
-//     std::vector<Eigen::Index>& inner_index,
-//     std::vector<real_type>& values,
-//     const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
-//     const std::vector<int>& index_row_inv,
-//     size_t col_id_mat,
-//     size_t row_lag,
-//     size_t /*col_lag*/) const
-// {
-//     const int start_id = mat.outerIndexPtr()[col_id_mat];
-//     const int end_id   = mat.outerIndexPtr()[col_id_mat + 1];
-//     const real_type* val_ptr = mat.valuePtr();
-//     for (int obj_id = start_id; obj_id < end_id; ++obj_id) {
-//         const int row_id_dS = mat.innerIndexPtr()[obj_id];
-//         const int row_id    = index_row_inv[row_id_dS];
-//         if (row_id >= 0) {
-//             inner_index.push_back(static_cast<Eigen::Index>(row_id) + row_lag);
-//             values.push_back(val_ptr[obj_id]);
-//             ++nb_obj_this_col;
-//         }
-//     }
-// }
-
 // =============================================================================
 //  NRSystem<MultiSlack, Rest...> — distributed-slack extension
 // =============================================================================
@@ -503,7 +320,7 @@ void NRSystem<MultiSlack, Rest...>::init_topology(
     }
 
     Base::init_topology(Ybus, Sbus, slack_ids, slack_weights, my_pv, pq);
-    this->lag_ += 1;   // MultiSlack always contributes exactly one extra row/col
+    // this->lag_ += 1;   // MultiSlack always contributes exactly one extra row/col
 }
 
 // ---- Phase 1.5: per-compute_pf state update ----------------------------------
@@ -523,7 +340,7 @@ void NRSystem<MultiSlack, Rest...>::update_state(
 template <typename... Rest>
 RealVect NRSystem<MultiSlack, Rest...>::mismatch() const
 {
-    return _mismatch_with_slack(this->V_, slack_absorbed_);
+    return _mismatch_with_slack(Base::V(), slack_absorbed_);
 }
 
 template <typename... Rest>
@@ -542,20 +359,6 @@ real_type NRSystem<MultiSlack, Rest...>::mismatch_sq_norm_at(const RealVect& dx)
 
 // ---- Virtual hooks -----------------------------------------------------------
 
-// template <typename... Rest>
-// void NRSystem<MultiSlack, Rest...>::_collect_J_triplets(
-//     std::vector<Eigen::Triplet<double>>& coeffs) const
-// {
-//     Base::_collect_J_triplets(coeffs);
-//     _append_slack_triplets(coeffs);
-// }
-
-// template <typename... Rest>
-// cplx_type* NRSystem<MultiSlack, Rest...>::_get_entry_ptr(int row, int col)
-// {
-//     if (row == _J_slack_row()) return nullptr;   // slack row is frozen
-//     return Base::_get_entry_ptr(row, col);
-// }
 
 // ---- Private helpers ---------------------------------------------------------
 
@@ -567,13 +370,13 @@ void NRSystem<MultiSlack, Rest...>::_append_slack_triplets(
     const int slack_col = this->total() - 1;     // last column
     const int n_pvpq    = this->theta_size();
 
-    const Eigen::SparseMatrix<real_type> dS_dVa_r = this->dS_dVa_.real();
-    const Eigen::SparseMatrix<real_type> dS_dVm_r = this->dS_dVm_.real();
+    const Eigen::SparseMatrix<real_type> dS_dVa_r = Base::dS_dVa().real();
+    const Eigen::SparseMatrix<real_type> dS_dVm_r = Base::dS_dVm().real();
     const int nb_bus = dS_dVa_r.cols();
 
     // Slack bus row: dP_slack / dTheta  (dTheta columns 0..n_pvpq-1)
     for (int col_id = 0; col_id < nb_bus; ++col_id) {
-        const int J_col = this->pvpq_inv_[col_id];
+        const int J_col = this->pvpq_inv()[col_id];
         if (J_col < 0) continue;
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVa_r, col_id); it; ++it) {
             if (it.row() != static_cast<Eigen::Index>(slack_bus_id_)) continue;
@@ -582,7 +385,7 @@ void NRSystem<MultiSlack, Rest...>::_append_slack_triplets(
     }
     // Slack bus row: dP_slack / dVm  (dVm columns n_pvpq..n_pvpq+n_pq-1)
     for (int col_id = 0; col_id < nb_bus; ++col_id) {
-        const int J_col = this->pq_inv_[col_id];
+        const int J_col = Base::pq_inv()[col_id];
         if (J_col < 0) continue;
         for (Eigen::SparseMatrix<real_type>::InnerIterator it(dS_dVm_r, col_id); it; ++it) {
             if (it.row() != static_cast<Eigen::Index>(slack_bus_id_)) continue;
@@ -596,8 +399,8 @@ void NRSystem<MultiSlack, Rest...>::_append_slack_triplets(
         slack_weights_[static_cast<int>(slack_bus_id_)]));
 
     // Slack column: coupling to pvpq rows (rows 0..n_pvpq-1)
-    for (int i = 0; i < static_cast<int>(this->pvpq_.size()); ++i) {
-        const real_type sl_w = slack_weights_(this->pvpq_(i));
+    for (int i = 0; i < static_cast<int>(Base::pvpq().size()); ++i) {
+        const real_type sl_w = slack_weights_(Base::pvpq()(i));
         if (std::abs(sl_w) > BaseConstants::_tol_equal_float)
             coeffs.push_back(Eigen::Triplet<double>(i, slack_col, sl_w));
     }
@@ -607,8 +410,8 @@ template <typename... Rest>
 RealVect NRSystem<MultiSlack, Rest...>::_mismatch_with_slack(
     const CplxVect& V_trial, real_type sa) const
 {
-    const int n_pv = this->nb_pv_;
-    const int n_pq = this->nb_pq_;
+    const int n_pv = Base::nb_pv();
+    const int n_pq = Base::nb_pq();
 
     auto mis = V_trial.array() * (*this->Ybus_ptr_ * V_trial).array().conjugate()
                - this->Sbus_ptr_->array()
@@ -618,9 +421,9 @@ RealVect NRSystem<MultiSlack, Rest...>::_mismatch_with_slack(
 
     // Layout: [dP_pv, dP_pq, dQ_pq, slack_eq]  (negated)
     RealVect res(n_pv + 2 * n_pq + 1);
-    res.segment(0,               n_pv) = -real_(this->pv_);
-    res.segment(n_pv,            n_pq) = -real_(this->pq_);
-    res.segment(n_pv + n_pq,     n_pq) = -imag_(this->pq_);
+    res.segment(0,               n_pv) = -real_(Base::pv());
+    res.segment(n_pv,            n_pq) = -real_(Base::pq());
+    res.segment(n_pv + n_pq,     n_pq) = -imag_(Base::pq());
     res(n_pv + 2 * n_pq) = -real_(static_cast<int>(slack_bus_id_));
     return res;
 }
