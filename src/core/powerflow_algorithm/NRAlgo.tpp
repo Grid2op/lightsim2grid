@@ -93,6 +93,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
+            _system.fill_internal_variables();
             _system.fill_J();
 
             if (need_init) {
