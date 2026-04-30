@@ -56,12 +56,12 @@ struct MultiSlack {};   // distributed-slack extension (+1 row/col always)
 template <typename... Extensions>
 class NRSystem;
 
-// ---- Base specialisation: NRSystem<> (single-slack, lag = 0) ------------------
+// ---- Base specialisation: NRSystem<> (single-slack) ------------------
 
 /**
  * Base Newton-Raphson system: single-slack, (n_pvpq + n_pq) x (n_pvpq + n_pq) Jacobian.
  *
- * 3-phase interface:
+ * 3-phase interface : TODO refacto NR description
  *   Phase 1  — init_topology(): builds pvpq maps, sets lag_. Call when pv/pq change.
  *   Phase 1.5— update_state():  updates V/Sbus pointers. Call every compute_pf.
  *   Phase 2  — build_J_sparsity(): symbolic J build + value_map. Call when topology changes.
@@ -83,10 +83,30 @@ class NRSystem;
  * Where pvpq is the concatenation of pv then pq bus (might be sorted in the future)
  * And pv is the pv indexes.
  * 
+ * The "state variables" for this base class are then:
+ *    - all the theta (complex voltage angle) at each pv or pq nodes 
+ *      (theta at slack buses are 0 by definition)
+ *    - all the V (complex voltage magnitude) at each pq nodes
+ * 
+ * This means there are exactly 2 * n_pq + n_pv "state variables" for this base class.
+ * 
  * This structure will not be changed by future additions.
  * 
- * Extension variables (slack, future HVDC) go at the LAST rows/cols so the core
- * (n_pvpq + n_pq) x (n_pvpq + n_pq) block is index-compatible for all depths.
+ * And now, for each extension you have the following structure:
+ * 
+ *               |J_base      | J_coupling |
+ * J_augmented = |------------|------------|
+ *               |J_interface | J_features |
+ * 
+ * And they can "recursively" defined J_coupling, J_interface and J_feature
+ * depending on the structure of the previous jacobians build.
+ * 
+ * They should NEVER rewrite J_base. They can add as many row / columns
+ * as they want: each row / colum represents an added "state variable".
+ * 
+ * Rewriting J_base would mean modifying the state variables of the base
+ * class which would break the "inheritance" / "composition" pattern that
+ * we defined here.
  */
 template <>
 class NRSystem<>
@@ -95,11 +115,15 @@ protected:
     struct Contrib { int jrow, jcol, ybus_k; };
 
 public:
-    NRSystem() noexcept
-        : Ybus_ptr_(nullptr), Sbus_ptr_(nullptr),
-          nb_pv_(0), nb_pq_(0), nb_pvpq_(0), lag_(0),
-          need_full_rebuild_(true),
-          timer_dSbus_(0.), timer_fillJ_(0.) {}
+    NRSystem() noexcept:
+        Ybus_ptr_(nullptr),
+        Sbus_ptr_(nullptr),
+        nb_pv_(0),
+        nb_pq_(0),
+        nb_pvpq_(0),
+        need_full_rebuild_(true),
+        timer_dSbus_(0.),
+        timer_fillJ_(0.) {}
 
     virtual ~NRSystem() = default;
 
@@ -149,19 +173,17 @@ public:
         need_full_rebuild_ = true;
     }
 
-    const Eigen::SparseMatrix<real_type>& J()  const { return J_; }
-    const CplxVect& V()  const { return V_; }
-    const RealVect& Va() const { return Va_; }
-    const RealVect& Vm() const { return Vm_; }
+    Eigen::Ref<const Eigen::SparseMatrix<real_type> > J()  const { return J_; }
+    Eigen::Ref<const CplxVect> V()  const { return V_; }
+    Eigen::Ref<const RealVect> Va() const { return Va_; }
+    Eigen::Ref<const RealVect> Vm() const { return Vm_; }
 
-    // ----- Size / segment accessors (replace NRLayout) ---------------------------
+    // to be implemented by all other classes
+    virtual size_t total_state_variables() const {return nb_pvpq_ + nb_pq_;}
 
-    int nb_pv()      const { return nb_pv_; }
-    int nb_pq()      const { return nb_pq_; }
-    int lag()        const { return lag_; }
-    int theta_size() const { return nb_pv_ + nb_pq_; }
+    // ----- Size / segment accessors ---------------------------
+    int theta_size() const { return nb_pvpq_; }
     int vm_size()    const { return nb_pq_; }
-    int total()      const { return lag_ + nb_pv_ + 2 * nb_pq_; }
 
     // Core state vector segments: theta first, then vm, then extension variables.
     RealVect::SegmentReturnType      theta(RealVect& x)       const { return x.segment(0, theta_size()); }
@@ -175,24 +197,44 @@ public:
     double timer_fillJ() const { return timer_fillJ_; }
     void   reset_timers()      { timer_dSbus_ = 0.; timer_fillJ_ = 0.; }
 
-protected:
+private:
     // ---- Shared data (one copy, inherited by all extensions) --------------------
-    const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
-    const CplxVect*                        Sbus_ptr_;
     Eigen::VectorXi                        pv_, pq_, pvpq_;
     std::vector<int>                       pvpq_inv_, pq_inv_;
-    int                                    nb_pv_, nb_pq_, nb_pvpq_, lag_;  // TODO remove lag here !
+    int                                    nb_pv_, nb_pq_, nb_pvpq_;
     RealVect                               Va_, Vm_;
     CplxVect                               V_;
     Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
     Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
-    std::vector<cplx_type*>                value_map_;  // todo remove
+    // std::vector<cplx_type*>                value_map_;  // todo remove
     std::vector<int>                       map_j11_;
     std::vector<int>                       map_j21_;
     std::vector<int>                       map_j12_;
     std::vector<int>                       map_j22_;
     bool                                   need_full_rebuild_;
     double                                 timer_dSbus_, timer_fillJ_;
+
+protected:
+    // visible attribute for derived class (non owning ptr)
+    const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
+    const CplxVect*                        Sbus_ptr_;
+
+    // protected getters (const)
+    Eigen::Ref<const Eigen::VectorXi> pv() const { return pv_; } 
+    Eigen::Ref<const Eigen::VectorXi> pq() const { return pq_; }
+    Eigen::Ref<const Eigen::VectorXi> pvpq() const { return pvpq_; }
+    const std::vector<int> &          pvpq_inv() const {return pvpq_inv_; }
+    const std::vector<int> &          pq_inv() const {return pq_inv_; }
+    int                               nb_pv() const {return nb_pv_;}
+    int                               nb_pq() const {return nb_pq_;}
+    int                               nb_pvpq() const {return nb_pvpq_;}
+    
+    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return dS_dVm_; }
+    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return dS_dVa_; }
+    const std::vector<int> &          map_j11() const {return map_j11_; }
+    const std::vector<int> &          map_j21() const {return map_j21_; }
+    const std::vector<int> &          map_j12() const {return map_j12_; }
+    const std::vector<int> &          map_j22() const {return map_j22_; }
 
     // ---- Virtual hooks (overridden by extensions) --------------------------------
 
