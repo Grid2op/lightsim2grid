@@ -15,7 +15,7 @@ using namespace ls2g;
 
 void bind_batch(py::module_& m) {
     py::class_<TimeSeries>(m, "TimeSeriesCPP", DocComputers::Computers.c_str())
-        .def(py::init<const GridModel &>())
+        .def(py::init<const LSGrid &>())
         .def_property("init_from_n_powerflow",
                       [](const TimeSeries & self){ return self.get_init_from_n_powerflow(); },
                       [](TimeSeries & self, bool val){ self.set_init_from_n_powerflow(val); },
@@ -25,10 +25,10 @@ void bind_batch(py::module_& m) {
                       "Default: false)mydelim")
 
         // solver control
-        .def("change_algorithm", &TimeSeries::change_algorithm, DocGridModel::change_algorithm.c_str())
+        .def("change_algorithm", &TimeSeries::change_algorithm, DocLSGrid::change_algorithm.c_str())
         .def("change_solver", &TimeSeries::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
-        .def("available_default_algorithms", &TimeSeries::available_default_algorithms, DocGridModel::available_default_algorithms.c_str())
-        .def("get_algo_type", &TimeSeries::get_algo_type, DocGridModel::get_algo_type.c_str())
+        .def("available_default_algorithms", &TimeSeries::available_default_algorithms, DocLSGrid::available_default_algorithms.c_str())
+        .def("get_algo_type", &TimeSeries::get_algo_type, DocLSGrid::get_algo_type.c_str())
 
         // timers
         .def("total_time", &TimeSeries::total_time, DocComputers::total_time.c_str())
@@ -54,7 +54,7 @@ void bind_batch(py::module_& m) {
         .def("get_sbuses", &TimeSeries::get_sbuses, DocComputers::get_sbuses.c_str(), py::return_value_policy::reference_internal);
 
     py::class_<ContingencyAnalysis>(m, "ContingencyAnalysisCPP", DocSecurityAnalysis::SecurityAnalysis.c_str())
-        .def(py::init<const GridModel &>())
+        .def(py::init<const LSGrid &>())
         .def_property("init_from_n_powerflow",
                       [](const ContingencyAnalysis & self){ return self.get_init_from_n_powerflow(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_init_from_n_powerflow(val); },
@@ -65,10 +65,10 @@ void bind_batch(py::module_& m) {
                       "with the given input vector)mydelim")
 
         // solver control
-        .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocGridModel::change_algorithm.c_str())
+        .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocLSGrid::change_algorithm.c_str())
         .def("change_solver", &ContingencyAnalysis::change_algorithm, "DEPRECATED: use 'change_algorithm' instead")
-        .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocGridModel::available_algorithm_names.c_str())
-        .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocGridModel::get_algo_type.c_str())
+        .def("available_default_algorithms", &ContingencyAnalysis::available_default_algorithms, DocLSGrid::available_algorithm_names.c_str())
+        .def("get_algo_type", &ContingencyAnalysis::get_algo_type, DocLSGrid::get_algo_type.c_str())
 
         // add contingencies
         .def("add_all_n1", &ContingencyAnalysis::add_all_n1, DocSecurityAnalysis::add_all_n1.c_str())
@@ -87,7 +87,7 @@ void bind_batch(py::module_& m) {
 
         // inspect
         .def("my_defaults", &ContingencyAnalysis::my_defaults_vect, DocSecurityAnalysis::my_defaults_vect.c_str())
-        .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency, DocGridModel::_internal_do_not_use.c_str())
+        .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency, DocLSGrid::_internal_do_not_use.c_str())
 
         // perform computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocSecurityAnalysis::compute.c_str())

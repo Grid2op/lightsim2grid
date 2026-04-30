@@ -54,7 +54,7 @@ This is a work in progress at the moment
    :maxdepth: 2
    :caption: Technical Documentation
 
-   gridmodel
+   network
    install_from_source
    lightsimbackend
    solvers

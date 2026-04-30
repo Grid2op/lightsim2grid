@@ -102,7 +102,7 @@ void AlgorithmSelector::change_algorithm(const std::string& name)
     _algo_type = type;
     _algo_type_used_for_nr = type;
 
-    if (_gridmodel_ptr) _algo->set_gridmodel(_gridmodel_ptr);
+    if (_gridmodel_ptr) _algo->set_lsgrid(_gridmodel_ptr);
     _algo->reset();
 }
 

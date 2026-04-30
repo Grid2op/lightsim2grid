@@ -20,7 +20,7 @@ series of injections (productions and loads) to compute powerflows/
 class LS2G_API TimeSeries final: public BaseBatchSolverSynch
 {
     public:
-        explicit TimeSeries(const GridModel & init_grid_model) noexcept:
+        explicit TimeSeries(const LSGrid & init_grid_model) noexcept:
             BaseBatchSolverSynch(init_grid_model),
             _Sbuses(),
             _status(1), // 1: success, 0: failure

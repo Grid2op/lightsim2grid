@@ -13,7 +13,7 @@ import pandas as pd
 import pypowsybl as pypo
 from typing import Dict, Iterable, Optional, Union
 from packaging import version
-from ...lightsim2grid_cpp import GridModel # type: ignore
+from ...lightsim2grid_cpp import LSGrid # type: ignore
 
 
 from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
@@ -68,14 +68,14 @@ def init(net : pypo.network.Network,
          n_busbar_per_sub: Optional[int]=None,  # new in 0.9.1
          buses_for_sub:Optional[bool]=None,  # new in 0.9.1
          init_vm_pu:float=1.06,
-         ) -> GridModel:
+         ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
     
 
     .. code-block:: python
     
-        from lightsim2grid.gridmodel import init_from_pypowsybl
+        from lightsim2grid.network import init_from_pypowsybl
         
     .. warning::
         It is not available if the `pypowsybl` python package is not installed.
@@ -148,10 +148,10 @@ def init(net : pypo.network.Network,
                        will be set.
     :type init_vm_pu: float
     
-    :return: The properly initialized gridmodel.
-    :rtype: :class:`GridModel`
+    :return: The properly initialized network.
+    :rtype: :class:`LSGrid`
     """
-    model = GridModel()
+    model = LSGrid()
     if hasattr(net, "_nominal_apparent_power"):
         sn_mva_used = getattr(net, "_nominal_apparent_power")
     else:

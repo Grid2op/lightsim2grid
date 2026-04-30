@@ -20,7 +20,7 @@ import grid2op
 from grid2op.Chronics import ChangeNothing
 
 from lightsim2grid import LightSimBackend
-from lightsim2grid.gridmodel import init_from_pypowsybl
+from lightsim2grid.network import init_from_pypowsybl
 
 
 from test_match_with_pypowsybl.utils_for_slack import (

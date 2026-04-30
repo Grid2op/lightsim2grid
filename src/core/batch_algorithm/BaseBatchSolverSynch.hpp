@@ -9,7 +9,7 @@
 #ifndef BASEMULTIPLEPOWERFLOW_H
 #define BASEMULTIPLEPOWERFLOW_H
 
-#include "GridModel.hpp"
+#include "LSGrid.hpp"
 
 namespace ls2g {
 
@@ -28,7 +28,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         using RealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         using CplxMat =  Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
         
-        explicit BaseBatchSolverSynch(const GridModel & init_grid_model) noexcept:
+        explicit BaseBatchSolverSynch(const LSGrid & init_grid_model) noexcept:
             _grid_model(init_grid_model),
             n_line_(init_grid_model.nb_powerline()),
             n_trafos_(init_grid_model.nb_trafo()),
@@ -339,7 +339,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         double _timer_pre_proc = 0.;
 
         // inputs
-        GridModel _grid_model;
+        LSGrid _grid_model;
 
         // properties of the grid
         const size_t n_line_;

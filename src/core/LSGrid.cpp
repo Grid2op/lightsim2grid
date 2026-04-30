@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#include "GridModel.hpp"
+#include "LSGrid.hpp"
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 
 #include <queue>
@@ -14,7 +14,7 @@
 namespace ls2g {
 
 
-GridModel::GridModel(const GridModel & other)
+LSGrid::LSGrid(const LSGrid & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
     sn_mva_ = other.sn_mva_;
@@ -64,7 +64,7 @@ GridModel::GridModel(const GridModel & other)
 }
 
 //pickle
-GridModel::StateRes GridModel::get_state() const 
+LSGrid::StateRes LSGrid::get_state() const 
 {
     std::vector<int> ls_to_orig(_ls_to_orig.begin(), _ls_to_orig.end());
     std::string version_major = VERSION_MAJOR;
@@ -80,7 +80,7 @@ GridModel::StateRes GridModel::get_state() const
     auto res_storage = storages_.get_state();
     auto res_dc_line = dc_lines_.get_state();
 
-    GridModel::StateRes res(version_major,
+    LSGrid::StateRes res(version_major,
                             version_medium,
                             version_minor,
                             ls_to_orig,
@@ -102,7 +102,7 @@ GridModel::StateRes GridModel::get_state() const
     return res;
 };
 
-void GridModel::set_state(GridModel::StateRes & my_state)
+void LSGrid::set_state(LSGrid::StateRes & my_state)
 {
     // after loading back, the instance need to be reset anyway
     // TODO see if it's worth the trouble NOT to do it
@@ -116,7 +116,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     if((version_major != VERSION_MAJOR )| (version_medium != VERSION_MEDIUM) | (version_minor != VERSION_MINOR))
     {
         std::ostringstream exc_;
-        exc_ << "GridModel::set_state: Wrong version. You tried to load a lightsim2grid model saved with version ";
+        exc_ << "LSGrid::set_state: Wrong version. You tried to load a lightsim2grid model saved with version ";
         exc_ << version_major << "." << version_medium << "." << version_minor;
         exc_ << " while currently using the package on version ";
         exc_ << VERSION_MAJOR << "." << VERSION_MEDIUM << "." << VERSION_MINOR;
@@ -184,7 +184,7 @@ void GridModel::set_state(GridModel::StateRes & my_state)
     _dc_algo.change_algorithm(std::get<17>(my_state));
 };
 
-void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
+void LSGrid::set_ls_to_orig(const IntVect & ls_to_orig){
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -196,7 +196,7 @@ void GridModel::set_ls_to_orig(const IntVect & ls_to_orig){
     set_ls_to_orig_internal(ls_to_orig);
 }
 
-void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
+void LSGrid::set_orig_to_ls(const IntVect & orig_to_ls){
     if(orig_to_ls.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -220,7 +220,7 @@ void GridModel::set_orig_to_ls(const IntVect & orig_to_ls){
     }
 }
 
-void GridModel::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
+void LSGrid::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
     if(ls_to_orig.size() == 0){
         _ls_to_orig = IntVect();
         _orig_to_ls = IntVect();
@@ -238,7 +238,7 @@ void GridModel::set_ls_to_orig_internal(const IntVect & ls_to_orig) noexcept{
 }
 
 //init
-void GridModel::init_bus(unsigned int n_sub,
+void LSGrid::init_bus(unsigned int n_sub,
                          unsigned int n_busbar_per_sub,
                          const RealVect & bus_vn_kv,
                          int nb_line,
@@ -255,7 +255,7 @@ void GridModel::init_bus(unsigned int n_sub,
     _ls_to_orig = IntVect();
 }
 
-void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
+void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 {
     if(reset_ac){
         id_me_to_ac_solver_ = SolverBusIdVect();
@@ -291,16 +291,16 @@ void GridModel::reset(bool reset_solver, bool reset_ac, bool reset_dc)
     // reset the solvers
     if (reset_solver){
         _algo.reset();
-        _algo.set_gridmodel(this);
+        _algo.set_lsgrid(this);
         _algo.tell_solver_control(algo_controler_);
 
         _dc_algo.reset();
-        _dc_algo.set_gridmodel(this);
+        _dc_algo.set_lsgrid(this);
         _dc_algo.tell_solver_control(algo_controler_);
     }
 }
 
-CplxVect GridModel::ac_pf(const CplxVect & Vinit,
+CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
                           int max_iter,
                           real_type tol)
 {
@@ -308,7 +308,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
-        exc_ << "GridModel::ac_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "LSGrid::ac_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
         exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
@@ -350,7 +350,7 @@ CplxVect GridModel::ac_pf(const CplxVect & Vinit,
     return res;
 };
 
-void GridModel::check_solution_q_values_onegen(CplxVect & res,
+void LSGrid::check_solution_q_values_onegen(CplxVect & res,
                                                const GenInfo& gen,
                                                bool check_q_limits) const{
     if(check_q_limits)
@@ -376,7 +376,7 @@ void GridModel::check_solution_q_values_onegen(CplxVect & res,
     }
 }
 
-void GridModel::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
+void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
     // test for iterator though generators
     for(const auto & gen: generators_)
     {
@@ -409,7 +409,7 @@ void GridModel::check_solution_q_values(CplxVect & res, bool check_q_limits) con
     }
 }
 
-CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_limits)
+CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits)
 {
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
@@ -449,7 +449,7 @@ CplxVect GridModel::check_solution(const CplxVect & V_proposed, bool check_q_lim
     return res;
 };
 
-CplxVect GridModel::pre_process_solver(
+CplxVect LSGrid::pre_process_solver(
     const CplxVect & Vinit, 
     CplxVect & Sbus,
     Eigen::SparseMatrix<cplx_type> & Ybus,
@@ -548,7 +548,7 @@ CplxVect GridModel::pre_process_solver(
         if(bus_me_id.cast_int() == BaseConstants::_deactivated_bus_id){
             //TODO DEBUG MODE : only in debug mode
             std::ostringstream exc_;
-            exc_ << "GridModel::pre_process_solver: the bus with solver id ";
+            exc_ << "LSGrid::pre_process_solver: the bus with solver id ";
             exc_ << bus_solver_id;
             exc_ << " is connected, but mapped (in id_solver_to_me) to a disconnected bus (global / gridmodel id)";
             throw std::runtime_error(exc_.str());
@@ -572,7 +572,7 @@ CplxVect GridModel::pre_process_solver(
     return V;
 }
 
-CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, 
+CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, 
                                                     SolverBusIdVect & id_me_to_solver,
                                                     int size)
 {
@@ -583,7 +583,7 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
         SolverBusId bus_id_solver = id_me_to_solver[bus_id_me];
         if(bus_id_solver.cast_int() == BaseConstants::_deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "GridModel::_get_results_back_to_orig_nodes: the bus with id ";
+            exc_ << "LSGrid::_get_results_back_to_orig_nodes: the bus with id ";
             exc_ << bus_id_me;
             exc_ << " is connected to a disconnected bus (solver side)";
             throw std::runtime_error(exc_.str());
@@ -593,7 +593,7 @@ CplxVect GridModel::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
     return res;
 }
 
-void GridModel::process_results(bool conv,
+void LSGrid::process_results(bool conv,
                                 CplxVect & res,
                                 const CplxVect & Vinit,
                                 bool ac,
@@ -618,7 +618,7 @@ void GridModel::process_results(bool conv,
     }
 }
 
-void GridModel::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
+void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
                                       GlobalBusIdVect& id_solver_to_me){
 
     //TODO get disconnected bus !!! (and have some conversion for it)
@@ -638,13 +638,13 @@ void GridModel::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
     }
 }
 
-void GridModel::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
+void LSGrid::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                           int nb_bus_solver){
     Ybus = Eigen::SparseMatrix<cplx_type>(nb_bus_solver, nb_bus_solver);
     Ybus.reserve(nb_bus_solver + 4*powerlines_.nb() + 4*trafos_.nb() + 2 * shunts_.nb());
 }
 
-void GridModel::init_slack_bus(const CplxVect & Sbus,
+void LSGrid::init_slack_bus(const CplxVect & Sbus,
                                const SolverBusIdVect& id_me_to_solver,
                                const GlobalBusIdVect& id_solver_to_me,
                                const GlobalBusIdVect & slack_bus_id_me,
@@ -657,7 +657,7 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
         SolverBusId tmp = id_me_to_solver[el.cast_int()];
         if(tmp.cast_int() == BaseConstants::_deactivated_bus_id){
             std::ostringstream exc_;
-            exc_ << "GridModel::init_slack_bus: One of the slack bus is disconnected.";
+            exc_ << "LSGrid::init_slack_bus: One of the slack bus is disconnected.";
             exc_ << " You can check bus with global id GlobalBusId : ";
             exc_ << el.cast_int();
             exc_ << ": [";
@@ -672,10 +672,10 @@ void GridModel::init_slack_bus(const CplxVect & Sbus,
     if(GenericContainer::is_in_vect(BaseConstants::_deactivated_bus_id, slack_bus_id_solver.to_int_vector())){
         // TODO improve error message with the gen_id
         // TODO DEBUG MODE: only check that in debug mode
-        throw std::runtime_error("GridModel::init_Sbus: One of the slack bus is disconnected !");
+        throw std::runtime_error("LSGrid::init_Sbus: One of the slack bus is disconnected !");
     }
 }
-void GridModel::fillYbus(
+void LSGrid::fillYbus(
     Eigen::SparseMatrix<cplx_type> & res,
     bool ac,
     const SolverBusIdVect& id_me_to_solver){
@@ -700,7 +700,7 @@ void GridModel::fillYbus(
     res.makeCompressed();
 }
 
-void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_to_solver)
+void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_to_solver)
 {
     // init the Sbus 
     Sbus.array() = 0.;  // reset to 0.
@@ -717,7 +717,7 @@ void GridModel::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
 }
 
-void GridModel::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
+void LSGrid::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                           const GlobalBusIdVect& id_solver_to_me,
                           const SolverBusIdVect & slack_bus_id_solver,
                           const AlgoControl & solver_control)
@@ -760,7 +760,7 @@ void GridModel::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
     }
 }
 
-void GridModel::compute_results(bool ac){
+void LSGrid::compute_results(bool ac){
     // retrieve results from powerflow
     const auto & Va = ac ? _algo.get_Va() : _dc_algo.get_Va();
     const auto & Vm = ac ? _algo.get_Vm() : _dc_algo.get_Vm();
@@ -812,7 +812,7 @@ void GridModel::compute_results(bool ac){
                     total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
 }
 
-void GridModel::reset_results(){
+void LSGrid::reset_results(){
     powerlines_.reset_results();  // TODO have a function to dispatch that to all type of elements
     shunts_.reset_results();
     trafos_.reset_results();
@@ -823,7 +823,7 @@ void GridModel::reset_results(){
     dc_lines_.reset_results();
 }
 
-CplxVect GridModel::dc_pf(const CplxVect & Vinit,
+CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
                           int max_iter,  // not used for DC
                           real_type tol  // not used for DC
                           )
@@ -838,7 +838,7 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     if(Vinit.size() != nb_bus){
         //TODO DEBUG MODE: 
         std::ostringstream exc_;
-        exc_ << "GridModel::dc_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
+        exc_ << "LSGrid::dc_pf: Size of the Vinit should be the same as the total number of buses. Currently:  ";
         exc_ << "Vinit: " << Vinit.size() << " and there are " << nb_bus << " buses.";
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
@@ -876,18 +876,18 @@ CplxVect GridModel::dc_pf(const CplxVect & Vinit,
     return res;
 }
 
-RealMat GridModel::get_ptdf_solver(){
+RealMat LSGrid::get_ptdf_solver(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
+        throw std::runtime_error("LSGrid::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const RealMat & PTDF_solver = _dc_algo.get_ptdf();
     return PTDF_solver;
 }
 
 
-RealMat GridModel::get_ptdf(){
+RealMat LSGrid::get_ptdf(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("GridModel::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
+        throw std::runtime_error("LSGrid::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const RealMat & PTDF_solver = get_ptdf_solver();
     RealMat PTDF_grid =  RealMat::Zero(powerlines_.nb() + trafos_.nb(), total_bus());  // , std::numeric_limits<real_type>::quiet_NaN()
@@ -899,9 +899,9 @@ RealMat GridModel::get_ptdf(){
     return PTDF_grid;
 }
 
-RealMat GridModel::get_lodf(){
+RealMat LSGrid::get_lodf(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("GridModel::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
+        throw std::runtime_error("LSGrid::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const size_t nb_el = powerlines_.nb() + trafos_.nb();
     // retrieve the from_bus / to_bus from the grid
@@ -924,52 +924,52 @@ RealMat GridModel::get_lodf(){
     return _dc_algo.get_lodf(from_bus_solver, to_bus_solver);
 }
 
-Eigen::SparseMatrix<real_type> GridModel::get_Bf_solver(){
+Eigen::SparseMatrix<real_type> LSGrid::get_Bf_solver(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("GridModel::get_Bf_solver: Cannot get the Bf matrix without having first computed a DC powerflow.");
+        throw std::runtime_error("LSGrid::get_Bf_solver: Cannot get the Bf matrix without having first computed a DC powerflow.");
     }
     Eigen::SparseMatrix<real_type> Bf;
     fillBf_for_PTDF(Bf);
     return Bf;
 }
 
-Eigen::SparseMatrix<real_type> GridModel::get_Bf(){
+Eigen::SparseMatrix<real_type> LSGrid::get_Bf(){
     if(Ybus_dc_.size() == 0){
-        throw std::runtime_error("GridModel::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
+        throw std::runtime_error("LSGrid::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
     }
     Eigen::SparseMatrix<real_type> Bf_solver = get_Bf_solver();
     return _relabel_matrix(Bf_solver, id_dc_solver_to_me_, false);
 }
 
-void GridModel::add_gen_slackbus(int gen_id, real_type weight){
+void LSGrid::add_gen_slackbus(int gen_id, real_type weight){
     if(gen_id < 0)
     {
         std::ostringstream exc_;
-        exc_ << "GridModel::add_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
+        exc_ << "LSGrid::add_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
         exc_ << gen_id;
         throw std::runtime_error(exc_.str());
     }
     if(gen_id >= generators_.nb())
     {
         std::ostringstream exc_;
-        exc_ << "GridModel::add_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
+        exc_ << "LSGrid::add_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
         exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
         throw std::runtime_error(exc_.str());
     }
     if(weight <= 0.){
         std::ostringstream exc_;
-        exc_ << "GridModel::add_gen_slackbus: please enter a valid weight for the slack bus (> 0.)";
+        exc_ << "LSGrid::add_gen_slackbus: please enter a valid weight for the slack bus (> 0.)";
         throw std::runtime_error(exc_.str());
     }
     generators_.add_slackbus(gen_id, weight, algo_controler_);
 }
 
-void GridModel::remove_gen_slackbus(int gen_id){
+void LSGrid::remove_gen_slackbus(int gen_id){
     if(gen_id < 0)
     {
         // TODO DEBUG MODE: only check when in debug mode
         std::ostringstream exc_;
-        exc_ << "GridModel::remove_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
+        exc_ << "LSGrid::remove_gen_slackbus: Slack bus should be an id of a generator, thus positive. You provided: ";
         exc_ << gen_id;
         throw std::runtime_error(exc_.str());
     }
@@ -977,7 +977,7 @@ void GridModel::remove_gen_slackbus(int gen_id){
     {
         // TODO DEBUG MODE: only check when in debug mode
         std::ostringstream exc_;
-        exc_ << "GridModel::remove_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
+        exc_ << "LSGrid::remove_gen_slackbus: There are only " << generators_.nb() << " generators on the grid. ";
         exc_ << "Generator with id " << gen_id << " does not exist and can't be the slack bus";
         throw std::runtime_error(exc_.str());
     }
@@ -985,43 +985,43 @@ void GridModel::remove_gen_slackbus(int gen_id){
 }
 
 /** GRID2OP SPECIFIC REPRESENTATION **/
-void GridModel::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_gens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_continuous_values(has_changed, new_values, &GridModel::change_p_gen);
+    update_continuous_values(has_changed, new_values, &LSGrid::change_p_gen);
 }
 
-void GridModel::update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_sgens_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_continuous_values(has_changed, new_values, &GridModel::change_p_sgen);
+    update_continuous_values(has_changed, new_values, &LSGrid::change_p_sgen);
 }
 
-void GridModel::update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_gens_v(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_continuous_values(has_changed, new_values, &GridModel::change_v_gen);
+    update_continuous_values(has_changed, new_values, &LSGrid::change_v_gen);
 }
 
-void GridModel::update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_loads_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_continuous_values(has_changed, new_values, &GridModel::change_p_load);
+    update_continuous_values(has_changed, new_values, &LSGrid::change_p_load);
 }
 
-void GridModel::update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_loads_q(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_continuous_values(has_changed, new_values, &GridModel::change_q_load);
+    update_continuous_values(has_changed, new_values, &LSGrid::change_q_load);
 }
 
-void GridModel::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_storages_p(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                               Eigen::Ref<Eigen::Array<float, Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
-    update_continuous_values(has_changed, new_values, &GridModel::change_p_storage);
+    update_continuous_values(has_changed, new_values, &LSGrid::change_p_storage);
 }
 
-void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
+void LSGrid::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > has_changed,
                             Eigen::Ref<const Eigen::Array<int,  Eigen::Dynamic, Eigen::RowMajor> > new_values)
 {
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
@@ -1036,7 +1036,7 @@ void GridModel::update_topo(Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, 
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
-void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
+void LSGrid::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                            Eigen::SparseMatrix<real_type> & Bpp, 
                            FDPFMethod xb_or_bx) const
 {
@@ -1067,11 +1067,11 @@ void GridModel::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
 }
 
 
-void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose) const
+void LSGrid::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose) const
 {
     const int nb_bus_solver = static_cast<int>(id_dc_solver_to_me_.size());
     // TODO DEBUG MODE
-    if(nb_bus_solver == 0) throw std::runtime_error("GridModel::fillBf_for_PTDF: it appears no DC powerflow has run on your grid.");
+    if(nb_bus_solver == 0) throw std::runtime_error("LSGrid::fillBf_for_PTDF: it appears no DC powerflow has run on your grid.");
     
     if(transpose){
         Bf = Eigen::SparseMatrix<real_type>(nb_bus_solver, powerlines_.nb() + trafos_.nb());
@@ -1096,7 +1096,7 @@ void GridModel::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transp
 
 // returns only the gen_id with the highest p that is connected to this bus !
 // returns bus_id, gen_bus_id
-std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
+std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     auto res = std::tuple<int, int>(-1, -1);
     int res_bus_id = -1;
     int res_gen_id = -1;
@@ -1135,7 +1135,7 @@ std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
         }
     }
     // TODO DEBUG MODE
-    if(res_bus_id == -1) throw std::runtime_error("GridModel::assign_slack_to_most_connected: impossible to find anything connected to a node.");
+    if(res_bus_id == -1) throw std::runtime_error("LSGrid::assign_slack_to_most_connected: impossible to find anything connected to a node.");
     std::get<0>(res) = res_bus_id;
 
     // and reset the slack bus
@@ -1149,11 +1149,11 @@ std::tuple<int, int> GridModel::assign_slack_to_most_connected(){
 }
 
 // TODO DC LINE: one side might be in the connected comp and not the other !
-void GridModel::consider_only_main_component(){
+void LSGrid::consider_only_main_component(){
     const auto & slack_buses_id = generators_.get_slack_bus_id();
 
     // TODO DEBUG MODE
-    if(slack_buses_id.size() == 0) throw std::runtime_error("GridModel::consider_only_main_component: no slack is defined on your grid. This function cannot be used.");
+    if(slack_buses_id.size() == 0) throw std::runtime_error("LSGrid::consider_only_main_component: no slack is defined on your grid. This function cannot be used.");
     
     // build the graph
     const auto nb_busbars = substations_.nb_bus();

@@ -123,7 +123,7 @@ void ShuntContainer::fillSbus(CplxVect & Sbus, const SolverBusIdVect & id_grid_t
         }
         bus_id_solver = id_grid_to_solver[bus_id_me.cast_int()];
         if(bus_id_solver.cast_int() == _deactivated_bus_id){
-            throw std::runtime_error("GridModel::fillSbus: A shunt is connected to a disconnected bus.");
+            throw std::runtime_error("LSGrid::fillSbus: A shunt is connected to a disconnected bus.");
         }
         Sbus.coeffRef(bus_id_solver.cast_int()) -= target_p_mw_(shunt_id);  // TODO : check the - here, it is suspicious !
     }

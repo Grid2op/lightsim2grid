@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef GRIDMODEL_H
-#define GRIDMODEL_H
+#ifndef LSGRID_H
+#define LSGRID_H
 
 #include <iostream>
 #include <vector>
@@ -43,7 +43,7 @@
 namespace ls2g {
 
 //TODO implement a BFS check to make sure the Ymatrix is "connected" [one single component]
-class LS2G_API GridModel final
+class LS2G_API LSGrid final
 {
     public:
         using IntVectRowMaj = Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor>;
@@ -78,7 +78,7 @@ class LS2G_API GridModel final
                 AlgorithmType // dc_algo
                 >;
 
-        GridModel():
+        LSGrid():
           timer_last_ac_pf_(0.),
           timer_last_dc_pf_(0.),
           algo_controler_(),
@@ -88,17 +88,17 @@ class LS2G_API GridModel final
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
             _dc_algo.change_algorithm(AlgorithmType::DC_SparseLU);
-            _algo.set_gridmodel(this);
-            _dc_algo.set_gridmodel(this);
+            _algo.set_lsgrid(this);
+            _dc_algo.set_lsgrid(this);
             algo_controler_.tell_all_changed();
         }
-        GridModel(const GridModel & other);
-        // GridModel(GridModel && other) noexcept = default;  // TODO
-        GridModel copy() const {
-            GridModel res(*this);
+        LSGrid(const LSGrid & other);
+        // LSGrid(LSGrid && other) noexcept = default;  // TODO
+        LSGrid copy() const {
+            LSGrid res(*this);
             return res;
         }
-        ~GridModel() noexcept = default;
+        ~LSGrid() noexcept = default;
 
         void set_ls_to_orig(const IntVect & ls_to_orig);  // set both _ls_to_orig and _orig_to_ls
         void set_orig_to_ls(const IntVect & orig_to_ls);  // set both _orig_to_ls and _ls_to_orig
@@ -370,8 +370,8 @@ class LS2G_API GridModel final
         void remove_gen_slackbus(int gen_id);
 
         //pickle
-        GridModel::StateRes get_state() const ;
-        void set_state(GridModel::StateRes & my_state) ;
+        LSGrid::StateRes get_state() const ;
+        void set_state(LSGrid::StateRes & my_state) ;
 
         // algo config (scaling/refactor policy params) — not part of StateRes pickle
         AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
@@ -386,7 +386,7 @@ class LS2G_API GridModel final
             if (my_state.size() != size_th)
             {
                 // TODO more explicit error message
-                throw std::runtime_error("Invalid state when loading LightSim::GridModel");
+                throw std::runtime_error("Invalid state when loading LightSim::LSGrid");
             }
         }
 
@@ -1004,7 +1004,7 @@ class LS2G_API GridModel final
         const GlobalBusIdVect get_pv() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pv_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pv_solver(), id_dc_solver_to_me_);
-            throw std::runtime_error("GridModel::get_pv: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            throw std::runtime_error("LSGrid::get_pv: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
         const IntVect get_pv_numpy() const{
             return get_pv().as_eigen();  // was _to_intvect()
@@ -1041,7 +1041,7 @@ class LS2G_API GridModel final
         const GlobalBusIdVect get_pq() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pq_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector2<SolverBusIdVect, GlobalBusIdVect>(get_pq_solver(), id_dc_solver_to_me_);
-            throw std::runtime_error("GridModel::get_pq: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            throw std::runtime_error("LSGrid::get_pq: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
         const IntVect get_pq_numpy() const{
             return get_pq().as_eigen();  // was _to_intvect()
@@ -1130,7 +1130,7 @@ class LS2G_API GridModel final
         const RealVect get_slack_weights() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_slack_weights_solver(), id_dc_solver_to_me_);
-            throw std::runtime_error("GridModel::get_slack_weights: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            throw std::runtime_error("LSGrid::get_slack_weights: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         /**
@@ -1150,7 +1150,7 @@ class LS2G_API GridModel final
         const CplxVect get_V() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_V_solver(), id_dc_solver_to_me_);
-            throw std::runtime_error("GridModel::get_V: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            throw std::runtime_error("LSGrid::get_V: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         /**
@@ -1170,7 +1170,7 @@ class LS2G_API GridModel final
         const RealVect get_Va() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Va_solver(), id_dc_solver_to_me_);
-            throw std::runtime_error("GridModel::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            throw std::runtime_error("LSGrid::get_Va: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         /**
@@ -1190,7 +1190,7 @@ class LS2G_API GridModel final
         const RealVect get_Vm() const{
             if(id_ac_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_ac_solver_to_me_);
             if(id_dc_solver_to_me_.size() > 0) return _relabel_vector(get_Vm_solver(), id_dc_solver_to_me_);
-            throw std::runtime_error("GridModel::get_Vm: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            throw std::runtime_error("LSGrid::get_Vm: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
         }
 
         Eigen::Ref<const Eigen::SparseMatrix<real_type> > get_J_solver() const{
@@ -1305,7 +1305,7 @@ class LS2G_API GridModel final
         {
             if(substations_.nb_bus() !=  static_cast<unsigned int>(n_sub_ * max_nb_bus_per_sub)){
                 std::ostringstream exc_;
-                exc_ << "GridModel::set_max_nb_bus_per_sub: ";
+                exc_ << "LSGrid::set_max_nb_bus_per_sub: ";
                 exc_ << "your model counts ";
                 exc_ << substations_.nb_bus()  << " buses according to `substations_.nb_bus()` but ";
                 exc_ << n_sub_ * max_nb_bus_per_sub_ << " according to n_sub_ * max_nb_bus_per_sub_.";
@@ -1399,9 +1399,9 @@ class LS2G_API GridModel final
             // way faster than this function.
             using index_type = typename Eigen::SparseMatrix<T>::StorageIndex ;
             const int nb_conn_bus = nb_connected_bus();
-            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
-            if(Ybus.cols() != nb_conn_bus) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");
-            if(relabel_row & (Ybus.rows() != nb_conn_bus)) throw std::runtime_error("GridModel::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columnd (nb connected bus, ...) expected");
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(Ybus.cols() != nb_conn_bus) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");
+            if(relabel_row & (Ybus.rows() != nb_conn_bus)) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columnd (nb connected bus, ...) expected");
             Eigen::SparseMatrix<T> res(relabel_row ? total_bus() : Ybus.rows(), total_bus());
             res.reserve(Ybus.nonZeros());
             std::vector<Eigen::Triplet<T> > tripletList;
@@ -1437,8 +1437,8 @@ class LS2G_API GridModel final
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Ref<const Eigen::Matrix<T, Eigen::Dynamic, 1> > & Sbus,
                                                             const GlobalBusIdVect & id_solver_to_me) const
         {
-            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
-            if(Sbus.size() != nb_connected_bus()) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("LSGrid::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(Sbus.size() != nb_connected_bus()) throw std::runtime_error("LSGrid::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
             for(auto solver_id = 0; solver_id < Sbus.size(); ++solver_id){
                 res[id_solver_to_me[solver_id].cast_int()] = Sbus[solver_id];
@@ -1460,8 +1460,8 @@ class LS2G_API GridModel final
         Eigen::Matrix<T, Eigen::Dynamic, 1> _relabel_vector(const Eigen::Matrix<T, Eigen::Dynamic, 1> & Sbus,
                                                             const GlobalBusIdVect & id_solver_to_me) const
         {
-            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
-            if(Sbus.size() != nb_connected_bus()) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("LSGrid::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(Sbus.size() != nb_connected_bus()) throw std::runtime_error("LSGrid::_relabel_vector: impossible to retrieve the `gridmodel` input solver has not the right size, expected (nb connected bus, ).");
             Eigen::Matrix<T, Eigen::Dynamic, 1> res = Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(total_bus());
             for(int solver_id = 0; solver_id < Sbus.size(); ++solver_id){
                 
@@ -1480,7 +1480,7 @@ class LS2G_API GridModel final
             const InputBusIdVect & solver_indexed_bus,
             const GlobalBusIdVect & id_solver_to_me) const
         {
-            if(id_solver_to_me.size() == 0) throw std::runtime_error("GridModel::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
+            if(id_solver_to_me.size() == 0) throw std::runtime_error("LSGrid::_relabel_vector: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             OutputBusIdVect res = OutputBusIdVect(solver_indexed_bus.size(), static_cast<typename OutputBusIdVect::value_type>(-1));  // TODO or 0...
             size_t pos_id = 0;
             for(const auto & el_id : solver_indexed_bus){
@@ -1644,4 +1644,4 @@ class LS2G_API GridModel final
 
 } // namespace ls2g
 
-#endif  //GRIDMODEL_H
+#endif  //LSGRID_H

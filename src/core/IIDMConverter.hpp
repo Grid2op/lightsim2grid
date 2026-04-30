@@ -11,7 +11,7 @@
 #ifndef IIDMCONVERTER_H
 #define IIDMCONVERTER_H
 
-#include "GridModel.hpp"
+#include "LSGrid.hpp"
 
 #include <iostream>
 #include <libxml/parser.h>
@@ -33,14 +33,14 @@ class LS2G_API GridModelFromIIDM
         std::cout << "getGeneratorCount: " << network_.getGeneratorCount() << std::endl;
     }
 
-    GridModel get_grid_model() const;
+    LSGrid get_grid_model() const;
 
     private:
         powsybl::iidm::Network network_;
 
-        powsybl::iidm::network::BusView init_bus(GridModel & grid_model) const;
-        void init_powerlines(GridModel & grid_model, const powsybl::iidm::network::BusView & bus_view) const;
-        void init_trafos(GridModel & grid_model, const powsybl::iidm::network::BusView & bus_view) const;
+        powsybl::iidm::network::BusView init_bus(LSGrid & grid_model) const;
+        void init_powerlines(LSGrid & grid_model, const powsybl::iidm::network::BusView & bus_view) const;
+        void init_trafos(LSGrid & grid_model, const powsybl::iidm::network::BusView & bus_view) const;
 };
 
 #endif  // IIDMCONVERTER_H

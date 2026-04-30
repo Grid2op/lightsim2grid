@@ -21,7 +21,7 @@ have been disconnected
 class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 {
     public:
-        explicit  ContingencyAnalysis(const GridModel & init_grid_model) noexcept:
+        explicit  ContingencyAnalysis(const LSGrid & init_grid_model) noexcept:
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),

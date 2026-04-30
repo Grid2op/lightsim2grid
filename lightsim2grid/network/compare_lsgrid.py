@@ -10,7 +10,7 @@ from functools import partial
 import numpy as np
 
 
-from ..lightsim2grid_cpp import GridModel # type: ignore
+from ..lightsim2grid_cpp import LSGrid # type: ignore
 
 
 ATTR_SUBSTATIONS_INPUT = [
@@ -143,17 +143,17 @@ def _aux_compare_one_el(tmp, li_attrs, el1, el2, tol):
     
     
 def _aux_compare(
-    gridmodel1: GridModel,
-    gridmodel2: GridModel,
+    network1: LSGrid,
+    network2: LSGrid,
     meth_nm,
     li_attrs,
     tol):
     res = {}
-    if len(getattr(gridmodel1, meth_nm)()) != len(getattr(gridmodel2, meth_nm)()):
-        res["size"] = len(getattr(gridmodel1, meth_nm)()), len(getattr(gridmodel2, meth_nm)())
+    if len(getattr(network1, meth_nm)()) != len(getattr(network2, meth_nm)()):
+        res["size"] = len(getattr(network1, meth_nm)()), len(getattr(network2, meth_nm)())
         return res
     
-    for num, (el1, el2) in enumerate(zip(getattr(gridmodel1, meth_nm)(), getattr(gridmodel2, meth_nm)())):
+    for num, (el1, el2) in enumerate(zip(getattr(network1, meth_nm)(), getattr(network2, meth_nm)())):
         tmp = {}
         _aux_compare_one_el(tmp, li_attrs, el1, el2, tol)
         if len(tmp) > 0: 
@@ -161,10 +161,10 @@ def _aux_compare(
     return res
     
         
-def _compare_substations(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_substations(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_sub = _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_substations",
         ATTR_SUBSTATIONS_INPUT,
         tol,
@@ -172,10 +172,10 @@ def _compare_substations(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8)
     return res_sub
     
     
-def _compare_lines(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_lines(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_lines =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_lines",
         ATTR_LINES_INPUT,
         tol,
@@ -183,10 +183,10 @@ def _compare_lines(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_lines
     
     
-def _compare_trafos(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_trafos(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_trafos =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_trafos",
         ATTR_TAFO_INPUT,
         tol
@@ -194,11 +194,11 @@ def _compare_trafos(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_trafos
 
 
-def _compare_dclines(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_dclines(network1: LSGrid, network2: LSGrid, tol=1e-8):
     meth_nm = "get_dclines"
     res_dclines =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         meth_nm,
         ATTR_DCLINE_INPUT,
         tol,
@@ -206,7 +206,7 @@ def _compare_dclines(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     if "size" in res_dclines:
         return res_dclines
 
-    for num, (el1, el2) in enumerate(zip(getattr(gridmodel1, meth_nm)(), getattr(gridmodel2, meth_nm)())):
+    for num, (el1, el2) in enumerate(zip(getattr(network1, meth_nm)(), getattr(network2, meth_nm)())):
         gen1 = el1.gen_side_1
         gen2 = el2.gen_side_1
         tmp = {}
@@ -224,10 +224,10 @@ def _compare_dclines(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_dclines
 
 
-def _compare_generators(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_generators(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_gens =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_generators",
         ATTR_GENS_INPUT,
         tol
@@ -235,10 +235,10 @@ def _compare_generators(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_gens
 
 
-def _compare_static_generators(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_static_generators(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_sgens =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_static_generators",
         ATTR_SGENS_INPUT,
         tol,
@@ -246,10 +246,10 @@ def _compare_static_generators(gridmodel1: GridModel, gridmodel2: GridModel, tol
     return res_sgens
 
 
-def _compare_loads(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_loads(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_loads =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_loads",
         ATTR_LOADS_INPUT,
         tol,
@@ -257,10 +257,10 @@ def _compare_loads(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_loads
 
 
-def _compare_storages(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_storages(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_sto =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_storages",
         ATTR_STORAGES_INPUT,
         tol,
@@ -268,10 +268,10 @@ def _compare_storages(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_sto
 
 
-def _compare_shunts(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def _compare_shunts(network1: LSGrid, network2: LSGrid, tol=1e-8):
     res_sto =  _aux_compare(
-        gridmodel1,
-        gridmodel2,
+        network1,
+        network2,
         "get_shunts",
         ATTR_SHUNTS_INPUT,
         tol,
@@ -279,9 +279,9 @@ def _compare_shunts(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
     return res_sto
 
 
-def compare_gridmodel_input(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e-8):
+def compare_network_input(network1: LSGrid, network2: LSGrid, tol=1e-8):
     """
-    This function tests that the two gridmodels as argument have the same underlying grid.
+    This function tests that the two networks as argument have the same underlying grid.
     
     This means the same structure (same elements, connected to the same substations, with the same 
     physical properties) and also the same "setpoints" (*eg* same target active and reactive power 
@@ -293,31 +293,31 @@ def compare_gridmodel_input(gridmodel1: GridModel, gridmodel2: GridModel, tol=1e
         
     """
     res = {}
-    subs = _compare_substations(gridmodel1, gridmodel2, tol)
+    subs = _compare_substations(network1, network2, tol)
     if len(subs) > 0:
         res["substations"] = subs
-    lines = _compare_lines(gridmodel1, gridmodel2, tol)
+    lines = _compare_lines(network1, network2, tol)
     if len(lines) > 0:
         res["lines"] = lines
-    trafos = _compare_trafos(gridmodel1, gridmodel2, tol)
+    trafos = _compare_trafos(network1, network2, tol)
     if len(trafos) > 0:
         res["trafos"] = trafos
-    dclines = _compare_dclines(gridmodel1, gridmodel2, tol)
+    dclines = _compare_dclines(network1, network2, tol)
     if len(dclines) > 0:
         res["dclines"] = dclines
-    gens = _compare_generators(gridmodel1, gridmodel2, tol)
+    gens = _compare_generators(network1, network2, tol)
     if len(gens) > 0:
         res["generators"] = gens
-    sgens = _compare_static_generators(gridmodel1, gridmodel2, tol)
+    sgens = _compare_static_generators(network1, network2, tol)
     if len(gens) > 0:
         res["static_generators"] = sgens
-    loads = _compare_loads(gridmodel1, gridmodel2, tol)
+    loads = _compare_loads(network1, network2, tol)
     if len(loads) > 0:
         res["loads"] = loads
-    stos = _compare_storages(gridmodel1, gridmodel2, tol)
+    stos = _compare_storages(network1, network2, tol)
     if len(stos) > 0:
         res["storages"] = stos
-    shunts = _compare_shunts(gridmodel1, gridmodel2, tol)
+    shunts = _compare_shunts(network1, network2, tol)
     if len(shunts) > 0:
         res["shunts"] = shunts
     return res

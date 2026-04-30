@@ -7,7 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "Solvers.hpp"
-#include "GridModel.hpp"   // required: fillBp_Bpp body references gridmodel_ptr_ (a GridModel*)
+#include "LSGrid.hpp"   // required: fillBp_Bpp body references lsgrid_ptr_ (a GridModel*)
 
 namespace ls2g {
 
@@ -18,7 +18,7 @@ void BaseFDPFAlgo<LinearSolver, XB_BX>::fillBp_Bpp(
     Eigen::SparseMatrix<real_type> & Bp,
     Eigen::SparseMatrix<real_type> & Bpp) const
 {
-    gridmodel_ptr_->fillBp_Bpp(Bp, Bpp, XB_BX);
+    lsgrid_ptr_->fillBp_Bpp(Bp, Bpp, XB_BX);
 }
 
 // ---- SparseLU (always available) ----

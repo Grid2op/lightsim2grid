@@ -7,7 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 """
-Use the pandapower converter to properly initialize a GridModel c++ object.
+Use the pandapower converter to properly initialize a LSGrid c++ object.
 """
 
 from typing import Optional
@@ -15,7 +15,7 @@ import numpy as np
 from numbers import Number
 
 import pandapower
-from ...lightsim2grid_cpp import GridModel, PandaPowerConverter
+from ...lightsim2grid_cpp import LSGrid, PandaPowerConverter
 from ._aux_add_sgen import _aux_add_sgen
 from ._aux_add_load import _aux_add_load
 from ._aux_add_trafo import _aux_add_trafo
@@ -33,9 +33,9 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
          n_sub: Optional[int]=None,  # number of voltage levels
          n_busbar_per_sub: Optional[int]=None,  # max number of buses allowed per substation / voltage level
          pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2"
-         ) -> GridModel:
+         ) -> LSGrid:
     """
-    Convert a pandapower network as input into a GridModel.
+    Convert a pandapower network as input into a LSGrid.
 
     This can fail to convert the grid and still not throw any error, use with care (for example, you can run a powerflow
     after this conversion, run a powerflow with pandapower, and compare the results to make sure they match !)
@@ -54,7 +54,7 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     if you really need any of the above, please submit a github issue and we will work on their support.
 
     This conversion has been extensively studied for the case118() of pandapower.networks and should work
-    really well for this grid. Actually, this grid is used for testing the GridModel class.
+    really well for this grid. Actually, this grid is used for testing the LSGrid class.
 
     Parameters
     ----------
@@ -74,8 +74,8 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
 
     Returns
     -------
-    model: :class:`lightsim2grid.gridmodel.GridModel`
-        The initialize gridmodel
+    model: :class:`lightsim2grid.network.LSGrid`
+        The initialize network
 
     """
     if pp_orig_file not in ALLOWED_PP_ORIG_FILE.__args__:
@@ -90,7 +90,7 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     converter.set_f_hz(pp_net.f_hz)
 
     # set up the data model accordingly
-    model = GridModel()
+    model = LSGrid()
     if "_options" in pp_net:
         if "init_vm_pu" in pp_net["_options"]:
             tmp_ = pp_net["_options"]["init_vm_pu"]

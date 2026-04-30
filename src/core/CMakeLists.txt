@@ -261,7 +261,7 @@ add_subdirectory(powerflow_algorithm)
 add_library(lightsim2grid_core SHARED
     "${CMAKE_CURRENT_SOURCE_DIR}/help_fun_msg.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BaseConstants.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/GridModel.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/LSGrid.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmSelector.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmRegistry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AlgorithmTypeNames.cpp"

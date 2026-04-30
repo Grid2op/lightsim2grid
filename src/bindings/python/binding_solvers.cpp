@@ -96,15 +96,15 @@ void bind_solvers(py::module_& m) {
     {
         auto cls = py::class_<FDPF_XB_SparseLU>(m, "FDPF_XB_SparseLU", DocSolver::FDPF_XB_SparseLU.c_str())
             .def(py::init<>())
-            .def("debug_get_Bp_python",  &FDPF_XB_SparseLU::debug_get_Bp_python,  DocGridModel::_internal_do_not_use.c_str())
-            .def("debug_get_Bpp_python", &FDPF_XB_SparseLU::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());
+            .def("debug_get_Bp_python",  &FDPF_XB_SparseLU::debug_get_Bp_python,  DocLSGrid::_internal_do_not_use.c_str())
+            .def("debug_get_Bpp_python", &FDPF_XB_SparseLU::debug_get_Bpp_python, DocLSGrid::_internal_do_not_use.c_str());
         bind_algo_methods(cls);
     }
     {
         auto cls = py::class_<FDPF_BX_SparseLU>(m, "FDPF_BX_SparseLU", DocSolver::FDPF_BX_SparseLU.c_str())
             .def(py::init<>())
-            .def("debug_get_Bp_python",  &FDPF_BX_SparseLU::debug_get_Bp_python,  DocGridModel::_internal_do_not_use.c_str())
-            .def("debug_get_Bpp_python", &FDPF_BX_SparseLU::debug_get_Bpp_python, DocGridModel::_internal_do_not_use.c_str());
+            .def("debug_get_Bp_python",  &FDPF_BX_SparseLU::debug_get_Bp_python,  DocLSGrid::_internal_do_not_use.c_str())
+            .def("debug_get_Bpp_python", &FDPF_BX_SparseLU::debug_get_Bpp_python, DocLSGrid::_internal_do_not_use.c_str());
         bind_algo_methods(cls);
     }
 
@@ -230,6 +230,6 @@ void bind_solvers(py::module_& m) {
         .def("get_timers",           &AlgorithmSelector::get_timers,           "TODO")
         .def("get_timers_jacobian",  &AlgorithmSelector::get_timers_jacobian,  "TODO")
         .def("get_timers_ptdf_lodf", &AlgorithmSelector::get_timers_ptdf_lodf, "TODO")
-        .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str())
-        .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference, DocGridModel::_internal_do_not_use.c_str());
+        .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference, DocLSGrid::_internal_do_not_use.c_str())
+        .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference, DocLSGrid::_internal_do_not_use.c_str());
 }

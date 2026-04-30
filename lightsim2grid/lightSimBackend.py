@@ -846,7 +846,7 @@ class LightSimBackend(Backend):
         return res
     
     def _load_grid_pypowsybl(self, path=None, filename=None):
-        from lightsim2grid.gridmodel.from_pypowsybl import init as init_from_pypowsybl
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
         import pypowsybl.network as pypow_net
         loader_kwargs = {}
         if self._loader_kwargs is not None:
@@ -1132,7 +1132,7 @@ class LightSimBackend(Backend):
                                    f"{sorted(allowed_loader_kwargs)}.")
         
     def _aux_init_pandapower(self):
-        from lightsim2grid.gridmodel import init_from_pandapower
+        from lightsim2grid.network import init_from_pandapower
         pp_orig_file = "pandapower_v2"
         loader_kwargs = {}
         if self._loader_kwargs is not None:
