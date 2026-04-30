@@ -14,6 +14,7 @@
 #include "CustTimer.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
+
 #include <vector>
 #include <stdexcept>
 
@@ -66,16 +67,37 @@ class NRSystem;
  *   Phase 2  — build_J_sparsity(): symbolic J build + value_map. Call when topology changes.
  *   Phase 3  — fill_J(): fast numerical fill via value_map_. Call each factorisation.
  *
+ * J has the structure:
+ * 
+ *   | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
+ *   | --------- | = dimensions: | ------------------------- |
+ *   | J21 | J22 |               |  (pq, pvpq)  | (pq, pq)   |
+ * 
+ * Python implementation:
+ * 
+ *   J11 = dS_dVa[array([pvpq]).T, pvpq].real
+ *   J12 = dS_dVm[array([pvpq]).T, pq].real
+ *   J21 = dS_dVa[array([pq]).T, pvpq].imag
+ *   J22 = dS_dVm[array([pq]).T, pq].imag
+ *
+ * Where pvpq is the concatenation of pv then pq bus (might be sorted in the future)
+ * And pv is the pv indexes.
+ * 
+ * This structure will not be changed by future additions.
+ * 
  * Extension variables (slack, future HVDC) go at the LAST rows/cols so the core
  * (n_pvpq + n_pq) x (n_pvpq + n_pq) block is index-compatible for all depths.
  */
 template <>
 class NRSystem<>
 {
+protected:
+    struct Contrib { int jrow, jcol, ybus_k; };
+
 public:
     NRSystem() noexcept
         : Ybus_ptr_(nullptr), Sbus_ptr_(nullptr),
-          nb_pv_(0), nb_pq_(0), lag_(0),
+          nb_pv_(0), nb_pq_(0), nb_pvpq_(0), lag_(0),
           need_full_rebuild_(true),
           timer_dSbus_(0.), timer_fillJ_(0.) {}
 
@@ -100,11 +122,12 @@ public:
 
     // ----- Phase 2: build J sparsity + value_map (non-virtual) ------------------
 
-    void build_J_sparsity();
+    void build_J_sparsity();  // calls build_value_maps
 
     // ----- Phase 3: fill J numerically (non-virtual) ----------------------------
 
     void fill_J();
+    void fill_internal_variables();
 
     // ----- NR iteration primitives -----------------------------------------------
 
@@ -115,10 +138,14 @@ public:
     // ----- Housekeeping ----------------------------------------------------------
 
     void clear_jacobian() {
-        J_         = Eigen::SparseMatrix<real_type>();
-        dS_dVm_    = Eigen::SparseMatrix<cplx_type>();
-        dS_dVa_    = Eigen::SparseMatrix<cplx_type>();
-        value_map_.clear();
+        J_         = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
+        dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+        dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+
+        map_j11_.clear();
+        map_j21_.clear();
+        map_j12_.clear();
+        map_j22_.clear();
         need_full_rebuild_ = true;
     }
 
@@ -150,16 +177,20 @@ public:
 
 protected:
     // ---- Shared data (one copy, inherited by all extensions) --------------------
-    const Eigen::SparseMatrix<cplx_type>* Ybus_ptr_;
+    const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
     const CplxVect*                        Sbus_ptr_;
     Eigen::VectorXi                        pv_, pq_, pvpq_;
     std::vector<int>                       pvpq_inv_, pq_inv_;
-    int                                    nb_pv_, nb_pq_, lag_;
+    int                                    nb_pv_, nb_pq_, nb_pvpq_, lag_;  // TODO remove lag here !
     RealVect                               Va_, Vm_;
     CplxVect                               V_;
-    Eigen::SparseMatrix<real_type>         J_;
-    Eigen::SparseMatrix<cplx_type>         dS_dVm_, dS_dVa_;
-    std::vector<cplx_type*>                value_map_;
+    Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
+    Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
+    std::vector<cplx_type*>                value_map_;  // todo remove
+    std::vector<int>                       map_j11_;
+    std::vector<int>                       map_j21_;
+    std::vector<int>                       map_j12_;
+    std::vector<int>                       map_j22_;
     bool                                   need_full_rebuild_;
     double                                 timer_dSbus_, timer_fillJ_;
 
@@ -167,41 +198,60 @@ protected:
 
     // Collect ALL structural triplets for J.  Base fills the core block;
     // each extension override calls Base::_collect_J_triplets(coeffs) first then appends.
-    virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const;
+    // virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const;
 
     // Per-entry value-pointer hook: return pointer into dS_dVa_/dS_dVm_ for
     // variable entries, or nullptr for constant entries (e.g. slack row).
     // Called once per J nonzero during build_J_sparsity — virtual overhead OK here.
     // Base handles the core block; extensions override to handle their own rows.
-    virtual cplx_type* _get_entry_ptr(int row, int col);
+    // virtual cplx_type* _get_entry_ptr(int row, int col);
 
     // ---- Shared helpers (non-virtual, never overridden) --------------------------
 
-    void _collect_value_map();   // called by build_J_sparsity; iterates J col-major
+    // void _collect_value_map();   // called by build_J_sparsity; iterates J col-major
 
-    void _dSbus_dV(const Eigen::SparseMatrix<cplx_type>& Ybus, const CplxVect& V);
+    // void _dSbus_dV(const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>& Ybus, const CplxVect& V);
     static CplxVect _reconstruct_V(const RealVect& Va, const RealVect& Vm);
     CplxVect _compute_trial_V(const RealVect& dx) const;
     RealVect _mismatch_core(const CplxVect& V_trial) const;
 
-    void _get_values_J(int& nb_obj_this_col,
-                       std::vector<Eigen::Index>& inner_index,
-                       std::vector<real_type>& values,
-                       const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
-                       const std::vector<int>& index_row_inv,
-                       const Eigen::VectorXi& index_col,
-                       size_t col_id,
-                       size_t row_lag,
-                       size_t col_lag) const;
+    // void _get_values_J(int& nb_obj_this_col,
+    //                    std::vector<Eigen::Index>& inner_index,
+    //                    std::vector<real_type>& values,
+    //                    const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
+    //                    const std::vector<int>& index_row_inv,
+    //                    const Eigen::VectorXi& index_col,
+    //                    size_t col_id,
+    //                    size_t row_lag,
+    //                    size_t col_lag) const;
 
-    void _get_values_J(int& nb_obj_this_col,
-                       std::vector<Eigen::Index>& inner_index,
-                       std::vector<real_type>& values,
-                       const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
-                       const std::vector<int>& index_row_inv,
-                       size_t col_id_mat,
-                       size_t row_lag,
-                       size_t col_lag) const;
+    // void _get_values_J(int& nb_obj_this_col,
+    //                    std::vector<Eigen::Index>& inner_index,
+    //                    std::vector<real_type>& values,
+    //                    const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
+    //                    const std::vector<int>& index_row_inv,
+    //                    size_t col_id_mat,
+    //                    size_t row_lag,
+    //                    size_t col_lag) const;
+
+
+// protected, but might be private, I don' really know.
+    void _build_value_map(
+        const std::vector<Contrib> & c11,
+        const std::vector<Contrib> & c21,
+        const std::vector<Contrib> & c12,
+        const std::vector<Contrib> & c22
+    );
+
+    // definitely protected for this one
+    int find_J_pos(int row, int col) const {
+        int start = J_.outerIndexPtr()[col];
+        int end   = J_.outerIndexPtr()[col + 1];
+        const int* inner = J_.innerIndexPtr();
+        auto it = std::lower_bound(inner + start, inner + end, row);
+        if (it == inner + end || *it != row) return -1;
+        return (int)(it - inner);
+    };
 
 private:
     NRSystem(const NRSystem&)            = delete;
@@ -253,10 +303,10 @@ public:
 
 protected:
     // Appends slack row + slack column triplets after the core block
-    virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const override;
+    // virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const override;
 
     // Returns nullptr for the slack row (constant); delegates to Base otherwise
-    virtual cplx_type* _get_entry_ptr(int row, int col) override;
+    // virtual cplx_type* _get_entry_ptr(int row, int col) override;
 
 private:
     size_t    slack_bus_id_;

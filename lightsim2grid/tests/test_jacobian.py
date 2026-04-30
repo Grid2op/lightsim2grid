@@ -56,13 +56,17 @@ class JacobianMultiSlackTester(unittest.TestCase):
             cls.res["init_state"]["pq"],
             iter,
             cls.res["init_state"]["tol"])
-        
         J = self.nr_algo.get_J()[self.new_to_old_indexes().T, self.new_to_old_indexes()]
+        # J = self.nr_algo.get_J().copy()
         V = self.nr_algo.get_V()
-        assert J.shape == cls.res[f"{iter}"]["J"].shape, f"error for iter {iter}: J.shape = {J.shape} != {cls.res[f'{iter}']['J'].shape}"
-        assert J.nnz == cls.res[f"{iter}"]["J"].nnz, f"error for iter {iter}: J.nnz = {J.nnz} != {cls.res[f'{iter}']['J'].nnz}"
-        if J.shape[0] > 0:
-            assert np.abs(J - cls.res[f"{iter}"]["J"]).max() <= 1e-6, f"error for iter {iter}: {np.abs(J - cls.res[f'{iter}']['J']).max()}"
+        ref_J = cls.res[f"{iter}"]["J"]
+        if ref_J.shape[0] > 0:
+            assert J.shape == ref_J.shape, f"error for iter {iter}: J.shape = {J.shape} != {ref_J.shape}"
+            assert J.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J.nnz} != {ref_J.nnz}"
+            assert (J.indices == ref_J.indices).all(), f"error for iter {iter}: J.indices = {J.indices} != {ref_J.indices}"
+            assert (J.indptr == ref_J.indptr).all(), f"error for iter {iter}: J.indptr = {J.indptr} != {ref_J.indptr}"
+            if J.shape[0] > 0:
+                assert np.abs(J - cls.res[f"{iter}"]["J"]).max() <= 1e-6, f"error for iter {iter}: {np.abs(J - ref_J).max()}"
         assert V.shape == cls.res[f"{iter}"]["V"].shape, f"error for iter {iter}: V.shape = {V.shape} != {cls.res[f'{iter}']['V'].shape}"
         if  V.shape[0] > 0:
             assert np.abs(V - cls.res[f"{iter}"]["V"]).max() <= 1e-6, f"error for iter {iter}: {np.abs(V - cls.res[f'{iter}']['V']).max()}"
@@ -93,6 +97,6 @@ class JacobianSingleSlackTester(JacobianMultiSlackTester):
     
     def new_to_old_indexes(self):
         """
-        No changes for single slack
+        No changes for single slack atm
         """
-        return np.arange(22).reshape(-1,1)
+        return np.arange(22).reshape(1,-1)

@@ -8,7 +8,7 @@ try:
     from lightsim2grid.algorithm import NRSing_KLU
 except ImportError:
     # lightsim2grid version < 0.14
-    from lightsim2grid.solver import KLUSolver as NRSing_KLU
+    from lightsim2grid.solver import KLUSolverSingleSlack as NRSing_KLU
     
 env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend())
 obs = env.reset(seed=0, options={"time serie id": 0})
