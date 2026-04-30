@@ -34,6 +34,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   (for now, deprecation pending) to `from lightsim2grid.solver import SolverType` 
   without any other changes. Or you can see the documentation for the (possible)
   new enum names of the `lightsim2grid.algorithm.AlgorithmType` enum.
+- [BREAKING] For plugin developers (C++ side): the virtual method ``set_gridmodel`` in
+  ``BaseAlgo`` is renamed ``set_lsgrid``, and the protected member ``gridmodel_ptr_``
+  is renamed ``lsgrid_ptr_``.
 - [DEPRECATION PENDING] some previous solver names (now called algorithm) were 
   rather ambiguous and not very clear. For example, it was not clear that "KLU"
   referenced the Newton Raphson method, with distributed slack variant, that use_buses_for_sub

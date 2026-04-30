@@ -33,7 +33,7 @@ class JacobianMultiSlackTester(unittest.TestCase):
         return super().setUpClass()
     
     def setUp(self) -> None:
-        self.solver = self.get_algo()
+        self.nr_algo = self.get_algo()
         return super().setUp()    
     
     def new_to_old_indexes(self):
@@ -46,7 +46,7 @@ class JacobianMultiSlackTester(unittest.TestCase):
     
     def _aux_test_iter(self, iter):
         cls = type(self)
-        self.solver.compute_pf(
+        self.nr_algo.compute_pf(
             cls.res["init_state"]["Ybus"],
             cls.res["init_state"]["v_init"],
             cls.res["init_state"]["Sbus"],
@@ -57,8 +57,8 @@ class JacobianMultiSlackTester(unittest.TestCase):
             iter,
             cls.res["init_state"]["tol"])
         
-        J = self.solver.get_J()[self.new_to_old_indexes().T, self.new_to_old_indexes()]
-        V = self.solver.get_V()
+        J = self.nr_algo.get_J()[self.new_to_old_indexes().T, self.new_to_old_indexes()]
+        V = self.nr_algo.get_V()
         assert J.shape == cls.res[f"{iter}"]["J"].shape, f"error for iter {iter}: J.shape = {J.shape} != {cls.res[f'{iter}']['J'].shape}"
         assert J.nnz == cls.res[f"{iter}"]["J"].nnz, f"error for iter {iter}: J.nnz = {J.nnz} != {cls.res[f'{iter}']['J'].nnz}"
         if J.shape[0] > 0:
@@ -82,6 +82,7 @@ class JacobianMultiSlackTester(unittest.TestCase):
     def test_4_iter(self):
         self._aux_test_iter(4)
 
+
 class JacobianSingleSlackTester(JacobianMultiSlackTester):
     @classmethod
     def get_name(cls):
@@ -90,3 +91,8 @@ class JacobianSingleSlackTester(JacobianMultiSlackTester):
     def get_algo(self):
         return NRSing_KLU()
     
+    def new_to_old_indexes(self):
+        """
+        No changes for single slack
+        """
+        return np.arange(22).reshape(-1,1)
