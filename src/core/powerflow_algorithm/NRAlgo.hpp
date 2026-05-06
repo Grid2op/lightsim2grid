@@ -172,26 +172,29 @@ public:
 
     // ----- debug ---------------------------------------------------------------
 
-    Eigen::SparseMatrix<real_type>
-    create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type>& Ybus,
-                                const CplxVect& V,
-                                const RealVect& slack_weights,
-                                const Eigen::VectorXi& pq,
-                                const Eigen::VectorXi& pvpq)
-    {
-        // DO NOT USE, FOR DEBUG ONLY
-        (void)pvpq; (void)slack_weights;
-        CplxVect Sbus_dummy(V.size()); Sbus_dummy.setZero();
-        Eigen::VectorXi pv_dummy(0);
-        IntVect slack_ids_dummy(1); slack_ids_dummy(0) = 0;
-        RealVect sw_dummy = RealVect::Ones(V.size());
-        sw_dummy /= sw_dummy.sum();
-        _system.init_topology(Ybus, Sbus_dummy, slack_ids_dummy, sw_dummy, pv_dummy, pq);
-        _system.update_state(Ybus, V, Sbus_dummy);
-        _system.build_J_sparsity();
-        _system.fill_J();
-        return _system.J();
-    }
+    // TODO make it work !
+    // Eigen::SparseMatrix<real_type>
+    // create_jacobian_matrix_test(const Eigen::SparseMatrix<cplx_type>& Ybus,
+    //                             const CplxVect& V,
+    //                             const RealVect& slack_weights,
+    //                             const Eigen::VectorXi& pq,
+    //                             const Eigen::VectorXi& pvpq)
+    // {
+    //     // DO NOT USE, FOR DEBUG ONLY
+    //     (void)pvpq; (void)slack_weights;
+    //     CplxVect Sbus_dummy(V.size()); Sbus_dummy.setZero();
+    //     Eigen::VectorXi pv_dummy(0);
+    //     IntVect slack_ids_dummy(1); slack_ids_dummy(0) = 0;
+    //     RealVect sw_dummy = RealVect::Ones(V.size());
+    //     sw_dummy /= sw_dummy.sum();
+    //     _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
+    //     _system.init_topology(slack_ids, slack_weights, pv_dummy, pq);
+    //     // _system.init_topology(Ybus, Sbus_dummy, slack_ids_dummy, sw_dummy, pv_dummy, pq);
+    //     // _system.update_state(Ybus, V, Sbus_dummy);
+    //     _system.build_J_sparsity();
+    //     _system.fill_J();
+    //     return _system.J();
+    // }
 
 protected:
     virtual void reset_timer() override {
