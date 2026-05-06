@@ -51,15 +51,211 @@ namespace ls2g {
 template <typename... Extensions>
 class NRSystem;
 
+struct LS2G_API Contrib { int jrow, jcol, ybus_k; };
+
+// ---- Base class definition ----------------------------------------------------
+class LS2G_API Base
+{
+    public:
+        Base():
+            nb_pv_(0),
+            nb_pq_(0),
+            nb_pvpq_(0)
+            {}
+
+        static int find_J_pos (
+            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > J,
+            int row,
+            int col){
+            int start = J.outerIndexPtr()[col];
+            int end   = J.outerIndexPtr()[col + 1];
+            const int* inner = J.innerIndexPtr();
+            auto it = std::lower_bound(inner + start, inner + end, row);
+            if (it == inner + end || *it != row) return -1;
+            return (int) (it - inner);
+        };
+
+        // call at the beginning of each solve
+        void update_state(
+            const LSGrid *                         lsgrid_ptr,
+            const Eigen::SparseMatrix<cplx_type>&  Ybus,
+            const CplxVect&                        Sbus,
+            const RealVect&                        slack_weights
+        ){
+            lsgrid_ptr_ = lsgrid_ptr;
+            Ybus_ptr_ = &Ybus;
+            Sbus_ptr_ = &Sbus;
+        }
+
+        // call after update_state
+        // at the beginning of each solve
+        // only if the topology has changed
+        void init_topology(
+            Eigen::Ref<const IntVect>              slack_ids,
+            const RealVect&                        slack_weights,
+            Eigen::Ref<const IntVect>              pv,
+            Eigen::Ref<const IntVect>              pq
+        ) {
+
+            // initialize the sparsity pattern of these matrices
+            dS_dVm_ = *Ybus_ptr_;
+            dS_dVa_ = *Ybus_ptr_;
+
+            pv_ = IntVect(pv);
+            pq_ = IntVect(pq);
+
+            nb_pv_ = static_cast<int>(pv_.size());
+            nb_pq_ = static_cast<int>(pq_.size());
+
+            pvpq_.resize(nb_pv_ + nb_pq_);
+            pvpq_ << pv_, pq_;
+
+            nb_pvpq_ = static_cast<int>(pvpq_.size());
+            const int n_bus  = static_cast<int>(Ybus_ptr_->rows());
+
+            pvpq_inv_.assign(n_bus, -1);
+            for (int i = 0; i < nb_pvpq_; ++i) pvpq_inv_[pvpq_(i)] = i;
+            pq_inv_.assign(n_bus, -1);
+            for (int i = 0; i < nb_pq_; ++i) pq_inv_[pq_(i)] = i;
+        }
+
+        size_t get_size() const { return nb_pvpq_ + nb_pq_;}
+
+        std::vector< std::vector<Contrib> > build_J_contrib()
+        {
+            // compute its sparsity pattern
+            const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
+            const int nnz_Y  = Ybus.nonZeros();
+
+            // get the triplets (will be in a virtual function later)
+            std::vector<Contrib> c11; // stores in order c11, c12, c21 and c22
+            std::vector<Contrib> c21; // stores in order c11, c12, c21 and c22
+            std::vector<Contrib> c12; // stores in order c11, c12, c21 and c22
+            std::vector<Contrib> c22; // stores in order c11, c12, c21 and c22
+            c11.reserve(nnz_Y);
+            c21.reserve(nnz_Y);
+            c12.reserve(nnz_Y);
+            c22.reserve(nnz_Y);
+            // TODO this might be overly pessimistic (only pvpq comp are kept for c11 and c21)
+            // TODO this might be overly pessimistic (only pq comp are kept for c12 and c22) 
+
+            int k = 0;
+            for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
+                for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
+                    it(Ybus, outer); it; ++it, ++k)
+                {
+                    int i = (int)it.row(), j = (int)it.col();
+                    int ri = pvpq_inv_[i], rq = pq_inv_[i];
+                    int ci = pvpq_inv_[j], cq = pq_inv_[j];
+                    if (ri >= 0 && ci >= 0) c11.push_back({ri,          ci,          k});
+                    if (ri >= 0 && cq >= 0) c12.push_back({ri,          nb_pvpq_ + cq, k});
+                    if (rq >= 0 && ci >= 0) c21.push_back({nb_pvpq_ + rq, ci,          k});
+                    if (rq >= 0 && cq >= 0) c22.push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k});
+                }
+            }
+
+            return {c11, c21, c12, c22};
+        }
+
+        void build_value_map(
+            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > J,
+            const std::vector< std::vector<Contrib> > & cijs
+        )
+        {
+            const auto & Ybus = * Ybus_ptr_;
+            const size_t nnz_Y = Ybus.nonZeros();
+
+            // now synch the map_j{1,2}{1,2} with the new J_ matrix
+            map_j11_.assign(nnz_Y, -1);
+            map_j12_.assign(nnz_Y, -1);
+            map_j21_.assign(nnz_Y, -1);
+            map_j22_.assign(nnz_Y, -1);
+
+            // same order as build_J_contrib
+            // int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  
+            // this would also avoid copy
+
+            for (auto& c : cijs[0]) map_j11_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
+            for (auto& c : cijs[1]) map_j21_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
+            for (auto& c : cijs[2]) map_j12_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
+            for (auto& c : cijs[3]) map_j22_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
+        }
+
+        void clear_jacobian()
+        {
+            dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+            dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+
+            map_j11_.clear();
+            map_j21_.clear();
+            map_j12_.clear();
+            map_j22_.clear();
+        }
+
+    private:
+        Eigen::VectorXi                        pv_, pq_, pvpq_;
+        std::vector<int>                       pvpq_inv_, pq_inv_;
+        int                                    nb_pv_, nb_pq_, nb_pvpq_;
+        Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
+        std::vector<int>                       map_j11_;
+        std::vector<int>                       map_j21_;
+        std::vector<int>                       map_j12_;
+        std::vector<int>                       map_j22_;
+
+
+        // visible attribute for derived class (non owning ptr)
+        const LSGrid *                                         lsgrid_ptr_;
+        const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
+        const CplxVect*                                        Sbus_ptr_;
+
+
+    public:
+        Eigen::Ref<const Eigen::VectorXi> pv() const { return pv_; } 
+        Eigen::Ref<const Eigen::VectorXi> pq() const { return pq_; }
+        Eigen::Ref<const Eigen::VectorXi> pvpq() const { return pvpq_; }
+        const std::vector<int> &          pvpq_inv() const {return pvpq_inv_; }
+        const std::vector<int> &          pq_inv() const {return pq_inv_; }
+        int                               nb_pv() const {return nb_pv_;}
+        int                               nb_pq() const {return nb_pq_;}
+        int                               nb_pvpq() const {return nb_pvpq_;}
+
+        int theta_size() const { return nb_pvpq_; }
+        int vm_size()    const { return nb_pq_; }
+         
+        Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return dS_dVm_; }
+        Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return dS_dVa_; }
+        const std::vector<int> &          map_j11() const {return map_j11_; }
+        const std::vector<int> &          map_j21() const {return map_j21_; }
+        const std::vector<int> &          map_j12() const {return map_j12_; }
+        const std::vector<int> &          map_j22() const {return map_j22_; }
+
+        // TODO remove after refacto
+        Eigen::Ref<Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm() { return dS_dVm_; }
+        Eigen::Ref<Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa() { return dS_dVa_; }
+        std::vector<int> &          map_j11() {return map_j11_; }
+        std::vector<int> &          map_j21() {return map_j21_; }
+        std::vector<int> &          map_j12() {return map_j12_; }
+        std::vector<int> &          map_j22() {return map_j22_; }
+};
 
 // ---- Extension tag types ------------------------------------------------------
 
-class MultiSlack   // distributed-slack extension
+/**
+ * This extension adds the ability to have a distributed slack directly in the jacobian.
+ * 
+ * It adds exactly "nb slack" extra variables (nb_slack being the
+ * number of slacks in the grid)
+ * 
+ * The first "nb_slack" - 1 are pv nodes: theta is the extra state variables.
+ * 
+ * The last state variable represents the p mismatch at each slack bus.
+ */
+class LS2G_API MultiSlack   // distributed-slack extension
 {
     public:
-        template<class NRSystemCLS>
+        // call at the beginning of each solve
         void update_state(
-            const NRSystemCLS *                    nr_system_ptr,
+            const Base *                           nr_system_base_ptr,
             const LSGrid *                         lsgrid_ptr,
             const Eigen::SparseMatrix<cplx_type>&  Ybus,
             const CplxVect&                        Sbus,
@@ -68,6 +264,9 @@ class MultiSlack   // distributed-slack extension
             // TODO remember slack weights !
         }
 
+        // call after update_state
+        // at the beginning of each solve
+        // only if the topology has changed
         void init_topology(
             Eigen::Ref<const IntVect>              slack_ids,
             const RealVect&                        slack_weights,
@@ -75,10 +274,48 @@ class MultiSlack   // distributed-slack extension
             Eigen::Ref<const IntVect>              pq
         ) {
             my_size_ = slack_ids.size();
+            ref_slack_id_ = static_cast<size_t>(slack_ids[0]);
+            // pv_slack_inv =   // TODO
+            if(my_size_ > 1){
+                // real distributed slack
+                pv_slack_ = slack_ids.segment(1, my_size_ -1);  // TODO sort this
+
+            }else{
+                // only one slack provided
+            }
+
+        }
+
+        // called after update_state
+        // (and init_topology)
+        // at the beginning of each solve
+        size_t get_size() const {
+            return my_size_;
+        }
+
+        // called when topology has changed
+        // after update_state, init_topology (and get_size)
+        void add_triplets(
+            size_t offset,
+            std::vector<Eigen::Triplet<real_type> >& triplets
+        ){
+            
+        }
+
+        // can be explicitly called any time.
+        // if called, then the update_state, init_topology, add_triplets etc.
+        // will be called again if another powerflow needs
+        // to be run.
+        void clear_jacobian(){
+            pv_slack_ = IntVect::Zero(0);
+            pv_slack_inv.clear();
         }
 
     private:
         size_t my_size_;
+        size_t ref_slack_id_;
+        Eigen::VectorXi                        pv_slack_;
+        std::vector<int>                       pv_slack_inv;
 
 };
 
@@ -138,21 +375,16 @@ class MultiSlack   // distributed-slack extension
  * we defined here.
  */
 template <typename... Rest>
-class NRSystem
+class LS2G_API NRSystem<Base, Rest...>
 {
-protected:
-    struct Contrib { int jrow, jcol, ybus_k; };
-
 public:
     NRSystem() noexcept:
         Ybus_ptr_(nullptr),
         Sbus_ptr_(nullptr),
-        nb_pv_(0),
-        nb_pq_(0),
-        nb_pvpq_(0),
         need_full_rebuild_(true),
         timer_dSbus_(0.),
-        timer_fillJ_(0.) {}
+        timer_fillJ_(0.),
+        nb_total_state_variables_(0) {}
 
     virtual ~NRSystem() = default;
 
@@ -192,13 +424,8 @@ public:
 
     void clear_jacobian() {
         J_         = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
-        dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
-        dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
-
-        map_j11_.clear();
-        map_j21_.clear();
-        map_j12_.clear();
-        map_j22_.clear();
+        base_.clear_jacobian();
+        _clear_jacobian_extensions(std::make_index_sequence<sizeof...(Rest)>{});
         need_full_rebuild_ = true;
     }
 
@@ -208,11 +435,11 @@ public:
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
 
     // to be implemented by all other classes
-    virtual size_t total_state_variables() const {return nb_pvpq_ + nb_pq_;}
+    size_t total_state_variables() const {return nb_total_state_variables_;}
 
     // ----- Size / segment accessors ---------------------------
-    int theta_size() const { return nb_pvpq_; }
-    int vm_size()    const { return nb_pq_; }
+    int theta_size() const { return base_.theta_size(); }
+    int vm_size()    const { return base_.vm_size(); }
 
     // Core state vector segments: theta first, then vm, then extension variables.
     RealVect::SegmentReturnType      theta(RealVect& x)       const { return x.segment(0, theta_size()); }
@@ -228,22 +455,18 @@ public:
 
 private:
     // ---- Shared data (one copy, inherited by all extensions) --------------------
-    Eigen::VectorXi                        pv_, pq_, pvpq_;
-    std::vector<int>                       pvpq_inv_, pq_inv_;
-    int                                    nb_pv_, nb_pq_, nb_pvpq_;
     RealVect                               Va_, Vm_;
     CplxVect                               V_;
     Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
-    Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
-    // std::vector<cplx_type*>                value_map_;  // todo remove
-    std::vector<int>                       map_j11_;
-    std::vector<int>                       map_j21_;
-    std::vector<int>                       map_j12_;
-    std::vector<int>                       map_j22_;
     bool                                   need_full_rebuild_;
     double                                 timer_dSbus_, timer_fillJ_;
+    size_t                                 nb_total_state_variables_;
 
-    std::tuple<Rest...> extensions_; // Holds the state for HVDC, DistSlack, etc.
+    // Holds the base things
+    Base                                   base_;
+
+    // Holds the state for HVDC, DistSlack, etc.
+    std::tuple<Rest...>                    extensions_; 
 
 protected:
     // visible attribute for derived class (non owning ptr)
@@ -252,21 +475,21 @@ protected:
     const CplxVect*                                        Sbus_ptr_;
 
     // protected getters (const)
-    Eigen::Ref<const Eigen::VectorXi> pv() const { return pv_; } 
-    Eigen::Ref<const Eigen::VectorXi> pq() const { return pq_; }
-    Eigen::Ref<const Eigen::VectorXi> pvpq() const { return pvpq_; }
-    const std::vector<int> &          pvpq_inv() const {return pvpq_inv_; }
-    const std::vector<int> &          pq_inv() const {return pq_inv_; }
-    int                               nb_pv() const {return nb_pv_;}
-    int                               nb_pq() const {return nb_pq_;}
-    int                               nb_pvpq() const {return nb_pvpq_;}
+    Eigen::Ref<const Eigen::VectorXi> pv() const { return base_.pv(); } // TODO and also the slack "pv" for dist slack
+    Eigen::Ref<const Eigen::VectorXi> pq() const { return base_.pq(); }
+    Eigen::Ref<const Eigen::VectorXi> pvpq() const { return base_.pvpq(); }  // TODO and also the slack "pv" for dist slack
+    const std::vector<int> &          pvpq_inv() const {return base_.pvpq_inv(); }  // TODO and also the slack "pv" for dist slack
+    const std::vector<int> &          pq_inv() const {return base_.pq_inv(); }
+    int                               nb_pv() const {return base_.nb_pv();}
+    int                               nb_pq() const {return base_.nb_pq();}
+    int                               nb_pvpq() const {return base_.nb_pvpq();}
     
-    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return dS_dVm_; }
-    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return dS_dVa_; }
-    const std::vector<int> &          map_j11() const {return map_j11_; }
-    const std::vector<int> &          map_j21() const {return map_j21_; }
-    const std::vector<int> &          map_j12() const {return map_j12_; }
-    const std::vector<int> &          map_j22() const {return map_j22_; }
+    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return base_.dS_dVm(); }
+    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return base_.dS_dVa(); }
+    const std::vector<int> &          map_j11() const {return base_.map_j11(); }
+    const std::vector<int> &          map_j21() const {return base_.map_j21(); }
+    const std::vector<int> &          map_j12() const {return base_.map_j12(); }
+    const std::vector<int> &          map_j22() const {return base_.map_j22(); }
 
     // TODO NR refacto
     static CplxVect _reconstruct_V(const RealVect& Va, const RealVect& Vm);
@@ -278,16 +501,6 @@ protected:
     void _build_value_map(
         const std::vector< std::vector<Contrib> > & cijs
     );
-
-    // definitely protected for this one
-    int find_J_pos(int row, int col) const {
-        int start = J_.outerIndexPtr()[col];
-        int end   = J_.outerIndexPtr()[col + 1];
-        const int* inner = J_.innerIndexPtr();
-        auto it = std::lower_bound(inner + start, inner + end, row);
-        if (it == inner + end || *it != row) return -1;
-        return (int)(it - inner);
-    };
 
 private:
     // private members to combine  the extension features
@@ -315,7 +528,7 @@ private:
         const RealVect&                        slack_weights,
         std::index_sequence<Is...>){
         int dummy[] = { 0, (std::get<Is>(extensions_).update_state(
-            this,
+            &base_,
             lsgrid_ptr,
             Ybus,
             Sbus,
@@ -324,6 +537,38 @@ private:
         (void)dummy;
     }
 
+    template <std::size_t... Is>
+    void _update_total_state_variables(
+        std::index_sequence<Is...>){
+        nb_total_state_variables_ = base_.get_size();
+        int dummy[] = { 0, (nb_total_state_variables_ += std::get<Is>(extensions_).get_size(), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _add_triplets_extensions(
+        std::vector<Eigen::Triplet<real_type> >& triplets,
+        std::index_sequence<Is...>) {
+        int current_offset = base_.get_size();
+        
+        // We can't use the simple dummy array if we need to update 'current_offset' 
+        // inside the expansion. We use a small recursive call or a braced-init loop.
+        
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).add_triplets(current_offset, triplets), 
+            current_offset += std::get<Is>(extensions_).get_size(), 
+            0
+        )... };
+    }
+
+    template <std::size_t... Is>
+    void _clear_jacobian_extensions(
+        std::index_sequence<Is...>) {                
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).clear_jacobian(),
+            0
+        )... };
+    }
 private:
     NRSystem(const NRSystem&)            = delete;
     NRSystem(NRSystem&&)                 = delete;
@@ -391,8 +636,8 @@ private:
 
 // ---- Type aliases (keep existing names working) --------------------------------
 
-using SingleSlackNRSystem = NRSystem<>;
-using MultiSlackNRSystem  = NRSystem<MultiSlack>;
+using SingleSlackNRSystem = NRSystem<Base>;
+using MultiSlackNRSystem  = NRSystem<Base, MultiSlack>;
 
 } // namespace ls2g
 

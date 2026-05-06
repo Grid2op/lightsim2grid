@@ -14,43 +14,31 @@ namespace ls2g {
 
 // ---- Phase 1: topology init --------------------------------------------------
 template <typename... Rest>
-inline void NRSystem<Rest...>::init_topology(
+inline void NRSystem<Base, Rest...>::init_topology(
     Eigen::Ref<const IntVect>              slack_ids,
     const RealVect&                        slack_weights,
     Eigen::Ref<const IntVect>              pv,
     Eigen::Ref<const IntVect>              pq)
 {
-    pv_ = IntVect(pv);
-    pq_ = IntVect(pq);
-
-    nb_pv_ = static_cast<int>(pv_.size());
-    nb_pq_ = static_cast<int>(pq_.size());
-
-    pvpq_.resize(nb_pv_ + nb_pq_);
-    pvpq_ << pv_, pq_;
-
-    nb_pvpq_ = static_cast<int>(pvpq_.size());
-    const int n_bus  = static_cast<int>(Ybus_ptr_->rows());
-
-    pvpq_inv_.assign(n_bus, -1);
-    for (int i = 0; i < nb_pvpq_; ++i) pvpq_inv_[pvpq_(i)] = i;
-    pq_inv_.assign(n_bus, -1);
-    for (int i = 0; i < nb_pq_; ++i) pq_inv_[pq_(i)] = i;
 
     // init the sparsity pattern
     // I think we don't really care about the
     // values
-    dS_dVm_ = *Ybus_ptr_;
-    dS_dVa_ = *Ybus_ptr_;
+    // dS_dVm_ = *Ybus_ptr_;
+    // dS_dVa_ = *Ybus_ptr_;
     
     // now init the extra features
+    base_.init_topology(slack_ids, slack_weights, pv, pq);
     _init_topology_extensions(slack_ids, slack_weights, pv, pq, std::make_index_sequence<sizeof...(Rest)>{});
+    
+    // now compute the jacobian size
+    _update_total_state_variables(std::make_index_sequence<sizeof...(Rest)>{});
     need_full_rebuild_ = true;
 }
 
 // ---- Phase 1.5: per-compute_pf state update ----------------------------------
 template <typename... Rest>
-inline void NRSystem<Rest...>::update_state(
+inline void NRSystem<Base, Rest...>::update_state(
     const LSGrid *                         lsgrid_ptr,
     const Eigen::SparseMatrix<cplx_type>&  Ybus,
     const CplxVect&                        V_init,
@@ -66,12 +54,13 @@ inline void NRSystem<Rest...>::update_state(
     V_  = V_init;
 
     // now inform the extensions
+    base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
     _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, std::make_index_sequence<sizeof...(Rest)>{});
 }
 
 // ---- Phase 2: build J sparsity + value_map -----------------------------------
 template <typename... Rest>
-inline void NRSystem<Rest...>::build_J_sparsity()
+inline void NRSystem<Base, Rest...>::build_J_sparsity()
 {
     // reset J
     J_         = Eigen::SparseMatrix<real_type>();
@@ -79,85 +68,84 @@ inline void NRSystem<Rest...>::build_J_sparsity()
     // compute its sparsity pattern
     const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
     const int n_bus  = Ybus.rows();
-    const size_t dim_J  =  this->total_state_variables(); // nb_pvpq_ + nb_pq_;
-    const int nnz_Y  = Ybus.nonZeros();
+    const size_t dim_J  =  total_state_variables(); // nb_pvpq_ + nb_pq_;
+    // base_.build_J_sparsity();
 
-    // get the triplets (will be in a virtual function later)
-    std::vector< std::vector<Contrib> > cijs(4); // stores in order c11, c12, c21 and c22
-    int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  // TODO NR refacto: move this as static attrs
+    // const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
+    // const int nnz_Y  = Ybus.nonZeros();
 
-    // TODO this might be overly pessimistic (only pvpq comp are kept for c11 and c21)
-    // TODO this might be overly pessimistic (only pq comp are kept for c12 and c22) 
-    for(auto & el: cijs) el.reserve(nnz_Y);
-    int k = 0;
-    for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
-        for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
-             it(Ybus, outer); it; ++it, ++k)
-        {
-            int i = (int)it.row(), j = (int)it.col();
-            int ri = pvpq_inv_[i], rq = pq_inv_[i];
-            int ci = pvpq_inv_[j], cq = pq_inv_[j];
-            if (ri >= 0 && ci >= 0) cijs[c11].push_back({ri,          ci,          k});
-            if (ri >= 0 && cq >= 0) cijs[c12].push_back({ri,          nb_pvpq_ + cq, k});
-            if (rq >= 0 && ci >= 0) cijs[c21].push_back({nb_pvpq_ + rq, ci,          k});
-            if (rq >= 0 && cq >= 0) cijs[c22].push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k});
-        }
-    }
+    // // get the triplets (will be in a virtual function later)
+    // std::vector< std::vector<Contrib> > cijs(4); // stores in order c11, c12, c21 and c22
+    // int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  // TODO NR refacto: move this as static attrs
 
-    size_t expected_size = cijs[c11].size() + cijs[c12].size() + cijs[c21].size() + cijs[c22].size();
+    // // TODO this might be overly pessimistic (only pvpq comp are kept for c11 and c21)
+    // // TODO this might be overly pessimistic (only pq comp are kept for c12 and c22) 
+    // for(auto & el: cijs) el.reserve(nnz_Y);
+    // int k = 0;
+    // for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
+    //     for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
+    //          it(Ybus, outer); it; ++it, ++k)
+    //     {
+    //         int i = (int)it.row(), j = (int)it.col();
+    //         int ri = pvpq_inv_[i], rq = pq_inv_[i];
+    //         int ci = pvpq_inv_[j], cq = pq_inv_[j];
+    //         if (ri >= 0 && ci >= 0) cijs[c11].push_back({ri,          ci,          k});
+    //         if (ri >= 0 && cq >= 0) cijs[c12].push_back({ri,          nb_pvpq_ + cq, k});
+    //         if (rq >= 0 && ci >= 0) cijs[c21].push_back({nb_pvpq_ + rq, ci,          k});
+    //         if (rq >= 0 && cq >= 0) cijs[c22].push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k});
+    //     }
+    // }
+    std::vector< std::vector<Contrib> > contribs = base_.build_J_contrib();
+    // _add_triplets_extensions(contribs, std::make_index_sequence<sizeof...(Rest)>{});
 
+    size_t expected_size = 0;
+    for(const auto & el: contribs) expected_size += el.size();
     // reserve enough space
     std::vector<Eigen::Triplet<real_type> > triplets;
     triplets.reserve(expected_size);
+
     // now fill the triplets
-    for(const auto& cij : cijs)
+    for(const auto& cij : contribs)
     {
         for (auto& c : cij) triplets.push_back({c.jrow, c.jcol, 0.});
     }
+
     // and build the matrix
     J_.resize(dim_J, dim_J);
     J_.setFromTriplets(triplets.begin(), triplets.end());
     J_.makeCompressed();
 
     // and finally build the value maps
-    _build_value_map(cijs);
+    _build_value_map(contribs);
 }
 
 template <typename... Rest>
-inline void NRSystem<Rest...>::_build_value_map(
+inline void NRSystem<Base, Rest...>::_build_value_map(
     const std::vector< std::vector<Contrib> > & cijs
 )
 {
     const int nnz_Y  = Ybus_ptr_->nonZeros();
 
-    // now synch the map_j{1,2}{1,2} with the new J_ matrix
-    map_j11_.assign(nnz_Y, -1);
-    map_j12_.assign(nnz_Y, -1);
-    map_j21_.assign(nnz_Y, -1);
-    map_j22_.assign(nnz_Y, -1);
+    // other members
 
-    int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  // TODO NR refacto: move this as static attrs
-    // this would also avoid copy
+    // then base
+    base_.build_value_map(J_, cijs);
 
-    for (auto& c : cijs[c11]) map_j11_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
-    for (auto& c : cijs[c12]) map_j12_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
-    for (auto& c : cijs[c21]) map_j21_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
-    for (auto& c : cijs[c22]) map_j22_[c.ybus_k] = find_J_pos(c.jrow, c.jcol);
     need_full_rebuild_ = false;
 }
 
 // ---- Phase 3: fill J values (fast, called every factorisation) ---------------
 template <typename... Rest>
-inline void NRSystem<Rest...>::fill_J()
+inline void NRSystem<Base, Rest...>::fill_J()
 {
     auto timer = CustTimer();
 
     std::tuple<int, int> ref_ = {-1, -1};
     std::vector<std::tuple<int, int> > map_pos(J_.nonZeros(), ref_);
-    const cplx_type* ds_dvm = dS_dVm_.valuePtr();
-    const cplx_type* ds_dva = dS_dVa_.valuePtr();
+    const cplx_type* ds_dvm = base_.dS_dVm().valuePtr();
+    const cplx_type* ds_dva = base_.dS_dVa().valuePtr();
     size_t i = 0;
-    for(auto & c : map_j11_){
+    for(auto & c : base_.map_j11()){
         if(c == -1){
             // coeff of J11 not used in J
             i++;
@@ -168,7 +156,7 @@ inline void NRSystem<Rest...>::fill_J()
     }
 
     i = 0;
-    for(auto & c : map_j21_){
+    for(auto & c : base_.map_j21()){
         if(c == -1){
             // coeff of J21 not used in J
             i++;
@@ -179,7 +167,7 @@ inline void NRSystem<Rest...>::fill_J()
     }
 
     i = 0;
-    for(auto & c : map_j12_){
+    for(auto & c : base_.map_j12()){
         if(c == -1){
             // coeff of J12 not used in J
             i++;
@@ -190,7 +178,7 @@ inline void NRSystem<Rest...>::fill_J()
     }
 
     i = 0;
-    for(auto & c : map_j22_){
+    for(auto & c : base_.map_j22()){
         if(c == -1){
             // coeff of J22 not used in J
             i++;
@@ -203,7 +191,7 @@ inline void NRSystem<Rest...>::fill_J()
 }
 
 template <typename... Rest>
-inline void NRSystem<Rest...>::fill_internal_variables()
+inline void NRSystem<Base, Rest...>::fill_internal_variables()
 {
     auto timer = CustTimer();
     const Eigen::SparseMatrix<cplx_type>& Ybus = *Ybus_ptr_;
@@ -212,8 +200,8 @@ inline void NRSystem<Rest...>::fill_internal_variables()
     const CplxVect Ibus  = Ybus * V_;
     const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
 
-    cplx_type * ds_dvm_val_ptr = dS_dVm_.valuePtr();
-    cplx_type * ds_dva_val_ptr = dS_dVa_.valuePtr();
+    cplx_type * ds_dvm_val_ptr = base_.dS_dVm().valuePtr();
+    cplx_type * ds_dva_val_ptr = base_.dS_dVa().valuePtr();
 
     size_t pos = 0;
     for (size_t col_id = 0; col_id < size_dS; ++col_id) {
@@ -243,19 +231,19 @@ inline void NRSystem<Rest...>::fill_internal_variables()
 
 // ---- NR primitives -----------------------------------------------------------
 template <typename... Rest>
-inline RealVect NRSystem<Rest...>::mismatch() const
+inline RealVect NRSystem<Base, Rest...>::mismatch() const
 {
     return _mismatch_core(V_);
 }
 
 template <typename... Rest>
-inline void NRSystem<Rest...>::apply_step(const RealVect& dx)
+inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
 {
-    if (nb_pv_ > 0)
-        Va_(pv_) += theta(dx).segment(0, nb_pv_);
-    if (nb_pq_ > 0) {
-        Va_(pq_) += theta(dx).segment(nb_pv_, nb_pq_);
-        Vm_(pq_) += vm(dx);
+    if (base_.nb_pv() > 0)
+        Va_(base_.pv()) += theta(dx).segment(0, base_.nb_pv());
+    if (base_.nb_pq() > 0) {
+        Va_(base_.pq()) += theta(dx).segment(base_.nb_pv(), base_.nb_pq());
+        Vm_(base_.pq()) += vm(dx);
     }
     V_ = _reconstruct_V(Va_, Vm_);
     if (Vm_.minCoeff() < static_cast<real_type>(0.)) {
@@ -265,13 +253,13 @@ inline void NRSystem<Rest...>::apply_step(const RealVect& dx)
 }
 
 template <typename... Rest>
-inline real_type NRSystem<Rest...>::mismatch_sq_norm_at(const RealVect& dx) const
+inline real_type NRSystem<Base, Rest...>::mismatch_sq_norm_at(const RealVect& dx) const
 {
     return _mismatch_core(_compute_trial_V(dx)).squaredNorm();
 }
 
 template <typename... Rest>
-inline CplxVect NRSystem<Rest...>::_reconstruct_V(const RealVect& Va, const RealVect& Vm)
+inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const RealVect& Va, const RealVect& Vm)
 {
     const cplx_type m_i = BaseConstants::my_i;
     return Vm.array() * (Va.array().cos().template cast<cplx_type>()
@@ -279,30 +267,30 @@ inline CplxVect NRSystem<Rest...>::_reconstruct_V(const RealVect& Va, const Real
 }
 
 template <typename... Rest>
-inline CplxVect NRSystem<Rest...>::_compute_trial_V(const RealVect& dx) const
+inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const RealVect& dx) const
 {
     RealVect Va_t = Va_;
     RealVect Vm_t = Vm_;
-    if (nb_pv_ > 0) Va_t(pv_) += theta(dx).segment(0, nb_pv_);
-    if (nb_pq_ > 0) {
-        Va_t(pq_) += theta(dx).segment(nb_pv_, nb_pq_);
-        Vm_t(pq_) += vm(dx);
+    if (base_.nb_pv() > 0) Va_t(base_.pv()) += theta(dx).segment(0, base_.nb_pv());
+    if (base_.nb_pq() > 0) {
+        Va_t(base_.pq()) += theta(dx).segment(base_.nb_pv(), base_.nb_pq());
+        Vm_t(base_.pq()) += vm(dx);
     }
     return _reconstruct_V(Va_t, Vm_t);
 }
 
 template <typename... Rest>
-inline RealVect NRSystem<Rest...>::_mismatch_core(const CplxVect& V_trial) const
+inline RealVect NRSystem<Base, Rest...>::_mismatch_core(const CplxVect& V_trial) const
 {
     auto mis = V_trial.array() * (*Ybus_ptr_ * V_trial).array().conjugate()
                - Sbus_ptr_->array();
     const RealVect real_ = mis.real();
     const RealVect imag_ = mis.imag();
 
-    RealVect res(nb_pv_ + 2 * nb_pq_);
-    res.segment(0,               nb_pv_) = -real_(pv_);
-    res.segment(nb_pv_,          nb_pq_) = -real_(pq_);
-    res.segment(nb_pv_ + nb_pq_, nb_pq_) = -imag_(pq_);
+    RealVect res(base_.get_size());
+    res.segment(0,               base_.nb_pv()) = -real_(base_.pv());
+    res.segment(base_.nb_pv(),          base_.nb_pq()) = -real_(base_.pq());
+    res.segment(base_.nb_pv() + base_.nb_pq(), base_.nb_pq()) = -imag_(base_.pq());
     return res;
 }
 
