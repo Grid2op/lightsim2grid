@@ -26,7 +26,7 @@ namespace ls2g {
  * not template parameters, so the same binary can switch strategy at run time.
  */
 template<class LinearSolver, class NRSystem>
-class NRAlgo : public BaseAlgo
+class LS2G_API NRAlgo : public BaseAlgo
 {
 public:
     NRAlgo() noexcept :

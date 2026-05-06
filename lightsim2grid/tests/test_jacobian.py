@@ -46,6 +46,8 @@ class JacobianMultiSlackTester(unittest.TestCase):
     
     def _aux_test_iter(self, iter):
         cls = type(self)
+        ref_J = cls.res[f"{iter}"]["J"]
+        
         self.nr_algo.compute_pf(
             cls.res["init_state"]["Ybus"],
             cls.res["init_state"]["v_init"],
@@ -56,17 +58,18 @@ class JacobianMultiSlackTester(unittest.TestCase):
             cls.res["init_state"]["pq"],
             iter,
             cls.res["init_state"]["tol"])
-        J = self.nr_algo.get_J()[self.new_to_old_indexes().T, self.new_to_old_indexes()]
-        # J = self.nr_algo.get_J().copy()
-        V = self.nr_algo.get_V()
-        ref_J = cls.res[f"{iter}"]["J"]
+        J_wrong_order = self.nr_algo.get_J()
         if ref_J.shape[0] > 0:
-            assert J.shape == ref_J.shape, f"error for iter {iter}: J.shape = {J.shape} != {ref_J.shape}"
-            assert J.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J.nnz} != {ref_J.nnz}"
+            assert J_wrong_order.shape == ref_J.shape, f"error for iter {iter}: J.shape = {J_wrong_order.shape} != {ref_J.shape}"
+            assert J_wrong_order.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J_wrong_order.nnz} != {ref_J.nnz}"
+        
+            J = J_wrong_order[self.new_to_old_indexes().T, self.new_to_old_indexes()]
             assert (J.indices == ref_J.indices).all(), f"error for iter {iter}: J.indices = {J.indices} != {ref_J.indices}"
             assert (J.indptr == ref_J.indptr).all(), f"error for iter {iter}: J.indptr = {J.indptr} != {ref_J.indptr}"
             if J.shape[0] > 0:
                 assert np.abs(J - cls.res[f"{iter}"]["J"]).max() <= 1e-6, f"error for iter {iter}: {np.abs(J - ref_J).max()}"
+            
+        V = self.nr_algo.get_V()
         assert V.shape == cls.res[f"{iter}"]["V"].shape, f"error for iter {iter}: V.shape = {V.shape} != {cls.res[f'{iter}']['V'].shape}"
         if  V.shape[0] > 0:
             assert np.abs(V - cls.res[f"{iter}"]["V"]).max() <= 1e-6, f"error for iter {iter}: {np.abs(V - cls.res[f'{iter}']['V']).max()}"
