@@ -64,12 +64,12 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         return false;
     }
 
+    // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
+    _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
+
     // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
     if (need_rebuild)
-        _system.init_topology(Ybus, Sbus, slack_ids, slack_weights, pv, pq);
-
-    // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
-    _system.update_state(Ybus, V, Sbus);
+        _system.init_topology(slack_ids, slack_weights, pv, pq);
 
     // Phase 2: rebuild J sparsity + value_map, then initialize linear solver.
     bool need_init = need_rebuild;

@@ -46,15 +46,44 @@
 
 namespace ls2g {
 
-// ---- Extension tag types ------------------------------------------------------
-
-struct MultiSlack {};   // distributed-slack extension (+1 row/col always)
-// struct HVDC {};      // future (+n_hvdc_lines rows/cols at runtime)
-
 // ---- Primary template declaration (no definition) -----------------------------
 
 template <typename... Extensions>
 class NRSystem;
+
+
+// ---- Extension tag types ------------------------------------------------------
+
+class MultiSlack   // distributed-slack extension
+{
+    public:
+        template<class NRSystemCLS>
+        void update_state(
+            const NRSystemCLS *                    nr_system_ptr,
+            const LSGrid *                         lsgrid_ptr,
+            const Eigen::SparseMatrix<cplx_type>&  Ybus,
+            const CplxVect&                        Sbus,
+            const RealVect&                        slack_weights
+        ){
+            // TODO remember slack weights !
+        }
+
+        void init_topology(
+            Eigen::Ref<const IntVect>              slack_ids,
+            const RealVect&                        slack_weights,
+            Eigen::Ref<const IntVect>              pv,
+            Eigen::Ref<const IntVect>              pq
+        ) {
+            my_size_ = slack_ids.size();
+        }
+
+    private:
+        size_t my_size_;
+
+};
+
+// struct HVDC {};      // future (+n_hvdc_lines rows/cols at runtime)
+
 
 // ---- Base specialisation: NRSystem<> (single-slack) ------------------
 
@@ -108,8 +137,8 @@ class NRSystem;
  * class which would break the "inheritance" / "composition" pattern that
  * we defined here.
  */
-template <>
-class NRSystem<>
+template <typename... Rest>
+class NRSystem
 {
 protected:
     struct Contrib { int jrow, jcol, ybus_k; };
@@ -129,9 +158,7 @@ public:
 
     // ----- Phase 1: topology init (call when pv/pq/slack topology changes) -------
 
-    virtual void init_topology(
-        const Eigen::SparseMatrix<cplx_type>& Ybus,
-        const CplxVect&                        Sbus,
+    void init_topology(
         Eigen::Ref<const IntVect>              slack_ids,
         const RealVect&                        slack_weights,
         Eigen::Ref<const IntVect>              pv,
@@ -139,10 +166,12 @@ public:
 
     // ----- Phase 1.5: per-compute_pf state update (cheap) -----------------------
 
-    virtual void update_state(
-        const Eigen::SparseMatrix<cplx_type>& Ybus,
+    void update_state(
+        const LSGrid *                         lsgrid_ptr,
+        const Eigen::SparseMatrix<cplx_type>&  Ybus,
         const CplxVect&                        V_init,
-        const CplxVect&                        Sbus);
+        const CplxVect&                        Sbus,
+        Eigen::Ref<const RealVect>             slack_weights);
 
     // ----- Phase 2: build J sparsity + value_map (non-virtual) ------------------
 
@@ -214,10 +243,13 @@ private:
     bool                                   need_full_rebuild_;
     double                                 timer_dSbus_, timer_fillJ_;
 
+    std::tuple<Rest...> extensions_; // Holds the state for HVDC, DistSlack, etc.
+
 protected:
     // visible attribute for derived class (non owning ptr)
+    const LSGrid *                                         lsgrid_ptr_;
     const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
-    const CplxVect*                        Sbus_ptr_;
+    const CplxVect*                                        Sbus_ptr_;
 
     // protected getters (const)
     Eigen::Ref<const Eigen::VectorXi> pv() const { return pv_; } 
@@ -236,53 +268,15 @@ protected:
     const std::vector<int> &          map_j12() const {return map_j12_; }
     const std::vector<int> &          map_j22() const {return map_j22_; }
 
-    // ---- Virtual hooks (overridden by extensions) --------------------------------
-
-    // Collect ALL structural triplets for J.  Base fills the core block;
-    // each extension override calls Base::_collect_J_triplets(coeffs) first then appends.
-    // virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const;
-
-    // Per-entry value-pointer hook: return pointer into dS_dVa_/dS_dVm_ for
-    // variable entries, or nullptr for constant entries (e.g. slack row).
-    // Called once per J nonzero during build_J_sparsity — virtual overhead OK here.
-    // Base handles the core block; extensions override to handle their own rows.
-    // virtual cplx_type* _get_entry_ptr(int row, int col);
-
-    // ---- Shared helpers (non-virtual, never overridden) --------------------------
-
-    // void _collect_value_map();   // called by build_J_sparsity; iterates J col-major
-
-    // void _dSbus_dV(const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>& Ybus, const CplxVect& V);
+    // TODO NR refacto
     static CplxVect _reconstruct_V(const RealVect& Va, const RealVect& Vm);
     CplxVect _compute_trial_V(const RealVect& dx) const;
     RealVect _mismatch_core(const CplxVect& V_trial) const;
 
-    // void _get_values_J(int& nb_obj_this_col,
-    //                    std::vector<Eigen::Index>& inner_index,
-    //                    std::vector<real_type>& values,
-    //                    const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
-    //                    const std::vector<int>& index_row_inv,
-    //                    const Eigen::VectorXi& index_col,
-    //                    size_t col_id,
-    //                    size_t row_lag,
-    //                    size_t col_lag) const;
 
-    // void _get_values_J(int& nb_obj_this_col,
-    //                    std::vector<Eigen::Index>& inner_index,
-    //                    std::vector<real_type>& values,
-    //                    const Eigen::Ref<const Eigen::SparseMatrix<real_type>>& mat,
-    //                    const std::vector<int>& index_row_inv,
-    //                    size_t col_id_mat,
-    //                    size_t row_lag,
-    //                    size_t col_lag) const;
-
-
-// protected, but might be private, I don' really know.
+    // protected, but might be private, I don't really know.
     void _build_value_map(
-        const std::vector<Contrib> & c11,
-        const std::vector<Contrib> & c21,
-        const std::vector<Contrib> & c12,
-        const std::vector<Contrib> & c22
+        const std::vector< std::vector<Contrib> > & cijs
     );
 
     // definitely protected for this one
@@ -294,6 +288,41 @@ protected:
         if (it == inner + end || *it != row) return -1;
         return (int)(it - inner);
     };
+
+private:
+    // private members to combine  the extension features
+    template <std::size_t... Is>
+    void _init_topology_extensions(
+        Eigen::Ref<const IntVect>              slack_ids,
+        const RealVect&                        slack_weights,
+        Eigen::Ref<const IntVect>              pv,
+        Eigen::Ref<const IntVect>              pq,
+        std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).init_topology(
+            slack_ids,
+            slack_weights,
+            pv,
+            pq
+            ), 0)... };
+        (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _update_state_extensions(
+        const LSGrid *                         lsgrid_ptr,
+        const Eigen::SparseMatrix<cplx_type>&  Ybus,
+        const CplxVect&                        Sbus,
+        const RealVect&                        slack_weights,
+        std::index_sequence<Is...>){
+        int dummy[] = { 0, (std::get<Is>(extensions_).update_state(
+            this,
+            lsgrid_ptr,
+            Ybus,
+            Sbus,
+            slack_weights
+            ), 0)... };
+        (void)dummy;
+    }
 
 private:
     NRSystem(const NRSystem&)            = delete;
@@ -313,53 +342,52 @@ private:
  * The slack row in J is set once in build_J_sparsity and kept CONSTANT across
  * NR iterations (a valid quasi-Newton approximation for this equation).
  */
-template <typename... Rest>
-class NRSystem<MultiSlack, Rest...> : public NRSystem<Rest...>
-{
-    using Base = NRSystem<Rest...>;
-public:
-    NRSystem() noexcept
-        : Base(), slack_bus_id_(0), slack_absorbed_(static_cast<real_type>(0.)) {}
+// template <typename... Rest>
+// class NRSystem<MultiSlack, Rest...>
+// {
+// public:
+//     NRSystem() noexcept
+//         : Base(), slack_bus_id_(0), slack_absorbed_(static_cast<real_type>(0.)) {}
 
-    virtual ~NRSystem() = default;
+//     virtual ~NRSystem() = default;
 
-    // ----- Phase 1 ---------------------------------------------------------------
-    virtual void init_topology(
-        const Eigen::SparseMatrix<cplx_type>& Ybus,
-        const CplxVect&                        Sbus,
-        Eigen::Ref<const IntVect>              slack_ids,
-        const RealVect&                        slack_weights,
-        Eigen::Ref<const IntVect>              pv,
-        Eigen::Ref<const IntVect>              pq) override;
+//     // ----- Phase 1 ---------------------------------------------------------------
+//     void init_topology(
+//         const Eigen::SparseMatrix<cplx_type>& Ybus,
+//         const CplxVect&                        Sbus,
+//         Eigen::Ref<const IntVect>              slack_ids,
+//         const RealVect&                        slack_weights,
+//         Eigen::Ref<const IntVect>              pv,
+//         Eigen::Ref<const IntVect>              pq) override;
 
-    // ----- Phase 1.5 -------------------------------------------------------------
-    virtual void update_state(
-        const Eigen::SparseMatrix<cplx_type>& Ybus,
-        const CplxVect&                        V_init,
-        const CplxVect&                        Sbus) override;
+//     // ----- Phase 1.5 -------------------------------------------------------------
+//     virtual void update_state(
+//         const Eigen::SparseMatrix<cplx_type>& Ybus,
+//         const CplxVect&                        V_init,
+//         const CplxVect&                        Sbus) override;
 
-    // ----- NR primitives ---------------------------------------------------------
-    virtual RealVect  mismatch()                              const override;
-    virtual void      apply_step(const RealVect& dx)                override;
-    virtual real_type mismatch_sq_norm_at(const RealVect& dx) const override;
+//     // ----- NR primitives ---------------------------------------------------------
+//     virtual RealVect  mismatch()                              const override;
+//     virtual void      apply_step(const RealVect& dx)                override;
+//     virtual real_type mismatch_sq_norm_at(const RealVect& dx) const override;
 
-protected:
-    // Appends slack row + slack column triplets after the core block
-    // virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const override;
+// protected:
+//     // Appends slack row + slack column triplets after the core block
+//     // virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const override;
 
-    // Returns nullptr for the slack row (constant); delegates to Base otherwise
-    // virtual cplx_type* _get_entry_ptr(int row, int col) override;
+//     // Returns nullptr for the slack row (constant); delegates to Base otherwise
+//     // virtual cplx_type* _get_entry_ptr(int row, int col) override;
 
-private:
-    size_t    slack_bus_id_;
-    RealVect  slack_weights_;
-    real_type slack_absorbed_;
+// private:
+//     size_t    slack_bus_id_;
+//     RealVect  slack_weights_;
+//     real_type slack_absorbed_;
 
-    int _J_slack_row() const { return this->theta_size() + this->vm_size(); }
+//     int _J_slack_row() const { return this->theta_size() + this->vm_size(); }
 
-    void   _append_slack_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const;
-    RealVect _mismatch_with_slack(const CplxVect& V_trial, real_type sa) const;
-};
+//     void   _append_slack_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const;
+//     RealVect _mismatch_with_slack(const CplxVect& V_trial, real_type sa) const;
+// };
 
 // ---- Type aliases (keep existing names working) --------------------------------
 
