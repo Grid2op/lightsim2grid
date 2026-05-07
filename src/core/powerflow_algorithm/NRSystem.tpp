@@ -95,7 +95,9 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     //         if (rq >= 0 && cq >= 0) cijs[c22].push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k});
     //     }
     // }
-    std::vector< std::vector<Contrib> > contribs = base_.build_J_contrib();
+    std::vector< std::vector<Contrib> > contribs;
+    contribs.reserve(sizeof...(Rest) + 1);
+    contribs.push_back(base_.build_J_contrib());
     _build_J_contrib_extensions(contribs, std::make_index_sequence<sizeof...(Rest)>{});
 
     size_t expected_size = 0;
@@ -116,7 +118,7 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     J_.makeCompressed();
 
     // and finally build the value maps
-    _build_value_map(contribs);
+    _build_value_map(contribs);  // will call build_value_map_extensions
 }
 
 // ---- Phase 3: fill J values (fast, called every factorisation) ---------------
@@ -125,8 +127,6 @@ inline void NRSystem<Base, Rest...>::fill_J()
 {
     auto timer = CustTimer();
 
-    std::tuple<int, int> ref_ = {-1, -1};
-    std::vector<std::tuple<int, int> > map_pos(J_.nonZeros(), ref_);
     const cplx_type* ds_dvm = dS_dVm_.valuePtr();
     const cplx_type* ds_dva = dS_dVa_.valuePtr();
     size_t i = 0;
@@ -172,6 +172,7 @@ inline void NRSystem<Base, Rest...>::fill_J()
         J_.valuePtr()[c] = std::imag(ds_dvm[i]);
         i++;
     }
+    _fill_J_extensions(std::make_index_sequence<sizeof...(Rest)>{});
     timer_fillJ_ += timer.duration();
 }
 
