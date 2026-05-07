@@ -41,8 +41,21 @@ class JacobianMultiSlackTester(unittest.TestCase):
         in lightsim2grid 0.14, order of the Jac change and slack is put at the end (instead of the beginning)
         
         this should be used J_new_indx[self.reorder_jac_row().T, self.reorder_jac_row()] == J_old_index
+        
+        new order:
+        pv, pq, pq, pv_slack, slack
+        
+        old order:
+        slack, pv_(slack + base), pq, pq
+        
         """
-        return np.concatenate(([22], np.arange(22))).reshape(-1,1)
+        return np.concatenate(
+            (
+                [22],  # slack
+                [21, 20],  # pv_slack
+                np.arange(20)  # rest (pv_base, pq, pq)
+                )
+            ).reshape(-1,1)
     
     def _aux_test_iter(self, iter):
         cls = type(self)
@@ -62,7 +75,8 @@ class JacobianMultiSlackTester(unittest.TestCase):
         if ref_J.shape[0] > 0:
             assert J_wrong_order.shape == ref_J.shape, f"error for iter {iter}: J.shape = {J_wrong_order.shape} != {ref_J.shape}"
             assert J_wrong_order.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J_wrong_order.nnz} != {ref_J.nnz}"
-        
+                        
+            # J is csc !
             J = J_wrong_order[self.new_to_old_indexes().T, self.new_to_old_indexes()]
             assert (J.indices == ref_J.indices).all(), f"error for iter {iter}: J.indices = {J.indices} != {ref_J.indices}"
             assert (J.indptr == ref_J.indptr).all(), f"error for iter {iter}: J.indptr = {J.indptr} != {ref_J.indptr}"
