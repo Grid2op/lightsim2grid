@@ -51,10 +51,11 @@ namespace ls2g {
 template <typename... Extensions>
 class NRSystem;
 
-enum LS2G_API dSdX { dSdVa_r, dSdVa_i, dSdVm_r, dSdVm_i, NA};
+enum LS2G_API dSdX { dSdVa_r, dSdVa_i, dSdVm_r, dSdVm_i, NotIndSdV};
 
 class LS2G_API Contrib final
 { 
+    private:
         int jrow_;
         int jcol_;
         int ybus_k_;
@@ -93,6 +94,18 @@ class LS2G_API Base
             const int* inner = J_csc.innerIndexPtr();
             auto it = std::lower_bound(inner + start, inner + end, row);
             if (it == inner + end || *it != row) return -1;
+            return (int) (it - inner);
+        };
+
+        static int find_J_pos_csr(
+            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::RowMajor> > J_csr,
+            int row,
+            int col){
+            int start = J_csr.outerIndexPtr()[row];
+            int end   = J_csr.outerIndexPtr()[row + 1];
+            const int* inner = J_csr.innerIndexPtr();
+            auto it = std::lower_bound(inner + start, inner + end, col);
+            if (it == inner + end || *it != col) return -1;
             return (int) (it - inner);
         };
 
@@ -137,7 +150,7 @@ class LS2G_API Base
 
         size_t get_size() const { return nb_pvpq_ + nb_pq_;}
 
-        std::vector< std::vector<Contrib> > build_J_contrib()
+        std::vector<Contrib> build_J_contrib() noexcept
         {
             // compute its sparsity pattern
             const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
@@ -164,10 +177,12 @@ class LS2G_API Base
                 }
             }
 
-            return {cntrb};
+            return cntrb;
         }
 
         void clear_jacobian() {}
+
+        void fill_J() {}
 
         const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> * Ybus_ptr() const {return Ybus_ptr_;}
 
@@ -212,7 +227,9 @@ class LS2G_API Base
 class LS2G_API MultiSlack   // distributed-slack extension
 {
     public:
-        // call at the beginning of each solve
+        // call at the beginning of each NR solve
+        // once. It is not called for
+        // NR iterations
         void update_state(
             const Base *                           nr_system_base_ptr,
             const LSGrid *                         lsgrid_ptr,
@@ -222,6 +239,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
         ){
             // TODO remember slack weights !
             nr_system_base_ptr_ = nr_system_base_ptr;
+            slack_weights_ = slack_weights;
         }
 
         // call after update_state
@@ -234,6 +252,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
             Eigen::Ref<const IntVect>              pq
         ) {
             my_size_ = slack_ids.size();
+            // TODO: sort the slack_ids
+            // TODO take the last slack (easier to fill the J matrix !)
             ref_slack_id_ = static_cast<size_t>(slack_ids[0]);
             pv_slack_inv_.assign(nr_system_base_ptr_->Ybus_ptr()->cols(), -1);
             if(my_size_ > 1){
@@ -258,11 +278,13 @@ class LS2G_API MultiSlack   // distributed-slack extension
         /**
         J has the shape:
         
-        | J11 | J12 | S13 |                | (pvpq_base, pvpq_base) | (pvpq_base, pq) | (pvpq_base, pvslack) |
-        | --------------- |                | --------------------------------------------------------------- |
-        | J21 | J22 | S23 |  = dimensions: |    (pq, pvpq_base)     |    (pq, pq)     |    (pq, pvslack)     |
-        | --------------- |                | --------------------------------------------------------------- |
-        | S31 | S32 | S33 |                |  (pvslack, pvpq_base)  |  (pvslack, pq)  |  (pvslack, pvslack)  |
+        | J11 | J12 | S13 |   |               | (pvpq_base, pvpq_base) | (pvpq_base, pq) | (pvpq_base, pvslack) | (pvpq_base, 1) |
+        | --------------- |   |               | --------------------------------------------------------------- |                |
+        | J21 | J22 | S23 | s |               |    (pq, pvpq_base)     |    (pq, pq)     |    (pq, pvslack)     |     (pq, 1)    |
+        | --------------- | l | = dimensions: | --------------------------------------------------------------- |                |
+        | S31 | S32 | S33 | a |               |  (pvslack, pvpq_base)  |  (pvslack, pq)  |  (pvslack, pvslack)  |  (pvslack, 1)  |
+        |-----------------| c |               | --------------------------------------------------------------- |                |
+        |    slack_bus    | k |                
 
         python implementation (base, not modified) :
 
@@ -290,18 +312,40 @@ class LS2G_API MultiSlack   // distributed-slack extension
 
         `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
         the remaining pq components are all 0.
+
+        ┌───────┬────────────────┬─────────────────┬───────────────────────────────────┐
+        │ Block │ Row equations  │  Col unknowns   │              Formula              │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ J11   │ ΔP / pvpq_base │ ΔVa / pvpq_base │ dS_dVa[pvpq_base, pvpq_base].real │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ J12   │ ΔP / pvpq_base │ ΔVm / pq        │ dS_dVm[pvpq_base, pq].real        │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ S13   │ ΔP / pvpq_base │ ΔVa / pvslack   │ dS_dVa[pvpq_base, pvslack].real   │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ J21   │ ΔQ / pq        │ ΔVa / pvpq_base │ dS_dVa[pq, pvpq_base].imag        │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ J22   │ ΔQ / pq        │ ΔVm / pq        │ dS_dVm[pq, pq].imag               │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ S23   │ ΔQ / pq        │ ΔVa / pvslack   │ dS_dVa[pq, pvslack].imag          │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ S31   │ ΔP / pvslack   │ ΔVa / pvpq_base │ dS_dVa[pvslack, pvpq_base].real   │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ S32   │ ΔP / pvslack   │ ΔVm / pq        │ dS_dVm[pvslack, pq].real          │
+        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
+        │ S33   │ ΔP / pvslack   │ ΔVa / pvslack   │ dS_dVa[pvslack, pvslack].real     │
+        └───────┴────────────────┴─────────────────┴───────────────────────────────────┘
+
         **/
-        void build_J_contrib(
-            int offset,
-            std::vector<std::vector<Contrib> >& contribs
-        ){
+        std::vector<Contrib> build_J_contrib(
+            int offset
+        ) noexcept {
             const auto & Ybus = * nr_system_base_ptr_->Ybus_ptr();
             const size_t nnz_Y = Ybus.nonZeros();
+            my_offset_ = static_cast<size_t>(offset);
+            int my_size = static_cast<int>(my_size_);
 
             std::vector<Contrib> cntrb; 
             cntrb.reserve(5 * nnz_Y);  // 5 * nnz_Y is overly pessimistic (too much memory allocated)
-
-            int c11 = 0, c21 = 1, c12 = 2, c22 = 3; // TODO have a struct for the triplets !
 
             const std::vector<int> & pvpq_inv = nr_system_base_ptr_ ->pvpq_inv();
             const std::vector<int> & pq_inv = nr_system_base_ptr_ ->pq_inv();
@@ -326,42 +370,106 @@ class LS2G_API MultiSlack   // distributed-slack extension
                     
                     // add the new columns (J_coupling)
                     // S31
-                    if (rs >= 0 && ci >= 0){
-                        cntrb.push_back({offset + rs, ci, k, dSdVa_r});
-                    }
+                    if (rs >= 0 && ci >= 0) cntrb.push_back({offset + rs, ci, k, dSdVa_r});
+
                     // S32
                     if (rs >= 0 && cq >= 0) cntrb.push_back({offset + rs, nb_pvpq_base + cq, k, dSdVm_r});
 
                     // add the new  J feature
                     // S33
-                    if (rs >= 0 && cs >= 0)
-                    {
-                        cntrb.push_back({offset + rs,     offset + cs, k, dSdVa_r});
+                    if (rs >= 0 && cs >= 0) cntrb.push_back({offset + rs,     offset + cs, k, dSdVa_r});
+
+                    // add ref slack equations
+                    if (i == ref_slack_id_){
+                        // slack P wrt theta pvpq
+                        if(ci >= 0) cntrb.push_back({offset + my_size, ci, k, dSdVa_r});
+                        // slack P wrt Vm pq
+                        if(cq >= 0) cntrb.push_back({offset + my_size, nb_pvpq_base + cq, k, dSdVm_r});
+                        // slack P wrt theta pvslack
+                        if(cs >= 0) cntrb.push_back({offset + my_size, offset + cs, k, dSdVa_r});
                     }
                 }
 
             }
-            // and now add the slack equations
+            // and now add the slack equations (last column), it is 
+            // 0 for pvpq, pq and the slack weights for pvslack
+            for(size_t i = 0; i < my_size_; ++i)
+            {
+                cntrb.push_back({offset + static_cast<int>(i), offset + my_size, -1, NotIndSdV});
+            }
 
             // now store them in a defined order
-            contribs.push_back(cntrb);
+            return cntrb;
         }
+
+        // this function is called to update the "value map"
+        // It is part of possible "computation speed optimization"
+        // so we advise to ignore it at first.
+        // It is called each time a new J is defined.
+        // It is called after update_state, init_topology and build_J_contrib.
+        // The idea behind this is that it is faster to update the 
+        // jacobian at each iteration of the Newton Raphson,
+        // you can use a "value_map" that maps the new values you want 
+        // to compute to their index in Jacobian.valuePtr()
+        // So intead of computing Jacobian.coeffRef(row, col) = XXX
+        // you will be able to call Jacobian.valuePtr()[value_map[i]] = XXX[i]
+        void build_value_map(
+            // Jacobian is the inialized (correct sparsity pattern) of the Jacobian
+            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > Jacobian,
+            // my_contrib is the result of the call to build_J_contrib
+            const std::vector<Contrib> & my_contrib
+        )
+        {
+            // when filling the values I want to fill by 
+            // looking to slack_ids directly in order
+            // as the ref slack is the first one (TODO we might change that...)
+            // there is a "lag" of 1
+            map_dist_slack_ = std::vector<int>(my_size_); 
+            for(size_t i = 0; i < my_size_ - 1; ++i)
+            {
+                // other slack (non ref)
+                map_dist_slack_[i + 1] = Base::find_J_pos(Jacobian, my_offset_ + i, my_offset_ + my_size_);
+                // the [i+1] = XXX(my_offset_ + i, ...) (and not i+1) is volontary
+                // because the first slack bus is taken as the ref slack.
+            }
+            // ref slack (first one)
+            map_dist_slack_[0] = Base::find_J_pos(Jacobian, my_offset_, my_offset_ + my_size_);
+        }
+
 
         // can be explicitly called any time.
         // if called, then the update_state, init_topology, add_triplets etc.
         // will be called again if another powerflow needs
         // to be run.
         void clear_jacobian(){
+            my_size_ = 0;
+            ref_slack_id_ = 0;
+            my_offset_ = 0;
             pv_slack_ = IntVect::Zero(0);
             pv_slack_inv_.clear();
+            nr_system_base_ptr_ = nullptr;
+            slack_weights_ = RealVect::Zero(0);
+            map_dist_slack_.clear();
+        }
+
+        // called at each iteration of the Newton Raphson
+        // when this is called, it assumes that update_state, init_topology 
+        // etc. have been properly called.
+        void fill_J(Eigen::Ref<Eigen::SparseMatrix<real_type, Eigen::ColMajor> > Jacobian) const
+        {
+            // TODO
+
         }
 
     private:
         size_t             my_size_;
         size_t             ref_slack_id_;
+        size_t             my_offset_;
         Eigen::VectorXi    pv_slack_;
         std::vector<int>   pv_slack_inv_;
         const Base *       nr_system_base_ptr_;
+        RealVect           slack_weights_;  // size: nb_bus
+        std::vector<int>   map_dist_slack_;
 
 };
 
@@ -594,7 +702,8 @@ protected:
             }
         }
 
-        // TODO build value mapt of the extensions
+        // TODO build value map of the extensions
+        _build_value_map_extensions(cijs, std::make_index_sequence<sizeof...(Rest)>{});
 
         // indicate it is fully initialized
         need_full_rebuild_ = false;
@@ -640,7 +749,7 @@ private:
         std::index_sequence<Is...>){
         nb_total_state_variables_ = base_.get_size();
         int dummy[] = { 0, (nb_total_state_variables_ += std::get<Is>(extensions_).get_size(), 0)... };
-        (void)dummy;
+        (void) dummy;
     }
 
     template <std::size_t... Is>
@@ -653,10 +762,11 @@ private:
         // inside the expansion. We use a small recursive call or a braced-init loop.
         
         int dummy[] = { 0, (
-            std::get<Is>(extensions_).build_J_contrib(current_offset, contribs), 
+            contribs.push_back(std::get<Is>(extensions_).build_J_contrib(current_offset)), 
             current_offset += std::get<Is>(extensions_).get_size(), 
             0
         )... };
+        (void) dummy;
     }
 
     template <std::size_t... Is>
@@ -666,6 +776,29 @@ private:
             std::get<Is>(extensions_).clear_jacobian(),
             0
         )... };
+    }
+
+    template <std::size_t... Is>
+    void _build_value_map_extensions(
+        const std::vector< std::vector<Contrib> > & cijs,
+        std::index_sequence<Is...>
+    ) {
+        size_t current_id = 1;  // nothing for base
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).build_value_map(J_, cijs[current_id]), 
+            current_id += 1, 
+            0
+        )... };
+    }
+
+    template <std::size_t... Is>
+    void _fill_J_extensions(
+        std::index_sequence<Is...>) {                
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).fill_J(J_),
+            0
+        )... };
+        (void) dummy;
     }
 
 private:

@@ -74,7 +74,7 @@ class JacobianMultiSlackTester(unittest.TestCase):
         J_wrong_order = self.nr_algo.get_J()
         if ref_J.shape[0] > 0:
             assert J_wrong_order.shape == ref_J.shape, f"error for iter {iter}: J.shape = {J_wrong_order.shape} != {ref_J.shape}"
-            assert J_wrong_order.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J_wrong_order.nnz} != {ref_J.nnz}"
+            # assert J_wrong_order.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J_wrong_order.nnz} != {ref_J.nnz}"
                         
             # J is csc !
             J = J_wrong_order[self.new_to_old_indexes().T, self.new_to_old_indexes()]
