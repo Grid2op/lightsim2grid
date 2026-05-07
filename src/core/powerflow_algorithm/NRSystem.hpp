@@ -51,7 +51,28 @@ namespace ls2g {
 template <typename... Extensions>
 class NRSystem;
 
-struct LS2G_API Contrib { int jrow, jcol, ybus_k; };
+enum LS2G_API dSdX { dSdVa_r, dSdVa_i, dSdVm_r, dSdVm_i, NA};
+
+class LS2G_API Contrib final
+{ 
+        int jrow_;
+        int jcol_;
+        int ybus_k_;
+        dSdX whichmat_; 
+
+    public:
+       Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
+           jrow_(jrow),
+           jcol_(jcol),
+           ybus_k_(ybus_k),
+           whichmat_(whichmat) {}
+
+       int jrow() const {return jrow_;}
+       int jcol() const {return jcol_;}
+       int ybus_k() const {return ybus_k_;}
+       dSdX whichmat() const {return whichmat_;}
+
+};
 
 // ---- Base class definition ----------------------------------------------------
 class LS2G_API Base
@@ -64,12 +85,12 @@ class LS2G_API Base
             {}
 
         static int find_J_pos (
-            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > J,
+            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > J_csc,
             int row,
             int col){
-            int start = J.outerIndexPtr()[col];
-            int end   = J.outerIndexPtr()[col + 1];
-            const int* inner = J.innerIndexPtr();
+            int start = J_csc.outerIndexPtr()[col];
+            int end   = J_csc.outerIndexPtr()[col + 1];
+            const int* inner = J_csc.innerIndexPtr();
             auto it = std::lower_bound(inner + start, inner + end, row);
             if (it == inner + end || *it != row) return -1;
             return (int) (it - inner);
@@ -96,11 +117,6 @@ class LS2G_API Base
             Eigen::Ref<const IntVect>              pv,
             Eigen::Ref<const IntVect>              pq
         ) {
-
-            // initialize the sparsity pattern of these matrices
-            dS_dVm_ = *Ybus_ptr_;
-            dS_dVa_ = *Ybus_ptr_;
-
             pv_ = IntVect(pv);
             pq_ = IntVect(pq);
 
@@ -128,14 +144,8 @@ class LS2G_API Base
             const int nnz_Y  = Ybus.nonZeros();
 
             // get the triplets (will be in a virtual function later)
-            std::vector<Contrib> c11; // stores in order c11, c12, c21 and c22
-            std::vector<Contrib> c21; // stores in order c11, c12, c21 and c22
-            std::vector<Contrib> c12; // stores in order c11, c12, c21 and c22
-            std::vector<Contrib> c22; // stores in order c11, c12, c21 and c22
-            c11.reserve(nnz_Y);
-            c21.reserve(nnz_Y);
-            c12.reserve(nnz_Y);
-            c22.reserve(nnz_Y);
+            std::vector<Contrib> cntrb;
+            cntrb.reserve(4 * nnz_Y);
             // TODO this might be overly pessimistic (only pvpq comp are kept for c11 and c21)
             // TODO this might be overly pessimistic (only pq comp are kept for c12 and c22) 
 
@@ -147,60 +157,24 @@ class LS2G_API Base
                     int i = (int)it.row(), j = (int)it.col();
                     int ri = pvpq_inv_[i], rq = pq_inv_[i];
                     int ci = pvpq_inv_[j], cq = pq_inv_[j];
-                    if (ri >= 0 && ci >= 0) c11.push_back({ri,          ci,          k});
-                    if (ri >= 0 && cq >= 0) c12.push_back({ri,          nb_pvpq_ + cq, k});
-                    if (rq >= 0 && ci >= 0) c21.push_back({nb_pvpq_ + rq, ci,          k});
-                    if (rq >= 0 && cq >= 0) c22.push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k});
+                    if (ri >= 0 && ci >= 0) cntrb.push_back({ri,          ci,          k, dSdVa_r});
+                    if (ri >= 0 && cq >= 0) cntrb.push_back({ri,          nb_pvpq_ + cq, k, dSdVm_r});
+                    if (rq >= 0 && ci >= 0) cntrb.push_back({nb_pvpq_ + rq, ci,          k, dSdVa_i});
+                    if (rq >= 0 && cq >= 0) cntrb.push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k, dSdVm_i});
                 }
             }
 
-            return {c11, c21, c12, c22};
+            return {cntrb};
         }
 
-        void build_value_map(
-            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > J,
-            const std::vector< std::vector<Contrib> > & cijs
-        )
-        {
-            const auto & Ybus = * Ybus_ptr_;
-            const size_t nnz_Y = Ybus.nonZeros();
+        void clear_jacobian() {}
 
-            // now synch the map_j{1,2}{1,2} with the new J_ matrix
-            map_j11_.assign(nnz_Y, -1);
-            map_j12_.assign(nnz_Y, -1);
-            map_j21_.assign(nnz_Y, -1);
-            map_j22_.assign(nnz_Y, -1);
-
-            // same order as build_J_contrib
-            // int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  
-            // this would also avoid copy
-
-            for (auto& c : cijs[0]) map_j11_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
-            for (auto& c : cijs[1]) map_j21_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
-            for (auto& c : cijs[2]) map_j12_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
-            for (auto& c : cijs[3]) map_j22_[c.ybus_k] = find_J_pos(J, c.jrow, c.jcol);
-        }
-
-        void clear_jacobian()
-        {
-            dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
-            dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
-
-            map_j11_.clear();
-            map_j21_.clear();
-            map_j12_.clear();
-            map_j22_.clear();
-        }
+        const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> * Ybus_ptr() const {return Ybus_ptr_;}
 
     private:
         Eigen::VectorXi                        pv_, pq_, pvpq_;
         std::vector<int>                       pvpq_inv_, pq_inv_;
         int                                    nb_pv_, nb_pq_, nb_pvpq_;
-        Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
-        std::vector<int>                       map_j11_;
-        std::vector<int>                       map_j21_;
-        std::vector<int>                       map_j12_;
-        std::vector<int>                       map_j22_;
 
 
         // visible attribute for derived class (non owning ptr)
@@ -221,21 +195,6 @@ class LS2G_API Base
 
         int theta_size() const { return nb_pvpq_; }
         int vm_size()    const { return nb_pq_; }
-         
-        Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return dS_dVm_; }
-        Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return dS_dVa_; }
-        const std::vector<int> &          map_j11() const {return map_j11_; }
-        const std::vector<int> &          map_j21() const {return map_j21_; }
-        const std::vector<int> &          map_j12() const {return map_j12_; }
-        const std::vector<int> &          map_j22() const {return map_j22_; }
-
-        // TODO remove after refacto
-        Eigen::Ref<Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm() { return dS_dVm_; }
-        Eigen::Ref<Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa() { return dS_dVa_; }
-        std::vector<int> &          map_j11() {return map_j11_; }
-        std::vector<int> &          map_j21() {return map_j21_; }
-        std::vector<int> &          map_j12() {return map_j12_; }
-        std::vector<int> &          map_j22() {return map_j22_; }
 };
 
 // ---- Extension tag types ------------------------------------------------------
@@ -262,6 +221,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             const RealVect&                        slack_weights
         ){
             // TODO remember slack weights !
+            nr_system_base_ptr_ = nr_system_base_ptr;
         }
 
         // call after update_state
@@ -275,13 +235,12 @@ class LS2G_API MultiSlack   // distributed-slack extension
         ) {
             my_size_ = slack_ids.size();
             ref_slack_id_ = static_cast<size_t>(slack_ids[0]);
-            // pv_slack_inv =   // TODO
+            pv_slack_inv_.assign(nr_system_base_ptr_->Ybus_ptr()->cols(), -1);
             if(my_size_ > 1){
                 // real distributed slack
-                pv_slack_ = slack_ids.segment(1, my_size_ -1);  // TODO sort this
-
-            }else{
-                // only one slack provided
+                const int nb_slack_pv = my_size_ - 1;
+                pv_slack_ = slack_ids.segment(1, nb_slack_pv);  // TODO sort this
+                for (int i = 0; i < nb_slack_pv; ++i) pv_slack_inv_[pv_slack_(i)] = i;
             }
 
         }
@@ -295,11 +254,97 @@ class LS2G_API MultiSlack   // distributed-slack extension
 
         // called when topology has changed
         // after update_state, init_topology (and get_size)
-        void add_triplets(
-            size_t offset,
-            std::vector<Eigen::Triplet<real_type> >& triplets
+
+        /**
+        J has the shape:
+        
+        | J11 | J12 | S13 |                | (pvpq_base, pvpq_base) | (pvpq_base, pq) | (pvpq_base, pvslack) |
+        | --------------- |                | --------------------------------------------------------------- |
+        | J21 | J22 | S23 |  = dimensions: |    (pq, pvpq_base)     |    (pq, pq)     |    (pq, pvslack)     |
+        | --------------- |                | --------------------------------------------------------------- |
+        | S31 | S32 | S33 |                |  (pvslack, pvpq_base)  |  (pvslack, pq)  |  (pvslack, pvslack)  |
+
+        python implementation (base, not modified) :
+
+        `J11` = dS_dVa[array([pvpq]).T, pvpq].real
+        `J12` = dS_dVm[array([pvpq]).T, pq].real
+        `J21` = dS_dVa[array([pq]).T, pvpq].imag
+        `J22` = dS_dVm[array([pq]).T, pq].imag
+
+        The J_coupling is :
+
+        - `S13` = dS_dVa[array([pvpq]).T, pv_slack].real
+        - `S23` = dS_dVa[array([pq]).T, pv_slack].imag
+
+        The J_interface is :
+
+        - `S31` = dS_dVa[array([pv_slack]).T, pvpq_base].real
+        - `S32` = dS_dVm[array([pv_slack]).T, pvpq_base].real
+
+        Some part of J feature are:
+        
+        - `S33` = dS_dVa[pvslack, pvslack].real
+
+        `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
+        and dS_dVm[slack_bus_id, pq].real
+
+        `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
+        the remaining pq components are all 0.
+        **/
+        void build_J_contrib(
+            int offset,
+            std::vector<std::vector<Contrib> >& contribs
         ){
-            
+            const auto & Ybus = * nr_system_base_ptr_->Ybus_ptr();
+            const size_t nnz_Y = Ybus.nonZeros();
+
+            std::vector<Contrib> cntrb; 
+            cntrb.reserve(5 * nnz_Y);  // 5 * nnz_Y is overly pessimistic (too much memory allocated)
+
+            int c11 = 0, c21 = 1, c12 = 2, c22 = 3; // TODO have a struct for the triplets !
+
+            const std::vector<int> & pvpq_inv = nr_system_base_ptr_ ->pvpq_inv();
+            const std::vector<int> & pq_inv = nr_system_base_ptr_ ->pq_inv();
+            int nb_pvpq_base = nr_system_base_ptr_->nb_pvpq();
+
+            int k = 0;
+            for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
+                for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
+                    it(Ybus, outer); it; ++it, ++k)
+                {
+                    int i = (int)it.row(), j = (int)it.col();
+                    int ri = pvpq_inv[i], rq = pq_inv[i];
+                    int ci = pvpq_inv[j], cq = pq_inv[j];
+                    int rs = pv_slack_inv_[i];
+                    int cs = pv_slack_inv_[j];
+
+                    // adapt the base triplets (J_interface)
+                    // S13
+                    if (ri >= 0 && cs >= 0) cntrb.push_back({ri, offset + cs, k, dSdVa_r});
+                    // S23
+                    if (rq >= 0 && cs >= 0) cntrb.push_back({nb_pvpq_base + rq, offset + cs, k, dSdVa_i});
+                    
+                    // add the new columns (J_coupling)
+                    // S31
+                    if (rs >= 0 && ci >= 0){
+                        cntrb.push_back({offset + rs, ci, k, dSdVa_r});
+                    }
+                    // S32
+                    if (rs >= 0 && cq >= 0) cntrb.push_back({offset + rs, nb_pvpq_base + cq, k, dSdVm_r});
+
+                    // add the new  J feature
+                    // S33
+                    if (rs >= 0 && cs >= 0)
+                    {
+                        cntrb.push_back({offset + rs,     offset + cs, k, dSdVa_r});
+                    }
+                }
+
+            }
+            // and now add the slack equations
+
+            // now store them in a defined order
+            contribs.push_back(cntrb);
         }
 
         // can be explicitly called any time.
@@ -308,14 +353,15 @@ class LS2G_API MultiSlack   // distributed-slack extension
         // to be run.
         void clear_jacobian(){
             pv_slack_ = IntVect::Zero(0);
-            pv_slack_inv.clear();
+            pv_slack_inv_.clear();
         }
 
     private:
-        size_t my_size_;
-        size_t ref_slack_id_;
-        Eigen::VectorXi                        pv_slack_;
-        std::vector<int>                       pv_slack_inv;
+        size_t             my_size_;
+        size_t             ref_slack_id_;
+        Eigen::VectorXi    pv_slack_;
+        std::vector<int>   pv_slack_inv_;
+        const Base *       nr_system_base_ptr_;
 
 };
 
@@ -426,6 +472,14 @@ public:
         J_         = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
         base_.clear_jacobian();
         _clear_jacobian_extensions(std::make_index_sequence<sizeof...(Rest)>{});
+
+        dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+        dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
+
+        map_dsdva_r_.clear();
+        map_dsdva_i_.clear();
+        map_dsdvm_r_.clear();
+        map_dsdvm_i_.clear();
         need_full_rebuild_ = true;
     }
 
@@ -461,6 +515,11 @@ private:
     bool                                   need_full_rebuild_;
     double                                 timer_dSbus_, timer_fillJ_;
     size_t                                 nb_total_state_variables_;
+    Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
+    std::vector<int>                       map_dsdva_r_;
+    std::vector<int>                       map_dsdva_i_;
+    std::vector<int>                       map_dsdvm_r_;
+    std::vector<int>                       map_dsdvm_i_;
 
     // Holds the base things
     Base                                   base_;
@@ -484,12 +543,8 @@ protected:
     int                               nb_pq() const {return base_.nb_pq();}
     int                               nb_pvpq() const {return base_.nb_pvpq();}
     
-    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return base_.dS_dVm(); }
-    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return base_.dS_dVa(); }
-    const std::vector<int> &          map_j11() const {return base_.map_j11(); }
-    const std::vector<int> &          map_j21() const {return base_.map_j21(); }
-    const std::vector<int> &          map_j12() const {return base_.map_j12(); }
-    const std::vector<int> &          map_j22() const {return base_.map_j22(); }
+    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return dS_dVm_; }
+    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return dS_dVa_; }
 
     // TODO NR refacto
     static CplxVect _reconstruct_V(const RealVect& Va, const RealVect& Vm);
@@ -497,11 +552,54 @@ protected:
     RealVect _mismatch_core(const CplxVect& V_trial) const;
 
 
-    // protected, but might be private, I don't really know.
     void _build_value_map(
         const std::vector< std::vector<Contrib> > & cijs
-    );
+    )
+    {
+        const auto & Ybus = * Ybus_ptr_;
+        const size_t nnz_Y = Ybus.nonZeros();
 
+        // now synch the map_j{1,2}{1,2} with the new J_ matrix
+        map_dsdva_r_.assign(nnz_Y, -1);
+        map_dsdva_i_.assign(nnz_Y, -1);
+        map_dsdvm_r_.assign(nnz_Y, -1);
+        map_dsdvm_i_.assign(nnz_Y, -1);
+
+        // same order as build_J_contrib
+        // int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  
+        // this would also avoid copy
+        for(const auto& cij : cijs)
+        {
+            for (auto& c : cij)
+            {
+                switch (c.whichmat())
+                {
+                case dSdVa_r:
+                    map_dsdva_r_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
+                    break;
+                case dSdVa_i:
+                    map_dsdva_i_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
+                    break;
+                case dSdVm_r:
+                    map_dsdvm_r_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
+                    break;
+                case dSdVm_i:
+                    map_dsdvm_i_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
+                    break;
+
+                default:
+                    break;
+                }
+                
+            }
+        }
+
+        // TODO build value mapt of the extensions
+
+        // indicate it is fully initialized
+        need_full_rebuild_ = false;
+    }
+    
 private:
     // private members to combine  the extension features
     template <std::size_t... Is>
@@ -546,8 +644,8 @@ private:
     }
 
     template <std::size_t... Is>
-    void _add_triplets_extensions(
-        std::vector<Eigen::Triplet<real_type> >& triplets,
+    void _build_J_contrib_extensions(
+        std::vector<std::vector<Contrib> >& contribs,
         std::index_sequence<Is...>) {
         int current_offset = base_.get_size();
         
@@ -555,7 +653,7 @@ private:
         // inside the expansion. We use a small recursive call or a braced-init loop.
         
         int dummy[] = { 0, (
-            std::get<Is>(extensions_).add_triplets(current_offset, triplets), 
+            std::get<Is>(extensions_).build_J_contrib(current_offset, contribs), 
             current_offset += std::get<Is>(extensions_).get_size(), 
             0
         )... };
@@ -569,6 +667,7 @@ private:
             0
         )... };
     }
+
 private:
     NRSystem(const NRSystem&)            = delete;
     NRSystem(NRSystem&&)                 = delete;

@@ -8,10 +8,6 @@
 
 namespace ls2g {
 
-// =============================================================================
-//  NRSystem<> — base specialisation (single-slack, lag = 0)
-// =============================================================================
-
 // ---- Phase 1: topology init --------------------------------------------------
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::init_topology(
@@ -24,8 +20,12 @@ inline void NRSystem<Base, Rest...>::init_topology(
     // init the sparsity pattern
     // I think we don't really care about the
     // values
-    // dS_dVm_ = *Ybus_ptr_;
-    // dS_dVa_ = *Ybus_ptr_;
+    dS_dVm_ = *Ybus_ptr_;
+    dS_dVa_ = *Ybus_ptr_;
+    map_dsdva_r_.clear();
+    map_dsdva_i_.clear();
+    map_dsdvm_r_.clear();
+    map_dsdvm_i_.clear();
     
     // now init the extra features
     base_.init_topology(slack_ids, slack_weights, pv, pq);
@@ -96,7 +96,7 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     //     }
     // }
     std::vector< std::vector<Contrib> > contribs = base_.build_J_contrib();
-    // _add_triplets_extensions(contribs, std::make_index_sequence<sizeof...(Rest)>{});
+    _build_J_contrib_extensions(contribs, std::make_index_sequence<sizeof...(Rest)>{});
 
     size_t expected_size = 0;
     for(const auto & el: contribs) expected_size += el.size();
@@ -107,7 +107,7 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     // now fill the triplets
     for(const auto& cij : contribs)
     {
-        for (auto& c : cij) triplets.push_back({c.jrow, c.jcol, 0.});
+        for (auto& c : cij) triplets.push_back({c.jrow(), c.jcol(), 0.});
     }
 
     // and build the matrix
@@ -119,21 +119,6 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     _build_value_map(contribs);
 }
 
-template <typename... Rest>
-inline void NRSystem<Base, Rest...>::_build_value_map(
-    const std::vector< std::vector<Contrib> > & cijs
-)
-{
-    const int nnz_Y  = Ybus_ptr_->nonZeros();
-
-    // other members
-
-    // then base
-    base_.build_value_map(J_, cijs);
-
-    need_full_rebuild_ = false;
-}
-
 // ---- Phase 3: fill J values (fast, called every factorisation) ---------------
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::fill_J()
@@ -142,10 +127,10 @@ inline void NRSystem<Base, Rest...>::fill_J()
 
     std::tuple<int, int> ref_ = {-1, -1};
     std::vector<std::tuple<int, int> > map_pos(J_.nonZeros(), ref_);
-    const cplx_type* ds_dvm = base_.dS_dVm().valuePtr();
-    const cplx_type* ds_dva = base_.dS_dVa().valuePtr();
+    const cplx_type* ds_dvm = dS_dVm_.valuePtr();
+    const cplx_type* ds_dva = dS_dVa_.valuePtr();
     size_t i = 0;
-    for(auto & c : base_.map_j11()){
+    for(auto & c : map_dsdva_r_){
         if(c == -1){
             // coeff of J11 not used in J
             i++;
@@ -156,7 +141,7 @@ inline void NRSystem<Base, Rest...>::fill_J()
     }
 
     i = 0;
-    for(auto & c : base_.map_j21()){
+    for(auto & c : map_dsdva_i_){
         if(c == -1){
             // coeff of J21 not used in J
             i++;
@@ -167,7 +152,7 @@ inline void NRSystem<Base, Rest...>::fill_J()
     }
 
     i = 0;
-    for(auto & c : base_.map_j12()){
+    for(auto & c : map_dsdvm_r_){
         if(c == -1){
             // coeff of J12 not used in J
             i++;
@@ -178,7 +163,7 @@ inline void NRSystem<Base, Rest...>::fill_J()
     }
 
     i = 0;
-    for(auto & c : base_.map_j22()){
+    for(auto & c : map_dsdvm_i_){
         if(c == -1){
             // coeff of J22 not used in J
             i++;
@@ -200,8 +185,8 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
     const CplxVect Ibus  = Ybus * V_;
     const CplxVect conjIbus_Vnorm = Ibus.array().conjugate() * Vnorm.array();
 
-    cplx_type * ds_dvm_val_ptr = base_.dS_dVm().valuePtr();
-    cplx_type * ds_dva_val_ptr = base_.dS_dVa().valuePtr();
+    cplx_type * ds_dvm_val_ptr = dS_dVm_.valuePtr();
+    cplx_type * ds_dva_val_ptr = dS_dVa_.valuePtr();
 
     size_t pos = 0;
     for (size_t col_id = 0; col_id < size_dS; ++col_id) {
