@@ -52,14 +52,14 @@ class JacobianMultiSlackTester(unittest.TestCase):
         return np.concatenate(
             (
                 [22],  # slack
-                [21, 20],  # pv_slack
+                [20, 21],  # pv_slack
                 np.arange(20)  # rest (pv_base, pq, pq)
                 )
             ).reshape(-1,1)
     
     def _aux_test_iter(self, iter):
         cls = type(self)
-        ref_J = cls.res[f"{iter}"]["J"]
+        ref_J = cls.res[f"{iter}"]["J"].copy()
         
         self.nr_algo.compute_pf(
             cls.res["init_state"]["Ybus"],
@@ -74,14 +74,27 @@ class JacobianMultiSlackTester(unittest.TestCase):
         J_wrong_order = self.nr_algo.get_J()
         if ref_J.shape[0] > 0:
             assert J_wrong_order.shape == ref_J.shape, f"error for iter {iter}: J.shape = {J_wrong_order.shape} != {ref_J.shape}"
-            # assert J_wrong_order.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J_wrong_order.nnz} != {ref_J.nnz}"
-                        
+            assert J_wrong_order.nnz == ref_J.nnz, f"error for iter {iter}: J.nnz = {J_wrong_order.nnz} != {ref_J.nnz}"
+            
+            ref_J_data = ref_J.data.copy()
+            J_data = J_wrong_order.data.copy()
+            ref_J_data.sort()
+            J_data.sort()
+            assert np.abs(ref_J_data - J_data).max()<= 1e-6, f"wrong sorted data between J and ref_J, {(np.abs(ref_J_data - J_data) >= 1e-6).nonzero()[0]}"
+            
             # J is csc !
-            J = J_wrong_order[self.new_to_old_indexes().T, self.new_to_old_indexes()]
-            assert (J.indices == ref_J.indices).all(), f"error for iter {iter}: J.indices = {J.indices} != {ref_J.indices}"
+            J_for_copy = J_wrong_order.copy()
+            J_for_copy.data[np.abs(J_for_copy.data) < 1e-15] = 0.  # remove too small element, might differ in ref_J
+            J = J_for_copy[self.new_to_old_indexes().T, self.new_to_old_indexes()]
+            # I do the following because apparently this removes the 0. coeff from original matrices
+            # and I i remove this from J_wrong_order, I need to remove them from J too.
+            ref_J.data[np.abs(ref_J.data) < 1e-15] = 0. # ok if this is not exactly the same at this precision...
+            init_index = np.arange(ref_J.shape[0]).reshape(-1,1)
+            ref_J = ref_J[init_index.T, init_index].copy()
             assert (J.indptr == ref_J.indptr).all(), f"error for iter {iter}: J.indptr = {J.indptr} != {ref_J.indptr}"
+            assert (J.indices == ref_J.indices).all(), f"error for iter {iter}: J.indices = {(J.indices != ref_J.indices).nonzero()[0]}"
             if J.shape[0] > 0:
-                assert np.abs(J - cls.res[f"{iter}"]["J"]).max() <= 1e-6, f"error for iter {iter}: {np.abs(J - ref_J).max()}"
+                assert np.abs(J - ref_J).max() <= 1e-6, f"error for iter {iter}: {np.abs(J - ref_J).max()}"
             
         V = self.nr_algo.get_V()
         assert V.shape == cls.res[f"{iter}"]["V"].shape, f"error for iter {iter}: V.shape = {V.shape} != {cls.res[f'{iter}']['V'].shape}"
@@ -116,4 +129,4 @@ class JacobianSingleSlackTester(JacobianMultiSlackTester):
         """
         No changes for single slack atm
         """
-        return np.arange(22).reshape(1,-1)
+        return np.arange(22).reshape(-1,1)
