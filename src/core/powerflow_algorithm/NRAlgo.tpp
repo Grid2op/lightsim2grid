@@ -63,15 +63,17 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         timer_total_nr_ += timer.duration();
         return false;
     }
-
+    // std::cout << "Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).\n";
     // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
     _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
 
     // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
+    // std::cout << "Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).\n";
     if (need_rebuild)
         _system.init_topology(slack_ids, slack_weights, pv, pq);
 
     // Phase 2: rebuild J sparsity + value_map, then initialize linear solver.
+    // std::cout << "Phase 2: rebuild J sparsity + value_map, then initialize linear solver.\n";
     bool need_init = need_rebuild;
     if (need_rebuild) {
         _system.build_J_sparsity();
@@ -89,11 +91,15 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
     while ((!converged) & (nr_iter_ < max_iter)) {
         nr_iter_++;
+        // std::cout << "=================================\n";
+        // std::cout << "start iter " << nr_iter_ << std::endl;
 
         need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
+            // std::cout << "fill_internal_variables\n";
             _system.fill_internal_variables();
+            // std::cout << "fill_J\n";
             _system.fill_J();
 
             if (need_init) {
@@ -112,20 +118,28 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         }
 
         // Solve J * dx = F  (F = mismatch, negated convention; F overwritten with dx)
+        // std::cout << "_linear_solver.solve(F);\n";
         {
             auto timer_s = CustTimer();
             err_ = _linear_solver.solve(F);
             timer_solve_ += timer_s.duration();
         }
-        if (err_ != ErrorType::NoError) { res = false; break; }
+        if (err_ != ErrorType::NoError) { 
+            
+            std::cout << "err_ " << err_ << std::endl;
+            res = false; break;
+        }
 
         // Apply scaling policy (runtime dispatch)
+        // std::cout << "scaling_policy_->scale(_system, F);\n";
         real_type coeff = scaling_policy_->scale(_system, F);
         auto timer_va_vm = CustTimer();
+        // std::cout << "apply_step(coeff * F)\n";
         _system.apply_step(coeff * F);
         timer_Va_Vm_ += timer_va_vm.duration();
 
         // New mismatch
+        // std::cout << "mismatch\n";
         F = _system.mismatch();
         if (!F.allFinite()) { err_ = ErrorType::InifiniteValue; break; }
         converged = _check_for_convergence(F, tol);
@@ -145,6 +159,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     V   = V_;
 
     // Propagate NRSystem timers to NRAlgo
+    // std::cout << "timers\n";
     timer_dSbus_ += _system.timer_dSbus();
     timer_fillJ_ += _system.timer_fillJ();
     _system.reset_timers();

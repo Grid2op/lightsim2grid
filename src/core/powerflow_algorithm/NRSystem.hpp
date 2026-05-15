@@ -255,6 +255,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             // TODO: sort the slack_ids
             // TODO take the last slack (easier to fill the J matrix !)
             ref_slack_id_ = static_cast<size_t>(slack_ids[0]);
+            slack_ids_ = slack_ids;
             pv_slack_inv_.assign(nr_system_base_ptr_->Ybus_ptr()->cols(), -1);
             if(my_size_ > 1){
                 // real distributed slack
@@ -381,12 +382,19 @@ class LS2G_API MultiSlack   // distributed-slack extension
 
                     // add ref slack equations
                     if (i == ref_slack_id_){
-                        // slack P wrt theta pvpq
-                        if(ci >= 0) cntrb.push_back({offset + my_size, ci, k, dSdVa_r});
-                        // slack P wrt Vm pq
-                        if(cq >= 0) cntrb.push_back({offset + my_size, nb_pvpq_base + cq, k, dSdVm_r});
-                        // slack P wrt theta pvslack
-                        if(cs >= 0) cntrb.push_back({offset + my_size, offset + cs, k, dSdVa_r});
+                        // ref slack P wrt theta pvpq
+                        if(ci >= 0) {
+                            cntrb.push_back({offset + my_size - 1, ci, k, dSdVa_r});
+                        }
+                        // ref slack P wrt Vm pq
+                        if(cq >= 0){
+                            cntrb.push_back({offset + my_size - 1, nb_pvpq_base + cq, k, dSdVm_r});
+                        }
+                        // ref slack P wrt theta pvslack
+                        if(cs >= 0)
+                        {
+                            cntrb.push_back({offset + my_size - 1, offset + cs, k, dSdVa_r});
+                        }
                     }
                 }
 
@@ -395,7 +403,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             // 0 for pvpq, pq and the slack weights for pvslack
             for(size_t i = 0; i < my_size_; ++i)
             {
-                cntrb.push_back({offset + static_cast<int>(i), offset + my_size, -1, NotIndSdV});
+                cntrb.push_back({offset + static_cast<int>(i), offset + my_size - 1, -1, NotIndSdV});
             }
 
             // now store them in a defined order
@@ -428,12 +436,12 @@ class LS2G_API MultiSlack   // distributed-slack extension
             for(size_t i = 0; i < my_size_ - 1; ++i)
             {
                 // other slack (non ref)
-                map_dist_slack_[i + 1] = Base::find_J_pos(Jacobian, my_offset_ + i, my_offset_ + my_size_);
+                map_dist_slack_[i + 1] = Base::find_J_pos(Jacobian, my_offset_ + i, my_offset_ + (my_size_ - 1));
                 // the [i+1] = XXX(my_offset_ + i, ...) (and not i+1) is volontary
                 // because the first slack bus is taken as the ref slack.
             }
             // ref slack (first one)
-            map_dist_slack_[0] = Base::find_J_pos(Jacobian, my_offset_, my_offset_ + my_size_);
+            map_dist_slack_[0] = Base::find_J_pos(Jacobian, my_offset_ + (my_size_ - 1), my_offset_ + (my_size_ - 1));
         }
 
 
@@ -445,6 +453,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             my_size_ = 0;
             ref_slack_id_ = 0;
             my_offset_ = 0;
+            slack_ids_ = IntVect::Zero(0);
             pv_slack_ = IntVect::Zero(0);
             pv_slack_inv_.clear();
             nr_system_base_ptr_ = nullptr;
@@ -457,7 +466,15 @@ class LS2G_API MultiSlack   // distributed-slack extension
         // etc. have been properly called.
         void fill_J(Eigen::Ref<Eigen::SparseMatrix<real_type, Eigen::ColMajor> > Jacobian) const
         {
-            // TODO
+            size_t i = 0;
+            for(auto & c : map_dist_slack_){
+                if(c == -1){
+                    i++;
+                    continue;
+                }
+                Jacobian.valuePtr()[c] = slack_weights_(slack_ids_(i));
+                i++;
+            }
 
         }
 
@@ -465,6 +482,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
         size_t             my_size_;
         size_t             ref_slack_id_;
         size_t             my_offset_;
+        Eigen::VectorXi    slack_ids_;
         Eigen::VectorXi    pv_slack_;
         std::vector<int>   pv_slack_inv_;
         const Base *       nr_system_base_ptr_;
@@ -702,7 +720,7 @@ protected:
             }
         }
 
-        // TODO build value map of the extensions
+        // build value map of the extensions
         _build_value_map_extensions(cijs, std::make_index_sequence<sizeof...(Rest)>{});
 
         // indicate it is fully initialized
@@ -783,7 +801,7 @@ private:
         const std::vector< std::vector<Contrib> > & cijs,
         std::index_sequence<Is...>
     ) {
-        size_t current_id = 1;  // nothing for base
+        size_t current_id = 1;  // nothing for base, so assigned to 1
         int dummy[] = { 0, (
             std::get<Is>(extensions_).build_value_map(J_, cijs[current_id]), 
             current_id += 1, 

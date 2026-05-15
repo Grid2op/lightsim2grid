@@ -102,6 +102,7 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
 
     size_t expected_size = 0;
     for(const auto & el: contribs) expected_size += el.size();
+    // std::cout << "\texpected_size " << expected_size << std::endl;
     // reserve enough space
     std::vector<Eigen::Triplet<real_type> > triplets;
     triplets.reserve(expected_size);
@@ -109,15 +110,23 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
     // now fill the triplets
     for(const auto& cij : contribs)
     {
-        for (auto& c : cij) triplets.push_back({c.jrow(), c.jcol(), 0.});
+        for (auto& c : cij)
+        {
+            triplets.push_back({c.jrow(), c.jcol(), 0.});
+            // if((c.jrow() >= 23) || (c.jcol() >= 23)){
+            //     std::cout << "\t error in NRSystem.tpp: " << c.jrow() << " " << c.jcol() << std::endl;
+            // }
+        }
     }
 
     // and build the matrix
+    // std::cout << "and build the matrix, dim_J: " << dim_J << std::endl;
     J_.resize(dim_J, dim_J);
     J_.setFromTriplets(triplets.begin(), triplets.end());
     J_.makeCompressed();
 
     // and finally build the value maps
+    // std::cout << "_build_value_map " << std::endl;
     _build_value_map(contribs);  // will call build_value_map_extensions
 }
 
