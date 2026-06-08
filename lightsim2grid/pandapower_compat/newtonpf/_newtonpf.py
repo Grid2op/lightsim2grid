@@ -331,7 +331,22 @@ def newtonpf_new(Ybus, Sbus, V0, ref, pv, pq, ppci, options):
         warnings.warn("You are using a pandapower version that does not support distributed slack. We will attempt to "
                       "replicate this with lightsim2grid.")
         ref, slack_weights = _isolate_slack_ids(Sbus, pv, pq)
-    
+
+    # sanity check (distributed slack): every bus carrying a non-zero slack weight
+    # MUST be tagged as a slack bus (i.e. be part of `ref`). Otherwise the
+    # distributed-slack Jacobian built by lightsim2grid is inconsistent with the
+    # power mismatch: the absorbed slack is spread onto every weighted bus, so a
+    # weighted bus left in pv/pq would miss its coupling entry in the slack column
+    # and the solver would silently fail to converge.
+    weighted_buses = np.nonzero(np.abs(slack_weights) > 1e-7)[0]
+    untagged_buses = np.setdiff1d(weighted_buses, np.asarray(ref).reshape(-1))
+    if untagged_buses.size:
+        raise ValueError(
+            f"newtonpf_new: buses {untagged_buses.tolist()} carry a non-zero slack weight "
+            "but are not tagged as slack buses (they are absent from `ref`). Every bus with "
+            "a non-zero slack weight must be declared as a slack bus."
+        )
+
     # initialize the solver and perform some sanity checks
     solver = _get_valid_solver(options, Ybus)
     
