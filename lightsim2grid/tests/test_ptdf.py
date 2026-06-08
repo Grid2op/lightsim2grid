@@ -33,7 +33,7 @@ class TestCase14SLU(unittest.TestCase):
             self.gridmodel = init_from_pandapower(self.case)
         self.V_init = 1. * self.gridmodel.get_bus_vn_kv()
         solver_type = self.get_algo_type()
-        if solver_type not in self.gridmodel.available_algorithms():
+        if solver_type not in self.gridmodel.available_algorithm_names():
             self.skipTest("Solver type not supported on this platform")
         self.gridmodel.change_algorithm(solver_type)
         V = self.gridmodel.dc_pf(self.V_init, 1, 1e-8)

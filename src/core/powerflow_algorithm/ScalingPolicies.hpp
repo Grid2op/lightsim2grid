@@ -67,16 +67,15 @@ class LS2G_API MaxVoltageChangeScalingPolicy final : public ScalingPolicy<NRSyst
         virtual real_type scale(const NRSystem& system, const RealVect & F) final
         {
             real_type alpha = static_cast<real_type>(1.0);
-            if (system.theta_size() > 0) {
-                const real_type max_abs_dtheta = system.theta(F).array().abs().maxCoeff();
-                if (max_abs_dtheta > max_dVa_)
-                    alpha = std::min(alpha, max_dVa_ / max_abs_dtheta);
-            }
-            if (system.vm_size() > 0) {
-                const real_type max_abs_dvm = system.vm(F).array().abs().maxCoeff();
-                if (max_abs_dvm > max_dVm_)
-                    alpha = std::min(alpha, max_dVm_ / max_abs_dvm);
-            }
+            // max_abs_dtheta / max_abs_dvm account for both the base block and any
+            // extension angle / voltage-magnitude state variables (which may be
+            // non-contiguous in the global step vector).
+            const real_type max_abs_dtheta = system.max_abs_dtheta(F);
+            if (max_abs_dtheta > max_dVa_)
+                alpha = std::min(alpha, max_dVa_ / max_abs_dtheta);
+            const real_type max_abs_dvm = system.max_abs_dvm(F);
+            if (max_abs_dvm > max_dVm_)
+                alpha = std::min(alpha, max_dVm_ / max_abs_dvm);
             return alpha;
         }
 

@@ -210,6 +210,19 @@ class LS2G_API Base
 
         int theta_size() const { return nb_pvpq_; }
         int vm_size()    const { return nb_pq_; }
+
+        // fill the base residual rows (negated mismatch) into the
+        // segment [0, get_size()) of the global residual vector.
+        // real_ / imag_ are the per-bus real / imaginary parts of the
+        // complex power mismatch (V .* conj(Ybus V) - Sbus).
+        void fill_mismatch(Eigen::Ref<RealVect> res,
+                           const RealVect& real_,
+                           const RealVect& imag_) const
+        {
+            res.segment(0,                  nb_pv_) = -real_(pv_);
+            res.segment(nb_pv_,             nb_pq_) = -real_(pq_);
+            res.segment(nb_pv_ + nb_pq_,    nb_pq_) = -imag_(pq_);
+        }
 };
 
 // ---- Extension tag types ------------------------------------------------------
@@ -240,6 +253,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
             // TODO remember slack weights !
             nr_system_base_ptr_ = nr_system_base_ptr;
             slack_weights_ = slack_weights;
+            // initial slack absorbed (see MultiSlackPolicy::initial_slack_absorbed)
+            slack_absorbed_ = std::real(Sbus.sum());
         }
 
         // call after update_state
@@ -458,6 +473,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
             pv_slack_inv_.clear();
             nr_system_base_ptr_ = nullptr;
             slack_weights_ = RealVect::Zero(0);
+            slack_absorbed_ = static_cast<real_type>(0.);
             map_dist_slack_.clear();
         }
 
@@ -478,6 +494,53 @@ class LS2G_API MultiSlack   // distributed-slack extension
 
         }
 
+        // ---- NR primitive hooks (composed by NRSystem) ----------------------
+        // All hooks operate on this extension's own slice of the global vectors:
+        //   dx_ext == dx.segment(offset, my_size_), laid out as
+        //   [ pv_slack angles (my_size_ - 1) | slack_absorbed (1) ].
+
+        // permanent application (apply_step): pv_slack angles + commit slack_absorbed_
+        void apply_step(Eigen::Ref<const RealVect> dx_ext, RealVect& Va, RealVect& /*Vm*/)
+        {
+            if (my_size_ > 1) Va(pv_slack_) += dx_ext.segment(0, my_size_ - 1);
+            slack_absorbed_ += dx_ext(static_cast<int>(my_size_) - 1);
+        }
+
+        // trial voltages only (used by _compute_trial_V; does not mutate ext state)
+        void apply_trial_voltages(Eigen::Ref<const RealVect> dx_ext, RealVect& Va, RealVect& /*Vm*/) const
+        {
+            if (my_size_ > 1) Va(pv_slack_) += dx_ext.segment(0, my_size_ - 1);
+        }
+
+        // adjust the per-bus complex power mismatch by (slack_absorbed + dx step) * slack_weights
+        void adjust_mismatch(Eigen::Ref<const RealVect> dx_ext, CplxVect& mis) const
+        {
+            const real_type sa = slack_absorbed_ + dx_ext(static_cast<int>(my_size_) - 1);
+            mis.array() += (sa * slack_weights_.array()).template cast<cplx_type>();
+        }
+
+        // fill this extension's residual rows (negated mismatch) into res_ext
+        // (== res.segment(offset, my_size_)):
+        //   [ -real(pv_slack) (my_size_ - 1) | -real(ref_slack) (1) ]
+        void fill_mismatch(Eigen::Ref<RealVect> res_ext,
+                           const RealVect& real_,
+                           const RealVect& /*imag_*/) const
+        {
+            if (my_size_ > 1) res_ext.segment(0, my_size_ - 1) = -real_(pv_slack_);
+            res_ext(static_cast<int>(my_size_) - 1) = -real_(static_cast<int>(ref_slack_id_));
+        }
+
+        // scaling reductions over this extension's slice (max |step|)
+        real_type max_abs_dtheta(Eigen::Ref<const RealVect> dx_ext) const
+        {
+            return (my_size_ > 1) ? dx_ext.segment(0, my_size_ - 1).array().abs().maxCoeff()
+                                  : static_cast<real_type>(0.);
+        }
+        real_type max_abs_dvm(Eigen::Ref<const RealVect> /*dx_ext*/) const
+        {
+            return static_cast<real_type>(0.);
+        }
+
     private:
         size_t             my_size_;
         size_t             ref_slack_id_;
@@ -487,6 +550,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
         std::vector<int>   pv_slack_inv_;
         const Base *       nr_system_base_ptr_;
         RealVect           slack_weights_;  // size: nb_bus
+        real_type          slack_absorbed_;
         std::vector<int>   map_dist_slack_;
 
 };
@@ -618,8 +682,28 @@ public:
     size_t total_state_variables() const {return nb_total_state_variables_;}
 
     // ----- Size / segment accessors ---------------------------
+    // theta_size()/vm_size()/theta()/vm() describe the BASE block only
+    // ([0, theta_size()) and [theta_size(), theta_size()+vm_size())). They are
+    // used internally to slice the base part of dx. They do NOT account for
+    // extension state variables (which may be non-contiguous in the global
+    // vector); scaling policies must use max_abs_dtheta()/max_abs_dvm() instead.
     int theta_size() const { return base_.theta_size(); }
     int vm_size()    const { return base_.vm_size(); }
+
+    // ----- Scaling reductions (base + extensions) -----------------------------
+    // max |angle step| / max |voltage-magnitude step| across all state variables.
+    real_type max_abs_dtheta(const RealVect& dx) const {
+        real_type m = static_cast<real_type>(0.);
+        if (theta_size() > 0) m = theta(dx).array().abs().maxCoeff();
+        _reduce_dtheta_extensions(dx, m, std::make_index_sequence<sizeof...(Rest)>{});
+        return m;
+    }
+    real_type max_abs_dvm(const RealVect& dx) const {
+        real_type m = static_cast<real_type>(0.);
+        if (vm_size() > 0) m = vm(dx).array().abs().maxCoeff();
+        _reduce_dvm_extensions(dx, m, std::make_index_sequence<sizeof...(Rest)>{});
+        return m;
+    }
 
     // Core state vector segments: theta first, then vm, then extension variables.
     RealVect::SegmentReturnType      theta(RealVect& x)       const { return x.segment(0, theta_size()); }
@@ -675,7 +759,9 @@ protected:
     // TODO NR refacto
     static CplxVect _reconstruct_V(const RealVect& Va, const RealVect& Vm);
     CplxVect _compute_trial_V(const RealVect& dx) const;
-    RealVect _mismatch_core(const CplxVect& V_trial) const;
+    // assemble the (negated) residual at trial voltages V_t; dx is the step that
+    // produced V_t (used by extensions that carry extra state, e.g. slack absorbed).
+    RealVect _residual(const CplxVect& V_t, const RealVect& dx) const;
 
 
     void _build_value_map(
@@ -811,9 +897,89 @@ private:
 
     template <std::size_t... Is>
     void _fill_J_extensions(
-        std::index_sequence<Is...>) {                
+        std::index_sequence<Is...>) {
         int dummy[] = { 0, (
             std::get<Is>(extensions_).fill_J(J_),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    // ---- NR primitive fold helpers (offset starts after the base block) ------
+
+    template <std::size_t... Is>
+    void _apply_step_extensions(const RealVect& dx, RealVect& Va, RealVect& Vm,
+                                std::index_sequence<Is...>) {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).apply_step(
+                dx.segment(current_offset, std::get<Is>(extensions_).get_size()), Va, Vm),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    template <std::size_t... Is>
+    void _apply_trial_voltages_extensions(const RealVect& dx, RealVect& Va, RealVect& Vm,
+                                          std::index_sequence<Is...>) const {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).apply_trial_voltages(
+                dx.segment(current_offset, std::get<Is>(extensions_).get_size()), Va, Vm),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    template <std::size_t... Is>
+    void _adjust_mismatch_extensions(const RealVect& dx, CplxVect& mis,
+                                     std::index_sequence<Is...>) const {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).adjust_mismatch(
+                dx.segment(current_offset, std::get<Is>(extensions_).get_size()), mis),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    template <std::size_t... Is>
+    void _fill_mismatch_extensions(RealVect& res, const RealVect& real_, const RealVect& imag_,
+                                   std::index_sequence<Is...>) const {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).fill_mismatch(
+                res.segment(current_offset, std::get<Is>(extensions_).get_size()), real_, imag_),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    template <std::size_t... Is>
+    void _reduce_dtheta_extensions(const RealVect& dx, real_type& m,
+                                   std::index_sequence<Is...>) const {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            m = std::max(m, std::get<Is>(extensions_).max_abs_dtheta(
+                dx.segment(current_offset, std::get<Is>(extensions_).get_size()))),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    template <std::size_t... Is>
+    void _reduce_dvm_extensions(const RealVect& dx, real_type& m,
+                                std::index_sequence<Is...>) const {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            m = std::max(m, std::get<Is>(extensions_).max_abs_dvm(
+                dx.segment(current_offset, std::get<Is>(extensions_).get_size()))),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
             0
         )... };
         (void) dummy;

@@ -228,18 +228,23 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
 template <typename... Rest>
 inline RealVect NRSystem<Base, Rest...>::mismatch() const
 {
-    return _mismatch_core(V_);
+    // current state: no step (dx == 0), residual evaluated at V_
+    return _residual(V_, RealVect::Zero(total_state_variables()));
 }
 
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
 {
+    // base block: theta at pv/pq, vm at pq
     if (base_.nb_pv() > 0)
         Va_(base_.pv()) += theta(dx).segment(0, base_.nb_pv());
     if (base_.nb_pq() > 0) {
         Va_(base_.pq()) += theta(dx).segment(base_.nb_pv(), base_.nb_pq());
         Vm_(base_.pq()) += vm(dx);
     }
+    // extension blocks: e.g. pv_slack angles + slack absorbed
+    _apply_step_extensions(dx, Va_, Vm_, std::make_index_sequence<sizeof...(Rest)>{});
+
     V_ = _reconstruct_V(Va_, Vm_);
     if (Vm_.minCoeff() < static_cast<real_type>(0.)) {
         Vm_ = V_.array().abs();
@@ -250,7 +255,7 @@ inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
 template <typename... Rest>
 inline real_type NRSystem<Base, Rest...>::mismatch_sq_norm_at(const RealVect& dx) const
 {
-    return _mismatch_core(_compute_trial_V(dx)).squaredNorm();
+    return _residual(_compute_trial_V(dx), dx).squaredNorm();
 }
 
 template <typename... Rest>
@@ -271,21 +276,26 @@ inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const RealVect& dx) co
         Va_t(base_.pq()) += theta(dx).segment(base_.nb_pv(), base_.nb_pq());
         Vm_t(base_.pq()) += vm(dx);
     }
+    // extension blocks may also carry angle state (e.g. pv_slack)
+    _apply_trial_voltages_extensions(dx, Va_t, Vm_t, std::make_index_sequence<sizeof...(Rest)>{});
     return _reconstruct_V(Va_t, Vm_t);
 }
 
 template <typename... Rest>
-inline RealVect NRSystem<Base, Rest...>::_mismatch_core(const CplxVect& V_trial) const
+inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const RealVect& dx) const
 {
-    auto mis = V_trial.array() * (*Ybus_ptr_ * V_trial).array().conjugate()
-               - Sbus_ptr_->array();
+    // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus
+    CplxVect mis = V_t.array() * (*Ybus_ptr_ * V_t).array().conjugate()
+                   - Sbus_ptr_->array();
+    // extensions adjust the complex injection (e.g. + slack_absorbed * slack_weights)
+    _adjust_mismatch_extensions(dx, mis, std::make_index_sequence<sizeof...(Rest)>{});
+
     const RealVect real_ = mis.real();
     const RealVect imag_ = mis.imag();
 
-    RealVect res(base_.get_size());
-    res.segment(0,               base_.nb_pv()) = -real_(base_.pv());
-    res.segment(base_.nb_pv(),          base_.nb_pq()) = -real_(base_.pq());
-    res.segment(base_.nb_pv() + base_.nb_pq(), base_.nb_pq()) = -imag_(base_.pq());
+    RealVect res(total_state_variables());
+    base_.fill_mismatch(res.segment(0, base_.get_size()), real_, imag_);
+    _fill_mismatch_extensions(res, real_, imag_, std::make_index_sequence<sizeof...(Rest)>{});
     return res;
 }
 
