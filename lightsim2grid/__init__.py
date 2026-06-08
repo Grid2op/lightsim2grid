@@ -15,7 +15,7 @@ __all__ = [
     "algorithm",
     "solver",
     "compilation_options",
-    "load_solver_plugin",
+    "load_algorithm_plugin",
     "get_include",
     "get_cmake_dir"]
 
