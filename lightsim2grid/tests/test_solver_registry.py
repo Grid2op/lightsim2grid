@@ -71,7 +71,7 @@ class TestStringOverload(unittest.TestCase):
 
     def test_change_solver_string_dc(self):
         gm = _make_grid()
-        gm.change_algorithm("DC")
+        gm.change_algorithm("DC_SparseLU")
         self.assertEqual(gm.get_dc_solver_type(), AlgorithmType.DC_SparseLU)
 
     def test_change_solver_unknown_name_raises(self):
@@ -85,7 +85,7 @@ class TestAvailableSolvers(unittest.TestCase):
 
     def test_available_solvers_returns_list(self):
         gm = _make_grid()
-        solvers = gm.available_algorithms()
+        solvers = gm.available_algorithm_names()
         self.assertIsInstance(solvers, list)
         self.assertIn(AlgorithmType.NR_SparseLU, solvers)
         self.assertIn(AlgorithmType.DC_SparseLU, solvers)
@@ -95,14 +95,14 @@ class TestAvailableSolvers(unittest.TestCase):
         names = gm.available_solver_names()
         self.assertIsInstance(names, list)
         self.assertTrue(all(isinstance(n, str) for n in names))
-        self.assertIn("SparseLU", names)
-        self.assertIn("DC", names)
+        self.assertIn("NR_SparseLU", names)
+        self.assertIn("DC_SparseLU", names)
 
     def test_available_solver_names_covers_available_solvers(self):
         """Every enum returned by available_solvers() must have a string counterpart."""
         gm = _make_grid()
         names = set(gm.available_solver_names())
-        for st in gm.available_algorithms():
+        for st in gm.available_algorithm_names():
             # Convert AlgorithmType to its string name by checking all known names
             gm2 = _make_grid()
             gm2.change_algorithm(st)
@@ -130,12 +130,12 @@ class TestKLUSolver(unittest.TestCase):
 
     def test_change_to_klu_by_string(self):
         gm = _make_grid()
-        gm.change_algorithm("KLU")
+        gm.change_algorithm("NR_KLU")
         self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_KLU)
 
     def test_klu_in_available_solver_names(self):
         gm = _make_grid()
-        self.assertIn("KLU", gm.available_solver_names())
+        self.assertIn("NR_KLU", gm.available_solver_names())
 
 
 class TestPluginLoading(unittest.TestCase):
