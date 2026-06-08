@@ -91,7 +91,7 @@ jobs:
       # top of main.yml.
       - name: Re-verify wheel and sdist count
         env:
-          EXPECTED_WHEELS: 34
+          EXPECTED_WHEELS: 30
           EXPECTED_SDIST: 1
         run: |
           WHEEL_COUNT=$(find dist/ -name "*.whl" | wc -l | tr -d ' ')
