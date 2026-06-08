@@ -247,10 +247,10 @@ inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
 {
     // base block: theta at pv/pq, vm at pq
     if (base_.nb_pv() > 0)
-        Va_(base_.pv()) += theta(dx).segment(0, base_.nb_pv());
+        Va_(base_.pv()) += theta_base(dx).segment(0, base_.nb_pv());
     if (base_.nb_pq() > 0) {
-        Va_(base_.pq()) += theta(dx).segment(base_.nb_pv(), base_.nb_pq());
-        Vm_(base_.pq()) += vm(dx);
+        Va_(base_.pq()) += theta_base(dx).segment(base_.nb_pv(), base_.nb_pq());
+        Vm_(base_.pq()) += vm_base(dx);
     }
     // extension blocks: e.g. pv_slack angles + slack absorbed
     _apply_step_extensions(dx, Va_, Vm_, std::make_index_sequence<sizeof...(Rest)>{});
@@ -279,12 +279,13 @@ inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const RealVect& Va, cons
 template <typename... Rest>
 inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const RealVect& dx) const
 {
+    // TODO check that dx has the proper size
     RealVect Va_t = Va_;
     RealVect Vm_t = Vm_;
-    if (base_.nb_pv() > 0) Va_t(base_.pv()) += theta(dx).segment(0, base_.nb_pv());
+    if (base_.nb_pv() > 0) Va_t(base_.pv()) += theta_base(dx).segment(0, base_.nb_pv());
     if (base_.nb_pq() > 0) {
-        Va_t(base_.pq()) += theta(dx).segment(base_.nb_pv(), base_.nb_pq());
-        Vm_t(base_.pq()) += vm(dx);
+        Va_t(base_.pq()) += theta_base(dx).segment(base_.nb_pv(), base_.nb_pq());
+        Vm_t(base_.pq()) += vm_base(dx);
     }
     // extension blocks may also carry angle state (e.g. pv_slack)
     _apply_trial_voltages_extensions(dx, Va_t, Vm_t, std::make_index_sequence<sizeof...(Rest)>{});
