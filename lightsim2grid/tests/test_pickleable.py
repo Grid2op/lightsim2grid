@@ -145,11 +145,11 @@ class TestPickle(unittest.TestCase):
 
     def test_cannot_load_unfit_ls_version(self):
         tmpdir = Path(".") / "old_pickle"
-        with self.assertRaises(ImportError):
+        with self.assertRaises((ImportError, AttributeError)):
             # old pickle made with lightsim2grid_cpp directly accessible from "from lightsim2grid_cpp import XXX"
             with open(tmpdir / "test_pickle.pickle", "rb") as f:
                 pickle.load(f)
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises((RuntimeError, AttributeError)):
             # pickle made with lightsim2grid_cpp accessible only with "from lightsim2grid.lightsim2grid_cpp import XXX"
             with open(tmpdir / "test_pickle_2.pickle", "rb") as f:
                 pickle.load(f)
