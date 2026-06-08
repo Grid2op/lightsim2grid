@@ -145,7 +145,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install, numpy < 2)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
@@ -158,7 +158,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -181,7 +181,7 @@ jobs:
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python3 -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python3 -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python3 -c "from lightsim2grid.network import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp313' # pandapower does not support 3.13, so grid2op does not so I cannot test that for 3.13
@@ -295,7 +295,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install, numpy < 2)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38' && matrix.python.name != 'cp313' && matrix.python.name != 'cp314'
@@ -308,7 +308,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
           python3 -m pip install --upgrade numpy
 
       - name: Check LightSimBackend can be imported (with grid2op)
@@ -322,7 +322,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python -c "from lightsim2grid.network import init_from_pandapower"
           
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp314' # pandapower does not support 3.14, so grid2op does not so I cannot test that for 3.14
@@ -447,7 +447,7 @@ jobs:
           python -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python -c "from lightsim2grid.gridmodel import GridModel"
+          python -c "from lightsim2grid.network import LSGrid"
 
       - name: Check package can be imported (bare install)
         if: matrix.python.name != 'cp37' && matrix.python.name != 'cp38'
@@ -459,7 +459,7 @@ jobs:
           python3 -c "from lightsim2grid.timeSerie import TimeSeriesCPP"
           python3 -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP"
           python3 -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP"
-          python3 -c "from lightsim2grid.gridmodel import GridModel"
+          python3 -c "from lightsim2grid.network import LSGrid"
       
       - name: Fix urllib3 (python 3.7)
         if: matrix.python.name == 'cp37'
@@ -486,7 +486,7 @@ jobs:
           python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysis"
           python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
           python -c "from lightsim2grid.securityAnalysis import SecurityAnalysis"
-          python -c "from lightsim2grid.gridmodel import init_from_pandapower"
+          python -c "from lightsim2grid.network import init_from_pandapower"
       
       - name: Check LightSimBackend can be used to create env
         if: matrix.python.name != 'cp314' || matrix.runner.arch != 'x86_64'
@@ -613,7 +613,7 @@ jobs:
             python -c "from lightsim2grid.timeSerie import TimeSeriesCPP, TimeSerie" &&
             python -c "from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP, ContingencyAnalysis" &&
             python -c "from lightsim2grid.securityAnalysis import SecurityAnalysisCPP, SecurityAnalysis" &&
-            python -c "from lightsim2grid.gridmodel import GridModel, init_from_pandapower" &&
+            python -c "from lightsim2grid.network import LSGrid, init_from_pandapower" &&
             python -c "from lightsim2grid import LightSimBackend" &&
             python -c "from lightsim2grid.physical_law_checker import PhysicalLawChecker"
       - name: Upload wheel
@@ -651,7 +651,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           ls _install/lib/*lightsim2grid_core* || ls _install/lib64/*lightsim2grid_core*
-          ls _install/include/lightsim2grid/GridModel.hpp
+          ls _install/include/lightsim2grid/LSGrid.hpp
           ls _install/lib/cmake/lightsim2grid_core/lightsim2grid_coreConfig.cmake
 
       - name: Verify installed layout (windows)
@@ -659,7 +659,7 @@ jobs:
         shell: bash
         run: |
           ls _install/lib/lightsim2grid_core* || ls _install/bin/lightsim2grid_core*
-          ls _install/include/lightsim2grid/GridModel.hpp
+          ls _install/include/lightsim2grid/LSGrid.hpp
           ls _install/lib/cmake/lightsim2grid_core/lightsim2grid_coreConfig.cmake
 
       - name: Build minimal consumer via find_package
@@ -675,8 +675,8 @@ jobs:
           target_link_libraries(consumer PRIVATE lightsim2grid::core)
           EOF
           cat > _test_consumer/consumer.cpp << 'EOF'
-          #include <SolverRegistry.hpp>
-          int main() { auto& r = ls2g::SolverRegistry::instance(); return r.available_solvers().empty() ? 1 : 0; }
+          #include <AlgorithmRegistry.hpp>
+          int main() { auto& r = ls2g::AlgorithmRegistry::instance(); return r.available_algorithm_names().empty() ? 1 : 0; }
           EOF
           cmake -S _test_consumer -B _build_consumer \
                 -DCMAKE_PREFIX_PATH="$(pwd)/_install" \
