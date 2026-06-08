@@ -13,7 +13,7 @@ from grid2op.gym_compat import GymEnv
 import numpy as np
 from lightsim2grid import LightSimBackend
 from lightsim2grid.network import LSGrid
-from lightsim2grid.network.compare_lsgrid import compare_gridmodel_input
+from lightsim2grid.network.compare_lsgrid import compare_network_input
 
 import unittest
 import warnings
@@ -66,7 +66,7 @@ class TestDistSlackBackend(unittest.TestCase):
         assert env_gym_cpy.init_env.backend._grid is not None
         assert isinstance(env_gym_cpy.init_env.backend._grid, LSGrid)
         assert env_gym_cpy.init_env.backend._grid is not env_gym.init_env.backend._grid
-        tmp = compare_gridmodel_input(
+        tmp = compare_network_input(
             env_gym_cpy.init_env.backend._grid,
             env_gym.init_env.backend._grid
         )
@@ -75,7 +75,7 @@ class TestDistSlackBackend(unittest.TestCase):
         assert env_gym_cpy.init_env.backend._LightSimBackend__me_at_init is not None
         assert isinstance(env_gym_cpy.init_env.backend._LightSimBackend__me_at_init, LSGrid)
         assert env_gym_cpy.init_env.backend._LightSimBackend__me_at_init is not env_gym.init_env.backend._LightSimBackend__me_at_init
-        tmp = compare_gridmodel_input(
+        tmp = compare_network_input(
             env_gym_cpy.init_env.backend._LightSimBackend__me_at_init,
             env_gym.init_env.backend._LightSimBackend__me_at_init
         )

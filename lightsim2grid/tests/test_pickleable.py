@@ -18,7 +18,7 @@ import numpy as np
 import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
 from lightsim2grid.network.compare_lsgrid import (
-    compare_gridmodel_input,
+    compare_network_input,
     _compare_loads,
     _compare_lines,
     _compare_generators,
@@ -118,7 +118,7 @@ class TestPickle(unittest.TestCase):
             
             self.aux_test_2sides(self.env.backend._grid, backend_1._grid)
             self.aux_test_1side(self.env.backend._grid, backend_1._grid)
-            tmp = compare_gridmodel_input(self.env.backend._grid, backend_1._grid)
+            tmp = compare_network_input(self.env.backend._grid, backend_1._grid)
             assert len(tmp) == 0
             
             nb_bus_total = self.env.n_sub * 2
