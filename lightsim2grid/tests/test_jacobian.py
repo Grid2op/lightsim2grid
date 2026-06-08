@@ -116,6 +116,80 @@ class JacobianMultiSlackTester(unittest.TestCase):
     def test_4_iter(self):
         self._aux_test_iter(4)
 
+    def test_col_converters(self):
+        """Check the bus_id -> Jacobian-column converters, including the
+        distributed-slack (pv_slack) extension columns.
+
+        Column layout (new order, slack at the end):
+          - theta of base pvpq buses : [0, n_pvpq)
+          - vm of pq buses           : [n_pvpq, n_pvpq + n_pq)  (== [n_pvpq, base_size))
+          - theta of pv_slack buses  : [base_size, base_size + n_pv_slack)
+          - slack_absorbed (no bus)  : base_size + n_pv_slack   (last column)
+        """
+        cls = type(self)
+        init = cls.res["init_state"]
+        self.nr_algo.compute_pf(init["Ybus"], init["v_init"], init["Sbus"],
+                                init["slack_ids"], init["slack_weights"],
+                                init["pv"], init["pq"], 10, init["tol"])
+
+        J = self.nr_algo.get_J()
+        theta = np.asarray(self.nr_algo.get_theta_to_J_col())
+        vm = np.asarray(self.nr_algo.get_vm_to_J_col())
+        q = np.asarray(self.nr_algo.get_q_to_J_col())
+
+        n_bus = init["Ybus"].shape[0]
+        pv = np.asarray(init["pv"]).reshape(-1)
+        pq = np.asarray(init["pq"]).reshape(-1)
+        slack_ids = np.asarray(init["slack_ids"]).reshape(-1)
+        ref_slack = slack_ids[0]
+        pv_slack = slack_ids[1:]  # distributed-slack pv buses (empty for single slack)
+
+        pvpq = np.r_[pv, pq]
+        n_pvpq = pvpq.shape[0]
+        n_pq = pq.shape[0]
+        base_size = n_pvpq + n_pq
+
+        # one entry per bus
+        assert theta.shape[0] == n_bus, "theta_to_J_col has wrong size"
+        assert vm.shape[0] == n_bus, "vm_to_J_col has wrong size"
+        assert q.shape[0] == n_bus, "q_to_J_col has wrong size"
+        # q is a placeholder for now
+        assert np.all(q == -1), "q_to_J_col must be -1 everywhere for now"
+
+        # expected full layout: base block + pv_slack extension columns
+        expected_theta = -np.ones(n_bus, dtype=int)
+        expected_theta[pvpq] = np.arange(n_pvpq)
+        expected_theta[pv_slack] = base_size + np.arange(pv_slack.shape[0])
+        expected_vm = -np.ones(n_bus, dtype=int)
+        expected_vm[pq] = n_pvpq + np.arange(n_pq)
+
+        assert np.array_equal(theta, expected_theta), \
+            f"theta_to_J_col mismatch: {theta} != {expected_theta}"
+        assert np.array_equal(vm, expected_vm), \
+            f"vm_to_J_col mismatch: {vm} != {expected_vm}"
+
+        # the reference slack owns neither a theta nor a vm unknown
+        assert theta[ref_slack] == -1, "ref slack must not own a theta column"
+        assert vm[ref_slack] == -1, "ref slack must not own a vm column"
+
+        # pv_slack buses own a theta column in the extension region, but no vm column
+        if pv_slack.shape[0] > 0:
+            assert np.all(theta[pv_slack] >= base_size), \
+                "pv_slack theta columns must be in the extension region"
+            assert np.all(vm[pv_slack] == -1), "pv_slack buses must not own a vm column"
+
+        # the converters must reference exactly the bus-unknown columns
+        # [0, base_size + n_pv_slack); any remaining J columns are the
+        # slack_absorbed column(s) (present only for the multi-slack extension),
+        # which are not per-bus unknowns and so are not referenced by any map.
+        used = np.sort(np.concatenate([theta[theta >= 0], vm[vm >= 0]]))
+        assert np.array_equal(used, np.arange(base_size + pv_slack.shape[0])), \
+            "converter columns must be exactly [0, base_size + n_pv_slack)"
+        assert J.shape[1] >= base_size + pv_slack.shape[0], \
+            "Jacobian has fewer columns than bus unknowns"
+        assert theta.max() < J.shape[1], "theta column index out of range"
+        assert vm.max() < J.shape[1], "vm column index out of range"
+
 
 class JacobianSingleSlackTester(JacobianMultiSlackTester):
     @classmethod

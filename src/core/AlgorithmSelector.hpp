@@ -193,6 +193,19 @@ class LS2G_API AlgorithmSelector final
             return res;
         }
 
+        IntVect get_theta_to_J_col_python() const {
+            check_right_solver("get_theta_to_J_col");
+            return get_prt_solver("get_theta_to_J_col", false)->get_theta_to_J_col_python();
+        }
+        IntVect get_vm_to_J_col_python() const {
+            check_right_solver("get_vm_to_J_col");
+            return get_prt_solver("get_vm_to_J_col", false)->get_vm_to_J_col_python();
+        }
+        IntVect get_q_to_J_col_python() const {
+            check_right_solver("get_q_to_J_col");
+            return get_prt_solver("get_q_to_J_col", false)->get_q_to_J_col_python();
+        }
+
         double get_computation_time() const {
             return std::get<3>(get_prt_solver("get_computation_time", true)->get_timers());
         }
