@@ -23,7 +23,7 @@ if(NOT lightsim2grid_core_FOUND)
     if(NOT DEFINED Eigen3_INCLUDE)
         set(Eigen3_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen")
     endif()
-    if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/SolverRegistry.hpp")
+    if(NOT EXISTS "${LIGHTSIM2GRID_SRC}/AlgorithmRegistry.hpp")
         message(FATAL_ERROR
             "lightsim2grid_core not found.\n"
             "Either install lightsim2grid and pass:\n"

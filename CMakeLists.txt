@@ -19,6 +19,12 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# lightsim2grid does not use C++20/23 modules. With MSVC + C++23 (/std:c++latest)
+# CMake otherwise enables module dependency scanning and tries to build the
+# `import std` library modules (std.ixx / std.compat.ixx), which is fragile and
+# breaks the Windows build (notably the ARM64 cross-compile). Turn it off.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # --- Dependencies ---
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
