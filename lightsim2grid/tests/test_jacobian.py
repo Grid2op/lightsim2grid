@@ -17,6 +17,25 @@ from lightsim2grid.algorithm import (
 )
 
 
+class _NumpyCompatUnpickler(pickle.Unpickler):
+    """Load pickles saved with numpy >= 2 (which reference ``numpy._core``)
+    even when running with numpy < 2 (where the module is ``numpy.core``).
+
+    Under numpy >= 2 the ``numpy._core`` modules exist natively so no remap is
+    done. Under numpy < 2 they are redirected to ``numpy.core`` which still
+    exists there (and remains importable, as a deprecated alias, under numpy >= 2).
+    """
+    def find_class(self, module, name):
+        if module.startswith("numpy._core") and not hasattr(np, "_core"):
+            module = "numpy.core" + module[len("numpy._core"):]
+        return super().find_class(module, name)
+
+
+def _load_pickle(path):
+    with open(path, "rb") as f:
+        return _NumpyCompatUnpickler(f).load()
+
+
 class JacobianMultiSlackTester(unittest.TestCase):
     @classmethod
     def get_name(cls):
@@ -27,9 +46,8 @@ class JacobianMultiSlackTester(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls) -> None:
-        with open(cls.get_name(), "rb") as f:
-            cls.res = pickle.load(f)
-            
+        cls.res = _load_pickle(cls.get_name())
+
         return super().setUpClass()
     
     def setUp(self) -> None:
