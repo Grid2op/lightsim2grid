@@ -736,35 +736,20 @@ public:
     // to be implemented by all other classes
     size_t total_state_variables() const {return nb_total_state_variables_;}
 
-    // ----- Size / segment accessors ---------------------------
-    // theta_size()/vm_size()/theta()/vm() describe the BASE block only
-    // ([0, theta_size()) and [theta_size(), theta_size()+vm_size())). They are
-    // used internally to slice the base part of dx. They do NOT account for
-    // extension state variables (which may be non-contiguous in the global
-    // vector); scaling policies must use max_abs_dtheta()/max_abs_dvm() instead.
-    int theta_size() const { return base_.theta_size(); }
-    int vm_size()    const { return base_.vm_size(); }
-
     // ----- Scaling reductions (base + extensions) -----------------------------
     // max |angle step| / max |voltage-magnitude step| across all state variables.
     real_type max_abs_dtheta(const RealVect& dx) const {
         real_type m = static_cast<real_type>(0.);
-        if (theta_size() > 0) m = theta(dx).array().abs().maxCoeff();
+        if (theta_base_size() > 0) m = theta_base(dx).array().abs().maxCoeff();
         _reduce_dtheta_extensions(dx, m, std::make_index_sequence<sizeof...(Rest)>{});
         return m;
     }
     real_type max_abs_dvm(const RealVect& dx) const {
         real_type m = static_cast<real_type>(0.);
-        if (vm_size() > 0) m = vm(dx).array().abs().maxCoeff();
+        if (vm_base_size() > 0) m = vm_base(dx).array().abs().maxCoeff();
         _reduce_dvm_extensions(dx, m, std::make_index_sequence<sizeof...(Rest)>{});
         return m;
     }
-
-    // Core state vector segments: theta first, then vm, then extension variables.
-    RealVect::SegmentReturnType      theta(RealVect& x)       const { return x.segment(0, theta_size()); }
-    RealVect::ConstSegmentReturnType theta(const RealVect& x) const { return x.segment(0, theta_size()); }
-    RealVect::SegmentReturnType      vm   (RealVect& x)       const { return x.segment(theta_size(), vm_size()); }
-    RealVect::ConstSegmentReturnType vm   (const RealVect& x) const { return x.segment(theta_size(), vm_size()); }
 
     // ----- Timers ----------------------------------------------------------------
 
@@ -794,6 +779,20 @@ private:
 
     // Holds the state for HVDC, DistSlack, etc.
     std::tuple<Rest...>                    extensions_; 
+
+    // ----- Size / segment accessors ---------------------------
+    // theta_size()/vm_size()/theta()/vm() describe the BASE block only
+    // ([0, theta_size()) and [theta_size(), theta_size()+vm_size())). They are
+    // used internally to slice the base part of dx. They do NOT account for
+    // extension state variables (which may be non-contiguous in the global
+    // vector); scaling policies must use max_abs_dtheta()/max_abs_dvm() instead.
+    int theta_base_size() const { return base_.theta_size(); }
+    int vm_base_size()    const { return base_.vm_size(); }
+    // Core state vector segments: theta first, then vm, then extension variables.
+    RealVect::SegmentReturnType      theta_base(RealVect& x)       const { return x.segment(0, theta_base_size()); }
+    RealVect::ConstSegmentReturnType theta_base(const RealVect& x) const { return x.segment(0, theta_base_size()); }
+    RealVect::SegmentReturnType      vm_base   (RealVect& x)       const { return x.segment(theta_base_size(), vm_base_size()); }
+    RealVect::ConstSegmentReturnType vm_base   (const RealVect& x) const { return x.segment(theta_base_size(), vm_base_size()); }
 
 protected:
     // visible attribute for derived class (non owning ptr)
@@ -1062,64 +1061,6 @@ private:
     NRSystem& operator=(const NRSystem&) = delete;
     NRSystem& operator=(NRSystem&&)      = delete;
 };
-
-// ---- Extension specialisation: NRSystem<MultiSlack, Rest...> ------------------
-
-/**
- * Distributed-slack extension.  Inherits all data and logic from NRSystem<Rest...>
- * and adds:
- *   - one extra row/col at the end of J (lag_ += 1)
- *   - slack_absorbed_ tracking in apply_step / mismatch
- *
- * The slack row in J is set once in build_J_sparsity and kept CONSTANT across
- * NR iterations (a valid quasi-Newton approximation for this equation).
- */
-// template <typename... Rest>
-// class NRSystem<MultiSlack, Rest...>
-// {
-// public:
-//     NRSystem() noexcept
-//         : Base(), slack_bus_id_(0), slack_absorbed_(static_cast<real_type>(0.)) {}
-
-//     virtual ~NRSystem() = default;
-
-//     // ----- Phase 1 ---------------------------------------------------------------
-//     void init_topology(
-//         const Eigen::SparseMatrix<cplx_type>& Ybus,
-//         const CplxVect&                        Sbus,
-//         Eigen::Ref<const IntVect>              slack_ids,
-//         const RealVect&                        slack_weights,
-//         Eigen::Ref<const IntVect>              pv,
-//         Eigen::Ref<const IntVect>              pq) override;
-
-//     // ----- Phase 1.5 -------------------------------------------------------------
-//     virtual void update_state(
-//         const Eigen::SparseMatrix<cplx_type>& Ybus,
-//         const CplxVect&                        V_init,
-//         const CplxVect&                        Sbus) override;
-
-//     // ----- NR primitives ---------------------------------------------------------
-//     virtual RealVect  mismatch()                              const override;
-//     virtual void      apply_step(const RealVect& dx)                override;
-//     virtual real_type mismatch_sq_norm_at(const RealVect& dx) const override;
-
-// protected:
-//     // Appends slack row + slack column triplets after the core block
-//     // virtual void _collect_J_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const override;
-
-//     // Returns nullptr for the slack row (constant); delegates to Base otherwise
-//     // virtual cplx_type* _get_entry_ptr(int row, int col) override;
-
-// private:
-//     size_t    slack_bus_id_;
-//     RealVect  slack_weights_;
-//     real_type slack_absorbed_;
-
-//     int _J_slack_row() const { return this->theta_size() + this->vm_size(); }
-
-//     void   _append_slack_triplets(std::vector<Eigen::Triplet<double>>& coeffs) const;
-//     RealVect _mismatch_with_slack(const CplxVect& V_trial, real_type sa) const;
-// };
 
 // ---- Type aliases (keep existing names working) --------------------------------
 

@@ -37,6 +37,11 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [BREAKING] For plugin developers (C++ side): the virtual method ``set_gridmodel`` in
   ``BaseAlgo`` is renamed ``set_lsgrid``, and the protected member ``gridmodel_ptr_``
   is renamed ``lsgrid_ptr_``.
+- [BREAKING] for Newton based solvers, the Jacobian row / columns does not have 
+  the same ordering as before, this is because some modularity is being implemented
+  at this level to allow for other types of "extensions" (similar to distributed slack)
+  such as the handling of HVDC or remote voltage control. Jacobian indices no more
+  follow pandapower convention.
 - [DEPRECATION PENDING] some previous solver names (now called algorithm) were 
   rather ambiguous and not very clear. For example, it was not clear that "KLU"
   referenced the Newton Raphson method, with distributed slack variant, that use_buses_for_sub
