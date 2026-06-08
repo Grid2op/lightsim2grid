@@ -69,6 +69,13 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
             "Return an AlgoConfig capturing all scaling/refactor policy type and parameters.")
         .def("set_config", &Solver::set_config, py::arg("config"),
             "Restore scaling/refactor policy type and parameters from an AlgoConfig.")
+        // column (unknown) -> bus-id converters (only valid after a powerflow)
+        .def("get_theta_to_J_col", &Solver::get_theta_to_J_col_python,
+            "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
+        .def("get_vm_to_J_col",    &Solver::get_vm_to_J_col_python,
+            "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")
+        .def("get_q_to_J_col",     &Solver::get_q_to_J_col_python,
+            "bus_id -> Jacobian column of its reactive (q) unknown, currently always -1")
         ;
 }
 
@@ -223,6 +230,9 @@ void bind_solvers(py::module_& m) {
         .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str())
         .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str())
         .def("get_J",                &AlgorithmSelector::get_J_python,         DocSolver::chooseSolver_get_J_python.c_str())
+        .def("get_theta_to_J_col",   &AlgorithmSelector::get_theta_to_J_col_python, "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
+        .def("get_vm_to_J_col",      &AlgorithmSelector::get_vm_to_J_col_python,    "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")
+        .def("get_q_to_J_col",       &AlgorithmSelector::get_q_to_J_col_python,     "bus_id -> Jacobian column of its reactive (q) unknown, currently always -1")
         .def("get_error",            &AlgorithmSelector::get_error,            DocSolver::get_V.c_str())
         .def("get_nb_iter",          &AlgorithmSelector::get_nb_iter,          DocSolver::get_nb_iter.c_str())
         .def("converged",            &AlgorithmSelector::converged,            DocSolver::converged.c_str())

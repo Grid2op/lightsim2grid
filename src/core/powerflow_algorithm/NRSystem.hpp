@@ -76,6 +76,25 @@ class LS2G_API Contrib final
 };
 
 // ---- Base class definition ----------------------------------------------------
+
+/**
+ * Base Newton-Raphson system block (single-slack core).
+ *
+ * Jacobian orientation (applies to the whole augmented J):
+ *   - each ROW is an EQUATION   : a power-mismatch residual
+ *       (ΔP at a pv/pq bus, ΔQ at a pq bus)
+ *   - each COLUMN is an UNKNOWN  : a state-variable correction
+ *       (ΔVa at a pv/pq bus, ΔVm at a pq bus, ... extensions add more)
+ *
+ * i.e. J[row, col] = d(equation row) / d(unknown col), used to solve
+ *   J . dx = -F(x). So there is one row per equation and one column per
+ *   unknown (NOT one row per unknown).
+ *
+ * The column->bus converters (theta_to_J_col / vm_to_J_col / q_to_J_col, built
+ * by fill_col_converters) invert the "which column holds which unknown" map:
+ * given a bus id they return the Jacobian column of that bus' theta / vm / q
+ * unknown, or -1 when the bus owns no such unknown.
+ */
 class LS2G_API Base
 {
     public:
@@ -222,6 +241,19 @@ class LS2G_API Base
             res.segment(0,                  nb_pv_) = -real_(pv_);
             res.segment(nb_pv_,             nb_pq_) = -real_(pq_);
             res.segment(nb_pv_ + nb_pq_,    nb_pq_) = -imag_(pq_);
+        }
+
+        // Fill the base-block columns of the bus_id -> Jacobian-column converters.
+        // The vectors are owned by NRSystem, already sized to n_bus and pre-filled
+        // with -1; this only writes the columns the base block is responsible for.
+        // base theta unknowns occupy columns [0, nb_pvpq_); base vm unknowns occupy
+        // columns [nb_pvpq_, nb_pvpq_ + nb_pq_). q has no base column (placeholder).
+        void fill_col_converters(std::vector<int>& theta_to_J_col,
+                                 std::vector<int>& vm_to_J_col,
+                                 std::vector<int>& /*q_to_J_col*/) const
+        {
+            for (int i = 0; i < nb_pvpq_; ++i) theta_to_J_col[pvpq_(i)] = i;
+            for (int i = 0; i < nb_pq_;   ++i) vm_to_J_col[pq_(i)]      = nb_pvpq_ + i;
         }
 };
 
@@ -494,6 +526,20 @@ class LS2G_API MultiSlack   // distributed-slack extension
 
         }
 
+        // Fill this extension's columns of the bus_id -> Jacobian-column converters.
+        // The extra columns are the pv_slack angles at [offset, offset + my_size_ - 1)
+        // plus the slack_absorbed column at offset + my_size_ - 1 (the latter is NOT
+        // a per-bus theta/vm/q unknown, so it is intentionally left out of all maps).
+        void fill_col_converters(int offset,
+                                 std::vector<int>& theta_to_J_col,
+                                 std::vector<int>& /*vm_to_J_col*/,
+                                 std::vector<int>& /*q_to_J_col*/) const
+        {
+            for (int k = 0; k < static_cast<int>(my_size_) - 1; ++k)
+                theta_to_J_col[pv_slack_(k)] = offset + k;  // distributed-slack angle column
+            // column (offset + my_size_ - 1) is slack_absorbed: not a bus unknown
+        }
+
         // ---- NR primitive hooks (composed by NRSystem) ----------------------
         // All hooks operate on this extension's own slice of the global vectors:
         //   dx_ext == dx.segment(offset, my_size_), laid out as
@@ -670,6 +716,9 @@ public:
         map_dsdva_i_.clear();
         map_dsdvm_r_.clear();
         map_dsdvm_i_.clear();
+        theta_to_J_col_.clear();
+        vm_to_J_col_.clear();
+        q_to_J_col_.clear();
         need_full_rebuild_ = true;
     }
 
@@ -677,6 +726,12 @@ public:
     Eigen::Ref<const CplxVect> V()  const { return V_; }
     Eigen::Ref<const RealVect> Va() const { return Va_; }
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
+
+    // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
+    // Each vector has size n_bus and spans the full augmented J (base + extensions).
+    const std::vector<int>& theta_to_J_col() const { return theta_to_J_col_; }
+    const std::vector<int>& vm_to_J_col()    const { return vm_to_J_col_; }
+    const std::vector<int>& q_to_J_col()     const { return q_to_J_col_; }
 
     // to be implemented by all other classes
     size_t total_state_variables() const {return nb_total_state_variables_;}
@@ -730,6 +785,9 @@ private:
     std::vector<int>                       map_dsdva_i_;
     std::vector<int>                       map_dsdvm_r_;
     std::vector<int>                       map_dsdvm_i_;
+
+    // bus_id -> Jacobian column converters (size n_bus, built in init_topology)
+    std::vector<int>                       theta_to_J_col_, vm_to_J_col_, q_to_J_col_;
 
     // Holds the base things
     Base                                   base_;
@@ -874,8 +932,21 @@ private:
     }
 
     template <std::size_t... Is>
+    void _fill_col_converters_extensions(
+        std::vector<int>& th, std::vector<int>& vm, std::vector<int>& q,
+        std::index_sequence<Is...>) const {
+        int current_offset = static_cast<int>(base_.get_size());
+        int dummy[] = { 0, (
+            std::get<Is>(extensions_).fill_col_converters(current_offset, th, vm, q),
+            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
+            0
+        )... };
+        (void) dummy;
+    }
+
+    template <std::size_t... Is>
     void _clear_jacobian_extensions(
-        std::index_sequence<Is...>) {                
+        std::index_sequence<Is...>) {
         int dummy[] = { 0, (
             std::get<Is>(extensions_).clear_jacobian(),
             0

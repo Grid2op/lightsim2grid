@@ -33,6 +33,16 @@ inline void NRSystem<Base, Rest...>::init_topology(
     
     // now compute the jacobian size
     _update_total_state_variables(std::make_index_sequence<sizeof...(Rest)>{});
+
+    // build the bus_id -> Jacobian column converters (base block + extensions)
+    const int n_bus = static_cast<int>(Ybus_ptr_->rows());
+    theta_to_J_col_.assign(n_bus, -1);
+    vm_to_J_col_.assign(n_bus, -1);
+    q_to_J_col_.assign(n_bus, -1);
+    base_.fill_col_converters(theta_to_J_col_, vm_to_J_col_, q_to_J_col_);
+    _fill_col_converters_extensions(theta_to_J_col_, vm_to_J_col_, q_to_J_col_,
+                                    std::make_index_sequence<sizeof...(Rest)>{});
+
     need_full_rebuild_ = true;
 }
 

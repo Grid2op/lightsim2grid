@@ -77,6 +77,18 @@ class LS2G_API BaseAlgo : public BaseConstants
             throw std::runtime_error("AlgorithmSelector::get_J: There is not Jacobian matrix for this solver type.");
         }
 
+        // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
+        // Only Newton-Raphson solvers define a Jacobian, hence these throw by default.
+        virtual IntVect get_theta_to_J_col_python() const {
+            throw std::runtime_error("get_theta_to_J_col: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_vm_to_J_col_python() const {
+            throw std::runtime_error("get_vm_to_J_col: only available for Newton-Raphson solvers.");
+        }
+        virtual IntVect get_q_to_J_col_python() const {
+            throw std::runtime_error("get_q_to_J_col: only available for Newton-Raphson solvers.");
+        }
+
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
         }

@@ -64,6 +64,14 @@ public:
         return res;
     }
 
+    // ----- column (unknown) -> bus-id converters (NR-only) ---------------------
+    // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
+    // Only meaningful after a topology has been initialised (i.e. after at least
+    // one compute_pf), same lifetime as get_J.
+    virtual IntVect get_theta_to_J_col_python() const override { return _to_intvect(_system.theta_to_J_col()); }
+    virtual IntVect get_vm_to_J_col_python()    const override { return _to_intvect(_system.vm_to_J_col()); }
+    virtual IntVect get_q_to_J_col_python()     const override { return _to_intvect(_system.q_to_J_col()); }
+
     // ----- timers --------------------------------------------------------------
 
     virtual
@@ -218,6 +226,10 @@ protected:
     }
 
 private:
+    static IntVect _to_intvect(const std::vector<int>& v) {
+        return Eigen::Map<const IntVect>(v.data(), static_cast<Eigen::Index>(v.size()));
+    }
+
     LinearSolver _linear_solver;
     NRSystem     _system;
 
