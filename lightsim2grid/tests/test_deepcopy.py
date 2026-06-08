@@ -13,7 +13,7 @@ from grid2op.gym_compat import GymEnv
 import numpy as np
 from lightsim2grid import LightSimBackend
 from lightsim2grid.network import LSGrid
-from lightsim2grid.network.compare_gridmodel import compare_gridmodel_input
+from lightsim2grid.network.compare_lsgrid import compare_gridmodel_input
 
 import unittest
 import warnings

@@ -424,11 +424,15 @@ class __ContingencyAnalysis(object):
         self._ls_backend.close()
         self.__is_closed = True
         
-    def change_solver(self, solver_type):
+    def change_algorithm(self, solver_type):
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
-        self.computer.change_solver(solver_type)
+        self.computer.change_algorithm(solver_type)
         self.clear()
+
+    def change_solver(self, solver_type):
+        # kept as a backward-compatible alias of `change_algorithm`
+        self.change_algorithm(solver_type)
         
         
 if GRID2OP_INSTALLED:

@@ -74,7 +74,9 @@ class MakeTests(unittest.TestCase):
         :return:
         """
         pvpq = np.r_[pv, pq]
-        Jmodif_ls = J[1:, 1:] if dist_slack else J
+        # slack moved from the first to the last row/col in the refactored NR
+        # (single-slack cases here, so it is the single trailing row/col)
+        Jmodif_ls = J[:-1, :-1] if dist_slack else J
         comp_val = np.abs(Jmodif_ls - J_pp)  # new in version 0.5.6 : distributed slack added a component to J
         comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
