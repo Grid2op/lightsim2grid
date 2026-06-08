@@ -1,9 +1,8 @@
-import pickle
-
 import grid2op
 import numpy as np
 
 from lightsim2grid import LightSimBackend
+from jacobian_io import save_res
 try:
     from lightsim2grid.algorithm import NR_KLU
 except ImportError:
@@ -48,5 +47,4 @@ for n_iter in range(5):
     }
 assert solver.converged()
 
-with open("saved_jacobian_multi.pkl", "wb") as f:
-    pickle.dump(res, f)
+save_res("saved_jacobian_multi.npz", res)

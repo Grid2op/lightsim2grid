@@ -7,8 +7,8 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import os
+import sys
 import unittest
-import pickle
 
 import numpy as np
 from lightsim2grid.algorithm import (
@@ -16,37 +16,23 @@ from lightsim2grid.algorithm import (
     NRSing_KLU
 )
 
-
-class _NumpyCompatUnpickler(pickle.Unpickler):
-    """Load pickles saved with numpy >= 2 (which reference ``numpy._core``)
-    even when running with numpy < 2 (where the module is ``numpy.core``).
-
-    Under numpy >= 2 the ``numpy._core`` modules exist natively so no remap is
-    done. Under numpy < 2 they are redirected to ``numpy.core`` which still
-    exists there (and remains importable, as a deprecated alias, under numpy >= 2).
-    """
-    def find_class(self, module, name):
-        if module.startswith("numpy._core") and not hasattr(np, "_core"):
-            module = "numpy.core" + module[len("numpy._core"):]
-        return super().find_class(module, name)
-
-
-def _load_pickle(path):
-    with open(path, "rb") as f:
-        return _NumpyCompatUnpickler(f).load()
+# the fixtures are stored as numpy-version-independent .npz archives (no pickle),
+# see jacobian_case14_sandbox/jacobian_io.py
+sys.path.append(os.path.join(os.path.dirname(__file__), "jacobian_case14_sandbox"))
+from jacobian_io import load_res
 
 
 class JacobianMultiSlackTester(unittest.TestCase):
     @classmethod
     def get_name(cls):
-        return os.path.join("jacobian_case14_sandbox","saved_jacobian_multi.pkl")
+        return os.path.join("jacobian_case14_sandbox","saved_jacobian_multi.npz")
     
     def get_algo(self):
         return NR_KLU()
     
     @classmethod
     def setUpClass(cls) -> None:
-        cls.res = _load_pickle(cls.get_name())
+        cls.res = load_res(cls.get_name())
 
         return super().setUpClass()
     
@@ -212,7 +198,7 @@ class JacobianMultiSlackTester(unittest.TestCase):
 class JacobianSingleSlackTester(JacobianMultiSlackTester):
     @classmethod
     def get_name(cls):
-        return os.path.join("jacobian_case14_sandbox","saved_jacobian_single.pkl")
+        return os.path.join("jacobian_case14_sandbox","saved_jacobian_single.npz")
     
     def get_algo(self):
         return NRSing_KLU()
