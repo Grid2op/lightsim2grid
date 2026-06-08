@@ -30,6 +30,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 
 [0.14.0] 2026-xx-yy
 ---------------------
+- [BREAKING] drop python 3.8 support (end of life end back in 2024)
 - [BREAKING] `lightsim2grid.SolverType` enum is no more accessible. You can migrate 
   (for now, deprecation pending) to `from lightsim2grid.solver import SolverType` 
   without any other changes. Or you can see the documentation for the (possible)
