@@ -277,10 +277,10 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
-                name: "Build external solver plugin"
+                name: "Build external algo plugin"
                 command: |
                     source venv_test/bin/activate
-                    cd examples/external_solver
+                    cd examples/external_algorithm
                     mkdir build && cd build
                     cmake ..
                     make -j$(nproc)
@@ -410,10 +410,10 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
-                name: "Build external solver plugin"
+                name: "Build external algo plugin"
                 command: |
                     source venv_test/bin/activate
-                    cd examples/external_solver
+                    cd examples/external_algorithm
                     mkdir build && cd build
                     cmake ..
                     make -j$(nproc)
@@ -461,12 +461,12 @@ jobs:
                     pip install pypowsybl lxml  # bug in pandapower (missing lxml dependencies)
                     pip freeze
             - run:
-                name: "Build external solver plugin"
+                name: "Build external algo plugin"
                 command: |
                     .\venv_test\Scripts\activate
                     $ls2g_lib = python -c "import importlib.util, pathlib; spec = importlib.util.find_spec('lightsim2grid.lightsim2grid_cpp'); print(pathlib.Path(spec.origin).parent / 'lightsim2grid_cpp.lib')"
-                    mkdir examples\external_solver\build -Force
-                    Set-Location examples\external_solver\build
+                    mkdir examples\external_algorithm\build -Force
+                    Set-Location examples\external_algorithm\build
                     cmake .. "-DLIGHTSIM2GRID_CPP_LIB=$ls2g_lib"
                     cmake --build . --config Release
                     Set-Location ..\..\..
@@ -520,7 +520,7 @@ jobs:
                     cd lightsim2grid/tests/
                     python -m unittest test_DCPF.py
                     python -m unittest test_ACPF.py
-                    python -m unittest test_GridModel_pandapower.py
+                    python -m unittest test_LSGrid_pandapower.py
 
     test_legacy_pypowsybl:
         executor: gcc_latest
@@ -562,7 +562,7 @@ jobs:
                 command: | 
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
-                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_LSGrid_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
 
             - run:
@@ -571,7 +571,7 @@ jobs:
                     source venv_test/bin/activate
                     uv pip install "pypowsybl~=1.9.0" "numpy>2"
                     cd lightsim2grid/tests/
-                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_LSGrid_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
 
             - run:
@@ -580,7 +580,7 @@ jobs:
                     source venv_test/bin/activate
                     uv pip install "pypowsybl~=1.10.0"
                     cd lightsim2grid/tests/
-                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_LSGrid_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
 
             - run:
@@ -589,7 +589,7 @@ jobs:
                     source venv_test/bin/activate
                     uv pip install "pypowsybl~=1.13.0"
                     cd lightsim2grid/tests/
-                    python -m unittest test_GridModel_pypowsybl.py
+                    python -m unittest test_LSGrid_pypowsybl.py
                     python -m unittest test_init_from_pypowsybl.py
 
 
