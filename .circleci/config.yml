@@ -452,7 +452,7 @@ jobs:
                 command: |
                     .\venv_test\Scripts\activate
                     git submodule update --init
-                    python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .[test]
+                    python -m pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -v -e .
                     pip freeze
             - run:
                 name: "Show package versions"
