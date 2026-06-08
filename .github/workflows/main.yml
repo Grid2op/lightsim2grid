@@ -14,14 +14,14 @@ env:
   # from being created, which in turn prevents the PyPI release workflow
   # (publish.yml) from running at all.
   #
-  #   manylinux x86_64  (cp38–cp314 × 1 container)            →  7
-  #   windows   x64     (cp38–cp314 × AMD64)                   →  7
-  #   macos     x86_64  (cp38–cp314, native on macos-15-intel) →  7
+  #   manylinux x86_64  (cp39–cp314 × 1 container)             →  6
+  #   windows   x64     (cp39–cp314 × AMD64)                   →  6
+  #   macos     x86_64  (cp39–cp314, native on macos-15-intel) →  6
   #   macos     arm64   (cp310–cp314, native on macos-14)      →  5
-  #   exotic    macos arm64  via cibuildwheel (cp38, cp39)     →  2
+  #   exotic    macos arm64  via cibuildwheel (cp39)           →  1
   #   exotic    windows ARM64 via cibuildwheel (cp39–cp314)    →  6
-  #                                                total:        34
-  EXPECTED_WHEELS: 34
+  #                                                total:        30
+  EXPECTED_WHEELS: 30
   EXPECTED_SDIST: 1
 
 jobs:
