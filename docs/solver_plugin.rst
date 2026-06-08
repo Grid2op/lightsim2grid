@@ -169,6 +169,32 @@ Returns the last Jacobian matrix.  The base implementation throws
 ``std::runtime_error``.  Override if your solver exposes a Jacobian
 (needed only when Python code calls ``get_J()`` on the grid model).
 
+``get_theta_to_J_col_python`` / ``get_vm_to_J_col_python`` / ``get_q_to_J_col_python`` *(virtual — override only for Newton-Raphson algorithms)*
+
+.. code-block:: cpp
+
+    virtual IntVect get_theta_to_J_col_python() const;
+    virtual IntVect get_vm_to_J_col_python()    const;
+    virtual IntVect get_q_to_J_col_python()     const;
+
+Expose the mapping between a bus index (solver id) and the position of its
+unknown in the Jacobian.  Each returns a vector of size ``n_bus`` where entry
+``bus_id`` is the Jacobian **column** holding that bus' unknown, or ``-1`` when
+the bus owns no such unknown:
+
+* ``get_theta_to_J_col_python`` — column of the bus' voltage-angle (``theta`` /
+  ``ΔVa``) unknown;
+* ``get_vm_to_J_col_python`` — column of the bus' voltage-magnitude (``vm`` /
+  ``ΔVm``) unknown;
+* ``get_q_to_J_col_python`` — column of the bus' reactive (``q``) unknown.
+
+The base implementation throws ``std::runtime_error`` (these only make sense for
+solvers that build a Jacobian).  For a Newton-Raphson solver built on
+``NRSystem`` you can simply forward to its ``theta_to_J_col()`` /
+``vm_to_J_col()`` / ``q_to_J_col()`` accessors.  They surface in Python as
+:py:meth:`LSGrid.get_theta_to_J_col`, :py:meth:`LSGrid.get_vm_to_J_col` and
+:py:meth:`LSGrid.get_q_to_J_col`.
+
 Protected result members
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -409,9 +435,25 @@ Python API reference
     .. code-block:: python
 
         >>> gm.available_algorithm_names()
-        ['NR_SparseLU', 'GaussSeidel', 'NRSing_KLU', 
+        ['NR_SparseLU', 'GaussSeidel', 'NRSing_KLU',
          # and all other lightsim2grid installed "solver"
          'MySolver']
+
+.. py:method:: LSGrid.get_theta_to_J_col() -> numpy.ndarray
+.. py:method:: LSGrid.get_vm_to_J_col() -> numpy.ndarray
+.. py:method:: LSGrid.get_q_to_J_col() -> numpy.ndarray
+
+    Return the mapping from a bus index (solver id) to the column of the
+    Jacobian holding that bus' unknown.  Each call returns an integer array of
+    size ``n_bus`` whose entry ``bus_id`` is the Jacobian column of the bus'
+    ``theta`` (voltage angle), ``vm`` (voltage magnitude) or ``q`` (reactive)
+    unknown respectively, or ``-1`` when the bus owns no such unknown.
+
+    These are only meaningful for Newton-Raphson solvers (those that build a
+    Jacobian, see :func:`get_J`).  They mirror the ``get_J()`` accessor and let
+    you locate a given bus' rows/columns inside the augmented Jacobian.
+
+    :raises RuntimeError: If the active solver does not build a Jacobian.
 
 .. note::
 

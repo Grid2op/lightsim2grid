@@ -36,6 +36,11 @@
 // timer_fillJ()
 // J()  (public accessor of NRAlgo)
 
+// Public API (bus id -> Jacobian column converters, built in init_topology)
+// theta_to_J_col() : bus id -> column of that bus' theta (ΔVa) unknown, -1 if none
+// vm_to_J_col()    : bus id -> column of that bus' vm (ΔVm) unknown, -1 if none
+// q_to_J_col()     : bus id -> column of that bus' q unknown, -1 if none
+
 // Public API (used by scaling policy)
 // mismatch_sq_norm_at()
 // theta()
