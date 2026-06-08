@@ -657,7 +657,7 @@ class LS2G_API MultiSlack   // distributed-slack extension
  * we defined here.
  */
 template <typename... Rest>
-class LS2G_API NRSystem<Base, Rest...>
+class NRSystem<Base, Rest...>
 {
 public:
     NRSystem() noexcept:
