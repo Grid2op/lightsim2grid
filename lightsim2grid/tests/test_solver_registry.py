@@ -61,7 +61,7 @@ class TestStringOverload(unittest.TestCase):
     def test_change_solver_string_sparselU(self):
         gm = _make_grid()
         gm.change_algorithm(AlgorithmType.GaussSeidel)   # change away from default
-        gm.change_algorithm("SparseLU")
+        gm.change_algorithm("NR_SparseLU")
         self.assertEqual(gm.get_algo_type(), AlgorithmType.NR_SparseLU)
 
     def test_change_solver_string_gaussseidel(self):
@@ -85,7 +85,7 @@ class TestAvailableSolvers(unittest.TestCase):
 
     def test_available_solvers_returns_list(self):
         gm = _make_grid()
-        solvers = gm.available_algorithm_names()
+        solvers = gm.available_solvers()
         self.assertIsInstance(solvers, list)
         self.assertIn(AlgorithmType.NR_SparseLU, solvers)
         self.assertIn(AlgorithmType.DC_SparseLU, solvers)
@@ -102,17 +102,8 @@ class TestAvailableSolvers(unittest.TestCase):
         """Every enum returned by available_solvers() must have a string counterpart."""
         gm = _make_grid()
         names = set(gm.available_solver_names())
-        for st in gm.available_algorithm_names():
-            # Convert AlgorithmType to its string name by checking all known names
-            gm2 = _make_grid()
-            gm2.change_algorithm(st)
-            # After change, get_algo_type or get_dc_solver_type reflects the change
-            if st in (AlgorithmType.DC_SparseLU, AlgorithmType.DC_KLU if hasattr(AlgorithmType, "KLUDC") else None,
-                      AlgorithmType.DC_NICSLU if hasattr(AlgorithmType, "NICSLUDC") else None,
-                      AlgorithmType.DC_CKTSO if hasattr(AlgorithmType, "CKTSODC") else None):
-                pass  # DC solver types
-            else:
-                self.assertEqual(gm2.get_algo_type(), st)
+        for st in gm.available_solvers():
+            self.assertIn(st.name, names)
 
 
 class TestKLUSolver(unittest.TestCase):

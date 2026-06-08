@@ -86,7 +86,7 @@ class MakeTests(unittest.TestCase):
         """
         pvpq = np.r_[pv, pq]
 
-        comp_val = np.abs(J[1:, 1:] - J_pp)  # new in version 0.5.6 : distributed slack added a component to J
+        comp_val = np.abs(J - J_pp)  # J already remapped to pandapower [pvpq | pq] order in solver_aux
         comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
         assert np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)])) <= self.tol_test, "J21 (dS_dVa_i) are not equal"
@@ -105,6 +105,13 @@ class MakeTests(unittest.TestCase):
                                           self.pv, self.pq, self.max_it, self.tol)
         assert has_conv, "the load flow has diverged for {}".format(self.path)
         J = self.solver.get_J()
+        # new NR layout puts the slack at the end and orders the bus unknowns via the
+        # bus_id -> J-column converters; remap to pandapower's [pvpq | pq] order.
+        theta = np.asarray(self.solver.get_theta_to_J_col())
+        vm = np.asarray(self.solver.get_vm_to_J_col())
+        pvpq = np.r_[self.pv, self.pq]
+        col_perm = np.concatenate([theta[pvpq], vm[self.pq]])
+        J = J[col_perm.reshape(-1, 1), col_perm.reshape(1, -1)]
         Va = self.solver.get_Va()
         Vm = self.solver.get_Vm()
         J_pp, V_pp = self.load_res(iter_max=self.solver.get_nb_iter())

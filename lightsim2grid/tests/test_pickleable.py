@@ -17,7 +17,7 @@ import numpy as np
 
 import grid2op
 from lightsim2grid.lightSimBackend import LightSimBackend
-from lightsim2grid.gridmodel.compare_gridmodel import (
+from lightsim2grid.network.compare_lsgrid import (
     compare_gridmodel_input,
     _compare_loads,
     _compare_lines,
