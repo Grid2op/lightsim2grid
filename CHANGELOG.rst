@@ -43,6 +43,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   at this level to allow for other types of "extensions" (similar to distributed slack)
   such as the handling of HVDC or remote voltage control. Jacobian indices no more
   follow pandapower convention.
+- [BREAKING] (cpp only) the linear solvers now supports methods analyze, factorize 
+  (was merged into "analyze" before) and the function "refactor" is called 
+  "refactorize" for consistency.
 - [DEPRECATION PENDING] some previous solver names (now called algorithm) were 
   rather ambiguous and not very clear. For example, it was not clear that "KLU"
   referenced the Newton Raphson method, with distributed slack variant, that use_buses_for_sub

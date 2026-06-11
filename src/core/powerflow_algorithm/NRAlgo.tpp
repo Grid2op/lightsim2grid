@@ -79,12 +79,13 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         _system.build_J_sparsity();
         n_ = static_cast<int>(_system.J().cols());
     }
+    // std::cout << "need_init " << need_init << "\n";
 
-    timer_pre_proc_ += timer_pre.duration();
 
     // Initial mismatch (negated: Sbus - Scomp)
     RealVect F = _system.mismatch();
-    bool converged = _check_for_convergence(F, tol);
+    timer_pre_proc_ += timer_pre.duration(); 
+    bool converged = _check_for_convergence(F, tol);  // counted in timer_check_
     nr_iter_       = 0;
     bool res       = true;
     bool need_factorize = true;   // factorize on first iteration
@@ -98,19 +99,27 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
             // std::cout << "fill_internal_variables\n";
-            _system.fill_internal_variables();
+            _system.fill_internal_variables();  // timer_dSbus_
             // std::cout << "fill_J\n";
-            _system.fill_J();
+            _system.fill_J();  // timer_fillJ_
 
             if (need_init) {
-                // New sparsity pattern: (re-)initialize factorization.
-                auto timer_i = CustTimer();
-                err_ = _linear_solver.initialize(_system.J());
+                // New sparsity pattern: analyze (structure) then factorize (values).
+                {
+                    auto timer_i = CustTimer();
+                    err_ = _linear_solver.analyze(_system.J());
+                    timer_initialize_ += timer_i.duration();
+                }
+                if (err_ == ErrorType::NoError) {
+                    auto timer_f = CustTimer();
+                    err_ = _linear_solver.factorize(_system.J());
+                    timer_factor_ += timer_f.duration();
+                }
                 need_init = false;
-                timer_initialize_ += timer_i.duration();
+                need_factorize_ = false;
             } else {
                 auto timer_r = CustTimer();
-                err_ = _linear_solver.refactor(_system.J());
+                err_ = _linear_solver.refactorize(_system.J());
                 timer_refactor_ += timer_r.duration();
             }
             if (err_ != ErrorType::NoError) { res = false; break; }
@@ -132,7 +141,10 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
         // Apply scaling policy (runtime dispatch)
         // std::cout << "scaling_policy_->scale(_system, F);\n";
+        auto timer_sc = CustTimer();
         real_type coeff = scaling_policy_->scale(_system, F);
+        timer_scale_ += timer_sc.duration();
+
         auto timer_va_vm = CustTimer();
         // std::cout << "apply_step(coeff * F)\n";
         _system.apply_step(coeff * F);
@@ -140,9 +152,11 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
         // New mismatch
         // std::cout << "mismatch\n";
+        auto timer_mis = CustTimer();
         F = _system.mismatch();
+        timer_mismatch_ += timer_mis.duration();
         if (!F.allFinite()) { err_ = ErrorType::InifiniteValue; break; }
-        converged = _check_for_convergence(F, tol);
+        converged = _check_for_convergence(F, tol);  // timer_check_
         need_factorize = false;
     }
 

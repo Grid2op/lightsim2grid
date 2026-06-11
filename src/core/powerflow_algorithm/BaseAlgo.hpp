@@ -35,9 +35,21 @@ namespace ls2g {
 
 class LSGrid;
 
-using TimerJacType = std::tuple<double, double, double, double,
-                   double, double, double, double,
-                   double, double>;
+using TimerJacType = std::tuple<
+    double,  // timer_Fx_
+    double,  // timer_solve_
+    double,  // timer_factor_
+    double,  // timer_refactor_
+    double,  // timer_initialize_
+    double,  // timer_check_
+    double,  // timer_dSbus_
+    double,  // timer_fillJ_
+    double,  // timer_Va_Vm_
+    double,  // timer_pre_proc_
+    double,  // timer_scale_
+    double,  // timer_mismatch_
+    double   // timer_total_nr_
+>;
 using TimerPTDFLODFType = std::tuple<double, double, double>;
 
 /**
@@ -123,12 +135,15 @@ class LS2G_API BaseAlgo : public BaseConstants
                 timer_Fx_,
                 timer_solve_,
                 -1.,  // timer_refactor_: not available for non NR solver, so I put -1
+                -1.,  // timer_factor_: not available for non NR solver, so I put -1
                 -1.,  // timer_initialize_: not available for non NR solver, so I put -1
                 timer_check_,
                 -1.,  // not available for non NR solver, so I put -1
                 -1.,  // not available for non NR solver, so I put -1
                 -1.,  // not available for non NR solver, so I put -1
                 -1.,  // not available for non NR solver, so I put -1
+                -1.,  // not available for non NR solver, so I put -1
+                -1.,
                 timer_total_nr_
             };
             return res;

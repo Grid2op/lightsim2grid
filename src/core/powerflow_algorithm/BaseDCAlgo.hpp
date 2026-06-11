@@ -22,7 +22,9 @@ class BaseDCAlgo final: public BaseAlgo
             _linear_solver(),
             need_factorize_(true),
             need_refactor_(true),
+            timer_factor_(0.),
             timer_refactor_(0.),
+            timer_initialize_(0.),
             timer_ptdf_(0.),
             timer_lodf_(0.),
             sizeYbus_with_slack_(0),
@@ -34,6 +36,10 @@ class BaseDCAlgo final: public BaseAlgo
         virtual void reset_timer() final{
             BaseAlgo::reset_timer();
             timer_refactor_ = 0.;
+            timer_factor_ = 0.;
+            timer_initialize_  = 0.;
+            timer_solve_ = 0.;
+            timer_factor_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
         }
@@ -44,12 +50,15 @@ class BaseDCAlgo final: public BaseAlgo
                 timer_Fx_,
                 timer_solve_,
                 timer_refactor_,
-                -1.,  // timer_initialize_: not applicable to DC solver
+                timer_factor_,
+                timer_initialize_,  // timer_initialize_: not applicable to DC solver
                 timer_check_,
                 -1.,  // timer_dSbus_: not applicable to DC solver
                 -1.,  // timer_fillJ_: not applicable to DC solver
                 -1.,  // timer_Va_Vm_: not applicable to DC solver
                 -1.,  // timer_pre_proc_: not applicable to DC solver
+                -1.,  // no scaling in DC mode
+                -1.,  // no timer_mismatch_ in DC mode
                 timer_total_nr_
             };
             return res;
@@ -117,7 +126,10 @@ class BaseDCAlgo final: public BaseAlgo
         bool need_factorize_;
         bool need_refactor_;
 
+        double timer_factor_;
         double timer_refactor_;
+        double timer_initialize_;
+
         double timer_ptdf_;
         double timer_lodf_;
 

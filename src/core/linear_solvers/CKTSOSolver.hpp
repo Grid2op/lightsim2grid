@@ -82,8 +82,9 @@ class LS2G_API CKTSOLinearSolver final
 
         // public api
         ErrorType reset();
-        ErrorType initialize(const Eigen::SparseMatrix<real_type> & J);
-        ErrorType refactor(const Eigen::SparseMatrix<real_type> & J);
+        ErrorType analyze(const Eigen::SparseMatrix<real_type> & J);   // creates solver + reordering + symbolic factorization
+        ErrorType factorize(const Eigen::SparseMatrix<real_type> & J); // numeric factorization (requires values)
+        ErrorType refactorize(const Eigen::SparseMatrix<real_type> & J);  // re-numeric factorization, reuses symbolic
         ErrorType solve(RealVect & b);
 
         // can this linear solver solve problem where RHS is a matrix

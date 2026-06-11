@@ -36,12 +36,11 @@ ErrorType CKTSOLinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
+ErrorType CKTSOLinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
     const long long *oparm = oparm_;
     int ret_ = CKTSO_CreateSolver(&solver_, &iparm_, &oparm);
-    if (ret_ < 0){   // fail
+    if (ret_ < 0){
         if (ret_ == -99){
-            // fail to initialize because of a license issue
             std::string msg = "Fail to initilize the CKTSO solver because we cannot find the cktso.lic file. ";
             msg += "Please copy this file at the location you want to use the CKTSO solver (the place where the lib is located). ";
             msg += "See `import lightsim2grid; print(lightsim2grid.compilation_options.cktso_lib)` and then copy paste ";
@@ -51,9 +50,7 @@ ErrorType CKTSOLinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J
         return ErrorType::LicenseError;
     }
 
-    const auto n = J.cols(); // should be equal to J_.nrows()
-    int ret;
-    ErrorType err = ErrorType::NoError; // reset error message
+    const auto n = J.cols();
     const unsigned int nnz = J.nonZeros();
 
     ai_ = new int [nnz];
@@ -67,32 +64,31 @@ ErrorType CKTSOLinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J
     for(int i = 0; i < n+1; ++i){
         ap_[i] = static_cast<int>(ref_ap[i]);
     }
-    ret = solver_->Analyze(false,  // complex or real
-                           n,
-                           ap_,
-                           ai_,
-                           J.valuePtr(),
-                           nb_thread_);
+    int ret = solver_->Analyze(false,  // complex or real
+                               n,
+                               ap_,
+                               ai_,
+                               J.valuePtr(),
+                               nb_thread_);
     if (ret < 0){
-        err = ErrorType::SolverAnalyze;
-        // std::cout << "CKTSOLinearSolver::initialize() solver_->Analyze error: "  << ret << std::endl;
         // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
-        return err;
+        return ErrorType::SolverAnalyze;
     }
-
-    ret = solver_->Factorize(J.valuePtr(),
-                             true // @fast: whether to use fast factorization => was set to "false" in the demo
-                             );
-    if (ret < 0){
-        err = ErrorType::SolverFactor;
-        // std::cout << "CKTSOLinearSolver::initialize() solver_->Factorize error: "  << ret << std::endl;
-        // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
-        return err;
-    }
-    return err;
+    return ErrorType::NoError;
 }
 
-ErrorType CKTSOLinearSolver::refactor(const Eigen::SparseMatrix<real_type> & J){
+ErrorType CKTSOLinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J){
+    int ret = solver_->Factorize(J.valuePtr(),
+                                 true // @fast: whether to use fast factorization
+                                 );
+    if (ret < 0){
+        // https://github.com/chenxm1986/cktso/blob/master/include/cktso.h for error info
+        return ErrorType::SolverFactor;
+    }
+    return ErrorType::NoError;
+}
+
+ErrorType CKTSOLinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & J){
     int ret = solver_->Refactorize(J.valuePtr());
     if(ret < 0){
         // std::cout << "CKTSOLinearSolver::refactor solver_->Refactorize error: " << ret << std::endl;

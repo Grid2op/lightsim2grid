@@ -98,12 +98,26 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         }
     }
 
-    // initialize the solver if needed
+    // analyze (structure) + factorize (values) if topology changed
     if(need_factorize_){
         // std::cout << "\t\t\tneed to factorize\n";
-        ErrorType status_init = _linear_solver.initialize(dcYbus_noslack_);
+        auto timer_an = CustTimer();
+        ErrorType status_init = _linear_solver.analyze(dcYbus_noslack_);
+        const double dur_an = timer_an.duration();
+        timer_initialize_ += dur_an;
         if(status_init != ErrorType::NoError){
             err_ = status_init;
+            timer_total_nr_ += timer.duration();
+            return false;
+        }
+
+        auto timer_fac = CustTimer();
+        status_init = _linear_solver.factorize(dcYbus_noslack_);
+        const double dur_fact = timer_fac.duration();
+        timer_factor_ += dur_fact;
+        if(status_init != ErrorType::NoError){
+            err_ = status_init;
+            timer_total_nr_ += timer.duration();
             return false;
         }
         need_factorize_ = false;
@@ -120,8 +134,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     if(need_refactor_){
         auto timer_s = CustTimer();
-        ErrorType error = _linear_solver.refactor(dcYbus_noslack_);
-        timer_refactor_ += timer_s.duration();
+        ErrorType error = _linear_solver.refactorize(dcYbus_noslack_);
+        const double dur_refacto = timer_s.duration();
+        timer_refactor_ += dur_refacto;
         if(error != ErrorType::NoError){
             err_ = error;
             timer_total_nr_ += timer.duration();
@@ -131,10 +146,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     {
         auto timer_s = CustTimer();
         ErrorType error = _linear_solver.solve(Va_dc_without_slack);
-        timer_solve_ += timer_s.duration();
+        const double dur_solve = timer_s.duration();
+        timer_solve_ += dur_solve;
         if(error != ErrorType::NoError){
             err_ = error;
-            timer_total_nr_ += timer.duration();
+            timer_total_nr_ += dur_solve;
             return false;
         }
     }

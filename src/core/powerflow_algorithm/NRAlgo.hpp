@@ -42,12 +42,15 @@ public:
         iw_mu_min_(static_cast<real_type>(1e-4)),
         iw_mu_max_(static_cast<real_type>(1.0)),
         refactor_every_n_(4),
+        timer_factor_(0.),
         timer_refactor_(0.),
         timer_initialize_(0.),
         timer_dSbus_(0.),
         timer_fillJ_(0.),
         timer_Va_Vm_(0.),
-        timer_pre_proc_(0.) {}
+        timer_pre_proc_(0.),
+        timer_scale_(0.),
+        timer_mismatch_(0.) {}
 
     virtual ~NRAlgo() noexcept = default;
 
@@ -79,6 +82,7 @@ public:
     {
         return TimerJacType(timer_Fx_,
                             timer_solve_,
+                            timer_factor_,
                             timer_refactor_,
                             timer_initialize_,
                             timer_check_,
@@ -86,6 +90,8 @@ public:
                             timer_fillJ_,
                             timer_Va_Vm_,
                             timer_pre_proc_,
+                            timer_scale_,
+                            timer_mismatch_,
                             timer_total_nr_);
     }
 
@@ -207,12 +213,15 @@ public:
 protected:
     virtual void reset_timer() override {
         BaseAlgo::reset_timer();
+        timer_factor_     = 0.;
         timer_refactor_   = 0.;
         timer_dSbus_      = 0.;
         timer_fillJ_      = 0.;
         timer_Va_Vm_      = 0.;
         timer_pre_proc_   = 0.;
         timer_initialize_ = 0.;
+        timer_scale_      = 0.;
+        timer_mismatch_      = 0.;
         _system.reset_timers();
     }
 
@@ -256,12 +265,15 @@ private:
     int refactor_every_n_;
 
     // Timers
+    double timer_factor_;
     double timer_refactor_;
     double timer_initialize_;
     double timer_dSbus_;
     double timer_fillJ_;
     double timer_Va_Vm_;
     double timer_pre_proc_;
+    double timer_scale_;
+    double timer_mismatch_;
 
     // No copy
     NRAlgo(const NRAlgo&) = delete;

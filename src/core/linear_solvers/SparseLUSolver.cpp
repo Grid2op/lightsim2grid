@@ -14,18 +14,19 @@ namespace ls2g {
 
 const bool SparseLULinearSolver::CAN_SOLVE_MAT = true;
 
-ErrorType SparseLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
-    // default Eigen representation: column major, which is good for klu !
-    // J is const here
-    ErrorType res = ErrorType::NoError; 
+ErrorType SparseLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
     solver_.analyzePattern(J);
-    // do not check here for "solver_.info" it is not set to "Success"
-    solver_.factorize(J);
-    if(solver_.info() != Eigen::Success) res = ErrorType::SolverFactor; 
-    return res;
+    // analyzePattern does not set solver_.info() to Success, so no check here
+    return ErrorType::NoError;
 }
 
-ErrorType SparseLULinearSolver::refactor(const Eigen::SparseMatrix<real_type> & J){
+ErrorType SparseLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J){
+    solver_.factorize(J);
+    if(solver_.info() != Eigen::Success) return ErrorType::SolverFactor;
+    return ErrorType::NoError;
+}
+
+ErrorType SparseLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & J){
     solver_.factorize(J);
     if(solver_.info() != Eigen::Success) return ErrorType::SolverFactor;
     return ErrorType::NoError;

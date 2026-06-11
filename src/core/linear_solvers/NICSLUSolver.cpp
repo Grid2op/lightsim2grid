@@ -38,11 +38,9 @@ ErrorType NICSLULinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & J){
-    // default Eigen representation: column major, which is good for klu !
-    const auto n = J.cols(); // should be equal to J_.nrows()
-    int ret;
-    ErrorType err = ErrorType::NoError; // reset error message
+ErrorType NICSLULinearSolver::analyze(const Eigen::SparseMatrix<real_type> & J){
+    // NICSLU Analyze may use values for MC64 value-based scaling/ordering
+    const auto n = J.cols();
     const unsigned int nnz = J.nonZeros();
 
     ai_ = new unsigned int [nnz];  // deleted in destructor and NICSLUSolver::reset
@@ -56,29 +54,29 @@ ErrorType NICSLULinearSolver::initialize(const Eigen::SparseMatrix<real_type> & 
     for(int i = 0; i < n+1; ++i){
         ap_[i] = static_cast<unsigned int>(ref_ap[i]);
     }
-    ret = solver_.Analyze(n,
-                          J.valuePtr(),
-                          ai_,
-                          ap_,
-                          MATRIX_COLUMN_REAL);  // MATRIX_COLUMN_REAL, MATRIX_ROW_REAL
+    int ret = solver_.Analyze(n,
+                              J.valuePtr(),
+                              ai_,
+                              ap_,
+                              MATRIX_COLUMN_REAL);  // MATRIX_COLUMN_REAL, MATRIX_ROW_REAL
     if (ret < 0){
-        err = ErrorType::SolverAnalyze;
-        // std::cout << "NICSLULinearSolver::initialize() solver_.Analyze error: "  << ret << std::endl;
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
-        return err;
+        return ErrorType::SolverAnalyze;
     }
-    // solver.FactorizeMatrix(ax, 0); //use all created threads
-    ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
-    if (ret < 0){
-        err = ErrorType::SolverFactor;
-        // std::cout << "NICSLULinearSolver::initialize() solver_.FactorizeMatrix error: "  << ret << std::endl;
-        // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
-        return err;
-    }
-    return err;
+    return ErrorType::NoError;
 }
 
-ErrorType NICSLULinearSolver::refactor(const Eigen::SparseMatrix<real_type> & J){
+ErrorType NICSLULinearSolver::factorize(const Eigen::SparseMatrix<real_type> & J){
+    // solver.FactorizeMatrix(ax, 0); //use all created threads
+    int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
+    if (ret < 0){
+        // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
+        return ErrorType::SolverFactor;
+    }
+    return ErrorType::NoError;
+}
+
+ErrorType NICSLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type> & J){
     int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
     if(ret < 0){
         // std::cout << "NICSLULinearSolver::refactor solver_.FactorizeMatrix error: " << ret << std::endl;

@@ -23,30 +23,29 @@ ErrorType KLULinearSolver::reset(){
     return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::initialize(const Eigen::SparseMatrix<real_type>&  J){
-    // default Eigen representation: column major, which is good for klu !
-    // J is const here, but `klu_analyze` signature expects arrays and not const arrays
-    // so I const_cast
+ErrorType KLULinearSolver::analyze(const Eigen::SparseMatrix<real_type>& J){
+    // J is const here, but `klu_analyze` signature expects non-const arrays, so I const_cast
     const auto n = J.cols();
     common_ = klu_common();
-    ErrorType res = ErrorType::NoError; 
     symbolic_ = klu_analyze(n,
                             const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
                             const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
                             &common_);
-    if(common_.status != KLU_OK){
-        res = ErrorType::SolverAnalyze; 
-    }else{
-        numeric_ = klu_factor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
-                              const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
-                              const_cast<real_type*>(J.valuePtr()),
-                              symbolic_, &common_);
-        if(common_.status != KLU_OK) res = ErrorType::SolverFactor; 
-    }
-    return res;
+    if(common_.status != KLU_OK) return ErrorType::SolverAnalyze;
+    return ErrorType::NoError;
 }
 
-ErrorType KLULinearSolver::refactor(const Eigen::SparseMatrix<real_type>& J){
+ErrorType KLULinearSolver::factorize(const Eigen::SparseMatrix<real_type>& J){
+    // J is const here, but `klu_factor` signature expects non-const arrays, so I const_cast
+    numeric_ = klu_factor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
+                          const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
+                          const_cast<real_type*>(J.valuePtr()),
+                          symbolic_, &common_);
+    if(common_.status != KLU_OK) return ErrorType::SolverFactor;
+    return ErrorType::NoError;
+}
+
+ErrorType KLULinearSolver::refactorize(const Eigen::SparseMatrix<real_type>& J){
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
     int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),

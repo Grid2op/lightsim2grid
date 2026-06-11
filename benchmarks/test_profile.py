@@ -7,7 +7,7 @@ import time
 from kiwisolver import Solver
 import grid2op
 from lightsim2grid import LightSimBackend
-from lightsim2grid.solver import SolverType
+from lightsim2grid.solver import AlgorithmType
 import warnings
 import pandapower as pp
 import numpy as np
@@ -24,7 +24,8 @@ from  benchmark_grid_size import (
 prng = np.random.default_rng(42)
     
 CASE_NAME = "case9241pegase.json"
-NB_TS = 1000
+CASE_NAME = "case6515rte.json"
+NB_TS = 288  # does not work if you put something else here !! fixme: get_loads_gens
 
 
 def my_grid2op_env(case_name, nb_ts, prng):
@@ -77,7 +78,7 @@ def main_glop():
     make_steps_glop(env, NB_TS, reset_algo=True)
     
 
-def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_used=SolverType.KLU):
+def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_used=AlgorithmType.NR_KLU):
     time_ls = 0.
     ls_timer_Fx = 0.
     ls_timer_solve = 0.
@@ -88,7 +89,12 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
     ls_timer_Va_Vm = 0.
     ls_timer_pre_proc = 0.
     ls_timer_total_nr = 0.
+    ls_timer_factor = 0.
     ls_timer_refactor = 0.
+    ls_timer_per_refactor = 0.
+    ls_timer_per_solve = 0.
+    ls_timer_per_scale = 0.
+    ls_timer_per_mismatch = 0.
     try:
         with open(f"gridmodel_{case_name}.pickle", "rb") as f:
             ls_grid = pickle.load(f)
@@ -108,10 +114,11 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
         if V.shape[0] == 0:
             raise RuntimeError("Divergence")
         
-        (timer_Fx_, timer_solve_, timer_refactor_, timer_initialize_,
+        (timer_Fx_, timer_solve_, timer_factor_, timer_refactor_, timer_initialize_,
          timer_check_, timer_dSbus_, timer_fillJ_,
-         timer_Va_Vm_, timer_pre_proc_, timer_total_nr_
+         timer_Va_Vm_, timer_pre_proc_, timer_scale, timer_mismatch, timer_total_nr_
          ) = ls_grid.get_solver().get_timers_jacobian()
+        nr_iter =  ls_grid.get_solver().get_nb_iter()
         ls_grid.unset_changes()  # tell lightsim2grid that the state of the grid is consistent
         ls_timer_Fx += timer_Fx_
         ls_timer_solve += timer_solve_
@@ -123,6 +130,17 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
         ls_timer_pre_proc += timer_pre_proc_
         ls_timer_total_nr += timer_total_nr_
         ls_timer_refactor += timer_refactor_
+        ls_timer_factor += timer_factor_
+        if abs(timer_factor_) > 1e-8:
+            # factor is used
+            nb_denom = nr_iter - 1
+        else:
+            # refactor is used accross all iterations
+            nb_denom = nr_iter
+        ls_timer_per_refactor += timer_refactor_ / nb_denom 
+        ls_timer_per_solve += timer_solve_ / nr_iter  # solve is called each iter
+        ls_timer_per_scale = timer_scale
+        ls_timer_per_mismatch = timer_mismatch
     print(f"Solver used: {solver_used}")
     print(f"Nb iter: {nb_ts}")
     print(f"Do reset each step: {reset_algo}")
@@ -132,16 +150,21 @@ def main_gridmodel(case_name=CASE_NAME, nb_ts=NB_TS, reset_algo=True, solver_use
     print(f"Total time spent in the solver: {1e3 * ls_timer_total_nr:.2e} ms ({100. * ls_timer_total_nr / time_ls:.0f}% of total time spent in lightsim2grid)")
     print(f"\t Time to pre process Ybus, Sbus etc.: {1e3 * ls_timer_pre_proc:.2e} ms ({100. * ls_timer_pre_proc / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to initialize linear solver {1e3 * ls_timer_initialize:.2e} ms ({100. * ls_timer_initialize / ls_timer_total_nr:.0f} % of time in solver)")
+    print(f"\t Time to factor the linear solver {1e3 * ls_timer_factor:.2e} ms ({100. * ls_timer_factor / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to compute dS/dV {1e3 * ls_timer_dSbus : .2e} ms ({100. * ls_timer_dSbus / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to fill the Jacobian {1e3 * ls_timer_fillJ:.2e} ms ({100. * ls_timer_fillJ / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to refactor the Jacobian linear system: {1e3 * ls_timer_refactor:.2e} ms ({100. * ls_timer_refactor / ls_timer_total_nr:.0f} % of time in solver)")
+    print(f"\t\t This equates to {1e3 * ls_timer_per_refactor:.2e} ms per refactor")
     print(f"\t Time to solve the Jacobian linear system: {1e3 * ls_timer_solve:.2e} ms ({100. * ls_timer_solve / ls_timer_total_nr:.0f} % of time in solver)")
+    print(f"\t\t This equates to {1e3 * ls_timer_per_solve:.2e} ms per solve")
     print(f"\t Time to update Va and Vm {1e3*ls_timer_Va_Vm:.2e} ms ({100. * ls_timer_Va_Vm / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to evaluate p,q mismmatch at each bus {1e3*ls_timer_Fx:.2e} ms ({100. * ls_timer_Fx / ls_timer_total_nr:.0f} % of time in solver)")
     print(f"\t Time to evaluate cvg criteria {1e3*ls_timer_check:.2e} ms ({100. * ls_timer_check / ls_timer_total_nr:.0f} % of time in solver)")
+    print(f"\t Time to build mismatch vector {1e3*ls_timer_per_mismatch:.2e} ms ({100. * ls_timer_per_mismatch / ls_timer_total_nr:.0f} % of time in solver)")
+    print(f"\t Time to scale mismatch vector {1e3*ls_timer_per_scale:.2e} ms ({100. * ls_timer_per_scale / ls_timer_total_nr:.0f} % of time in solver)")
     print("--------------------------------------\n")
     
     
 if __name__ == "__main__":
-    # my_grid2op_env(case_name, nb_ts, prng)
-    main_gridmodel(CASE_NAME, NB_TS, reset_algo=True, solver_used=SolverType.KLUSingleSlack)
+    # my_grid2op_env(CASE_NAME, NB_TS, prng)
+    main_gridmodel(CASE_NAME, NB_TS, reset_algo=False, solver_used=AlgorithmType.NRSing_KLU)
