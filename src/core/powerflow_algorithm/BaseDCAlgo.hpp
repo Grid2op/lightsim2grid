@@ -25,6 +25,8 @@ class BaseDCAlgo final: public BaseAlgo
             timer_factor_(0.),
             timer_refactor_(0.),
             timer_initialize_(0.),
+            timer_pre_proc_(0.),
+            timer_mismatch_(0.),  // used for all the post processing
             timer_ptdf_(0.),
             timer_lodf_(0.),
             sizeYbus_with_slack_(0),
@@ -38,8 +40,9 @@ class BaseDCAlgo final: public BaseAlgo
             timer_refactor_ = 0.;
             timer_factor_ = 0.;
             timer_initialize_  = 0.;
+            timer_pre_proc_  = 0.;
+            timer_mismatch_  = 0.;
             timer_solve_ = 0.;
-            timer_factor_ = 0.;
             timer_ptdf_ = 0.;
             timer_lodf_ = 0.;
         }
@@ -54,6 +57,8 @@ class BaseDCAlgo final: public BaseAlgo
             res.timer_initialize_ = timer_initialize_;
             res.timer_check_      = timer_check_;
             res.timer_total_nr_   = timer_total_nr_;
+            res.timer_pre_proc_   = timer_pre_proc_;
+            res.timer_mismatch_   = timer_mismatch_;
             return res;
         }
 
@@ -122,6 +127,8 @@ class BaseDCAlgo final: public BaseAlgo
         double timer_factor_;
         double timer_refactor_;
         double timer_initialize_;
+        double timer_pre_proc_;
+        double timer_mismatch_;  // used for all the post processing
 
         double timer_ptdf_;
         double timer_lodf_;

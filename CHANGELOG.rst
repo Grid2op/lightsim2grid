@@ -92,6 +92,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] results of get_timers_jacobian() function now measures 13 different timers
   and has is accessible with names (rather than just id). It is still iterable for
   backward compatibility. 
+- [IMPROVED] computation speed of DC algorithm in general
 
 [0.13.1]  2026-04-21
 --------------------
