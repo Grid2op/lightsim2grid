@@ -31,7 +31,10 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     if(!is_linear_solver_valid()) {
         return false;
     }
-    BaseAlgo::reset_timer();
+    reset_timer();
+    // std::cout << "\n\n____________________________________________________\n";
+    // std::cout << "need_factorize " <<  need_factorize_ <<"\n"; 
+    // std::cout << "need_refactor " <<  need_refactor_ <<"\n"; 
 
     auto timer = CustTimer();
     if(need_factorize_ ||
@@ -42,6 +45,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.has_ybus_some_coeffs_zero()
        ){
        reset();
+    //    std::cout << "need_factorize_ 1\n"; 
        // at this stage need_factorize_ is set also to true
     }
     
@@ -58,6 +62,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         // TODO SLACK (for now i put all slacks as PV, except the first one)
         // this should be handled in Sbus, because we know the amount of power absorbed by the slack
         // so we can compute it correctly !
+        auto timer_pre = CustTimer();
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
         // find the slack buses
@@ -66,6 +71,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
         // corresp bus -> solverbus
         fill_mat_bus_id(sizeYbus_with_slack_);
+        timer_pre_proc_ += timer_pre.duration();
     }
 
     // remove the slack bus from Ybus
@@ -73,8 +79,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
+        auto timer_pre = CustTimer();
         fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
+        timer_pre_proc_ += timer_pre.duration();
         need_factorize_ = true;  // force a call to "factor" the linear solver as the lhs (ybus) changed
+        // std::cout << "need_factorize_ 2\n"; 
         // no need to refactor if ybus did not change
     }
     
@@ -90,12 +99,14 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // remove the slack bus from Sbus
     if(need_factorize_ || _solver_control.need_recompute_sbus()){
         // std::cout << "\t\t\tneed to dcSbus_noslack_\n";
+        auto timer_pre = CustTimer();
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
             const int col_res = mat_bus_id_(k);
             dcSbus_noslack_(col_res) = std::real(Sbus(k));
         }
+        timer_pre_proc_ += timer_pre.duration();
     }
 
     // analyze (structure) + factorize (values) if topology changed
@@ -120,12 +131,16 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
             timer_total_nr_ += timer.duration();
             return false;
         }
-        need_factorize_ = false;
-        need_refactor_ = false;
+        need_factorize_ = false;  // done just above
+        need_refactor_ = false;  // no need to refactor as a factor as been called just now
+        // std::cout << "need_factorize_ 3\n"; 
     }
 
     // solve for theta: Sbus = dcY . theta (make a copy to keep dcSbus_noslack_)
-    RealVect Va_dc_without_slack = dcSbus_noslack_;       
+    auto timer_pre = CustTimer();
+    RealVect Va_dc_without_slack = dcSbus_noslack_;      
+    timer_pre_proc_ += timer_pre.duration(); 
+    
     // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (max): " << dcYbus_noslack_.coeffs().maxCoeff() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp: dcYbus_noslack_ (sum): " << dcYbus_noslack_.coeffs().abs().sum() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack (inf norm): " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
@@ -133,6 +148,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // std::cout << "\t\tBaseDCAlgo.tpp:  V (l1 norm): " <<  V.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     // std::cout << "\t\tBaseDCAlgo.tpp:  Sbus (l1 norm): " <<  Sbus.lpNorm<1>() << std::endl;  // TODO DEBUG WINDOWS
     if(need_refactor_){
+        // we should end-up here only in case of n-1 simulation (handled in contingency analysis)
+        // set to true in update_internal_Ybus
+        // std::cout << "\t\t\tneed to refactorize\n";
         auto timer_s = CustTimer();
         ErrorType error = _linear_solver.refactorize(dcYbus_noslack_);
         const double dur_refacto = timer_s.duration();
@@ -150,11 +168,12 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         timer_solve_ += dur_solve;
         if(error != ErrorType::NoError){
             err_ = error;
-            timer_total_nr_ += dur_solve;
+            timer_total_nr_ += timer.duration();
             return false;
         }
     }
     
+    auto timer_mismatch = CustTimer();
     if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
@@ -200,7 +219,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     V_.array() *= Vm_.array();
     nr_iter_ = 1;
     V = V_;
-    need_refactor_ = false;  // powerflow is a success, no need to refactor it next time.
+    need_refactor_ = false;  // no need to redo it in general cases
+    timer_mismatch_ = timer_mismatch.duration();
+    // std::cout << "need_refactor " <<  need_refactor_ <<"\n"; 
+    // std::cout << "end powerflow\n";
+    // std::cout << "---------------------------------------\n";
     
     #ifdef __COUT_TIMES
         std::cout << "\t dc postproc: " << 1000. * timer_postproc.duration() << "ms" << std::endl;

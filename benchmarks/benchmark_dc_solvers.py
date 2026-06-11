@@ -131,19 +131,21 @@ def main(max_ts,
     agent = DoNothingAgent(action_space=env_pp.action_space)
     if no_pp is False:
         print("Start using Pandapower")
-        nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0)
+        nb_ts_pp, time_pp, aor_pp, gen_p_pp, gen_q_pp = run_env(env_pp, max_ts, agent, chron_id=0, env_seed=0,
+                                                                is_dc=True)
         pp_comp_time = env_pp.backend.comp_time
         pp_time_pf = env_pp._time_powerflow
     
     if pypow_error is None:
         # also benchmark pypowsybl backend
-        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0)
+        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0,
+                                                                               is_dc=True)
         pypow_comp_time = env_pypow.backend.comp_time
         pypow_time_pf = env_pypow._time_powerflow
         if hasattr(env_pypow, "_time_step"):
             # for oldest grid2op version where this was not stored
             time_pypow = env_pypow._time_step
-            
+    
     wst = True  # print extra info in the run_env function
     solver_types = env_lightsim.backend.available_solvers
     
@@ -168,13 +170,13 @@ def main(max_ts,
             # NR based solver => less iterations
             env_lightsim.backend.set_solver_max_iter(10)
         nb_ts_gs, time_gs, aor_gs, gen_p_gs, gen_q_gs = run_env(env_lightsim, max_ts, agent, chron_id=0,
-                                                                with_type_solver=wst, env_seed=0)
+                                                                with_type_solver=wst, env_seed=0, is_dc=True)
         gs_comp_time = env_lightsim.backend.comp_time
         gs_time_pf = env_lightsim._time_powerflow
         res_times[solver_type] = (solver_names[solver_type],
                                   nb_ts_gs, time_gs, aor_gs, gen_p_gs,
                                   gen_q_gs, gs_comp_time, gs_time_pf)
-
+    # sys.exit(0)
     env_name = get_env_name_displayed(env_name_input)
 
     real_env_ls = env_lightsim
@@ -226,6 +228,7 @@ def main(max_ts,
     # Perform a securtiy analysis (up to 1000 contingencies)
     real_env_ls.reset()
     sa = ContingencyAnalysis(real_env_ls)
+    print("BEGINNING SA")
     computer_sa = sa.computer
     computer_sa.change_algorithm(AlgorithmType.DC_KLU)
     for i in range(real_env_ls.n_line):
