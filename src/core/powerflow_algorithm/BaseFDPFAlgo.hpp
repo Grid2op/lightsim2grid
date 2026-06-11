@@ -81,8 +81,10 @@ class BaseFDPFAlgo: public BaseAlgo
         void initialize() {
             auto timer = CustTimer();
             err_ = ErrorType::NoError; // reset error message
-            // init Bp solver
-            ErrorType init_status = _linear_solver_Bp.initialize(Bp_);
+            // analyze (structure) + factorize (values) for Bp solver
+            ErrorType init_status = _linear_solver_Bp.analyze(Bp_);
+            if(init_status == ErrorType::NoError)
+                init_status = _linear_solver_Bp.factorize(Bp_);
             if(init_status != ErrorType::NoError){
                 _linear_solver_Bp.reset();
                 _linear_solver_Bpp.reset();
@@ -91,8 +93,10 @@ class BaseFDPFAlgo: public BaseAlgo
                 timer_initialize_ += timer.duration();
                 return;
             }
-            // init Bpp solver (if Bp is sucesfull of course)
-            init_status = _linear_solver_Bpp.initialize(Bpp_);
+            // analyze (structure) + factorize (values) for Bpp solver (if Bp succeeded)
+            init_status = _linear_solver_Bpp.analyze(Bpp_);
+            if(init_status == ErrorType::NoError)
+                init_status = _linear_solver_Bpp.factorize(Bpp_);
             if(init_status != ErrorType::NoError){
                 _linear_solver_Bp.reset();
                 _linear_solver_Bpp.reset();
