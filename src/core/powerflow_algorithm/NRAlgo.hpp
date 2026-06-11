@@ -78,21 +78,23 @@ public:
     // ----- timers --------------------------------------------------------------
 
     virtual
-    TimerJacType get_timers_jacobian() const override
+    TimerJac get_timers_jacobian() const override
     {
-        return TimerJacType(timer_Fx_,
-                            timer_solve_,
-                            timer_factor_,
-                            timer_refactor_,
-                            timer_initialize_,
-                            timer_check_,
-                            timer_dSbus_,
-                            timer_fillJ_,
-                            timer_Va_Vm_,
-                            timer_pre_proc_,
-                            timer_scale_,
-                            timer_mismatch_,
-                            timer_total_nr_);
+        TimerJac res;
+        res.timer_Fx_         = timer_Fx_;
+        res.timer_solve_      = timer_solve_;
+        res.timer_factor_     = timer_factor_;
+        res.timer_refactor_   = timer_refactor_;
+        res.timer_initialize_ = timer_initialize_;
+        res.timer_check_      = timer_check_;
+        res.timer_dSbus_      = timer_dSbus_;
+        res.timer_fillJ_      = timer_fillJ_;
+        res.timer_Va_Vm_      = timer_Va_Vm_;
+        res.timer_pre_proc_   = timer_pre_proc_;
+        res.timer_scale_      = timer_scale_;
+        res.timer_mismatch_   = timer_mismatch_;
+        res.timer_total_nr_   = timer_total_nr_;
+        return res;
     }
 
     // ----- powerflow -----------------------------------------------------------

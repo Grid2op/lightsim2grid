@@ -214,7 +214,7 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_timers", true)->get_timers();
         }
 
-        TimerJacType get_timers_jacobian() const {
+        TimerJac get_timers_jacobian() const {
             return get_prt_solver("get_timers_jacobian", true)->get_timers_jacobian();
         }
 

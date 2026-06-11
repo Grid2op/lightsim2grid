@@ -134,8 +134,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
             timer_solve_ += timer_s.duration();
         }
         if (err_ != ErrorType::NoError) { 
-            
-            std::cout << "err_ " << err_ << std::endl;
             res = false; break;
         }
 
@@ -164,19 +162,18 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
         res = false;
     }
-    timer_total_nr_ += timer.duration();
 
     // Synchronise BaseAlgo's voltage state
     V_  = _system.V();
     Vm_ = _system.Vm();
     Va_ = _system.Va();
-    V   = V_;
 
     // Propagate NRSystem timers to NRAlgo
     // std::cout << "timers\n";
     timer_dSbus_ += _system.timer_dSbus();
     timer_fillJ_ += _system.timer_fillJ();
     _system.reset_timers();
+    timer_total_nr_ += timer.duration();
 
     #ifdef __COUT_TIMES
         std::cout << "Computation time: "

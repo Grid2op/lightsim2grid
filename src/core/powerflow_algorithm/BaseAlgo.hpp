@@ -35,21 +35,21 @@ namespace ls2g {
 
 class LSGrid;
 
-using TimerJacType = std::tuple<
-    double,  // timer_Fx_
-    double,  // timer_solve_
-    double,  // timer_factor_
-    double,  // timer_refactor_
-    double,  // timer_initialize_
-    double,  // timer_check_
-    double,  // timer_dSbus_
-    double,  // timer_fillJ_
-    double,  // timer_Va_Vm_
-    double,  // timer_pre_proc_
-    double,  // timer_scale_
-    double,  // timer_mismatch_
-    double   // timer_total_nr_
->;
+struct TimerJac {
+    double timer_Fx_         = -1.;
+    double timer_solve_      = -1.;
+    double timer_factor_     = -1.;
+    double timer_refactor_   = -1.;
+    double timer_initialize_ = -1.;
+    double timer_check_      = -1.;
+    double timer_dSbus_      = -1.;
+    double timer_fillJ_      = -1.;
+    double timer_Va_Vm_      = -1.;
+    double timer_pre_proc_   = -1.;
+    double timer_scale_      = -1.;
+    double timer_mismatch_   = -1.;
+    double timer_total_nr_   = -1.;
+};
 using TimerPTDFLODFType = std::tuple<double, double, double>;
 
 /**
@@ -129,23 +129,13 @@ class LS2G_API BaseAlgo : public BaseConstants
             return res;
         }
         
-        virtual TimerJacType get_timers_jacobian() const
+        virtual TimerJac get_timers_jacobian() const
         {
-            TimerJacType res = {
-                timer_Fx_,
-                timer_solve_,
-                -1.,  // timer_refactor_: not available for non NR solver, so I put -1
-                -1.,  // timer_factor_: not available for non NR solver, so I put -1
-                -1.,  // timer_initialize_: not available for non NR solver, so I put -1
-                timer_check_,
-                -1.,  // not available for non NR solver, so I put -1
-                -1.,  // not available for non NR solver, so I put -1
-                -1.,  // not available for non NR solver, so I put -1
-                -1.,  // not available for non NR solver, so I put -1
-                -1.,  // not available for non NR solver, so I put -1
-                -1.,
-                timer_total_nr_
-            };
+            TimerJac res;
+            res.timer_Fx_       = timer_Fx_;
+            res.timer_solve_    = timer_solve_;
+            res.timer_check_    = timer_check_;
+            res.timer_total_nr_ = timer_total_nr_;
             return res;
         }
         
