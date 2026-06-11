@@ -80,6 +80,53 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
 }
 
 void bind_solvers(py::module_& m) {
+    // ---- TimerJac ----
+    py::class_<TimerJac>(m, "TimerJac",
+        "Named timer record returned by get_timers_jacobian(). "
+        "All fields default to -1.0 when not applicable to the active solver. "
+        "Supports tuple-style iteration and unpacking.")
+        .def_readonly("timer_Fx",         &TimerJac::timer_Fx_)
+        .def_readonly("timer_solve",      &TimerJac::timer_solve_)
+        .def_readonly("timer_factor",     &TimerJac::timer_factor_)
+        .def_readonly("timer_refactor",   &TimerJac::timer_refactor_)
+        .def_readonly("timer_initialize", &TimerJac::timer_initialize_)
+        .def_readonly("timer_check",      &TimerJac::timer_check_)
+        .def_readonly("timer_dSbus",      &TimerJac::timer_dSbus_)
+        .def_readonly("timer_fillJ",      &TimerJac::timer_fillJ_)
+        .def_readonly("timer_Va_Vm",      &TimerJac::timer_Va_Vm_)
+        .def_readonly("timer_pre_proc",   &TimerJac::timer_pre_proc_)
+        .def_readonly("timer_scale",      &TimerJac::timer_scale_)
+        .def_readonly("timer_mismatch",   &TimerJac::timer_mismatch_)
+        .def_readonly("timer_total_nr",   &TimerJac::timer_total_nr_)
+        .def("__len__", [](const TimerJac&) { return 13; })
+        .def("__getitem__", [](const TimerJac& t, int i) -> double {
+            const double vals[13] = {
+                t.timer_Fx_, t.timer_solve_, t.timer_factor_,
+                t.timer_refactor_, t.timer_initialize_, t.timer_check_,
+                t.timer_dSbus_, t.timer_fillJ_, t.timer_Va_Vm_,
+                t.timer_pre_proc_, t.timer_scale_, t.timer_mismatch_,
+                t.timer_total_nr_
+            };
+            if (i < 0) i += 13;
+            if (i < 0 || i >= 13) throw py::index_error();
+            return vals[i];
+        })
+        .def("__iter__", [](const TimerJac& t) {
+            return py::iter(py::make_tuple(
+                t.timer_Fx_, t.timer_solve_, t.timer_factor_,
+                t.timer_refactor_, t.timer_initialize_, t.timer_check_,
+                t.timer_dSbus_, t.timer_fillJ_, t.timer_Va_Vm_,
+                t.timer_pre_proc_, t.timer_scale_, t.timer_mismatch_,
+                t.timer_total_nr_
+            ));
+        })
+        .def("__repr__", [](const TimerJac& t) {
+            return "TimerJac(timer_Fx=" + std::to_string(t.timer_Fx_) +
+                   ", timer_solve=" + std::to_string(t.timer_solve_) +
+                   ", timer_factor=" + std::to_string(t.timer_factor_) +
+                   ", ...)";
+        });
+
     // ---- SparseLU ----
     {
         auto cls = py::class_<NR_SparseLU>(m, "NR_SparseLU", DocSolver::NR_SparseLU.c_str())

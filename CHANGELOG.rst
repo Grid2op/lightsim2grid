@@ -46,6 +46,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [BREAKING] (cpp only) the linear solvers now supports methods analyze, factorize 
   (was merged into "analyze" before) and the function "refactor" is called 
   "refactorize" for consistency.
+- [BREAKING] The "get_timers_jacobian" method of an algorithm now returns 13 elements.
+  To avoid any further breaking changes, we advise user to use the `TimerJac` structure
+  which is exported to python and contains all the named element instead.
 - [DEPRECATION PENDING] some previous solver names (now called algorithm) were 
   rather ambiguous and not very clear. For example, it was not clear that "KLU"
   referenced the Newton Raphson method, with distributed slack variant, that use_buses_for_sub
@@ -86,6 +89,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] names in the enum for the solver (*eg* AlgorithmType.NR_KLU) now
   matches the names of the solver (*eg* NR_KLU). There is no more differences 
   between the enum and the solver names.
+- [IMPROVED] results of get_timers_jacobian() function now measures 13 different timers
+  and has is accessible with names (rather than just id). It is still iterable for
+  backward compatibility. 
 
 [0.13.1]  2026-04-21
 --------------------

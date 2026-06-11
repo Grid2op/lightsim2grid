@@ -44,23 +44,16 @@ class BaseDCAlgo final: public BaseAlgo
             timer_lodf_ = 0.;
         }
 
-        virtual TimerJacType get_timers_jacobian() const final
+        virtual TimerJac get_timers_jacobian() const final
         {
-            TimerJacType res = {
-                timer_Fx_,
-                timer_solve_,
-                timer_refactor_,
-                timer_factor_,
-                timer_initialize_,  // timer_initialize_: not applicable to DC solver
-                timer_check_,
-                -1.,  // timer_dSbus_: not applicable to DC solver
-                -1.,  // timer_fillJ_: not applicable to DC solver
-                -1.,  // timer_Va_Vm_: not applicable to DC solver
-                -1.,  // timer_pre_proc_: not applicable to DC solver
-                -1.,  // no scaling in DC mode
-                -1.,  // no timer_mismatch_ in DC mode
-                timer_total_nr_
-            };
+            TimerJac res;
+            res.timer_Fx_         = timer_Fx_;
+            res.timer_solve_      = timer_solve_;
+            res.timer_factor_     = timer_factor_;
+            res.timer_refactor_   = timer_refactor_;
+            res.timer_initialize_ = timer_initialize_;
+            res.timer_check_      = timer_check_;
+            res.timer_total_nr_   = timer_total_nr_;
             return res;
         }
 
