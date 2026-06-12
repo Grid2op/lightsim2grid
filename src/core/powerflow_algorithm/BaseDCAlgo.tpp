@@ -174,51 +174,49 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     }
     
     auto timer_mismatch = CustTimer();
-    if(!Va_dc_without_slack.array().allFinite() || (Va_dc_without_slack.lpNorm<Eigen::Infinity>() >= 1e6)){
+    // single-pass validity check: cwiseAbs().maxCoeff() returns NaN/Inf if any element is non-finite
+    const real_type maxAbsVal = Va_dc_without_slack.cwiseAbs().maxCoeff();
+    if(!std::isfinite(maxAbsVal) || maxAbsVal >= 1e6){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
-        // std::cout << "\t\tBaseDCAlgo.tpp: Va_dc_without_slack: " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << std::endl;  // TODO DEBUG WINDOWS
         err_ = ErrorType::SolverSolve;
         V = CplxVect();
         V_ = CplxVect();
         Vm_ = RealVect();
         Va_ = RealVect();
         timer_total_nr_ += timer.duration();
-        // std::cout << "_linear_solver.allFinite" << Va_dc_without_slack.array().allFinite() <<", " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() <<"\n";
         return false;
     }
-    // std::cout << "\t " << Va_dc_without_slack.lpNorm<Eigen::Infinity>() << "\n";
 
     #ifdef __COUT_TIMES
         std::cout << "\t dc solve: " << 1000. * timer_solve.duration() << "ms" << std::endl;
         auto timer_postproc = CustTimer();
     #endif // __COUT_TIMES
-    
+
     // retrieve back the results in the proper shape (add back the slack bus)
-    // TODO have a better way for this, for example using `.segment(0,npv)`
-    // see the BaseAlgo.cpp: _evaluate_Fx
-    RealVect Va_dc = RealVect::Constant(sizeYbus_with_slack_, my_zero_);
-    // fill Va from dc approx
-    for (int ybus_id=0; ybus_id < sizeYbus_with_slack_; ++ybus_id){
-        if(mat_bus_id_(ybus_id) == -1) continue;  // slack bus is handled elsewhere
-        const int bus_me = mat_bus_id_(ybus_id);
-        Va_dc(ybus_id) = Va_dc_without_slack(bus_me);
+    // write directly into Va_: slack positions stay 0, non-slack scattered via precomputed indices
+    if(Va_.size() != sizeYbus_with_slack_) Va_.resize(sizeYbus_with_slack_);
+    Va_.setZero();
+    Va_(nonslack_ybus_ids_) = Va_dc_without_slack;
+    Va_.array() += std::arg(V(slack_buses_ids_solver_(0)));
+
+    // add the Voltage setpoints of the generator (only recompute when magnitudes may have changed)
+    // size check guards against Vm_ being cleared by a previous failed contingency
+    if(need_factorize_ ||
+        Vm_.size() != sizeYbus_with_slack_ ||  // in contingency analysis, Vm is cleared if a cont diverges, so I need to recompute it
+       _solver_control.has_v_changed() ||
+       _solver_control.has_dimension_changed() ||
+       _solver_control.has_pv_changed()){
+        Vm_ = V.array().abs();
     }
-    Va_dc.array() += std::arg(V(slack_buses_ids_solver_(0)));
 
-    // save the results
-    Va_ = Va_dc;
-
-    // add the Voltage setpoints of the generator
-    Vm_ = V.array().abs();
-    Vm_(slack_buses_ids_solver_) = V(slack_buses_ids_solver_).array().abs();
-
-    // now compute the resulting complex voltage
-    V_ = (Va_.array().cos().template cast<cplx_type>() + my_i * Va_.array().sin().template cast<cplx_type>());
-
-    V_.array() *= Vm_.array();
+    // compute complex voltages with std::polar: uses hardware sincos, no temporaries, fills V and V_ in one pass
+    V_.resize(sizeYbus_with_slack_);
+    V.resize(sizeYbus_with_slack_);
+    for(int i = 0; i < sizeYbus_with_slack_; ++i){
+        V_[i] = V[i] = std::polar(Vm_[i], Va_[i]);
+    }
     nr_iter_ = 1;
-    V = V_;
     need_refactor_ = false;  // no need to redo it in general cases
     timer_mismatch_ = timer_mismatch.duration();
     // std::cout << "need_refactor " <<  need_refactor_ <<"\n"; 
@@ -235,10 +233,12 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 template<class LinearSolver>
 void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
     mat_bus_id_ = Eigen::VectorXi::Constant(nb_bus_solver, -1);
+    nonslack_ybus_ids_.resize(sizeYbus_without_slack_);
     int solver_id = 0;
     for (int ybus_id=0; ybus_id < nb_bus_solver; ++ybus_id){
         if(isin(ybus_id, slack_buses_ids_solver_)) continue;  // I don't add anything to the slack bus
         mat_bus_id_(ybus_id) = solver_id;
+        nonslack_ybus_ids_(solver_id) = ybus_id;
         ++solver_id;
     }
 }
@@ -285,6 +285,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
     my_pv_ = Eigen::VectorXi();
     slack_buses_ids_solver_ = Eigen::VectorXi();
     mat_bus_id_ = Eigen::VectorXi();
+    nonslack_ybus_ids_ = Eigen::VectorXi();
 }
 
 template<class LinearSolver>
