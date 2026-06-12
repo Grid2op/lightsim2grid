@@ -98,6 +98,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("init_storages", &LSGrid::init_storages, DocLSGrid::_internal_do_not_use.c_str())
         .def("init_sgens", &LSGrid::init_sgens, DocLSGrid::_internal_do_not_use.c_str())
         .def("init_dclines", &LSGrid::init_dclines, DocLSGrid::_internal_do_not_use.c_str())
+        .def("init_hvdc_lines", &LSGrid::init_hvdc_lines, DocLSGrid::_internal_do_not_use.c_str())
         .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
@@ -221,6 +222,11 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("change_bus2_dcline", &LSGrid::change_bus2_dcline, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus1_dcline", &LSGrid::get_bus1_dcline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_bus2_dcline", &LSGrid::get_bus2_dcline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("set_status_droop_hvdc", &LSGrid::set_status_droop_hvdc,
+             "Set the droop regime of an angle-droop (AC emulation) hvdc line: 0 = linear, +1 = saturated 1->2, -1 = saturated 2->1. "
+             "This is an INPUT of the solver, constant across one solve: the saturation logic is meant to be run between two solves (python outer loop).")
+        .def("get_status_droop_hvdc", &LSGrid::get_status_droop_hvdc, "Droop regime of one hvdc line, see `set_status_droop_hvdc`")
+        .def("get_status_droop_hvdc_vect", &LSGrid::get_status_droop_hvdc_vect, "Droop regimes of all the hvdc lines, see `set_status_droop_hvdc`")
 
         // get back the results
         .def("get_V", &LSGrid::get_V, DocLSGrid::get_V.c_str())

@@ -13,6 +13,7 @@
 #include "BaseConstants.hpp"
 #include "CustTimer.hpp"
 #include "NRLedger.hpp"
+#include "HvdcDroopData.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 
@@ -51,6 +52,8 @@
 
 
 namespace ls2g {
+
+class LSGrid;  // only a pointer travels through the component protocol
 
 // ---- Primary template declaration (no definition) -----------------------------
 
@@ -97,10 +100,13 @@ class LS2G_API Contrib final
 //                                   custom rows/cols; stores the returned indices.
 //  - declare_feature_entries(FeatureSink&) : declares the component's non-dS
 //                                   Jacobian entries; stores the handles.
-//  - fill_feature_values(FeatureWriter&)   : writes the feature values
+//  - fill_feature_values(FeatureWriter&, Va) : writes the feature values
 //                                   (called at every fill_J; J was zeroed first).
-//  - adjust_mismatch(dx, mis)     : adds the component's physical injections to
-//                                   the per-bus complex mismatch. dx is the FULL
+//                                   Va is the CURRENT voltage-angle vector (all
+//                                   solver buses), for state-dependent slopes.
+//  - adjust_mismatch(V_t, dx, mis): adds the component's physical injections to
+//                                   the per-bus complex mismatch, evaluated at
+//                                   the trial voltages V_t. dx is the FULL
 //                                   step vector (zero vector of full size when
 //                                   evaluating at the current state); the
 //                                   component indexes it with its stored column ids.
@@ -195,8 +201,8 @@ class LS2G_API Base
         }
 
         void declare_feature_entries(FeatureSink& /*sink*/) {}
-        void fill_feature_values(FeatureWriter& /*writer*/) const {}
-        void adjust_mismatch(const RealVect& /*dx*/, CplxVect& /*mis*/) const {}
+        void fill_feature_values(FeatureWriter& /*writer*/, const RealVect& /*Va*/) const {}
+        void adjust_mismatch(const CplxVect& /*V_t*/, const RealVect& /*dx*/, CplxVect& /*mis*/) const {}
         void fill_custom_rows(RealVect& /*res*/,
                               const RealVect& /*Va*/,
                               const RealVect& /*Vm*/,
@@ -305,14 +311,14 @@ class LS2G_API MultiSlack   // distributed-slack extension
                 feature_handles_.push_back(sink.add(slack_p_rows_[k], slack_col_));
         }
 
-        void fill_feature_values(FeatureWriter& writer) const
+        void fill_feature_values(FeatureWriter& writer, const RealVect& /*Va*/) const
         {
             for (int k = 0; k < my_size_; ++k)
                 writer.add(feature_handles_[k], slack_weights_(slack_buses_[k]));
         }
 
         // adjust the per-bus complex power mismatch by (slack_absorbed + dx step) * slack_weights
-        void adjust_mismatch(const RealVect& dx, CplxVect& mis) const
+        void adjust_mismatch(const CplxVect& /*V_t*/, const RealVect& dx, CplxVect& mis) const
         {
             const real_type sa = slack_absorbed_ + dx(slack_col_);
             mis.array() += (sa * slack_weights_.array()).cast<cplx_type>();
@@ -355,7 +361,147 @@ class LS2G_API MultiSlack   // distributed-slack extension
 
 };
 
-// struct HVDC {};      // future (+n_hvdc_lines rows/cols at runtime)
+/**
+ * Hvdc angle-droop ("AC emulation") extension.
+ *
+ * For every CONNECTED droop-enabled hvdc line, the active power follows
+ *   raw = p0 + k * (theta1 - theta2)
+ * instead of a fixed setpoint (the HvdcLineContainer does NOT stamp those
+ * lines in Sbus in AC). The flows / derivatives mirror pyloadflow
+ * `equations/ac_emulation.py` (itself a port of open-loadflow's
+ * HvdcAcEmulationSide{1,2}ActiveFlowEquationTerm).
+ *
+ * The extension claims NO row / column: its equations are the existing bus
+ * P mismatches and its unknowns the existing bus thetas. It only:
+ *   - declares up to 4 dP/dtheta Jacobian entries per line,
+ *     (p_row(b1) | p_row(b2)) x (theta_col(b1) | theta_col(b2)), where the
+ *     row / column exists (a slack end simply drops its entries: its theta is
+ *     not an unknown / its P balance not an equation of the base block).
+ *     They are declared whatever the droop regime, so a `status_droop` flip
+ *     between two solves does NOT change the J sparsity pattern and the
+ *     symbolic factorization of the linear solver is reused;
+ *   - adds the theta-dependent flows to the per-bus mismatch;
+ *   - writes the (piecewise constant) droop slopes: on the controller side
+ *     +/- k, on the non-controller side +/- k * (1 - lf1) * (1 - lf2), the
+ *     derivative of the resistive dc-line loss being neglected (OLF parity).
+ *     Saturated lines are pure constant injections: zero slopes.
+ *
+ * When the grid has no droop hvdc line, every loop below is empty: the
+ * behaviour (and the J pattern) is strictly identical to a build without
+ * this extension.
+ */
+class LS2G_API Hvdc
+{
+    public:
+        Hvdc(): my_size_(0) {}
+
+        // pulls the droop data (solver bus ids, pu) from the grid;
+        // defined in NRSystemHvdc.cpp (needs the full LSGrid type)
+        void update_state(
+            const Base *                           nr_system_base_ptr,
+            const LSGrid *                         lsgrid_ptr,
+            const Eigen::SparseMatrix<cplx_type>&  Ybus,
+            const CplxVect&                        Sbus,
+            const RealVect&                        slack_weights
+        );
+
+        void init_topology(
+            Eigen::Ref<const IntVect>              /*slack_ids*/,
+            const RealVect&                        /*slack_weights*/,
+            Eigen::Ref<const IntVect>              /*pv*/,
+            Eigen::Ref<const IntVect>              /*pq*/
+        ) {}
+
+        // claims nothing: only caches the rows / columns of the two end buses
+        // (the ledger is fully populated by the previous components: Hvdc must
+        // be the LAST extension of the tuple)
+        void register_in(NRLedger& ledger)
+        {
+            p_row_1_.resize(my_size_);
+            p_row_2_.resize(my_size_);
+            theta_col_1_.resize(my_size_);
+            theta_col_2_.resize(my_size_);
+            for (int k = 0; k < my_size_; ++k) {
+                p_row_1_[k] = ledger.p_row(data_.bus1(k));
+                p_row_2_[k] = ledger.p_row(data_.bus2(k));
+                theta_col_1_[k] = ledger.theta_col(data_.bus1(k));
+                theta_col_2_[k] = ledger.theta_col(data_.bus2(k));
+            }
+        }
+
+        // up to 4 dP/dtheta entries per line, declared whatever the regime
+        void declare_feature_entries(FeatureSink& sink)
+        {
+            h11_.assign(my_size_, -1);
+            h12_.assign(my_size_, -1);
+            h21_.assign(my_size_, -1);
+            h22_.assign(my_size_, -1);
+            for (int k = 0; k < my_size_; ++k) {
+                if ((p_row_1_[k] >= 0) && (theta_col_1_[k] >= 0)) h11_[k] = sink.add(p_row_1_[k], theta_col_1_[k]);
+                if ((p_row_1_[k] >= 0) && (theta_col_2_[k] >= 0)) h12_[k] = sink.add(p_row_1_[k], theta_col_2_[k]);
+                if ((p_row_2_[k] >= 0) && (theta_col_1_[k] >= 0)) h21_[k] = sink.add(p_row_2_[k], theta_col_1_[k]);
+                if ((p_row_2_[k] >= 0) && (theta_col_2_[k] >= 0)) h22_[k] = sink.add(p_row_2_[k], theta_col_2_[k]);
+            }
+        }
+
+        void fill_feature_values(FeatureWriter& writer, const RealVect& Va) const
+        {
+            for (int k = 0; k < my_size_; ++k) {
+                if (data_.status(k) != 0) continue;  // saturated: constant injection, zero slopes
+                const real_type raw = data_.p0(k) + data_.k(k) * (Va(data_.bus1(k)) - Va(data_.bus2(k)));
+                const real_type loss_mult = (1. - data_.lf1(k)) * (1. - data_.lf2(k));
+                // dp1 = dp1/dtheta1, dp2 = dp2/dtheta1; d/dtheta2 = -d/dtheta1
+                const real_type dp1 = (raw >= 0.) ? data_.k(k) : data_.k(k) * loss_mult;
+                const real_type dp2 = (raw < 0.) ? -data_.k(k) : -data_.k(k) * loss_mult;
+                if (h11_[k] >= 0) writer.add(h11_[k], dp1);
+                if (h12_[k] >= 0) writer.add(h12_[k], -dp1);
+                if (h21_[k] >= 0) writer.add(h21_[k], dp2);
+                if (h22_[k] >= 0) writer.add(h22_[k], -dp2);
+            }
+        }
+
+        // the flows LEAVE the buses into the hvdc: they ADD to the computed
+        // power, ie to the mismatch (mis = V conj(Ybus V) - Sbus + ...)
+        void adjust_mismatch(const CplxVect& V_t, const RealVect& /*dx*/, CplxVect& mis) const
+        {
+            real_type p1_flow, p2_flow;
+            for (int k = 0; k < my_size_; ++k) {
+                const real_type theta_1 = std::arg(V_t(data_.bus1(k)));
+                const real_type theta_2 = std::arg(V_t(data_.bus2(k)));
+                const real_type raw = data_.p0(k) + data_.k(k) * (theta_1 - theta_2);
+                data_.flows_pu(k, raw, p1_flow, p2_flow);
+                mis(data_.bus1(k)) += p1_flow;
+                mis(data_.bus2(k)) += p2_flow;
+            }
+        }
+
+        void fill_custom_rows(RealVect& /*res*/,
+                              const RealVect& /*Va*/,
+                              const RealVect& /*Vm*/,
+                              const RealVect& /*dx*/) const {}
+
+        void apply_step(const RealVect& /*dx*/) {}
+
+        void clear() {
+            my_size_ = 0;
+            data_.clear();
+            p_row_1_.clear();
+            p_row_2_.clear();
+            theta_col_1_.clear();
+            theta_col_2_.clear();
+            h11_.clear();
+            h12_.clear();
+            h21_.clear();
+            h22_.clear();
+        }
+
+    private:
+        int                  my_size_;
+        HvdcDroopSolverData  data_;
+        std::vector<int>     p_row_1_, p_row_2_;          // P row of each end bus (-1 if none)
+        std::vector<int>     theta_col_1_, theta_col_2_;  // theta column of each end bus (-1 if none)
+        std::vector<int>     h11_, h12_, h21_, h22_;      // FeatureSink handles (-1 if entry dropped)
+};
 
 
 // ---- NRSystem<Base, Rest...> ----------------------------------------------------
@@ -575,15 +721,16 @@ private:
 
     template <std::size_t... Is>
     void _fill_feature_values_extensions(FeatureWriter& writer, std::index_sequence<Is...>) const {
-        int dummy[] = { 0, (std::get<Is>(extensions_).fill_feature_values(writer), 0)... };
+        int dummy[] = { 0, (std::get<Is>(extensions_).fill_feature_values(writer, Va_), 0)... };
         (void)dummy;
     }
 
     template <std::size_t... Is>
-    void _adjust_mismatch_extensions(const RealVect& dx, CplxVect& mis,
+    void _adjust_mismatch_extensions(const CplxVect& V_t, const RealVect& dx, CplxVect& mis,
                                      std::index_sequence<Is...>) const {
-        int dummy[] = { 0, (std::get<Is>(extensions_).adjust_mismatch(dx, mis), 0)... };
+        int dummy[] = { 0, (std::get<Is>(extensions_).adjust_mismatch(V_t, dx, mis), 0)... };
         (void)dummy;
+        (void)V_t;
     }
 
     template <std::size_t... Is>
@@ -615,9 +762,10 @@ private:
 };
 
 // ---- Type aliases (keep existing names working) --------------------------------
+// Hvdc must be the LAST extension (it reads the ledger populated by the others)
 
-using SingleSlackNRSystem = NRSystem<Base>;
-using MultiSlackNRSystem  = NRSystem<Base, MultiSlack>;
+using SingleSlackNRSystem = NRSystem<Base, Hvdc>;
+using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, Hvdc>;
 
 } // namespace ls2g
 

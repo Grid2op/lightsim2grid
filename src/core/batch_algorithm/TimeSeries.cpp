@@ -52,6 +52,16 @@ int TimeSeries::compute_Vs(Eigen::Ref<const RealMat> gen_p,
     add_ = false;
     fill_SBus_real(_Sbuses, loads, load_p, id_me_to_solver_, add_);
     fill_SBus_imag(_Sbuses, loads, load_q, id_me_to_solver_, add_);
+
+    // add the (constant accross the steps) hvdc injections: fixed-setpoint
+    // lines, station reactive setpoints / LCC consumptions and, in dc, the
+    // saturated droop lines. The angle-droop flows of the linear-mode lines
+    // are theta dependent: they are handled by the solver itself (Hvdc
+    // extension of the NR system in ac, dc matrix term in dc).
+    CplxVect hvdc_sbus = CplxVect::Zero(nb_buses_solver_);
+    _grid_model.get_dclines_as_data().fillSbus(hvdc_sbus, id_me_to_solver_, ac_solver_used);
+    _Sbuses.rowwise() += hvdc_sbus.transpose();
+
     if(abs(sn_mva - 1.0) > _tol_equal_float) _Sbuses.array() /= static_cast<cplx_type>(sn_mva);
     // TODO trafo hack for Sbus !
     //////////////////////////////////////////

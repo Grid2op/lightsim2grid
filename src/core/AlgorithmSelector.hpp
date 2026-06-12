@@ -94,6 +94,18 @@ class LS2G_API AlgorithmSelector final
                    (type == AlgorithmType::DC_NICSLU) ||
                    (type == AlgorithmType::DC_CKTSO);
         }
+        // only the Newton-Raphson algorithms implement the hvdc angle-droop
+        // ("AC emulation") equations; plugin (Custom) solvers are assumed not to
+        bool supports_hvdc_droop(const AlgorithmType& type) const noexcept {
+            return (type == AlgorithmType::NR_SparseLU) ||
+                   (type == AlgorithmType::NR_KLU) ||
+                   (type == AlgorithmType::NR_NICSLU) ||
+                   (type == AlgorithmType::NR_CKTSO) ||
+                   (type == AlgorithmType::NRSing_SparseLU) ||
+                   (type == AlgorithmType::NRSing_KLU) ||
+                   (type == AlgorithmType::NRSing_NICSLU) ||
+                   (type == AlgorithmType::NRSing_CKTSO);
+        }
         bool is_fdpf(const AlgorithmType& type) const noexcept {
             return (type == AlgorithmType::FDPF_XB_SparseLU) ||
                    (type == AlgorithmType::FDPF_BX_SparseLU) ||

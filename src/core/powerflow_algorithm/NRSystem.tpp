@@ -159,7 +159,7 @@ inline void NRSystem<Base, Rest...>::fill_J()
 
     // feature (non dS-derived) values
     FeatureWriter writer(J_values, feature_pos_);
-    base_.fill_feature_values(writer);
+    base_.fill_feature_values(writer, Va_);
     _fill_feature_values_extensions(writer, std::make_index_sequence<sizeof...(Rest)>{});
 
     timer_fillJ_ += timer.duration();
@@ -270,9 +270,10 @@ inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const Re
     // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus
     CplxVect mis = V_t.array() * (*Ybus_ptr_ * V_t).array().conjugate()
                    - Sbus_ptr_->array();
-    // components adjust the complex injection (e.g. + slack_absorbed * slack_weights)
-    base_.adjust_mismatch(dx, mis);
-    _adjust_mismatch_extensions(dx, mis, std::make_index_sequence<sizeof...(Rest)>{});
+    // components adjust the complex injection (e.g. + slack_absorbed * slack_weights,
+    // + the theta-dependent hvdc droop flows)
+    base_.adjust_mismatch(V_t, dx, mis);
+    _adjust_mismatch_extensions(V_t, dx, mis, std::make_index_sequence<sizeof...(Rest)>{});
 
     // generic residual rows, driven by the ledger's (bus, row) pair lists
     // (accumulate: duplicated rows must sum)

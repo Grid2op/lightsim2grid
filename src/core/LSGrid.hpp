@@ -35,7 +35,8 @@
 #include "element_container/LoadContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SGenContainer.hpp"
-#include "element_container/DCLineContainer.hpp"
+#include "element_container/HvdcLineContainer.hpp"
+#include "HvdcDroopData.hpp"
 
 // import newton raphson solvers using different linear algebra solvers
 #include "AlgorithmSelector.hpp"
@@ -71,8 +72,8 @@ class LS2G_API LSGrid final
                 SGenContainer::StateRes,
                 // storage units
                 LoadContainer::StateRes,
-                //dc lines
-                DCLineContainer::StateRes,
+                //hvdc lines (was the "dc lines" before lightsim2grid 0.12)
+                HvdcLineContainer::StateRes,
                 // algo types
                 AlgorithmType, // ac_algo
                 AlgorithmType // dc_algo
@@ -158,7 +159,7 @@ class LS2G_API LSGrid final
         const LoadContainer & get_loads_as_data() const {return loads_;}
         const LineContainer & get_powerlines_as_data() const {return powerlines_;}
         const TrafoContainer & get_trafos_as_data() const {return trafos_;}
-        const DCLineContainer & get_dclines_as_data() const {return dc_lines_;}
+        const HvdcLineContainer & get_dclines_as_data() const {return hvdc_lines_;}
         Eigen::Ref<const RealVect> get_bus_vn_kv() const {return substations_.get_bus_vn_kv();}
         std::tuple<int, int> assign_slack_to_most_connected();
         void consider_only_main_component();
@@ -325,9 +326,51 @@ class LS2G_API LSGrid final
                           const RealVect & max_q1,
                           const RealVect & min_q2,
                           const RealVect & max_q2){
-            dc_lines_.init(branch_from_id, branch_to_id, p_mw,
-                           loss_percent, loss_mw, vm1_pu, vm2_pu,
-                           min_q1, max_q1, min_q2, max_q2);
+            hvdc_lines_.init_legacy(branch_from_id, branch_to_id, p_mw,
+                                    loss_percent, loss_mw, vm1_pu, vm2_pu,
+                                    min_q1, max_q1, min_q2, max_q2);
+        }
+        /**
+         * Full IIDM-style hvdc initialization (two converter stations - VSC or
+         * LCC - per line, optional angle-droop). See HvdcLineContainer::init.
+         */
+        void init_hvdc_lines(const Eigen::VectorXi & bus1_id,
+                             const Eigen::VectorXi & bus2_id,
+                             const std::vector<int> & type1,
+                             const std::vector<int> & type2,
+                             const RealVect & loss_factor1,
+                             const RealVect & loss_factor2,
+                             const std::vector<bool> & vreg1_on,
+                             const std::vector<bool> & vreg2_on,
+                             const RealVect & vm1_pu,
+                             const RealVect & vm2_pu,
+                             const RealVect & q1_setpoint_mvar,
+                             const RealVect & q2_setpoint_mvar,
+                             const RealVect & min_q1,
+                             const RealVect & max_q1,
+                             const RealVect & min_q2,
+                             const RealVect & max_q2,
+                             const RealVect & power_factor1,
+                             const RealVect & power_factor2,
+                             const std::vector<int> & converters_mode,
+                             const RealVect & p_setpoint_mw,
+                             const RealVect & r_ohm,
+                             const RealVect & nominal_v_kv,
+                             const std::vector<bool> & droop_enabled,
+                             const RealVect & droop_p0_mw,
+                             const RealVect & droop_mw_per_deg,
+                             const RealVect & pmax_1to2_mw,
+                             const RealVect & pmax_2to1_mw){
+            const RealVect no_legacy_loss = RealVect::Zero(bus1_id.size());
+            hvdc_lines_.init(bus1_id, bus2_id, type1, type2,
+                             loss_factor1, loss_factor2, vreg1_on, vreg2_on,
+                             vm1_pu, vm2_pu, q1_setpoint_mvar, q2_setpoint_mvar,
+                             min_q1, max_q1, min_q2, max_q2,
+                             power_factor1, power_factor2,
+                             converters_mode, p_setpoint_mw, r_ohm, nominal_v_kv,
+                             no_legacy_loss, no_legacy_loss,
+                             droop_enabled, droop_p0_mw, droop_mw_per_deg,
+                             pmax_1to2_mw, pmax_2to1_mw);
         }
 
         void init_bus_status(){
@@ -341,7 +384,7 @@ class LS2G_API LSGrid final
             loads_.reconnect_connected_buses(substations_);
             sgens_.reconnect_connected_buses(substations_);
             storages_.reconnect_connected_buses(substations_);
-            dc_lines_.reconnect_connected_buses(substations_);
+            hvdc_lines_.reconnect_connected_buses(substations_);
             const std::vector<bool> new_status = substations_.get_bus_status();
 
             if(new_status.size() != last_bus_status_saved_.size()){
@@ -509,7 +552,7 @@ class LS2G_API LSGrid final
         // read only data accessor
         const SubstationContainer & get_substations() const {return substations_;}
         const LineContainer & get_lines() const {return powerlines_;}
-        const DCLineContainer & get_dclines() const {return dc_lines_;}
+        const HvdcLineContainer & get_dclines() const {return hvdc_lines_;}
         const TrafoContainer & get_trafos() const {return trafos_;}
         const GeneratorContainer & get_generators() const {return generators_;}
         const LoadContainer & get_loads() const {return loads_;}
@@ -523,8 +566,8 @@ class LS2G_API LSGrid final
             powerlines_.set_names(names);
         }
         void set_dcline_names(const std::vector<std::string> & names){
-            GenericContainer::check_size(names, dc_lines_.nb(), "set_dcline_names");
-            dc_lines_.set_names(names);
+            GenericContainer::check_size(names, hvdc_lines_.nb(), "set_dcline_names");
+            hvdc_lines_.set_names(names);
         }
         void set_trafo_names(const std::vector<std::string> & names){
             GenericContainer::check_size(names, trafos_.nb(), "set_trafo_names");
@@ -741,18 +784,35 @@ class LS2G_API LSGrid final
         int get_bus_storage(int storage_id) {return storages_.get_bus(storage_id).cast_int();}
 
         //deactivate a powerline (disconnect it)
-        void deactivate_dcline(int dcline_id) {dc_lines_.deactivate(dcline_id, algo_controler_); }
-        void reactivate_dcline(int dcline_id) {dc_lines_.reactivate(dcline_id, algo_controler_); }
-        void change_p_dcline(int dcline_id, real_type new_p) {dc_lines_.change_p(dcline_id, new_p, algo_controler_); }
-        void change_v1_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_1(dcline_id, new_v_pu, algo_controler_); }
-        void change_v2_dcline(int dcline_id, real_type new_v_pu) {dc_lines_.change_v_side_2(dcline_id, new_v_pu, algo_controler_); }
+        void deactivate_dcline(int dcline_id) {hvdc_lines_.deactivate(dcline_id, algo_controler_); }
+        void reactivate_dcline(int dcline_id) {hvdc_lines_.reactivate(dcline_id, algo_controler_); }
+        void change_p_dcline(int dcline_id, real_type new_p) {hvdc_lines_.change_p(dcline_id, new_p, algo_controler_); }
+        void change_v1_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_1(dcline_id, new_v_pu, algo_controler_); }
+        void change_v2_dcline(int dcline_id, real_type new_v_pu) {hvdc_lines_.change_v_side_2(dcline_id, new_v_pu, algo_controler_); }
+        /**
+         * Set the droop regime of an angle-droop (AC emulation) hvdc line.
+         * This is an INPUT of the solver: 0 = linear, +1 = saturated 1->2,
+         * -1 = saturated 2->1. The saturation logic (against pmax_1to2 /
+         * pmax_2to1) is meant to be run between two solves, in Python.
+         */
+        void set_status_droop_hvdc(int dcline_id, int status) {hvdc_lines_.set_status_droop(dcline_id, status, algo_controler_); }
+        int get_status_droop_hvdc(int dcline_id) const {return hvdc_lines_.get_status_droop(dcline_id);}
+        std::vector<int> get_status_droop_hvdc_vect() const {return hvdc_lines_.get_status_droop_vect();}
+        /**
+         * Per-solve data of the connected angle-droop (AC emulation) hvdc
+         * lines, in solver bus labelling and per-unit. Consumed by the Hvdc
+         * extension of the Newton-Raphson system (ac = true) and by the DC
+         * algorithm (ac = false). Only valid once `pre_process_solver` ran
+         * (ie from within a solver's compute_pf).
+         */
+        void fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) const;
         /**
          * Change the bus on the dc line "side 1" dcline_id.
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus1_dcline(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
-            dc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, algo_controler_, substations_); 
+            hvdc_lines_.change_bus_side_1(dcline_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus1_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
             change_bus1_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
@@ -763,13 +823,13 @@ class LS2G_API LSGrid final
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */
         void change_bus2_dcline(int dcline_id, GridModelBusId new_gridmodel_bus_id) {
-            dc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, algo_controler_, substations_); 
+            hvdc_lines_.change_bus_side_2(dcline_id, new_gridmodel_bus_id, algo_controler_, substations_);
         }
         void change_bus2_dcline_python(int dcline_id, int new_gridmodel_bus_id) {
             change_bus2_dcline(dcline_id, GridModelBusId(new_gridmodel_bus_id)); 
         }
-        int get_bus1_dcline(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
-        int get_bus2_dcline(int dcline_id) const {return dc_lines_.get_bus_side_1(dcline_id).cast_int();}
+        int get_bus1_dcline(int dcline_id) const {return hvdc_lines_.get_bus_side_1(dcline_id).cast_int();}
+        int get_bus2_dcline(int dcline_id) const {return hvdc_lines_.get_bus_side_2(dcline_id).cast_int();}
 
         // All results access
         tuple3d get_loads_res() const {return loads_.get_res();}
@@ -788,9 +848,9 @@ class LS2G_API LSGrid final
         const std::vector<bool>& get_storages_status() const { return storages_.get_status();}
         tuple3d get_sgens_res() const {return sgens_.get_res();}
         const std::vector<bool>& get_sgens_status() const { return sgens_.get_status();}
-        tuple3d get_dcline_res1() const {return dc_lines_.get_res_side_1();}
-        tuple3d get_dcline_res2() const {return dc_lines_.get_res_side_2();}
-        const std::vector<bool>& get_dclines_status() const { return dc_lines_.get_status_global();}
+        tuple3d get_dcline_res1() const {return hvdc_lines_.get_res_side_1();}
+        tuple3d get_dcline_res2() const {return hvdc_lines_.get_res_side_2();}
+        const std::vector<bool>& get_dclines_status() const { return hvdc_lines_.get_status_global();}
 
         Eigen::Ref<const RealVect> get_gen_theta() const  {return generators_.get_theta();}
         Eigen::Ref<const RealVect> get_load_theta() const  {return loads_.get_theta();}
@@ -800,8 +860,8 @@ class LS2G_API LSGrid final
         Eigen::Ref<const RealVect> get_line_theta2() const {return powerlines_.get_theta_side_2();}
         Eigen::Ref<const RealVect> get_trafo_theta1() const {return trafos_.get_theta_side_1();}
         Eigen::Ref<const RealVect> get_trafo_theta2() const {return trafos_.get_theta_side_2();}
-        Eigen::Ref<const RealVect> get_dcline_theta1() const {return dc_lines_.get_theta_side_1();}
-        Eigen::Ref<const RealVect> get_dcline_theta2() const {return dc_lines_.get_theta_side_2();}
+        Eigen::Ref<const RealVect> get_dcline_theta1() const {return hvdc_lines_.get_theta_side_1();}
+        Eigen::Ref<const RealVect> get_dcline_theta2() const {return hvdc_lines_.get_theta_side_2();}
 
         const GlobalBusIdVect & get_all_shunt_buses() const {return shunts_.get_buses();}
         Eigen::Ref<const IntVect> get_all_shunt_buses_numpy() const {return shunts_.get_bus_id_numpy();}
@@ -822,8 +882,8 @@ class LS2G_API LSGrid final
         tuple5d get_trafo_res2_full() const {return trafos_.get_res_full_side_2();}
         tuple4d get_storages_res_full() const {return storages_.get_res_full();}
         tuple4d get_sgens_res_full() const {return sgens_.get_res_full();}
-        tuple4d get_dcline_res1_full() const {return dc_lines_.get_res_full_side_1();}
-        tuple4d get_dcline_res2_full() const {return dc_lines_.get_res_full_side_2();}
+        tuple4d get_dcline_res1_full() const {return hvdc_lines_.get_res_full_side_1();}
+        tuple4d get_dcline_res2_full() const {return hvdc_lines_.get_res_full_side_2();}
 
         /**
          * @brief Get the Ybus solver object (AC)
@@ -1540,7 +1600,11 @@ class LS2G_API LSGrid final
                                                  int size);
 
         void check_solution_q_values( CplxVect & res, bool check_q_limits) const;
-        void check_solution_q_values_onegen(CplxVect & res, const GenInfo& gen, bool check_q_limits) const;
+        void check_solution_q_values_onegen(CplxVect & res,
+                                            int bus_id,
+                                            real_type min_q_mvar,
+                                            real_type max_q_mvar,
+                                            bool check_q_limits) const;
 
     private:
         // memory for the import
@@ -1615,8 +1679,8 @@ class LS2G_API LSGrid final
         // 8. storage units
         LoadContainer storages_;
 
-        // 9. hvdc
-        DCLineContainer dc_lines_;
+        // 9. hvdc (converter stations + lines, exposed through the "dcline" API)
+        HvdcLineContainer hvdc_lines_;
 
         // 10. slack bus
         // std::vector<int> slack_bus_id_;
