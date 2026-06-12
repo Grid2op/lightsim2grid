@@ -10,6 +10,7 @@
 #define BASE_DC_ALGO_H
 
 #include "BaseAlgo.hpp"
+#include "HvdcDroopData.hpp"
 
 namespace ls2g {
 
@@ -115,6 +116,16 @@ class BaseDCAlgo final: public BaseAlgo
         void fill_mat_bus_id(int nb_bus_solver);
         void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat);
 
+        // hvdc angle-droop ("AC emulation") support: in dc, the linear-mode
+        // droop lines contribute `p = p0 + k * (theta1 - theta2)`: the k term
+        // goes into the dc matrix (like a branch of susceptance k), the p0
+        // constant into the rhs. Saturated lines arrive through Sbus as fixed
+        // injections (stamped by the HvdcLineContainer).
+        // NB the PTDF / LODF then include the (lossless) droop sensitivity.
+        bool update_hvdc_droop_data();  // pulls the data from the grid, true if it changed
+        void add_droop_to_dcYbus();
+        void add_droop_to_dcSbus();
+
         // remove_slack_buses: res_mat is initialized and make_compressed in this function
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`
         void remove_slack_buses(int nb_bus_solver, const Eigen::SparseMatrix<ref_mat_type> & ref_mat, Eigen::SparseMatrix<real_type> & res_mat);
@@ -145,6 +156,9 @@ class BaseDCAlgo final: public BaseAlgo
         // ybus_ids of non-slack buses in solver order (mat_bus_id_ inverse for non-slack); precomputed in fill_mat_bus_id
         Eigen::VectorXi nonslack_ybus_ids_;
 
+        // connected angle-droop hvdc lines (solver bus ids, pu), refreshed at
+        // every compute_pf; a change forces a rebuild of dcYbus / dcSbus
+        HvdcDroopSolverData hvdc_droop_data_;
 };
 
 #include "BaseDCAlgo.tpp"

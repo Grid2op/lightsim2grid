@@ -110,7 +110,7 @@ ATTR_TAFO_INPUT = (ATTR_LINES_INPUT +
 )
 
 
-ATTR_DCLINE_INPUT = (ATTR_2SIDES_INPUT + 
+ATTR_DCLINE_INPUT = (ATTR_2SIDES_INPUT +
     [
         "target_p1_mw",
         "p2_mw",
@@ -118,8 +118,30 @@ ATTR_DCLINE_INPUT = (ATTR_2SIDES_INPUT +
         "target_vm2_pu",
         "loss_pct",
         "loss_mw",
+        "converters_mode",
+        "p_setpoint_mw",
+        "r_ohm",
+        "nominal_v_kv",
+        "droop_enabled",
+        "droop_p0_mw",
+        "droop_k_mw_per_rad",
+        "pmax_1to2_mw",
+        "pmax_2to1_mw",
     ]
 )
+
+
+ATTR_STATION_INPUT = [
+    "converter_type",
+    "loss_factor",
+    "voltage_regulator_on",
+    "target_vm_pu",
+    "target_p_mw",
+    "target_q_mvar",
+    "min_q_mvar",
+    "max_q_mvar",
+    "power_factor",
+]
 
 
 def __are_float_different(attr1, attr2, tol) -> bool:
@@ -207,20 +229,20 @@ def _compare_dclines(network1: LSGrid, network2: LSGrid, tol=1e-8):
         return res_dclines
 
     for num, (el1, el2) in enumerate(zip(getattr(network1, meth_nm)(), getattr(network2, meth_nm)())):
-        gen1 = el1.gen_side_1
-        gen2 = el2.gen_side_1
+        station1 = el1.station1
+        station2 = el2.station1
         tmp = {}
-        _aux_compare_one_el(tmp, ATTR_GENS_INPUT, gen1, gen2, tol)
+        _aux_compare_one_el(tmp, ATTR_STATION_INPUT, station1, station2, tol)
         if len(tmp) > 0:
-            res_dclines[f"{num}_gen_side_1"] = tmp
-            
-        gen1 = el1.gen_side_2
-        gen2 = el2.gen_side_2
+            res_dclines[f"{num}_station_side_1"] = tmp
+
+        station1 = el1.station2
+        station2 = el2.station2
         tmp = {}
-        _aux_compare_one_el(tmp, ATTR_GENS_INPUT, gen1, gen2, tol)
+        _aux_compare_one_el(tmp, ATTR_STATION_INPUT, station1, station2, tol)
         if len(tmp) > 0:
-            res_dclines[f"{num}_gen_side_2"] = tmp
-        
+            res_dclines[f"{num}_station_side_2"] = tmp
+
     return res_dclines
 
 

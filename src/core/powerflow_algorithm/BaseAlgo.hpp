@@ -71,7 +71,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             timer_Fx_(0.),
             timer_solve_(0.),
             timer_check_(0.),
-            timer_total_nr_(0.){};
+            timer_total_nr_(0.),
+            lsgrid_ptr_(nullptr){};
 
         virtual ~BaseAlgo() noexcept = default;
 

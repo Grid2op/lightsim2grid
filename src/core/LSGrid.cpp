@@ -54,8 +54,8 @@ LSGrid::LSGrid(const LSGrid & other)
     // 8. storage units
     storages_ = other.storages_;
 
-    // dc lines
-    dc_lines_ = other.dc_lines_;
+    // hvdc lines
+    hvdc_lines_ = other.hvdc_lines_;
 
     // assign the right solver
     reset(true, true, true);
@@ -78,7 +78,7 @@ LSGrid::StateRes LSGrid::get_state() const
     auto res_load = loads_.get_state();
     auto res_sgen = sgens_.get_state();
     auto res_storage = storages_.get_state();
-    auto res_dc_line = dc_lines_.get_state();
+    auto res_hvdc_line = hvdc_lines_.get_state();
 
     LSGrid::StateRes res(version_major,
                             version_medium,
@@ -95,7 +95,7 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_load,
                             res_sgen,
                             res_storage,
-                            res_dc_line,
+                            res_hvdc_line,
                             get_algo_type(),
                             get_dc_algo_type()
                             );
@@ -146,8 +146,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
     // storage units
     LoadContainer::StateRes & state_storages = std::get<14>(my_state);
-    // dc lines
-    DCLineContainer::StateRes & state_dc_lines = std::get<15>(my_state);
+    // hvdc lines
+    HvdcLineContainer::StateRes & state_hvdc_lines = std::get<15>(my_state);
 
     // assign it to this instance
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
@@ -175,8 +175,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     sgens_.set_state(state_sgens);
     // 7. storage units
     storages_.set_state(state_storages);
-    // dc lines
-    dc_lines_.set_state(state_dc_lines);
+    // hvdc lines
+    hvdc_lines_.set_state(state_hvdc_lines);
 
     // handle the solver
     reset(true, true, true);
@@ -313,6 +313,13 @@ CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
         exc_ << "(fyi: Components of Vinit corresponding to deactivated bus will be ignored anyway, so you can put whatever you want there).";
         throw std::runtime_error(exc_.str());
     }
+    if(hvdc_lines_.has_droop_active() && !_algo.supports_hvdc_droop(_algo.get_type())){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::ac_pf: the grid counts hvdc lines with the angle-droop (AC emulation) enabled, ";
+        exc_ << "which is only supported by the Newton-Raphson algorithms (not by the Gauss-Seidel / ";
+        exc_ << "fast-decoupled ones). Please `change_algorithm` or disable the droop.";
+        throw std::runtime_error(exc_.str());
+    }
     bool conv = false;
     CplxVect res = CplxVect();
 
@@ -350,29 +357,91 @@ CplxVect LSGrid::ac_pf(const CplxVect & Vinit,
     return res;
 };
 
+void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) const
+{
+    data.clear();
+    const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
+    if(nb_hvdc == 0) return;
+    const SolverBusIdVect & id_me_to_solver = ac ? id_me_to_ac_solver_ : id_me_to_dc_solver_;
+    const std::vector<bool> & droop_enabled = hvdc_lines_.get_droop_enabled();
+    const std::vector<bool> & status_global = hvdc_lines_.get_status_global();
+    std::vector<int> indices;
+    indices.reserve(nb_hvdc);
+    for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+        if(!droop_enabled[hvdc_id] || !status_global[hvdc_id]) continue;
+        indices.push_back(hvdc_id);
+    }
+    const int nb_droop = static_cast<int>(indices.size());
+    if(nb_droop == 0) return;
+    data.bus1 = Eigen::VectorXi(nb_droop);
+    data.bus2 = Eigen::VectorXi(nb_droop);
+    data.status = Eigen::VectorXi(nb_droop);
+    data.p0 = RealVect(nb_droop);
+    data.k = RealVect(nb_droop);
+    data.lf1 = RealVect(nb_droop);
+    data.lf2 = RealVect(nb_droop);
+    data.r = RealVect(nb_droop);
+    data.pmax12 = RealVect(nb_droop);
+    data.pmax21 = RealVect(nb_droop);
+    for(int pos = 0; pos < nb_droop; ++pos){
+        const int hvdc_id = indices[pos];
+        const GlobalBusId bus_1 = hvdc_lines_.get_bus_side_1(hvdc_id);
+        const GlobalBusId bus_2 = hvdc_lines_.get_bus_side_2(hvdc_id);
+        const SolverBusId bus_1_solver = id_me_to_solver[bus_1.cast_int()];
+        const SolverBusId bus_2_solver = id_me_to_solver[bus_2.cast_int()];
+        if((bus_1_solver.cast_int() == GenericContainer::_deactivated_bus_id) ||
+           (bus_2_solver.cast_int() == GenericContainer::_deactivated_bus_id)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_hvdc_droop_solver_data: hvdc line with id ";
+            exc_ << hvdc_id;
+            exc_ << " is connected to a disconnected bus while being connected to the grid.";
+            throw std::runtime_error(exc_.str());
+        }
+        data.bus1(pos) = bus_1_solver.cast_int();
+        data.bus2(pos) = bus_2_solver.cast_int();
+        data.status(pos) = hvdc_lines_.get_status_droop(hvdc_id);
+        data.p0(pos) = hvdc_lines_.get_droop_p0_mw(hvdc_id) / sn_mva_;
+        data.k(pos) = hvdc_lines_.get_droop_k_mw_per_rad(hvdc_id) / sn_mva_;
+        data.lf1(pos) = hvdc_lines_.get_loss_factor_side_1(hvdc_id);
+        data.lf2(pos) = hvdc_lines_.get_loss_factor_side_2(hvdc_id);
+        const real_type v_nom = hvdc_lines_.get_nominal_v_kv(hvdc_id);
+        data.r(pos) = (v_nom > 0.) ? hvdc_lines_.get_r_ohm(hvdc_id) * sn_mva_ / (v_nom * v_nom) : 0.;
+        data.pmax12(pos) = hvdc_lines_.get_pmax_1to2_mw(hvdc_id) / sn_mva_;
+        data.pmax21(pos) = hvdc_lines_.get_pmax_2to1_mw(hvdc_id) / sn_mva_;
+    }
+}
+
+void fill_hvdc_droop_data_from_grid(const LSGrid * lsgrid_ptr, HvdcDroopSolverData & data, bool ac)
+{
+    data.clear();
+    if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_hvdc_droop_solver_data(data, ac);
+}
+
 void LSGrid::check_solution_q_values_onegen(CplxVect & res,
-                                               const GenInfo& gen,
+                                               int bus_id,
+                                               real_type min_q_mvar,
+                                               real_type max_q_mvar,
                                                bool check_q_limits) const{
     if(check_q_limits)
     {
         // i need to check the reactive can be absorbed / produced by the generator
         real_type new_q = BaseConstants::my_zero_;
-        real_type react_this_bus = std::imag(res.coeff(gen.bus_id));
-        if((react_this_bus >= gen.min_q_mvar) && (react_this_bus <= gen.max_q_mvar))
+        real_type react_this_bus = std::imag(res.coeff(bus_id));
+        if((react_this_bus >= min_q_mvar) && (react_this_bus <= max_q_mvar))
         {
             // this generator is able to handle all reactive
             new_q = BaseConstants::my_zero_;
-        }else if(react_this_bus < gen.min_q_mvar){
+        }else if(react_this_bus < min_q_mvar){
             // generator cannot absorb enough reactive power
-            new_q = react_this_bus - gen.min_q_mvar; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
+            new_q = react_this_bus - min_q_mvar; //ex. need -50, qmin is -30, remains: (-50) - (-30) = -20 MVAr
         }else{
             // generator cannot produce enough reactive power
-            new_q = react_this_bus - gen.max_q_mvar;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
+            new_q = react_this_bus - max_q_mvar;  // ex. need 50, qmax is 30, remains: 50 - 30 = 20 MVAr
         }
-        res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), new_q};
+        res.coeffRef(bus_id) = {std::real(res.coeff(bus_id)), new_q};
     }else{
         // the q value for the bus at which the generator is connected will be 0
-        res.coeffRef(gen.bus_id) = {std::real(res.coeff(gen.bus_id)), BaseConstants::my_zero_};
+        res.coeffRef(bus_id) = {std::real(res.coeff(bus_id)), BaseConstants::my_zero_};
     }
 }
 
@@ -385,7 +454,7 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
             // the generator is disconnected, I do nothing
             continue;
         }
-        check_solution_q_values_onegen(res, gen, check_q_limits);
+        check_solution_q_values_onegen(res, gen.bus_id, gen.min_q_mvar, gen.max_q_mvar, check_q_limits);
 
         // if(gen.id == gen_slackbus_)
         if(gen.is_slack)
@@ -396,16 +465,18 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
         }
     }
 
-    // then do the same for dc powerlines
-    for(const auto & dcline: dc_lines_)
+    // then do the same for the hvdc converter stations
+    for(const auto & hvdc: hvdc_lines_)
     {
-        if(!dcline.connected_global)
+        if(!hvdc.connected_global)
         {
-            // the generator is disconnected, I do nothing
+            // the hvdc line is disconnected, I do nothing
             continue;
         }
-        check_solution_q_values_onegen(res, dcline.gen_side_1, check_q_limits);
-        check_solution_q_values_onegen(res, dcline.gen_side_2, check_q_limits);
+        const auto & station_1 = hvdc.station_side_1;
+        const auto & station_2 = hvdc.station_side_2;
+        check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
+        check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
     }
 }
 
@@ -428,7 +499,21 @@ CplxVect LSGrid::check_solution(const CplxVect & V_proposed, bool check_q_limits
     // compute the mismatch
     CplxVect tmp = Ybus_ac_ * V;  // this is a vector
     tmp = tmp.array().conjugate();  // i take the conjugate
-    auto mis = V.array() * tmp.array() - acSbus_.array();  // TODO ac or dc here
+    CplxVect mis = V.array() * tmp.array() - acSbus_.array();  // TODO ac or dc here
+
+    // the angle-droop (AC emulation) hvdc flows are not part of Sbus: they
+    // leave the buses, so they add to the computed power, ie to the mismatch
+    HvdcDroopSolverData droop_data;
+    fill_hvdc_droop_solver_data(droop_data, true);
+    for(int k = 0; k < droop_data.size(); ++k){
+        const real_type theta_1 = std::arg(V(droop_data.bus1(k)));
+        const real_type theta_2 = std::arg(V(droop_data.bus2(k)));
+        const real_type raw = droop_data.p0(k) + droop_data.k(k) * (theta_1 - theta_2);
+        real_type p1_flow, p2_flow;
+        droop_data.flows_pu(k, raw, p1_flow, p2_flow);
+        mis(droop_data.bus1(k)) += p1_flow;
+        mis(droop_data.bus2(k)) += p2_flow;
+    }
 
     // store results
     CplxVect res = _get_results_back_to_orig_nodes(mis,
@@ -530,7 +615,7 @@ CplxVect LSGrid::pre_process_solver(
         total_q_max_per_bus_ = RealVect::Constant(nb_bus_total, 0.);
         total_gen_per_bus_ = Eigen::VectorXi::Constant(nb_bus_total, 0);
         generators_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-        dc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+        hvdc_lines_.init_q_vector(nb_bus_total, total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
     }
 
     if (redo_all || converter_changed ||
@@ -557,7 +642,7 @@ CplxVect LSGrid::pre_process_solver(
         V(bus_solver_id) = tmp;
     }
     generators_.set_vm(V, id_me_to_solver);
-    dc_lines_.set_vm(V, id_me_to_solver);
+    hvdc_lines_.set_vm(V, id_me_to_solver);
 
     if(algo_controler_.need_reset_solver() || 
        algo_controler_.has_dimension_changed() ||
@@ -695,7 +780,7 @@ void LSGrid::fillYbus(
     sgens_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     storages_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     generators_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
-    dc_lines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
+    hvdc_lines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     res.setFromTriplets(tripletList.begin(), tripletList.end());  // works because  "The initial contents of *this is destroyed"
     res.makeCompressed();
 }
@@ -711,7 +796,7 @@ void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_
     sgens_.fillSbus(Sbus, id_me_to_solver, ac);
     storages_.fillSbus(Sbus, id_me_to_solver, ac);
     generators_.fillSbus(Sbus, id_me_to_solver, ac);
-    dc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
+    hvdc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
     if (abs(sn_mva_ - 1.0) > BaseConstants::_tol_equal_float) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
@@ -742,7 +827,7 @@ void LSGrid::fillpv_pq(const SolverBusIdVect& id_me_to_solver,
     storages_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     sgens_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
     generators_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
-    dc_lines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
+    hvdc_lines_.fillpv(bus_pv, has_bus_been_added, slack_bus_id_solver, id_me_to_solver);
 
     for(int bus_id = 0; bus_id< nb_bus; ++bus_id){
         if(GenericContainer::is_in_vect(bus_id, slack_bus_id_solver.to_int_vector())) continue;  // slack bus is not PQ either
@@ -782,7 +867,7 @@ void LSGrid::compute_results(bool ac){
     // for prods
     generators_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for dclines
-    dc_lines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
+    hvdc_lines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
 
     //handle_slack_bus active power
     CplxVect mismatch;  // power mismatch at each bus (SOLVER BUS !!!)
@@ -808,7 +893,7 @@ void LSGrid::compute_results(bool ac){
     // mainly to initialize the Q value of the generators in dc (just fill it with 0.)
     generators_.set_q(reactive_mismatch, id_me_to_solver, ac,
                       total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
-    dc_lines_.set_q(reactive_mismatch, id_me_to_solver, ac,
+    hvdc_lines_.set_q(reactive_mismatch, id_me_to_solver, ac,
                     total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
 }
 
@@ -820,7 +905,7 @@ void LSGrid::reset_results(){
     sgens_.reset_results();
     storages_.reset_results();
     generators_.reset_results();
-    dc_lines_.reset_results();
+    hvdc_lines_.reset_results();
 }
 
 CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
@@ -1058,7 +1143,7 @@ void LSGrid::fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp,
     sgens_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
     storages_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
     generators_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
-    dc_lines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
+    hvdc_lines_.fillBp_Bpp(tripletList_Bp, tripletList_Bpp, id_me_to_ac_solver_, sn_mva_, xb_or_bx);
     // now make the matrices effectively
     Bp.setFromTriplets(tripletList_Bp.begin(), tripletList_Bp.end());
     Bp.makeCompressed();
@@ -1088,7 +1173,7 @@ void LSGrid::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose
     sgens_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
     storages_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
     generators_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
-    dc_lines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
+    hvdc_lines_.fillBf_for_PTDF(tripletList, id_me_to_dc_solver_, sn_mva_, powerlines_.nb(), transpose);
 
     Bf.setFromTriplets(tripletList.begin(), tripletList.end());
     Bf.makeCompressed();
@@ -1113,7 +1198,7 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     sgens_.gen_p_per_bus(gen_p_per_bus);
     storages_.gen_p_per_bus(gen_p_per_bus);
     generators_.gen_p_per_bus(gen_p_per_bus);
-    dc_lines_.gen_p_per_bus(gen_p_per_bus);
+    hvdc_lines_.gen_p_per_bus(gen_p_per_bus);
 
     // computes the total number of "neighbors" (extremity of connected powerlines and trafo, not real neighbors)
     powerlines_.nb_line_end(nb_line_end_per_bus);  // TODO have a function to dispatch that to all type of elements
@@ -1123,7 +1208,7 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     sgens_.nb_line_end(nb_line_end_per_bus);
     storages_.nb_line_end(nb_line_end_per_bus);
     generators_.nb_line_end(nb_line_end_per_bus);
-    dc_lines_.nb_line_end(nb_line_end_per_bus);
+    hvdc_lines_.nb_line_end(nb_line_end_per_bus);
     
     // now find the most connected buses
     for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id)
@@ -1166,7 +1251,7 @@ void LSGrid::consider_only_main_component(){
     sgens_.get_graph(tripletList);
     storages_.get_graph(tripletList);
     generators_.get_graph(tripletList);
-    dc_lines_.get_graph(tripletList);
+    hvdc_lines_.get_graph(tripletList);
     Eigen::SparseMatrix<real_type> graph = Eigen::SparseMatrix<real_type>(nb_busbars, nb_busbars);
     graph.setFromTriplets(tripletList.begin(), tripletList.end());
     graph.makeCompressed();
@@ -1244,7 +1329,7 @@ void LSGrid::consider_only_main_component(){
     sgens_.disconnect_if_not_in_main_component(bus_in_main_cc);
     storages_.disconnect_if_not_in_main_component(bus_in_main_cc);
     generators_.disconnect_if_not_in_main_component(bus_in_main_cc);
-    dc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc);
+    hvdc_lines_.disconnect_if_not_in_main_component(bus_in_main_cc);
     // and finally deal with the buses
     init_bus_status();
 }

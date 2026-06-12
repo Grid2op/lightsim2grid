@@ -18,8 +18,11 @@ __all__ = ["GeneratorContainer",
            "TrafoInfo",
            "LineContainer",
            "LineInfo",
-           "DCLineContainer",
-           "DCLineInfo",
+           "HvdcLineContainer",
+           "HvdcLineInfo",
+           "ConverterStationInfo",
+           "DCLineContainer",  # deprecated alias of HvdcLineContainer
+           "DCLineInfo",  # deprecated alias of HvdcLineInfo
            ]
 
 from ..lightsim2grid_cpp import GeneratorContainer # type: ignore
@@ -34,5 +37,10 @@ from ..lightsim2grid_cpp import TrafoContainer # type: ignore
 from ..lightsim2grid_cpp import TrafoInfo # type: ignore
 from ..lightsim2grid_cpp import LineContainer # type: ignore
 from ..lightsim2grid_cpp import LineInfo # type: ignore
-from ..lightsim2grid_cpp import DCLineContainer # type: ignore
-from ..lightsim2grid_cpp import DCLineInfo # type: ignore
+from ..lightsim2grid_cpp import HvdcLineContainer # type: ignore
+from ..lightsim2grid_cpp import HvdcLineInfo # type: ignore
+from ..lightsim2grid_cpp import ConverterStationInfo # type: ignore
+
+# deprecated aliases (the "dc lines" are modelled as hvdc lines since lightsim2grid 0.12)
+DCLineContainer = HvdcLineContainer
+DCLineInfo = HvdcLineInfo
