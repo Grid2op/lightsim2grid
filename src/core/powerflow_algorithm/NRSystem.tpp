@@ -16,34 +16,24 @@ inline void NRSystem<Base, Rest...>::init_topology(
     Eigen::Ref<const IntVect>              pv,
     Eigen::Ref<const IntVect>              pq)
 {
-
-    // init the sparsity pattern
-    // I think we don't really care about the
-    // values
+    // init the sparsity pattern of the dS matrices (values do not matter yet)
     dS_dVm_ = *Ybus_ptr_;
     dS_dVa_ = *Ybus_ptr_;
     map_dsdva_r_.clear();
     map_dsdva_i_.clear();
     map_dsdvm_r_.clear();
     map_dsdvm_i_.clear();
-    
-    // now init the extra features
+
+    // components compute their own index sets
     base_.init_topology(slack_ids, slack_weights, pv, pq);
     _init_topology_extensions(slack_ids, slack_weights, pv, pq, std::make_index_sequence<sizeof...(Rest)>{});
-    
-    // now compute the jacobian size
-    _update_total_state_variables(std::make_index_sequence<sizeof...(Rest)>{});
 
-    // build the bus_id -> Jacobian column converters (base block + extensions)
+    // then claim their equations / unknowns in the ledger
+    // (allocation order defines the J layout)
     const int n_bus = static_cast<int>(Ybus_ptr_->rows());
-    theta_to_J_col_.assign(n_bus, -1);
-    vm_to_J_col_.assign(n_bus, -1);
-    q_to_J_col_.assign(n_bus, -1);
-    base_.fill_col_converters(theta_to_J_col_, vm_to_J_col_, q_to_J_col_);
-    _fill_col_converters_extensions(theta_to_J_col_, vm_to_J_col_, q_to_J_col_,
-                                    std::make_index_sequence<sizeof...(Rest)>{});
-
-    need_full_rebuild_ = true;
+    ledger_.reset(n_bus);
+    base_.register_in(ledger_);
+    _register_in_extensions(ledger_, std::make_index_sequence<sizeof...(Rest)>{});
 }
 
 // ---- Phase 1.5: per-compute_pf state update ----------------------------------
@@ -63,81 +53,74 @@ inline void NRSystem<Base, Rest...>::update_state(
     Vm_ = V_init.array().abs();
     V_  = V_init;
 
-    // now inform the extensions
+    // now inform the components
     base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
     _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, std::make_index_sequence<sizeof...(Rest)>{});
 }
 
-// ---- Phase 2: build J sparsity + value_map -----------------------------------
+// ---- Phase 2: build J sparsity + value maps -----------------------------------
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::build_J_sparsity()
 {
-    // reset J
-    J_         = Eigen::SparseMatrix<real_type>();
+    J_ = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
 
-    // compute its sparsity pattern
-    const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
-    const int n_bus  = Ybus.rows();
-    const size_t dim_J  =  total_state_variables(); // nb_pvpq_ + nb_pq_;
-    // base_.build_J_sparsity();
+    const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>& Ybus = *Ybus_ptr_;
+    const int nnz_Y = static_cast<int>(Ybus.nonZeros());
 
-    // const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
-    // const int nnz_Y  = Ybus.nonZeros();
-
-    // // get the triplets (will be in a virtual function later)
-    // std::vector< std::vector<Contrib> > cijs(4); // stores in order c11, c12, c21 and c22
-    // int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  // TODO NR refacto: move this as static attrs
-
-    // // TODO this might be overly pessimistic (only pvpq comp are kept for c11 and c21)
-    // // TODO this might be overly pessimistic (only pq comp are kept for c12 and c22) 
-    // for(auto & el: cijs) el.reserve(nnz_Y);
-    // int k = 0;
-    // for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
-    //     for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
-    //          it(Ybus, outer); it; ++it, ++k)
-    //     {
-    //         int i = (int)it.row(), j = (int)it.col();
-    //         int ri = pvpq_inv_[i], rq = pq_inv_[i];
-    //         int ci = pvpq_inv_[j], cq = pq_inv_[j];
-    //         if (ri >= 0 && ci >= 0) cijs[c11].push_back({ri,          ci,          k});
-    //         if (ri >= 0 && cq >= 0) cijs[c12].push_back({ri,          nb_pvpq_ + cq, k});
-    //         if (rq >= 0 && ci >= 0) cijs[c21].push_back({nb_pvpq_ + rq, ci,          k});
-    //         if (rq >= 0 && cq >= 0) cijs[c22].push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k});
-    //     }
-    // }
-    std::vector< std::vector<Contrib> > contribs;
-    contribs.reserve(sizeof...(Rest) + 1);
-    contribs.push_back(base_.build_J_contrib());
-    _build_J_contrib_extensions(contribs, std::make_index_sequence<sizeof...(Rest)>{});
-
-    size_t expected_size = 0;
-    for(const auto & el: contribs) expected_size += el.size();
-    // std::cout << "\texpected_size " << expected_size << std::endl;
-    // reserve enough space
-    std::vector<Eigen::Triplet<real_type> > triplets;
-    triplets.reserve(expected_size);
-
-    // now fill the triplets
-    for(const auto& cij : contribs)
-    {
-        for (auto& c : cij)
+    // generic dS pass: ONE loop over the Ybus nonzeros generates every
+    // dS-derived entry, for all components at once. k is the running nnz index.
+    std::vector<Contrib> cntrb;
+    cntrb.reserve(4 * nnz_Y);  // pessimistic upper bound
+    int k = 0;
+    for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
+        for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
+            it(Ybus, outer); it; ++it, ++k)
         {
-            triplets.push_back({c.jrow(), c.jcol(), 0.});
-            // if((c.jrow() >= 23) || (c.jcol() >= 23)){
-            //     std::cout << "\t error in NRSystem.tpp: " << c.jrow() << " " << c.jcol() << std::endl;
-            // }
+            const int i = static_cast<int>(it.row()), j = static_cast<int>(it.col());
+            const int pr = ledger_.p_row(i),     qr = ledger_.q_row(i);
+            const int tc = ledger_.theta_col(j), vc = ledger_.vm_col(j);
+            if (pr >= 0 && tc >= 0) cntrb.push_back({pr, tc, k, dSdVa_r});
+            if (pr >= 0 && vc >= 0) cntrb.push_back({pr, vc, k, dSdVm_r});
+            if (qr >= 0 && tc >= 0) cntrb.push_back({qr, tc, k, dSdVa_i});
+            if (qr >= 0 && vc >= 0) cntrb.push_back({qr, vc, k, dSdVm_i});
         }
     }
 
-    // and build the matrix
-    // std::cout << "and build the matrix, dim_J: " << dim_J << std::endl;
+    // feature (non dS-derived) entries declared by the components
+    sink_.clear();
+    base_.declare_feature_entries(sink_);
+    _declare_feature_entries_extensions(sink_, std::make_index_sequence<sizeof...(Rest)>{});
+
+    // build the matrix (duplicated positions are summed, all values are 0 here)
+    std::vector<Eigen::Triplet<real_type> > triplets;
+    triplets.reserve(cntrb.size() + sink_.size());
+    for (const auto& c : cntrb) triplets.push_back({c.jrow(), c.jcol(), 0.});
+    for (int h = 0; h < sink_.size(); ++h) triplets.push_back({sink_.row(h), sink_.col(h), 0.});
+
+    const int dim_J = ledger_.size();
     J_.resize(dim_J, dim_J);
     J_.setFromTriplets(triplets.begin(), triplets.end());
     J_.makeCompressed();
 
-    // and finally build the value maps
-    // std::cout << "_build_value_map " << std::endl;
-    _build_value_map(contribs);  // will call build_value_map_extensions
+    // resolve the dS value maps (Ybus nnz position -> J_.valuePtr() position)
+    map_dsdva_r_.assign(nnz_Y, -1);
+    map_dsdva_i_.assign(nnz_Y, -1);
+    map_dsdvm_r_.assign(nnz_Y, -1);
+    map_dsdvm_i_.assign(nnz_Y, -1);
+    for (const auto& c : cntrb) {
+        const int pos = Base::find_J_pos(J_, c.jrow(), c.jcol());
+        switch (c.whichmat()) {
+            case dSdVa_r: map_dsdva_r_[c.ybus_k()] = pos; break;
+            case dSdVa_i: map_dsdva_i_[c.ybus_k()] = pos; break;
+            case dSdVm_r: map_dsdvm_r_[c.ybus_k()] = pos; break;
+            case dSdVm_i: map_dsdvm_i_[c.ybus_k()] = pos; break;
+        }
+    }
+
+    // resolve the feature positions
+    feature_pos_.resize(sink_.size());
+    for (int h = 0; h < sink_.size(); ++h)
+        feature_pos_[h] = Base::find_J_pos(J_, sink_.row(h), sink_.col(h));
 }
 
 // ---- Phase 3: fill J values (fast, called every factorisation) ---------------
@@ -146,52 +129,39 @@ inline void NRSystem<Base, Rest...>::fill_J()
 {
     auto timer = CustTimer();
 
+    // zero J first: every write below accumulates (+=), since several
+    // contributions may resolve to the same position
+    real_type* J_values = J_.valuePtr();
+    std::fill(J_values, J_values + J_.nonZeros(), static_cast<real_type>(0.));
+
     const cplx_type* ds_dvm = dS_dVm_.valuePtr();
     const cplx_type* ds_dva = dS_dVa_.valuePtr();
     size_t i = 0;
-    for(auto & c : map_dsdva_r_){
-        if(c == -1){
-            // coeff of J11 not used in J
-            i++;
-            continue;
-        }
-        J_.valuePtr()[c] = std::real(ds_dva[i]);
-        i++;
+    for (auto& c : map_dsdva_r_) {
+        if (c != -1) J_values[c] += std::real(ds_dva[i]);
+        ++i;
+    }
+    i = 0;
+    for (auto& c : map_dsdva_i_) {
+        if (c != -1) J_values[c] += std::imag(ds_dva[i]);
+        ++i;
+    }
+    i = 0;
+    for (auto& c : map_dsdvm_r_) {
+        if (c != -1) J_values[c] += std::real(ds_dvm[i]);
+        ++i;
+    }
+    i = 0;
+    for (auto& c : map_dsdvm_i_) {
+        if (c != -1) J_values[c] += std::imag(ds_dvm[i]);
+        ++i;
     }
 
-    i = 0;
-    for(auto & c : map_dsdva_i_){
-        if(c == -1){
-            // coeff of J21 not used in J
-            i++;
-            continue;
-        }
-        J_.valuePtr()[c] = std::imag(ds_dva[i]);
-        i++;
-    }
+    // feature (non dS-derived) values
+    FeatureWriter writer(J_values, feature_pos_);
+    base_.fill_feature_values(writer);
+    _fill_feature_values_extensions(writer, std::make_index_sequence<sizeof...(Rest)>{});
 
-    i = 0;
-    for(auto & c : map_dsdvm_r_){
-        if(c == -1){
-            // coeff of J12 not used in J
-            i++;
-            continue;
-        }
-        J_.valuePtr()[c] = std::real(ds_dvm[i]);
-        i++;
-    }
-
-    i = 0;
-    for(auto & c : map_dsdvm_i_){
-        if(c == -1){
-            // coeff of J22 not used in J
-            i++;
-            continue;
-        }
-        J_.valuePtr()[c] = std::imag(ds_dvm[i]);
-        i++;
-    }
-    _fill_J_extensions(std::make_index_sequence<sizeof...(Rest)>{});
     timer_fillJ_ += timer.duration();
 }
 
@@ -239,21 +209,23 @@ template <typename... Rest>
 inline RealVect NRSystem<Base, Rest...>::mismatch() const
 {
     // current state: no step (dx == 0), residual evaluated at V_
-    return _residual(V_, RealVect::Zero(total_state_variables()));
+    return _residual(V_, RealVect::Zero(static_cast<Eigen::Index>(total_state_variables())));
 }
 
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::apply_step(const RealVect& dx)
 {
-    // base block: theta at pv/pq, vm at pq
-    if (base_.nb_pv() > 0)
-        Va_(base_.pv()) += theta_base(dx).segment(0, base_.nb_pv());
-    if (base_.nb_pq() > 0) {
-        Va_(base_.pq()) += theta_base(dx).segment(base_.nb_pv(), base_.nb_pq());
-        Vm_(base_.pq()) += vm_base(dx);
-    }
-    // extension blocks: e.g. pv_slack angles + slack absorbed
-    _apply_step_extensions(dx, Va_, Vm_, std::make_index_sequence<sizeof...(Rest)>{});
+    // generic voltage updates, driven by the ledger's (bus, col) pair lists
+    const std::vector<int>& theta_buses = ledger_.theta_buses();
+    const std::vector<int>& theta_cols  = ledger_.theta_cols();
+    for (size_t k = 0; k < theta_buses.size(); ++k) Va_(theta_buses[k]) += dx(theta_cols[k]);
+    const std::vector<int>& vm_buses = ledger_.vm_buses();
+    const std::vector<int>& vm_cols  = ledger_.vm_cols();
+    for (size_t k = 0; k < vm_buses.size(); ++k) Vm_(vm_buses[k]) += dx(vm_cols[k]);
+
+    // component-owned non-voltage state (e.g. slack absorbed)
+    base_.apply_step(dx);
+    _apply_step_extensions(dx, std::make_index_sequence<sizeof...(Rest)>{});
 
     V_ = _reconstruct_V(Va_, Vm_);
     if (Vm_.minCoeff() < static_cast<real_type>(0.)) {
@@ -279,16 +251,16 @@ inline CplxVect NRSystem<Base, Rest...>::_reconstruct_V(const RealVect& Va, cons
 template <typename... Rest>
 inline CplxVect NRSystem<Base, Rest...>::_compute_trial_V(const RealVect& dx) const
 {
-    // TODO check that dx has the proper size
+    // same voltage loops as apply_step, on local copies; the components' extra
+    // state is handled through the dx argument of adjust_mismatch / fill_custom_rows
     RealVect Va_t = Va_;
     RealVect Vm_t = Vm_;
-    if (base_.nb_pv() > 0) Va_t(base_.pv()) += theta_base(dx).segment(0, base_.nb_pv());
-    if (base_.nb_pq() > 0) {
-        Va_t(base_.pq()) += theta_base(dx).segment(base_.nb_pv(), base_.nb_pq());
-        Vm_t(base_.pq()) += vm_base(dx);
-    }
-    // extension blocks may also carry angle state (e.g. pv_slack)
-    _apply_trial_voltages_extensions(dx, Va_t, Vm_t, std::make_index_sequence<sizeof...(Rest)>{});
+    const std::vector<int>& theta_buses = ledger_.theta_buses();
+    const std::vector<int>& theta_cols  = ledger_.theta_cols();
+    for (size_t k = 0; k < theta_buses.size(); ++k) Va_t(theta_buses[k]) += dx(theta_cols[k]);
+    const std::vector<int>& vm_buses = ledger_.vm_buses();
+    const std::vector<int>& vm_cols  = ledger_.vm_cols();
+    for (size_t k = 0; k < vm_buses.size(); ++k) Vm_t(vm_buses[k]) += dx(vm_cols[k]);
     return _reconstruct_V(Va_t, Vm_t);
 }
 
@@ -298,15 +270,23 @@ inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const Re
     // per-bus complex power mismatch: V .* conj(Ybus V) - Sbus
     CplxVect mis = V_t.array() * (*Ybus_ptr_ * V_t).array().conjugate()
                    - Sbus_ptr_->array();
-    // extensions adjust the complex injection (e.g. + slack_absorbed * slack_weights)
+    // components adjust the complex injection (e.g. + slack_absorbed * slack_weights)
+    base_.adjust_mismatch(dx, mis);
     _adjust_mismatch_extensions(dx, mis, std::make_index_sequence<sizeof...(Rest)>{});
 
-    const RealVect real_ = mis.real();
-    const RealVect imag_ = mis.imag();
+    // generic residual rows, driven by the ledger's (bus, row) pair lists
+    // (accumulate: duplicated rows must sum)
+    RealVect res = RealVect::Zero(static_cast<Eigen::Index>(total_state_variables()));
+    const std::vector<int>& p_buses = ledger_.p_buses();
+    const std::vector<int>& p_rows  = ledger_.p_rows();
+    for (size_t k = 0; k < p_buses.size(); ++k) res(p_rows[k]) -= std::real(mis(p_buses[k]));
+    const std::vector<int>& q_buses = ledger_.q_buses();
+    const std::vector<int>& q_rows  = ledger_.q_rows();
+    for (size_t k = 0; k < q_buses.size(); ++k) res(q_rows[k]) -= std::imag(mis(q_buses[k]));
 
-    RealVect res(total_state_variables());
-    base_.fill_mismatch(res.segment(0, base_.get_size()), real_, imag_);
-    _fill_mismatch_extensions(res, real_, imag_, std::make_index_sequence<sizeof...(Rest)>{});
+    // component-owned custom rows (none for Base / MultiSlack)
+    base_.fill_custom_rows(res, Va_, Vm_, dx);
+    _fill_custom_rows_extensions(res, Va_, Vm_, dx, std::make_index_sequence<sizeof...(Rest)>{});
     return res;
 }
 

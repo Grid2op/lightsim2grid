@@ -42,22 +42,32 @@ class JacobianMultiSlackTester(unittest.TestCase):
     
     def new_to_old_indexes(self):
         """
-        in lightsim2grid 0.14, order of the Jac change and slack is put at the end (instead of the beginning)
-        
-        this should be used J_new_indx[self.reorder_jac_row().T, self.reorder_jac_row()] == J_old_index
-        
-        new order:
-        pv, pq, pq, pv_slack, slack
-        
-        old order:
-        slack, pv_(slack + base), pq, pq
-        
+        in lightsim2grid 0.14, the Jacobian rows / columns are laid out by
+        increasing bus index within each block: base block first (theta / P of
+        sorted pvpq, then vm / Q of sorted pq), then the distributed-slack
+        extension (sorted non-ref slacks, slack_absorbed / ref equation last).
+
+        the stored reference uses the historical layout:
+        slack eq, P at slack_ids[1:] (input order), P at pv then pq (input order), Q at pq
+
+        this should be used J_new_indx[self.new_to_old_indexes().T, self.new_to_old_indexes()] == J_old_index
         """
+        init = type(self).res["init_state"]
+        pv = np.asarray(init["pv"]).reshape(-1)
+        pq = np.asarray(init["pq"]).reshape(-1)
+        slack_ids = np.asarray(init["slack_ids"]).reshape(-1)
+        pv_slack = slack_ids[1:]  # non-ref slack buses (input order)
+
+        pvpq_sorted = np.sort(np.r_[pv, pq])
+        pq_sorted = np.sort(pq)
+        n_pvpq = pvpq_sorted.shape[0]
+        base_size = n_pvpq + pq_sorted.shape[0]
         return np.concatenate(
             (
-                [22],  # slack
-                [20, 21],  # pv_slack
-                np.arange(20)  # rest (pv_base, pq, pq)
+                [base_size + pv_slack.shape[0]],  # slack (ref eq / slack_absorbed col)
+                base_size + np.searchsorted(np.sort(pv_slack), pv_slack),  # pv_slack
+                np.searchsorted(pvpq_sorted, np.r_[pv, pq]),  # P / theta at pv then pq
+                n_pvpq + np.searchsorted(pq_sorted, pq),  # Q / vm at pq
                 )
             ).reshape(-1,1)
     
@@ -124,11 +134,11 @@ class JacobianMultiSlackTester(unittest.TestCase):
         """Check the bus_id -> Jacobian-column converters, including the
         distributed-slack (pv_slack) extension columns.
 
-        Column layout (new order, slack at the end):
-          - theta of base pvpq buses : [0, n_pvpq)
-          - vm of pq buses           : [n_pvpq, n_pvpq + n_pq)  (== [n_pvpq, base_size))
-          - theta of pv_slack buses  : [base_size, base_size + n_pv_slack)
-          - slack_absorbed (no bus)  : base_size + n_pv_slack   (last column)
+        Column layout (sorted by bus index within each block, slack at the end):
+          - theta of sorted base pvpq buses : [0, n_pvpq)
+          - vm of sorted pq buses           : [n_pvpq, n_pvpq + n_pq)  (== [n_pvpq, base_size))
+          - theta of sorted pv_slack buses  : [base_size, base_size + n_pv_slack)
+          - slack_absorbed (no bus)         : base_size + n_pv_slack   (last column)
         """
         cls = type(self)
         init = cls.res["init_state"]
@@ -160,12 +170,13 @@ class JacobianMultiSlackTester(unittest.TestCase):
         # q is a placeholder for now
         assert np.all(q == -1), "q_to_J_col must be -1 everywhere for now"
 
-        # expected full layout: base block + pv_slack extension columns
+        # expected full layout (sorted by bus index within each block):
+        # base block + pv_slack extension columns
         expected_theta = -np.ones(n_bus, dtype=int)
-        expected_theta[pvpq] = np.arange(n_pvpq)
-        expected_theta[pv_slack] = base_size + np.arange(pv_slack.shape[0])
+        expected_theta[np.sort(pvpq)] = np.arange(n_pvpq)
+        expected_theta[np.sort(pv_slack)] = base_size + np.arange(pv_slack.shape[0])
         expected_vm = -np.ones(n_bus, dtype=int)
-        expected_vm[pq] = n_pvpq + np.arange(n_pq)
+        expected_vm[np.sort(pq)] = n_pvpq + np.arange(n_pq)
 
         assert np.array_equal(theta, expected_theta), \
             f"theta_to_J_col mismatch: {theta} != {expected_theta}"
@@ -205,6 +216,18 @@ class JacobianSingleSlackTester(JacobianMultiSlackTester):
     
     def new_to_old_indexes(self):
         """
-        No changes for single slack atm
+        single slack: no extension block; the stored reference uses pv-then-pq
+        blocks while the new layout sorts each block by bus index.
         """
-        return np.arange(22).reshape(-1,1)
+        init = type(self).res["init_state"]
+        pv = np.asarray(init["pv"]).reshape(-1)
+        pq = np.asarray(init["pq"]).reshape(-1)
+        pvpq_sorted = np.sort(np.r_[pv, pq])
+        pq_sorted = np.sort(pq)
+        n_pvpq = pvpq_sorted.shape[0]
+        return np.concatenate(
+            (
+                np.searchsorted(pvpq_sorted, np.r_[pv, pq]),  # P / theta at pv then pq
+                n_pvpq + np.searchsorted(pq_sorted, pq),  # Q / vm at pq
+                )
+            ).reshape(-1,1)

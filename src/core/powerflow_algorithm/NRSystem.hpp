@@ -12,13 +12,15 @@
 #include "Utils.hpp"
 #include "BaseConstants.hpp"
 #include "CustTimer.hpp"
+#include "NRLedger.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 
+#include <algorithm>
+#include <cmath>
+#include <tuple>
 #include <vector>
 #include <stdexcept>
-
-// TODO need to be cleaned up and simplified
 
 // Public API (used by NRAlgo, in order)
 // init_topology : if Ybus changed
@@ -27,10 +29,11 @@
 // mismatch (before NR loop)
 // ---------------- ENTERING NR LOOP
 // if need factorize:
+//     fill_internal_variables
 //     fill_J
 // apply_step
 // mismatch
-// ---------------- END NRR LOOP 
+// ---------------- END NR LOOP
 // V(), Vm(), Va()
 // timer_dSbus()
 // timer_fillJ()
@@ -43,10 +46,8 @@
 
 // Public API (used by scaling policy)
 // mismatch_sq_norm_at()
-// theta()
-// vm()
-// theta_size()
-// vm_size()
+// max_abs_dtheta()
+// max_abs_dvm()
 
 
 namespace ls2g {
@@ -56,15 +57,18 @@ namespace ls2g {
 template <typename... Extensions>
 class NRSystem;
 
-enum LS2G_API dSdX { dSdVa_r, dSdVa_i, dSdVm_r, dSdVm_i, NotIndSdV};
+enum LS2G_API dSdX { dSdVa_r, dSdVa_i, dSdVm_r, dSdVm_i };
 
+// One dS-derived Jacobian entry: J(jrow, jcol) takes the real or imaginary
+// part (whichmat) of the dS_dVa / dS_dVm value stored at Ybus nnz position
+// ybus_k. Produced by the generic dS pass of NRSystem::build_J_sparsity.
 class LS2G_API Contrib final
-{ 
+{
     private:
         int jrow_;
         int jcol_;
         int ybus_k_;
-        dSdX whichmat_; 
+        dSdX whichmat_;
 
     public:
        Contrib(int jrow, int jcol, int ybus_k, dSdX whichmat) noexcept:
@@ -80,7 +84,32 @@ class LS2G_API Contrib final
 
 };
 
-// ---- Base class definition ----------------------------------------------------
+// ---- Component protocol --------------------------------------------------------
+//
+// The Base block and every extension implement the same interface; NRSystem
+// composes them (Base is the first, special-cased member; extensions live in a
+// tuple). A component NEVER manipulates global J offsets: it claims its rows /
+// columns in the NRLedger and keeps the returned indices.
+//
+//  - update_state(...)            : per-solve state refresh (cheap, always).
+//  - init_topology(...)           : computes the component's own index sets only.
+//  - register_in(NRLedger&)       : claims bus-owned rows/cols and allocates
+//                                   custom rows/cols; stores the returned indices.
+//  - declare_feature_entries(FeatureSink&) : declares the component's non-dS
+//                                   Jacobian entries; stores the handles.
+//  - fill_feature_values(FeatureWriter&)   : writes the feature values
+//                                   (called at every fill_J; J was zeroed first).
+//  - adjust_mismatch(dx, mis)     : adds the component's physical injections to
+//                                   the per-bus complex mismatch. dx is the FULL
+//                                   step vector (zero vector of full size when
+//                                   evaluating at the current state); the
+//                                   component indexes it with its stored column ids.
+//  - fill_custom_rows(res, Va, Vm, dx) : accumulates (+=) residuals ONLY into
+//                                   custom rows the component allocated. Bus-owned
+//                                   P/Q rows are filled generically by NRSystem.
+//  - apply_step(dx)               : updates ONLY the component's own non-voltage
+//                                   state. Voltage updates are generic.
+//  - clear()                      : reset.
 
 /**
  * Base Newton-Raphson system block (single-slack core).
@@ -95,10 +124,12 @@ class LS2G_API Contrib final
  *   J . dx = -F(x). So there is one row per equation and one column per
  *   unknown (NOT one row per unknown).
  *
- * The column->bus converters (theta_to_J_col / vm_to_J_col / q_to_J_col, built
- * by fill_col_converters) invert the "which column holds which unknown" map:
- * given a bus id they return the Jacobian column of that bus' theta / vm / q
- * unknown, or -1 when the bus owns no such unknown.
+ * The base block registers, in INCREASING BUS INDEX order (the pv / pq input
+ * arrays are NOT assumed sorted; they are sorted internally):
+ *   - theta unknowns for sorted(pv ∪ pq),
+ *   - vm unknowns for sorted(pq),
+ *   - P equations for sorted(pv ∪ pq),
+ *   - Q equations for sorted(pq).
  */
 class LS2G_API Base
 {
@@ -121,36 +152,20 @@ class LS2G_API Base
             return (int) (it - inner);
         };
 
-        static int find_J_pos_csr(
-            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::RowMajor> > J_csr,
-            int row,
-            int col){
-            int start = J_csr.outerIndexPtr()[row];
-            int end   = J_csr.outerIndexPtr()[row + 1];
-            const int* inner = J_csr.innerIndexPtr();
-            auto it = std::lower_bound(inner + start, inner + end, col);
-            if (it == inner + end || *it != col) return -1;
-            return (int) (it - inner);
-        };
-
         // call at the beginning of each solve
         void update_state(
-            const LSGrid *                         lsgrid_ptr,
-            const Eigen::SparseMatrix<cplx_type>&  Ybus,
-            const CplxVect&                        Sbus,
-            const RealVect&                        slack_weights
-        ){
-            lsgrid_ptr_ = lsgrid_ptr;
-            Ybus_ptr_ = &Ybus;
-            Sbus_ptr_ = &Sbus;
-        }
+            const LSGrid *                         /*lsgrid_ptr*/,
+            const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
+            const CplxVect&                        /*Sbus*/,
+            const RealVect&                        /*slack_weights*/
+        ){}
 
         // call after update_state
         // at the beginning of each solve
         // only if the topology has changed
         void init_topology(
-            Eigen::Ref<const IntVect>              slack_ids,
-            const RealVect&                        slack_weights,
+            Eigen::Ref<const IntVect>              /*slack_ids*/,
+            const RealVect&                        /*slack_weights*/,
             Eigen::Ref<const IntVect>              pv,
             Eigen::Ref<const IntVect>              pq
         ) {
@@ -164,131 +179,88 @@ class LS2G_API Base
             pvpq_ << pv_, pq_;
 
             nb_pvpq_ = static_cast<int>(pvpq_.size());
-            const int n_bus  = static_cast<int>(Ybus_ptr_->rows());
-
-            pvpq_inv_.assign(n_bus, -1);
-            for (int i = 0; i < nb_pvpq_; ++i) pvpq_inv_[pvpq_(i)] = i;
-            pq_inv_.assign(n_bus, -1);
-            for (int i = 0; i < nb_pq_; ++i) pq_inv_[pq_(i)] = i;
         }
 
-        size_t get_size() const { return nb_pvpq_ + nb_pq_;}
-
-        std::vector<Contrib> build_J_contrib() noexcept
+        void register_in(NRLedger& ledger) const
         {
-            // compute its sparsity pattern
-            const Eigen::SparseMatrix<cplx_type> & Ybus = *Ybus_ptr_;
-            const int nnz_Y  = Ybus.nonZeros();
+            std::vector<int> pvpq_sorted(pvpq_.data(), pvpq_.data() + nb_pvpq_);
+            std::sort(pvpq_sorted.begin(), pvpq_sorted.end());
+            std::vector<int> pq_sorted(pq_.data(), pq_.data() + nb_pq_);
+            std::sort(pq_sorted.begin(), pq_sorted.end());
 
-            // get the triplets (will be in a virtual function later)
-            std::vector<Contrib> cntrb;
-            cntrb.reserve(4 * nnz_Y);
-            // TODO this might be overly pessimistic (only pvpq comp are kept for c11 and c21)
-            // TODO this might be overly pessimistic (only pq comp are kept for c12 and c22) 
-
-            int k = 0;
-            for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
-                for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
-                    it(Ybus, outer); it; ++it, ++k)
-                {
-                    int i = (int)it.row(), j = (int)it.col();
-                    int ri = pvpq_inv_[i], rq = pq_inv_[i];
-                    int ci = pvpq_inv_[j], cq = pq_inv_[j];
-                    if (ri >= 0 && ci >= 0) cntrb.push_back({ri,          ci,          k, dSdVa_r});
-                    if (ri >= 0 && cq >= 0) cntrb.push_back({ri,          nb_pvpq_ + cq, k, dSdVm_r});
-                    if (rq >= 0 && ci >= 0) cntrb.push_back({nb_pvpq_ + rq, ci,          k, dSdVa_i});
-                    if (rq >= 0 && cq >= 0) cntrb.push_back({nb_pvpq_ + rq, nb_pvpq_ + cq, k, dSdVm_i});
-                }
-            }
-
-            return cntrb;
+            for (int bus : pvpq_sorted) ledger.add_theta_unknown(bus);
+            for (int bus : pq_sorted)   ledger.add_vm_unknown(bus);
+            for (int bus : pvpq_sorted) ledger.add_p_equation(bus);
+            for (int bus : pq_sorted)   ledger.add_q_equation(bus);
         }
 
-        void clear_jacobian() {}
+        void declare_feature_entries(FeatureSink& /*sink*/) {}
+        void fill_feature_values(FeatureWriter& /*writer*/) const {}
+        void adjust_mismatch(const RealVect& /*dx*/, CplxVect& /*mis*/) const {}
+        void fill_custom_rows(RealVect& /*res*/,
+                              const RealVect& /*Va*/,
+                              const RealVect& /*Vm*/,
+                              const RealVect& /*dx*/) const {}
+        void apply_step(const RealVect& /*dx*/) {}
 
-        void fill_J() {}
-
-        const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> * Ybus_ptr() const {return Ybus_ptr_;}
+        void clear() {
+            pv_ = IntVect();
+            pq_ = IntVect();
+            pvpq_ = IntVect();
+            nb_pv_ = 0;
+            nb_pq_ = 0;
+            nb_pvpq_ = 0;
+        }
 
     private:
-        Eigen::VectorXi                        pv_, pq_, pvpq_;
-        std::vector<int>                       pvpq_inv_, pq_inv_;
-        int                                    nb_pv_, nb_pq_, nb_pvpq_;
-
-
-        // visible attribute for derived class (non owning ptr)
-        const LSGrid *                                         lsgrid_ptr_;
-        const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
-        const CplxVect*                                        Sbus_ptr_;
-
+        IntVect pv_, pq_, pvpq_;
+        int     nb_pv_, nb_pq_, nb_pvpq_;
 
     public:
-        Eigen::Ref<const Eigen::VectorXi> pv() const { return pv_; } 
-        Eigen::Ref<const Eigen::VectorXi> pq() const { return pq_; }
-        Eigen::Ref<const Eigen::VectorXi> pvpq() const { return pvpq_; }
-        const std::vector<int> &          pvpq_inv() const {return pvpq_inv_; }
-        const std::vector<int> &          pq_inv() const {return pq_inv_; }
-        int                               nb_pv() const {return nb_pv_;}
-        int                               nb_pq() const {return nb_pq_;}
-        int                               nb_pvpq() const {return nb_pvpq_;}
-
-        int theta_size() const { return nb_pvpq_; }
-        int vm_size()    const { return nb_pq_; }
-
-        // fill the base residual rows (negated mismatch) into the
-        // segment [0, get_size()) of the global residual vector.
-        // real_ / imag_ are the per-bus real / imaginary parts of the
-        // complex power mismatch (V .* conj(Ybus V) - Sbus).
-        void fill_mismatch(Eigen::Ref<RealVect> res,
-                           const RealVect& real_,
-                           const RealVect& imag_) const
-        {
-            res.segment(0,                  nb_pv_) = -real_(pv_);
-            res.segment(nb_pv_,             nb_pq_) = -real_(pq_);
-            res.segment(nb_pv_ + nb_pq_,    nb_pq_) = -imag_(pq_);
-        }
-
-        // Fill the base-block columns of the bus_id -> Jacobian-column converters.
-        // The vectors are owned by NRSystem, already sized to n_bus and pre-filled
-        // with -1; this only writes the columns the base block is responsible for.
-        // base theta unknowns occupy columns [0, nb_pvpq_); base vm unknowns occupy
-        // columns [nb_pvpq_, nb_pvpq_ + nb_pq_). q has no base column (placeholder).
-        void fill_col_converters(std::vector<int>& theta_to_J_col,
-                                 std::vector<int>& vm_to_J_col,
-                                 std::vector<int>& /*q_to_J_col*/) const
-        {
-            for (int i = 0; i < nb_pvpq_; ++i) theta_to_J_col[pvpq_(i)] = i;
-            for (int i = 0; i < nb_pq_;   ++i) vm_to_J_col[pq_(i)]      = nb_pvpq_ + i;
-        }
+        Eigen::Ref<const IntVect> pv() const { return pv_; }
+        Eigen::Ref<const IntVect> pq() const { return pq_; }
+        Eigen::Ref<const IntVect> pvpq() const { return pvpq_; }
+        int                       nb_pv() const {return nb_pv_;}
+        int                       nb_pq() const {return nb_pq_;}
+        int                       nb_pvpq() const {return nb_pvpq_;}
 };
 
 // ---- Extension tag types ------------------------------------------------------
 
 /**
  * This extension adds the ability to have a distributed slack directly in the jacobian.
- * 
- * It adds exactly "nb slack" extra variables (nb_slack being the
- * number of slacks in the grid)
- * 
- * The first "nb_slack" - 1 are pv nodes: theta is the extra state variables.
- * 
- * The last state variable represents the p mismatch at each slack bus.
+ *
+ * It adds exactly "nb slack" extra rows and columns (nb_slack being the
+ * number of slacks in the grid). It registers, after the base block:
+ *   - for each non-ref slack bus (sorted by bus id): a theta unknown and a
+ *     P equation;
+ *   - a P equation for the ref slack bus (slack_ids[0]);
+ *   - one custom column: the slack_absorbed unknown.
+ *
+ * All the dS-derived Jacobian entries of those rows / columns are generated by
+ * the generic dS pass of NRSystem. The only feature-specific entries are the
+ * slack_absorbed column coefficients: slack_weights(bus) at each slack bus'
+ * P row.
  */
 class LS2G_API MultiSlack   // distributed-slack extension
 {
     public:
+        MultiSlack():
+            my_size_(0),
+            ref_slack_id_(0),
+            slack_col_(-1),
+            slack_absorbed_(static_cast<real_type>(0.)) {}
+
         // call at the beginning of each NR solve
         // once. It is not called for
         // NR iterations
         void update_state(
-            const Base *                           nr_system_base_ptr,
-            const LSGrid *                         lsgrid_ptr,
-            const Eigen::SparseMatrix<cplx_type>&  Ybus,
+            const Base *                           /*nr_system_base_ptr*/,
+            const LSGrid *                         /*lsgrid_ptr*/,
+            const Eigen::SparseMatrix<cplx_type>&  /*Ybus*/,
             const CplxVect&                        Sbus,
             const RealVect&                        slack_weights
         ){
-            // TODO remember slack weights !
-            nr_system_base_ptr_ = nr_system_base_ptr;
             slack_weights_ = slack_weights;
             // initial slack absorbed (see MultiSlackPolicy::initial_slack_absorbed)
             slack_absorbed_ = std::real(Sbus.sum());
@@ -299,379 +271,135 @@ class LS2G_API MultiSlack   // distributed-slack extension
         // only if the topology has changed
         void init_topology(
             Eigen::Ref<const IntVect>              slack_ids,
-            const RealVect&                        slack_weights,
-            Eigen::Ref<const IntVect>              pv,
-            Eigen::Ref<const IntVect>              pq
+            const RealVect&                        /*slack_weights*/,
+            Eigen::Ref<const IntVect>              /*pv*/,
+            Eigen::Ref<const IntVect>              /*pq*/
         ) {
-            my_size_ = slack_ids.size();
-            // TODO: sort the slack_ids
-            // TODO take the last slack (easier to fill the J matrix !)
-            ref_slack_id_ = static_cast<size_t>(slack_ids[0]);
-            slack_ids_ = slack_ids;
-            pv_slack_inv_.assign(nr_system_base_ptr_->Ybus_ptr()->cols(), -1);
-            if(my_size_ > 1){
-                // real distributed slack
-                const int nb_slack_pv = my_size_ - 1;
-                pv_slack_ = slack_ids.segment(1, nb_slack_pv);  // TODO sort this
-                for (int i = 0; i < nb_slack_pv; ++i) pv_slack_inv_[pv_slack_(i)] = i;
-            }
-
+            my_size_ = static_cast<int>(slack_ids.size());
+            ref_slack_id_ = slack_ids[0];
+            // slack buses in registration order: non-ref slacks sorted by bus
+            // id, then the ref slack last
+            slack_buses_.assign(slack_ids.data() + 1, slack_ids.data() + my_size_);
+            std::sort(slack_buses_.begin(), slack_buses_.end());
+            slack_buses_.push_back(ref_slack_id_);
         }
 
-        // called after update_state
-        // (and init_topology)
-        // at the beginning of each solve
-        size_t get_size() const {
-            return my_size_;
-        }
-
-        // called when topology has changed
-        // after update_state, init_topology (and get_size)
-
-        /**
-        J has the shape:
-        
-        | J11 | J12 | S13 |   |               | (pvpq_base, pvpq_base) | (pvpq_base, pq) | (pvpq_base, pvslack) | (pvpq_base, 1) |
-        | --------------- |   |               | --------------------------------------------------------------- |                |
-        | J21 | J22 | S23 | s |               |    (pq, pvpq_base)     |    (pq, pq)     |    (pq, pvslack)     |     (pq, 1)    |
-        | --------------- | l | = dimensions: | --------------------------------------------------------------- |                |
-        | S31 | S32 | S33 | a |               |  (pvslack, pvpq_base)  |  (pvslack, pq)  |  (pvslack, pvslack)  |  (pvslack, 1)  |
-        |-----------------| c |               | --------------------------------------------------------------- |                |
-        |    slack_bus    | k |                
-
-        python implementation (base, not modified) :
-
-        `J11` = dS_dVa[array([pvpq]).T, pvpq].real
-        `J12` = dS_dVm[array([pvpq]).T, pq].real
-        `J21` = dS_dVa[array([pq]).T, pvpq].imag
-        `J22` = dS_dVm[array([pq]).T, pq].imag
-
-        The J_coupling is :
-
-        - `S13` = dS_dVa[array([pvpq]).T, pv_slack].real
-        - `S23` = dS_dVa[array([pq]).T, pv_slack].imag
-
-        The J_interface is :
-
-        - `S31` = dS_dVa[array([pv_slack]).T, pvpq_base].real
-        - `S32` = dS_dVm[array([pv_slack]).T, pvpq_base].real
-
-        Some part of J feature are:
-        
-        - `S33` = dS_dVa[pvslack, pvslack].real
-
-        `slack_bus` = is the representation of the equation for the reference slack bus dS_dVa[slack_bus_id, pvpq].real
-        and dS_dVm[slack_bus_id, pq].real
-
-        `slack` is the representation of the equation connecting together the slack buses (represented by slack_weights)
-        the remaining pq components are all 0.
-
-        ┌───────┬────────────────┬─────────────────┬───────────────────────────────────┐
-        │ Block │ Row equations  │  Col unknowns   │              Formula              │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ J11   │ ΔP / pvpq_base │ ΔVa / pvpq_base │ dS_dVa[pvpq_base, pvpq_base].real │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ J12   │ ΔP / pvpq_base │ ΔVm / pq        │ dS_dVm[pvpq_base, pq].real        │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ S13   │ ΔP / pvpq_base │ ΔVa / pvslack   │ dS_dVa[pvpq_base, pvslack].real   │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ J21   │ ΔQ / pq        │ ΔVa / pvpq_base │ dS_dVa[pq, pvpq_base].imag        │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ J22   │ ΔQ / pq        │ ΔVm / pq        │ dS_dVm[pq, pq].imag               │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ S23   │ ΔQ / pq        │ ΔVa / pvslack   │ dS_dVa[pq, pvslack].imag          │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ S31   │ ΔP / pvslack   │ ΔVa / pvpq_base │ dS_dVa[pvslack, pvpq_base].real   │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ S32   │ ΔP / pvslack   │ ΔVm / pq        │ dS_dVm[pvslack, pq].real          │
-        ├───────┼────────────────┼─────────────────┼───────────────────────────────────┤
-        │ S33   │ ΔP / pvslack   │ ΔVa / pvslack   │ dS_dVa[pvslack, pvslack].real     │
-        └───────┴────────────────┴─────────────────┴───────────────────────────────────┘
-
-        **/
-        std::vector<Contrib> build_J_contrib(
-            int offset
-        ) noexcept {
-            const auto & Ybus = * nr_system_base_ptr_->Ybus_ptr();
-            const size_t nnz_Y = Ybus.nonZeros();
-            my_offset_ = static_cast<size_t>(offset);
-            int my_size = static_cast<int>(my_size_);
-
-            std::vector<Contrib> cntrb; 
-            cntrb.reserve(5 * nnz_Y);  // 5 * nnz_Y is overly pessimistic (too much memory allocated)
-
-            const std::vector<int> & pvpq_inv = nr_system_base_ptr_ ->pvpq_inv();
-            const std::vector<int> & pq_inv = nr_system_base_ptr_ ->pq_inv();
-            int nb_pvpq_base = nr_system_base_ptr_->nb_pvpq();
-
-            int k = 0;
-            for (int outer = 0; outer < Ybus.outerSize(); ++outer) {
-                for (Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>::InnerIterator
-                    it(Ybus, outer); it; ++it, ++k)
-                {
-                    int i = (int)it.row(), j = (int)it.col();
-                    int ri = pvpq_inv[i], rq = pq_inv[i];
-                    int ci = pvpq_inv[j], cq = pq_inv[j];
-                    int rs = pv_slack_inv_[i];
-                    int cs = pv_slack_inv_[j];
-
-                    // adapt the base triplets (J_interface)
-                    // S13
-                    if (ri >= 0 && cs >= 0) cntrb.push_back({ri, offset + cs, k, dSdVa_r});
-                    // S23
-                    if (rq >= 0 && cs >= 0) cntrb.push_back({nb_pvpq_base + rq, offset + cs, k, dSdVa_i});
-                    
-                    // add the new columns (J_coupling)
-                    // S31
-                    if (rs >= 0 && ci >= 0) cntrb.push_back({offset + rs, ci, k, dSdVa_r});
-
-                    // S32
-                    if (rs >= 0 && cq >= 0) cntrb.push_back({offset + rs, nb_pvpq_base + cq, k, dSdVm_r});
-
-                    // add the new  J feature
-                    // S33
-                    if (rs >= 0 && cs >= 0) cntrb.push_back({offset + rs,     offset + cs, k, dSdVa_r});
-
-                    // add ref slack equations
-                    if (i == ref_slack_id_){
-                        // ref slack P wrt theta pvpq
-                        if(ci >= 0) {
-                            cntrb.push_back({offset + my_size - 1, ci, k, dSdVa_r});
-                        }
-                        // ref slack P wrt Vm pq
-                        if(cq >= 0){
-                            cntrb.push_back({offset + my_size - 1, nb_pvpq_base + cq, k, dSdVm_r});
-                        }
-                        // ref slack P wrt theta pvslack
-                        if(cs >= 0)
-                        {
-                            cntrb.push_back({offset + my_size - 1, offset + cs, k, dSdVa_r});
-                        }
-                    }
-                }
-
-            }
-            // and now add the slack equations (last column), it is 
-            // 0 for pvpq, pq and the slack weights for pvslack
-            for(size_t i = 0; i < my_size_; ++i)
-            {
-                cntrb.push_back({offset + static_cast<int>(i), offset + my_size - 1, -1, NotIndSdV});
-            }
-
-            // now store them in a defined order
-            return cntrb;
-        }
-
-        // this function is called to update the "value map"
-        // It is part of possible "computation speed optimization"
-        // so we advise to ignore it at first.
-        // It is called each time a new J is defined.
-        // It is called after update_state, init_topology and build_J_contrib.
-        // The idea behind this is that it is faster to update the 
-        // jacobian at each iteration of the Newton Raphson,
-        // you can use a "value_map" that maps the new values you want 
-        // to compute to their index in Jacobian.valuePtr()
-        // So intead of computing Jacobian.coeffRef(row, col) = XXX
-        // you will be able to call Jacobian.valuePtr()[value_map[i]] = XXX[i]
-        void build_value_map(
-            // Jacobian is the inialized (correct sparsity pattern) of the Jacobian
-            Eigen::Ref<const Eigen::SparseMatrix<real_type, Eigen::ColMajor> > Jacobian,
-            // my_contrib is the result of the call to build_J_contrib
-            const std::vector<Contrib> & my_contrib
-        )
+        void register_in(NRLedger& ledger)
         {
-            // when filling the values I want to fill by 
-            // looking to slack_ids directly in order
-            // as the ref slack is the first one (TODO we might change that...)
-            // there is a "lag" of 1
-            map_dist_slack_ = std::vector<int>(my_size_); 
-            for(size_t i = 0; i < my_size_ - 1; ++i)
-            {
-                // other slack (non ref)
-                map_dist_slack_[i + 1] = Base::find_J_pos(Jacobian, my_offset_ + i, my_offset_ + (my_size_ - 1));
-                // the [i+1] = XXX(my_offset_ + i, ...) (and not i+1) is volontary
-                // because the first slack bus is taken as the ref slack.
+            slack_p_rows_.clear();
+            slack_p_rows_.reserve(my_size_);
+            for (int k = 0; k + 1 < my_size_; ++k) {
+                ledger.add_theta_unknown(slack_buses_[k]);
+                slack_p_rows_.push_back(ledger.add_p_equation(slack_buses_[k]));
             }
-            // ref slack (first one)
-            map_dist_slack_[0] = Base::find_J_pos(Jacobian, my_offset_ + (my_size_ - 1), my_offset_ + (my_size_ - 1));
+            slack_p_rows_.push_back(ledger.add_p_equation(ref_slack_id_));
+            slack_col_ = ledger.add_custom_col();  // slack_absorbed unknown
         }
 
-
-        // can be explicitly called any time.
-        // if called, then the update_state, init_topology, add_triplets etc.
-        // will be called again if another powerflow needs
-        // to be run.
-        void clear_jacobian(){
-            my_size_ = 0;
-            ref_slack_id_ = 0;
-            my_offset_ = 0;
-            slack_ids_ = IntVect::Zero(0);
-            pv_slack_ = IntVect::Zero(0);
-            pv_slack_inv_.clear();
-            nr_system_base_ptr_ = nullptr;
-            slack_weights_ = RealVect::Zero(0);
-            slack_absorbed_ = static_cast<real_type>(0.);
-            map_dist_slack_.clear();
-        }
-
-        // called at each iteration of the Newton Raphson
-        // when this is called, it assumes that update_state, init_topology 
-        // etc. have been properly called.
-        void fill_J(Eigen::Ref<Eigen::SparseMatrix<real_type, Eigen::ColMajor> > Jacobian) const
+        // one entry per slack bus: (that bus' P row, slack_absorbed column)
+        void declare_feature_entries(FeatureSink& sink)
         {
-            size_t i = 0;
-            for(auto & c : map_dist_slack_){
-                if(c == -1){
-                    i++;
-                    continue;
-                }
-                Jacobian.valuePtr()[c] = slack_weights_(slack_ids_(i));
-                i++;
-            }
-
+            feature_handles_.clear();
+            feature_handles_.reserve(my_size_);
+            for (int k = 0; k < my_size_; ++k)
+                feature_handles_.push_back(sink.add(slack_p_rows_[k], slack_col_));
         }
 
-        // Fill this extension's columns of the bus_id -> Jacobian-column converters.
-        // The extra columns are the pv_slack angles at [offset, offset + my_size_ - 1)
-        // plus the slack_absorbed column at offset + my_size_ - 1 (the latter is NOT
-        // a per-bus theta/vm/q unknown, so it is intentionally left out of all maps).
-        void fill_col_converters(int offset,
-                                 std::vector<int>& theta_to_J_col,
-                                 std::vector<int>& /*vm_to_J_col*/,
-                                 std::vector<int>& /*q_to_J_col*/) const
+        void fill_feature_values(FeatureWriter& writer) const
         {
-            for (int k = 0; k < static_cast<int>(my_size_) - 1; ++k)
-                theta_to_J_col[pv_slack_(k)] = offset + k;  // distributed-slack angle column
-            // column (offset + my_size_ - 1) is slack_absorbed: not a bus unknown
-        }
-
-        // ---- NR primitive hooks (composed by NRSystem) ----------------------
-        // All hooks operate on this extension's own slice of the global vectors:
-        //   dx_ext == dx.segment(offset, my_size_), laid out as
-        //   [ pv_slack angles (my_size_ - 1) | slack_absorbed (1) ].
-
-        // permanent application (apply_step): pv_slack angles + commit slack_absorbed_
-        void apply_step(Eigen::Ref<const RealVect> dx_ext, RealVect& Va, RealVect& /*Vm*/)
-        {
-            if (my_size_ > 1) Va(pv_slack_) += dx_ext.segment(0, my_size_ - 1);
-            slack_absorbed_ += dx_ext(static_cast<int>(my_size_) - 1);
-        }
-
-        // trial voltages only (used by _compute_trial_V; does not mutate ext state)
-        void apply_trial_voltages(Eigen::Ref<const RealVect> dx_ext, RealVect& Va, RealVect& /*Vm*/) const
-        {
-            if (my_size_ > 1) Va(pv_slack_) += dx_ext.segment(0, my_size_ - 1);
+            for (int k = 0; k < my_size_; ++k)
+                writer.add(feature_handles_[k], slack_weights_(slack_buses_[k]));
         }
 
         // adjust the per-bus complex power mismatch by (slack_absorbed + dx step) * slack_weights
-        void adjust_mismatch(Eigen::Ref<const RealVect> dx_ext, CplxVect& mis) const
+        void adjust_mismatch(const RealVect& dx, CplxVect& mis) const
         {
-            const real_type sa = slack_absorbed_ + dx_ext(static_cast<int>(my_size_) - 1);
-            mis.array() += (sa * slack_weights_.array()).template cast<cplx_type>();
+            const real_type sa = slack_absorbed_ + dx(slack_col_);
+            mis.array() += (sa * slack_weights_.array()).cast<cplx_type>();
         }
 
-        // fill this extension's residual rows (negated mismatch) into res_ext
-        // (== res.segment(offset, my_size_)):
-        //   [ -real(pv_slack) (my_size_ - 1) | -real(ref_slack) (1) ]
-        void fill_mismatch(Eigen::Ref<RealVect> res_ext,
-                           const RealVect& real_,
-                           const RealVect& /*imag_*/) const
+        // all this extension's rows are bus-owned P equations,
+        // filled generically by NRSystem
+        void fill_custom_rows(RealVect& /*res*/,
+                              const RealVect& /*Va*/,
+                              const RealVect& /*Vm*/,
+                              const RealVect& /*dx*/) const {}
+
+        // voltage updates (the non-ref slack thetas) are generic; only the
+        // slack_absorbed state is owned by this extension
+        void apply_step(const RealVect& dx)
         {
-            if (my_size_ > 1) res_ext.segment(0, my_size_ - 1) = -real_(pv_slack_);
-            res_ext(static_cast<int>(my_size_) - 1) = -real_(static_cast<int>(ref_slack_id_));
+            slack_absorbed_ += dx(slack_col_);
         }
 
-        // scaling reductions over this extension's slice (max |step|)
-        real_type max_abs_dtheta(Eigen::Ref<const RealVect> dx_ext) const
-        {
-            return (my_size_ > 1) ? dx_ext.segment(0, my_size_ - 1).array().abs().maxCoeff()
-                                  : static_cast<real_type>(0.);
-        }
-        real_type max_abs_dvm(Eigen::Ref<const RealVect> /*dx_ext*/) const
-        {
-            return static_cast<real_type>(0.);
+        void clear(){
+            my_size_ = 0;
+            ref_slack_id_ = 0;
+            slack_col_ = -1;
+            slack_buses_.clear();
+            slack_p_rows_.clear();
+            feature_handles_.clear();
+            slack_weights_ = RealVect();
+            slack_absorbed_ = static_cast<real_type>(0.);
         }
 
     private:
-        size_t             my_size_;
-        size_t             ref_slack_id_;
-        size_t             my_offset_;
-        Eigen::VectorXi    slack_ids_;
-        Eigen::VectorXi    pv_slack_;
-        std::vector<int>   pv_slack_inv_;
-        const Base *       nr_system_base_ptr_;
-        RealVect           slack_weights_;  // size: nb_bus
+        int                my_size_;
+        int                ref_slack_id_;
+        int                slack_col_;        // J column of the slack_absorbed unknown
+        std::vector<int>   slack_buses_;      // non-ref slacks sorted, then ref slack
+        std::vector<int>   slack_p_rows_;     // P row of each slack bus (same order)
+        std::vector<int>   feature_handles_;  // FeatureSink handles (same order)
+        RealVect           slack_weights_;    // size: nb_bus
         real_type          slack_absorbed_;
-        std::vector<int>   map_dist_slack_;
 
 };
 
 // struct HVDC {};      // future (+n_hvdc_lines rows/cols at runtime)
 
 
-// ---- Base specialisation: NRSystem<> (single-slack) ------------------
+// ---- NRSystem<Base, Rest...> ----------------------------------------------------
 
 /**
- * Base Newton-Raphson system: single-slack, (n_pvpq + n_pq) x (n_pvpq + n_pq) Jacobian.
+ * Composable Newton-Raphson system: a Base block (single-slack core) plus any
+ * number of extensions (e.g. MultiSlack), all registered in a central NRLedger.
  *
- * 3-phase interface : TODO refacto NR description
- *   Phase 1  — init_topology(): builds pvpq maps, sets lag_. Call when pv/pq change.
+ * 3-phase interface:
+ *   Phase 1  — init_topology(): components compute their index sets, then claim
+ *              their equations (J rows) / unknowns (J columns) in the ledger.
+ *              Call when pv/pq/slack topology changes.
  *   Phase 1.5— update_state():  updates V/Sbus pointers. Call every compute_pf.
- *   Phase 2  — build_J_sparsity(): symbolic J build + value_map. Call when topology changes.
- *   Phase 3  — fill_J(): fast numerical fill via value_map_. Call each factorisation.
+ *   Phase 2  — build_J_sparsity(): symbolic J build + value maps. Call when
+ *              topology changes.
+ *   Phase 3  — fill_J(): fast numerical fill via the value maps. Call each
+ *              factorisation.
  *
- * J has the structure:
- * 
- *   | J11 | J12 |               | (pvpq, pvpq) | (pvpq, pq) |
- *   | --------- | = dimensions: | ------------------------- |
- *   | J21 | J22 |               |  (pq, pvpq)  | (pq, pq)   |
- * 
- * Python implementation:
- * 
- *   J11 = dS_dVa[array([pvpq]).T, pvpq].real
- *   J12 = dS_dVm[array([pvpq]).T, pq].real
- *   J21 = dS_dVa[array([pq]).T, pvpq].imag
- *   J22 = dS_dVm[array([pq]).T, pq].imag
+ * All the dS-derived Jacobian entries (∂(P or Q mismatch at bus i)/∂(θ or Vm
+ * at bus j), which exist iff Ybus(i, j) != 0) are generated by ONE generic
+ * pass over the Ybus nonzeros, for every component at once: the ledger says
+ * which buses own a P/Q equation and a θ/Vm unknown. Components only declare
+ * their feature-specific (non dS-derived) entries through the FeatureSink.
  *
- * Where pvpq is the concatenation of pv then pq bus (might be sorted in the future)
- * And pv is the pv indexes.
- * 
- * The "state variables" for this base class are then:
- *    - all the theta (complex voltage angle) at each pv or pq nodes 
- *      (theta at slack buses are 0 by definition)
- *    - all the V (complex voltage magnitude) at each pq nodes
- * 
- * This means there are exactly 2 * n_pq + n_pv "state variables" for this base class.
- * 
- * This structure will not be changed by future additions.
- * 
- * And now, for each extension you have the following structure:
- * 
- *               |J_base      | J_coupling |
- * J_augmented = |------------|------------|
- *               |J_interface | J_features |
- * 
- * And they can "recursively" defined J_coupling, J_interface and J_feature
- * depending on the structure of the previous jacobians build.
- * 
- * They should NEVER rewrite J_base. They can add as many row / columns
- * as they want: each row / colum represents an added "state variable".
- * 
- * Rewriting J_base would mean modifying the state variables of the base
- * class which would break the "inheritance" / "composition" pattern that
- * we defined here.
+ * Likewise the residual P/Q rows, the voltage updates (apply_step /
+ * _compute_trial_V) and the scaling reductions (max_abs_dtheta / max_abs_dvm)
+ * are generic loops over the ledger's (bus, row) / (bus, col) pair lists;
+ * components only handle their own custom rows and non-voltage state.
+ *
+ * Layout: each component registers its bus-owned rows / columns in INCREASING
+ * BUS INDEX order, components in declaration order (Base first). Several
+ * contributions may resolve to the same J position, so fill_J zeroes J then
+ * accumulates (+=).
  */
 template <typename... Rest>
 class NRSystem<Base, Rest...>
 {
 public:
     NRSystem() noexcept:
-        Ybus_ptr_(nullptr),
-        Sbus_ptr_(nullptr),
-        need_full_rebuild_(true),
         timer_dSbus_(0.),
         timer_fillJ_(0.),
-        nb_total_state_variables_(0) {}
+        lsgrid_ptr_(nullptr),
+        Ybus_ptr_(nullptr),
+        Sbus_ptr_(nullptr) {}
 
     virtual ~NRSystem() = default;
 
@@ -692,11 +420,11 @@ public:
         const CplxVect&                        Sbus,
         Eigen::Ref<const RealVect>             slack_weights);
 
-    // ----- Phase 2: build J sparsity + value_map (non-virtual) ------------------
+    // ----- Phase 2: build J sparsity + value maps -------------------------------
 
-    void build_J_sparsity();  // calls build_value_maps
+    void build_J_sparsity();
 
-    // ----- Phase 3: fill J numerically (non-virtual) ----------------------------
+    // ----- Phase 3: fill J numerically -------------------------------------------
 
     void fill_J();
     void fill_internal_variables();
@@ -711,8 +439,8 @@ public:
 
     void clear_jacobian() {
         J_         = Eigen::SparseMatrix<real_type, Eigen::ColMajor>();
-        base_.clear_jacobian();
-        _clear_jacobian_extensions(std::make_index_sequence<sizeof...(Rest)>{});
+        base_.clear();
+        _clear_extensions(std::make_index_sequence<sizeof...(Rest)>{});
 
         dS_dVm_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
         dS_dVa_    = Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>();
@@ -721,10 +449,9 @@ public:
         map_dsdva_i_.clear();
         map_dsdvm_r_.clear();
         map_dsdvm_i_.clear();
-        theta_to_J_col_.clear();
-        vm_to_J_col_.clear();
-        q_to_J_col_.clear();
-        need_full_rebuild_ = true;
+        sink_.clear();
+        feature_pos_.clear();
+        ledger_.reset(0);
     }
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type> > J()  const { return J_; }
@@ -734,25 +461,22 @@ public:
 
     // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
     // Each vector has size n_bus and spans the full augmented J (base + extensions).
-    const std::vector<int>& theta_to_J_col() const { return theta_to_J_col_; }
-    const std::vector<int>& vm_to_J_col()    const { return vm_to_J_col_; }
-    const std::vector<int>& q_to_J_col()     const { return q_to_J_col_; }
+    const std::vector<int>& theta_to_J_col() const { return ledger_.theta_col_of_bus(); }
+    const std::vector<int>& vm_to_J_col()    const { return ledger_.vm_col_of_bus(); }
+    const std::vector<int>& q_to_J_col()     const { return ledger_.q_col_of_bus(); }
 
-    // to be implemented by all other classes
-    size_t total_state_variables() const {return nb_total_state_variables_;}
+    size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
 
-    // ----- Scaling reductions (base + extensions) -----------------------------
+    // ----- Scaling reductions ----------------------------------------------------
     // max |angle step| / max |voltage-magnitude step| across all state variables.
     real_type max_abs_dtheta(const RealVect& dx) const {
         real_type m = static_cast<real_type>(0.);
-        if (theta_base_size() > 0) m = theta_base(dx).array().abs().maxCoeff();
-        _reduce_dtheta_extensions(dx, m, std::make_index_sequence<sizeof...(Rest)>{});
+        for (int col : ledger_.theta_cols()) m = std::max(m, std::abs(dx(col)));
         return m;
     }
     real_type max_abs_dvm(const RealVect& dx) const {
         real_type m = static_cast<real_type>(0.);
-        if (vm_base_size() > 0) m = vm_base(dx).array().abs().maxCoeff();
-        _reduce_dvm_extensions(dx, m, std::make_index_sequence<sizeof...(Rest)>{});
+        for (int col : ledger_.vm_cols()) m = std::max(m, std::abs(dx(col)));
         return m;
     }
 
@@ -763,41 +487,30 @@ public:
     void   reset_timers()      { timer_dSbus_ = 0.; timer_fillJ_ = 0.; }
 
 private:
-    // ---- Shared data (one copy, inherited by all extensions) --------------------
+    // ---- Shared data (one copy, shared by all components) -----------------------
     RealVect                               Va_, Vm_;
     CplxVect                               V_;
     Eigen::SparseMatrix<real_type, Eigen::ColMajor>         J_;
-    bool                                   need_full_rebuild_;
     double                                 timer_dSbus_, timer_fillJ_;
-    size_t                                 nb_total_state_variables_;
     Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>         dS_dVm_, dS_dVa_;
+
+    // dS value maps: Ybus nnz position -> position in J_.valuePtr() (-1 if unused)
     std::vector<int>                       map_dsdva_r_;
     std::vector<int>                       map_dsdva_i_;
     std::vector<int>                       map_dsdvm_r_;
     std::vector<int>                       map_dsdvm_i_;
 
-    // bus_id -> Jacobian column converters (size n_bus, built in init_topology)
-    std::vector<int>                       theta_to_J_col_, vm_to_J_col_, q_to_J_col_;
+    // central registry of equations / unknowns (defines the J layout)
+    NRLedger                               ledger_;
+    // feature (non dS-derived) entries: (row, col) list + resolved valuePtr positions
+    FeatureSink                            sink_;
+    std::vector<int>                       feature_pos_;
 
     // Holds the base things
     Base                                   base_;
 
     // Holds the state for HVDC, DistSlack, etc.
-    std::tuple<Rest...>                    extensions_; 
-
-    // ----- Size / segment accessors ---------------------------
-    // theta_size()/vm_size()/theta()/vm() describe the BASE block only
-    // ([0, theta_size()) and [theta_size(), theta_size()+vm_size())). They are
-    // used internally to slice the base part of dx. They do NOT account for
-    // extension state variables (which may be non-contiguous in the global
-    // vector); scaling policies must use max_abs_dtheta()/max_abs_dvm() instead.
-    int theta_base_size() const { return base_.theta_size(); }
-    int vm_base_size()    const { return base_.vm_size(); }
-    // Core state vector segments: theta first, then vm, then extension variables.
-    RealVect::SegmentReturnType      theta_base(RealVect& x)       const { return x.segment(0, theta_base_size()); }
-    RealVect::ConstSegmentReturnType theta_base(const RealVect& x) const { return x.segment(0, theta_base_size()); }
-    RealVect::SegmentReturnType      vm_base   (RealVect& x)       const { return x.segment(theta_base_size(), vm_base_size()); }
-    RealVect::ConstSegmentReturnType vm_base   (const RealVect& x) const { return x.segment(theta_base_size(), vm_base_size()); }
+    std::tuple<Rest...>                    extensions_;
 
 protected:
     // visible attribute for derived class (non owning ptr)
@@ -805,78 +518,14 @@ protected:
     const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor>* Ybus_ptr_;
     const CplxVect*                                        Sbus_ptr_;
 
-    // protected getters (const)
-    Eigen::Ref<const Eigen::VectorXi> pv() const { return base_.pv(); } // TODO and also the slack "pv" for dist slack
-    Eigen::Ref<const Eigen::VectorXi> pq() const { return base_.pq(); }
-    Eigen::Ref<const Eigen::VectorXi> pvpq() const { return base_.pvpq(); }  // TODO and also the slack "pv" for dist slack
-    const std::vector<int> &          pvpq_inv() const {return base_.pvpq_inv(); }  // TODO and also the slack "pv" for dist slack
-    const std::vector<int> &          pq_inv() const {return base_.pq_inv(); }
-    int                               nb_pv() const {return base_.nb_pv();}
-    int                               nb_pq() const {return base_.nb_pq();}
-    int                               nb_pvpq() const {return base_.nb_pvpq();}
-    
-    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVm()  const { return dS_dVm_; }
-    Eigen::Ref<const Eigen::SparseMatrix<cplx_type, Eigen::ColMajor> > dS_dVa()  const { return dS_dVa_; }
-
-    // TODO NR refacto
     static CplxVect _reconstruct_V(const RealVect& Va, const RealVect& Vm);
     CplxVect _compute_trial_V(const RealVect& dx) const;
     // assemble the (negated) residual at trial voltages V_t; dx is the step that
-    // produced V_t (used by extensions that carry extra state, e.g. slack absorbed).
+    // produced V_t (used by components that carry extra state, e.g. slack absorbed).
     RealVect _residual(const CplxVect& V_t, const RealVect& dx) const;
 
-
-    void _build_value_map(
-        const std::vector< std::vector<Contrib> > & cijs
-    )
-    {
-        const auto & Ybus = * Ybus_ptr_;
-        const size_t nnz_Y = Ybus.nonZeros();
-
-        // now synch the map_j{1,2}{1,2} with the new J_ matrix
-        map_dsdva_r_.assign(nnz_Y, -1);
-        map_dsdva_i_.assign(nnz_Y, -1);
-        map_dsdvm_r_.assign(nnz_Y, -1);
-        map_dsdvm_i_.assign(nnz_Y, -1);
-
-        // same order as build_J_contrib
-        // int c11 = 0, c12 = 1, c21 = 2, c22 = 3;  
-        // this would also avoid copy
-        for(const auto& cij : cijs)
-        {
-            for (auto& c : cij)
-            {
-                switch (c.whichmat())
-                {
-                case dSdVa_r:
-                    map_dsdva_r_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
-                    break;
-                case dSdVa_i:
-                    map_dsdva_i_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
-                    break;
-                case dSdVm_r:
-                    map_dsdvm_r_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
-                    break;
-                case dSdVm_i:
-                    map_dsdvm_i_[c.ybus_k()] = Base::find_J_pos(J_, c.jrow(), c.jcol());
-                    break;
-
-                default:
-                    break;
-                }
-                
-            }
-        }
-
-        // build value map of the extensions
-        _build_value_map_extensions(cijs, std::make_index_sequence<sizeof...(Rest)>{});
-
-        // indicate it is fully initialized
-        need_full_rebuild_ = false;
-    }
-    
 private:
-    // private members to combine  the extension features
+    // ---- component hook fold helpers (C++14 index_sequence/dummy-array idiom) ---
     template <std::size_t... Is>
     void _init_topology_extensions(
         Eigen::Ref<const IntVect>              slack_ids,
@@ -908,156 +557,54 @@ private:
             slack_weights
             ), 0)... };
         (void)dummy;
+        // silence unused-parameter warnings when the extension pack is empty
+        (void)lsgrid_ptr; (void)Ybus; (void)Sbus; (void)slack_weights;
     }
 
     template <std::size_t... Is>
-    void _update_total_state_variables(
-        std::index_sequence<Is...>){
-        nb_total_state_variables_ = base_.get_size();
-        int dummy[] = { 0, (nb_total_state_variables_ += std::get<Is>(extensions_).get_size(), 0)... };
-        (void) dummy;
+    void _register_in_extensions(NRLedger& ledger, std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).register_in(ledger), 0)... };
+        (void)dummy;
     }
 
     template <std::size_t... Is>
-    void _build_J_contrib_extensions(
-        std::vector<std::vector<Contrib> >& contribs,
-        std::index_sequence<Is...>) {
-        int current_offset = base_.get_size();
-        
-        // We can't use the simple dummy array if we need to update 'current_offset' 
-        // inside the expansion. We use a small recursive call or a braced-init loop.
-        
-        int dummy[] = { 0, (
-            contribs.push_back(std::get<Is>(extensions_).build_J_contrib(current_offset)), 
-            current_offset += std::get<Is>(extensions_).get_size(), 
-            0
-        )... };
-        (void) dummy;
+    void _declare_feature_entries_extensions(FeatureSink& sink, std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).declare_feature_entries(sink), 0)... };
+        (void)dummy;
     }
 
     template <std::size_t... Is>
-    void _fill_col_converters_extensions(
-        std::vector<int>& th, std::vector<int>& vm, std::vector<int>& q,
-        std::index_sequence<Is...>) const {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).fill_col_converters(current_offset, th, vm, q),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
-    }
-
-    template <std::size_t... Is>
-    void _clear_jacobian_extensions(
-        std::index_sequence<Is...>) {
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).clear_jacobian(),
-            0
-        )... };
-    }
-
-    template <std::size_t... Is>
-    void _build_value_map_extensions(
-        const std::vector< std::vector<Contrib> > & cijs,
-        std::index_sequence<Is...>
-    ) {
-        size_t current_id = 1;  // nothing for base, so assigned to 1
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).build_value_map(J_, cijs[current_id]), 
-            current_id += 1, 
-            0
-        )... };
-    }
-
-    template <std::size_t... Is>
-    void _fill_J_extensions(
-        std::index_sequence<Is...>) {
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).fill_J(J_),
-            0
-        )... };
-        (void) dummy;
-    }
-
-    // ---- NR primitive fold helpers (offset starts after the base block) ------
-
-    template <std::size_t... Is>
-    void _apply_step_extensions(const RealVect& dx, RealVect& Va, RealVect& Vm,
-                                std::index_sequence<Is...>) {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).apply_step(
-                dx.segment(current_offset, std::get<Is>(extensions_).get_size()), Va, Vm),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
-    }
-
-    template <std::size_t... Is>
-    void _apply_trial_voltages_extensions(const RealVect& dx, RealVect& Va, RealVect& Vm,
-                                          std::index_sequence<Is...>) const {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).apply_trial_voltages(
-                dx.segment(current_offset, std::get<Is>(extensions_).get_size()), Va, Vm),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
+    void _fill_feature_values_extensions(FeatureWriter& writer, std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).fill_feature_values(writer), 0)... };
+        (void)dummy;
     }
 
     template <std::size_t... Is>
     void _adjust_mismatch_extensions(const RealVect& dx, CplxVect& mis,
                                      std::index_sequence<Is...>) const {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).adjust_mismatch(
-                dx.segment(current_offset, std::get<Is>(extensions_).get_size()), mis),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
+        int dummy[] = { 0, (std::get<Is>(extensions_).adjust_mismatch(dx, mis), 0)... };
+        (void)dummy;
     }
 
     template <std::size_t... Is>
-    void _fill_mismatch_extensions(RealVect& res, const RealVect& real_, const RealVect& imag_,
-                                   std::index_sequence<Is...>) const {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            std::get<Is>(extensions_).fill_mismatch(
-                res.segment(current_offset, std::get<Is>(extensions_).get_size()), real_, imag_),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
+    void _fill_custom_rows_extensions(RealVect& res,
+                                      const RealVect& Va, const RealVect& Vm,
+                                      const RealVect& dx,
+                                      std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).fill_custom_rows(res, Va, Vm, dx), 0)... };
+        (void)dummy;
     }
 
     template <std::size_t... Is>
-    void _reduce_dtheta_extensions(const RealVect& dx, real_type& m,
-                                   std::index_sequence<Is...>) const {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            m = std::max(m, std::get<Is>(extensions_).max_abs_dtheta(
-                dx.segment(current_offset, std::get<Is>(extensions_).get_size()))),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
+    void _apply_step_extensions(const RealVect& dx, std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).apply_step(dx), 0)... };
+        (void)dummy;
     }
 
     template <std::size_t... Is>
-    void _reduce_dvm_extensions(const RealVect& dx, real_type& m,
-                                std::index_sequence<Is...>) const {
-        int current_offset = static_cast<int>(base_.get_size());
-        int dummy[] = { 0, (
-            m = std::max(m, std::get<Is>(extensions_).max_abs_dvm(
-                dx.segment(current_offset, std::get<Is>(extensions_).get_size()))),
-            current_offset += static_cast<int>(std::get<Is>(extensions_).get_size()),
-            0
-        )... };
-        (void) dummy;
+    void _clear_extensions(std::index_sequence<Is...>) {
+        int dummy[] = { 0, (std::get<Is>(extensions_).clear(), 0)... };
+        (void)dummy;
     }
 
 private:

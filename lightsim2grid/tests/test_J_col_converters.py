@@ -26,8 +26,9 @@ class TestJColConverters(unittest.TestCase):
 
     For each bus the solver returns the Jacobian column of that bus' theta / vm /
     q unknown, or -1 if the bus owns no unknown of that type. The Jacobian columns
-    are laid out as: theta of pvpq buses in [0, n_pvpq), then vm of pq buses in
-    [n_pvpq, n_pvpq + n_pq). q is a placeholder (always -1 for now).
+    are laid out by INCREASING BUS INDEX: theta of the sorted pvpq buses in
+    [0, n_pvpq), then vm of the sorted pq buses in [n_pvpq, n_pvpq + n_pq).
+    q is a placeholder (always -1 for now).
 
     These invariants are structural (derived from pv/pq) and therefore independent
     of the numerical Jacobian values.
@@ -92,18 +93,20 @@ class TestJColConverters(unittest.TestCase):
         # q is a placeholder for now: no bus owns a reactive unknown
         assert np.all(q == -1), "q_to_J_col must be -1 everywhere for now"
 
-        # expected base-block layout: theta of pvpq in [0, n_pvpq), vm of pq next
-        pvpq = np.r_[self.pv, self.pq]
-        n_pvpq = pvpq.shape[0]
+        # expected base-block layout (sorted by bus index): theta of sorted pvpq
+        # in [0, n_pvpq), vm of sorted pq next
+        pvpq_sorted = np.sort(np.r_[self.pv, self.pq])
+        pq_sorted = np.sort(self.pq)
+        n_pvpq = pvpq_sorted.shape[0]
         expected_theta = -np.ones(n_bus, dtype=int)
-        expected_theta[pvpq] = np.arange(n_pvpq)
+        expected_theta[pvpq_sorted] = np.arange(n_pvpq)
         expected_vm = -np.ones(n_bus, dtype=int)
-        expected_vm[self.pq] = n_pvpq + np.arange(self.pq.shape[0])
+        expected_vm[pq_sorted] = n_pvpq + np.arange(pq_sorted.shape[0])
 
         assert np.array_equal(theta, expected_theta), \
-            "theta_to_J_col does not match the expected pvpq column layout"
+            "theta_to_J_col does not match the expected sorted pvpq column layout"
         assert np.array_equal(vm, expected_vm), \
-            "vm_to_J_col does not match the expected pq column layout"
+            "vm_to_J_col does not match the expected sorted pq column layout"
 
         # the reference (slack) buses own no theta and no vm unknown
         assert np.all(theta[ref] == -1), "slack bus must not own a theta column"
