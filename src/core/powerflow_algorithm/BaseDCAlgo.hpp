@@ -142,6 +142,8 @@ class BaseDCAlgo final: public BaseAlgo
         Eigen::VectorXi slack_buses_ids_solver_;
         // -1 if bus is slack , else the id of the row / column used in the linear solver representing this bus
         Eigen::VectorXi mat_bus_id_;   // formerly `ybus_to_me`
+        // ybus_ids of non-slack buses in solver order (mat_bus_id_ inverse for non-slack); precomputed in fill_mat_bus_id
+        Eigen::VectorXi nonslack_ybus_ids_;
 
 };
 
