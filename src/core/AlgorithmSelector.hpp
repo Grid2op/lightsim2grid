@@ -148,6 +148,20 @@ class LS2G_API AlgorithmSelector final
                 Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, max_iter, tol);
         }
 
+        // Native real-valued DC entry point (only valid for DC solvers).
+        bool compute_pf_dc(const Eigen::SparseMatrix<real_type>& Bbus,
+                           CplxVect& V,
+                           const RealVect& Pbus,
+                           Eigen::Ref<const IntVect> slack_ids,
+                           const RealVect& slack_weights,
+                           Eigen::Ref<const IntVect> pv,
+                           Eigen::Ref<const IntVect> pq)
+        {
+            _algo_type_used_for_nr = _algo_type;
+            return get_prt_solver("compute_pf_dc", true)->compute_pf_dc(
+                Bbus, V, Pbus, slack_ids, slack_weights, pv, pq);
+        }
+
         Eigen::Ref<const CplxVect> get_V() const {
             return get_prt_solver("get_V", true)->get_V();
         }
@@ -186,6 +200,10 @@ class LS2G_API AlgorithmSelector final
 
         void tell_solver_control(const AlgoControl& solver_control) {
             get_prt_solver("tell_solver_control", false)->tell_solver_control(solver_control);
+        }
+
+        void tell_dc_control(const DCControl& dc_control) {
+            get_prt_solver("tell_dc_control", false)->tell_dc_control(dc_control);
         }
 
         Eigen::SparseMatrix<real_type> get_J_python() const {

@@ -135,7 +135,8 @@ bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus
 
 IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     const bool ac_solver_used = _algo.ac_solver_used();
-    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver();
+    // the DC admittance matrix is real, cast it to complex for the (shared) connectivity check below
+    Eigen::SparseMatrix<cplx_type> Ybus = ac_solver_used ? _grid_model.get_Ybus_solver() : _grid_model.get_dcYbus_solver().cast<cplx_type>();
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
     int cont_id = 0;
     for(const auto & coeffs_modif: _li_coeffs){

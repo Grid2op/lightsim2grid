@@ -161,8 +161,28 @@ class LS2G_API BaseAlgo : public BaseConstants
                         real_type tol
                         ) = 0 ;
 
+        // Native real-valued DC entry point: DC only needs `Bbus . theta = Pbus` (all real).
+        // Only the DC solver overrides this; every other solver type throws.
+        // `V` carries the complex initial voltage (slack angle + voltage setpoints) on input
+        // and the complex result on output. There is no max_iter / tol: DC is a single linear solve.
+        virtual
+        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+                           CplxVect & V,
+                           const RealVect & Pbus,
+                           Eigen::Ref<const IntVect> slack_ids,
+                           const RealVect & slack_weights,
+                           Eigen::Ref<const IntVect> pv,
+                           Eigen::Ref<const IntVect> pq){
+            throw std::runtime_error("compute_pf_dc is only available for DC solvers.");
+        }
+
         void tell_solver_control(const AlgoControl & solver_control){
             _solver_control = solver_control;
+            // keep the DC-specific control in sync so DC call sites need no extra wiring
+            _dc_control = DCControl(solver_control);
+        }
+        void tell_dc_control(const DCControl & dc_control){
+            _dc_control = dc_control;
         }
         virtual void reset();
         virtual RealMat get_ptdf(){
@@ -291,6 +311,7 @@ class LS2G_API BaseAlgo : public BaseConstants
 
         const LSGrid * lsgrid_ptr_;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
         AlgoControl _solver_control;
+        DCControl _dc_control;  // DC-specific change tracking (kept in sync by tell_solver_control)
 
 };
 

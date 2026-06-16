@@ -17,6 +17,11 @@ template<class LinearSolver>
 class BaseDCAlgo final: public BaseAlgo
 {
     public:
+        // above this (absolute) voltage angle [rad] the DC solution is considered non physical
+        // (used as a divergence criterion together with the "all finite" check)
+        static constexpr real_type _max_dc_voltage_angle = 1e6;
+
+    public:
         BaseDCAlgo() noexcept :
             BaseAlgo(false),
             _linear_solver(),
@@ -72,18 +77,32 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        // TODO SLACK : this should be handled in Sbus by the gridmodel maybe ?
+        // Adapter kept for the batch / contingency code paths which still feed a complex
+        // Ybus / Sbus: it extracts the real part and delegates to the native `compute_pf_dc`.
+        // `max_iter` and `tol` are ignored (DC is a single linear solve).
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,
                         const CplxVect & Sbus,
                         Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,  // currently unused
+                        const RealVect & slack_weights,
                         Eigen::Ref<const IntVect> pv,
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
                         ) final;
+
+        // TODO SLACK : this should be handled in Pbus by the gridmodel maybe ?
+        // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
+        virtual
+        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+                           CplxVect & V,
+                           const RealVect & Pbus,
+                           Eigen::Ref<const IntVect> slack_ids,
+                           const RealVect & slack_weights,
+                           Eigen::Ref<const IntVect> pv,
+                           Eigen::Ref<const IntVect> pq
+                           ) final;
 
         virtual RealMat get_ptdf() final;
         virtual RealMat get_lodf(const IntVect & from_bus,
@@ -113,7 +132,7 @@ class BaseDCAlgo final: public BaseAlgo
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);
-        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat);
+        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat);
 
         // remove_slack_buses: res_mat is initialized and make_compressed in this function
         template<typename ref_mat_type>  // ref_mat_type should be `real_type` or `cplx_type`

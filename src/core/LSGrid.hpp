@@ -857,8 +857,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        Eigen::SparseMatrix<cplx_type> get_dcYbus_solver(){
-            return Ybus_dc_;  // This is copied to python
+        Eigen::SparseMatrix<real_type> get_dcYbus_solver(){
+            return Bbus_dc_;  // This is copied to python (DC admittance matrix is real)
         }
 
         /**
@@ -893,8 +893,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        Eigen::Ref<const CplxVect> get_dcSbus_solver() const{
-            return dcSbus_;
+        Eigen::Ref<const RealVect> get_dcSbus_solver() const{
+            return dcPbus_;  // DC power injection is real (active power P)
         }
 
         /**
@@ -933,8 +933,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const Eigen::SparseMatrix<cplx_type> get_dcYbus() const {
-            return _relabel_matrix(Ybus_dc_, id_dc_solver_to_me_);
+        const Eigen::SparseMatrix<real_type> get_dcYbus() const {
+            return _relabel_matrix(Bbus_dc_, id_dc_solver_to_me_);
         }
 
         /**
@@ -969,8 +969,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const CplxVect get_dcSbus() const {
-            return _relabel_vector(dcSbus_, id_dc_solver_to_me_);
+        const RealVect get_dcSbus() const {
+            return _relabel_vector(dcPbus_, id_dc_solver_to_me_);
         }
 
         /**
@@ -1338,6 +1338,18 @@ class LS2G_API LSGrid final
                                     bool is_ac,
                                     const AlgoControl & solver_control);
 
+        // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
+        // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
+        // pre_process_solver but keeps the whole DC path real (no complex Ybus / Sbus).
+        CplxVect pre_process_dc_solver(const CplxVect & Vinit,
+                                       RealVect & Pbus,
+                                       Eigen::SparseMatrix<real_type> & Bbus,
+                                       SolverBusIdVect & id_me_to_solver,
+                                       GlobalBusIdVect & id_solver_to_me,
+                                       GlobalBusIdVect & slack_bus_id_me,
+                                       SolverBusIdVect & slack_bus_id_solver,
+                                       const AlgoControl & solver_control);
+
         //for FDPF
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                         Eigen::SparseMatrix<real_type> & Bpp, 
@@ -1370,12 +1382,13 @@ class LS2G_API LSGrid final
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        int nb_bus_solver);
+        void init_Bbus(Eigen::SparseMatrix<real_type> & Bbus,
+                       int nb_bus_solver);  // DC: real admittance matrix
         void init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
                                    GlobalBusIdVect& id_solver_to_me);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
-        void init_slack_bus(const CplxVect & Sbus,
-                            const SolverBusIdVect & id_me_to_solver,
+        void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,
                             SolverBusIdVect & slack_bus_id_solver
@@ -1492,6 +1505,7 @@ class LS2G_API LSGrid final
     
     protected:
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const SolverBusIdVect& id_me_to_solver);
+        void fillBdc(Eigen::SparseMatrix<real_type> & res, const SolverBusIdVect& id_me_to_solver);  // DC: real admittance matrix
         void fillSbus_me(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver);
         void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                        const GlobalBusIdVect& id_solver_to_me,
@@ -1628,9 +1642,9 @@ class LS2G_API LSGrid final
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;
-        Eigen::SparseMatrix<cplx_type> Ybus_dc_;
+        Eigen::SparseMatrix<real_type> Bbus_dc_;  // DC admittance matrix is real (susceptance B)
         CplxVect acSbus_;
-        CplxVect dcSbus_;
+        RealVect dcPbus_;  // DC power injection is real (active power P)
         SolverBusIdVect bus_pv_;  // id are the solver internal id and NOT the initial id
         SolverBusIdVect bus_pq_;  // id are the solver internal id and NOT the initial id
 

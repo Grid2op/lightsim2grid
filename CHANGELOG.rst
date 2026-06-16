@@ -93,6 +93,7 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   and has is accessible with names (rather than just id). It is still iterable for
   backward compatibility. 
 - [IMPROVED] computation speed of DC algorithm in general
+- [IMPROVED] dc powerflow is now really separate from AC (different problem, different hypothesis etc.)
 
 [0.13.1]  2026-04-21
 --------------------

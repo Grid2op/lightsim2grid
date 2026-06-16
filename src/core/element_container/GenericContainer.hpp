@@ -38,6 +38,16 @@ class LS2G_API GenericContainer : public BaseConstants
                                 // is overriden mainly for "branches" (lines, transformers etc.)
                               };
 
+        // Real-valued DC admittance matrix (Bbus) contribution. DC only needs `Bbus . theta = Pbus`
+        // (all real), so this fills real triplets directly (no complex temporary).
+        // Only "branches" (lines, transformers) contribute to the DC Bbus.
+        virtual void fillBdc(std::vector<Eigen::Triplet<real_type> > & res,
+                             const SolverBusIdVect & id_grid_to_solver,
+                             real_type sn_mva) const {
+                                // nothing to do by default
+                                // is overriden mainly for "branches" (lines, transformers etc.)
+                             };
+
         virtual void fillBp_Bpp(std::vector<Eigen::Triplet<real_type> > & Bp,
                                 std::vector<Eigen::Triplet<real_type> > & Bpp,
                                 const SolverBusIdVect & id_grid_to_solver,
