@@ -10,7 +10,9 @@
 #include <limits>  // for nans
 #include <cmath>  // for nans
 
-// TODO SLACK !!!
+// Complex adapter, kept for the batch / contingency code paths that still build a complex
+// Ybus / Sbus. It extracts the real part and delegates to the native real `compute_pf_dc`.
+// max_iter and tol are ignored (DC is a single linear solve).
 template<class LinearSolver>
 bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                                           CplxVect & V,
@@ -23,8 +25,33 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
                                           real_type tol
                                           )
 {
-    // max_iter is ignored
-    // tol is ignored
+    Eigen::SparseMatrix<real_type> Bbus(Ybus.rows(), Ybus.cols());
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(Ybus.nonZeros());
+    for (int k=0; k < Ybus.outerSize(); ++k){
+        for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, k); it; ++it){
+            tripletList.push_back(Eigen::Triplet<real_type>(static_cast<int>(it.row()),
+                                                            static_cast<int>(it.col()),
+                                                            std::real(it.value())));
+        }
+    }
+    Bbus.setFromTriplets(tripletList.begin(), tripletList.end());
+    Bbus.makeCompressed();
+    const RealVect Pbus = Sbus.real();
+    return compute_pf_dc(Bbus, V, Pbus, slack_ids, slack_weights, pv, pq);
+}
+
+// TODO SLACK !!!
+template<class LinearSolver>
+bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+                                             CplxVect & V,
+                                             const RealVect & Pbus,
+                                             Eigen::Ref<const IntVect> slack_ids,
+                                             const RealVect & slack_weights,
+                                             Eigen::Ref<const IntVect> pv,
+                                             Eigen::Ref<const IntVect> pq
+                                             )
+{
     // V is used the following way: at pq buses it's completely ignored. For pv bus only the magnitude is used,
     //   and for the slack bus both the magnitude and the angle are used.
 
@@ -38,30 +65,29 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
 
     auto timer = CustTimer();
     if(need_factorize_ ||
-       _solver_control.need_reset_solver() || 
-       _solver_control.has_dimension_changed() ||
-       _solver_control.has_slack_participate_changed() ||  // the full "ybus without slack" has changed, everything needs to be recomputed_solver_control.ybus_change_sparsity_pattern()
-       _solver_control.ybus_change_sparsity_pattern() ||
-       _solver_control.has_ybus_some_coeffs_zero()
+       _dc_control.need_reset() ||
+       _dc_control.has_dim_changed() ||
+       _dc_control.has_slack_changed() ||  // the full "Bbus without slack" has changed, everything needs to be recomputed
+       _dc_control.has_bbus_sparsity_changed() ||
+       _dc_control.has_bbus_some_zero()
        ){
        reset();
-    //    std::cout << "need_factorize_ 1\n"; 
+    //    std::cout << "need_factorize_ 1\n";
        // at this stage need_factorize_ is set also to true
     }
-    
-    sizeYbus_with_slack_ = static_cast<int>(Ybus.rows());
+
+    sizeYbus_with_slack_ = static_cast<int>(Bbus.rows());
 
     #ifdef __COUT_TIMES
         auto timer_preproc = CustTimer();
     #endif // __COUT_TIMES
 
-    if(need_factorize_ || 
-       _solver_control.has_pv_changed() || 
-       _solver_control.has_pq_changed()) {    
+    if(need_factorize_ ||
+       _dc_control.has_bus_class_changed()) {
 
-        // TODO SLACK (for now i put all slacks as PV, except the first one)
-        // this should be handled in Sbus, because we know the amount of power absorbed by the slack
-        // so we can compute it correctly !
+        // The first slack bus is the angle reference (removed from the linear system); the other
+        // slack buses are kept as PV. The active power imbalance is distributed across all the
+        // participating slack buses (by slack_weights) further down (see "distributed slack").
         auto timer_pre = CustTimer();
         my_pv_ = retrieve_pv_with_slack(slack_ids, pv);
 
@@ -74,15 +100,15 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         timer_pre_proc_ += timer_pre.duration();
     }
 
-    // remove the slack bus from Ybus
-    if(need_factorize_ || 
-       _solver_control.need_recompute_ybus() ||
-       _solver_control.ybus_change_sparsity_pattern() ||
-       _solver_control.has_ybus_some_coeffs_zero()) {
+    // remove the slack bus from Bbus
+    if(need_factorize_ ||
+       _dc_control.need_recompute_bbus() ||
+       _dc_control.has_bbus_sparsity_changed() ||
+       _dc_control.has_bbus_some_zero()) {
         auto timer_pre = CustTimer();
-        fill_dcYbus_noslack(sizeYbus_with_slack_, Ybus);
+        fill_dcYbus_noslack(sizeYbus_with_slack_, Bbus);
         timer_pre_proc_ += timer_pre.duration();
-        need_factorize_ = true;  // force a call to "factor" the linear solver as the lhs (ybus) changed
+        need_factorize_ = true;  // force a call to "factor" the linear solver as the lhs (Bbus) changed
         // std::cout << "need_factorize_ 2\n"; 
         // no need to refactor if ybus did not change
     }
@@ -96,15 +122,31 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
         auto timer_solve = CustTimer();
     #endif // __COUT_TIMES
 
-    // remove the slack bus from Sbus
-    if(need_factorize_ || _solver_control.need_recompute_sbus()){
+    // remove the slack bus from Pbus
+    if(need_factorize_ || _dc_control.need_recompute_pbus() || _dc_control.has_slack_weight_changed()){
         // std::cout << "\t\t\tneed to dcSbus_noslack_\n";
         auto timer_pre = CustTimer();
         dcSbus_noslack_ = RealVect::Constant(sizeYbus_without_slack_, my_zero_);
         for (int k=0; k < sizeYbus_with_slack_; ++k){
             if(mat_bus_id_(k) == -1) continue;  // I don't add anything to the slack bus
             const int col_res = mat_bus_id_(k);
-            dcSbus_noslack_(col_res) = std::real(Sbus(k));
+            dcSbus_noslack_(col_res) = Pbus(k);
+        }
+
+        // distributed slack: spread the global active power imbalance T = -sum(Pbus) over the
+        // participating slack buses, proportionally to slack_weights (normalized, sum = 1).
+        // The non-reference slack buses (still in the system) get their share added to the reduced
+        // injection so the angles reflect the distribution; the reference bus (removed from the
+        // system) absorbs its share implicitly. With a single slack (weight 1 at the reference)
+        // this is a no-op and reduces to the historical "reference absorbs everything" behaviour.
+        if(slack_weights.size() == sizeYbus_with_slack_){
+            const real_type imbalance = -Pbus.sum();
+            for (int k=0; k < sizeYbus_with_slack_; ++k){
+                if(slack_weights(k) <= my_zero_) continue;  // not a participating slack bus
+                const int col_res = mat_bus_id_(k);
+                if(col_res == -1) continue;  // reference bus: removed from the system, share is implicit
+                dcSbus_noslack_(col_res) += slack_weights(k) * imbalance;
+            }
         }
         timer_pre_proc_ += timer_pre.duration();
     }
@@ -174,9 +216,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     }
     
     auto timer_mismatch = CustTimer();
-    // single-pass validity check: cwiseAbs().maxCoeff() returns NaN/Inf if any element is non-finite
-    const real_type maxAbsVal = Va_dc_without_slack.cwiseAbs().maxCoeff();
-    if(!std::isfinite(maxAbsVal) || maxAbsVal >= 1e6){
+    // single-pass validity check: maxCoeff<PropagateNaN> propagates NaN (the default maxCoeff
+    // skips it, because `NaN > x` is false), and +/-Inf yields a non-finite max, so both fail
+    // the isfinite test below. This is what catches a singular system (e.g. an islanded grid).
+    const real_type maxAbsVal = Va_dc_without_slack.cwiseAbs().maxCoeff<Eigen::PropagateNaN>();
+    if(!std::isfinite(maxAbsVal) || maxAbsVal >= _max_dc_voltage_angle){
         // for convergence, all values should be finite
         // and it's not realistic if some Va are too high
         err_ = ErrorType::SolverSolve;
@@ -204,9 +248,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf(const Eigen::SparseMatrix<cplx_type> &
     // size check guards against Vm_ being cleared by a previous failed contingency
     if(need_factorize_ ||
         Vm_.size() != sizeYbus_with_slack_ ||  // in contingency analysis, Vm is cleared if a cont diverges, so I need to recompute it
-       _solver_control.has_v_changed() ||
-       _solver_control.has_dimension_changed() ||
-       _solver_control.has_pv_changed()){
+       _dc_control.has_vm_changed() ||
+       _dc_control.has_dim_changed() ||
+       _dc_control.has_bus_class_changed()){
         Vm_ = V.array().abs();
     }
 
@@ -244,7 +288,7 @@ void BaseDCAlgo<LinearSolver>::fill_mat_bus_id(int nb_bus_solver){
 }
 
 template<class LinearSolver>
-void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat){
+void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat){
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     remove_slack_buses(nb_bus_solver, ref_mat, dcYbus_noslack_);
 }

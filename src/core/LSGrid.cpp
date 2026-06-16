@@ -268,14 +268,14 @@ void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
         id_me_to_dc_solver_ = SolverBusIdVect();
         id_dc_solver_to_me_ = GlobalBusIdVect();
         slack_bus_id_dc_solver_ = SolverBusIdVect();
-        Ybus_dc_ = Eigen::SparseMatrix<cplx_type>();
+        Bbus_dc_ = Eigen::SparseMatrix<real_type>();
     }
 
     timer_last_ac_pf_= 0.;
     timer_last_dc_pf_ = 0.;
 
     acSbus_ = CplxVect();
-    dcSbus_ = CplxVect();
+    dcPbus_ = RealVect();
     bus_pv_ = SolverBusIdVect();
     bus_pq_ = SolverBusIdVect();
 
@@ -511,7 +511,7 @@ CplxVect LSGrid::pre_process_solver(
         solver_control.has_slack_participate_changed() || 
         solver_control.has_pv_changed() || 
         solver_control.has_pq_changed()) {
-            init_slack_bus(Sbus, id_me_to_solver, id_solver_to_me, slack_bus_id_me, slack_bus_id_solver);
+            init_slack_bus(id_me_to_solver, id_solver_to_me, slack_bus_id_me, slack_bus_id_solver);
             fillpv_pq(
                 id_me_to_solver,
                 id_solver_to_me,
@@ -572,7 +572,97 @@ CplxVect LSGrid::pre_process_solver(
     return V;
 }
 
-CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp, 
+CplxVect LSGrid::pre_process_dc_solver(
+    const CplxVect & Vinit,
+    RealVect & Pbus,
+    Eigen::SparseMatrix<real_type> & Bbus,
+    SolverBusIdVect & id_me_to_solver,
+    GlobalBusIdVect & id_solver_to_me,
+    GlobalBusIdVect & slack_bus_id_me,
+    SolverBusIdVect & slack_bus_id_solver,
+    const AlgoControl & solver_control)
+{
+    // Mirrors pre_process_solver, but keeps the whole DC path real:
+    //   - Bbus (admittance) is a real sparse matrix, built via fillBdc (lines + trafos only)
+    //   - Pbus (active power) is a real vector. It is assembled by reusing the existing
+    //     (complex) Sbus fills into a small transient and keeping only the real part.
+    if(solver_control.need_reset_solver()){
+        _dc_algo.reset();
+    }
+
+    bool redo_all =
+            solver_control.need_reset_solver() ||
+            solver_control.has_dimension_changed();
+
+    if (redo_all || solver_control.has_slack_participate_changed()){
+        slack_bus_id_me = generators_.get_slack_bus_id();
+    }
+    if (redo_all || solver_control.has_one_el_changed_bus()){
+        init_bus_status();
+    }
+
+    // init_bus_status can set the flag "has_dimension_change", so redo this here
+    redo_all =
+            solver_control.need_reset_solver() ||
+            solver_control.has_dimension_changed();
+    bool converter_changed = false;
+    if (redo_all || solver_control.ybus_change_sparsity_pattern()){
+        init_converter_bus_id(id_me_to_solver, id_solver_to_me);
+        const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
+        init_Bbus(Bbus, nb_bus_solver);
+        converter_changed = true;
+    }
+    if (redo_all || converter_changed || solver_control.need_recompute_ybus()){
+        fillBdc(Bbus, id_me_to_solver);
+    }
+    if (redo_all || converter_changed ||
+        solver_control.has_slack_participate_changed() ||
+        solver_control.has_pv_changed() ||
+        solver_control.has_pq_changed()) {
+            init_slack_bus(id_me_to_solver, id_solver_to_me, slack_bus_id_me, slack_bus_id_solver);
+            fillpv_pq(id_me_to_solver, id_solver_to_me, slack_bus_id_solver, solver_control);
+        }
+
+    if (redo_all || converter_changed ||
+        solver_control.has_slack_participate_changed() ||
+        solver_control.has_pv_changed() ||
+        solver_control.has_pq_changed() ||
+        solver_control.need_recompute_sbus()) {
+            // assemble the real DC power vector via the existing Sbus fills (transient complex), keep real part
+            CplxVect Sbus_tmp = CplxVect::Constant(id_solver_to_me.size(), 0.);
+            fillSbus_me(Sbus_tmp, false, id_me_to_solver);
+            Pbus = Sbus_tmp.real();
+        }
+
+    const int nb_bus_solver = static_cast<int>(id_solver_to_me.size());
+    CplxVect V = CplxVect::Constant(nb_bus_solver, init_vm_pu_);
+    for(int bus_solver_id = 0; bus_solver_id < nb_bus_solver; ++bus_solver_id){
+        GlobalBusId bus_me_id = id_solver_to_me[bus_solver_id];
+        if(bus_me_id.cast_int() == BaseConstants::_deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::pre_process_dc_solver: the bus with solver id ";
+            exc_ << bus_solver_id;
+            exc_ << " is connected, but mapped (in id_solver_to_me) to a disconnected bus (global / gridmodel id)";
+            throw std::runtime_error(exc_.str());
+        }
+        V(bus_solver_id) = Vinit(bus_me_id.cast_int());
+    }
+    generators_.set_vm(V, id_me_to_solver);
+    dc_lines_.set_vm(V, id_me_to_solver);
+
+    if(algo_controler_.need_reset_solver() ||
+       algo_controler_.has_dimension_changed() ||
+       algo_controler_.has_slack_participate_changed() ||
+       algo_controler_.has_pv_changed() ||
+       algo_controler_.has_slack_weight_changed()){
+        slack_weights_ = generators_.get_slack_weights_solver(Bbus.rows(), id_me_to_solver);
+    }
+
+    _dc_algo.tell_solver_control(algo_controler_);
+    return V;
+}
+
+CplxVect LSGrid::_get_results_back_to_orig_nodes(const CplxVect & res_tmp,
                                                     SolverBusIdVect & id_me_to_solver,
                                                     int size)
 {
@@ -644,8 +734,14 @@ void LSGrid::init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
     Ybus.reserve(nb_bus_solver + 4*powerlines_.nb() + 4*trafos_.nb() + 2 * shunts_.nb());
 }
 
-void LSGrid::init_slack_bus(const CplxVect & Sbus,
-                               const SolverBusIdVect& id_me_to_solver,
+void LSGrid::init_Bbus(Eigen::SparseMatrix<real_type> & Bbus,
+                          int nb_bus_solver){
+    // DC: real admittance matrix, only lines and trafos contribute (no shunt)
+    Bbus = Eigen::SparseMatrix<real_type>(nb_bus_solver, nb_bus_solver);
+    Bbus.reserve(nb_bus_solver + 4*powerlines_.nb() + 4*trafos_.nb());
+}
+
+void LSGrid::init_slack_bus(const SolverBusIdVect& id_me_to_solver,
                                const GlobalBusIdVect& id_solver_to_me,
                                const GlobalBusIdVect & slack_bus_id_me,
                                SolverBusIdVect & slack_bus_id_solver)
@@ -697,6 +793,22 @@ void LSGrid::fillYbus(
     generators_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     dc_lines_.fillYbus(tripletList, ac, id_me_to_solver, sn_mva_);
     res.setFromTriplets(tripletList.begin(), tripletList.end());  // works because  "The initial contents of *this is destroyed"
+    res.makeCompressed();
+}
+
+void LSGrid::fillBdc(
+    Eigen::SparseMatrix<real_type> & res,
+    const SolverBusIdVect& id_me_to_solver){
+    /**
+    Real DC admittance (Bbus) matrix. Only lines and transformers contribute to the DC
+    admittance matrix (shunts contribute to Pbus, not Bbus). Builds real triplets directly.
+    **/
+    res.setZero();
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(4*powerlines_.nb() + 4*trafos_.nb());
+    powerlines_.fillBdc(tripletList, id_me_to_solver, sn_mva_);
+    trafos_.fillBdc(tripletList, id_me_to_solver, sn_mva_);
+    res.setFromTriplets(tripletList.begin(), tripletList.end());
     res.makeCompressed();
 }
 
@@ -794,13 +906,21 @@ void LSGrid::compute_results(bool ac){
         mismatch = V.array() * (Ybus_ac_ * V).conjugate().array() - acSbus_.array();
         active_mismatch = mismatch.real() * sn_mva_;
     } else{
+        // distributed slack (DC): the global active power imbalance -sum(Pbus) is shared among the
+        // participating slack buses proportionally to their (normalized) slack weights. With a single
+        // slack this assigns the whole imbalance to the reference bus (historical behaviour).
         active_mismatch = RealVect::Zero(V.size());
-        //TODO SLACK: improve distributed slack for DC mode !
-        // it is possible to know in advance the contribution of each slack generators (sum(Sbus) MW 
-        // to split among the contributing generators) so it's possible to "mess with" Sbus 
-        // for such purpose
-        const SolverBusId id_slack = slack_bus_id_dc_solver_(0);
-        active_mismatch(id_slack.cast_int()) = -dcSbus_.real().sum() * sn_mva_;
+        const real_type imbalance = -dcPbus_.sum() * sn_mva_;
+        if(slack_weights_.size() == active_mismatch.size()){
+            for(int k=0; k < slack_weights_.size(); ++k){
+                if(slack_weights_(k) <= BaseConstants::my_zero_) continue;
+                active_mismatch(k) = slack_weights_(k) * imbalance;
+            }
+        } else {
+            // fallback (should not happen): assign the whole imbalance to the reference slack bus
+            const SolverBusId id_slack = slack_bus_id_dc_solver_(0);
+            active_mismatch(id_slack.cast_int()) = imbalance;
+        }
     }
     generators_.set_p_slack(active_mismatch, id_me_to_solver);
 
@@ -848,28 +968,25 @@ CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
 
     // reset_results();  // clear the results  No need to do it, results are neceassirly set or reset in post process
 
-    // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
+    // pre process the data: builds the real DC admittance matrix Bbus_dc_ and real power vector dcPbus_
     bool is_ac = false;
-    CplxVect V = pre_process_solver(Vinit,
-                                    dcSbus_,
-                                    Ybus_dc_,
-                                    id_me_to_dc_solver_,
-                                    id_dc_solver_to_me_,
-                                    slack_bus_id_dc_me_,
-                                    slack_bus_id_dc_solver_,
-                                    is_ac,
-                                    algo_controler_);
-    // start the solver
-    conv = _dc_algo.compute_pf(
-        Ybus_dc_,
+    CplxVect V = pre_process_dc_solver(Vinit,
+                                       dcPbus_,
+                                       Bbus_dc_,
+                                       id_me_to_dc_solver_,
+                                       id_dc_solver_to_me_,
+                                       slack_bus_id_dc_me_,
+                                       slack_bus_id_dc_solver_,
+                                       algo_controler_);
+    // start the solver (native real DC entry point)
+    conv = _dc_algo.compute_pf_dc(
+        Bbus_dc_,
         V,
-        dcSbus_,
+        dcPbus_,
         slack_bus_id_dc_solver_.as_eigen(),  // was _to_intvect()
         slack_weights_,
         bus_pv_.as_eigen(),  // was _to_intvect()
-        bus_pq_.as_eigen(),  // was _to_intvect()
-        max_iter,
-        tol);
+        bus_pq_.as_eigen());  // was _to_intvect()
     // store results (fase -> because I am in dc mode)
     process_results(conv, res, Vinit, is_ac, id_me_to_dc_solver_);
     timer_last_dc_pf_ = timer.duration();
@@ -877,7 +994,7 @@ CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
 }
 
 RealMat LSGrid::get_ptdf_solver(){
-    if(Ybus_dc_.size() == 0){
+    if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const RealMat & PTDF_solver = _dc_algo.get_ptdf();
@@ -886,7 +1003,7 @@ RealMat LSGrid::get_ptdf_solver(){
 
 
 RealMat LSGrid::get_ptdf(){
-    if(Ybus_dc_.size() == 0){
+    if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_ptdf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const RealMat & PTDF_solver = get_ptdf_solver();
@@ -900,7 +1017,7 @@ RealMat LSGrid::get_ptdf(){
 }
 
 RealMat LSGrid::get_lodf(){
-    if(Ybus_dc_.size() == 0){
+    if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_lodf: Cannot get the ptdf without having first computed a DC powerflow.");
     }
     const size_t nb_el = powerlines_.nb() + trafos_.nb();
@@ -925,7 +1042,7 @@ RealMat LSGrid::get_lodf(){
 }
 
 Eigen::SparseMatrix<real_type> LSGrid::get_Bf_solver(){
-    if(Ybus_dc_.size() == 0){
+    if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_Bf_solver: Cannot get the Bf matrix without having first computed a DC powerflow.");
     }
     Eigen::SparseMatrix<real_type> Bf;
@@ -934,7 +1051,7 @@ Eigen::SparseMatrix<real_type> LSGrid::get_Bf_solver(){
 }
 
 Eigen::SparseMatrix<real_type> LSGrid::get_Bf(){
-    if(Ybus_dc_.size() == 0){
+    if(Bbus_dc_.size() == 0){
         throw std::runtime_error("LSGrid::get_Bf: Cannot get the Bf matrix without having first computed a DC powerflow.");
     }
     Eigen::SparseMatrix<real_type> Bf_solver = get_Bf_solver();

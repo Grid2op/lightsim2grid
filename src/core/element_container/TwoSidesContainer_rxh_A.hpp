@@ -339,8 +339,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     if(status1[el_id] && status2[el_id]){
                         real_type Va_hv = Va(bus_hv_solver_id.cast_int());
                         real_type Va_lv = Va(bus_lv_solver_id.cast_int());
-                        res_p_side_1(el_id) = (std::real(ydc_11_(el_id)) * Va_hv + std::real(ydc_12_(el_id)) * Va_lv) * sn_mva;
-                        res_p_side_2(el_id) = (std::real(ydc_22_(el_id)) * Va_lv + std::real(ydc_21_(el_id)) * Va_hv) * sn_mva;
+                        res_p_side_1(el_id) = (ydc_11_(el_id) * Va_hv + ydc_12_(el_id) * Va_lv) * sn_mva;
+                        res_p_side_2(el_id) = (ydc_22_(el_id) * Va_lv + ydc_21_(el_id) * Va_hv) * sn_mva;
                     }else{
                         res_p_side_1(el_id) = 0.;
                         res_p_side_2(el_id) = 0.;
@@ -406,10 +406,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         Eigen::Ref<const CplxVect> yac_eff_21() const {return yac_eff_21_;}
         Eigen::Ref<const CplxVect> yac_eff_22() const {return yac_eff_22_;}
 
-        Eigen::Ref<const CplxVect> ydc_11() const {return ydc_11_;}
-        Eigen::Ref<const CplxVect> ydc_12() const {return ydc_12_;}
-        Eigen::Ref<const CplxVect> ydc_21() const {return ydc_21_;}
-        Eigen::Ref<const CplxVect> ydc_22() const {return ydc_22_;}
+        Eigen::Ref<const RealVect> ydc_11() const {return ydc_11_;}
+        Eigen::Ref<const RealVect> ydc_12() const {return ydc_12_;}
+        Eigen::Ref<const RealVect> ydc_21() const {return ydc_21_;}
+        Eigen::Ref<const RealVect> ydc_22() const {return ydc_22_;}
 
         // connection status accessors (explicit, needed by external Ybus builders)
         const std::vector<bool>& get_status_side_1() const { return side_1_.get_status(); }
@@ -499,6 +499,47 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
                     res.push_back(Eigen::Triplet<cplx_type> (bus_side1_solver_id.cast_int(), bus_side2_solver_id.cast_int(), yft));
                     res.push_back(Eigen::Triplet<cplx_type> (bus_side2_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ytf));
                 }
+            }
+        }
+
+        // Real DC equivalent of fillYbus (DC branch): pushes the real susceptance coefficients
+        // directly into a real triplet list (no complex temporary).
+        virtual void fillBdc(
+            std::vector<Eigen::Triplet<real_type> > & res,
+            const SolverBusIdVect & id_grid_to_solver,
+            real_type sn_mva) const override
+        {
+            const size_t nb_els = nb();
+            const std::vector<bool> & status1 = side_1_.get_status();
+            const std::vector<bool> & status2 = side_2_.get_status();
+
+            for(size_t el_id =0; el_id < nb_els; ++el_id){
+                // i don't do anything if the branch is disconnected
+                if(!status_global_[el_id]  || (!status1[el_id] && !status2[el_id])) continue;
+                // In DC disconnected on one side == disco on both sides
+                if((!status1[el_id]) || (!status2[el_id])) continue;
+
+                const GlobalBusId bus_side1_id_me = get_bus_side_1(el_id);
+                const GlobalBusId bus_side2_id_me = get_bus_side_2(el_id);
+                if(bus_side1_id_me.cast_int() == _deactivated_bus_id || bus_side2_id_me.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBdc: (GlobalID) the branch with id ";
+                    exc_ << el_id << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+                const SolverBusId bus_side1_solver_id = id_grid_to_solver[bus_side1_id_me.cast_int()];
+                const SolverBusId bus_side2_solver_id = id_grid_to_solver[bus_side2_id_me.cast_int()];
+                if(bus_side1_solver_id.cast_int() == _deactivated_bus_id || bus_side2_solver_id.cast_int() == _deactivated_bus_id){
+                    std::ostringstream exc_;
+                    exc_ << "TwoSidesContainer_rxh_A::fillBdc: (SolverID) the branch with id ";
+                    exc_ << el_id << " is connected to a disconnected bus while being connected";
+                    throw std::runtime_error(exc_.str());
+                }
+
+                res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_11_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_22_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side1_solver_id.cast_int(), bus_side2_solver_id.cast_int(), ydc_12_(el_id)));
+                res.push_back(Eigen::Triplet<real_type> (bus_side2_solver_id.cast_int(), bus_side1_solver_id.cast_int(), ydc_21_(el_id)));
             }
         }
 
@@ -859,10 +900,10 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             yac_eff_21_ = CplxVect::Zero(my_size);
             yac_eff_22_ = CplxVect::Zero(my_size);
 
-            ydc_11_ = CplxVect::Zero(my_size);
-            ydc_12_ = CplxVect::Zero(my_size);
-            ydc_21_ = CplxVect::Zero(my_size);
-            ydc_22_ = CplxVect::Zero(my_size);
+            ydc_11_ = RealVect::Zero(my_size);
+            ydc_12_ = RealVect::Zero(my_size);
+            ydc_21_ = RealVect::Zero(my_size);
+            ydc_22_ = RealVect::Zero(my_size);
             this->_update_other_model_coeffs();
             for(size_t i = 0; i < my_size; ++i)
             {
@@ -933,8 +974,8 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
 
             // for DC
             // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
-            // except here I only care about the real part, so I remove the "1/j"
-            cplx_type tmp = 1. / cplx_type(x_(el_id), 0.);
+            // except here I only care about the real part (1/x), so I remove the "1/j"
+            const real_type tmp = 1. / x_(el_id);
             ydc_11_(el_id) = tmp;
             ydc_22_(el_id) = tmp;
             ydc_21_(el_id) = -tmp;
@@ -964,10 +1005,11 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
         CplxVect yac_eff_21_;
         CplxVect yac_eff_22_;
 
-        CplxVect ydc_11_;
-        CplxVect ydc_12_;
-        CplxVect ydc_21_;
-        CplxVect ydc_22_;
+        // DC admittance coefficients: real (DC only uses the real susceptance 1/x), see _update_model_coeffs_one_el
+        RealVect ydc_11_;
+        RealVect ydc_12_;
+        RealVect ydc_21_;
+        RealVect ydc_22_;
 
         // For FDPF
         FDPFCoeffsContainer BX_fpdf_coeffs_;
