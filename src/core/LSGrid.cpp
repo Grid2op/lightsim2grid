@@ -654,6 +654,17 @@ CplxVect LSGrid::pre_process_solver(
 
     if(is_ac) _algo.tell_solver_control(algo_controler_);
     else _dc_algo.tell_solver_control(algo_controler_);
+
+    // keep the member bus mapping in sync with the one we just built. The single-shot
+    // ac_pf / dc_pf pass the member itself as `id_me_to_solver` (self-assign, skipped
+    // below), but the batch algorithms (TimeSeries / ContingencyAnalysis) pass their own
+    // local vector. The hvdc droop extension reads the member through
+    // fill_hvdc_droop_solver_data(), so it must reflect the active mapping in every path.
+    if(is_ac){
+        if(&id_me_to_solver != &id_me_to_ac_solver_) id_me_to_ac_solver_ = id_me_to_solver;
+    } else {
+        if(&id_me_to_solver != &id_me_to_dc_solver_) id_me_to_dc_solver_ = id_me_to_solver;
+    }
     return V;
 }
 
