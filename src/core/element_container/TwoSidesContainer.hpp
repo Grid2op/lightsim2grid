@@ -371,7 +371,7 @@ class TwoSidesContainer : public GenericContainer
             side_1_.set_state(std::get<4>(my_state));
             side_2_.set_state(std::get<5>(my_state));
             auto size = nb();
-            check_size(names_, size, "names");
+            if(names_.size() > 0) check_size(names_, size, "names");  // names are optional
             if(side_1_.nb() != size) throw std::runtime_error("Side_1 do not have the proper size");
             if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
         }
