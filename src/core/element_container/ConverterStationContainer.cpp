@@ -120,7 +120,7 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     reset_results();
 }
 
-void ConverterStationContainer::set_station_p(int station_id, real_type p_mw, AlgoControl & solver_control)
+void ConverterStationContainer::set_station_p(int station_id, real_type p_mw, DualAlgoControl & solver_control)
 {
     [[maybe_unused]] bool my_status = status_.at(station_id);  // also checks station_id is in range
     this->_change_p(station_id, p_mw, my_status, solver_control);
@@ -131,13 +131,14 @@ void ConverterStationContainer::set_station_p(int station_id, real_type p_mw, Al
         // LCC always consumes Q = |P| * tan(acos(power_factor)) (generator sign convention)
         const real_type new_q = -abs(p_mw) * std::tan(std::acos(power_factor_(station_id)));
         if (abs(target_q_mvar_(station_id) - new_q) > _tol_equal_float) {
-            solver_control.tell_recompute_sbus();
+            solver_control.ac_algo_controler().tell_recompute_sbus();
+            solver_control.dc_algo_controler().tell_recompute_sbus();
             target_q_mvar_(station_id) = new_q;
         }
     }
 }
 
-void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, AlgoControl & solver_control)
+void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, DualAlgoControl & solver_control)
 {
     bool my_status = status_.at(station_id);
     if(!my_status)
@@ -150,7 +151,8 @@ void ConverterStationContainer::change_v(int station_id, real_type new_v_pu, Alg
     }
     if (abs(target_vm_pu_(station_id) - new_v_pu) > _tol_equal_float)
     {
-        solver_control.tell_v_changed();
+        solver_control.ac_algo_controler().tell_v_changed();
+        solver_control.dc_algo_controler().tell_v_changed();
         target_vm_pu_(station_id) = new_v_pu;
     }
 }
@@ -394,10 +396,11 @@ void ConverterStationContainer::_compute_results(
     }
 }
 
-void ConverterStationContainer::_change_p(int station_id, real_type new_p, bool /*my_status*/, AlgoControl & solver_control)
+void ConverterStationContainer::_change_p(int station_id, real_type new_p, bool /*my_status*/, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(station_id) - new_p) > _tol_equal_float) {
-        solver_control.tell_recompute_sbus();
+        solver_control.ac_algo_controler().tell_recompute_sbus();
+        solver_control.dc_algo_controler().tell_recompute_sbus();
     }
     // turned off stations (p == 0) are not pv: if the active power changes,
     // the list of pv buses may change (legacy dcline behaviour, cf `turnedoff_no_pv`)
@@ -405,29 +408,39 @@ void ConverterStationContainer::_change_p(int station_id, real_type new_p, bool 
     bool pseudo_off_now = abs(new_p) < _tol_equal_float;
     if((pseudo_off_before && !pseudo_off_now) ||
        (!pseudo_off_before && pseudo_off_now)){
-        solver_control.tell_pv_changed();
+        solver_control.ac_algo_controler().tell_pv_changed();
+        solver_control.dc_algo_controler().tell_pv_changed();
     }
 }
 
-bool ConverterStationContainer::_deactivate(int el_id, AlgoControl & solver_control) {
+bool ConverterStationContainer::_deactivate(int el_id, DualAlgoControl & solver_control) {
     if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
-    solver_control.tell_recompute_sbus();
-    solver_control.tell_pv_changed();
+    solver_control.ac_algo_controler().tell_recompute_sbus();
+    solver_control.dc_algo_controler().tell_recompute_sbus();
+    solver_control.ac_algo_controler().tell_pv_changed();
+    solver_control.dc_algo_controler().tell_pv_changed();
     return true;
 }
 
-bool ConverterStationContainer::_reactivate(int el_id, AlgoControl & solver_control) {
+bool ConverterStationContainer::_reactivate(int el_id, DualAlgoControl & solver_control) {
     if(status_[el_id]) return false;  // nothing to do if station already connected
-    solver_control.tell_recompute_sbus();
-    solver_control.tell_pv_changed();
+    solver_control.ac_algo_controler().tell_recompute_sbus();
+    solver_control.dc_algo_controler().tell_recompute_sbus();
+    solver_control.ac_algo_controler().tell_pv_changed();
+    solver_control.dc_algo_controler().tell_pv_changed();
     return true;
 }
 
-bool ConverterStationContainer::_change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int /*nb_bus*/) {
+bool ConverterStationContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int /*nb_bus*/) {
     if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
-    solver_control.tell_recompute_sbus();
-    solver_control.tell_one_el_changed_bus();
-    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
+    solver_control.ac_algo_controler().tell_recompute_sbus();
+    solver_control.dc_algo_controler().tell_recompute_sbus();
+    solver_control.ac_algo_controler().tell_one_el_changed_bus();
+    solver_control.dc_algo_controler().tell_one_el_changed_bus();
+    if(voltage_regulator_on_[el_id]) {
+        solver_control.ac_algo_controler().tell_pv_changed();
+        solver_control.dc_algo_controler().tell_pv_changed();
+    }
     return true;
 }
 

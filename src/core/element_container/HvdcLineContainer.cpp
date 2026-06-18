@@ -77,7 +77,7 @@ void HvdcLineContainer::init(const Eigen::VectorXi & bus1_id,
     pmax_1to2_mw_ = pmax_1to2_mw;
     pmax_2to1_mw_ = pmax_2to1_mw;
 
-    AlgoControl unused_solver_control;
+    DualAlgoControl unused_solver_control;
     for(int hvdc_id = 0; hvdc_id < size; ++hvdc_id){
         if((converters_mode[hvdc_id] != ConvertersMode::SIDE_1_RECTIFIER) &&
            (converters_mode[hvdc_id] != ConvertersMode::SIDE_2_RECTIFIER)){
@@ -150,7 +150,7 @@ void HvdcLineContainer::init_legacy(const Eigen::VectorXi & branch_from_id,
          loss_percent, loss_mw,
          no_droop, zeros, zeros, zeros, zeros);
 
-    AlgoControl unused_solver_control;
+    DualAlgoControl unused_solver_control;
     for(int hvdc_id = 0; hvdc_id < size; ++hvdc_id){
         update_targets_from_p1(hvdc_id, p_mw(hvdc_id), unused_solver_control);
     }
@@ -268,7 +268,7 @@ void HvdcLineContainer::droop_flows_mw(int hvdc_id, real_type raw_mw, real_type 
     }
 }
 
-void HvdcLineContainer::update_station_targets(int hvdc_id, AlgoControl & solver_control)
+void HvdcLineContainer::update_station_targets(int hvdc_id, DualAlgoControl & solver_control)
 {
     const real_type setpoint = p_setpoint_mw_(hvdc_id);
     real_type t1, t2;
@@ -283,7 +283,7 @@ void HvdcLineContainer::update_station_targets(int hvdc_id, AlgoControl & solver
     side_2_.set_station_p(hvdc_id, t2, solver_control);
 }
 
-void HvdcLineContainer::update_targets_from_p1(int hvdc_id, real_type p1_mw, AlgoControl & solver_control)
+void HvdcLineContainer::update_targets_from_p1(int hvdc_id, real_type p1_mw, DualAlgoControl & solver_control)
 {
     if(p1_mw < 0.){
         // side 1 consumes |p1|: side 1 is the rectifier
@@ -321,7 +321,7 @@ void HvdcLineContainer::update_targets_from_p1(int hvdc_id, real_type p1_mw, Alg
     update_station_targets(hvdc_id, solver_control);
 }
 
-void HvdcLineContainer::change_p(int hvdc_id, real_type new_p, AlgoControl & solver_control)
+void HvdcLineContainer::change_p(int hvdc_id, real_type new_p, DualAlgoControl & solver_control)
 {
     if(!status_global_.at(hvdc_id))
     {
@@ -334,7 +334,7 @@ void HvdcLineContainer::change_p(int hvdc_id, real_type new_p, AlgoControl & sol
     update_targets_from_p1(hvdc_id, new_p, solver_control);
 }
 
-void HvdcLineContainer::set_status_droop(int hvdc_id, int status, AlgoControl & solver_control)
+void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoControl & solver_control)
 {
     _check_in_range(hvdc_id, status_droop_, "set_status_droop");
     if((status < -1) || (status > 1)){
@@ -355,7 +355,8 @@ void HvdcLineContainer::set_status_droop(int hvdc_id, int status, AlgoControl & 
         // the sparsity pattern of the jacobian does not change (the droop
         // entries are declared whatever the regime), only the values /
         // injections do: the symbolic factorization is fully reused.
-        solver_control.tell_recompute_sbus();
+        solver_control.ac_algo_controler().tell_recompute_sbus();
+        solver_control.dc_algo_controler().tell_recompute_sbus();
     }
 }
 

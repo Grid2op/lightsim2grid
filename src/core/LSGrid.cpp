@@ -861,8 +861,8 @@ CplxVect LSGrid::_pre_process_solver_impl(
         slack_weights_ = generators_.get_slack_weights_solver(mat.rows(), id_me_to_solver);
     }
 
-    if(is_ac) _algo.tell_solver_control(algo_controler_);
-    else _dc_algo.tell_solver_control(algo_controler_);
+    if(is_ac) _algo.tell_solver_control(solver_control);
+    else _dc_algo.tell_solver_control(solver_control);
 
     // keep the member bus mapping in sync with the one we just built. The single-shot
     // ac_pf / dc_pf pass the member itself as `id_me_to_solver` (self-assign, skipped

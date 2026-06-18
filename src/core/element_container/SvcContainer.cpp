@@ -179,40 +179,55 @@ void SvcContainer::_compute_results(
     }
 }
 
-bool SvcContainer::_deactivate(int svc_id, AlgoControl & solver_control)
+bool SvcContainer::_deactivate(int svc_id, DualAlgoControl & solver_control)
 {
     if(status_[svc_id]){
-        solver_control.tell_recompute_sbus();
-        solver_control.tell_one_el_changed_bus();
-        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE) solver_control.tell_pv_changed();
+        solver_control.ac_algo_controler().tell_recompute_sbus();
+        solver_control.ac_algo_controler().tell_one_el_changed_bus();
+        solver_control.dc_algo_controler().tell_recompute_sbus();
+        solver_control.dc_algo_controler().tell_one_el_changed_bus();
+        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
+            solver_control.ac_algo_controler().tell_pv_changed();
+            solver_control.dc_algo_controler().tell_pv_changed();
+        }
         return true;
     }
     return false;
 }
 
-bool SvcContainer::_reactivate(int svc_id, AlgoControl & solver_control)
+bool SvcContainer::_reactivate(int svc_id, DualAlgoControl & solver_control)
 {
     if(!status_[svc_id]){
-        solver_control.tell_recompute_sbus();
-        solver_control.tell_one_el_changed_bus();
-        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE) solver_control.tell_pv_changed();
+        solver_control.ac_algo_controler().tell_recompute_sbus();
+        solver_control.ac_algo_controler().tell_one_el_changed_bus();
+        solver_control.dc_algo_controler().tell_recompute_sbus();
+        solver_control.dc_algo_controler().tell_one_el_changed_bus();
+        if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
+            solver_control.ac_algo_controler().tell_pv_changed();
+            solver_control.dc_algo_controler().tell_pv_changed();
+        }
         return true;
     }
     return false;
 }
 
-bool SvcContainer::_change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus)
+bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus)
 {
     // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
     // which the caller runs *after* this function. Bail out here on an out-of-range
     // id so the `regulated_bus_id_` write below never touches memory out of bounds.
-    if(el_id < 0 || el_id >= nb()) return false;
-    if(bus_id_(el_id) == new_bus_id) return false;
+    if(svc_id < 0 || svc_id >= nb()) return false;
+    if(bus_id_(svc_id) == new_bus_id) return false;
     // a LOCAL voltage controller's regulated bus follows its own bus
-    if(regulated_bus_id_(el_id) == bus_id_(el_id).cast_int()) regulated_bus_id_(el_id) = new_bus_id.cast_int();
-    solver_control.tell_recompute_sbus();
-    solver_control.tell_one_el_changed_bus();
-    if(regulation_mode_(el_id) == RegulationMode::VOLTAGE) solver_control.tell_pv_changed();
+    if(regulated_bus_id_(svc_id) == bus_id_(svc_id).cast_int()) regulated_bus_id_(svc_id) = new_bus_id.cast_int();
+    solver_control.ac_algo_controler().tell_recompute_sbus();
+    solver_control.ac_algo_controler().tell_one_el_changed_bus();
+    solver_control.dc_algo_controler().tell_recompute_sbus();
+    solver_control.dc_algo_controler().tell_one_el_changed_bus();
+    if(regulation_mode_(svc_id) == RegulationMode::VOLTAGE){
+        solver_control.ac_algo_controler().tell_pv_changed();
+        solver_control.dc_algo_controler().tell_pv_changed();
+    }
     return true;
 }
 
