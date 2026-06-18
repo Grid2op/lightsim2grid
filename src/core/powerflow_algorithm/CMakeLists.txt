@@ -3,5 +3,6 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/GaussSeidelSynchAlgo.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BaseAlgo.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemHvdc.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemVoltageControl.cpp"
 )
 set(SOURCES ${SOURCES} PARENT_SCOPE)
