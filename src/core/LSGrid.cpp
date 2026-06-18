@@ -57,6 +57,9 @@ LSGrid::LSGrid(const LSGrid & other)
     // hvdc lines
     hvdc_lines_ = other.hvdc_lines_;
 
+    // static var compensators
+    svcs_ = other.svcs_;
+
     // assign the right solver
     reset(true, true, true);
     _algo.change_algorithm(other.get_algo_type());
@@ -79,6 +82,7 @@ LSGrid::StateRes LSGrid::get_state() const
     auto res_sgen = sgens_.get_state();
     auto res_storage = storages_.get_state();
     auto res_hvdc_line = hvdc_lines_.get_state();
+    auto res_svc = svcs_.get_state();
 
     LSGrid::StateRes res(version_major,
                             version_medium,
@@ -97,7 +101,8 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_storage,
                             res_hvdc_line,
                             get_algo_type(),
-                            get_dc_algo_type()
+                            get_dc_algo_type(),
+                            res_svc
                             );
     return res;
 };
@@ -148,6 +153,8 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     LoadContainer::StateRes & state_storages = std::get<14>(my_state);
     // hvdc lines
     HvdcLineContainer::StateRes & state_hvdc_lines = std::get<15>(my_state);
+    // static var compensators (index 16/17 are the ac/dc algo types)
+    SvcContainer::StateRes & state_svcs = std::get<18>(my_state);
 
     // assign it to this instance
     set_ls_to_orig(IntVect::Map(ls_to_pp.data(), ls_to_pp.size()));  // set also _orig_to_ls
@@ -177,6 +184,7 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     storages_.set_state(state_storages);
     // hvdc lines
     hvdc_lines_.set_state(state_hvdc_lines);
+    svcs_.set_state(state_svcs);
 
     // handle the solver
     reset(true, true, true);
@@ -417,6 +425,182 @@ void fill_hvdc_droop_data_from_grid(const LSGrid * lsgrid_ptr, HvdcDroopSolverDa
     if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_hvdc_droop_solver_data(data, ac);
 }
 
+void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, bool ac) const
+{
+    data.clear();
+    if(!ac) return;  // DC: no voltage control (no-op, SVC contributes nothing)
+    const SolverBusIdVect & id_me_to_solver = id_me_to_ac_solver_;
+    const int nb_bus_solver = static_cast<int>(id_ac_solver_to_me_.size());
+    if(nb_bus_solver == 0) return;
+
+    // PQ membership: a bus owns a Q equation AND a Vm unknown iff it is a PQ bus
+    // (PV buses have only theta/P, the slack none). bus_pq_ is set by fillpv_pq.
+    std::vector<bool> is_pq(nb_bus_solver, false);
+    for(int k = 0; k < static_cast<int>(bus_pq_.size()); ++k){
+        const int b = bus_pq_(k).cast_int();
+        if(b >= 0 && b < nb_bus_solver) is_pq[b] = true;
+    }
+
+    // 1. collect the active voltage-mode controllers (remote-regulating gens for
+    //    now; voltage-mode SVCs are added with the SvcContainer). Per controller:
+    //    solver bus, regulated solver bus, v_set (pu), sharing key, kind, elem id.
+    struct Raw { int bus; int reg_bus; real_type v_set; real_type slope; real_type weight; int kind; int elem_id; };
+    std::vector<Raw> raws;
+    const int nb_gen = static_cast<int>(generators_.nb());
+    const GlobalBusIdVect & gen_buses = generators_.get_buses();
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!generators_.gen_is_voltage_controller(gen_id)) continue;
+        const int ctrl_grid = gen_buses(gen_id).cast_int();
+        const int reg_grid  = generators_.get_regulated_bus_id(gen_id);
+        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+        const int reg_solver  = (reg_grid >= 0) ? id_me_to_solver[reg_grid].cast_int()
+                                                : GenericContainer::_deactivated_bus_id;
+        if(ctrl_solver == GenericContainer::_deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
+                 << " is a voltage controller but its bus is disconnected.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(reg_solver == GenericContainer::_deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
+                 << " regulates a disconnected bus.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(!is_pq[ctrl_solver]){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
+                 << " regulates a remote bus but its OWN bus has no reactive (Q) equation"
+                    " (it is a slack or PV bus). This is not supported in v1.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(!is_pq[reg_solver]){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: generator " << gen_id
+                 << " regulates bus " << reg_grid << " which has no voltage (Vm) unknown"
+                    " (it is a slack or an already-PV bus). This is not supported in v1.";
+            throw std::runtime_error(exc_.str());
+        }
+        const real_type w = generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id);
+        raws.push_back({ctrl_solver, reg_solver, generators_.get_target_vm_pu(gen_id),
+                        static_cast<real_type>(0.), w, VoltageControlSolverData::GEN, gen_id});
+    }
+
+    // ... and the active VOLTAGE-mode SVCs (local or remote, with or without slope)
+    const int nb_svc = static_cast<int>(svcs_.nb());
+    const GlobalBusIdVect & svc_buses = svcs_.get_buses();
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        if(!svcs_.svc_is_voltage_controller(svc_id)) continue;
+        const int ctrl_grid = svc_buses(svc_id).cast_int();
+        const int reg_grid  = svcs_.get_regulated_bus_id(svc_id);
+        const int ctrl_solver = id_me_to_solver[ctrl_grid].cast_int();
+        const int reg_solver  = (reg_grid >= 0) ? id_me_to_solver[reg_grid].cast_int()
+                                                : GenericContainer::_deactivated_bus_id;
+        if(ctrl_solver == GenericContainer::_deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
+                 << " is a voltage controller but its bus is disconnected.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(reg_solver == GenericContainer::_deactivated_bus_id){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
+                 << " regulates a disconnected bus.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(!is_pq[ctrl_solver]){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
+                 << " is at a bus with no reactive (Q) equation (it is a slack or PV bus)."
+                    " This is not supported in v1.";
+            throw std::runtime_error(exc_.str());
+        }
+        if(!is_pq[reg_solver]){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << svc_id
+                 << " regulates bus " << reg_grid << " which has no voltage (Vm) unknown"
+                    " (it is a slack or an already-PV bus). This is not supported in v1.";
+            throw std::runtime_error(exc_.str());
+        }
+        const real_type w = svcs_.get_b_max(svc_id) - svcs_.get_b_min(svc_id);
+        raws.push_back({ctrl_solver, reg_solver, svcs_.get_target_vm_pu(svc_id),
+                        svcs_.get_slope_pu(svc_id), w, VoltageControlSolverData::SVC, svc_id});
+    }
+    if(raws.empty()) return;
+
+    // 2. group by regulated solver bus (merge gens that share a regulated bus),
+    //    checking the v_set agree within tolerance.
+    std::vector<int> grp_reg;
+    std::vector<real_type> grp_vset;
+    std::vector<std::vector<int> > grp_members;  // indices into raws
+    for(int i = 0; i < static_cast<int>(raws.size()); ++i){
+        int g = -1;
+        for(int gg = 0; gg < static_cast<int>(grp_reg.size()); ++gg)
+            if(grp_reg[gg] == raws[i].reg_bus){ g = gg; break; }
+        if(g == -1){
+            g = static_cast<int>(grp_reg.size());
+            grp_reg.push_back(raws[i].reg_bus);
+            grp_vset.push_back(raws[i].v_set);
+            grp_members.push_back(std::vector<int>());
+        } else if(std::abs(grp_vset[g] - raws[i].v_set) > BaseConstants::_tol_equal_float){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::fill_voltage_control_solver_data: several controllers regulate the"
+                    " same bus with conflicting voltage setpoints (" << grp_vset[g] << " vs "
+                 << raws[i].v_set << " pu).";
+            throw std::runtime_error(exc_.str());
+        }
+        grp_members[g].push_back(i);
+    }
+
+    // 2b. v1 restriction: an SVC may only be ALONE in its control group. The
+    //     cross-weight sharing of an SVC with other controllers (and any sloped
+    //     SVC sharing a regulated bus, cf Phase 0 probe #3) is not supported yet.
+    for(int g = 0; g < static_cast<int>(grp_members.size()); ++g){
+        if(grp_members[g].size() <= 1) continue;
+        for(int idx : grp_members[g]){
+            if(raws[idx].kind == VoltageControlSolverData::SVC){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::fill_voltage_control_solver_data: SVC " << raws[idx].elem_id
+                     << " shares a regulated bus with other controllers, which is not"
+                        " supported in v1 (an SVC must be the only controller of its bus).";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+    }
+
+    // 3. emit, controllers grouped contiguously
+    const int ng = static_cast<int>(grp_reg.size());
+    const int nc = static_cast<int>(raws.size());
+    data.bus = Eigen::VectorXi(nc);
+    data.kind = Eigen::VectorXi(nc);
+    data.elem_id = Eigen::VectorXi(nc);
+    data.slope = RealVect(nc);
+    data.weight = RealVect(nc);
+    data.group = Eigen::VectorXi(nc);
+    data.reg_bus = Eigen::VectorXi(ng);
+    data.v_set = RealVect(ng);
+    data.grp_start = Eigen::VectorXi(ng);
+    data.grp_count = Eigen::VectorXi(ng);
+    int cursor = 0;
+    for(int g = 0; g < ng; ++g){
+        data.reg_bus(g) = grp_reg[g];
+        data.v_set(g) = grp_vset[g];
+        data.grp_start(g) = cursor;
+        data.grp_count(g) = static_cast<int>(grp_members[g].size());
+        for(int idx : grp_members[g]){
+            const Raw & r = raws[idx];
+            data.bus(cursor) = r.bus;
+            data.kind(cursor) = r.kind;
+            data.elem_id(cursor) = r.elem_id;
+            data.slope(cursor) = r.slope;
+            // floor the sharing key to keep the N>1 sharing rows non-singular
+            data.weight(cursor) = (std::abs(r.weight) > BaseConstants::_tol_equal_float) ? r.weight : BaseConstants::_tol_equal_float;
+            data.group(cursor) = g;
+            ++cursor;
+        }
+    }
+}
+
 void LSGrid::check_solution_q_values_onegen(CplxVect & res,
                                                int bus_id,
                                                real_type min_q_mvar,
@@ -477,6 +661,16 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
         const auto & station_2 = hvdc.station_side_2;
         check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
         check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
+    }
+
+    // ... and the VOLTAGE-mode static var compensators: their reactive injection is
+    // solved by the VoltageControl extension (not stamped in Sbus), so the reactive
+    // mismatch at their bus must be absorbed. SVC reactive limits are NEVER enforced.
+    for(const auto & svc: svcs_)
+    {
+        if(!svc.connected) continue;
+        if(svc.regulation_mode != SvcContainer::RegulationMode::VOLTAGE) continue;  // REACTIVE_POWER is in Sbus
+        check_solution_q_values_onegen(res, svc.bus_id, 0., 0., false);  // never enforce SVC limits
     }
 }
 
@@ -643,6 +837,7 @@ CplxVect LSGrid::pre_process_solver(
     }
     generators_.set_vm(V, id_me_to_solver);
     hvdc_lines_.set_vm(V, id_me_to_solver);
+    svcs_.set_vm(V, id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
 
     if(algo_controler_.need_reset_solver() || 
        algo_controler_.has_dimension_changed() ||
@@ -808,6 +1003,7 @@ void LSGrid::fillSbus_me(CplxVect & Sbus, bool ac, const SolverBusIdVect& id_me_
     storages_.fillSbus(Sbus, id_me_to_solver, ac);
     generators_.fillSbus(Sbus, id_me_to_solver, ac);
     hvdc_lines_.fillSbus(Sbus, id_me_to_solver, ac);
+    svcs_.fillSbus(Sbus, id_me_to_solver, ac);  // REACTIVE_POWER-mode SVCs only
     if (abs(sn_mva_ - 1.0) > BaseConstants::_tol_equal_float) Sbus /= sn_mva_;
     // in dc mode, this is used for the phase shifter, this should not be divided by sn_mva_ !
     trafos_.hack_Sbus_for_dc_phase_shifter(Sbus, ac, id_me_to_solver);
@@ -879,6 +1075,8 @@ void LSGrid::compute_results(bool ac){
     generators_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
     // for dclines
     hvdc_lines_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
+    // for static var compensators
+    svcs_.compute_results(Va, Vm, V, id_me_to_solver, substations_.get_bus_vn_kv(), sn_mva_, ac);
 
     //handle_slack_bus active power
     CplxVect mismatch;  // power mismatch at each bus (SOLVER BUS !!!)
@@ -906,6 +1104,24 @@ void LSGrid::compute_results(bool ac){
                       total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
     hvdc_lines_.set_q(reactive_mismatch, id_me_to_solver, ac,
                     total_gen_per_bus_, total_q_min_per_bus_, total_q_max_per_bus_);
+
+    // VoltageControl (remote gen + SVC) write-back: the reactive output of the
+    // voltage-mode controllers is solved inside the NR system (not by the per-bus
+    // redistribution above, which skips them). Pull it from the AC algorithm and
+    // store it (pu -> MVAr). Empty for DC / non-NR algorithms.
+    if(ac){
+        const RealVect ctrl_q    = _algo.get_controller_q();
+        const IntVect  ctrl_kind = _algo.get_controller_kind();
+        const IntVect  ctrl_elem = _algo.get_controller_elem_id();
+        for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
+            const real_type q_mvar = ctrl_q(i) * sn_mva_;
+            if(ctrl_kind(i) == VoltageControlSolverData::GEN){
+                generators_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+            } else {  // VoltageControlSolverData::SVC
+                svcs_.set_voltage_control_q(ctrl_elem(i), q_mvar);
+            }
+        }
+    }
 }
 
 void LSGrid::reset_results(){
@@ -917,6 +1133,7 @@ void LSGrid::reset_results(){
     storages_.reset_results();
     generators_.reset_results();
     hvdc_lines_.reset_results();
+    svcs_.reset_results();
 }
 
 CplxVect LSGrid::dc_pf(const CplxVect & Vinit,
