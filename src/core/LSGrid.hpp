@@ -35,8 +35,10 @@
 #include "element_container/LoadContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SGenContainer.hpp"
+#include "element_container/SvcContainer.hpp"
 #include "element_container/HvdcLineContainer.hpp"
 #include "HvdcDroopData.hpp"
+#include "VoltageControlData.hpp"
 
 // import newton raphson solvers using different linear algebra solvers
 #include "AlgorithmSelector.hpp"
@@ -76,7 +78,9 @@ class LS2G_API LSGrid final
                 HvdcLineContainer::StateRes,
                 // algo types
                 AlgorithmType, // ac_algo
-                AlgorithmType // dc_algo
+                AlgorithmType, // dc_algo
+                // static var compensators (appended; old pickles are version-gated)
+                SvcContainer::StateRes
                 >;
 
         LSGrid():
@@ -309,6 +313,17 @@ class LS2G_API LSGrid final
                         const RealVect & sgen_qmax,
                         const Eigen::VectorXi & sgen_bus_id){
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
+        }
+        void init_svcs(const std::vector<int> & regulation_mode,
+                       const RealVect & target_vm_pu,
+                       const RealVect & q_setpoint_mvar,
+                       const RealVect & slope_pu,
+                       const RealVect & b_min,
+                       const RealVect & b_max,
+                       const Eigen::VectorXi & regulated_bus_id,
+                       const Eigen::VectorXi & svc_bus_id){
+            svcs_.init(regulation_mode, target_vm_pu, q_setpoint_mvar, slope_pu,
+                       b_min, b_max, regulated_bus_id, svc_bus_id);
         }
         void init_storages(const RealVect & storages_p,
                            const RealVect & storages_q,
@@ -558,6 +573,7 @@ class LS2G_API LSGrid final
         const LoadContainer & get_loads() const {return loads_;}
         const LoadContainer & get_storages() const {return storages_;}
         const SGenContainer & get_static_generators() const {return sgens_;}
+        const SvcContainer & get_svcs() const {return svcs_;}
         const ShuntContainer & get_shunts() const {return shunts_;}
         const std::vector<bool> & get_bus_status() const {return substations_.get_bus_status();}
         
@@ -727,6 +743,21 @@ class LS2G_API LSGrid final
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, algo_controler_); }
         int get_bus_gen(int gen_id) {return generators_.get_bus(gen_id).cast_int();}
 
+        //static var compensator (SVC)
+        void deactivate_svc(int svc_id) {svcs_.deactivate(svc_id, algo_controler_); }
+        void reactivate_svc(int svc_id) {svcs_.reactivate(svc_id, algo_controler_); }
+        void change_bus_svc(int svc_id, GridModelBusId new_gridmodel_bus_id) {
+            svcs_.change_bus(svc_id, new_gridmodel_bus_id, algo_controler_, substations_);
+        }
+        void change_bus_svc_python(int svc_id, int new_gridmodel_bus_id) {
+            change_bus_svc(svc_id, GridModelBusId(new_gridmodel_bus_id));
+        }
+        int get_bus_svc(int svc_id) {return svcs_.get_bus(svc_id).cast_int();}
+        void set_svc_names(const std::vector<std::string> & names){
+            GenericContainer::check_size(names, svcs_.nb(), "set_svc_names");
+            svcs_.set_names(names);
+        }
+
         //shunt
         void deactivate_shunt(int shunt_id) {shunts_.deactivate(shunt_id, algo_controler_); }
         void reactivate_shunt(int shunt_id) {shunts_.reactivate(shunt_id, algo_controler_); }
@@ -806,6 +837,21 @@ class LS2G_API LSGrid final
          * (ie from within a solver's compute_pf).
          */
         void fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) const;
+        /**
+         * Per-solve data of the ACTIVE voltage-mode controllers (remote-regulating
+         * generators and, later, voltage-mode SVCs), grouped by regulated solver
+         * bus, in solver bus labelling and per-unit. Consumed by the VoltageControl
+         * extension of the Newton-Raphson system (ac = true only; empty in DC).
+         * Throws a clear error on the singular-for-us configurations (see Phase 0
+         * probe #3). Only valid once `pre_process_solver` ran.
+         */
+        void fill_voltage_control_solver_data(VoltageControlSolverData & data, bool ac) const;
+        /**
+         * Set the grid bus whose voltage generator `gen_id` regulates (remote
+         * voltage control). `bus_id` == the generator's own bus restores ordinary
+         * local PV control.
+         */
+        void set_gen_regulated_bus(int gen_id, int bus_id) {generators_.set_regulated_bus(gen_id, bus_id, algo_controler_); }
         /**
          * Change the bus on the dc line "side 1" dcline_id.
          * 
@@ -1681,6 +1727,9 @@ class LS2G_API LSGrid final
 
         // 9. hvdc (converter stations + lines, exposed through the "dcline" API)
         HvdcLineContainer hvdc_lines_;
+
+        // 9b. static var compensators (SVC)
+        SvcContainer svcs_;
 
         // 10. slack bus
         // std::vector<int> slack_bus_id_;
