@@ -139,12 +139,14 @@ class LS2G_API LSGrid final
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
         // turned off generators are not pv
         void turnedoff_no_pv(){
-            algo_controler_.ac_algo_controler().has_pv_changed();  // pre-existing no-op (discarded getter); kept as-is
+            algo_controler_.ac_algo_controler().has_pv_changed(); 
+            algo_controler_.dc_algo_controler().has_pv_changed();
             generators_.turnedoff_no_pv(algo_controler_);
         }
         // turned off generators are pv
         void turnedoff_pv(){
-            algo_controler_.ac_algo_controler().has_pv_changed();  // pre-existing no-op (discarded getter); kept as-is
+            algo_controler_.ac_algo_controler().has_pv_changed();
+            algo_controler_.dc_algo_controler().has_pv_changed();
             generators_.turnedoff_pv(algo_controler_);
         }
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
@@ -188,24 +190,31 @@ class LS2G_API LSGrid final
 
         // solver "control"
         void change_algorithm(const AlgorithmType & type){
-            algo_controler_.ac_algo_controler().tell_all_changed();
-            algo_controler_.dc_algo_controler().tell_all_changed();
 
             if(_algo.is_fdpf(type)) init_fdpf_coeffs();
 
-            if(_algo.is_dc(type)) _dc_algo.change_algorithm(type);
-            else _algo.change_algorithm(type);
+            if(_algo.is_dc(type)){
+                _dc_algo.change_algorithm(type);
+                algo_controler_.dc_algo_controler().tell_all_changed();
+            } else {
+                _algo.change_algorithm(type);
+                algo_controler_.ac_algo_controler().tell_all_changed();
+            }
         }
         // String-based overload: looks up the solver by registry name.
         // For known built-in names the enum-based routing applies;
         // for plugin names the solver always goes to the AC solver slot.
         void change_algorithm(const std::string& name) {
-            algo_controler_.ac_algo_controler().tell_all_changed();
-            algo_controler_.dc_algo_controler().tell_all_changed();
             // Peek at IS_AC to decide which slot to update.
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
-            if (tmp->IS_AC) _algo.change_algorithm(name);
-            else _dc_algo.change_algorithm(name);
+            if (tmp->IS_AC) {
+                _algo.change_algorithm(name);
+                algo_controler_.ac_algo_controler().tell_all_changed();
+            }
+            else {
+                _dc_algo.change_algorithm(name);
+                algo_controler_.dc_algo_controler().tell_all_changed();
+            }
         }
         std::vector<AlgorithmType> available_default_algorithms() {return _algo.available_default_algorithms(); }
         // Returns all solver names currently registered (built-in + plugins).
@@ -420,7 +429,8 @@ class LS2G_API LSGrid final
             algo_controler_.dc_algo_controler().tell_solver_need_reset();
         }
         void tell_ybus_change_sparsity_pattern(){algo_controler_.ac_algo_controler().tell_ybus_change_sparsity_pattern(); algo_controler_.dc_algo_controler().tell_ybus_change_sparsity_pattern();}
-        const AlgoControl & get_algo_controler() const {return algo_controler_.ac_algo_controler();}
+        const AlgoControl & get_ac_algo_controler() const {return algo_controler_.ac_algo_controler();}
+        const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
         // dc powerflow
         CplxVect dc_pf(const CplxVect & Vinit,
@@ -476,10 +486,14 @@ class LS2G_API LSGrid final
         void deactivate_bus(GlobalBusId global_bus_id) {
             if(substations_.is_bus_connected(global_bus_id)){
                 // bus was connected, dim of matrix change
-                algo_controler_.ac_algo_controler().need_reset_solver();  // pre-existing no-op (discarded getters); kept as-is
+                algo_controler_.ac_algo_controler().need_reset_solver();
                 algo_controler_.ac_algo_controler().need_recompute_sbus();
                 algo_controler_.ac_algo_controler().need_recompute_ybus();
                 algo_controler_.ac_algo_controler().ybus_change_sparsity_pattern();
+                algo_controler_.dc_algo_controler().need_reset_solver();
+                algo_controler_.dc_algo_controler().need_recompute_sbus();
+                algo_controler_.dc_algo_controler().need_recompute_ybus();
+                algo_controler_.dc_algo_controler().ybus_change_sparsity_pattern();
                 GenericContainer::_generic_deactivate(global_bus_id, substations_);
             }
         }
@@ -491,10 +505,14 @@ class LS2G_API LSGrid final
         void reactivate_bus(GlobalBusId global_bus_id) {
             if(!substations_.is_bus_connected(global_bus_id)){
                 // bus was not connected, dim of matrix change
-                algo_controler_.ac_algo_controler().need_reset_solver();  // pre-existing no-op (discarded getters); kept as-is
+                algo_controler_.ac_algo_controler().need_reset_solver();
                 algo_controler_.ac_algo_controler().need_recompute_sbus();
                 algo_controler_.ac_algo_controler().need_recompute_ybus();
                 algo_controler_.ac_algo_controler().ybus_change_sparsity_pattern();
+                algo_controler_.dc_algo_controler().need_reset_solver();
+                algo_controler_.dc_algo_controler().need_recompute_sbus();
+                algo_controler_.dc_algo_controler().need_recompute_ybus();
+                algo_controler_.dc_algo_controler().ybus_change_sparsity_pattern();
                 GenericContainer::_generic_reactivate(global_bus_id, substations_); 
             }
         }

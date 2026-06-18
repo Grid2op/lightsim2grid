@@ -260,7 +260,6 @@ class TwoSidesContainer : public GenericContainer
         // setter (states)
         // methods used within lightsim
         virtual void deactivate(int el_id, DualAlgoControl & solver_control) final {
-            std::cout << "deactivate 2 sides element " << el_id << std::endl;
             bool one_changed = false;
             one_changed = side_1_.deactivate(el_id, solver_control) || one_changed;
             one_changed = side_2_.deactivate(el_id, solver_control) || one_changed;
