@@ -22,7 +22,7 @@ namespace ls2g {
 
 class ConverterStationContainer;
 
-class LS2G_API ConverterStationInfo : public OneSideContainer_PQ::OneSidePQInfo
+class LS2G_API ConverterStationInfo final : public OneSideContainer_PQ::OneSidePQInfo
 {
     public:
         int converter_type;  // 0 = VSC, 1 = LCC (ConverterStationContainer::ConverterType)
@@ -168,10 +168,11 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
             const RealVect & bus_vn_kv,
             real_type sn_mva,
             bool ac) override;
-        void _change_p(int station_id, real_type new_p, bool my_status, AlgoControl & solver_control) final;
-        bool _deactivate(int station_id, AlgoControl & solver_control) final;
-        bool _reactivate(int station_id, AlgoControl & solver_control) final;
-        bool _change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus) final;
+
+        void _change_p(int station_id, real_type new_p, bool my_status, DualAlgoControl & solver_control) final;
+        bool _deactivate(int station_id, DualAlgoControl & solver_control) final;
+        bool _reactivate(int station_id, DualAlgoControl & solver_control) final;
+        bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) final;
 
         /**
          * Station with a derived active power of 0: not PV, no Sbus contribution

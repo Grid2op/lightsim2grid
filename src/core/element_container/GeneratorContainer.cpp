@@ -271,10 +271,10 @@ void GeneratorContainer::get_vm_for_dc(RealVect & Vm){
     }
 }
 
-void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, AlgoControl & solver_control)
+void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, DualAlgoControl & solver_control)
 {
     if (abs(target_p_mw_(gen_id) - new_p) > _tol_equal_float) {
-        solver_control.tell_recompute_sbus();
+        solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
     }
     if(!turnedoff_gen_pv_){
         // if turned off generators (including these with p==0)
@@ -289,30 +289,30 @@ void GeneratorContainer::_change_p(int gen_id, real_type new_p, bool my_status, 
         bool pseudo_off_now = abs(new_p) < _tol_equal_float;
         if((pseudo_off_before && !pseudo_off_now) || 
            (!pseudo_off_before && pseudo_off_now)){
-            solver_control.tell_pv_changed();
+            solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed();
            }
     }
 }
 
-bool GeneratorContainer::_deactivate(int el_id, AlgoControl & solver_control) {
+bool GeneratorContainer::_deactivate(int el_id, DualAlgoControl & solver_control) {
     if(!status_[el_id]) return false;  // nothing to do if it was already deactivated
-    solver_control.tell_recompute_sbus();
-    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
-    if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
-    if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+    solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+    if(voltage_regulator_on_[el_id]){ solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed(); }
+    if(!turnedoff_gen_pv_){ solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed(); }
+    if(gen_slackbus_[el_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
     return true;
 };
 
-bool GeneratorContainer::_reactivate(int el_id, AlgoControl & solver_control) {
+bool GeneratorContainer::_reactivate(int el_id, DualAlgoControl & solver_control) {
     if(status_[el_id]) return false;  // nothing to do if gen already connected
-    solver_control.tell_recompute_sbus();
-    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
-    if(!turnedoff_gen_pv_) solver_control.tell_pv_changed();
-    if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+    solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+    if(voltage_regulator_on_[el_id]){ solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed(); }
+    if(!turnedoff_gen_pv_){ solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed(); }
+    if(gen_slackbus_[el_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
     return true;
 };
 
-void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, AlgoControl & solver_control)
+void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control)
 {
     bool my_status = status_.at(gen_id); // and this check that load_id is not out of bound
     if(!my_status)
@@ -327,17 +327,17 @@ void GeneratorContainer::change_v(int gen_id, real_type new_v_pu, AlgoControl & 
     change_v_nothrow(gen_id, new_v_pu, solver_control);
 }
 
-void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, AlgoControl & solver_control)
+void GeneratorContainer::change_v_nothrow(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control)
 {
     [[maybe_unused]] bool my_status = status_.at(gen_id); // and this check that gen_id is not out of bound [[maybe_unused]] 
     if (abs(target_vm_pu_(gen_id) - new_v_pu) > _tol_equal_float)
     {
-        solver_control.tell_v_changed();
+        solver_control.ac_algo_controler().tell_v_changed(); solver_control.dc_algo_controler().tell_v_changed();
         target_vm_pu_(gen_id) = new_v_pu;
     }
 }
 
-bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus) {
+bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) {
     // el_id is validated (and the proper IndexError raised) by `_generic_change_bus`,
     // which the caller runs *after* this function. Bail out here on an out-of-range
     // id so the `regulated_bus_id_` write below never touches memory out of bounds.
@@ -349,11 +349,18 @@ bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, AlgoC
     if(regulated_bus_id_(el_id) == bus_id_(el_id).cast_int()){
         regulated_bus_id_(el_id) = new_bus_id.cast_int();
     }
-    solver_control.tell_recompute_sbus();
-    solver_control.tell_one_el_changed_bus();
-    if(voltage_regulator_on_[el_id]) solver_control.tell_pv_changed();
-    if(gen_slackbus_[el_id]) solver_control.tell_slack_participate_changed();
+    solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+    solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
+    if(voltage_regulator_on_[el_id]) { solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed(); }
+    if(gen_slackbus_[el_id]) { solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
     return true;
+// bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) {
+//     if(bus_id_(el_id) == new_bus_id) return false;  // nothing to do if the bus did not changed
+//     solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();
+//     solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();
+//     if(voltage_regulator_on_[el_id]){ solver_control.ac_algo_controler().tell_pv_changed(); solver_control.dc_algo_controler().tell_pv_changed(); }
+//     if(gen_slackbus_[el_id]){ solver_control.ac_algo_controler().tell_slack_participate_changed(); solver_control.dc_algo_controler().tell_slack_participate_changed(); }
+    // return true;
 };
 
 void GeneratorContainer::set_vm(CplxVect & V, const SolverBusIdVect & id_grid_to_solver) const
@@ -527,7 +534,7 @@ void GeneratorContainer::set_q(
 
 void GeneratorContainer::update_slack_weights(
     Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack,
-    AlgoControl & solver_control)
+    DualAlgoControl & solver_control)
 {
     const int nb_gen = nb();
     std::vector<int> gen_slack_id;
@@ -543,7 +550,7 @@ void GeneratorContainer::update_slack_weights(
 
 void GeneratorContainer::update_slack_weights_by_id(
     Eigen::Ref<const IntVect> gen_slack_id,
-    AlgoControl & solver_control)
+    DualAlgoControl & solver_control)
 {
     // TODO speed: the solver_control will always tell that the slacks changed
     // even if it's not the case.

@@ -23,7 +23,7 @@
 namespace ls2g {
 
 class HvdcLineContainer;
-class LS2G_API HvdcLineInfo : public TwoSidesContainer<ConverterStationContainer>::TwoSidesInfo
+class LS2G_API HvdcLineInfo final : public TwoSidesContainer<ConverterStationContainer>::TwoSidesInfo
 {
     public:
         // members (the legacy DCLine names are kept: target_p_1_mw is the

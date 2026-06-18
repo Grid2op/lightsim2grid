@@ -111,8 +111,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             bool is_ac = _algo.ac_solver_used();
 
-            const auto & vect_y_ff = is_ac ? structure_data.yac_eff_11() : structure_data.ydc_11();
-            const auto & vect_y_ft = is_ac ? structure_data.yac_eff_12() : structure_data.ydc_12();
+            // AC uses complex (Kron-reduced) coefficients, DC uses real susceptance coefficients
+            Eigen::Ref<const CplxVect> vect_yac_ff = structure_data.yac_eff_11();
+            Eigen::Ref<const CplxVect> vect_yac_ft = structure_data.yac_eff_12();
+            Eigen::Ref<const RealVect> vect_ydc_ff = structure_data.ydc_11();
+            Eigen::Ref<const RealVect> vect_ydc_ft = structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             size_t nb_el = structure_data.nb();
@@ -133,11 +136,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me.cast_int());
                 const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
 
-                // retrieve physical parameters
-                const cplx_type y_ff = vect_y_ff(el_id);  // scalar
-                const cplx_type y_ft = vect_y_ft(el_id);
-
                 if(is_ac){
+                    // retrieve physical parameters (complex)
+                    const cplx_type y_ff = vect_yac_ff(el_id);  // scalar
+                    const cplx_type y_ft = vect_yac_ft(el_id);
                     // trafo equations (to get the power at the "from" side)
                     CplxVect I_ft =  y_ff * Efrom + y_ft * Eto;
                     I_ft = I_ft.array().conjugate();
@@ -146,7 +148,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // now compute the current flow
                     res = S_ft.array().abs() * sn_mva;
                 }else{
-                    res = (std::real(y_ff) * Efrom.array().arg() + std::real(y_ft) * Eto.array().arg()) * sn_mva;
+                    // DC active flow from the bus angles (theta) directly, like the gridmodel
+                    // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
+                    const real_type y_ff = vect_ydc_ff(el_id);
+                    const real_type y_ft = vect_ydc_ft(el_id);
+                    const RealVect theta_from = Efrom.array().arg();
+                    const RealVect theta_to = Eto.array().arg();
+                    res = (y_ff * theta_from.array() + y_ft * theta_to.array()) * sn_mva;
                     if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
                     res.array() = res.array().abs();
                 }
@@ -158,16 +166,18 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         void compute_active_power_flows(const T & structure_data,
                                         real_type sn_mva,
                                         size_t lag_id,
-                                        bool is_trafo) 
+                                        bool is_trafo)
         {
-            const auto & bus_vn_kv = _grid_model.get_bus_vn_kv();
             const auto & el_status = structure_data.get_status_global();
             const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
             const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
             const bool is_ac = _algo.ac_solver_used();
 
-            Eigen::Ref<const CplxVect> vect_y_ff = is_ac ? structure_data.yac_eff_11() : structure_data.ydc_11();
-            Eigen::Ref<const CplxVect> vect_y_ft = is_ac ? structure_data.yac_eff_12() : structure_data.ydc_12();
+            // AC uses complex (Kron-reduced) coefficients, DC uses real susceptance coefficients
+            Eigen::Ref<const CplxVect> vect_yac_ff = structure_data.yac_eff_11();
+            Eigen::Ref<const CplxVect> vect_yac_ft = structure_data.yac_eff_12();
+            Eigen::Ref<const RealVect> vect_ydc_ff = structure_data.ydc_11();
+            Eigen::Ref<const RealVect> vect_ydc_ft = structure_data.ydc_12();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             Eigen::Index nb_el = structure_data.nb();
@@ -184,15 +194,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 const auto & Efrom = _voltages.col(bus_from_me.cast_int());  // vector (one voltages per step)
                 const auto & Eto = _voltages.col(bus_to_me.cast_int());
 
-                const real_type bus_vn_kv_f = bus_vn_kv(bus_from_me.cast_int());
-                const RealVect v_f_kv = Efrom.array().abs() * bus_vn_kv_f;
-
-                // retrieve physical parameters
-                const cplx_type y_ff = vect_y_ff(el_id);  // scalar
-                const cplx_type y_ft = vect_y_ft(el_id);
-
                 // trafo equations (to get the power at the "from" side)
                 if(is_ac){
+                    // retrieve physical parameters (complex)
+                    const cplx_type y_ff = vect_yac_ff(el_id);  // scalar
+                    const cplx_type y_ft = vect_yac_ft(el_id);
                     CplxVect I_ft = y_ff * Efrom + y_ft * Eto;
                     I_ft = I_ft.array().conjugate();
                     const CplxVect S_ft = Efrom.array() * I_ft.array();
@@ -200,7 +206,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // now compute the active flow
                     res = S_ft.array().real() * sn_mva;
                 }else{
-                    res = (std::real(y_ff) * Efrom.array().arg() + std::real(y_ft) * Eto.array().arg()) * sn_mva;
+                    // DC active flow from the bus angles (theta) directly, like the gridmodel
+                    // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
+                    const real_type y_ff = vect_ydc_ff(el_id);
+                    const real_type y_ft = vect_ydc_ft(el_id);
+                    const RealVect theta_from = Efrom.array().arg();
+                    const RealVect theta_to = Eto.array().arg();
+                    res = (y_ff * theta_from.array() + y_ft * theta_to.array()) * sn_mva;
                     if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
                 }
                 _active_power_flows.col(el_id + lag_id) = res;
@@ -240,6 +252,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // clear previous data
             Sbus_ = CplxVect();
             Ybus_ = Eigen::SparseMatrix<cplx_type>();
+            Pbus_ = RealVect();
+            Bbus_ = Eigen::SparseMatrix<real_type>();
             id_solver_to_me_.clear();
             id_me_to_solver_.clear();
             slack_ids_solver_ = SolverBusIdVect();
@@ -248,19 +262,34 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
             // fill the data correctly
             _algo_controler.tell_all_changed();
-            CplxVect res = _grid_model.pre_process_solver(
-                Vinit, 
-                Sbus_,
-                Ybus_,
-                id_me_to_solver_,
-                id_solver_to_me_,
-                slack_ids_me_,
-                slack_ids_solver_,
-                ac_solver_used,
-                _algo_controler);
+            CplxVect res;
+            if(ac_solver_used){
+                res = _grid_model.pre_process_solver(
+                    Vinit,
+                    Sbus_,
+                    Ybus_,
+                    id_me_to_solver_,
+                    id_solver_to_me_,
+                    slack_ids_me_,
+                    slack_ids_solver_,
+                    ac_solver_used,
+                    _algo_controler);
+                nb_buses_solver_ = static_cast<int>(Ybus_.cols());
+            } else {
+                // native real DC path: build the real Bbus / Pbus
+                res = _grid_model.pre_process_dc_solver(
+                    Vinit,
+                    Pbus_,
+                    Bbus_,
+                    id_me_to_solver_,
+                    id_solver_to_me_,
+                    slack_ids_me_,
+                    slack_ids_solver_,
+                    _algo_controler);
+                nb_buses_solver_ = static_cast<int>(Bbus_.cols());
+            }
 
             // extract relevant information
-            nb_buses_solver_ = static_cast<int>(Ybus_.cols());
             const SolverBusIdVect & gm_bus_pv = _grid_model.get_pv_solver();
             const SolverBusIdVect & gm_bus_pq = _grid_model.get_pq_solver();
             const RealVect & gm_bus_sw = _grid_model.get_slack_weights_solver();
@@ -313,16 +342,28 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _algo.tell_solver_control(_algo_controler);
                 _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
                 CplxVect Vinit_solver2 = Vinit_solver;
-                bool conv = _algo.compute_pf(
-                    Ybus_,
-                    Vinit_solver2,
-                    Sbus_,
-                    slack_ids_me_.as_eigen(),
-                    slack_weights_,
-                    bus_pv_.as_eigen(),
-                    bus_pq_.as_eigen(),
-                    max_iter,
-                    tol);
+                bool conv;
+                if(_algo.ac_solver_used()){
+                    conv = _algo.compute_pf(
+                        Ybus_,
+                        Vinit_solver2,
+                        Sbus_,
+                        slack_ids_me_.as_eigen(),
+                        slack_weights_,
+                        bus_pv_.as_eigen(),
+                        bus_pq_.as_eigen(),
+                        max_iter,
+                        tol);
+                } else {
+                    conv = _algo.compute_pf_dc(
+                        Bbus_,
+                        Vinit_solver2,
+                        Pbus_,
+                        slack_ids_me_.as_eigen(),
+                        slack_weights_,
+                        bus_pv_.as_eigen(),
+                        bus_pq_.as_eigen());
+                }
 
                 // check if we init the n-1 cases with results from the n cases
                 // or not
@@ -370,6 +411,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // internal data
         CplxVect Sbus_;
         Eigen::SparseMatrix<cplx_type> Ybus_;
+        // DC counterparts (real): the DC solver works on the real system Bbus . theta = Pbus
+        RealVect Pbus_;
+        Eigen::SparseMatrix<real_type> Bbus_;
         GlobalBusIdVect id_solver_to_me_;
         SolverBusIdVect id_me_to_solver_;
         SolverBusIdVect slack_ids_solver_;

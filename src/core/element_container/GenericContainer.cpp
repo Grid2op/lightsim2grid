@@ -62,7 +62,7 @@ void GenericContainer::_generic_change_bus(
     int el_id,
     const GridModelBusId & new_gridmodel_bus_id,
     GlobalBusIdVect & el_bus_ids,
-    AlgoControl & solver_control,
+    DualAlgoControl & solver_control,
     int nb_max_bus) const {
     // bus id here "me_id" and NOT "solver_id"
 

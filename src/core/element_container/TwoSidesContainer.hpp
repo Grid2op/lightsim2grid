@@ -168,7 +168,7 @@ class TwoSidesContainer : public GenericContainer
 
         virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) final {
             const int nb_el = nb();
-            AlgoControl unused_solver_control;
+            DualAlgoControl unused_solver_control;
             const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
             const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
             for(int i = 0; i < nb_el; ++i){
@@ -228,7 +228,7 @@ class TwoSidesContainer : public GenericContainer
         virtual void update_topo(
             Eigen::Ref<const Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > & has_changed,
             Eigen::Ref<const Eigen::Array<int, Eigen::Dynamic, Eigen::RowMajor> > & new_values,
-            AlgoControl & solver_control,
+            DualAlgoControl & solver_control,
             SubstationContainer & substations
         ) final
         {
@@ -237,6 +237,8 @@ class TwoSidesContainer : public GenericContainer
 
             std::vector<bool> side1_changed = side_1_.update_topo(has_changed, new_values, solver_control, substations);
             std::vector<bool> side2_changed = side_2_.update_topo(has_changed, new_values, solver_control, substations);
+            // used for updating derived class for example.
+            this->_update_topo(solver_control, substations, side1_changed, side2_changed);
 
             // set the global status
             int nb_el = nb();
@@ -257,7 +259,7 @@ class TwoSidesContainer : public GenericContainer
 
         // setter (states)
         // methods used within lightsim
-        virtual void deactivate(int el_id, AlgoControl & solver_control) final {
+        virtual void deactivate(int el_id, DualAlgoControl & solver_control) final {
             bool one_changed = false;
             one_changed = side_1_.deactivate(el_id, solver_control) || one_changed;
             one_changed = side_2_.deactivate(el_id, solver_control) || one_changed;
@@ -266,10 +268,10 @@ class TwoSidesContainer : public GenericContainer
             if(ignore_status_global_) status_global_[el_id] = true;
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
-        virtual void reactivate(int el_id, AlgoControl & solver_control) final {
+        virtual void reactivate(int el_id, DualAlgoControl & solver_control) final {
             bool one_changed = false;
             one_changed = side_1_.reactivate(el_id, solver_control) || one_changed;
             one_changed = side_2_.reactivate(el_id, solver_control) || one_changed;
@@ -277,7 +279,7 @@ class TwoSidesContainer : public GenericContainer
             _generic_reactivate(el_id, status_global_);
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
 
@@ -291,14 +293,14 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */        
-        virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, AlgoControl & solver_control, const SubstationContainer & substation) final {
+        virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) final {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
             bool one_changed = side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
-            this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation);
             one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
         /**
@@ -306,14 +308,14 @@ class TwoSidesContainer : public GenericContainer
          * 
          * The bus id is given in the "gridmodel" id, not the "solver id" nor the "local id" **ie** between 0 and `n_busbar_per_sub * n_sub`.
          */  
-        virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, AlgoControl & solver_control, const SubstationContainer & substation) final {
+        virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) final {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
             bool one_changed = side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
-            this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation);
             one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
 
@@ -376,7 +378,7 @@ class TwoSidesContainer : public GenericContainer
             if(side_2_.nb() != size) throw std::runtime_error("Side_2 do not have the proper size");
         }
 
-        bool resolve_status(int el_id, bool side_1_modif, AlgoControl & solver_control){
+        bool resolve_status(int el_id, bool side_1_modif, DualAlgoControl & solver_control){
             OneSideType & side_modified = side_1_modif ? side_1_: side_2_;
             OneSideType & side_to_update = side_1_modif ? side_2_: side_1_;
             bool res = false;
@@ -409,21 +411,43 @@ class TwoSidesContainer : public GenericContainer
             // nothing to do by default
         }
 
-        virtual bool _deactivate(int el_id, AlgoControl & solver_control) {
+        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) {
             // nothing to do by default: handled in derived class
             if(status_global_[el_id]) return true;
             return false;
         }
-        virtual bool _reactivate(int el_id, AlgoControl & solver_control) {
+        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) {
             // nothing to do by default: handled in derived class
             if(!status_global_[el_id]) return true;
             return false;
         }
 
-        virtual void _change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, AlgoControl & solver_control, const SubstationContainer & substation) {
+        virtual void _change_bus_side_1(
+            int el_id, 
+            GridModelBusId new_gridmodel_bus_id, 
+            DualAlgoControl & solver_control, 
+            const SubstationContainer & substation,
+            bool has_effectively_changed
+        ) {
             // nothing to do by default: handled in derived class
         }
-        virtual void _change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, AlgoControl & solver_control, const SubstationContainer & substation) {
+        virtual void _change_bus_side_2(
+            int el_id,
+            GridModelBusId new_gridmodel_bus_id,
+            DualAlgoControl & solver_control,
+            const SubstationContainer & substation,
+            bool has_effectively_changed
+        ) {
+            // nothing to do by default: handled in derived class
+        }
+
+        virtual void _update_topo(
+            DualAlgoControl & solver_control,
+            SubstationContainer & substations,
+            const std::vector<bool> & side1_changed,
+            const std::vector<bool> & side2_changed
+        )
+        {
             // nothing to do by default: handled in derived class
         }
 
