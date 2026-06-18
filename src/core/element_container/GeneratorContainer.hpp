@@ -46,7 +46,7 @@ https://pandapower.readthedocs.io/en/latest/elements/gen.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/gen.html#electric-model
 **/
-class LS2G_API GeneratorContainer: public OneSideContainer_PQ, public IteratorAdder<GeneratorContainer, GenInfo>
+class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public IteratorAdder<GeneratorContainer, GenInfo>
 {
     friend class GenInfo;
 

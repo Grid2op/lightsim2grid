@@ -294,8 +294,8 @@ class TwoSidesContainer : public GenericContainer
         virtual void change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) final {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 1).");
             bool one_changed = side_1_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
-            this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation);
             one_changed = resolve_status(el_id, true, solver_control) || one_changed;
+            this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
                 _update_effective_coeffs_one_el(el_id);
@@ -309,8 +309,8 @@ class TwoSidesContainer : public GenericContainer
         virtual void change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) final {
             // if(!status_global_[el_id]) throw std::runtime_error("Cannot change the bus of a disconnected element (" + std::to_string(el_id) + ", side 2).");
             bool one_changed = side_2_.change_bus(el_id, new_gridmodel_bus_id, solver_control, substation);
-            this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation);
             one_changed = resolve_status(el_id, false, solver_control) || one_changed;
+            this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
                 _update_effective_coeffs_one_el(el_id);
@@ -420,10 +420,22 @@ class TwoSidesContainer : public GenericContainer
             return false;
         }
 
-        virtual void _change_bus_side_1(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) {
+        virtual void _change_bus_side_1(
+            int el_id, 
+            GridModelBusId new_gridmodel_bus_id, 
+            DualAlgoControl & solver_control, 
+            const SubstationContainer & substation,
+            bool has_effectively_changed
+        ) {
             // nothing to do by default: handled in derived class
         }
-        virtual void _change_bus_side_2(int el_id, GridModelBusId new_gridmodel_bus_id, DualAlgoControl & solver_control, const SubstationContainer & substation) {
+        virtual void _change_bus_side_2(
+            int el_id,
+            GridModelBusId new_gridmodel_bus_id,
+            DualAlgoControl & solver_control,
+            const SubstationContainer & substation,
+            bool has_effectively_changed
+        ) {
             // nothing to do by default: handled in derived class
         }
 
