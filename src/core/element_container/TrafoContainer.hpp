@@ -20,6 +20,8 @@
 #include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
+#include <algorithm>
+
 namespace ls2g {
 
 class TrafoContainer;
@@ -173,7 +175,7 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
                     solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
-                    solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only in DC however
+                    solver_control.dc_algo_controler().tell_recompute_sbus();  // only in DC however
                 }
         }
         
@@ -228,6 +230,20 @@ class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideCont
             }
         }
 
+        virtual void _update_topo(
+            DualAlgoControl & solver_control,
+            SubstationContainer & substations,
+            const std::vector<bool> & side1_changed,
+            const std::vector<bool> & side2_changed
+        )
+        {
+            bool onechanged_1 = std::any_of(side1_changed.begin(), side1_changed.end(), [](bool v) { return v; });
+            bool onechanged_2 = std::any_of(side2_changed.begin(), side2_changed.end(), [](bool v) { return v; });
+            if(onechanged_1 || onechanged_2){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+        }
     private:
         /**
          * whether to ignore the tap position for phase shifter (alpha).
