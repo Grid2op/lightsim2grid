@@ -237,6 +237,8 @@ class TwoSidesContainer : public GenericContainer
 
             std::vector<bool> side1_changed = side_1_.update_topo(has_changed, new_values, solver_control, substations);
             std::vector<bool> side2_changed = side_2_.update_topo(has_changed, new_values, solver_control, substations);
+            // used for updating derived class for example.
+            this->_update_topo(solver_control, substations, side1_changed, side2_changed);
 
             // set the global status
             int nb_el = nb();
@@ -258,6 +260,7 @@ class TwoSidesContainer : public GenericContainer
         // setter (states)
         // methods used within lightsim
         virtual void deactivate(int el_id, DualAlgoControl & solver_control) final {
+            std::cout << "deactivate 2 sides element " << el_id << std::endl;
             bool one_changed = false;
             one_changed = side_1_.deactivate(el_id, solver_control) || one_changed;
             one_changed = side_2_.deactivate(el_id, solver_control) || one_changed;
@@ -266,7 +269,7 @@ class TwoSidesContainer : public GenericContainer
             if(ignore_status_global_) status_global_[el_id] = true;
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
         virtual void reactivate(int el_id, DualAlgoControl & solver_control) final {
@@ -277,7 +280,7 @@ class TwoSidesContainer : public GenericContainer
             _generic_reactivate(el_id, status_global_);
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
 
@@ -298,7 +301,7 @@ class TwoSidesContainer : public GenericContainer
             this-> _change_bus_side_1(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
         /**
@@ -313,7 +316,7 @@ class TwoSidesContainer : public GenericContainer
             this-> _change_bus_side_2(el_id, new_gridmodel_bus_id, solver_control, substation, one_changed);
             if(one_changed){
                 // update coefficient for Ybus
-                _update_effective_coeffs_one_el(el_id);
+                this->_update_effective_coeffs_one_el(el_id);
             }
         }
 
@@ -436,6 +439,16 @@ class TwoSidesContainer : public GenericContainer
             const SubstationContainer & substation,
             bool has_effectively_changed
         ) {
+            // nothing to do by default: handled in derived class
+        }
+
+        virtual void _update_topo(
+            DualAlgoControl & solver_control,
+            SubstationContainer & substations,
+            const std::vector<bool> & side1_changed,
+            const std::vector<bool> & side2_changed
+        )
+        {
             // nothing to do by default: handled in derived class
         }
 
