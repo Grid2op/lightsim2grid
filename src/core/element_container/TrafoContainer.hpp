@@ -20,6 +20,8 @@
 #include "OneSideContainer_forBranch.hpp"
 #include "TwoSidesContainer_rxh_A.hpp"
 
+#include <algorithm>
+
 namespace ls2g {
 
 class TrafoContainer;
@@ -45,7 +47,7 @@ https://pandapower.readthedocs.io/en/latest/elements/trafo.html
 and for modeling of the Ybus matrix:
 https://pandapower.readthedocs.io/en/latest/elements/trafo.html#electric-model
 **/
-class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
+class LS2G_API TrafoContainer final : public TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>, public IteratorAdder<TrafoContainer, TrafoInfo>
 {
     //////////////////////////////
     // access data from base class
@@ -148,12 +150,12 @@ class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_
         void change_ratio(
             int el_id,
             real_type new_ratio,
-            AlgoControl & solver_control){
+            DualAlgoControl & solver_control){
                 if(std::abs(ratio_(el_id) - new_ratio) >_tol_equal_float){
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.tell_recompute_ybus();
+                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
                 }
         }
         
@@ -167,13 +169,13 @@ class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_
         void change_shift(
             int el_id,
             real_type new_shift_rad,
-            AlgoControl & solver_control){
+            DualAlgoControl & solver_control){
                 if(std::abs(shift_(el_id) - new_shift_rad) >_tol_equal_float){
                     shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.tell_recompute_ybus();
-                    solver_control.tell_recompute_sbus();  // only in DC however
+                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                    solver_control.dc_algo_controler().tell_recompute_sbus();  // only in DC however
                 }
         }
         
@@ -184,6 +186,64 @@ class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_
             dc_x_tau_shift_ = RealVect::Zero(nb());
         }
 
+        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
+            bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _deactivate(el_id, solver_control);
+            if(has_been_changed){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+            return has_been_changed;
+        }
+
+        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
+            bool has_been_changed = TwoSidesContainer_rxh_A<OneSideContainer_ForBranch>:: _reactivate(el_id, solver_control);
+            if(has_been_changed){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+            return has_been_changed;
+        }
+
+        virtual void _change_bus_side_1(
+            int el_id, 
+            GridModelBusId new_gridmodel_bus_id, 
+            DualAlgoControl & solver_control, 
+            const SubstationContainer & substation,
+            bool has_effectively_changed
+        ) {
+            if(has_effectively_changed){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+        }
+
+        virtual void _change_bus_side_2(
+            int el_id,
+            GridModelBusId new_gridmodel_bus_id,
+            DualAlgoControl & solver_control,
+            const SubstationContainer & substation,
+            bool has_effectively_changed
+        ) {
+            if(has_effectively_changed){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+        }
+
+        virtual void _update_topo(
+            DualAlgoControl & solver_control,
+            SubstationContainer & substations,
+            const std::vector<bool> & side1_changed,
+            const std::vector<bool> & side2_changed
+        )
+        {
+            bool onechanged_1 = std::any_of(side1_changed.begin(), side1_changed.end(), [](bool v) { return v; });
+            bool onechanged_2 = std::any_of(side2_changed.begin(), side2_changed.end(), [](bool v) { return v; });
+            if(onechanged_1 || onechanged_2){
+                // TODO speed: only when dc_x_tau_shift_ is not 0, but be carefull, dc_x_tau_shift_ can be changed later
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+        }
     private:
         /**
          * whether to ignore the tap position for phase shifter (alpha).

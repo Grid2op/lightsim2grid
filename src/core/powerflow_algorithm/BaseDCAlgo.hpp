@@ -18,6 +18,11 @@ template<class LinearSolver>
 class BaseDCAlgo final: public BaseAlgo
 {
     public:
+        // above this (absolute) voltage angle [rad] the DC solution is considered non physical
+        // (used as a divergence criterion together with the "all finite" check)
+        static constexpr real_type _max_dc_voltage_angle = 1e6;
+
+    public:
         BaseDCAlgo() noexcept :
             BaseAlgo(false),
             _linear_solver(),
@@ -73,18 +78,18 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        // TODO SLACK : this should be handled in Sbus by the gridmodel maybe ?
+        // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
+        // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
+        //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
         virtual
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                        CplxVect & V,
-                        const CplxVect & Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,  // currently unused
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
-                        int max_iter,
-                        real_type tol
-                        ) final;
+        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+                           CplxVect & V,
+                           const RealVect & Pbus,
+                           Eigen::Ref<const IntVect> slack_ids,
+                           const RealVect & slack_weights,
+                           Eigen::Ref<const IntVect> pv,
+                           Eigen::Ref<const IntVect> pq
+                           ) final;
 
         virtual RealMat get_ptdf() final;
         virtual RealMat get_lodf(const IntVect & from_bus,
@@ -114,7 +119,7 @@ class BaseDCAlgo final: public BaseAlgo
 
     protected:
         void fill_mat_bus_id(int nb_bus_solver);
-        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<cplx_type> & ref_mat);
+        void fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat);
 
         // hvdc angle-droop ("AC emulation") support: in dc, the linear-mode
         // droop lines contribute `p = p0 + k * (theta1 - theta2)`: the k term

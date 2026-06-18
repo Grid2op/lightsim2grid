@@ -158,6 +158,9 @@ class LS2G_API BaseAlgo : public BaseConstants
             return res;
         }
 
+        // Complex AC entry point: solves V . (Ybus . V)* = Sbus.
+        // Every AC solver overrides this; the DC solver does not (it uses `compute_pf_dc`) and
+        // therefore inherits this throwing default (symmetric with `compute_pf_dc` below).
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,  // store the results of the powerflow and the Vinit !
@@ -168,7 +171,24 @@ class LS2G_API BaseAlgo : public BaseConstants
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        ) = 0 ;
+                        ){
+            throw std::runtime_error("compute_pf (complex AC entry point) is not available for this solver (DC solvers use compute_pf_dc).");
+        }
+
+        // Native real-valued DC entry point: DC only needs `Bbus . theta = Pbus` (all real).
+        // Only the DC solver overrides this; every other solver type throws.
+        // `V` carries the complex initial voltage (slack angle + voltage setpoints) on input
+        // and the complex result on output. There is no max_iter / tol: DC is a single linear solve.
+        virtual
+        bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
+                           CplxVect & V,
+                           const RealVect & Pbus,
+                           Eigen::Ref<const IntVect> slack_ids,
+                           const RealVect & slack_weights,
+                           Eigen::Ref<const IntVect> pv,
+                           Eigen::Ref<const IntVect> pq){
+            throw std::runtime_error("compute_pf_dc is only available for DC solvers.");
+        }
 
         void tell_solver_control(const AlgoControl & solver_control){
             _solver_control = solver_control;
