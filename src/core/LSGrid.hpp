@@ -90,7 +90,8 @@ class LS2G_API LSGrid final
             _dc_algo.change_algorithm(AlgorithmType::DC_SparseLU);
             _algo.set_lsgrid(this);
             _dc_algo.set_lsgrid(this);
-            algo_controler_.tell_all_changed();
+            algo_controler_.ac_algo_controler().tell_all_changed();
+            algo_controler_.dc_algo_controler().tell_all_changed();
         }
         LSGrid(const LSGrid & other);
         // LSGrid(LSGrid && other) noexcept = default;  // TODO
@@ -138,14 +139,16 @@ class LS2G_API LSGrid final
         const GeneratorContainer & get_generators_as_data() const {return generators_;}
         // turned off generators are not pv
         void turnedoff_no_pv(){
-            algo_controler_.has_pv_changed();
+            algo_controler_.ac_algo_controler().has_pv_changed(); 
+            algo_controler_.dc_algo_controler().has_pv_changed();
             generators_.turnedoff_no_pv(algo_controler_);
-        }  
+        }
         // turned off generators are pv
         void turnedoff_pv(){
-            algo_controler_.has_pv_changed();
+            algo_controler_.ac_algo_controler().has_pv_changed();
+            algo_controler_.dc_algo_controler().has_pv_changed();
             generators_.turnedoff_pv(algo_controler_);
-        }  
+        }
         bool get_turnedoff_gen_pv() {return generators_.get_turnedoff_gen_pv();}
         void update_slack_weights(Eigen::Ref<Eigen::Array<bool, Eigen::Dynamic, Eigen::RowMajor> > could_be_slack){
             generators_.update_slack_weights(could_be_slack, algo_controler_);
@@ -187,22 +190,31 @@ class LS2G_API LSGrid final
 
         // solver "control"
         void change_algorithm(const AlgorithmType & type){
-            algo_controler_.tell_all_changed();
 
             if(_algo.is_fdpf(type)) init_fdpf_coeffs();
 
-            if(_algo.is_dc(type)) _dc_algo.change_algorithm(type);
-            else _algo.change_algorithm(type);
+            if(_algo.is_dc(type)){
+                _dc_algo.change_algorithm(type);
+                algo_controler_.dc_algo_controler().tell_all_changed();
+            } else {
+                _algo.change_algorithm(type);
+                algo_controler_.ac_algo_controler().tell_all_changed();
+            }
         }
         // String-based overload: looks up the solver by registry name.
         // For known built-in names the enum-based routing applies;
         // for plugin names the solver always goes to the AC solver slot.
         void change_algorithm(const std::string& name) {
-            algo_controler_.tell_all_changed();
             // Peek at IS_AC to decide which slot to update.
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
-            if (tmp->IS_AC) _algo.change_algorithm(name);
-            else _dc_algo.change_algorithm(name);
+            if (tmp->IS_AC) {
+                _algo.change_algorithm(name);
+                algo_controler_.ac_algo_controler().tell_all_changed();
+            }
+            else {
+                _dc_algo.change_algorithm(name);
+                algo_controler_.dc_algo_controler().tell_all_changed();
+            }
         }
         std::vector<AlgorithmType> available_default_algorithms() {return _algo.available_default_algorithms(); }
         // Returns all solver names currently registered (built-in + plugins).
@@ -348,13 +360,15 @@ class LS2G_API LSGrid final
                 // this can happen if last_bus_status_saved_ has never been set
                 // for example right after loading
                 // or if `tell_none_changed` has not been called yet.
-                algo_controler_.tell_dimension_changed();
+                algo_controler_.ac_algo_controler().tell_dimension_changed();
+                algo_controler_.dc_algo_controler().tell_dimension_changed();
                 return;
             }
             // NB last_bus_status_saved_ wil be set to the right state after `gridmodel.tell_none_changed` has been called.
             for(int global_bus = 0; global_bus < nb_bus_total; global_bus++){
                 if(last_bus_status_saved_[global_bus] != new_status[global_bus]){
-                    algo_controler_.tell_dimension_changed();
+                    algo_controler_.ac_algo_controler().tell_dimension_changed();
+                    algo_controler_.dc_algo_controler().tell_dimension_changed();
                     break;
                 }
             }
@@ -402,18 +416,21 @@ class LS2G_API LSGrid final
          * It is not mandatory, and allow to save computation times.
          */
         void unset_changes(){
-            algo_controler_.tell_none_changed();
+            algo_controler_.ac_algo_controler().tell_none_changed();
+            algo_controler_.dc_algo_controler().tell_none_changed();
             last_bus_status_saved_ = substations_.get_bus_status();
         }  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
 
-        void tell_recompute_ybus(){algo_controler_.tell_recompute_ybus();}
-        void tell_recompute_sbus(){algo_controler_.tell_recompute_sbus();}
+        void tell_recompute_ybus(){algo_controler_.ac_algo_controler().tell_recompute_ybus(); algo_controler_.dc_algo_controler().tell_recompute_ybus();}
+        void tell_recompute_sbus(){algo_controler_.ac_algo_controler().tell_recompute_sbus(); algo_controler_.dc_algo_controler().tell_recompute_sbus();}
         void tell_solver_need_reset(){
             last_bus_status_saved_ = std::vector<bool>(substations_.nb_bus(), false);
-            algo_controler_.tell_solver_need_reset();
+            algo_controler_.ac_algo_controler().tell_solver_need_reset();
+            algo_controler_.dc_algo_controler().tell_solver_need_reset();
         }
-        void tell_ybus_change_sparsity_pattern(){algo_controler_.tell_ybus_change_sparsity_pattern();} 
-        const AlgoControl & get_algo_controler() const {return algo_controler_;}
+        void tell_ybus_change_sparsity_pattern(){algo_controler_.ac_algo_controler().tell_ybus_change_sparsity_pattern(); algo_controler_.dc_algo_controler().tell_ybus_change_sparsity_pattern();}
+        const AlgoControl & get_ac_algo_controler() const {return algo_controler_.ac_algo_controler();}
+        const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
         // dc powerflow
         CplxVect dc_pf(const CplxVect & Vinit,
@@ -469,10 +486,14 @@ class LS2G_API LSGrid final
         void deactivate_bus(GlobalBusId global_bus_id) {
             if(substations_.is_bus_connected(global_bus_id)){
                 // bus was connected, dim of matrix change
-                algo_controler_.need_reset_solver();
-                algo_controler_.need_recompute_sbus();
-                algo_controler_.need_recompute_ybus();
-                algo_controler_.ybus_change_sparsity_pattern();
+                algo_controler_.ac_algo_controler().need_reset_solver();
+                algo_controler_.ac_algo_controler().need_recompute_sbus();
+                algo_controler_.ac_algo_controler().need_recompute_ybus();
+                algo_controler_.ac_algo_controler().ybus_change_sparsity_pattern();
+                algo_controler_.dc_algo_controler().need_reset_solver();
+                algo_controler_.dc_algo_controler().need_recompute_sbus();
+                algo_controler_.dc_algo_controler().need_recompute_ybus();
+                algo_controler_.dc_algo_controler().ybus_change_sparsity_pattern();
                 GenericContainer::_generic_deactivate(global_bus_id, substations_);
             }
         }
@@ -484,10 +505,14 @@ class LS2G_API LSGrid final
         void reactivate_bus(GlobalBusId global_bus_id) {
             if(!substations_.is_bus_connected(global_bus_id)){
                 // bus was not connected, dim of matrix change
-                algo_controler_.need_reset_solver();
-                algo_controler_.need_recompute_sbus();
-                algo_controler_.need_recompute_ybus();
-                algo_controler_.ybus_change_sparsity_pattern();
+                algo_controler_.ac_algo_controler().need_reset_solver();
+                algo_controler_.ac_algo_controler().need_recompute_sbus();
+                algo_controler_.ac_algo_controler().need_recompute_ybus();
+                algo_controler_.ac_algo_controler().ybus_change_sparsity_pattern();
+                algo_controler_.dc_algo_controler().need_reset_solver();
+                algo_controler_.dc_algo_controler().need_recompute_sbus();
+                algo_controler_.dc_algo_controler().need_recompute_ybus();
+                algo_controler_.dc_algo_controler().ybus_change_sparsity_pattern();
                 GenericContainer::_generic_reactivate(global_bus_id, substations_); 
             }
         }
@@ -857,8 +882,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::SparseMatrix<cplx_type> 
          */
-        Eigen::SparseMatrix<cplx_type> get_dcYbus_solver(){
-            return Ybus_dc_;  // This is copied to python
+        Eigen::SparseMatrix<real_type> get_dcYbus_solver(){
+            return Bbus_dc_;  // This is copied to python (DC admittance matrix is real)
         }
 
         /**
@@ -893,8 +918,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        Eigen::Ref<const CplxVect> get_dcSbus_solver() const{
-            return dcSbus_;
+        Eigen::Ref<const RealVect> get_dcSbus_solver() const{
+            return dcPbus_;  // DC power injection is real (active power P)
         }
 
         /**
@@ -933,8 +958,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const Eigen::SparseMatrix<cplx_type> get_dcYbus() const {
-            return _relabel_matrix(Ybus_dc_, id_dc_solver_to_me_);
+        const Eigen::SparseMatrix<real_type> get_dcYbus() const {
+            return _relabel_matrix(Bbus_dc_, id_dc_solver_to_me_);
         }
 
         /**
@@ -969,8 +994,8 @@ class LS2G_API LSGrid final
          * 
          * @return Eigen::Ref<const CplxVect>
          */
-        const CplxVect get_dcSbus() const {
-            return _relabel_vector(dcSbus_, id_dc_solver_to_me_);
+        const RealVect get_dcSbus() const {
+            return _relabel_vector(dcPbus_, id_dc_solver_to_me_);
         }
 
         /**
@@ -1338,6 +1363,18 @@ class LS2G_API LSGrid final
                                     bool is_ac,
                                     const AlgoControl & solver_control);
 
+        // DC-specific pre processing: builds the real Bbus (admittance) matrix and the
+        // real Pbus (active power) vector, reusing the shared bus-mapping helpers. Mirrors
+        // pre_process_solver but keeps the whole DC path real (no complex Ybus / Sbus).
+        CplxVect pre_process_dc_solver(const CplxVect & Vinit,
+                                       RealVect & Pbus,
+                                       Eigen::SparseMatrix<real_type> & Bbus,
+                                       SolverBusIdVect & id_me_to_solver,
+                                       GlobalBusIdVect & id_solver_to_me,
+                                       GlobalBusIdVect & slack_bus_id_me,
+                                       SolverBusIdVect & slack_bus_id_solver,
+                                       const AlgoControl & solver_control);
+
         //for FDPF
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
                         Eigen::SparseMatrix<real_type> & Bpp, 
@@ -1370,12 +1407,13 @@ class LS2G_API LSGrid final
         // converter from "my bus id" to the "solver bus id" (id_me_to_solver and id_solver_to_me)
         void init_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                        int nb_bus_solver);
+        void init_Bbus(Eigen::SparseMatrix<real_type> & Bbus,
+                       int nb_bus_solver);  // DC: real admittance matrix
         void init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
                                    GlobalBusIdVect& id_solver_to_me);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
-        void init_slack_bus(const CplxVect & Sbus,
-                            const SolverBusIdVect & id_me_to_solver,
+        void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,
                             SolverBusIdVect & slack_bus_id_solver
@@ -1491,7 +1529,36 @@ class LS2G_API LSGrid final
         }
     
     protected:
+        // Shared implementation of pre_process_solver (AC: complex Ybus / Sbus) and
+        // pre_process_dc_solver (DC: real Bbus / Pbus). The matrix scalar type selects the
+        // family (cplx_type => AC, real_type => DC); the type-specific steps (matrix init / fill,
+        // injection assembly) are tag-dispatched to the overloads just below.
+        template<class MatScalar, class InjVect>
+        CplxVect _pre_process_solver_impl(const CplxVect & Vinit,
+                                          InjVect & inj,
+                                          Eigen::SparseMatrix<MatScalar> & mat,
+                                          SolverBusIdVect & id_me_to_solver,
+                                          GlobalBusIdVect & id_solver_to_me,
+                                          GlobalBusIdVect & slack_bus_id_me,
+                                          SolverBusIdVect & slack_bus_id_solver,
+                                          const AlgoControl & solver_control);
+        // matrix (re)initialization, overloaded per family (no `if constexpr`, C++14)
+        void init_solver_matrix(Eigen::SparseMatrix<cplx_type> & mat, int nb_bus_solver){ init_Ybus(mat, nb_bus_solver); }
+        void init_solver_matrix(Eigen::SparseMatrix<real_type> & mat, int nb_bus_solver){ init_Bbus(mat, nb_bus_solver); }
+        void fill_solver_matrix(Eigen::SparseMatrix<cplx_type> & mat, const SolverBusIdVect & id_me_to_solver){ fillYbus(mat, true, id_me_to_solver); }
+        void fill_solver_matrix(Eigen::SparseMatrix<real_type> & mat, const SolverBusIdVect & id_me_to_solver){ fillBdc(mat, id_me_to_solver); }
+        // injection assembly, overloaded per family (AC fills complex Sbus + reactive vectors; DC fills real Pbus)
+        void prepare_injection(CplxVect & Sbus, bool redo_all, bool converter_changed,
+                               const SolverBusIdVect & id_me_to_solver,
+                               const GlobalBusIdVect & id_solver_to_me,
+                               const AlgoControl & solver_control);
+        void prepare_injection(RealVect & Pbus, bool redo_all, bool converter_changed,
+                               const SolverBusIdVect & id_me_to_solver,
+                               const GlobalBusIdVect & id_solver_to_me,
+                               const AlgoControl & solver_control);
+
         void fillYbus(Eigen::SparseMatrix<cplx_type> & res, bool ac, const SolverBusIdVect& id_me_to_solver);
+        void fillBdc(Eigen::SparseMatrix<real_type> & res, const SolverBusIdVect& id_me_to_solver);  // DC: real admittance matrix
         void fillSbus_me(CplxVect & res, bool ac, const SolverBusIdVect& id_me_to_solver);
         void fillpv_pq(const SolverBusIdVect& id_me_to_solver,
                        const GlobalBusIdVect& id_solver_to_me,
@@ -1566,7 +1633,7 @@ class LS2G_API LSGrid final
         double timer_last_ac_pf_;
         double timer_last_dc_pf_;
 
-        AlgoControl algo_controler_;
+        DualAlgoControl algo_controler_;  // independent change tracking for the AC and DC solver families
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         real_type sn_mva_;
@@ -1628,9 +1695,9 @@ class LS2G_API LSGrid final
 
         // as matrix, for the solver
         Eigen::SparseMatrix<cplx_type> Ybus_ac_;
-        Eigen::SparseMatrix<cplx_type> Ybus_dc_;
+        Eigen::SparseMatrix<real_type> Bbus_dc_;  // DC admittance matrix is real (susceptance B)
         CplxVect acSbus_;
-        CplxVect dcSbus_;
+        RealVect dcPbus_;  // DC power injection is real (active power P)
         SolverBusIdVect bus_pv_;  // id are the solver internal id and NOT the initial id
         SolverBusIdVect bus_pq_;  // id are the solver internal id and NOT the initial id
 
