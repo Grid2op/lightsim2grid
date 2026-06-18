@@ -202,10 +202,6 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("tell_solver_control", false)->tell_solver_control(solver_control);
         }
 
-        void tell_dc_control(const DCControl& dc_control) {
-            get_prt_solver("tell_dc_control", false)->tell_dc_control(dc_control);
-        }
-
         Eigen::SparseMatrix<real_type> get_J_python() const {
             Eigen::SparseMatrix<real_type> res = get_J();
             return res;

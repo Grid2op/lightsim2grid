@@ -82,7 +82,7 @@ struct Coeff{
 class AlgoControl final
 {
     public:
-        AlgoControl() noexcept: 
+        AlgoControl() noexcept:
             change_dimension_(true),
             pv_changed_(true),
             pq_changed_(true),
@@ -97,7 +97,7 @@ class AlgoControl final
             one_el_change_bus_(true)
             {};
 
-        ~AlgoControl() noexcept = default; 
+        ~AlgoControl() noexcept = default;
 
         void tell_all_changed(){
             change_dimension_ = true;
@@ -129,7 +129,7 @@ class AlgoControl final
             one_el_change_bus_ = false;
         }
 
-        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes) 
+        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
         void tell_dimension_changed(){change_dimension_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
         // some pv generators are now pq or the opposite
         void tell_pv_changed(){pv_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
@@ -149,7 +149,7 @@ class AlgoControl final
         void tell_v_changed(){v_changed_ = true;}
         // at least one generator has changed its slack participation
         void tell_slack_weight_changed(){slack_weight_changed_ = true;}
-        // tells that some coeff of ybus might have been set to 0. 
+        // tells that some coeff of ybus might have been set to 0.
         // (and ybus compressed again, so these coeffs are really completely hidden)
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
@@ -184,70 +184,33 @@ class AlgoControl final
 };
 
 /**
-DC-specific change-tracking control.
+Change-tracking control for both solver families (AC and DC).
 
-DC power flow only solves the real linear system `Bbus . theta = Pbus`, so it does
-not need the full AC change tracking (no pv/pq distinction, no reactive power, etc.).
-This holds exactly the subset of flags the DC solver reacts to, expressed in DC terms
-(Bbus / Pbus / Vm). It is built from an `AlgoControl` so that all the existing call
-sites (which set an `AlgoControl`) keep working unchanged.
+A grid modification (eg. disconnecting a line, changing a setpoint) invalidates the cached
+matrices of *both* the AC and the DC solver. `DualAlgoControl` simply holds one independent
+`AlgoControl` per family so each solver keeps its own change tracking (the AC solver consumes
+and resets `ac_algo_controler()` on an AC powerflow, the DC solver consumes and resets
+`dc_algo_controler()` on a DC powerflow, without clobbering each other).
+
+It is a plain composition (no inheritance, no virtual dispatch): callers forward a change to
+both families explicitly, eg.
+    dual.ac_algo_controler().tell_v_changed();
+    dual.dc_algo_controler().tell_v_changed();
 **/
-class DCControl final
+class DualAlgoControl final
 {
     public:
-        DCControl() noexcept:
-            need_reset_(true),
-            dim_changed_(true),
-            slack_changed_(true),
-            bbus_sparsity_changed_(true),
-            bbus_some_zero_(true),
-            recompute_bbus_(true),
-            recompute_pbus_(true),
-            bus_class_changed_(true),
-            vm_changed_(true),
-            slack_weight_changed_(true)
-            {};
+        DualAlgoControl() noexcept = default;
+        ~DualAlgoControl() noexcept = default;
 
-        // build the DC control from the (AC oriented) AlgoControl.
-        // pv / pq changes are both mapped to "bus classification changed" (DC does not
-        // distinguish pv from pq, but both can affect which bus is the reference slack).
-        explicit DCControl(const AlgoControl & ac) noexcept:
-            need_reset_(ac.need_reset_solver()),
-            dim_changed_(ac.has_dimension_changed()),
-            slack_changed_(ac.has_slack_participate_changed()),
-            bbus_sparsity_changed_(ac.ybus_change_sparsity_pattern()),
-            bbus_some_zero_(ac.has_ybus_some_coeffs_zero()),
-            recompute_bbus_(ac.need_recompute_ybus()),
-            recompute_pbus_(ac.need_recompute_sbus()),
-            bus_class_changed_(ac.has_pv_changed() || ac.has_pq_changed()),
-            vm_changed_(ac.has_v_changed()),
-            slack_weight_changed_(ac.has_slack_weight_changed())
-            {};
-
-        ~DCControl() noexcept = default;
-
-        bool need_reset() const {return need_reset_;}
-        bool has_dim_changed() const {return dim_changed_;}
-        bool has_slack_changed() const {return slack_changed_;}
-        bool has_bbus_sparsity_changed() const {return bbus_sparsity_changed_;}
-        bool has_bbus_some_zero() const {return bbus_some_zero_;}
-        bool need_recompute_bbus() const {return recompute_bbus_;}
-        bool need_recompute_pbus() const {return recompute_pbus_;}
-        bool has_bus_class_changed() const {return bus_class_changed_;}
-        bool has_vm_changed() const {return vm_changed_;}
-        bool has_slack_weight_changed() const {return slack_weight_changed_;}
+        AlgoControl & ac_algo_controler() noexcept {return ac_algo_controler_;}
+        AlgoControl & dc_algo_controler() noexcept {return dc_algo_controler_;}
+        const AlgoControl & ac_algo_controler() const noexcept {return ac_algo_controler_;}
+        const AlgoControl & dc_algo_controler() const noexcept {return dc_algo_controler_;}
 
     private:
-        bool need_reset_;               // solver needs to be reset from scratch
-        bool dim_changed_;              // dimension of Bbus / Pbus changed (eg topology change)
-        bool slack_changed_;           // slack participation changed
-        bool bbus_sparsity_changed_;   // sparsity pattern of Bbus changed
-        bool bbus_some_zero_;          // some coeff of Bbus might have been set to 0
-        bool recompute_bbus_;          // some coeff of Bbus changed (same sparsity)
-        bool recompute_pbus_;          // some coeff of Pbus changed
-        bool bus_class_changed_;       // pv / pq classification changed (affects ref slack)
-        bool vm_changed_;              // a generator changed its voltage setpoint (affects Vm)
-        bool slack_weight_changed_;    // slack participation weights changed (distributed slack)
+        AlgoControl ac_algo_controler_;  // change tracking consumed by the AC solver
+        AlgoControl dc_algo_controler_;  // change tracking consumed by the DC solver
 };
 
 template<int U>

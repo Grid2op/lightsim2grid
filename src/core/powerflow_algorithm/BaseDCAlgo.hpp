@@ -77,23 +77,9 @@ class BaseDCAlgo final: public BaseAlgo
             return res;
         }
 
-        // Adapter kept for the batch / contingency code paths which still feed a complex
-        // Ybus / Sbus: it extracts the real part and delegates to the native `compute_pf_dc`.
-        // `max_iter` and `tol` are ignored (DC is a single linear solve).
-        virtual
-        bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
-                        CplxVect & V,
-                        const CplxVect & Sbus,
-                        Eigen::Ref<const IntVect> slack_ids,
-                        const RealVect & slack_weights,
-                        Eigen::Ref<const IntVect> pv,
-                        Eigen::Ref<const IntVect> pq,
-                        int max_iter,
-                        real_type tol
-                        ) final;
-
-        // TODO SLACK : this should be handled in Pbus by the gridmodel maybe ?
         // Native real-valued DC power flow: solves `Bbus . theta = Pbus`.
+        // (the DC solver does not implement the complex `compute_pf`: it inherits the throwing
+        //  default from BaseAlgo, since every DC code path goes through `compute_pf_dc`)
         virtual
         bool compute_pf_dc(const Eigen::SparseMatrix<real_type> & Bbus,
                            CplxVect & V,

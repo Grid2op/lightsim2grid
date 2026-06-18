@@ -828,23 +828,23 @@ class TwoSidesContainer_rxh_A: public TwoSidesContainer<OneSideType>
             res_a_side_2_ = RealVect(nb());  // in kA
         }
 
-        virtual bool _deactivate(int el_id, AlgoControl & solver_control) override {
+        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_global_[el_id]){
                 // update solver control
-                solver_control.tell_recompute_ybus();
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
                 // but sparsity pattern do not change here (possibly one more coeff at 0.)
-                solver_control.tell_ybus_some_coeffs_zero();
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_ybus_some_coeffs_zero(); solver_control.dc_algo_controler().tell_ybus_some_coeffs_zero();
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
         }
-        virtual bool _reactivate(int el_id, AlgoControl & solver_control) override {
+        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_global_[el_id]){
                 // update solver control
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_ybus_change_sparsity_pattern();  // this might change
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();  // this might change
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;

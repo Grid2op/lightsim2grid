@@ -148,12 +148,12 @@ class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_
         void change_ratio(
             int el_id,
             real_type new_ratio,
-            AlgoControl & solver_control){
+            DualAlgoControl & solver_control){
                 if(std::abs(ratio_(el_id) - new_ratio) >_tol_equal_float){
                     ratio_(el_id) = new_ratio;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.tell_recompute_ybus();
+                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
                 }
         }
         
@@ -167,13 +167,13 @@ class LS2G_API TrafoContainer : public TwoSidesContainer_rxh_A<OneSideContainer_
         void change_shift(
             int el_id,
             real_type new_shift_rad,
-            AlgoControl & solver_control){
+            DualAlgoControl & solver_control){
                 if(std::abs(shift_(el_id) - new_shift_rad) >_tol_equal_float){
                     shift_(el_id) = new_shift_rad;
                     // TODO speed: only some part needs to be recomputed
                     _update_internal_coeffs(el_id); 
-                    solver_control.tell_recompute_ybus();
-                    solver_control.tell_recompute_sbus();  // only in DC however
+                    solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                    solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only in DC however
                 }
         }
         

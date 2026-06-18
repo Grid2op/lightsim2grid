@@ -144,10 +144,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // now compute the current flow
                     res = S_ft.array().abs() * sn_mva;
                 }else{
-                    // retrieve physical parameters (real DC susceptance)
+                    // DC active flow from the bus angles (theta) directly, like the gridmodel
+                    // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
                     const real_type y_ff = vect_ydc_ff(el_id);
                     const real_type y_ft = vect_ydc_ft(el_id);
-                    res = (y_ff * Efrom.array().arg() + y_ft * Eto.array().arg()) * sn_mva;
+                    const RealVect theta_from = Efrom.array().arg();
+                    const RealVect theta_to = Eto.array().arg();
+                    res = (y_ff * theta_from.array() + y_ft * theta_to.array()) * sn_mva;
                     if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
                     res.array() = res.array().abs();
                 }
@@ -199,10 +202,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     // now compute the active flow
                     res = S_ft.array().real() * sn_mva;
                 }else{
-                    // retrieve physical parameters (real DC susceptance)
+                    // DC active flow from the bus angles (theta) directly, like the gridmodel
+                    // results: P = ydc_ff . theta_from + ydc_ft . theta_to  (theta = bus voltage angle)
                     const real_type y_ff = vect_ydc_ff(el_id);
                     const real_type y_ft = vect_ydc_ft(el_id);
-                    res = (y_ff * Efrom.array().arg() + y_ft * Eto.array().arg()) * sn_mva;
+                    const RealVect theta_from = Efrom.array().arg();
+                    const RealVect theta_to = Eto.array().arg();
+                    res = (y_ff * theta_from.array() + y_ft * theta_to.array()) * sn_mva;
                     if(is_trafo) res.array() -= dc_x_tau_shift(el_id);
                 }
                 _active_power_flows.col(el_id + lag_id) = res;
@@ -242,6 +248,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // clear previous data
             Sbus_ = CplxVect();
             Ybus_ = Eigen::SparseMatrix<cplx_type>();
+            Pbus_ = RealVect();
+            Bbus_ = Eigen::SparseMatrix<real_type>();
             id_solver_to_me_.clear();
             id_me_to_solver_.clear();
             slack_ids_solver_ = SolverBusIdVect();
@@ -250,19 +258,34 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
 
             // fill the data correctly
             _algo_controler.tell_all_changed();
-            CplxVect res = _grid_model.pre_process_solver(
-                Vinit, 
-                Sbus_,
-                Ybus_,
-                id_me_to_solver_,
-                id_solver_to_me_,
-                slack_ids_me_,
-                slack_ids_solver_,
-                ac_solver_used,
-                _algo_controler);
+            CplxVect res;
+            if(ac_solver_used){
+                res = _grid_model.pre_process_solver(
+                    Vinit,
+                    Sbus_,
+                    Ybus_,
+                    id_me_to_solver_,
+                    id_solver_to_me_,
+                    slack_ids_me_,
+                    slack_ids_solver_,
+                    ac_solver_used,
+                    _algo_controler);
+                nb_buses_solver_ = static_cast<int>(Ybus_.cols());
+            } else {
+                // native real DC path: build the real Bbus / Pbus
+                res = _grid_model.pre_process_dc_solver(
+                    Vinit,
+                    Pbus_,
+                    Bbus_,
+                    id_me_to_solver_,
+                    id_solver_to_me_,
+                    slack_ids_me_,
+                    slack_ids_solver_,
+                    _algo_controler);
+                nb_buses_solver_ = static_cast<int>(Bbus_.cols());
+            }
 
             // extract relevant information
-            nb_buses_solver_ = static_cast<int>(Ybus_.cols());
             const SolverBusIdVect & gm_bus_pv = _grid_model.get_pv_solver();
             const SolverBusIdVect & gm_bus_pq = _grid_model.get_pq_solver();
             const RealVect & gm_bus_sw = _grid_model.get_slack_weights_solver();
@@ -315,16 +338,28 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _algo.tell_solver_control(_algo_controler);
                 _grid_model.get_generators().set_vm(Vinit_solver, id_me_to_solver_);
                 CplxVect Vinit_solver2 = Vinit_solver;
-                bool conv = _algo.compute_pf(
-                    Ybus_,
-                    Vinit_solver2,
-                    Sbus_,
-                    slack_ids_me_.as_eigen(),
-                    slack_weights_,
-                    bus_pv_.as_eigen(),
-                    bus_pq_.as_eigen(),
-                    max_iter,
-                    tol);
+                bool conv;
+                if(_algo.ac_solver_used()){
+                    conv = _algo.compute_pf(
+                        Ybus_,
+                        Vinit_solver2,
+                        Sbus_,
+                        slack_ids_me_.as_eigen(),
+                        slack_weights_,
+                        bus_pv_.as_eigen(),
+                        bus_pq_.as_eigen(),
+                        max_iter,
+                        tol);
+                } else {
+                    conv = _algo.compute_pf_dc(
+                        Bbus_,
+                        Vinit_solver2,
+                        Pbus_,
+                        slack_ids_me_.as_eigen(),
+                        slack_weights_,
+                        bus_pv_.as_eigen(),
+                        bus_pq_.as_eigen());
+                }
 
                 // check if we init the n-1 cases with results from the n cases
                 // or not
@@ -372,6 +407,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // internal data
         CplxVect Sbus_;
         Eigen::SparseMatrix<cplx_type> Ybus_;
+        // DC counterparts (real): the DC solver works on the real system Bbus . theta = Pbus
+        RealVect Pbus_;
+        Eigen::SparseMatrix<real_type> Bbus_;
         GlobalBusIdVect id_solver_to_me_;
         SolverBusIdVect id_me_to_solver_;
         SolverBusIdVect slack_ids_solver_;
