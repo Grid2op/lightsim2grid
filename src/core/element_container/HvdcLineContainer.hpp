@@ -215,11 +215,11 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * the side-1 station active power, generator convention (it is the
          * negated pandapower `p_mw`).
          */
-        void change_p(int hvdc_id, real_type new_p, AlgoControl & solver_control);
-        void change_v_side_1(int hvdc_id, real_type new_v_pu, AlgoControl & solver_control){
+        void change_p(int hvdc_id, real_type new_p, DualAlgoControl & solver_control);
+        void change_v_side_1(int hvdc_id, real_type new_v_pu, DualAlgoControl & solver_control){
             side_1_.change_v(hvdc_id, new_v_pu, solver_control);
         }
-        void change_v_side_2(int hvdc_id, real_type new_v_pu, AlgoControl & solver_control){
+        void change_v_side_2(int hvdc_id, real_type new_v_pu, DualAlgoControl & solver_control){
             side_2_.change_v(hvdc_id, new_v_pu, solver_control);
         }
 
@@ -252,7 +252,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * pattern is unchanged (the droop entries are declared whatever the
          * regime), so the symbolic factorization of the linear solver is reused.
          */
-        void set_status_droop(int hvdc_id, int status, AlgoControl & solver_control);
+        void set_status_droop(int hvdc_id, int status, DualAlgoControl & solver_control);
 
         /**
          * Active power received by the non-controller side (MW), for
@@ -345,14 +345,14 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * Recompute the two station active powers (and the LCC reactive
          * consumptions) from `converters_mode_` / `p_setpoint_mw_`.
          */
-        void update_station_targets(int hvdc_id, AlgoControl & solver_control);
+        void update_station_targets(int hvdc_id, DualAlgoControl & solver_control);
         /**
          * Legacy parametrization: given the side-1 station active power `p1`
          * (generator convention), derive `converters_mode_` / `p_setpoint_mw_`
          * (matches the legacy DCLineContainer::get_to_mw in both branches)
          * then update the station targets.
          */
-        void update_targets_from_p1(int hvdc_id, real_type p1_mw, AlgoControl & solver_control);
+        void update_targets_from_p1(int hvdc_id, real_type p1_mw, DualAlgoControl & solver_control);
 
     private:
         // line data (legacy pandapower loss model: multiplicative + fixed)

@@ -127,9 +127,9 @@ class LS2G_API ConverterStationContainer : public OneSideContainer_PQ, public It
          * For LCC stations the reactive consumption is updated accordingly.
          * Only called by the owning HvdcLineContainer.
          */
-        void set_station_p(int station_id, real_type p_mw, AlgoControl & solver_control);
+        void set_station_p(int station_id, real_type p_mw, DualAlgoControl & solver_control);
 
-        void change_v(int station_id, real_type new_v_pu, AlgoControl & solver_control);
+        void change_v(int station_id, real_type new_v_pu, DualAlgoControl & solver_control);
 
         // solver interface (mirrors GeneratorContainer, with the converter personality)
         /**

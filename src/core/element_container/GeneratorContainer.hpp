@@ -208,11 +208,13 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         bool regulates_remote(int gen_id) const {
             return regulated_bus_id_(gen_id) != bus_id_(gen_id).cast_int();
         }
-        void set_regulated_bus(int gen_id, int bus_id, AlgoControl & solver_control){
+        void set_regulated_bus(int gen_id, int bus_id, DualAlgoControl & solver_control){
             if(regulated_bus_id_(gen_id) != bus_id){
                 regulated_bus_id_(gen_id) = bus_id;
-                solver_control.tell_pv_changed();  // groups are rebuilt on topology init
-                solver_control.tell_recompute_sbus();
+                solver_control.ac_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
+                solver_control.ac_algo_controler().tell_recompute_sbus();
+                solver_control.dc_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
+                solver_control.dc_algo_controler().tell_recompute_sbus();
             }
         }
         // true iff this generator is an ACTIVE remote voltage controller (joins a
