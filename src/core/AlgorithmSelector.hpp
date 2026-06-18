@@ -218,6 +218,20 @@ class LS2G_API AlgorithmSelector final
             return get_prt_solver("get_q_to_J_col", false)->get_q_to_J_col_python();
         }
 
+        // VoltageControl (remote gen + SVC) converged reactive injection per
+        // controller (pu) + identity, in controller registration order. Empty
+        // for any active solver without the extension (no right-solver check on
+        // purpose: a DC / Gauss-Seidel solver simply returns an empty vector).
+        RealVect get_controller_q() const {
+            return get_prt_solver("get_controller_q", false)->get_controller_q();
+        }
+        IntVect get_controller_kind() const {
+            return get_prt_solver("get_controller_kind", false)->get_controller_kind();
+        }
+        IntVect get_controller_elem_id() const {
+            return get_prt_solver("get_controller_elem_id", false)->get_controller_elem_id();
+        }
+
         double get_computation_time() const {
             return std::get<3>(get_prt_solver("get_computation_time", true)->get_timers());
         }

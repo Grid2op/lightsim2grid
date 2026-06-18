@@ -14,6 +14,7 @@
 #include "CustTimer.hpp"
 #include "NRLedger.hpp"
 #include "HvdcDroopData.hpp"
+#include "VoltageControlData.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 
@@ -503,6 +504,245 @@ class LS2G_API Hvdc
         std::vector<int>     h11_, h12_, h21_, h22_;      // FeatureSink handles (-1 if entry dropped)
 };
 
+/**
+ * Remote voltage control (generators) + Static Var Compensators (SVC).
+ *
+ * BORDERED formulation. Per control group g = { controllers c1..cN (remote
+ * regulating generators and/or voltage-mode SVCs) regulating the SAME solver bus
+ * reg_bus(g) at setpoint v_set(g) }, the regulated bus and all controller buses
+ * REMAIN ordinary PQ buses (Base keeps their theta/vm unknowns and P/Q
+ * equations untouched). This extension only borders the system with, per group:
+ *   - N custom columns Q_c : the reactive injection (pu, GENERATOR convention)
+ *     of each controller, claimed with ledger.add_q_unknown(c.bus);
+ *   - 1 custom row (voltage constraint)
+ *         F_v = Vm(reg) + sum_c s_c.Q_c - v_set = 0
+ *     where s_c = slope(c) is non-zero only for a sloped SVC (0 for gens and
+ *     non-sloped SVCs: structurally identical, non-singular);
+ *   - N-1 custom rows (reactive sharing), with the FIRST controller as reference
+ *         F_k = w_1.Q_{k+1} - w_{k+1}.Q_1 = 0,   k = 1..N-1
+ *     w_i the sharing keys (cross-weight form, units cancel).
+ * N columns vs 1 + (N-1) rows per group: square. With zero groups every loop
+ * below is empty: the ledger / J sparsity / results are bit-identical to a build
+ * without this extension.
+ *
+ * Conventions PINNED empirically against pypowsybl OpenLoadFlow (Phase 0 probes,
+ * see lightsim2grid/tests/probe_olf_*.py):
+ *   - probe #1: OLF satisfies Vm(reg) = v_set - s_pu.Q_c with Q_c in GENERATOR
+ *     convention and s_pu = slope_kV_per_MVar * sn_mva / vn_kv(reg). Hence the
+ *     +s.Q sign of F_v above (no flip).
+ *   - probe #2: reactive sharing is pure proportional-to-range,
+ *     Q_i/(qmax_i-qmin_i) = const, so w_i = qmax_i - qmin_i (set in Python).
+ *   - probe #3: OLF converges on the singular-for-us configs (controller at a
+ *     PV/slack bus, regulated bus = slack or already-PV-via-local-gen, sloped SVC
+ *     sharing a bus) but with fallbacks needing bus reclassification we forbid in
+ *     v1; LSGrid::fill_voltage_control_solver_data rejects them with a clear error.
+ *
+ * Sign conventions matched to NRSystem.tpp (_residual: mis = V conj(YV) - Sbus,
+ * res(row) -= mis_part; J = dF/dx, solver solves J dx = res = -F):
+ *   - adjust_mismatch : mis(c.bus) -= cplx(0, q_c + dx(q_col_c));   (like Sbus)
+ *   - fill_custom_rows: res(v_row)     -= Vm(reg)+dx(vm_col) + sum s_c(q_c+dx) - v_set;
+ *                       res(share_k)   -= w_1.Qt_{k+1} - w_{k+1}.Qt_1;
+ *   - feature J values : (q_row(c.bus), q_col_c) = -1;
+ *                        (v_row, vm_col(reg))    = +1;
+ *                        (v_row, q_col_svc)      = s_c  (declared for SVC kind);
+ *                        (share_k, q_col_{k+1})  = w_1;
+ *                        (share_k, q_col_1)      = -w_{k+1};
+ *   - apply_step      : q_c += dx(q_col_c);
+ *   - update_state    : re-pull the data and reset every q_c = 0 (per-solve init).
+ *
+ * Feature entries are declared UNCONDITIONALLY (the slope entry is declared for
+ * every SVC controller even when its slope is 0) so a setpoint / slope change
+ * never alters the J sparsity pattern (KLU symbolic reuse for TimeSeries /
+ * ContingencyAnalysis).
+ *
+ * Must be registered AFTER Base and MultiSlack (it reads q_row(c.bus) and
+ * vm_col(reg) from the ledger) and BEFORE Hvdc (which reads the ledger last).
+ */
+class LS2G_API VoltageControl
+{
+    public:
+        VoltageControl(): my_size_(0) {}
+
+        // pulls the controller data (solver bus ids, pu) from the grid and resets
+        // the per-controller reactive state; defined in NRSystemVoltageControl.cpp
+        // (needs the full LSGrid type)
+        void update_state(
+            const Base *                           nr_system_base_ptr,
+            const LSGrid *                         lsgrid_ptr,
+            const Eigen::SparseMatrix<cplx_type>&  Ybus,
+            const CplxVect&                        Sbus,
+            const RealVect&                        slack_weights
+        );
+
+        void init_topology(
+            Eigen::Ref<const IntVect>              /*slack_ids*/,
+            const RealVect&                        /*slack_weights*/,
+            Eigen::Ref<const IntVect>              /*pv*/,
+            Eigen::Ref<const IntVect>              /*pq*/
+        ) {}
+
+        // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
+        // caches the controller q rows and the regulated-bus vm columns (the ledger
+        // is fully populated by Base / MultiSlack before this runs)
+        void register_in(NRLedger& ledger)
+        {
+            const int nc = data_.n_controllers();
+            const int ng = data_.n_groups();
+            q_cols_.assign(nc, -1);
+            q_rows_.assign(nc, -1);
+            v_rows_.assign(ng, -1);
+            vm_cols_.assign(ng, -1);
+            share_rows_.assign(ng, std::vector<int>());
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    q_cols_[j] = ledger.add_q_unknown(data_.bus(j));
+                    q_rows_[j] = ledger.q_row(data_.bus(j));
+                }
+                v_rows_[g]  = ledger.add_custom_row();
+                vm_cols_[g] = ledger.vm_col(data_.reg_bus(g));
+                share_rows_[g].assign(cnt - 1, -1);
+                for (int k = 0; k < cnt - 1; ++k) share_rows_[g][k] = ledger.add_custom_row();
+            }
+        }
+
+        // declares, unconditionally, every feature entry of the bordered block
+        void declare_feature_entries(FeatureSink& sink)
+        {
+            const int nc = data_.n_controllers();
+            const int ng = data_.n_groups();
+            h_qrow_.assign(nc, -1);
+            h_slope_.assign(nc, -1);
+            h_vm_.assign(ng, -1);
+            h_shareA_.assign(ng, std::vector<int>());
+            h_shareB_.assign(ng, std::vector<int>());
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const int v_row = v_rows_[g];
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (q_rows_[j] >= 0 && q_cols_[j] >= 0) h_qrow_[j] = sink.add(q_rows_[j], q_cols_[j]);
+                    // slope coupling Vm(reg) <- s.Q_c, declared for every SVC (slope-independent pattern)
+                    if (data_.kind(j) == VoltageControlSolverData::SVC && v_row >= 0 && q_cols_[j] >= 0)
+                        h_slope_[j] = sink.add(v_row, q_cols_[j]);
+                }
+                if (v_row >= 0 && vm_cols_[g] >= 0) h_vm_[g] = sink.add(v_row, vm_cols_[g]);
+                h_shareA_[g].assign(cnt - 1, -1);
+                h_shareB_[g].assign(cnt - 1, -1);
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int row = share_rows_[g][k];
+                    const int col_first = q_cols_[first];
+                    const int col_kp1   = q_cols_[first + (k + 1)];
+                    if (row >= 0 && col_kp1   >= 0) h_shareA_[g][k] = sink.add(row, col_kp1);
+                    if (row >= 0 && col_first >= 0) h_shareB_[g][k] = sink.add(row, col_first);
+                }
+            }
+        }
+
+        void fill_feature_values(FeatureWriter& writer, const RealVect& /*Va*/) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (h_qrow_[j]  >= 0) writer.add(h_qrow_[j],  static_cast<real_type>(-1.));
+                    if (h_slope_[j] >= 0) writer.add(h_slope_[j], data_.slope(j));
+                }
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], static_cast<real_type>(1.));
+                const real_type w_first = data_.weight(first);
+                for (int k = 0; k < cnt - 1; ++k) {
+                    if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], w_first);
+                    if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], -data_.weight(first + (k + 1)));
+                }
+            }
+        }
+
+        // the controller reactive injection subtracts from the mismatch like Sbus
+        void adjust_mismatch(const CplxVect& /*V_t*/, const RealVect& dx, CplxVect& mis) const
+        {
+            const int nc = data_.n_controllers();
+            for (int j = 0; j < nc; ++j)
+                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]));
+        }
+
+        // the bordered voltage and sharing rows
+        void fill_custom_rows(RealVect& res,
+                              const RealVect& /*Va*/,
+                              const RealVect& Vm,
+                              const RealVect& dx) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                // voltage constraint  Vm(reg) + sum s_c.Q_c - v_set
+                real_type vm_trial = Vm(data_.reg_bus(g));
+                if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
+                real_type slope_term = static_cast<real_type>(0.);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    slope_term += data_.slope(j) * (q_(j) + dx(q_cols_[j]));
+                }
+                res(v_rows_[g]) -= vm_trial + slope_term - data_.v_set(g);
+                // sharing rows w_1.Q_{k+1} - w_{k+1}.Q_1
+                const real_type w_first  = data_.weight(first);
+                const real_type Qt_first = q_(first) + dx(q_cols_[first]);
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int j = first + (k + 1);
+                    const real_type Qt_j = q_(j) + dx(q_cols_[j]);
+                    res(share_rows_[g][k]) -= w_first * Qt_j - data_.weight(j) * Qt_first;
+                }
+            }
+        }
+
+        void apply_step(const RealVect& dx)
+        {
+            const int nc = data_.n_controllers();
+            for (int j = 0; j < nc; ++j) q_(j) += dx(q_cols_[j]);
+        }
+
+        void clear() {
+            my_size_ = 0;
+            data_.clear();
+            q_ = RealVect();
+            q_cols_.clear();
+            q_rows_.clear();
+            v_rows_.clear();
+            vm_cols_.clear();
+            share_rows_.clear();
+            h_qrow_.clear();
+            h_slope_.clear();
+            h_vm_.clear();
+            h_shareA_.clear();
+            h_shareB_.clear();
+        }
+
+        // converged reactive injection per controller (pu, registration order)
+        Eigen::Ref<const RealVect>  controller_q()       const { return q_; }
+        Eigen::Ref<const IntVect>   controller_kind()    const { return data_.kind; }
+        Eigen::Ref<const IntVect>   controller_elem_id() const { return data_.elem_id; }
+
+    private:
+        int                            my_size_;     // number of controllers
+        VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
+        RealVect                       q_;           // running reactive injection per controller (pu, gen convention)
+        std::vector<int>               q_cols_;      // J column of each controller's Q unknown
+        std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
+        std::vector<int>               v_rows_;      // voltage row of each group
+        std::vector<int>               vm_cols_;     // vm column of each group's regulated bus (-1 if none)
+        std::vector<std::vector<int> > share_rows_;  // sharing rows of each group (size N-1)
+        std::vector<int>               h_qrow_;      // handle (q_row, q_col) per controller
+        std::vector<int>               h_slope_;     // handle (v_row, q_col) per controller (-1 unless SVC)
+        std::vector<int>               h_vm_;        // handle (v_row, vm_col) per group
+        std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
+        std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
+};
+
 
 // ---- NRSystem<Base, Rest...> ----------------------------------------------------
 
@@ -612,6 +852,22 @@ public:
     const std::vector<int>& q_to_J_col()     const { return ledger_.q_col_of_bus(); }
 
     size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
+
+    // ----- VoltageControl results (empty when the extension is not in the tuple) --
+    // converged reactive injection / kind / element id per controller (pu, in the
+    // controller registration order of VoltageControlSolverData).
+    RealVect controller_q() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? RealVect(vc->controller_q()) : RealVect();
+    }
+    IntVect controller_kind() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_kind()) : IntVect();
+    }
+    IntVect controller_elem_id() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc ? IntVect(vc->controller_elem_id()) : IntVect();
+    }
 
     // ----- Scaling reductions ----------------------------------------------------
     // max |angle step| / max |voltage-magnitude step| across all state variables.
@@ -754,6 +1010,25 @@ private:
         (void)dummy;
     }
 
+    // ---- compile-time search of the extension tuple for a given type ------------
+    // (the more specialized single-parameter overload wins when U == T)
+    template <class T, class U>
+    static void _maybe_set_ext(const T*& /*found*/, const U& /*ext*/) {}
+    template <class T>
+    static void _maybe_set_ext(const T*& found, const T& ext) { found = &ext; }
+
+    template <class T, std::size_t... Is>
+    const T* _find_extension_impl(std::index_sequence<Is...>) const {
+        const T* found = nullptr;
+        int dummy[] = { 0, (_maybe_set_ext<T>(found, std::get<Is>(extensions_)), 0)... };
+        (void)dummy;
+        return found;
+    }
+    template <class T>
+    const T* _find_extension() const {
+        return _find_extension_impl<T>(std::make_index_sequence<sizeof...(Rest)>{});
+    }
+
 private:
     NRSystem(const NRSystem&)            = delete;
     NRSystem(NRSystem&&)                 = delete;
@@ -762,10 +1037,12 @@ private:
 };
 
 // ---- Type aliases (keep existing names working) --------------------------------
-// Hvdc must be the LAST extension (it reads the ledger populated by the others)
+// VoltageControl is registered after Base / MultiSlack (it reads q_row / vm_col
+// from the ledger) and before Hvdc; Hvdc must stay the LAST extension (it reads
+// the ledger populated by all the others).
 
-using SingleSlackNRSystem = NRSystem<Base, Hvdc>;
-using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, Hvdc>;
+using SingleSlackNRSystem = NRSystem<Base, VoltageControl, Hvdc>;
+using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
 
 } // namespace ls2g
 

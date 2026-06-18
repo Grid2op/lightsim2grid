@@ -75,6 +75,11 @@ public:
     virtual IntVect get_vm_to_J_col_python()    const override { return _to_intvect(_system.vm_to_J_col()); }
     virtual IntVect get_q_to_J_col_python()     const override { return _to_intvect(_system.q_to_J_col()); }
 
+    // ----- VoltageControl (remote gen + SVC) converged results -----------------
+    virtual RealVect get_controller_q()       const override { return _system.controller_q(); }
+    virtual IntVect  get_controller_kind()    const override { return _system.controller_kind(); }
+    virtual IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
+
     // ----- timers --------------------------------------------------------------
 
     virtual
