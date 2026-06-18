@@ -149,6 +149,9 @@ class LS2G_API BaseAlgo : public BaseConstants
             return res;
         }
 
+        // Complex AC entry point: solves V . (Ybus . V)* = Sbus.
+        // Every AC solver overrides this; the DC solver does not (it uses `compute_pf_dc`) and
+        // therefore inherits this throwing default (symmetric with `compute_pf_dc` below).
         virtual
         bool compute_pf(const Eigen::SparseMatrix<cplx_type> & Ybus,
                         CplxVect & V,  // store the results of the powerflow and the Vinit !
@@ -159,7 +162,9 @@ class LS2G_API BaseAlgo : public BaseConstants
                         Eigen::Ref<const IntVect> pq,
                         int max_iter,
                         real_type tol
-                        ) = 0 ;
+                        ){
+            throw std::runtime_error("compute_pf (complex AC entry point) is not available for this solver (DC solvers use compute_pf_dc).");
+        }
 
         // Native real-valued DC entry point: DC only needs `Bbus . theta = Pbus` (all real).
         // Only the DC solver overrides this; every other solver type throws.
@@ -178,11 +183,6 @@ class LS2G_API BaseAlgo : public BaseConstants
 
         void tell_solver_control(const AlgoControl & solver_control){
             _solver_control = solver_control;
-            // keep the DC-specific control in sync so DC call sites need no extra wiring
-            _dc_control = DCControl(solver_control);
-        }
-        void tell_dc_control(const DCControl & dc_control){
-            _dc_control = dc_control;
         }
         virtual void reset();
         virtual RealMat get_ptdf(){
@@ -311,7 +311,6 @@ class LS2G_API BaseAlgo : public BaseConstants
 
         const LSGrid * lsgrid_ptr_;  // does not have ownership so that's fine (pointer to the base gridmodel, can be used for some powerflow)
         AlgoControl _solver_control;
-        DCControl _dc_control;  // DC-specific change tracking (kept in sync by tell_solver_control)
 
 };
 
