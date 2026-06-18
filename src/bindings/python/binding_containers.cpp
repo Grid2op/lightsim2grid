@@ -10,6 +10,7 @@
 #include "pickle_helpers.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SGenContainer.hpp"
+#include "element_container/SvcContainer.hpp"
 #include "element_container/LoadContainer.hpp"
 #include "element_container/ShuntContainer.hpp"
 #include "element_container/TrafoContainer.hpp"
@@ -45,12 +46,42 @@ void bind_containers(py::module_& m) {
         .def_readonly("target_q_mvar", &GenInfo::target_q_mvar, "TODO")
         .def_readonly("min_q_mvar", &GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("regulated_bus_id", &GenInfo::regulated_bus_id, "grid bus id whose voltage is regulated (== bus_id for local control)")
         .def_readonly("has_res", &GenInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &GenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &GenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &GenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
         .def_readonly("res_v_kv", &GenInfo::res_v_kv, DocIterator::res_v_kv.c_str())
         .def_readonly("voltage_level_id", &GenInfo::sub_id, DocIterator::sub_id.c_str());
+
+    auto svc_cls = py::class_<SvcContainer>(m, "SvcContainer", "Container of all the Static Var Compensators (SVC) of the grid.")
+        .def("__len__", [](const SvcContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const SvcContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const SvcContainer & data)  {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>());
+    add_pickle(svc_cls, "SvcContainer");
+
+    py::class_<SvcInfo>(m, "SvcInfo", "Information about one Static Var Compensator (SVC).")
+        .def_readonly("id", &SvcInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &SvcInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &SvcInfo::sub_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos_topo_vect", &SvcInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("connected", &SvcInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &SvcInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("regulation_mode", &SvcInfo::regulation_mode, "0 = OFF, 1 = VOLTAGE, 2 = REACTIVE_POWER")
+        .def_readonly("target_vm_pu", &SvcInfo::target_vm_pu, "voltage setpoint (pu of the regulated bus), VOLTAGE mode")
+        .def_readonly("target_q_mvar", &SvcInfo::target_q_mvar, "reactive setpoint (MVAr), REACTIVE_POWER mode")
+        .def_readonly("slope_pu", &SvcInfo::slope_pu, "voltage/reactive slope (pu), 0 = no droop")
+        .def_readonly("b_min", &SvcInfo::b_min, "minimum susceptance (stored, NEVER enforced)")
+        .def_readonly("b_max", &SvcInfo::b_max, "maximum susceptance (stored, NEVER enforced)")
+        .def_readonly("regulated_bus_id", &SvcInfo::regulated_bus_id, "grid bus id whose voltage is regulated (== bus_id for local control)")
+        .def_readonly("has_res", &SvcInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &SvcInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &SvcInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &SvcInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &SvcInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        .def_readonly("voltage_level_id", &SvcInfo::sub_id, DocIterator::sub_id.c_str());
 
     auto sgen_cls = py::class_<SGenContainer>(m, "SGenContainer", DocIterator::SGenContainer.c_str())
         .def("__len__", [](const SGenContainer & data) { return data.nb(); })

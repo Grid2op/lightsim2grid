@@ -56,6 +56,37 @@ def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connect
     return bus_id, mask_disco.values, sub_id
 
 
+def _aux_regulated_bus_view_ids(net, regulated_ids):
+    """Resolve voltage-controller regulated elements to their terminal bus.
+
+    A remote voltage controller (generator or SVC) points at a `regulated_element_id`
+    which, depending on the grid topology, may be a busbar section (node/breaker) or
+    any bus-connected equipment (load, generator, ...). OpenLoadFlow regulates the
+    voltage of that element's terminal bus. This returns, for each id in
+    `regulated_ids`, the bus-view bus id of its terminal (which is also the index of
+    the `bus_df` table used elsewhere in this converter), as a numpy object array.
+    """
+    lookup = {}
+    for getter in ("get_busbar_sections", "get_loads", "get_generators",
+                   "get_static_var_compensators", "get_shunt_compensators",
+                   "get_batteries", "get_vsc_converter_stations",
+                   "get_lcc_converter_stations"):
+        try:
+            df = getattr(net, getter)()
+        except Exception:
+            continue
+        if df.shape[0] == 0 or "bus_id" not in df.columns:
+            continue
+        for el_id, bus_view_id in zip(df.index, df["bus_id"].values):
+            lookup.setdefault(el_id, bus_view_id)
+    missing = [rid for rid in regulated_ids if rid not in lookup]
+    if missing:
+        raise RuntimeError("Some voltage controllers regulate an element whose bus could "
+                           "not be resolved (unknown or disconnected regulated element): "
+                           f"{missing}. This is not supported at the moment.")
+    return np.array([lookup[rid] for rid in regulated_ids], dtype=object)
+
+
 def init(net : pypo.network.Network,
          gen_slack_id: Union[int, str, Iterable[str], Dict[str, float]] = None,
          slack_bus_id: int = None,
@@ -301,19 +332,20 @@ def init(net : pypo.network.Network,
     max_q[~np.isfinite(max_q)] = max_float_value
     gen_bus, gen_disco, gen_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "gen", df_gen)
 
-    # dirty fix for when regulating elements are not the same
+    # remote voltage control: a generator may regulate the voltage of a *different*
+    # bus, identified by `regulated_element_id` (its own id when controlling locally).
+    # Resolve that element to the bus-view id of its terminal, then to the regulated
+    # voltage level (used for the target_v -> pu conversion) and, further down, to the
+    # lightsim2grid global bus id threaded into the C++ container.
     bus_reg = copy.deepcopy(df_gen["regulated_element_id"].values)
     # for oldest pypowsybl version, we could have "" there
     bus_reg = np.where(bus_reg == "", df_gen.index, bus_reg)
     vl_reg = copy.deepcopy(df_gen["voltage_level_id"].values)
-    mask_ref_bbs = bus_reg != df_gen.index
-    
-    bbs_df = net.get_busbar_sections().copy()
-    if not (np.isin(bus_reg[mask_ref_bbs], bbs_df.index)).all():
-        raise RuntimeError("At least some generator are in 'remote control' mode "
-                           "and does not control a busbar section, this is not supported "
-                           "at the moment.")
-    vl_reg[mask_ref_bbs] = bbs_df.loc[bus_reg[mask_ref_bbs], "voltage_level_id"].values
+    mask_remote_gen = bus_reg != df_gen.index.values
+    gen_reg_bus_view = None
+    if mask_remote_gen.any():
+        gen_reg_bus_view = _aux_regulated_bus_view_ids(net, bus_reg[mask_remote_gen])
+        vl_reg[mask_remote_gen] = bus_df.loc[gen_reg_bus_view, "voltage_level_id"].values
     model.init_generators_full(df_gen["target_p"].values,
                             #    df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
                                df_gen["target_v"].values / voltage_levels.loc[vl_reg]["nominal_v"].values,
@@ -326,7 +358,15 @@ def init(net : pypo.network.Network,
     for gen_id, is_disco in enumerate(gen_disco):
         if is_disco:
             model.deactivate_gen(gen_id)
-    model.set_gen_names(df_gen.index)   
+    model.set_gen_names(df_gen.index)
+
+    # thread the regulated bus to the C++ generator container. Local generators keep
+    # their own bus (already the C++ default), so a grid without any remote control
+    # stays byte-identical to before this feature.
+    if mask_remote_gen.any():
+        gen_reg_bus_global = bus_df.loc[gen_reg_bus_view, "bus_global_id"].values
+        for gen_id, reg_bus in zip(np.nonzero(mask_remote_gen)[0], gen_reg_bus_global):
+            model.set_gen_regulated_bus(int(gen_id), int(reg_bus))
     
     # for loads
     if sort_index:
@@ -462,9 +502,95 @@ def init(net : pypo.network.Network,
                     )
     for shunt_id, disco in enumerate(sh_disco):
         if disco:
-           model.deactivate_shunt(shunt_id) 
+           model.deactivate_shunt(shunt_id)
     model.set_shunt_names(df_shunt.index)
-           
+
+    # for Static Var Compensators (SVC): VOLTAGE (local/remote, optional slope),
+    # REACTIVE_POWER (fixed Q) or OFF, all solved through the bordered
+    # VoltageControl NR extension. A grid with no SVC declares no controller and
+    # stays byte-identical to before this feature.
+    if sort_index:
+        df_svc = net.get_static_var_compensators().sort_index()
+    else:
+        df_svc = net.get_static_var_compensators()
+    nb_svc = df_svc.shape[0]
+    svc_bus, svc_disco, svc_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "svc", df_svc)
+
+    # SvcContainer.RegulationMode: OFF=0, VOLTAGE=1, REACTIVE_POWER=2
+    OFF_MODE, VOLTAGE_MODE, REACTIVE_POWER_MODE = 0, 1, 2
+    svc_mode = np.zeros(nb_svc, dtype=int)
+    svc_reg_bus = svc_bus.copy()             # regulated bus (own bus unless remote)
+    svc_reg_vn = np.ones(nb_svc)             # nominal v (kV) of the regulated bus
+    svc_slope_pu = np.zeros(nb_svc)
+    svc_target_q_inject = np.zeros(nb_svc)
+    if nb_svc:
+        mode_str = df_svc["regulation_mode"].values.astype(str)
+        if "regulating" in df_svc.columns:
+            regulating = df_svc["regulating"].values.astype(bool)
+        else:
+            # legacy pypowsybl: "OFF" is encoded directly in the regulation mode
+            regulating = np.ones(nb_svc, dtype=bool)
+        svc_mode[(mode_str == "VOLTAGE") & regulating] = VOLTAGE_MODE
+        svc_mode[(mode_str == "REACTIVE_POWER") & regulating] = REACTIVE_POWER_MODE
+
+        # resolve the regulated bus, mirroring the generator `regulated_element_id`
+        # logic above (busbar section in node/breaker grids, or any bus-connected
+        # element). Local SVCs keep their own bus.
+        svc_vl = copy.deepcopy(df_svc["voltage_level_id"].values)
+        if "regulated_element_id" in df_svc.columns:
+            reg_id = copy.deepcopy(df_svc["regulated_element_id"].values)
+            reg_id = np.where(reg_id == "", df_svc.index, reg_id)
+            mask_svc_remote = reg_id != df_svc.index.values
+            if mask_svc_remote.any():
+                svc_reg_bus_view = _aux_regulated_bus_view_ids(net, reg_id[mask_svc_remote])
+                svc_reg_bus[mask_svc_remote] = bus_df.loc[svc_reg_bus_view, "bus_global_id"].values
+                svc_vl[mask_svc_remote] = bus_df.loc[svc_reg_bus_view, "voltage_level_id"].values
+        svc_reg_vn = voltage_levels.loc[svc_vl, "nominal_v"].values
+
+        # IIDM gives the SVC reactive setpoint in the receptor (load) convention,
+        # whereas lightsim2grid stamps Q with the generator-injection convention
+        # (Phase 0 probe: SVC target_q=+30 absorbs 30 MVar) -> negate.
+        target_q = df_svc["target_q"].values.astype(float)
+        target_q = np.where(np.isfinite(target_q), target_q, 0.)
+        svc_target_q_inject = -target_q
+
+        # optional voltage/reactive-power slope ("droop"), in kV/MVar:
+        #   s_pu = slope[kV/MVar] * sn_mva / vn_kv(regulated bus)   (Phase 0 probe #1)
+        try:
+            df_slope = net.get_extensions("voltagePerReactivePowerControl")
+        except Exception:
+            # extension tables may be unavailable on (very) old pypowsybl versions
+            df_slope = None
+        if df_slope is not None and df_slope.shape[0]:
+            for svc_pos, svc_id in enumerate(df_svc.index):
+                if svc_id in df_slope.index:
+                    slope_kv_per_mvar = float(df_slope.loc[svc_id, "slope"])
+                    svc_slope_pu[svc_pos] = slope_kv_per_mvar * sn_mva_used / svc_reg_vn[svc_pos]
+
+    if nb_svc:
+        target_v = df_svc["target_v"].values.astype(float)
+        # target_v (kV) -> pu at the regulated bus; NaN (REACTIVE_POWER / OFF) -> 1 pu
+        target_vm_pu = np.where(np.isfinite(target_v), target_v, svc_reg_vn) / svc_reg_vn
+        b_min = df_svc["b_min"].values.astype(float)
+        b_max = df_svc["b_max"].values.astype(float)
+    else:
+        target_vm_pu = np.zeros(0)
+        b_min = np.zeros(0)
+        b_max = np.zeros(0)
+
+    model.init_svcs([int(m) for m in svc_mode],
+                    target_vm_pu,
+                    svc_target_q_inject,
+                    svc_slope_pu,
+                    b_min,
+                    b_max,
+                    svc_reg_bus.astype(np.int32),
+                    svc_bus.astype(np.int32))
+    for svc_id, disco in enumerate(svc_disco):
+        if disco:
+            model.deactivate_svc(svc_id)
+    model.set_svc_names(df_svc.index)
+
     # for hvdc: vsc / lcc converter stations + hvdc lines, possibly carrying
     # the angle-droop ("AC emulation") extension
     if sort_index:
