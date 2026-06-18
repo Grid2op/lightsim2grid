@@ -49,6 +49,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [BREAKING] The "get_timers_jacobian" method of an algorithm now returns 13 elements.
   To avoid any further breaking changes, we advise user to use the `TimerJac` structure
   which is exported to python and contains all the named element instead.
+- [BREAKING] The "get_solver_control" method of LSGrid is now removed. Use
+  get_ac_algo_controler() for retrieving the AC algo controller or 
+  get_dc_algo_controler() for retrieving the DC algo controller
 - [DEPRECATION PENDING] some previous solver names (now called algorithm) were 
   rather ambiguous and not very clear. For example, it was not clear that "KLU"
   referenced the Newton Raphson method, with distributed slack variant, that use_buses_for_sub
@@ -93,6 +96,9 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   and has is accessible with names (rather than just id). It is still iterable for
   backward compatibility. 
 - [IMPROVED] computation speed of DC algorithm in general
+- [IMPROVED] dc powerflow is now really separate from AC (different problem, different hypothesis etc.)
+- [IMPROVED] the algo controler (used to be solver_control) is now split: there is one
+  for DC and one for AC.
 
 [0.13.1]  2026-04-21
 --------------------

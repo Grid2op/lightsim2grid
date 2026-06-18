@@ -122,37 +122,37 @@ class OneSideContainer_ForBranch : public OneSideContainer
             // elements
             };
 
-        virtual bool _deactivate(int el_id, AlgoControl & solver_control) override {
+        virtual bool _deactivate(int el_id, DualAlgoControl & solver_control) override {
             if(status_[el_id]){
-                solver_control.tell_ybus_some_coeffs_zero();
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_recompute_sbus();  // only for trafo in DC
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_ybus_some_coeffs_zero(); solver_control.dc_algo_controler().tell_ybus_some_coeffs_zero();
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
         };
-        virtual bool _reactivate(int el_id, AlgoControl & solver_control) override {
+        virtual bool _reactivate(int el_id, DualAlgoControl & solver_control) override {
             if(!status_[el_id]){
-                solver_control.tell_recompute_ybus();
-                solver_control.tell_recompute_sbus();  // only for trafo in DC
-                solver_control.tell_ybus_change_sparsity_pattern();
-                solver_control.tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();
+                // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
+                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // if the extremity of the line is alone on a bus, this can happen...
                 return true;
             }
             return false;
         };
-        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, AlgoControl & solver_control, int nb_bus) override {
+        virtual bool _change_bus(int el_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control, int nb_bus) override {
             const GridModelBusId & bus_me_id = bus_id_(el_id);
             
             if(bus_me_id != new_bus_id) {
                 // TODO speed: here the dimension changed only if nothing was connected before
-                solver_control.tell_one_el_changed_bus();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
+                solver_control.ac_algo_controler().tell_one_el_changed_bus(); solver_control.dc_algo_controler().tell_one_el_changed_bus();  // in this case i changed the bus, i need to recompute the jacobian and reset the solver
                 
                 // TODO speed: sparsity pattern might not change if something is already there  
-                solver_control.tell_ybus_change_sparsity_pattern();
-                solver_control.tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
-                solver_control.tell_recompute_sbus();  // only for trafo in DC
+                solver_control.ac_algo_controler().tell_ybus_change_sparsity_pattern(); solver_control.dc_algo_controler().tell_ybus_change_sparsity_pattern();
+                solver_control.ac_algo_controler().tell_recompute_ybus(); solver_control.dc_algo_controler().tell_recompute_ybus();  // if a bus changed for shunts / line / trafo
+                // solver_control.ac_algo_controler().tell_recompute_sbus(); solver_control.dc_algo_controler().tell_recompute_sbus();  // only for trafo in DC
                 return true;
             }
             return false;

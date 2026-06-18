@@ -26,16 +26,31 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
 )
 {
     _algo.tell_solver_control(_algo_controler);
-    bool conv = _algo.compute_pf(
-        Ybus,
-        V,
-        Sbus,
-        slack_ids,
-        slack_weights,
-        bus_pv,
-        bus_pq,
-        max_iter,
-        tol);
+    bool conv;
+    if(_algo.ac_solver_used()){
+        conv = _algo.compute_pf(
+            Ybus,
+            V,
+            Sbus,
+            slack_ids,
+            slack_weights,
+            bus_pv,
+            bus_pq,
+            max_iter,
+            tol);
+    } else {
+        // native real DC entry point: Bbus_ is the (constant) real admittance built in
+        // prepare_solver_input_base; Pbus is the real part of the (possibly per-step) injection
+        const RealVect Pbus = Sbus.real();
+        conv = _algo.compute_pf_dc(
+            Bbus_,
+            V,
+            Pbus,
+            slack_ids,
+            slack_weights,
+            bus_pv,
+            bus_pq);
+    }
     if(conv){
         V = _algo.get_V().array();
     }

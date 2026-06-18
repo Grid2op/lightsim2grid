@@ -82,7 +82,7 @@ struct Coeff{
 class AlgoControl final
 {
     public:
-        AlgoControl() noexcept: 
+        AlgoControl() noexcept:
             change_dimension_(true),
             pv_changed_(true),
             pq_changed_(true),
@@ -97,7 +97,7 @@ class AlgoControl final
             one_el_change_bus_(true)
             {};
 
-        ~AlgoControl() noexcept = default; 
+        ~AlgoControl() noexcept = default;
 
         void tell_all_changed(){
             change_dimension_ = true;
@@ -129,7 +129,7 @@ class AlgoControl final
             one_el_change_bus_ = false;
         }
 
-        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes) 
+        // the dimension of the Ybus matrix / Sbus vector has changed (eg. topology changes)
         void tell_dimension_changed(){change_dimension_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
         // some pv generators are now pq or the opposite
         void tell_pv_changed(){pv_changed_ = true;}  //should be used after the powerflow as run, so some vectors will not be recomputed if not needed.
@@ -149,7 +149,7 @@ class AlgoControl final
         void tell_v_changed(){v_changed_ = true;}
         // at least one generator has changed its slack participation
         void tell_slack_weight_changed(){slack_weight_changed_ = true;}
-        // tells that some coeff of ybus might have been set to 0. 
+        // tells that some coeff of ybus might have been set to 0.
         // (and ybus compressed again, so these coeffs are really completely hidden)
         // might need to trigger some recomputation of some solvers (eg NR based ones)
         void tell_ybus_some_coeffs_zero(){ybus_some_coeffs_zero_ = true;}
@@ -181,6 +181,36 @@ class AlgoControl final
         bool ybus_some_coeffs_zero_;  // tells that some coeff of ybus might have been set to 0. (and ybus compressed again, so these coeffs are really completely hidden)
         bool ybus_change_sparsity_pattern_;  // sparsity pattern of ybus changed (and so are its coeff), or ybus change of dimension
         bool one_el_change_bus_;  // whether one element has change of bus (or being reconnected / disconnected)
+};
+
+/**
+Change-tracking control for both solver families (AC and DC).
+
+A grid modification (eg. disconnecting a line, changing a setpoint) invalidates the cached
+matrices of *both* the AC and the DC solver. `DualAlgoControl` simply holds one independent
+`AlgoControl` per family so each solver keeps its own change tracking (the AC solver consumes
+and resets `ac_algo_controler()` on an AC powerflow, the DC solver consumes and resets
+`dc_algo_controler()` on a DC powerflow, without clobbering each other).
+
+It is a plain composition (no inheritance, no virtual dispatch): callers forward a change to
+both families explicitly, eg.
+    dual.ac_algo_controler().tell_v_changed();
+    dual.dc_algo_controler().tell_v_changed();
+**/
+class DualAlgoControl final
+{
+    public:
+        DualAlgoControl() noexcept = default;
+        ~DualAlgoControl() noexcept = default;
+
+        AlgoControl & ac_algo_controler() noexcept {return ac_algo_controler_;}
+        AlgoControl & dc_algo_controler() noexcept {return dc_algo_controler_;}
+        const AlgoControl & ac_algo_controler() const noexcept {return ac_algo_controler_;}
+        const AlgoControl & dc_algo_controler() const noexcept {return dc_algo_controler_;}
+
+    private:
+        AlgoControl ac_algo_controler_;  // change tracking consumed by the AC solver
+        AlgoControl dc_algo_controler_;  // change tracking consumed by the DC solver
 };
 
 template<int U>

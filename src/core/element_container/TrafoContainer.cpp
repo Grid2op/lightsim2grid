@@ -141,14 +141,14 @@ void TrafoContainer::_update_model_coeffs_one_el(int el_id)
 
     // for DC
     // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
-    // except here I only care about the real part, so I remove the "1/j"
-    cplx_type tmp = 1. / x_(el_id) * _1_tau;
+    // except here I only care about the real part (1/x), so I remove the "1/j"
+    const real_type tmp = 1. / x_(el_id) * _1_tau;
     ydc_11_(el_id) = tmp;
     ydc_22_(el_id) = tmp;
     ydc_21_(el_id) = -tmp;
     ydc_12_(el_id) = -tmp;
 
-    dc_x_tau_shift_(el_id) = -std::real(tmp) * theta_shift;
+    dc_x_tau_shift_(el_id) = -tmp * theta_shift;
 }
 
 void TrafoContainer::hack_Sbus_for_dc_phase_shifter(

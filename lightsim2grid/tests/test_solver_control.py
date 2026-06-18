@@ -184,7 +184,7 @@ class TestSolverControl(unittest.TestCase):
         self.gridmodel.unset_changes()
         # print("reco line")
         getattr(self, funname_undo)(gridmodel=self.gridmodel, el_id=el_id, el_val=el_val)
-        sovler_control = self.gridmodel.get_solver_control()
+        sovler_control = self.gridmodel.get_ac_algo_controler()  if runpf_fun=="_run_ac_pf" else self.gridmodel.get_dc_algo_controler()
         # print("2. ac pf")
         # print("re running powerflow")
         V_reco = getattr(self, runpf_fun)(gridmodel=self.gridmodel)
