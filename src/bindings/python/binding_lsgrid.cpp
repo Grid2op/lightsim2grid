@@ -179,7 +179,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
             shift ratio should be given in in the side1 (hv side in pandapower).
             )mydelimiter")
         .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg,
-            "Same as :ref:`change_shift_trafo` but phase shift is expressed in degree and NOT in rad.")
+            "Same as ``change_shift_trafo`` but phase shift is expressed in degree and NOT in rad.")
         .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::_internal_do_not_use.c_str())
@@ -245,7 +245,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_Vm_solver", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver.c_str(), py::return_value_policy::reference)
         .def("get_J_solver", &LSGrid::get_J_python_solver, DocLSGrid::get_J_python_solver.c_str(), py::return_value_policy::reference)
 
-        .def("id_me_to_ac_solver", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_me_to_ac_solver.c_str(), py::return_value_policy::reference)
+        .def("id_me_to_ac_solver", &LSGrid::id_me_to_ac_solver_numpy, DocLSGrid::id_me_to_ac_solver.c_str(), py::return_value_policy::reference)
         .def("id_ac_solver_to_me", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_ac_solver_to_me.c_str(), py::return_value_policy::reference)
         .def("id_me_to_dc_solver", &LSGrid::id_me_to_dc_solver_numpy, DocLSGrid::id_me_to_dc_solver.c_str(), py::return_value_policy::reference)
         .def("id_dc_solver_to_me", &LSGrid::id_dc_solver_to_me_numpy, DocLSGrid::id_dc_solver_to_me.c_str(), py::return_value_policy::reference)

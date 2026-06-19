@@ -325,7 +325,7 @@ void bind_containers(py::module_& m) {
         .def_readonly("target_q_mvar", &ConverterStationInfo::target_q_mvar, "TODO")
         .def_readonly("min_q_mvar", &ConverterStationInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &ConverterStationInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
-        .def_readonly("power_factor", &ConverterStationInfo::power_factor, "LCC power factor (Q = |P| * tan(acos(power_factor)))")
+        .def_readonly("power_factor", &ConverterStationInfo::power_factor, "LCC power factor (Q = abs(P) * tan(acos(power_factor)))")
         .def_readonly("has_res", &ConverterStationInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &ConverterStationInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &ConverterStationInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
