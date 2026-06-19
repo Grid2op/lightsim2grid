@@ -94,6 +94,10 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   in the generator convention (positive = produced) whereas lightsim2grid stores storage
   in the load convention (positive = charging), so the setpoints are now negated. The
   previous (untested) behaviour modeled a producing battery as a consuming load.
+- [FIXED] `ContingencyAnalysisCPP.is_grid_connected_after_contingency()` could segfault: it
+  built its working matrix from the grid model's own (never populated, hence empty) Ybus,
+  causing out-of-bounds writes. It now uses the correctly indexed internal `Ybus_` and builds
+  the required inputs on demand, so it works both before and after `compute()`.
 - [ADDED] a dedicated `StorageContainer` / `StorageInfo` (exposed through
   `lightsim2grid.elements`) for the storage units, with its convention documented.
 - [ADDED] reading the storage units (batteries) from a pypowsybl grid is now tested
@@ -118,6 +122,18 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   `test_voltage_control_pypowsybl`).
 - [ADDED] `LSGrid.get_storages()`, `LSGrid.get_dclines()`, `LSGrid.get_svcs()` and
   `LSGrid.get_voltage_levels()` accessors for the (new) containers.
+- [ADDED] a `handle_disconnected_grid` mode for the contingency analysis (`ContingencyAnalysis`
+  and `ContingencyAnalysisCPP`). By default (``False``) a contingency that splits the grid in
+  several connected components is skipped (its voltages stay at 0, legacy behaviour). When set
+  to ``True``, the largest connected component is solved while the buses of the other
+  component(s) are "masked" (their Newton-Raphson equations are forced to identity and their
+  voltage reported as 0). This is done **without any extra symbolic factorization** (the
+  solver's analyze/factor are not re-triggered): the masked buses keep the Jacobian sparsity
+  unchanged. The reference slack is chosen once, up-front, to minimise the number of
+  contingencies that have to be skipped (those that would strand the chosen reference), and a
+  stranded slack generator has its slack weight zeroed and the remaining weights rescaled.
+  Requires a Newton-Raphson algorithm (an AC non-NR solver raises a clear error). Tested in
+  `test_ContingencyAnalysis_split`.
 - [ADDED] (to interpret the new Jacobian layout) the methods `get_theta_to_J_col()`,
   `get_vm_to_J_col()` and `get_q_to_J_col()` on the Newton-Raphson algorithms (and on
   the `AlgorithmSelector`). Each returns a vector, **indexed by the solver bus id**,
