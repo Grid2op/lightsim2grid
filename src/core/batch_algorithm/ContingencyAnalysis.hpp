@@ -68,12 +68,16 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             BaseBatchSolverSynch::clear();
             _li_defaults.clear();
             _li_coeffs.clear();
+            _li_masked.clear();
+            _skip_mask.clear();
             _timer_total = 0.;
             _timer_modif_Ybus = 0.;
             _timer_pre_proc = 0.;
         }
         void clear_results_only(){
             BaseBatchSolverSynch::clear();
+            _li_masked.clear();
+            _skip_mask.clear();
             _timer_total = 0.;
             _timer_modif_Ybus = 0.;
             _timer_pre_proc = 0.;
@@ -104,6 +108,14 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             auto nb_removed = _li_defaults.erase(this_default);
             return nb_removed >= 1;
         }
+
+        // "handle disconnected grid" mode: when ON, a contingency that splits the grid
+        // is no longer skipped. Instead the largest connected component is solved while
+        // the buses of the other component(s) are "masked" (their NR equations are
+        // forced to identity, their voltage reported as 0). Default: OFF (legacy
+        // behaviour: such contingencies are skipped). Only the NR family supports it.
+        bool get_handle_disconnected_grid() const {return _handle_disconnected_grid;}
+        void set_handle_disconnected_grid(bool val) {_handle_disconnected_grid = val;}
 
         // make the computation
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
@@ -169,10 +181,28 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         // in this case, well, i don't use the results of the simulation
         bool check_invertible(const Eigen::SparseMatrix<cplx_type> & Ybus) const;
 
+        // ----- "handle disconnected grid" mode helpers (mask mode only) -----------
+        // connected-component labelling of Ybus: returns the solver bus ids that are
+        // NOT part of the largest connected component (empty if Ybus is connected).
+        std::vector<int> disconnected_buses(const Eigen::SparseMatrix<cplx_type> & Ybus) const;
+        // pre-pass run before the (n-)powerflow: fills _li_masked (the masked bus set
+        // of each contingency), chooses the reference slack that minimises the number
+        // of skipped contingencies (reordering slack_ids_me_ so it is index 0) and
+        // fills _skip_mask (contingencies that still strand the chosen reference).
+        void select_ref_slack_and_masks();
+        // a copy of slack_weights_ with the masked slack buses zeroed and the vector
+        // rescaled so its total is preserved (slack power stays among live slacks).
+        RealVect masked_slack_weights(const std::vector<int> & masked) const;
+
     private:
         // li_default
         std::set<std::set<int> > _li_defaults;  // do not use unordered_set here, we rely on the order for different functions !
         std::vector<std::vector<Coeff> > _li_coeffs;  // for each n-k, stores the coefficients I need to modify in the Ybus
+
+        // "handle disconnected grid" mode (see set_handle_disconnected_grid)
+        bool _handle_disconnected_grid = false;
+        std::vector<std::vector<int> > _li_masked;  // per contingency: masked solver bus ids (mask mode)
+        std::vector<char> _skip_mask;               // per contingency: 1 => skip (strands the ref slack)
 
         //timers
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation

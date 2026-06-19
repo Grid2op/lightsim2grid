@@ -214,6 +214,14 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("tell_solver_control", false)->tell_solver_control(solver_control);
         }
 
+        // bus masking (ContingencyAnalysis "handle disconnected grid" mode)
+        bool supports_bus_masking() const {
+            return get_prt_solver("supports_bus_masking", false)->supports_bus_masking();
+        }
+        void set_masked_buses(const std::vector<int>& solver_bus_ids) {
+            get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
+        }
+
         Eigen::SparseMatrix<real_type> get_J_python() const {
             Eigen::SparseMatrix<real_type> res = get_J();
             return res;

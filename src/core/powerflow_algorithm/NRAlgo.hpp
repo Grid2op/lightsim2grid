@@ -118,6 +118,12 @@ public:
 
     virtual void reset() override;
 
+    // ----- bus masking ---------------------------------------------------------
+    virtual bool supports_bus_masking() const override { return true; }
+    virtual void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
+        _system.set_masked_buses(solver_bus_ids);
+    }
+
     // ----- scaling policy ------------------------------------------------------
 
     ScalingPolicyType get_scaling_policy_type()  const { return scaling_policy_->type(); }
