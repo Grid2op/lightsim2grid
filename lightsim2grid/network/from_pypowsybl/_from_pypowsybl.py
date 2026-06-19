@@ -691,14 +691,22 @@ def init(net : pypo.network.Network,
             model.deactivate_dcline(hvdc_id)
     model.set_dcline_names(df_dc.index)
                 
-    # storage units  (TODO not tested yet)
+    # storage units (IIDM batteries). IIDM gives the battery setpoints in the
+    # *generator* convention (positive target_p = power produced / injected) while
+    # lightsim2grid stores storage as PQ in the *load* convention (positive = power
+    # drawn from the grid, *ie* charging), same as pandapower and grid2op. We negate
+    # to convert, and sanitize NaN (IIDM allows an unset target_q).
     if sort_index:
         df_batt = net.get_batteries().sort_index()
     else:
         df_batt = net.get_batteries()
     batt_bus, batt_disco, batt_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "storage", df_batt)
-    model.init_storages(df_batt["target_p"].values,
-                        df_batt["target_q"].values,
+    batt_p = df_batt["target_p"].values.astype(float)
+    batt_q = df_batt["target_q"].values.astype(float)
+    batt_p = np.where(np.isfinite(batt_p), batt_p, 0.)
+    batt_q = np.where(np.isfinite(batt_q), batt_q, 0.)
+    model.init_storages(-batt_p,  # IIDM generator convention -> lightsim2grid load convention
+                        -batt_q,
                         batt_bus
                         )
     for batt_id, disco in enumerate(batt_disco):

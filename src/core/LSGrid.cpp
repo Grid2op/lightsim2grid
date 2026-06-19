@@ -151,7 +151,7 @@ void LSGrid::set_state(LSGrid::StateRes & my_state)
     // static gen
     SGenContainer::StateRes & state_sgens= std::get<13>(my_state);
     // storage units
-    LoadContainer::StateRes & state_storages = std::get<14>(my_state);
+    StorageContainer::StateRes & state_storages = std::get<14>(my_state);
     // hvdc lines
     HvdcLineContainer::StateRes & state_hvdc_lines = std::get<15>(my_state);
     // static var compensators (index 16/17 are the ac/dc algo types)
