@@ -69,6 +69,15 @@ class TestIssueJacobian(unittest.TestCase):
             # with earlier pandapower version, distributed slack are
             # not taken into account, so this test does not work
             # because pandapower Jacobian has not the same shape.
+            # The refactored NR (NRLedger) orders the Jacobian sorted by bus index
+            # (theta for sorted(pv U pq), then Vm for sorted(pq)); pandapower uses
+            # [pv, pq] / pq. Permute the lightsim Jacobian back to pandapower's order.
+            pv = self.net._ppc["internal"]["pv"]
+            pq = self.net._ppc["internal"]["pq"]
+            pvpq = np.r_[pv, pq]
+            perm = np.r_[np.searchsorted(np.sort(pvpq), pvpq),
+                         len(pvpq) + np.searchsorted(np.sort(pq), pq)]
+            J = J[np.ix_(perm, perm)]
             assert np.max(np.abs(J - self.net._ppc["internal"]["J"])) <= 1e-6
 
 
