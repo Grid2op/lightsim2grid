@@ -21,7 +21,6 @@ TODO: speed directly update the pv, pq, Sbus and Ybus part when updating the ele
       (less error prone and faster to recompute). Then what is passed to the solver 
       is "only" a "mask" of these data when null
 TODO: https://github.com/haranjackson/NewtonKrylov for another type of algorithm ?
-TODO HVDC in Jacobian (see pandapower)
 TODO: in ContingencyAnalysisCpp: add back the `if(!ac_solver_used)` inside the  `remove_from_Ybus`
       in order to perform the "invertibility" check
 TODO: in `main.cpp` check the returned policy of pybind11 and also the `py::call_guard<py::gil_scoped_release>()` stuff
@@ -76,9 +75,18 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   The same happened for "lightsim2grid.gridmodel" module which is now "lightsim2grid.network".
   For now, the "lightsim2grid.gridmodel" is still present, with a deprecation warnings
   throw, to ensure backward compatibility.
+- [DEPRECATION PENDING] the `DCLineContainer` / `DCLineInfo` classes are renamed
+  `HvdcLineContainer` / `HvdcLineInfo` (clearer name, they model HVDC links). The old
+  names are still importable from `lightsim2grid.elements` as deprecated aliases.
 - [BREAKING] (pickle) the storage units are now stored in a dedicated `StorageContainer`
   (instead of reusing the `LoadContainer`). Grids pickled with a previous version of
   lightsim2grid can no longer be unpickled.
+- [BREAKING] (pickle) the HVDC / DC lines are now stored in a dedicated, richer
+  `HvdcLineContainer` (with converter stations and droop control). Grids pickled with a
+  previous version of lightsim2grid can no longer be unpickled.
+- [FIXED] `LSGrid.id_me_to_ac_solver()` returned the AC *solver -> gridmodel* mapping
+  (a duplicate of `id_ac_solver_to_me()`) instead of the *gridmodel -> AC solver*
+  mapping. It now returns the correct direction (the DC counterparts were already fine).
 - [FIXED] an issue preventing to use the `init_from_n_powerflow` attribute of `TimeSeries`
 - [FIXED] a warning when compiling lightsim2grid_core (redefinition of some classes)
 - [FIXED] storage units (batteries) read from a pypowsybl grid in `init_from_pypowsybl`
@@ -90,6 +98,31 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   `lightsim2grid.elements`) for the storage units, with its convention documented.
 - [ADDED] reading the storage units (batteries) from a pypowsybl grid is now tested
   (parity against PowSyBl OpenLoadFlow, see `test_storage_pypowsybl`).
+- [ADDED] proper **HVDC** support inside the AC (Newton-Raphson) and DC powerflow:
+  HVDC links now participate in the Jacobian, with `ConverterStationInfo` exposing the
+  VSC / LCC converter stations and an angle-droop (AC emulation) regime selectable via
+  `LSGrid.set_status_droop_hvdc` / `LSGrid.get_status_droop_hvdc`. Tested in DC, in
+  batch and for pickling (see `test_hvdc_dc`, `test_hvdc_droop`, `test_hvdc_batch`,
+  `test_hvdc_converter_stations`, `test_hvdc_pickle`, `test_hvdc_no_hvdc_bit_identical`).
+- [ADDED] reading HVDC lines (and their converter stations) from a pypowsybl grid
+  (`init_from_pypowsybl`), tested for parity (see `test_hvdc_pypowsybl`).
+- [ADDED] **Static Var Compensators (SVC)**: a dedicated `SvcContainer` / `SvcInfo`
+  (exposed through `lightsim2grid.elements`) supporting OFF / VOLTAGE / REACTIVE_POWER
+  regulation modes (with an optional voltage / reactive slope), together with the LSGrid
+  management methods (`get_svcs`, `deactivate_svc` / `reactivate_svc`, `change_bus_svc`,
+  `set_svc_names`).
+- [ADDED] **remote voltage control** for generators (and SVCs): a controller can now
+  regulate the voltage of a *different* bus through `LSGrid.set_gen_regulated_bus(...)`;
+  it is resolved automatically when importing from pypowsybl. Tested against PowSyBl
+  OpenLoadFlow (see `test_voltage_control_svc`, `test_voltage_control_remote_gen`,
+  `test_voltage_control_pypowsybl`).
+- [ADDED] `LSGrid.get_storages()`, `LSGrid.get_dclines()`, `LSGrid.get_svcs()` and
+  `LSGrid.get_voltage_levels()` accessors for the (new) containers.
+- [ADDED] (to interpret the new Jacobian layout) the methods `get_theta_to_J_col()`,
+  `get_vm_to_J_col()` and `get_q_to_J_col()` on the Newton-Raphson algorithms (and on
+  the `AlgorithmSelector`). Each returns a vector, **indexed by the solver bus id**,
+  giving the Jacobian column holding that bus' voltage-angle / voltage-magnitude /
+  reactive unknown (-1 when the bus owns no such unknown).
 - [ADDED] Refactored `ChooseAlgorithm` (used to be ChooseSolver) to a plugin-friendly
  `AlgorithmRegistry` (see doc)
 - [ADDED] installing the python package now also comes with the lightsim2grid_core 
@@ -101,6 +134,10 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] remove the "typedef" in favor of "using" cpp side (core)
 - [IMPROVED] add some "override" and "final" in the algorithm virtual methods.
 - [IMPROVED] file names of some example scripts.
+- [IMPROVED] documentation: a new "Bus labelling conventions" section (in the LSGrid
+  page) explaining the Local / GridModel (global) / Solver bus id conventions, with a
+  table of which `change_bus_*` / `get_bus_*` / `update_topo` / `*_solver` method uses
+  which convention.
 - [IMPROVED] names in the enum for the solver (*eg* AlgorithmType.NR_KLU) now
   matches the names of the solver (*eg* NR_KLU). There is no more differences 
   between the enum and the solver names.
@@ -111,6 +148,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
 - [IMPROVED] dc powerflow is now really separate from AC (different problem, different hypothesis etc.)
 - [IMPROVED] the algo controler (used to be solver_control) is now split: there is one
   for DC and one for AC.
+- [IMPROVED] a dedicated Jacobian-tester suite (`test_jacobian.py`) now validates the
+  refactored Newton-Raphson Jacobian (single and distributed slack, including the HVDC
+  and voltage-control extensions).
+- [IMPROVED] (cpp) the Newton-Raphson Jacobian layout is now driven by a central
+  `NRLedger` registry that assigns each equation (row) and each unknown (column) and
+  keeps the bus <-> column mapping introspectable. Columns are now sorted by (solver)
+  bus id, which is what changed the ordering w.r.t. the pandapower convention and what
+  enables the `get_theta_to_J_col()` / `get_vm_to_J_col()` / `get_q_to_J_col()` mappings
+  above. This central registry is also what makes the HVDC / voltage-control Jacobian
+  extensions possible.
 
 [0.13.1]  2026-04-21
 --------------------
