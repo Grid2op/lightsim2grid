@@ -77,6 +77,15 @@ class MakeTests(unittest.TestCase):
         # slack moved from the first to the last row/col in the refactored NR
         # (single-slack cases here, so it is the single trailing row/col)
         Jmodif_ls = J[:-1, :-1] if dist_slack else J
+        # The refactored NR (NRLedger) orders the Jacobian rows/cols sorted by bus index
+        # (theta for sorted(pv U pq), then Vm for sorted(pq)), whereas pandapower orders them
+        # as [pv, pq] / pq. Permute the lightsim Jacobian back to pandapower's order before
+        # comparing. pv / pq are unique bus ids, so searchsorted gives the exact lightsim slot.
+        pvpq_sorted = np.sort(pvpq)
+        pq_sorted = np.sort(pq)
+        perm = np.r_[np.searchsorted(pvpq_sorted, pvpq),
+                     len(pvpq) + np.searchsorted(pq_sorted, pq)]
+        Jmodif_ls = Jmodif_ls[np.ix_(perm, perm)]
         comp_val = np.abs(Jmodif_ls - J_pp)  # new in version 0.5.6 : distributed slack added a component to J
         comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
