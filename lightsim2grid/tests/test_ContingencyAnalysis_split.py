@@ -112,6 +112,20 @@ class TestContingencySplitMode(unittest.TestCase):
         SA.handle_disconnected_grid = True
         SA.compute(1. * self.V0, self.max_it, self.tol)  # must not raise
 
+    def test_is_grid_connected_no_segfault(self):
+        # regression: is_grid_connected_after_contingency() used to segfault because
+        # it relied on the (empty) grid-model Ybus. It must now work both standalone
+        # (before compute) and after compute, and agree.
+        SA = ContingencyAnalysisCPP(self.grid)
+        SA.add_n1(2)  # splits the grid (isolates bus 3)
+        SA.add_n1(0)  # also splits (isolates {1, 2, 3} from the slack)
+        standalone = np.asarray(SA.is_grid_connected_after_contingency())
+        assert standalone.shape == (2,)
+        assert np.all(standalone == 0), f"both radial cuts disconnect the grid, got {standalone}"
+        SA.compute(1. * self.V0, self.max_it, self.tol)
+        after = np.asarray(SA.is_grid_connected_after_contingency())
+        assert np.array_equal(standalone, after)
+
 
 class TestContingencySplitMultiSlack(unittest.TestCase):
     """Two slacks at the two ends of a line; a contingency strands one of them.

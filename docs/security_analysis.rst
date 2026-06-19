@@ -45,10 +45,57 @@ It can be used as:
 For now this relies on grid2op, but we could imagine a version of this class that can read
 to / from other data sources.
 
-.. note:: 
-    
-    A more advanced usage is given in the `examples\\security_analysis.py` 
+.. note::
+
+    A more advanced usage is given in the `examples\\security_analysis.py`
     file from the lightsim2grid package.
+
+Handling contingencies that split the grid
+-------------------------------------------
+
+By default, a contingency that splits the grid into several connected components (an "islanding")
+is **not simulated**: the corresponding row of the results is left at 0. (for the voltages) and
+``NaN`` (for the flows). You can list which contingencies split the grid with
+:func:`ContingencyAnalysisCPP.is_grid_connected_after_contingency`.
+
+Starting from lightsim2grid 0.14.0, you can opt in to a mode that *does* simulate these
+contingencies, on the largest connected component, by setting the ``handle_disconnected_grid``
+attribute to ``True``:
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import ContingencyAnalysis
+    from lightsim2grid import LightSimBackend
+    env = grid2op.make(..., backend=LightSimBackend())
+
+    security_analysis = ContingencyAnalysis(env)
+    security_analysis.add_all_n1_contingencies()
+
+    # opt in: simulate the largest island instead of skipping split contingencies
+    security_analysis.handle_disconnected_grid = True
+
+    res_p, res_a, res_v = security_analysis.get_flows()
+
+When this mode is enabled and a contingency splits the grid:
+
+- the **largest** connected component is solved as a regular powerflow;
+- the buses of the other component(s) are *masked*: their voltage is reported as ``0.`` (same
+  convention as a skipped contingency) and they do not influence the solved component;
+- if a slack generator ends up in a masked component, its slack weight is set to 0 and the
+  remaining slack weights are rescaled so the slack power is shared only among the live slacks.
+
+This is implemented **without re-triggering the symbolic factorization** of the linear solver
+(the Jacobian sparsity pattern is left unchanged), so it stays compatible with the speed of the
+contingency analysis. To make it possible, the reference slack is chosen once, before the
+computation, so as to minimise the number of contingencies that still have to be skipped (those
+that would disconnect the chosen reference slack itself).
+
+.. note::
+
+    This mode **requires a Newton-Raphson algorithm** (the default). Selecting an AC non
+    Newton-Raphson algorithm (*eg* Gauss-Seidel or Fast-Decoupled) and enabling the mode raises
+    an error. In DC the connectivity is already handled internally, so the flag has no effect.
 
 .. _sa_benchmarks:
 

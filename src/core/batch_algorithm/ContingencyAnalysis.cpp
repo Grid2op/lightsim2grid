@@ -265,9 +265,21 @@ IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     if(!ac_solver_used){
         // in DC mode the solver takes responsibility for the connectivity (see remove_from_Ybus),
         // so every contingency is reported as "connected". No need to build / cast a Ybus here.
-        return IntVect::Constant(_li_coeffs.size(), 1);
+        return IntVect::Constant(_li_defaults.size(), 1);
     }
-    Eigen::SparseMatrix<cplx_type> Ybus = _grid_model.get_Ybus_solver();
+    // Build the solver inputs (Ybus_, id_me_to_solver_) and the per-contingency
+    // coefficients if they are not available yet (i.e. compute() was not called).
+    // NB: we use the (correctly indexed) member Ybus_, NOT _grid_model.get_Ybus_solver():
+    // the latter is the grid model's own Ybus, which is never built by this class (it
+    // works on Ybus_) and would be an empty 0x0 matrix here -> out-of-bounds coeffRef.
+    if(Ybus_.cols() == 0 || _li_coeffs.size() != _li_defaults.size()){
+        const size_t nb_total_bus = _grid_model.total_bus();
+        CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
+                                            {_grid_model.get_init_vm_pu(), 0.});
+        prepare_solver_input_base(Vinit, ac_solver_used);
+        init_li_coeffs(ac_solver_used, id_me_to_solver_);
+    }
+    Eigen::SparseMatrix<cplx_type> Ybus = Ybus_;  // correctly-indexed copy
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
     int cont_id = 0;
     for(const auto & coeffs_modif: _li_coeffs){
