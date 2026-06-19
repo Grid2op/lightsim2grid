@@ -33,6 +33,7 @@
 #include "element_container/ShuntContainer.hpp"
 #include "element_container/TrafoContainer.hpp"
 #include "element_container/LoadContainer.hpp"
+#include "element_container/StorageContainer.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SGenContainer.hpp"
 #include "element_container/SvcContainer.hpp"
@@ -73,7 +74,7 @@ class LS2G_API LSGrid final
                 // static generators
                 SGenContainer::StateRes,
                 // storage units
-                LoadContainer::StateRes,
+                StorageContainer::StateRes,
                 //hvdc lines (was the "dc lines" before lightsim2grid 0.12)
                 HvdcLineContainer::StateRes,
                 // algo types
@@ -596,7 +597,7 @@ class LS2G_API LSGrid final
         const TrafoContainer & get_trafos() const {return trafos_;}
         const GeneratorContainer & get_generators() const {return generators_;}
         const LoadContainer & get_loads() const {return loads_;}
-        const LoadContainer & get_storages() const {return storages_;}
+        const StorageContainer & get_storages() const {return storages_;}
         const SGenContainer & get_static_generators() const {return sgens_;}
         const SvcContainer & get_svcs() const {return svcs_;}
         const ShuntContainer & get_shunts() const {return shunts_;}
@@ -1790,7 +1791,7 @@ class LS2G_API LSGrid final
         SGenContainer sgens_;
 
         // 8. storage units
-        LoadContainer storages_;
+        StorageContainer storages_;
 
         // 9. hvdc (converter stations + lines, exposed through the "dcline" API)
         HvdcLineContainer hvdc_lines_;

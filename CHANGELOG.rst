@@ -76,8 +76,20 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   The same happened for "lightsim2grid.gridmodel" module which is now "lightsim2grid.network".
   For now, the "lightsim2grid.gridmodel" is still present, with a deprecation warnings
   throw, to ensure backward compatibility.
+- [BREAKING] (pickle) the storage units are now stored in a dedicated `StorageContainer`
+  (instead of reusing the `LoadContainer`). Grids pickled with a previous version of
+  lightsim2grid can no longer be unpickled.
 - [FIXED] an issue preventing to use the `init_from_n_powerflow` attribute of `TimeSeries`
 - [FIXED] a warning when compiling lightsim2grid_core (redefinition of some classes)
+- [FIXED] storage units (batteries) read from a pypowsybl grid in `init_from_pypowsybl`
+  now use the correct sign convention: IIDM batteries declare their `target_p` / `target_q`
+  in the generator convention (positive = produced) whereas lightsim2grid stores storage
+  in the load convention (positive = charging), so the setpoints are now negated. The
+  previous (untested) behaviour modeled a producing battery as a consuming load.
+- [ADDED] a dedicated `StorageContainer` / `StorageInfo` (exposed through
+  `lightsim2grid.elements`) for the storage units, with its convention documented.
+- [ADDED] reading the storage units (batteries) from a pypowsybl grid is now tested
+  (parity against PowSyBl OpenLoadFlow, see `test_storage_pypowsybl`).
 - [ADDED] Refactored `ChooseAlgorithm` (used to be ChooseSolver) to a plugin-friendly
  `AlgorithmRegistry` (see doc)
 - [ADDED] installing the python package now also comes with the lightsim2grid_core 

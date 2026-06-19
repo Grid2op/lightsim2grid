@@ -69,6 +69,21 @@ Loads and Storage Units
     :members:
     :autosummary:
 
+Storage units (batteries) are modeled as PQ injections too, but exposed through a
+dedicated container. They use the **load convention**: a positive ``target_p`` means
+the unit is charging (power drawn from the grid), a negative ``target_p`` means it is
+discharging (power injected in the grid). Note that this is the opposite of the
+PowSyBl / IIDM (generator) convention; :func:`lightsim2grid.network.init_from_pypowsybl`
+negates the battery setpoints accordingly.
+
+.. autoclass:: lightsim2grid.elements.StorageContainer
+    :members:
+    :autosummary:
+
+.. autoclass:: lightsim2grid.elements.StorageInfo
+    :members:
+    :autosummary:
+
 Shunts
 ++++++++++++++++++++++++
 

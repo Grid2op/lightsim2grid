@@ -12,6 +12,8 @@ __all__ = ["GeneratorContainer",
            "SGenInfo",
            "LoadContainer",
            "LoadInfo",
+           "StorageContainer",
+           "StorageInfo",
            "ShuntContainer",
            "ShuntInfo",
            "TrafoContainer",
@@ -31,6 +33,8 @@ from ..lightsim2grid_cpp import SGenContainer # type: ignore
 from ..lightsim2grid_cpp import SGenInfo # type: ignore
 from ..lightsim2grid_cpp import LoadContainer # type: ignore
 from ..lightsim2grid_cpp import LoadInfo # type: ignore
+from ..lightsim2grid_cpp import StorageContainer # type: ignore
+from ..lightsim2grid_cpp import StorageInfo # type: ignore
 from ..lightsim2grid_cpp import ShuntContainer # type: ignore
 from ..lightsim2grid_cpp import ShuntInfo # type: ignore
 from ..lightsim2grid_cpp import TrafoContainer # type: ignore

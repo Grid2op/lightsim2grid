@@ -60,7 +60,10 @@ ATTR_LOADS_INPUT = [
 ]
 
 
-ATTR_STORAGES_INPUT = ATTR_LOADS_INPUT
+ATTR_STORAGES_INPUT = [
+    "target_p_mw",
+    "target_q_mvar",
+]
 
 
 ATTR_SHUNTS_INPUT = [

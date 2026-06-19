@@ -12,6 +12,7 @@
 #include "element_container/SGenContainer.hpp"
 #include "element_container/SvcContainer.hpp"
 #include "element_container/LoadContainer.hpp"
+#include "element_container/StorageContainer.hpp"
 #include "element_container/ShuntContainer.hpp"
 #include "element_container/TrafoContainer.hpp"
 #include "element_container/LineContainer.hpp"
@@ -136,6 +137,33 @@ void bind_containers(py::module_& m) {
         .def_readonly("res_theta_deg", &LoadInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
         .def_readonly("res_v_kv", &LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str())
         .def_readonly("voltage_level_id", &LoadInfo::sub_id, DocIterator::sub_id.c_str());
+
+    // storage units share the LoadContainer / LoadInfo documentation (they are PQ
+    // injections in the load convention) but are exposed as their own type.
+    auto storage_cls = py::class_<StorageContainer>(m, "StorageContainer", DocIterator::LoadContainer.c_str())
+        .def("__len__", [](const StorageContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const StorageContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const StorageContainer & data) {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>())
+        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(storage_cls, "StorageContainer");
+
+    py::class_<StorageInfo>(m, "StorageInfo", DocIterator::LoadInfo.c_str())
+        .def_readonly("id", &StorageInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &StorageInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &StorageInfo::sub_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos_topo_vect", &StorageInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("connected", &StorageInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &StorageInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("target_p_mw", &StorageInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &StorageInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &StorageInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &StorageInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &StorageInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &StorageInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &StorageInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        .def_readonly("voltage_level_id", &StorageInfo::sub_id, DocIterator::sub_id.c_str());
 
     auto shunt_cls = py::class_<ShuntContainer>(m, "ShuntContainer", DocIterator::ShuntContainer.c_str())
         .def("__len__", [](const ShuntContainer & data) { return data.nb(); })
