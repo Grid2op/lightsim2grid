@@ -63,6 +63,15 @@ void bind_batch(py::module_& m) {
                       "(*ie* a powerflow without any line disconnection) or not. "
                       "Default: false, meaning each simulation is initialized "
                       "with the given input vector)mydelim")
+        .def_property("handle_disconnected_grid",
+                      [](const ContingencyAnalysis & self){ return self.get_handle_disconnected_grid(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_handle_disconnected_grid(val); },
+                      R"mydelim(Whether to simulate the contingencies that split the grid in "
+                      "multiple connected components. When False (default) such contingencies "
+                      "are skipped (their voltages are left at 0), reproducing the legacy "
+                      "behaviour. When True, the largest connected component is solved while "
+                      "the buses of the other component(s) are masked (their voltage is "
+                      "reported as 0). Requires a Newton-Raphson algorithm.)mydelim")
 
         // solver control
         .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocLSGrid::change_algorithm.c_str())

@@ -209,6 +209,14 @@ class LS2G_API BaseAlgo : public BaseConstants
             throw std::runtime_error("Function update_internal_Ybus not implemented in general.");
         }
 
+        // bus masking (ContingencyAnalysis "handle disconnected grid" mode): forces
+        // the given solver buses' equations to identity so an isolated island does
+        // not make the system singular, without changing the matrix sparsity. Only
+        // the Newton-Raphson family supports it (see supports_bus_masking); the
+        // default is a no-op so other algorithms are unaffected.
+        virtual bool supports_bus_masking() const { return false; }
+        virtual void set_masked_buses(const std::vector<int> & /*solver_bus_ids*/) {}
+
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}
         
