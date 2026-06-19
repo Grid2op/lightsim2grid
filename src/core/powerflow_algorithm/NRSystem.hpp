@@ -783,6 +783,7 @@ public:
     NRSystem() noexcept:
         timer_dSbus_(0.),
         timer_fillJ_(0.),
+        masked_dirty_(false),
         lsgrid_ptr_(nullptr),
         Ybus_ptr_(nullptr),
         Sbus_ptr_(nullptr) {}
@@ -815,6 +816,19 @@ public:
     void fill_J();
     void fill_internal_variables();
 
+    // ----- bus masking (ContingencyAnalysis "handle disconnected grid" mode) ------
+    // Mark some solver buses as "masked": their P/Q mismatch rows are replaced by
+    // trivial identity rows (so dx == 0 on those buses), which keeps the Jacobian
+    // non-singular when a contingency isolates them from the live component. This
+    // is a pure value-level change: the J sparsity pattern / dimension are NOT
+    // touched, so the symbolic factorization is reused (no analyze()). An empty
+    // vector (the default) disables masking and reproduces the unmasked behaviour
+    // bit-for-bit. solver_bus_ids must never include the reference slack.
+    void set_masked_buses(const std::vector<int>& solver_bus_ids) {
+        masked_buses_ = solver_bus_ids;
+        masked_dirty_ = true;
+    }
+
     // ----- NR iteration primitives -----------------------------------------------
 
     virtual RealVect   mismatch()                           const;
@@ -837,6 +851,10 @@ public:
         map_dsdvm_i_.clear();
         sink_.clear();
         feature_pos_.clear();
+        masked_buses_.clear();
+        masked_zero_pos_.clear();
+        masked_one_pos_.clear();
+        masked_dirty_ = false;
         ledger_.reset(0);
     }
 
@@ -907,6 +925,45 @@ private:
     // feature (non dS-derived) entries: (row, col) list + resolved valuePtr positions
     FeatureSink                            sink_;
     std::vector<int>                       feature_pos_;
+
+    // bus masking (see set_masked_buses): masked_buses_ are solver bus ids whose
+    // P/Q rows are forced to identity. masked_zero_pos_ / masked_one_pos_ are the
+    // J_.valuePtr() positions to overwrite with 0 / 1 in fill_J; they are derived
+    // from masked_buses_ + the (fixed) J sparsity and recomputed lazily.
+    std::vector<int>                       masked_buses_;
+    std::vector<int>                       masked_zero_pos_;
+    std::vector<int>                       masked_one_pos_;
+    bool                                   masked_dirty_;
+
+    // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
+    // sparsity (one pass over the nonzeros). Call only when J_ is built.
+    void _recompute_mask_positions() {
+        masked_zero_pos_.clear();
+        masked_one_pos_.clear();
+        masked_dirty_ = false;
+        if (masked_buses_.empty() || J_.nonZeros() == 0) return;
+        const int dim = static_cast<int>(J_.rows());
+        std::vector<char> is_masked_row(dim, 0);
+        std::vector<int>  one_col_of_row(dim, -1);  // for a masked row: the col forced to 1
+        for (int b : masked_buses_) {
+            const int pr = ledger_.p_row(b);
+            const int tc = ledger_.theta_col(b);
+            if (pr >= 0) { is_masked_row[pr] = 1; one_col_of_row[pr] = tc; }
+            const int qr = ledger_.q_row(b);
+            const int vc = ledger_.vm_col(b);
+            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+        }
+        const int* outer = J_.outerIndexPtr();
+        const int* inner = J_.innerIndexPtr();
+        for (int col = 0; col < dim; ++col) {
+            for (int p = outer[col]; p < outer[col + 1]; ++p) {
+                const int row = inner[p];
+                if (!is_masked_row[row]) continue;
+                if (one_col_of_row[row] == col) masked_one_pos_.push_back(p);
+                else                            masked_zero_pos_.push_back(p);
+            }
+        }
+    }
 
     // Holds the base things
     Base                                   base_;

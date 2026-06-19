@@ -162,6 +162,15 @@ inline void NRSystem<Base, Rest...>::fill_J()
     base_.fill_feature_values(writer, Va_);
     _fill_feature_values_extensions(writer, std::make_index_sequence<sizeof...(Rest)>{});
 
+    // bus masking: overwrite the masked buses' rows with the identity (zero the
+    // whole row, then set the diagonal to 1 -- ones last, since the diagonal is
+    // itself part of a masked row). Pure value-level edit, J sparsity unchanged.
+    if (!masked_buses_.empty()) {
+        if (masked_dirty_) _recompute_mask_positions();
+        for (int p : masked_zero_pos_) J_values[p] = static_cast<real_type>(0.);
+        for (int p : masked_one_pos_)  J_values[p] = static_cast<real_type>(1.);
+    }
+
     timer_fillJ_ += timer.duration();
 }
 
@@ -288,6 +297,17 @@ inline RealVect NRSystem<Base, Rest...>::_residual(const CplxVect& V_t, const Re
     // component-owned custom rows (none for Base / MultiSlack)
     base_.fill_custom_rows(res, Va_, Vm_, dx);
     _fill_custom_rows_extensions(res, Va_, Vm_, dx, std::make_index_sequence<sizeof...(Rest)>{});
+
+    // bus masking: the masked buses' P/Q residuals are forced to 0 so the trivial
+    // identity rows of J (see fill_J) yield dx == 0 on those buses.
+    if (!masked_buses_.empty()) {
+        for (int b : masked_buses_) {
+            const int pr = ledger_.p_row(b);
+            if (pr >= 0) res(pr) = static_cast<real_type>(0.);
+            const int qr = ledger_.q_row(b);
+            if (qr >= 0) res(qr) = static_cast<real_type>(0.);
+        }
+    }
     return res;
 }
 

@@ -76,6 +76,13 @@ class __ContingencyAnalysis(object):
 
     In grid2op, it would be, in this case, 0. for the flows and 0. for the voltages.
 
+    By default, a contingency that splits the grid in multiple connected components is not
+    simulated (its voltages are left at 0.). If you set the `handle_disconnected_grid` attribute
+    to ``True`` (it requires a Newton-Raphson algorithm), such contingencies are instead simulated
+    on their largest connected component: the buses of the other component(s) are "masked" and
+    their voltage is reported as 0. This is done without triggering any extra matrix
+    re-factorization (the symbolic factorization of the solver is reused).
+
     """
     STR_TYPES = (str, np.str_)  # np.str deprecated in numpy 1.20 and earlier versions not supported anyway
         
@@ -131,7 +138,17 @@ class __ContingencyAnalysis(object):
         if bool(val) != val:
             raise ValueError("The `init_from_n_powerflow` attribute must be a boolean.")
         self.computer.init_from_n_powerflow = bool(val)
-        
+
+    @property
+    def handle_disconnected_grid(self):
+        return self.computer.handle_disconnected_grid
+
+    @handle_disconnected_grid.setter
+    def handle_disconnected_grid(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
+        self.computer.handle_disconnected_grid = bool(val)
+
     # TODO implement that !
     def __update_grid(self, backend_act):
         raise NotImplementedError("TODO !")
