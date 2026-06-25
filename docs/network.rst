@@ -159,6 +159,15 @@ bus (it defaults to the generator's own bus, which corresponds to local control)
 This is read automatically when initializing the grid from pypowsybl. The same
 mechanism is used by the :ref:`svc-section` below.
 
+.. warning::
+    When the grid is read from pypowsybl, the regulated bus is resolved **once**, at
+    import time, and stored by its (fixed) lightsim2grid global bus id. If the
+    regulated element is later moved to another bus *inside lightsim2grid* (e.g.
+    through a ``change_bus_*`` / topology change), the controller keeps regulating the
+    bus resolved at import: the lightsim2grid grid and the original pypowsybl grid then
+    desynchronise. Re-import the grid (or call ``set_gen_regulated_bus`` again) if you
+    need to follow such a topology change.
+
 Static Generators (more exotic)
 ++++++++++++++++++++++++++++++++
 
