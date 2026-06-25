@@ -219,6 +219,10 @@ bool SvcContainer::_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoCo
     if(svc_id < 0 || svc_id >= nb()) return false;
     if(bus_id_(svc_id) == new_bus_id) return false;
     // a LOCAL voltage controller's regulated bus follows its own bus
+    // TODO: a REMOTE controller's regulated bus is whatever was resolved at import time
+    // (e.g. by `init_from_pypowsybl`); if the regulated *element* changes bus we cannot
+    // tell (only the resolved bus id is stored), so it stays frozen and desynchronises
+    // from the source grid. Tracking the regulated element id would let us follow it.
     if(regulated_bus_id_(svc_id) == bus_id_(svc_id).cast_int()) regulated_bus_id_(svc_id) = new_bus_id.cast_int();
     solver_control.ac_algo_controler().tell_recompute_sbus();
     solver_control.ac_algo_controler().tell_one_el_changed_bus();
