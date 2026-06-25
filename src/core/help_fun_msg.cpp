@@ -1563,7 +1563,7 @@ const std::string DocIterator::DCLineContainer = R"mydelimiter(
     percent) and the formula for computing the power injected / produced by each generator is:
 
     - if `xx` is positive, then `yy = -1.0 * (xx - loss_mw) * (1.0 - 0.01 * loss_percent)`
-    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw
+    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw`
 
     The first formula directly comes from pandapower. The second one ensures that if the direction of the flow is 
     inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
@@ -1639,7 +1639,7 @@ const std::string DocIterator::DCLineInfo = R"mydelimiter(
     percent `loss_percent`) and the formula for computing the power injected / produced by each generator is:
 
     - if `xx` is positive, then `yy = -1.0 * (xx - loss_mw) * (1.0 - 0.01 * loss_percent)`
-    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw
+    - if `xx` is negative, then `yy = -1.0 * xx / (1.0 - 0.01 * loss_percent) + loss_mw`
 
     The first formula directly comes from pandapower. The second one ensures that if the direction of the flow is 
     inverted, then flows should also be inverted (`xx` becomes `yy` and reciprocally).
@@ -1681,7 +1681,7 @@ const std::string DocIterator::dc_line_formula = R"mydelimiter(
         The formula for computing the power injected / produced by each generator is:
 
         - if `or_mw` is positive, then `ex_mw = -1.0 * (or_mw - loss_mw) * (1.0 - 0.01 * loss_percent)`
-        - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw
+        - if `or_mw` is negative, then `ex_mw = -1.0 * or_mw / (1.0 - 0.01 * loss_percent) + loss_mw`
 
         Where `or_mw` denotes the power injected at the `origin` side and `ex_mw` the power injected at the `extremity`
         side.

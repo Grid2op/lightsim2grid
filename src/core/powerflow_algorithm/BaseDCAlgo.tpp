@@ -46,6 +46,11 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
 
     sizeYbus_with_slack_ = static_cast<int>(Bbus.rows());
 
+    // hvdc angle-droop: refresh the droop data; a change (eg a `status_droop`
+    // flip between two solves) modifies the dc matrix values, so it forces a
+    // rebuild + refactorization
+    const bool droop_changed = update_hvdc_droop_data();
+
     #ifdef __COUT_TIMES
         auto timer_preproc = CustTimer();
     #endif // __COUT_TIMES
@@ -68,8 +73,9 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
         timer_pre_proc_ += timer_pre.duration();
     }
 
-    // remove the slack bus from Bbus
+    // remove the slack bus from Ybus
     if(need_factorize_ ||
+       droop_changed ||
        _solver_control.need_recompute_ybus() ||
        _solver_control.ybus_change_sparsity_pattern() ||
        _solver_control.has_ybus_some_coeffs_zero()) {
@@ -116,6 +122,7 @@ bool BaseDCAlgo<LinearSolver>::compute_pf_dc(const Eigen::SparseMatrix<real_type
                 dcSbus_noslack_(col_res) += slack_weights(k) * imbalance;
             }
         }
+        add_droop_to_dcSbus();
         timer_pre_proc_ += timer_pre.duration();
     }
 
@@ -259,6 +266,63 @@ template<class LinearSolver>
 void BaseDCAlgo<LinearSolver>::fill_dcYbus_noslack(int nb_bus_solver, const Eigen::SparseMatrix<real_type> & ref_mat){
     // TODO see if "prune" might work here https://eigen.tuxfamily.org/dox/classEigen_1_1SparseMatrix.html#title29
     remove_slack_buses(nb_bus_solver, ref_mat, dcYbus_noslack_);
+    add_droop_to_dcYbus();
+}
+
+template<class LinearSolver>
+bool BaseDCAlgo<LinearSolver>::update_hvdc_droop_data(){
+    HvdcDroopSolverData new_data;
+    fill_hvdc_droop_data_from_grid(BaseAlgo::lsgrid_ptr_, new_data, false);
+    bool changed = (new_data.size() != hvdc_droop_data_.size());
+    if(!changed && (new_data.size() > 0)){
+        changed = (new_data.bus1.array() != hvdc_droop_data_.bus1.array()).any() ||
+                  (new_data.bus2.array() != hvdc_droop_data_.bus2.array()).any() ||
+                  (new_data.status.array() != hvdc_droop_data_.status.array()).any() ||
+                  (new_data.k.array() != hvdc_droop_data_.k.array()).any() ||
+                  (new_data.p0.array() != hvdc_droop_data_.p0.array()).any();
+    }
+    hvdc_droop_data_ = new_data;
+    return changed;
+}
+
+template<class LinearSolver>
+void BaseDCAlgo<LinearSolver>::add_droop_to_dcYbus(){
+    // the k * (theta1 - theta2) term of a linear-mode droop line behaves like
+    // a branch of susceptance k between the two buses
+    const int nb_droop = hvdc_droop_data_.size();
+    if(nb_droop == 0) return;
+    std::vector<Eigen::Triplet<real_type> > tripletList;
+    tripletList.reserve(4 * nb_droop);
+    for(int k = 0; k < nb_droop; ++k){
+        if(hvdc_droop_data_.status(k) != 0) continue;  // saturated: fixed injection, in Sbus
+        const int m1 = mat_bus_id_(hvdc_droop_data_.bus1(k));
+        const int m2 = mat_bus_id_(hvdc_droop_data_.bus2(k));
+        const real_type k_droop = hvdc_droop_data_.k(k);
+        if(m1 != -1) tripletList.push_back({m1, m1, k_droop});
+        if(m2 != -1) tripletList.push_back({m2, m2, k_droop});
+        if((m1 != -1) && (m2 != -1)){
+            tripletList.push_back({m1, m2, -k_droop});
+            tripletList.push_back({m2, m1, -k_droop});
+        }
+    }
+    if(tripletList.empty()) return;
+    Eigen::SparseMatrix<real_type> droop_mat(sizeYbus_without_slack_, sizeYbus_without_slack_);
+    droop_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    dcYbus_noslack_ += droop_mat;
+    dcYbus_noslack_.makeCompressed();
+}
+
+template<class LinearSolver>
+void BaseDCAlgo<LinearSolver>::add_droop_to_dcSbus(){
+    // the p0 constant of a linear-mode droop line leaves bus 1 and enters bus 2
+    const int nb_droop = hvdc_droop_data_.size();
+    for(int k = 0; k < nb_droop; ++k){
+        if(hvdc_droop_data_.status(k) != 0) continue;  // saturated: fixed injection, in Sbus
+        const int m1 = mat_bus_id_(hvdc_droop_data_.bus1(k));
+        const int m2 = mat_bus_id_(hvdc_droop_data_.bus2(k));
+        if(m1 != -1) dcSbus_noslack_(m1) -= hvdc_droop_data_.p0(k);
+        if(m2 != -1) dcSbus_noslack_(m2) += hvdc_droop_data_.p0(k);
+    }
 }
 
 template<class LinearSolver>
@@ -298,6 +362,7 @@ void BaseDCAlgo<LinearSolver>::reset(){
     slack_buses_ids_solver_ = Eigen::VectorXi();
     mat_bus_id_ = Eigen::VectorXi();
     nonslack_ybus_ids_ = Eigen::VectorXi();
+    hvdc_droop_data_.clear();
 }
 
 template<class LinearSolver>

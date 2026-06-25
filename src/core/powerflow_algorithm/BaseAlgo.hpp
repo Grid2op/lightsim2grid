@@ -71,7 +71,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             timer_Fx_(0.),
             timer_solve_(0.),
             timer_check_(0.),
-            timer_total_nr_(0.){};
+            timer_total_nr_(0.),
+            lsgrid_ptr_(nullptr){};
 
         virtual ~BaseAlgo() noexcept = default;
 
@@ -100,6 +101,14 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual IntVect get_q_to_J_col_python() const {
             throw std::runtime_error("get_q_to_J_col: only available for Newton-Raphson solvers.");
         }
+
+        // VoltageControl (remote gen + SVC) converged reactive injection per
+        // controller (pu) and its (kind, element id) identity, in controller
+        // registration order. Empty for algorithms without the extension (DC,
+        // Gauss-Seidel, NR without any voltage-mode controller).
+        virtual RealVect get_controller_q()       const { return RealVect(); }
+        virtual IntVect  get_controller_kind()    const { return IntVect(); }
+        virtual IntVect  get_controller_elem_id() const { return IntVect(); }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;

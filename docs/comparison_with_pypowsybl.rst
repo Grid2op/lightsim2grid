@@ -72,6 +72,7 @@ Reproduce the results
 You can run the example by running the script:
 
 .. code-block:: bash
+
     cd benchmarks
     python compare_lightsim2grid_pypowsybl.py --case $CASE_NAME
 
@@ -79,6 +80,7 @@ For example:
 
 
 .. code-block:: bash
+
     cd benchmarks
     python compare_lightsim2grid_pypowsybl.py --case ieee9
 
@@ -154,6 +156,7 @@ The benchmarks were run on:
 The results were obtained by launching:
 
 .. code-block:: bash
+
     python compare_lightsim2grid_pypowsybl.py --case ieee9
     python compare_lightsim2grid_pypowsybl.py --case ieee14
     python compare_lightsim2grid_pypowsybl.py --case ieee30
