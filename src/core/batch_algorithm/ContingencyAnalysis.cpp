@@ -11,6 +11,9 @@
 #include <queue>
 #include <algorithm>
 #include <math.h>       /* isfinite */
+#include <thread>
+#include <vector>
+#include <memory>
 
 namespace ls2g {
 
@@ -240,7 +243,8 @@ void ContingencyAnalysis::init_li_coeffs(
 
 bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus,
                                            const std::vector<Coeff> & coeffs,
-                                           bool ac_solver_used)
+                                           bool ac_solver_used,
+                                           AlgorithmSelector & algo)
 {
     if(ac_solver_used)
     {
@@ -252,7 +256,7 @@ bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus
         // DC solver stores the ybus internally, I update it
         // instead of building it over and over
         for(const Coeff& coeff : coeffs){
-            _algo.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
+            algo.update_internal_Ybus(coeff, false);  // false => remove the coeff (using -= )
         }
         // in DC mode the solver takes the responsibility
         // so Ybus is always "connected".
@@ -283,9 +287,9 @@ IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
     int cont_id = 0;
     for(const auto & coeffs_modif: _li_coeffs){
-        if(remove_from_Ybus(Ybus, coeffs_modif, true)) res(cont_id) = 1;
+        if(remove_from_Ybus(Ybus, coeffs_modif, true, _algo)) res(cont_id) = 1;
         else res(cont_id) = 0;
-        readd_to_Ybus(Ybus, coeffs_modif, true);
+        readd_to_Ybus(Ybus, coeffs_modif, true, _algo);
         ++cont_id;
     }
     return res;
@@ -294,7 +298,8 @@ IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
 void ContingencyAnalysis::readd_to_Ybus(
     Eigen::SparseMatrix<cplx_type> & Ybus,
     const std::vector<Coeff> & coeffs,
-    bool ac_solver_used)
+    bool ac_solver_used,
+    AlgorithmSelector & algo)
 {
     if(ac_solver_used){
         for(const Coeff & coeff_to_remove: coeffs){
@@ -304,7 +309,7 @@ void ContingencyAnalysis::readd_to_Ybus(
         // DC solver stores the ybus internally, I update it
         // instead of building it over and over
         for(const Coeff& coeff : coeffs){
-            _algo.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
+            algo.update_internal_Ybus(coeff, true);  // true => add back the coeff (using += )
         }
     }
 }
@@ -357,74 +362,190 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     if(!n_powerflow_has_conv) return;
 
-    // now perform the security analysis
-    size_t cont_id = 0;
-    CplxVect V;
-    bool conv;
-    for(const auto & coeffs_modif: _li_coeffs){
-        auto timer_modif_Ybus = CustTimer();
-        bool do_store = false;
-        conv = false;
+    // now perform the security analysis, possibly split across several threads
+    const size_t nb_cont = _li_coeffs.size();
+    const int nb_thread = std::min(static_cast<int>(nb_cont), std::max(1, _nb_thread));
 
-        if(mask_mode){
-            // disconnected-grid handling: solve the largest component while masking
-            // the rest, unless the contingency strands the chosen reference slack.
-            if(!_skip_mask[cont_id]){
-                const std::vector<int> & masked = _li_masked[cont_id];
-                remove_from_Ybus(Ybus_, coeffs_modif, ac_solver_used);  // invertibility handled by masking
-                _timer_modif_Ybus += timer_modif_Ybus.duration();
+    if(nb_thread <= 1){
+        // single-threaded path: reuse the (already warmed-up) member solver,
+        // member Ybus_ and the member accumulators -> identical to the legacy code.
+        std::exception_ptr err;
+        run_contingency_range(
+            0, nb_cont,
+            _algo, _algo_controler, Ybus_, Vinit_solver,
+            ac_solver_used, mask_mode, max_iter, tol, sn_mva,
+            _timer_modif_Ybus, _nb_solved, _timer_solver, err);
+        if(err) std::rethrow_exception(err);
+        _timer_total = timer.duration();
+        return;
+    }
 
-                _algo.set_masked_buses(masked);
-                const RealVect sw = masked.empty() ? slack_weights_ : masked_slack_weights(masked);
-                V = Vinit_solver; // Vinit is reused for each contingencies
-                conv = compute_one_powerflow(
-                    Ybus_, V, Sbus_,
-                    slack_ids_me_.as_eigen(), sw,
-                    bus_pv_.as_eigen(), bus_pq_.as_eigen(),
-                    max_iter, tol / sn_mva);
-                _algo.set_masked_buses(std::vector<int>());  // reset for the next contingency
+    // multi-threaded path: one solver + one Ybus copy + one AlgoControl per thread.
+    // Thread 0 reuses the member solver / Ybus_ / control (already warmed up) to
+    // save one copy + one warm-up. The remaining threads build a fresh solver of
+    // the same type and warm it up so its factorization / sparsity pattern match.
+    std::vector<std::unique_ptr<AlgorithmSelector> > extra_algos(nb_thread - 1);
+    std::vector<AlgoControl> controls(nb_thread);
+    std::vector<Eigen::SparseMatrix<cplx_type> > ybus_copies(nb_thread - 1);
+    std::vector<double> th_timer_modif(nb_thread, 0.);
+    std::vector<int> th_nb_solved(nb_thread, 0);
+    std::vector<double> th_timer_solver(nb_thread, 0.);
+    std::vector<std::exception_ptr> th_err(nb_thread);
+
+    controls[0] = _algo_controler;  // already "nothing changed" after preprocessing
+    for(int t = 1; t < nb_thread; ++t){
+        extra_algos[t - 1] = std::make_unique<AlgorithmSelector>();
+        AlgorithmSelector & algo = *extra_algos[t - 1];
+        algo.set_lsgrid(&_grid_model);
+        algo.change_algorithm(get_algo_type());
+        algo.set_config(_algo.get_config());  // match the member solver's configuration
+        controls[t] = _algo_controler;  // copy, made independent by warmup_solver
+        warmup_solver(algo, controls[t], Vinit_solver, max_iter, tol);
+        ybus_copies[t - 1] = Ybus_;  // thread-local working copy of the admittance
+    }
+
+    // contiguous split of [0, nb_cont) across the threads
+    auto algo_for = [&](int t) -> AlgorithmSelector & {
+        return t == 0 ? _algo : *extra_algos[t - 1];
+    };
+    auto ybus_for = [&](int t) -> Eigen::SparseMatrix<cplx_type> & {
+        return t == 0 ? Ybus_ : ybus_copies[t - 1];
+    };
+    const size_t base = nb_cont / static_cast<size_t>(nb_thread);
+    const size_t rem = nb_cont % static_cast<size_t>(nb_thread);
+    auto range_of = [&](int t, size_t & b, size_t & e){
+        // contiguous split: the first `rem` threads get one extra contingency
+        b = static_cast<size_t>(t) * base + std::min(static_cast<size_t>(t), rem);
+        e = b + base + (static_cast<size_t>(t) < rem ? 1 : 0);
+    };
+
+    // spawn threads 1..nb_thread-1, then run thread 0's share inline
+    std::vector<std::thread> threads;
+    threads.reserve(nb_thread - 1);
+    for(int t = 1; t < nb_thread; ++t){
+        size_t b, e;
+        range_of(t, b, e);
+        threads.emplace_back([=, &algo_for, &ybus_for, &controls, &th_timer_modif,
+                              &th_nb_solved, &th_timer_solver, &th_err, &Vinit_solver](){
+            run_contingency_range(
+                b, e,
+                algo_for(t), controls[t], ybus_for(t), Vinit_solver,
+                ac_solver_used, mask_mode, max_iter, tol, sn_mva,
+                th_timer_modif[t], th_nb_solved[t], th_timer_solver[t], th_err[t]);
+        });
+    }
+    {
+        size_t b, e;
+        range_of(0, b, e);
+        run_contingency_range(
+            b, e,
+            _algo, controls[0], Ybus_, Vinit_solver,
+            ac_solver_used, mask_mode, max_iter, tol, sn_mva,
+            th_timer_modif[0], th_nb_solved[0], th_timer_solver[0], th_err[0]);
+    }
+
+    for(auto & th : threads) th.join();
+
+    // surface the first error (if any) and merge the per-thread accumulators
+    for(int t = 0; t < nb_thread; ++t){
+        if(th_err[t]) std::rethrow_exception(th_err[t]);
+    }
+    for(int t = 0; t < nb_thread; ++t){
+        _timer_modif_Ybus += th_timer_modif[t];
+        _nb_solved += th_nb_solved[t];
+        _timer_solver += th_timer_solver[t];
+    }
+
+    _timer_total = timer.duration();
+}
+
+void ContingencyAnalysis::run_contingency_range(
+    size_t cont_begin,
+    size_t cont_end,
+    AlgorithmSelector & algo,
+    AlgoControl & control,
+    Eigen::SparseMatrix<cplx_type> & Ybus,
+    const CplxVect & Vinit_solver,
+    bool ac_solver_used,
+    bool mask_mode,
+    int max_iter,
+    real_type tol,
+    real_type sn_mva,
+    double & timer_modif_Ybus_acc,
+    int & nb_solved,
+    double & timer_solver,
+    std::exception_ptr & err)
+{
+    try {
+        CplxVect V;
+        for(size_t cont_id = cont_begin; cont_id < cont_end; ++cont_id){
+            const std::vector<Coeff> & coeffs_modif = _li_coeffs[cont_id];
+            auto timer_modif_Ybus = CustTimer();
+            bool do_store = false;
+            bool conv = false;
+
+            if(mask_mode){
+                // disconnected-grid handling: solve the largest component while masking
+                // the rest, unless the contingency strands the chosen reference slack.
+                if(!_skip_mask[cont_id]){
+                    const std::vector<int> & masked = _li_masked[cont_id];
+                    remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);  // invertibility handled by masking
+                    timer_modif_Ybus_acc += timer_modif_Ybus.duration();
+
+                    algo.set_masked_buses(masked);
+                    const RealVect sw = masked.empty() ? slack_weights_ : masked_slack_weights(masked);
+                    V = Vinit_solver; // Vinit is reused for each contingencies
+                    conv = compute_one_powerflow(
+                        algo, control, nb_solved, timer_solver,
+                        Ybus, V, Sbus_,
+                        slack_ids_me_.as_eigen(), sw,
+                        bus_pv_.as_eigen(), bus_pq_.as_eigen(),
+                        max_iter, tol / sn_mva);
+                    algo.set_masked_buses(std::vector<int>());  // reset for the next contingency
+
+                    timer_modif_Ybus = CustTimer();
+                    readd_to_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
+                    timer_modif_Ybus_acc += timer_modif_Ybus.duration();
+
+                    if(conv){
+                        // masked buses are not simulated: report 0 voltage for them
+                        for(int b : masked) if(b >= 0 && b < V.size()) V(b) = cplx_type(0., 0.);
+                        do_store = true;
+                    }
+                }
+                // skipped contingency: conv stays false, voltages stay 0
+            } else {
+                // legacy behaviour: skip the contingency if it disconnects the grid
+                bool invertible = remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
+                timer_modif_Ybus_acc += timer_modif_Ybus.duration();
+
+                if(invertible)
+                {
+                    V = Vinit_solver; // Vinit is reused for each contingencies
+                    conv = compute_one_powerflow(
+                        algo, control, nb_solved, timer_solver,
+                        Ybus,
+                        V,
+                        Sbus_,
+                        slack_ids_me_.as_eigen(),
+                        slack_weights_,
+                        bus_pv_.as_eigen(),
+                        bus_pq_.as_eigen(),
+                        max_iter,
+                        tol / sn_mva);
+                }
 
                 timer_modif_Ybus = CustTimer();
-                readd_to_Ybus(Ybus_, coeffs_modif, ac_solver_used);
-                _timer_modif_Ybus += timer_modif_Ybus.duration();
-
-                if(conv){
-                    // masked buses are not simulated: report 0 voltage for them
-                    for(int b : masked) if(b >= 0 && b < V.size()) V(b) = cplx_type(0., 0.);
-                    do_store = true;
-                }
-            }
-            // skipped contingency: conv stays false, voltages stay 0
-        } else {
-            // legacy behaviour: skip the contingency if it disconnects the grid
-            bool invertible = remove_from_Ybus(Ybus_, coeffs_modif, ac_solver_used);
-            _timer_modif_Ybus += timer_modif_Ybus.duration();
-
-            if(invertible)
-            {
-                V = Vinit_solver; // Vinit is reused for each contingencies
-                conv = compute_one_powerflow(
-                    Ybus_,
-                    V,
-                    Sbus_,
-                    slack_ids_me_.as_eigen(),
-                    slack_weights_,
-                    bus_pv_.as_eigen(),
-                    bus_pq_.as_eigen(),
-                    max_iter,
-                    tol / sn_mva);
+                readd_to_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
+                timer_modif_Ybus_acc += timer_modif_Ybus.duration();
+                do_store = conv && invertible;
             }
 
-            timer_modif_Ybus = CustTimer();
-            readd_to_Ybus(Ybus_, coeffs_modif, ac_solver_used);
-            _timer_modif_Ybus += timer_modif_Ybus.duration();
-            do_store = conv && invertible;
+            if (do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
         }
-
-        if (do_store) _voltages.row(cont_id)(id_solver_to_me_.as_eigen()) = V.array();
-        ++cont_id;
+    } catch(...) {
+        err = std::current_exception();
     }
-    _timer_total = timer.duration();
 }
 
 // by default the flows are not 0 when the powerline is connected in the original topology
