@@ -67,12 +67,19 @@ four-substations node-breaker network, which carries VSC and LCC HVDC, an SVC
 regulating voltage, a shunt, and ratio + phase tap changers.
 """
 
-import numpy as np
 import pandas as pd
 
 
 # Tolerance (MVAr) for deciding a reactive injection sits "at" its Q limit.
 _Q_LIMIT_TOL = 1e-3
+            
+            
+def _keep_only_main_comp(df_el, df_bus):
+    mask_conn = df_el["connected"]
+    bus_els = df_bus.loc[df_el.loc[mask_conn, "bus_id"]]
+    mask_main = (bus_els["synchronous_component"] == 0).values
+    df_el = df_el.loc[df_el.loc[mask_conn][mask_main].index]
+    return df_el
 
 
 def _reactive_limits(df: pd.DataFrame):
@@ -111,6 +118,7 @@ def bake_outer_loops(
     bake_active_power: bool = True,
     balance_on_loads: bool = False,
     load_power_factor_constant: bool = False,
+    keep_only_main_comp: bool=True
 ):
     """Rewrite ``network`` input setpoints to the converged outer-loop state.
 
@@ -138,6 +146,8 @@ def bake_outer_loops(
     load_power_factor_constant
         Mirror OLF's ``loadPowerFactorConstant``: also rewrite load q0 so the
         power factor is preserved.
+    keep_only_main_comp
+        Only elements of the main connected components are updated (True by default)
 
     Notes
     -----
@@ -146,19 +156,21 @@ def bake_outer_loops(
     it in IIDM, so PV->PQ is detected from the realized Q sitting at a limit.
     """
     if bake_taps:
-        _bake_taps_and_sections(network)
+        _bake_taps_and_sections(network, keep_only_main_comp)
     if bake_reactive_limits:
-        _bake_reactive_limit_switches(network)
+        _bake_reactive_limit_switches(network, keep_only_main_comp)
     if bake_active_power:
         _bake_active_power(
             network,
             balance_on_loads=balance_on_loads,
             load_power_factor_constant=load_power_factor_constant,
+            keep_only_main_comp=keep_only_main_comp
         )
 
 
-def _bake_taps_and_sections(network):
+def _bake_taps_and_sections(network, keep_only_main_comp=True):
     # Ratio tap changers (transformer voltage control outer loop).
+    df_bus = network.get_buses(attributes=["synchronous_component"])
     rtc = network.get_ratio_tap_changers(
         attributes=["tap", "solved_tap_position", "regulating"]
     )
@@ -171,7 +183,7 @@ def _bake_taps_and_sections(network):
         if keep.any():
             upd = pd.DataFrame(index=rtc.index[keep])
             upd["tap"] = rtc["solved_tap_position"][keep].astype(int)
-            upd["regulating"] = False
+            # upd["regulating"] = False
             network.update_ratio_tap_changers(upd)
 
     # Phase tap changers (phase-shifter regulation outer loop).
@@ -183,13 +195,21 @@ def _bake_taps_and_sections(network):
         if keep.any():
             upd = pd.DataFrame(index=ptc.index[keep])
             upd["tap"] = ptc["solved_tap_position"][keep].astype(int)
-            upd["regulating"] = False
+            # upd["regulating"] = False
             network.update_phase_tap_changers(upd)
 
     # Shunt compensators (shunt voltage control outer loop).
     sh = network.get_shunt_compensators(
-        attributes=["section_count", "solved_section_count", "voltage_regulation_on"]
+        attributes=[
+            "section_count", 
+            "solved_section_count", 
+            "voltage_regulation_on",
+            "connected", 
+            "bus_id"
+        ]
     )
+    if keep_only_main_comp:
+        sh = _keep_only_main_comp(sh, df_bus)
     if len(sh):
         keep = sh["voltage_regulation_on"] & sh["solved_section_count"].notna()
         if keep.any():
@@ -199,26 +219,35 @@ def _bake_taps_and_sections(network):
             network.update_shunt_compensators(upd)
 
 
-def _bake_reactive_limit_switches(network):
+def _bake_reactive_limit_switches(
+    network,
+    keep_only_main_comp=True):
+    df_bus = network.get_buses(attributes=["synchronous_component"])
     gen = network.get_generators(
         attributes=[
             "voltage_regulator_on", "q",
             "min_q", "max_q", "min_q_at_p", "max_q_at_p",
+            "connected", "bus_id"
         ]
     )
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
     mask, q_gen = _bound_at_qlimit(gen, gen["voltage_regulator_on"])
     if mask.any():
         upd = pd.DataFrame(index=gen.index[mask])
         upd["target_q"] = q_gen[mask]
         upd["voltage_regulator_on"] = False
         network.update_generators(upd)
-
+        
     vsc = network.get_vsc_converter_stations(
         attributes=[
             "voltage_regulator_on", "q",
             "min_q", "max_q", "min_q_at_p", "max_q_at_p",
+            "connected", "bus_id"
         ]
     )
+    if keep_only_main_comp:
+        vsc = _keep_only_main_comp(vsc, df_bus)
     if len(vsc):
         mask, q_gen = _bound_at_qlimit(vsc, vsc["voltage_regulator_on"])
         if mask.any():
@@ -231,22 +260,30 @@ def _bake_reactive_limit_switches(network):
     # docstring. Hook for susceptance-envelope saturation would go here.
 
 
-def _bake_active_power(network, balance_on_loads, load_power_factor_constant):
-    gen = network.get_generators(attributes=["p"])
+def _bake_active_power(network, balance_on_loads, load_power_factor_constant, keep_only_main_comp=True):
+    df_bus = network.get_buses(attributes=["synchronous_component"])
+    
+    gen = network.get_generators(attributes=["p", "connected", "bus_id"])
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
     if len(gen):
         # result p is load convention; target_p is generator convention
         network.update_generators(
             pd.DataFrame({"target_p": -gen["p"]}, index=gen.index)
         )
 
-    bat = network.get_batteries(attributes=["p"])
+    bat = network.get_batteries(attributes=["p", "connected", "bus_id"])
+    if keep_only_main_comp:
+        bat = _keep_only_main_comp(bat, df_bus)
     if len(bat):
         network.update_batteries(
             pd.DataFrame({"target_p": -bat["p"]}, index=bat.index)
         )
 
     if balance_on_loads:
-        load = network.get_loads(attributes=["p", "q"])
+        load = network.get_loads(attributes=["p", "q", "connected", "bus_id"])
+        if keep_only_main_comp:
+            load = _keep_only_main_comp(load, df_bus)
         if len(load):
             upd = pd.DataFrame(index=load.index)
             upd["p0"] = load["p"]  # load convention both sides, no flip
