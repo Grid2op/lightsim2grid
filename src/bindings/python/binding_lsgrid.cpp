@@ -98,6 +98,8 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("init_storages", &LSGrid::init_storages, DocLSGrid::_internal_do_not_use.c_str())
         .def("init_sgens", &LSGrid::init_sgens, DocLSGrid::_internal_do_not_use.c_str())
         .def("init_dclines", &LSGrid::init_dclines, DocLSGrid::_internal_do_not_use.c_str())
+        .def("init_hvdc_lines", &LSGrid::init_hvdc_lines, DocLSGrid::_internal_do_not_use.c_str())
+        .def("init_svcs", &LSGrid::init_svcs, DocLSGrid::_internal_do_not_use.c_str())
         .def("add_gen_slackbus", &LSGrid::add_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("remove_gen_slackbus", &LSGrid::remove_gen_slackbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
@@ -110,6 +112,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_trafos", &LSGrid::get_trafos, DocLSGrid::get_trafos.c_str(), py::return_value_policy::reference)
         .def("get_generators", &LSGrid::get_generators, DocLSGrid::get_generators.c_str(), py::return_value_policy::reference)
         .def("get_static_generators", &LSGrid::get_static_generators, DocLSGrid::get_static_generators.c_str(), py::return_value_policy::reference)
+        .def("get_svcs", &LSGrid::get_svcs, "Get the container of all the Static Var Compensators (SVC).", py::return_value_policy::reference)
         .def("get_shunts", &LSGrid::get_shunts, DocLSGrid::get_shunts.c_str(), py::return_value_policy::reference)
         .def("get_storages", &LSGrid::get_storages, DocLSGrid::get_storages.c_str(), py::return_value_policy::reference)
         .def("get_loads", &LSGrid::get_loads, DocLSGrid::get_loads.c_str(), py::return_value_policy::reference)
@@ -176,7 +179,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
             shift ratio should be given in in the side1 (hv side in pandapower).
             )mydelimiter")
         .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg,
-            "Same as :ref:`change_shift_trafo` but phase shift is expressed in degree and NOT in rad.")
+            "Same as ``change_shift_trafo`` but phase shift is expressed in degree and NOT in rad.")
         .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::_internal_do_not_use.c_str())
@@ -190,6 +193,12 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_bus_gen", &LSGrid::get_bus_gen, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::_internal_do_not_use.c_str())
+        .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, "Set the grid bus whose voltage a generator regulates (remote voltage control; bus == own bus for local control).")
+        .def("deactivate_svc", &LSGrid::deactivate_svc, DocLSGrid::_internal_do_not_use.c_str())
+        .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::_internal_do_not_use.c_str())
+        .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::_internal_do_not_use.c_str())
+        .def("get_bus_svc", &LSGrid::get_bus_svc, DocLSGrid::_internal_do_not_use.c_str())
+        .def("set_svc_names", &LSGrid::set_svc_names, "TODO")
 
         .def("deactivate_shunt", &LSGrid::deactivate_shunt, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_shunt", &LSGrid::reactivate_shunt, DocLSGrid::_internal_do_not_use.c_str())
@@ -221,6 +230,11 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("change_bus2_dcline", &LSGrid::change_bus2_dcline, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus1_dcline", &LSGrid::get_bus1_dcline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
         .def("get_bus2_dcline", &LSGrid::get_bus2_dcline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
+        .def("set_status_droop_hvdc", &LSGrid::set_status_droop_hvdc,
+             "Set the droop regime of an angle-droop (AC emulation) hvdc line: 0 = linear, +1 = saturated 1->2, -1 = saturated 2->1. "
+             "This is an INPUT of the solver, constant across one solve: the saturation logic is meant to be run between two solves (python outer loop).")
+        .def("get_status_droop_hvdc", &LSGrid::get_status_droop_hvdc, "Droop regime of one hvdc line, see `set_status_droop_hvdc`")
+        .def("get_status_droop_hvdc_vect", &LSGrid::get_status_droop_hvdc_vect, "Droop regimes of all the hvdc lines, see `set_status_droop_hvdc`")
 
         // get back the results
         .def("get_V", &LSGrid::get_V, DocLSGrid::get_V.c_str())
@@ -231,7 +245,7 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
         .def("get_Vm_solver", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver.c_str(), py::return_value_policy::reference)
         .def("get_J_solver", &LSGrid::get_J_python_solver, DocLSGrid::get_J_python_solver.c_str(), py::return_value_policy::reference)
 
-        .def("id_me_to_ac_solver", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_me_to_ac_solver.c_str(), py::return_value_policy::reference)
+        .def("id_me_to_ac_solver", &LSGrid::id_me_to_ac_solver_numpy, DocLSGrid::id_me_to_ac_solver.c_str(), py::return_value_policy::reference)
         .def("id_ac_solver_to_me", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_ac_solver_to_me.c_str(), py::return_value_policy::reference)
         .def("id_me_to_dc_solver", &LSGrid::id_me_to_dc_solver_numpy, DocLSGrid::id_me_to_dc_solver.c_str(), py::return_value_policy::reference)
         .def("id_dc_solver_to_me", &LSGrid::id_dc_solver_to_me_numpy, DocLSGrid::id_dc_solver_to_me.c_str(), py::return_value_policy::reference)

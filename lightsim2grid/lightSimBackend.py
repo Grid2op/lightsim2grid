@@ -149,7 +149,7 @@ class LightSimBackend(Backend):
         #:      So the "path", "filename" of grid2op.make and "pypowsybl_load_kwargs"
         #:      will be ignored if this is set.
         #:   - `pypowsybl_load_kwargs` (``dict``): addition keywords arguments
-        #:      passed to "pypowsybl.network.load(grid, **pypowsybl_load_kwargs)"
+        #:      passed to ``pypowsybl.network.load(grid, **pypowsybl_load_kwargs)``
         #:      Not used when grid is provided.
         #:   - `n_busbar_per_sub` (``int``): number of independant buses for
         #:     each substation in the GridModel.
@@ -203,6 +203,7 @@ class LightSimBackend(Backend):
         self._stop_if_storage_disco = stop_if_storage_disco
         
         #: .. versionadded:: 0.11.0
+        #:
         #: if set to ``True`` the backend will automatically
         #: disconnect any load / generator not in the main
         #: connected component. The default is ``False``
@@ -389,6 +390,7 @@ class LightSimBackend(Backend):
         self._next_pf_fails : Optional[BackendError] = None
         
         #: .. versionadded:: 0.11.1
+        #:
         #: generator to assign to the slack
         #: for now only used for pypowsybl
         self._gen_slack_id = gen_slack_id

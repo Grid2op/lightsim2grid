@@ -33,6 +33,7 @@ class LS2G_API GenInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type target_vm_pu;
         real_type min_q_mvar;
         real_type max_q_mvar;
+        int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id for local control)
 
         inline GenInfo(const GeneratorContainer & r_data_gen, int my_id) noexcept;
 };
@@ -62,7 +63,8 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
            std::vector<real_type>,  // min_q_
            std::vector<real_type>,  // max_q_
            std::vector<bool>,       // gen_slackbus
-           std::vector<real_type>   // gen_slack_weight_
+           std::vector<real_type>,  // gen_slack_weight_
+           std::vector<int>         // regulated_bus_id_ (appended; defaults to own bus)
         > ;
         
         GeneratorContainer() noexcept :OneSideContainer_PQ(), turnedoff_gen_pv_(true){};
@@ -197,6 +199,39 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         
         real_type get_qmin(int gen_id) {return min_q_.coeff(gen_id);}
         real_type get_qmax(int gen_id) {return max_q_.coeff(gen_id);}
+
+        // ---- remote voltage control --------------------------------------------
+        // grid bus id whose voltage this generator regulates (== its own bus for
+        // ordinary local control). A remote-regulating gen does NOT join the PV
+        // path: it is a controller in a VoltageControl group instead.
+        int get_regulated_bus_id(int gen_id) const {return regulated_bus_id_(gen_id);}
+        bool regulates_remote(int gen_id) const {
+            return regulated_bus_id_(gen_id) != bus_id_(gen_id).cast_int();
+        }
+        void set_regulated_bus(int gen_id, int bus_id, DualAlgoControl & solver_control){
+            if(regulated_bus_id_(gen_id) != bus_id){
+                regulated_bus_id_(gen_id) = bus_id;
+                solver_control.ac_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
+                solver_control.ac_algo_controler().tell_recompute_sbus();
+                solver_control.dc_algo_controler().tell_pv_changed();  // groups are rebuilt on topology init
+                solver_control.dc_algo_controler().tell_recompute_sbus();
+            }
+        }
+        // true iff this generator is an ACTIVE remote voltage controller (joins a
+        // VoltageControl group instead of the PV path); mirrors the fillpv gating
+        bool gen_is_voltage_controller(int gen_id) const {
+            if(!status_[gen_id]) return false;
+            if(!voltage_regulator_on_[gen_id]) return false;
+            if(!regulates_remote(gen_id)) return false;
+            if((!turnedoff_gen_pv_) && is_pseudo_off(gen_id)) return false;
+            return true;
+        }
+        real_type get_target_vm_pu(int gen_id) const {return target_vm_pu_(gen_id);}
+        real_type get_min_q(int gen_id) const {return min_q_.coeff(gen_id);}
+        real_type get_max_q(int gen_id) const {return max_q_.coeff(gen_id);}
+        // write the converged reactive output (MVAr) of a remote-regulating gen,
+        // supplied by the VoltageControl extension (LSGrid::compute_results)
+        void set_voltage_control_q(int gen_id, real_type q_mvar) {res_q_(gen_id) = q_mvar;}
         
         void change_v(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
         void change_v_nothrow(int gen_id, real_type new_v_pu, DualAlgoControl & solver_control);
@@ -240,6 +275,8 @@ class LS2G_API GeneratorContainer final: public OneSideContainer_PQ, public Iter
         // input data
         std::vector<bool> voltage_regulator_on_;
         RealVect target_vm_pu_;
+        // grid bus id whose voltage is regulated (defaults to own bus = local control)
+        Eigen::VectorXi regulated_bus_id_;
 
         // remember which generators are "slack bus"
         std::vector<bool> gen_slackbus_;  // say for each generator if it's a slack or not
@@ -278,7 +315,8 @@ slack_weight(-1.0),
 voltage_regulator_on(false),
 target_vm_pu(0.),
 min_q_mvar(0.),
-max_q_mvar(0.)
+max_q_mvar(0.),
+regulated_bus_id(-1)
 {
     if((my_id >= 0) && (my_id < r_data_gen.nb()))
     {
@@ -289,6 +327,7 @@ max_q_mvar(0.)
         target_vm_pu = r_data_gen.target_vm_pu_.coeff(my_id);
         min_q_mvar = r_data_gen.min_q_.coeff(my_id);
         max_q_mvar = r_data_gen.max_q_.coeff(my_id);
+        regulated_bus_id = r_data_gen.regulated_bus_id_(my_id);
     }
 }
 

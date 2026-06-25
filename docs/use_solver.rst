@@ -1,3 +1,5 @@
+.. _use-solver:
+
 Use as Pandapower Solver
 =========================
 
@@ -92,6 +94,17 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   solver.get_V()  # complex voltage
   # for compatible solvers
   solver.get_J()  # see documentation of the `newton_pf` function for more information about the shape of J.
+
+  # since lightsim2grid 0.14, the Jacobian rows / columns no longer follow the
+  # pandapower convention. To know which column of `J` holds which unknown, use
+  # the mappings below. Each returns a vector **indexed by the (solver) bus id**
+  # -- ie the same indexing as `Ybus` / `V0` above -- giving the Jacobian column
+  # of that bus' unknown, or -1 when the bus has no such unknown (eg. the
+  # voltage-angle column of a slack bus, or the voltage-magnitude of a PV bus):
+  theta_col = solver.get_theta_to_J_col()  # bus id -> column of its voltage-angle (theta) unknown
+  vm_col = solver.get_vm_to_J_col()         # bus id -> column of its voltage-magnitude (vm) unknown
+  q_col = solver.get_q_to_J_col()           # bus id -> column of its reactive (q) unknown
+  # eg. the angle unknown of (solver) bus 4 is column `theta_col[4]` of `J`
 
   # some other usefull information
   solver.get_nb_iter()  # return the number of iteration performed

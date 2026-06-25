@@ -475,7 +475,7 @@ Python API reference
 
 
 Worked example (``examples/external_algorithm/``)
------------------------------------------------
+-------------------------------------------------
 
 A minimal but complete example lives in the repository under
 ``examples/external_algorithm/``.  It implements ``DummyExternalAlgo``:
@@ -506,7 +506,7 @@ Expected output::
 
     Plugin loaded successfully.
     Registered solvers: ['DC', 'DummyExternal', 'FDPF_BX_SparseLU', ...]
-    change_algorithm('DummyExternal') OK — solver type is Custom as expected.
+    change_algorithm('DummyExternal') OK -- solver type is Custom as expected.
     All checks passed.
 
 The automated regression test is in

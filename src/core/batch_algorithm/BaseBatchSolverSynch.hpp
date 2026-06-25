@@ -38,6 +38,10 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _amps_flows(),
             _active_power_flows()
             {
+                // give the internal solvers access to the (copied) grid: the
+                // hvdc angle-droop data flows through this pointer (the member
+                // _grid_model has a stable address, the class is not copyable)
+                _algo.set_lsgrid(&_grid_model);
             }
         virtual ~BaseBatchSolverSynch() noexcept = default;  // to avoid warning about overload virtual
         BaseBatchSolverSynch(const BaseBatchSolverSynch&) = delete;

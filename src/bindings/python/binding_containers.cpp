@@ -10,11 +10,13 @@
 #include "pickle_helpers.hpp"
 #include "element_container/GeneratorContainer.hpp"
 #include "element_container/SGenContainer.hpp"
+#include "element_container/SvcContainer.hpp"
 #include "element_container/LoadContainer.hpp"
+#include "element_container/StorageContainer.hpp"
 #include "element_container/ShuntContainer.hpp"
 #include "element_container/TrafoContainer.hpp"
 #include "element_container/LineContainer.hpp"
-#include "element_container/DCLineContainer.hpp"
+#include "element_container/HvdcLineContainer.hpp"
 #include "SubstationContainer.hpp"
 #include "help_fun_msg.hpp"
 
@@ -45,12 +47,42 @@ void bind_containers(py::module_& m) {
         .def_readonly("target_q_mvar", &GenInfo::target_q_mvar, "TODO")
         .def_readonly("min_q_mvar", &GenInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &GenInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("regulated_bus_id", &GenInfo::regulated_bus_id, "grid bus id whose voltage is regulated (== bus_id for local control)")
         .def_readonly("has_res", &GenInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &GenInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &GenInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &GenInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
         .def_readonly("res_v_kv", &GenInfo::res_v_kv, DocIterator::res_v_kv.c_str())
         .def_readonly("voltage_level_id", &GenInfo::sub_id, DocIterator::sub_id.c_str());
+
+    auto svc_cls = py::class_<SvcContainer>(m, "SvcContainer", "Container of all the Static Var Compensators (SVC) of the grid.")
+        .def("__len__", [](const SvcContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const SvcContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const SvcContainer & data)  {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>());
+    add_pickle(svc_cls, "SvcContainer");
+
+    py::class_<SvcInfo>(m, "SvcInfo", "Information about one Static Var Compensator (SVC).")
+        .def_readonly("id", &SvcInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &SvcInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &SvcInfo::sub_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos_topo_vect", &SvcInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("connected", &SvcInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &SvcInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("regulation_mode", &SvcInfo::regulation_mode, "0 = OFF, 1 = VOLTAGE, 2 = REACTIVE_POWER")
+        .def_readonly("target_vm_pu", &SvcInfo::target_vm_pu, "voltage setpoint (pu of the regulated bus), VOLTAGE mode")
+        .def_readonly("target_q_mvar", &SvcInfo::target_q_mvar, "reactive setpoint (MVAr), REACTIVE_POWER mode")
+        .def_readonly("slope_pu", &SvcInfo::slope_pu, "voltage/reactive slope (pu), 0 = no droop")
+        .def_readonly("b_min", &SvcInfo::b_min, "minimum susceptance (stored, NEVER enforced)")
+        .def_readonly("b_max", &SvcInfo::b_max, "maximum susceptance (stored, NEVER enforced)")
+        .def_readonly("regulated_bus_id", &SvcInfo::regulated_bus_id, "grid bus id whose voltage is regulated (== bus_id for local control)")
+        .def_readonly("has_res", &SvcInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &SvcInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &SvcInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &SvcInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &SvcInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        .def_readonly("voltage_level_id", &SvcInfo::sub_id, DocIterator::sub_id.c_str());
 
     auto sgen_cls = py::class_<SGenContainer>(m, "SGenContainer", DocIterator::SGenContainer.c_str())
         .def("__len__", [](const SGenContainer & data) { return data.nb(); })
@@ -105,6 +137,33 @@ void bind_containers(py::module_& m) {
         .def_readonly("res_theta_deg", &LoadInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
         .def_readonly("res_v_kv", &LoadInfo::res_v_kv, DocIterator::res_v_kv.c_str())
         .def_readonly("voltage_level_id", &LoadInfo::sub_id, DocIterator::sub_id.c_str());
+
+    // storage units share the LoadContainer / LoadInfo documentation (they are PQ
+    // injections in the load convention) but are exposed as their own type.
+    auto storage_cls = py::class_<StorageContainer>(m, "StorageContainer", DocIterator::LoadContainer.c_str())
+        .def("__len__", [](const StorageContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const StorageContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const StorageContainer & data) {
+                return py::make_iterator(data.begin(), data.end());
+            }, py::keep_alive<0, 1>())
+        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, "TODO doc", py::keep_alive<0, 1>());
+    add_pickle(storage_cls, "StorageContainer");
+
+    py::class_<StorageInfo>(m, "StorageInfo", DocIterator::LoadInfo.c_str())
+        .def_readonly("id", &StorageInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &StorageInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &StorageInfo::sub_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos_topo_vect", &StorageInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("connected", &StorageInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &StorageInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("target_p_mw", &StorageInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_q_mvar", &StorageInfo::target_q_mvar, DocIterator::target_q_mvar.c_str())
+        .def_readonly("has_res", &StorageInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &StorageInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &StorageInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &StorageInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &StorageInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        .def_readonly("voltage_level_id", &StorageInfo::sub_id, DocIterator::sub_id.c_str());
 
     auto shunt_cls = py::class_<ShuntContainer>(m, "ShuntContainer", DocIterator::ShuntContainer.c_str())
         .def("__len__", [](const ShuntContainer & data) { return data.nb(); })
@@ -251,47 +310,80 @@ void bind_containers(py::module_& m) {
         .def_readonly("voltage_level1_id", &LineInfo::sub_1_id, DocIterator::sub_id.c_str())
         .def_readonly("voltage_level2_id", &LineInfo::sub_2_id, DocIterator::sub_id.c_str());
 
-    auto dcline_cls = py::class_<DCLineContainer>(m, "DCLineContainer", DocIterator::DCLineContainer.c_str())
-        .def("__len__", [](const DCLineContainer & data) { return data.nb(); })
-        .def("__getitem__", [](const DCLineContainer & data, int k){return data[k]; } )
-        .def("__iter__", [](const DCLineContainer & data) {
+    py::class_<ConverterStationInfo>(m, "ConverterStationInfo", "Information about one hvdc converter station (VSC or LCC)")
+        .def_readonly("id", &ConverterStationInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &ConverterStationInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub_id", &ConverterStationInfo::sub_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos_topo_vect", &ConverterStationInfo::pos_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("connected", &ConverterStationInfo::connected, DocIterator::connected.c_str())
+        .def_readonly("bus_id", &ConverterStationInfo::bus_id, DocIterator::bus_id.c_str())
+        .def_readonly("converter_type", &ConverterStationInfo::converter_type, "0 = VSC, 1 = LCC")
+        .def_readonly("loss_factor", &ConverterStationInfo::loss_factor, "converter loss factor (fraction, 0 - 1)")
+        .def_readonly("voltage_regulator_on", &ConverterStationInfo::voltage_regulator_on, "TODO")
+        .def_readonly("target_p_mw", &ConverterStationInfo::target_p_mw, DocIterator::target_p_mw.c_str())
+        .def_readonly("target_vm_pu", &ConverterStationInfo::target_vm_pu, DocIterator::target_vm_pu.c_str())
+        .def_readonly("target_q_mvar", &ConverterStationInfo::target_q_mvar, "TODO")
+        .def_readonly("min_q_mvar", &ConverterStationInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
+        .def_readonly("max_q_mvar", &ConverterStationInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
+        .def_readonly("power_factor", &ConverterStationInfo::power_factor, "LCC power factor (Q = abs(P) * tan(acos(power_factor)))")
+        .def_readonly("has_res", &ConverterStationInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p_mw", &ConverterStationInfo::res_p_mw, DocIterator::res_p_mw.c_str())
+        .def_readonly("res_q_mvar", &ConverterStationInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
+        .def_readonly("res_theta_deg", &ConverterStationInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
+        .def_readonly("res_v_kv", &ConverterStationInfo::res_v_kv, DocIterator::res_v_kv.c_str())
+        .def_readonly("voltage_level_id", &ConverterStationInfo::sub_id, DocIterator::sub_id.c_str());
+
+    auto dcline_cls = py::class_<HvdcLineContainer>(m, "HvdcLineContainer", DocIterator::DCLineContainer.c_str())
+        .def("__len__", [](const HvdcLineContainer & data) { return data.nb(); })
+        .def("__getitem__", [](const HvdcLineContainer & data, int k){return data[k]; } )
+        .def("__iter__", [](const HvdcLineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &DCLineContainer::get_bus_id_side_1_numpy)
-        .def("get_bus_id_side_2", &DCLineContainer::get_bus_id_side_2_numpy);
-    add_pickle(dcline_cls, "DCLineContainer");
+        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy)
+        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy);
+    add_pickle(dcline_cls, "HvdcLineContainer");
 
-    py::class_<DCLineInfo>(m, "DCLineInfo", DocIterator::DCLineInfo.c_str())
-        .def_readonly("id", &DCLineInfo::id, DocIterator::id.c_str())
-        .def_readonly("name", &DCLineInfo::name, DocIterator::name.c_str())
-        .def_readonly("sub1_id", &DCLineInfo::sub_1_id, DocIterator::sub_id.c_str())
-        .def_readonly("sub2_id", &DCLineInfo::sub_2_id, DocIterator::sub_id.c_str())
-        .def_readonly("pos1_topo_vect", &DCLineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
-        .def_readonly("pos2_topo_vect", &DCLineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
-        .def_readonly("connected_global", &DCLineInfo::connected_global, DocIterator::connected.c_str())
-        .def_readonly("connected1", &DCLineInfo::connected_1, DocIterator::connected.c_str())
-        .def_readonly("connected2", &DCLineInfo::connected_2, DocIterator::connected.c_str())
-        .def_readonly("bus1_id", &DCLineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
-        .def_readonly("bus2_id", &DCLineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
-        .def_readonly("target_p1_mw", &DCLineInfo::target_p_1_mw, DocIterator::target_p_or_mw.c_str())
-        .def_readonly("p2_mw", &DCLineInfo::p_2_mw, DocIterator::target_p_or_mw.c_str())
-        .def_readonly("target_vm1_pu", &DCLineInfo::target_vm_1_pu, DocIterator::target_vm_or_pu.c_str())
-        .def_readonly("target_vm2_pu", &DCLineInfo::target_vm_2_pu, DocIterator::target_vm_ex_pu.c_str())
-        .def_readonly("loss_pct", &DCLineInfo::loss_pct, DocIterator::loss_pct.c_str())
-        .def_readonly("loss_mw", &DCLineInfo::loss_mw, DocIterator::loss_mw.c_str())
-        .def_readonly("gen1", &DCLineInfo::gen_side_1, DocIterator::gen_or.c_str())
-        .def_readonly("gen2", &DCLineInfo::gen_side_2, DocIterator::gen_ex.c_str())
-        .def_readonly("has_res", &DCLineInfo::has_res, DocIterator::has_res.c_str())
-        .def_readonly("res_p1_mw", &DCLineInfo::res_p1_mw, DocIterator::res_p_or_mw_dcline.c_str())
-        .def_readonly("res_p2_mw", &DCLineInfo::res_p2_mw, DocIterator::res_p_ex_mw_dcline.c_str())
-        .def_readonly("res_q1_mvar", &DCLineInfo::res_q1_mvar, DocIterator::res_q_or_mvar_dcline.c_str())
-        .def_readonly("res_q2_mvar", &DCLineInfo::res_q2_mvar, DocIterator::res_q_ex_mvar_dcline.c_str())
-        .def_readonly("res_v1_kv", &DCLineInfo::res_v1_kv, DocIterator::res_v_or_kv_dcline.c_str())
-        .def_readonly("res_v2_kv", &DCLineInfo::res_v2_kv, DocIterator::res_v_ex_kv_dcline.c_str())
-        .def_readonly("res_theta1_deg", &DCLineInfo::res_theta1_deg, DocIterator::res_theta_or_deg_dcline.c_str())
-        .def_readonly("res_theta2_deg", &DCLineInfo::res_theta2_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
-        .def_readonly("voltage_level1_id", &DCLineInfo::sub_1_id, DocIterator::sub_id.c_str())
-        .def_readonly("voltage_level2_id", &DCLineInfo::sub_2_id, DocIterator::sub_id.c_str());
+    py::class_<HvdcLineInfo>(m, "HvdcLineInfo", DocIterator::DCLineInfo.c_str())
+        .def_readonly("id", &HvdcLineInfo::id, DocIterator::id.c_str())
+        .def_readonly("name", &HvdcLineInfo::name, DocIterator::name.c_str())
+        .def_readonly("sub1_id", &HvdcLineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("sub2_id", &HvdcLineInfo::sub_2_id, DocIterator::sub_id.c_str())
+        .def_readonly("pos1_topo_vect", &HvdcLineInfo::pos_1_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("pos2_topo_vect", &HvdcLineInfo::pos_2_topo_vect, DocIterator::pos_topo_vect.c_str())
+        .def_readonly("connected_global", &HvdcLineInfo::connected_global, DocIterator::connected.c_str())
+        .def_readonly("connected1", &HvdcLineInfo::connected_1, DocIterator::connected.c_str())
+        .def_readonly("connected2", &HvdcLineInfo::connected_2, DocIterator::connected.c_str())
+        .def_readonly("bus1_id", &HvdcLineInfo::bus_1_id, DocIterator::bus_or_id.c_str())
+        .def_readonly("bus2_id", &HvdcLineInfo::bus_2_id, DocIterator::bus_ex_id.c_str())
+        .def_readonly("target_p1_mw", &HvdcLineInfo::target_p_1_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("p2_mw", &HvdcLineInfo::p_2_mw, DocIterator::target_p_or_mw.c_str())
+        .def_readonly("target_vm1_pu", &HvdcLineInfo::target_vm_1_pu, DocIterator::target_vm_or_pu.c_str())
+        .def_readonly("target_vm2_pu", &HvdcLineInfo::target_vm_2_pu, DocIterator::target_vm_ex_pu.c_str())
+        .def_readonly("loss_pct", &HvdcLineInfo::loss_pct, DocIterator::loss_pct.c_str())
+        .def_readonly("loss_mw", &HvdcLineInfo::loss_mw, DocIterator::loss_mw.c_str())
+        .def_readonly("converters_mode", &HvdcLineInfo::converters_mode, "0 = side 1 rectifier, 1 = side 2 rectifier")
+        .def_readonly("p_setpoint_mw", &HvdcLineInfo::p_setpoint_mw, "active power drawn at the rectifier (>= 0)")
+        .def_readonly("r_ohm", &HvdcLineInfo::r_ohm, "dc line resistance (Ohm)")
+        .def_readonly("nominal_v_kv", &HvdcLineInfo::nominal_v_kv, "dc nominal voltage (kV), used in the resistive loss term")
+        .def_readonly("droop_enabled", &HvdcLineInfo::droop_enabled, "is the angle-droop (AC emulation) enabled ?")
+        .def_readonly("droop_p0_mw", &HvdcLineInfo::droop_p0_mw, "angle-droop p0 (MW)")
+        .def_readonly("droop_k_mw_per_rad", &HvdcLineInfo::droop_k_mw_per_rad, "angle-droop k (MW / radian)")
+        .def_readonly("pmax_1to2_mw", &HvdcLineInfo::pmax_1to2_mw, "maximum active power, side 1 to side 2 (MW)")
+        .def_readonly("pmax_2to1_mw", &HvdcLineInfo::pmax_2to1_mw, "maximum active power, side 2 to side 1 (MW)")
+        .def_readonly("status_droop", &HvdcLineInfo::status_droop, "droop regime (INPUT): 0 linear, +1 saturated 1->2, -1 saturated 2->1")
+        .def_readonly("station1", &HvdcLineInfo::station_side_1, "converter station of side 1")
+        .def_readonly("station2", &HvdcLineInfo::station_side_2, "converter station of side 2")
+        .def_readonly("has_res", &HvdcLineInfo::has_res, DocIterator::has_res.c_str())
+        .def_readonly("res_p1_mw", &HvdcLineInfo::res_p1_mw, DocIterator::res_p_or_mw_dcline.c_str())
+        .def_readonly("res_p2_mw", &HvdcLineInfo::res_p2_mw, DocIterator::res_p_ex_mw_dcline.c_str())
+        .def_readonly("res_q1_mvar", &HvdcLineInfo::res_q1_mvar, DocIterator::res_q_or_mvar_dcline.c_str())
+        .def_readonly("res_q2_mvar", &HvdcLineInfo::res_q2_mvar, DocIterator::res_q_ex_mvar_dcline.c_str())
+        .def_readonly("res_v1_kv", &HvdcLineInfo::res_v1_kv, DocIterator::res_v_or_kv_dcline.c_str())
+        .def_readonly("res_v2_kv", &HvdcLineInfo::res_v2_kv, DocIterator::res_v_ex_kv_dcline.c_str())
+        .def_readonly("res_theta1_deg", &HvdcLineInfo::res_theta1_deg, DocIterator::res_theta_or_deg_dcline.c_str())
+        .def_readonly("res_theta2_deg", &HvdcLineInfo::res_theta2_deg, DocIterator::res_theta_ex_deg_dcline.c_str())
+        .def_readonly("voltage_level1_id", &HvdcLineInfo::sub_1_id, DocIterator::sub_id.c_str())
+        .def_readonly("voltage_level2_id", &HvdcLineInfo::sub_2_id, DocIterator::sub_id.c_str());
 
     auto sub_cls = py::class_<SubstationContainer>(m, "SubstationContainer", "TODO")
         .def("__len__", [](const SubstationContainer & data) { return data.nb(); })

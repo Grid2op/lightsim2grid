@@ -94,6 +94,18 @@ class LS2G_API AlgorithmSelector final
                    (type == AlgorithmType::DC_NICSLU) ||
                    (type == AlgorithmType::DC_CKTSO);
         }
+        // only the Newton-Raphson algorithms implement the hvdc angle-droop
+        // ("AC emulation") equations; plugin (Custom) solvers are assumed not to
+        bool supports_hvdc_droop(const AlgorithmType& type) const noexcept {
+            return (type == AlgorithmType::NR_SparseLU) ||
+                   (type == AlgorithmType::NR_KLU) ||
+                   (type == AlgorithmType::NR_NICSLU) ||
+                   (type == AlgorithmType::NR_CKTSO) ||
+                   (type == AlgorithmType::NRSing_SparseLU) ||
+                   (type == AlgorithmType::NRSing_KLU) ||
+                   (type == AlgorithmType::NRSing_NICSLU) ||
+                   (type == AlgorithmType::NRSing_CKTSO);
+        }
         bool is_fdpf(const AlgorithmType& type) const noexcept {
             return (type == AlgorithmType::FDPF_XB_SparseLU) ||
                    (type == AlgorithmType::FDPF_BX_SparseLU) ||
@@ -218,6 +230,20 @@ class LS2G_API AlgorithmSelector final
         IntVect get_q_to_J_col_python() const {
             check_right_solver("get_q_to_J_col");
             return get_prt_solver("get_q_to_J_col", false)->get_q_to_J_col_python();
+        }
+
+        // VoltageControl (remote gen + SVC) converged reactive injection per
+        // controller (pu) + identity, in controller registration order. Empty
+        // for any active solver without the extension (no right-solver check on
+        // purpose: a DC / Gauss-Seidel solver simply returns an empty vector).
+        RealVect get_controller_q() const {
+            return get_prt_solver("get_controller_q", false)->get_controller_q();
+        }
+        IntVect get_controller_kind() const {
+            return get_prt_solver("get_controller_kind", false)->get_controller_kind();
+        }
+        IntVect get_controller_elem_id() const {
+            return get_prt_solver("get_controller_elem_id", false)->get_controller_elem_id();
         }
 
         double get_computation_time() const {

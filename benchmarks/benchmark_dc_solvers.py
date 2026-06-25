@@ -65,8 +65,8 @@ NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nics
 
 solver_names = {AlgorithmType.DC_SparseLU: "DC (SparseLU)",
                 AlgorithmType.DC_KLU: "DC (KLU)",
-                AlgorithmType.DC_NICSLU: "DC (NICSLU *)",
-                AlgorithmType.DC_CKTSO: "DC (CKTSO *)"
+                AlgorithmType.DC_NICSLU: "DC (NICSLU\\*)",
+                AlgorithmType.DC_CKTSO: "DC (CKTSO\\*)"
                 }
 solver_gs = {}
 solver_fdpf = {}
@@ -280,10 +280,10 @@ def main(max_ts,
                     f"{nb_ts_gs/time_gs:.2e}",
                     f"{1000.*gs_time_pf/nb_ts_gs:.2e}",
                     f"{1000.*gs_comp_time/nb_ts_gs:.2e}"]) 
-    tab.append(("time serie **", None, ts_time, ts_algo_time))
-    tab.append(("PTDF **", None, time_only_ptdf + time_flow_ptdf, time_flow_ptdf))
-    tab.append(("contingency analysis ***", None, sa_time, sa_algo_time))
-    tab.append(("LODF ***", None, time_only_lodf + time_flow_lodf, time_flow_lodf))
+    tab.append(("time serie \\*\\*", None, ts_time, ts_algo_time))
+    tab.append(("PTDF \\*\\*", None, time_only_ptdf + time_flow_ptdf, time_flow_ptdf))
+    tab.append(("contingency analysis \\*\\*\\*", None, sa_time, sa_algo_time))
+    tab.append(("LODF \\*\\*\\*", None, time_only_lodf + time_flow_lodf, time_flow_lodf))
 
     if TABULATE_AVAIL:
         res_use_with_grid2op_1 = tabulate(tab, headers=hds,  tablefmt="rst")
