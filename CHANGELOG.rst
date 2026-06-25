@@ -164,8 +164,14 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   unchanged. The reference slack is chosen once, up-front, to minimise the number of
   contingencies that have to be skipped (those that would strand the chosen reference), and a
   stranded slack generator has its slack weight zeroed and the remaining weights rescaled.
-  Requires a Newton-Raphson algorithm (an AC non-NR solver raises a clear error). Tested in
-  `test_ContingencyAnalysis_split`.
+  Supported both in AC (Newton-Raphson) and in DC: in DC the masked buses' rows of the reduced
+  system are forced to the identity (angle 0), the masked injections are dropped and the slack
+  imbalance is computed on the live component only, again **without re-triggering the symbolic
+  factorization**. An AC non-NR solver (Gauss-Seidel / Fast-Decoupled) raises a clear error.
+  Tested in `test_ContingencyAnalysis_split`.
+- [IMPROVED] `ContingencyAnalysisCPP.is_grid_connected_after_contingency` now also reports the
+  splitting contingencies in DC (it used to always claim "connected"), by labelling the connected
+  components of the real `Bbus`.
 - [ADDED] (to interpret the new Jacobian layout) the methods `get_theta_to_J_col()`,
   `get_vm_to_J_col()` and `get_q_to_J_col()` on the Newton-Raphson algorithms (and on
   the `AlgorithmSelector`). Each returns a vector, **indexed by the solver bus id**,
