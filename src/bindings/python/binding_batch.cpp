@@ -71,7 +71,8 @@ void bind_batch(py::module_& m) {
                       "are skipped (their voltages are left at 0), reproducing the legacy "
                       "behaviour. When True, the largest connected component is solved while "
                       "the buses of the other component(s) are masked (their voltage is "
-                      "reported as 0). Requires a Newton-Raphson algorithm.)mydelim")
+                      "reported as 0). Supported by the Newton-Raphson family (AC) and the DC "
+                      "solver; a non Newton-Raphson AC algorithm is rejected.)mydelim")
         .def_property("nb_thread",
                       [](const ContingencyAnalysis & self){ return self.get_nb_thread(); },
                       [](ContingencyAnalysis & self, int val){ self.set_nb_thread(val); },

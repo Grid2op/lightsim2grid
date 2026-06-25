@@ -103,14 +103,32 @@ class TestContingencySplitMode(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             SA.compute(1. * self.V0, self.max_it, self.tol)
 
-    def test_dc_flag_on_is_a_noop(self):
-        # DC handles connectivity internally: enabling the flag must not raise and
-        # must keep the legacy DC behaviour (no exception, computation runs).
+    def test_dc_flag_off_skips_split(self):
+        # legacy DC behaviour: a split contingency diverges (no slack reference in the
+        # stranded island) and is not stored -> all 0.
+        SA = ContingencyAnalysisCPP(self.grid)
+        SA.change_algorithm(AlgorithmType.DC_SparseLU)
+        SA.add_n1(2)
+        SA.handle_disconnected_grid = False
+        SA.compute(1. * self.V0, self.max_it, self.tol)
+        v = SA.get_voltages()
+        assert np.max(np.abs(v[0])) == 0., f"DC split contingency should be skipped, got {v[0]}"
+
+    def test_dc_flag_on_solves_main_component(self):
+        # with the flag ON, DC solves the largest component (masking the island).
         SA = ContingencyAnalysisCPP(self.grid)
         SA.change_algorithm(AlgorithmType.DC_SparseLU)
         SA.add_n1(2)
         SA.handle_disconnected_grid = True
-        SA.compute(1. * self.V0, self.max_it, self.tol)  # must not raise
+        SA.compute(1. * self.V0, self.max_it, self.tol)
+        v = SA.get_voltages()[0]
+        # the surviving component {0,1,2} matches a DC powerflow on the reference grid
+        Vref_dc = self.ref.dc_pf(np.ones(self.ref.get_bus_vn_kv().shape[0], dtype=complex),
+                                 self.max_it, self.tol)
+        assert np.max(np.abs(np.angle(v[:3]) - np.angle(Vref_dc))) <= 1e-6, \
+            f"DC main component mismatch: {np.max(np.abs(np.angle(v[:3]) - np.angle(Vref_dc))):.2e}"
+        # the isolated bus 3 is masked -> reported as exactly 0
+        assert v[3] == 0., f"masked bus should be 0, got {v[3]}"
 
     def test_is_grid_connected_no_segfault(self):
         # regression: is_grid_connected_after_contingency() used to segfault because
@@ -121,6 +139,19 @@ class TestContingencySplitMode(unittest.TestCase):
         SA.add_n1(0)  # also splits (isolates {1, 2, 3} from the slack)
         standalone = np.asarray(SA.is_grid_connected_after_contingency())
         assert standalone.shape == (2,)
+        assert np.all(standalone == 0), f"both radial cuts disconnect the grid, got {standalone}"
+        SA.compute(1. * self.V0, self.max_it, self.tol)
+        after = np.asarray(SA.is_grid_connected_after_contingency())
+        assert np.array_equal(standalone, after)
+
+    def test_is_grid_connected_dc(self):
+        # in DC the connectivity is now reported off the real Bbus (it used to always
+        # claim "connected"); both radial cuts disconnect the grid.
+        SA = ContingencyAnalysisCPP(self.grid)
+        SA.change_algorithm(AlgorithmType.DC_SparseLU)
+        SA.add_n1(2)
+        SA.add_n1(0)
+        standalone = np.asarray(SA.is_grid_connected_after_contingency())
         assert np.all(standalone == 0), f"both radial cuts disconnect the grid, got {standalone}"
         SA.compute(1. * self.V0, self.max_it, self.tol)
         after = np.asarray(SA.is_grid_connected_after_contingency())
@@ -177,6 +208,21 @@ class TestContingencySplitMultiSlack(unittest.TestCase):
         # the stranded island {3, 4} is masked -> reported as 0
         assert np.max(np.abs(v[0, 3:5])) == 0., f"masked island should be 0, got {v[0, 3:5]}"
 
+    def test_stranded_slack_is_masked_dc(self):
+        # same in DC: the stranded second slack's weight is zeroed, the live slack 0
+        # absorbs the imbalance and the island is reported as 0.
+        SA = ContingencyAnalysisCPP(self.grid)
+        SA.change_algorithm(AlgorithmType.DC_SparseLU)
+        SA.add_n1(2)
+        SA.handle_disconnected_grid = True
+        SA.compute(1. * self.V0, self.max_it, self.tol)
+        v = SA.get_voltages()
+        Vref_dc = self.ref.dc_pf(np.ones(self.ref.get_bus_vn_kv().shape[0], dtype=complex),
+                                 self.max_it, self.tol)
+        assert np.max(np.abs(np.angle(v[0, :3]) - np.angle(Vref_dc))) <= 1e-6, \
+            f"DC main component mismatch: {np.max(np.abs(np.angle(v[0, :3]) - np.angle(Vref_dc))):.2e}"
+        assert np.max(np.abs(v[0, 3:5])) == 0., f"masked island should be 0, got {v[0, 3:5]}"
+
 
 class TestContingencySplitCase14(unittest.TestCase):
     """Integration test on l2rpn_case14_sandbox: enabling the mode must leave the
@@ -194,8 +240,10 @@ class TestContingencySplitCase14(unittest.TestCase):
     def tearDown(self):
         self.env.close()
 
-    def _voltages(self, handle_disconnected):
+    def _voltages(self, handle_disconnected, algorithm=None):
         SA = ContingencyAnalysisCPP(self.env.backend._grid)
+        if algorithm is not None:
+            SA.change_algorithm(algorithm)
         SA.add_all_n1()
         SA.handle_disconnected_grid = handle_disconnected
         SA.compute(self.env.backend.V, self.env.backend.max_it, self.env.backend.tol)
@@ -226,6 +274,28 @@ class TestContingencySplitCase14(unittest.TestCase):
             assert live.min() > 0.5 and live.max() < 1.5, \
                 f"cont {i}: unrealistic voltages on the live component [{live.min()}, {live.max()}]"
             assert np.sum(vm <= 1e-9) >= 1, f"cont {i}: expected at least one masked (0) bus"
+
+    def test_regression_and_new_contingencies_dc(self):
+        # same as above but with the DC solver
+        voff = self._voltages(False, algorithm=AlgorithmType.DC_SparseLU)
+        von = self._voltages(True, algorithm=AlgorithmType.DC_SparseLU)
+        nb_sub = self.nb_sub
+
+        # contingencies solved when the mode is OFF must be bit-identical when ON
+        off_solved = np.array([np.any(np.abs(voff[i, :nb_sub]) > 1e-9) for i in range(voff.shape[0])])
+        assert off_solved.any(), "sanity: some DC contingencies should be solved with the mode off"
+        assert np.max(np.abs(von[off_solved] - voff[off_solved])) == 0., \
+            "connected DC contingencies must be unchanged when the mode is enabled"
+
+        # at least one split contingency (skipped when OFF) is now solved on its
+        # largest connected component
+        newly_solved = [i for i in range(voff.shape[0])
+                        if (not off_solved[i]) and np.any(np.abs(von[i, :nb_sub]) > 1e-9)]
+        assert len(newly_solved) >= 1, "the DC mode should solve at least one split contingency"
+        for i in newly_solved:
+            assert np.all(np.isfinite(von[i, :nb_sub])), f"DC cont {i}: non-finite voltage"
+            assert np.sum(np.abs(von[i, :nb_sub]) <= 1e-9) >= 1, \
+                f"DC cont {i}: expected at least one masked (0) bus"
 
 
 if __name__ == "__main__":

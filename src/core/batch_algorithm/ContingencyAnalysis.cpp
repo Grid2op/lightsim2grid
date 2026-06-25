@@ -50,8 +50,9 @@ bool ContingencyAnalysis::check_invertible(const Eigen::SparseMatrix<cplx_type> 
     return ok;
 }
 
-std::vector<int> ContingencyAnalysis::disconnected_buses(const Eigen::SparseMatrix<cplx_type> & Ybus) const{
-    const int n = static_cast<int>(Ybus.cols());
+template<typename T>
+std::vector<int> ContingencyAnalysis::disconnected_buses(const Eigen::SparseMatrix<T> & mat) const{
+    const int n = static_cast<int>(mat.cols());
     std::vector<int> comp_of_bus(n, -1);  // connected-component label of each bus
     int nb_comp = 0;
     std::queue<int> neighborhood;
@@ -63,9 +64,9 @@ std::vector<int> ContingencyAnalysis::disconnected_buses(const Eigen::SparseMatr
         while(!neighborhood.empty()){
             const int col_id = neighborhood.front();
             neighborhood.pop();
-            for (Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, col_id); it; ++it){
+            for (typename Eigen::SparseMatrix<T>::InnerIterator it(mat, col_id); it; ++it){
                 const int row = static_cast<int>(it.row());
-                if(comp_of_bus[row] == -1 && abs(it.value()) > 1e-8){
+                if(comp_of_bus[row] == -1 && std::abs(it.value()) > 1e-8){
                     comp_of_bus[row] = nb_comp;
                     neighborhood.push(row);
                 }
@@ -92,20 +93,34 @@ std::vector<int> ContingencyAnalysis::disconnected_buses(const Eigen::SparseMatr
     return masked;
 }
 
+// explicit instantiations: AC works on the complex Ybus_, DC on the real Bbus_
+template std::vector<int> ContingencyAnalysis::disconnected_buses<cplx_type>(const Eigen::SparseMatrix<cplx_type> &) const;
+template std::vector<int> ContingencyAnalysis::disconnected_buses<real_type>(const Eigen::SparseMatrix<real_type> &) const;
+
 void ContingencyAnalysis::select_ref_slack_and_masks(){
     const size_t nb_cont = _li_coeffs.size();
     _li_masked.assign(nb_cont, std::vector<int>());
     _skip_mask.assign(nb_cont, 0);
 
-    // 1) per-contingency masked bus set (largest component is kept).
-    // Work on a copy so the member Ybus_ used by the n-powerflow is left untouched.
-    {
+    // 1) per-contingency masked bus set (largest component is kept). Work on a copy of
+    // the admittance matrix so the member used by the n-powerflow is left untouched.
+    // AC uses the complex Ybus_; DC uses the real Bbus_ (Ybus_ is empty in DC mode).
+    if(_algo.ac_solver_used()){
         Eigen::SparseMatrix<cplx_type> Ybus = Ybus_;
         size_t cont_id = 0;
         for(const auto & coeffs_modif: _li_coeffs){
             for(const auto & c: coeffs_modif) Ybus.coeffRef(c.row_id, c.col_id) -= c.value;
             _li_masked[cont_id] = disconnected_buses(Ybus);
             for(const auto & c: coeffs_modif) Ybus.coeffRef(c.row_id, c.col_id) += c.value;
+            ++cont_id;
+        }
+    } else {
+        Eigen::SparseMatrix<real_type> Bbus = Bbus_;
+        size_t cont_id = 0;
+        for(const auto & coeffs_modif: _li_coeffs){
+            for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
+            _li_masked[cont_id] = disconnected_buses(Bbus);
+            for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) += std::real(c.value);
             ++cont_id;
         }
     }
@@ -266,31 +281,42 @@ bool ContingencyAnalysis::remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus
 
 IntVect ContingencyAnalysis::is_grid_connected_after_contingency(){
     const bool ac_solver_used = _algo.ac_solver_used();
-    if(!ac_solver_used){
-        // in DC mode the solver takes responsibility for the connectivity (see remove_from_Ybus),
-        // so every contingency is reported as "connected". No need to build / cast a Ybus here.
-        return IntVect::Constant(_li_defaults.size(), 1);
-    }
-    // Build the solver inputs (Ybus_, id_me_to_solver_) and the per-contingency
-    // coefficients if they are not available yet (i.e. compute() was not called).
-    // NB: we use the (correctly indexed) member Ybus_, NOT _grid_model.get_Ybus_solver():
-    // the latter is the grid model's own Ybus, which is never built by this class (it
-    // works on Ybus_) and would be an empty 0x0 matrix here -> out-of-bounds coeffRef.
-    if(Ybus_.cols() == 0 || _li_coeffs.size() != _li_defaults.size()){
+    // Build the solver inputs (the AC complex Ybus_ or the DC real Bbus_, plus
+    // id_me_to_solver_) and the per-contingency coefficients if they are not available
+    // yet (i.e. compute() was not called).
+    // NB: we use the (correctly indexed) member Ybus_ / Bbus_, NOT
+    // _grid_model.get_Ybus_solver(): the latter is the grid model's own Ybus, never built
+    // by this class (it works on Ybus_ / Bbus_) and would be an empty 0x0 matrix here ->
+    // out-of-bounds coeffRef.
+    const bool inputs_ready = (ac_solver_used ? Ybus_.cols() != 0 : Bbus_.cols() != 0);
+    if(!inputs_ready || _li_coeffs.size() != _li_defaults.size()){
         const size_t nb_total_bus = _grid_model.total_bus();
         CplxVect Vinit = CplxVect::Constant(static_cast<Eigen::Index>(nb_total_bus),
                                             {_grid_model.get_init_vm_pu(), 0.});
         prepare_solver_input_base(Vinit, ac_solver_used);
         init_li_coeffs(ac_solver_used, id_me_to_solver_);
     }
-    Eigen::SparseMatrix<cplx_type> Ybus = Ybus_;  // correctly-indexed copy
     IntVect res = IntVect::Constant(_li_coeffs.size(), 0);
-    int cont_id = 0;
-    for(const auto & coeffs_modif: _li_coeffs){
-        if(remove_from_Ybus(Ybus, coeffs_modif, true, _algo)) res(cont_id) = 1;
-        else res(cont_id) = 0;
-        readd_to_Ybus(Ybus, coeffs_modif, true, _algo);
-        ++cont_id;
+    if(ac_solver_used){
+        Eigen::SparseMatrix<cplx_type> Ybus = Ybus_;  // correctly-indexed copy
+        int cont_id = 0;
+        for(const auto & coeffs_modif: _li_coeffs){
+            if(remove_from_Ybus(Ybus, coeffs_modif, true, _algo)) res(cont_id) = 1;
+            else res(cont_id) = 0;
+            readd_to_Ybus(Ybus, coeffs_modif, true, _algo);
+            ++cont_id;
+        }
+    } else {
+        // DC: BFS the (real) Bbus_ directly. Unlike the AC `remove_from_Ybus`, this does
+        // not touch the solver's internal dc matrix, so it is side-effect free.
+        Eigen::SparseMatrix<real_type> Bbus = Bbus_;  // correctly-indexed copy
+        int cont_id = 0;
+        for(const auto & coeffs_modif: _li_coeffs){
+            for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) -= std::real(c.value);
+            res(cont_id) = disconnected_buses(Bbus).empty() ? 1 : 0;
+            for(const auto & c: coeffs_modif) Bbus.coeffRef(c.row_id, c.col_id) += std::real(c.value);
+            ++cont_id;
+        }
     }
     return res;
 }
@@ -339,14 +365,17 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
 
     // "handle disconnected grid" mode: pre-compute the masked bus set of each
     // contingency and choose the reference slack (BEFORE the n-powerflow, so the
-    // symbolic factorization is built once with that reference and reused).
-    const bool mask_mode = _handle_disconnected_grid && ac_solver_used;
+    // symbolic factorization is built once with that reference and reused). Supported
+    // by the Newton-Raphson family (AC) and the native DC solver; both expose bus
+    // masking. A non-NR AC algorithm (eg Gauss-Seidel / Fast-Decoupled) is rejected.
+    const bool mask_mode = _handle_disconnected_grid;
     if(mask_mode){
         if(!_algo.supports_bus_masking()){
             throw std::runtime_error("ContingencyAnalysis: the `handle_disconnected_grid` mode "
-                                     "requires a Newton-Raphson algorithm (the active algorithm "
-                                     "does not support bus masking). Use `change_algorithm` to "
-                                     "select an NR solver (e.g. NR_KLU / NR_SLU).");
+                                     "requires a Newton-Raphson algorithm (AC) or the DC solver "
+                                     "(the active algorithm does not support bus masking). Use "
+                                     "`change_algorithm` to select an NR solver (e.g. NR_KLU / "
+                                     "NR_SLU) or the DC solver.");
         }
         select_ref_slack_and_masks();
     }

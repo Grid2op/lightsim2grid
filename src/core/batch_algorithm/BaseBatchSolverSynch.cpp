@@ -67,8 +67,10 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
             tol);
     } else {
         // native real DC entry point: Bbus_ is the (constant) real admittance built in
-        // prepare_solver_input_base; Pbus is the real part of the (possibly per-step) injection
-        const RealVect Pbus = Sbus.real();
+        // prepare_solver_input_base; Pbus is the real part of the (possibly per-step)
+        // injection. ContingencyAnalysis leaves Sbus_ empty in DC (it relies on the
+        // member Pbus_ built once), so fall back to Pbus_ when no complex Sbus is given.
+        const RealVect Pbus = (Sbus.size() == 0) ? Pbus_ : RealVect(Sbus.real());
         conv = algo.compute_pf_dc(
             Bbus_,
             V,

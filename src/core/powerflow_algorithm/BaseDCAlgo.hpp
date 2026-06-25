@@ -110,6 +110,19 @@ class BaseDCAlgo final: public BaseAlgo
             if(!add) need_refactor_ = true;
         }
 
+        // ----- bus masking ("handle disconnected grid" mode) -----------------------
+        // ContingencyAnalysis can ask the DC solver to "mask" the buses of a
+        // disconnected island: their reduced-system row becomes identity (theta = 0)
+        // and their injection is dropped, so the largest connected component still
+        // solves while the masked buses are reported as 0. The masking is applied to
+        // a working copy of dcYbus_noslack_, so the (incrementally maintained)
+        // persistent matrix and the symbolic factorization are left untouched (only a
+        // numeric refactorize is needed). See compute_pf_dc.
+        virtual bool supports_bus_masking() const final { return true; }
+        virtual void set_masked_buses(const std::vector<int> & solver_bus_ids) final{
+            masked_buses_ = solver_bus_ids;
+        }
+
     private:
         // no copy allowed
         BaseDCAlgo(const BaseDCAlgo&) = delete;
@@ -164,6 +177,10 @@ class BaseDCAlgo final: public BaseAlgo
         // connected angle-droop hvdc lines (solver bus ids, pu), refreshed at
         // every compute_pf; a change forces a rebuild of dcYbus / dcSbus
         HvdcDroopSolverData hvdc_droop_data_;
+
+        // solver bus ids (with-slack indexing) masked by the "handle disconnected
+        // grid" mode (empty by default => no masking). See set_masked_buses.
+        std::vector<int> masked_buses_;
 };
 
 #include "BaseDCAlgo.tpp"

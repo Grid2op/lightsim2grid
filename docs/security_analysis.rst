@@ -86,16 +86,21 @@ When this mode is enabled and a contingency splits the grid:
   remaining slack weights are rescaled so the slack power is shared only among the live slacks.
 
 This is implemented **without re-triggering the symbolic factorization** of the linear solver
-(the Jacobian sparsity pattern is left unchanged), so it stays compatible with the speed of the
-contingency analysis. To make it possible, the reference slack is chosen once, before the
-computation, so as to minimise the number of contingencies that still have to be skipped (those
-that would disconnect the chosen reference slack itself).
+(the Jacobian, resp. the DC matrix, sparsity pattern is left unchanged), so it stays compatible
+with the speed of the contingency analysis. To make it possible, the reference slack is chosen
+once, before the computation, so as to minimise the number of contingencies that still have to be
+skipped (those that would disconnect the chosen reference slack itself).
+
+The mode works both in **AC** (with a Newton-Raphson algorithm) and in **DC**: in DC the masked
+buses' rows of the reduced system are forced to the identity (so their angle is 0), the masked
+injections are dropped and the slack imbalance is computed on the live component only. In both
+cases the masked buses are reported as ``0.``.
 
 .. note::
 
-    This mode **requires a Newton-Raphson algorithm** (the default). Selecting an AC non
-    Newton-Raphson algorithm (*eg* Gauss-Seidel or Fast-Decoupled) and enabling the mode raises
-    an error. In DC the connectivity is already handled internally, so the flag has no effect.
+    This mode **requires a Newton-Raphson algorithm** (AC, the default) or the **DC** solver.
+    Selecting an AC *non* Newton-Raphson algorithm (*eg* Gauss-Seidel or Fast-Decoupled) and
+    enabling the mode raises an error.
 
 Running the contingencies on multiple threads
 ---------------------------------------------
