@@ -72,6 +72,16 @@ void bind_batch(py::module_& m) {
                       "behaviour. When True, the largest connected component is solved while "
                       "the buses of the other component(s) are masked (their voltage is "
                       "reported as 0). Requires a Newton-Raphson algorithm.)mydelim")
+        .def_property("nb_thread",
+                      [](const ContingencyAnalysis & self){ return self.get_nb_thread(); },
+                      [](ContingencyAnalysis & self, int val){ self.set_nb_thread(val); },
+                      R"mydelim(Number of OS threads used to solve the contingencies (default: 1). "
+                      "With nb_thread == 1 the behaviour is identical to the legacy sequential "
+                      "computation. With nb_thread > 1 the contingency list is split into "
+                      "contiguous ranges, each solved by its own thread (each with its own solver "
+                      "and admittance matrix copy), writing to disjoint rows of the result matrix. "
+                      "The results do not depend on the number of threads. Values < 1 are "
+                      "clamped to 1.)mydelim")
 
         // solver control
         .def("change_algorithm", &ContingencyAnalysis::change_algorithm, DocLSGrid::change_algorithm.c_str())

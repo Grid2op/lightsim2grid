@@ -97,6 +97,51 @@ that would disconnect the chosen reference slack itself).
     Newton-Raphson algorithm (*eg* Gauss-Seidel or Fast-Decoupled) and enabling the mode raises
     an error. In DC the connectivity is already handled internally, so the flag has no effect.
 
+Running the contingencies on multiple threads
+---------------------------------------------
+
+Starting from lightsim2grid 0.14.0, the contingencies can be solved on several CPU threads
+at once. By default everything runs on a single thread (``nb_thread = 1``), reproducing the
+exact same behaviour (and results) as before. Set the ``nb_thread`` attribute to a value
+greater than ``1`` to split the work:
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import ContingencyAnalysis
+    from lightsim2grid import LightSimBackend
+    env = grid2op.make(..., backend=LightSimBackend())
+
+    security_analysis = ContingencyAnalysis(env)
+    security_analysis.add_all_n1_contingencies()
+
+    # solve the contingencies on 4 threads
+    security_analysis.nb_thread = 4
+
+    res_p, res_a, res_v = security_analysis.get_flows()
+
+Internally the contingency list is split into ``nb_thread`` contiguous ranges, and each range
+is solved by its own thread. To stay correct (and lock-free), every thread works on **its own**
+solver instance and **its own** copy of the admittance matrix, and writes to a distinct set of
+rows of the (shared) result matrix. As a consequence:
+
+- the results do not depend on the number of threads: ``nb_thread`` changes the timing, not the
+  numbers. They match the sequential results up to the solver's convergence tolerance (each
+  thread keeps its own solver warm-start state, so the converged voltages agree to roughly
+  ``1e-13``, far below the powerflow tolerance);
+- it works for the AC (Newton-Raphson), DC and ``handle_disconnected_grid`` modes alike;
+- there is a small per-thread set-up cost (one extra solver "warm-up" and one admittance-matrix
+  copy per additional thread), so the speed-up is sub-linear and most useful when there are many
+  contingencies to simulate.
+
+This feature only relies on the C++ standard library (``std::thread``): no additional dependency
+(MPI, OpenMP, ...) is required.
+
+.. note::
+
+    ``nb_thread`` is also available on the lower-level ``ContingencyAnalysisCPP`` class (same
+    semantics).
+
 .. _sa_benchmarks:
 
 Benchmarks (Contingency Analysis)

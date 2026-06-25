@@ -11,6 +11,7 @@
 
 #include "BaseBatchSolverSynch.hpp"
 #include <set>
+#include <exception>
 
 namespace ls2g {
 
@@ -117,6 +118,14 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         bool get_handle_disconnected_grid() const {return _handle_disconnected_grid;}
         void set_handle_disconnected_grid(bool val) {_handle_disconnected_grid = val;}
 
+        // number of OS threads used to solve the contingencies (default: 1).
+        // With nb_thread == 1 the behaviour is identical to the legacy sequential
+        // path. With nb_thread > 1 the contingency list is split into contiguous
+        // ranges, each solved by its own thread (own solver + own Ybus copy),
+        // writing to disjoint rows of the result matrix. Values < 1 are clamped to 1.
+        int get_nb_thread() const {return _nb_thread;}
+        void set_nb_thread(int n) {_nb_thread = (n < 1 ? 1 : n);}
+
         // make the computation
         void compute(const CplxVect & Vinit, int max_iter, real_type tol);
         IntVect is_grid_connected_after_contingency();
@@ -168,10 +177,11 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             }
         }
         void init_li_coeffs(bool ac_solver_used, const SolverBusIdVect &id_me_to_solver);
-        // remove the line parameters from Ybus, this is to emulate its disconnection
-        bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used);
+        // remove the line parameters from Ybus, this is to emulate its disconnection.
+        // `algo` is the solver whose internal Ybus is updated in DC mode (one per thread).
+        bool remove_from_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used, AlgorithmSelector & algo);
         // after the coefficient has been removed with "remove_from_Ybus", add it back to Ybus
-        void readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used);
+        void readd_to_Ybus(Eigen::SparseMatrix<cplx_type> & Ybus, const std::vector<Coeff> & coeffs, bool ac_solver_used, AlgorithmSelector & algo);
 
         // by default the flows are not 0 when the powerline is connected in the original topology
         // this function sorts this out
@@ -194,10 +204,35 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         // rescaled so its total is preserved (slack power stays among live slacks).
         RealVect masked_slack_weights(const std::vector<int> & masked) const;
 
+        // solve the contingencies in [cont_begin, cont_end) using the passed solver
+        // (one per thread), its own AlgoControl and a thread-local Ybus copy. Writes
+        // directly to the (disjoint) rows of _voltages; book-keeping goes to the
+        // passed accumulators (merged by the caller after all threads join). Any
+        // thrown exception is captured into `err` instead of crossing the thread
+        // boundary. This is the body shared by the single- and multi-threaded paths.
+        void run_contingency_range(size_t cont_begin,
+                                   size_t cont_end,
+                                   AlgorithmSelector & algo,
+                                   AlgoControl & control,
+                                   Eigen::SparseMatrix<cplx_type> & Ybus,
+                                   const CplxVect & Vinit_solver,
+                                   bool ac_solver_used,
+                                   bool mask_mode,
+                                   int max_iter,
+                                   real_type tol,
+                                   real_type sn_mva,
+                                   double & timer_modif_Ybus,
+                                   int & nb_solved,
+                                   double & timer_solver,
+                                   std::exception_ptr & err);
+
     private:
         // li_default
         std::set<std::set<int> > _li_defaults;  // do not use unordered_set here, we rely on the order for different functions !
         std::vector<std::vector<Coeff> > _li_coeffs;  // for each n-k, stores the coefficients I need to modify in the Ybus
+
+        // number of OS threads used to solve the contingencies (see set_nb_thread)
+        int _nb_thread = 1;
 
         // "handle disconnected grid" mode (see set_handle_disconnected_grid)
         bool _handle_disconnected_grid = false;

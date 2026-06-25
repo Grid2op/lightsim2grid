@@ -149,6 +149,23 @@ class __ContingencyAnalysis(object):
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
         self.computer.handle_disconnected_grid = bool(val)
 
+    @property
+    def nb_thread(self):
+        """Number of OS threads used to solve the contingencies (default: 1).
+
+        With ``nb_thread == 1`` the behaviour is identical to the legacy
+        sequential computation. With ``nb_thread > 1`` the contingencies are
+        split across that many threads (each with its own solver and admittance
+        matrix copy); the results do not depend on the number of threads.
+        """
+        return self.computer.nb_thread
+
+    @nb_thread.setter
+    def nb_thread(self, val: int):
+        if int(val) != val:
+            raise ValueError("The `nb_thread` attribute must be an integer.")
+        self.computer.nb_thread = int(val)
+
     # TODO implement that !
     def __update_grid(self, backend_act):
         raise NotImplementedError("TODO !")
