@@ -116,6 +116,15 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   it is resolved automatically when importing from pypowsybl. Tested against PowSyBl
   OpenLoadFlow (see `test_voltage_control_svc`, `test_voltage_control_remote_gen`,
   `test_voltage_control_pypowsybl`).
+
+  .. warning::
+      When importing from pypowsybl, the regulated bus is resolved **once**, at import
+      time, and stored by its (fixed) lightsim2grid global bus id. If the regulated
+      element is later moved to another bus *inside lightsim2grid* (e.g. through a
+      ``change_bus_*`` / topology change), the controller keeps regulating the bus
+      resolved at import: the lightsim2grid grid and the original pypowsybl grid then
+      desynchronise. Re-import the grid (or call ``set_gen_regulated_bus`` again) to
+      follow such a change. This is a known limitation (see the ``TODO`` in the code).
 - [ADDED] `LSGrid.get_storages()`, `LSGrid.get_dclines()`, `LSGrid.get_svcs()` and
   `LSGrid.get_voltage_levels()` accessors for the (new) containers.
 - [ADDED] (to interpret the new Jacobian layout) the methods `get_theta_to_J_col()`,
