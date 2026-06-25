@@ -25,6 +25,12 @@ endif()
 
 
 # =============================================================================
+# Threads (std::thread) — used by the multi-threaded ContingencyAnalysis
+# =============================================================================
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
+# =============================================================================
 # KLU (SuiteSparse) detection — 4 strategies, same logic as historical root
 # =============================================================================
 set(KLU_SOLVER_FOUND FALSE)
@@ -295,6 +301,10 @@ target_include_directories(lightsim2grid_core
 )
 
 target_compile_definitions(lightsim2grid_core PRIVATE LS2G_BUILDING_CORE)
+
+# std::thread support (multi-threaded ContingencyAnalysis). PUBLIC so the
+# lightsim2grid_cpp binding target inherits the threading flags / link.
+target_link_libraries(lightsim2grid_core PUBLIC Threads::Threads)
 
 
 # =============================================================================

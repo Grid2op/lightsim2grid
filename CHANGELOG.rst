@@ -144,6 +144,16 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
       follow such a change. This is a known limitation (see the ``TODO`` in the code).
 - [ADDED] `LSGrid.get_storages()`, `LSGrid.get_dclines()`, `LSGrid.get_svcs()` and
   `LSGrid.get_voltage_levels()` accessors for the (new) containers.
+- [ADDED] multi-threaded contingency analysis: a `nb_thread` attribute on `ContingencyAnalysis`
+  and `ContingencyAnalysisCPP` (default ``1``). When set to a value greater than ``1``, the
+  contingency list is split into contiguous ranges, each solved by its own OS thread (each
+  thread gets its own solver and its own copy of the admittance matrix, and writes to disjoint
+  rows of the result matrix). The results do not depend on the number of threads (they match the
+  sequential ones up to the solver's convergence tolerance: each thread keeps its own solver
+  warm-start state, so converged voltages agree to ~1e-13, far below the powerflow tolerance). It
+  is implemented using only the C++ standard library (`std::thread`, no MPI / OpenMP), works for the
+  AC (Newton-Raphson), DC and `handle_disconnected_grid` modes, and behaves identically to the
+  previous sequential code when `nb_thread == 1`.
 - [ADDED] a `handle_disconnected_grid` mode for the contingency analysis (`ContingencyAnalysis`
   and `ContingencyAnalysisCPP`). By default (``False``) a contingency that splits the grid in
   several connected components is skipped (its voltages stay at 0, legacy behaviour). When set
