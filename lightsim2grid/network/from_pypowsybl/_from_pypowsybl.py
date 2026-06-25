@@ -65,6 +65,19 @@ def _aux_regulated_bus_view_ids(net, regulated_ids):
     voltage of that element's terminal bus. This returns, for each id in
     `regulated_ids`, the bus-view bus id of its terminal (which is also the index of
     the `bus_df` table used elsewhere in this converter), as a numpy object array.
+
+    .. warning::
+        This mapping is resolved **once**, when the grid is imported. lightsim2grid
+        then stores the regulated bus by its (fixed) global id. If, afterwards, the
+        regulated element is moved to another bus *in lightsim2grid* (e.g. through a
+        ``change_bus_*`` / topology change), the controller keeps regulating the bus
+        resolved here: the two grids will desynchronise. Re-import the grid (or update
+        the regulated bus manually with ``set_gen_regulated_bus``) if you need to
+        follow such a topology change.
+
+    .. todo::
+        Track the regulated *element* (not the resolved bus) so that moving it to
+        another bus inside lightsim2grid updates the regulated bus automatically.
     """
     lookup = {}
     for getter in ("get_busbar_sections", "get_loads", "get_generators",
@@ -363,6 +376,9 @@ def init(net : pypo.network.Network,
     # thread the regulated bus to the C++ generator container. Local generators keep
     # their own bus (already the C++ default), so a grid without any remote control
     # stays byte-identical to before this feature.
+    # TODO: the regulated bus is resolved once, here, from the pypowsybl grid. If the
+    # regulated element later changes bus inside lightsim2grid, this stays frozen and
+    # the two grids desynchronise (see `_aux_regulated_bus_view_ids` warning).
     if mask_remote_gen.any():
         gen_reg_bus_global = bus_df.loc[gen_reg_bus_view, "bus_global_id"].values
         for gen_id, reg_bus in zip(np.nonzero(mask_remote_gen)[0], gen_reg_bus_global):
@@ -542,6 +558,9 @@ def init(net : pypo.network.Network,
             reg_id = np.where(reg_id == "", df_svc.index, reg_id)
             mask_svc_remote = reg_id != df_svc.index.values
             if mask_svc_remote.any():
+                # TODO: resolved once at import; if the regulated element later changes
+                # bus inside lightsim2grid this stays frozen and desynchronises from the
+                # original grid (see `_aux_regulated_bus_view_ids` warning).
                 svc_reg_bus_view = _aux_regulated_bus_view_ids(net, reg_id[mask_svc_remote])
                 svc_reg_bus[mask_svc_remote] = bus_df.loc[svc_reg_bus_view, "bus_global_id"].values
                 svc_vl[mask_svc_remote] = bus_df.loc[svc_reg_bus_view, "voltage_level_id"].values

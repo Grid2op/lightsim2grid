@@ -346,6 +346,11 @@ bool GeneratorContainer::_change_bus(int el_id, GridModelBusId new_bus_id, DualA
     // keep a LOCAL regulator local across a bus change: its regulated bus follows
     // its own bus (bus_id_ is still the OLD bus here, reassigned by the caller after).
     // A REMOTE regulator keeps its independent target bus.
+    // TODO: a REMOTE regulator's target bus is whatever was resolved at import time
+    // (e.g. by `init_from_pypowsybl`). If the *regulated element* itself changes bus
+    // here, we have no way to know it (we only store the resolved bus id), so the
+    // regulated bus stays frozen and desynchronises from the source grid. Tracking the
+    // regulated element id (not just the bus) would let us follow such a move.
     if(regulated_bus_id_(el_id) == bus_id_(el_id).cast_int()){
         regulated_bus_id_(el_id) = new_bus_id.cast_int();
     }
