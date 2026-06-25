@@ -1,7 +1,17 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
 # Include directory — path computed relative to this config file's installed location
 set_and_check(lightsim2grid_core_INCLUDE_DIR "@PACKAGE_LS2G_INSTALL_INCLUDEDIR@")
+
+# The exported target carries Threads::Threads in its PUBLIC link interface
+# (used by the multi-threaded ContingencyAnalysis). A consumer doing
+# find_package(lightsim2grid_core) must re-discover that imported target,
+# otherwise including the targets file below fails with
+# "target ... contains: Threads::Threads but the target was not found".
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_dependency(Threads)
 
 # Import the library target (lightsim2grid::core)
 if(NOT TARGET lightsim2grid::core)
