@@ -7,7 +7,7 @@ import numpy as np
 import pypowsybl as pypow
 import pypowsybl.loadflow as pypow_lf
 
-from lightsim2grid.gridmodel import init_from_pypowsybl
+from lightsim2grid.network import init_from_pypowsybl, get_pypowsybl_loopfree_parameters
 from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
 
 from utils_benchmark import print_configuration
@@ -33,34 +33,11 @@ def get_same_slack(case_name):
     raise RuntimeError(f"Unknown env {case_name}")
 
 
-def get_pypowsybl_parameters(slack_voltage_level):    
-    params = pypow_lf.Parameters(
-        voltage_init_mode=pypow._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-        transformer_voltage_control_on=False,
-        use_reactive_limits=False,
-        phase_shifter_regulation_on=False,
-        twt_split_shunt_admittance=True,
-        shunt_compensator_voltage_control_on=False,
-        read_slack_bus=False,
-        write_slack_bus=True,
-        distributed_slack=False,
-        dc_use_transformer_ratio=True,
-        hvdc_ac_emulation=False,
-        dc_power_factor=1.,
-        provider_parameters={
-            "useActiveLimits": "false",
-            "useReactiveLimits": "false",
-            "svcVoltageMonitoring": "false",
-            "voltageRemoteControl": "false",
-            "writeReferenceTerminals": "false",
-            "slackBusSelectionMode" : "NAME",  # for case 118
-            "slackBusesIds" : f"{slack_voltage_level}",  # for case 118
-            "voltagePerReactivePowerControl": "false",
-            "generatorReactivePowerRemoteControl": "false",
-            "secondaryVoltageControl": "false",
-            }
-        )
-    return params
+def get_pypowsybl_parameters(slack_voltage_level):
+    # single source of truth: the canonical "every outer loop disabled"
+    # parameters shipped with lightsim2grid, with the slack pinned by name so
+    # both engines use the same slack bus.
+    return get_pypowsybl_loopfree_parameters(slack_bus_ids=slack_voltage_level)
 
 
 def main(case_name,

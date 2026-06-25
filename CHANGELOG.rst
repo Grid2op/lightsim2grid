@@ -98,6 +98,19 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   built its working matrix from the grid model's own (never populated, hence empty) Ybus,
   causing out-of-bounds writes. It now uses the correctly indexed internal `Ybus_` and builds
   the required inputs on demand, so it works both before and after `compute()`.
+- [ADDED] `lightsim2grid.network.bake_outer_loops`: rewrites a pypowsybl network's
+  input setpoints to the converged PowSyBl OpenLoadFlow (OLF) outer-loop state (tap /
+  shunt positions, reactive-limit PV->PQ switches, distributed-slack active power) so
+  a subsequent *outer-loop-free* solve in OLF or lightsim2grid reproduces the OLF
+  with-loops operating point. Tested in `test_olf_bake` (pure-OLF round trips plus
+  lightsim2grid agreement through line / transformer outages).
+- [ADDED] `lightsim2grid.network.get_pypowsybl_loopfree_parameters`: a factory for the
+  canonical OLF `Parameters` with every outer loop disabled (empty `outerLoopNames`
+  allow-list, every trigger forced off). Now the single source of truth used by the
+  benchmarks (`compare_lightsim2grid_pypowsybl`), the documentation and the test suite.
+- [ADDED] `lightsim2grid.network.compare_baked` (and `ComparisonResult`): a thin helper
+  to validate lightsim2grid against OLF on identical inputs (bake, optional outages,
+  loop-free solve in both engines, voltage comparison).
 - [ADDED] a dedicated `StorageContainer` / `StorageInfo` (exposed through
   `lightsim2grid.elements`) for the storage units, with its convention documented.
 - [ADDED] reading the storage units (batteries) from a pypowsybl grid is now tested
