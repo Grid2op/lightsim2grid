@@ -88,38 +88,30 @@ For example:
 Load-flow parameters
 **********************
 
-The parameters used to compute the powerflow in these examples are:
+The parameters used to compute the powerflow in these examples are the canonical
+"every outer loop disabled" parameters shipped with lightsim2grid, exported as
+``get_pypowsybl_loopfree_parameters``. lightsim2grid solves a single power-flow
+problem (no outer loops), so to get consistent results pypowsybl must be told to
+run no outer loop either:
 
 .. code-block:: python
 
-    import pypowsybl.loadflow as pypow_lf
+    from lightsim2grid.network import get_pypowsybl_loopfree_parameters
 
-    params = pypow_lf.Parameters(
-    voltage_init_mode=pypow._pypowsybl.VoltageInitMode.UNIFORM_VALUES,
-    transformer_voltage_control_on=False,
-    use_reactive_limits=False,
-    phase_shifter_regulation_on=False,
-    twt_split_shunt_admittance=True,
-    shunt_compensator_voltage_control_on=False,
-    read_slack_bus=False,
-    write_slack_bus=True,
-    distributed_slack=False,
-    dc_use_transformer_ratio=True,
-    hvdc_ac_emulation=False,
-    dc_power_factor=1.,
-    provider_parameters={
-        "useActiveLimits": "false",
-        "useReactiveLimits": "false",
-        "svcVoltageMonitoring": "false",
-        "voltageRemoteControl": "false",
-        "writeReferenceTerminals": "false",
-        "slackBusSelectionMode" : "NAME",
-        "slackBusesIds" : "VL69_0",  # DEPENDS ON CASE_NAME: for case 118
-        "voltagePerReactivePowerControl": "false",
-        "generatorReactivePowerRemoteControl": "false",
-        "secondaryVoltageControl": "false",
-        }
-    )
+    # pin the slack on the same bus lightsim2grid uses (depends on the case,
+    # e.g. "VL69_0" for ieee118); omit slack_bus_ids to read the slack from
+    # the network instead.
+    params = get_pypowsybl_loopfree_parameters(slack_bus_ids="VL69_0")
+
+Under the hood this builds a :class:`pypowsybl.loadflow.Parameters` that disables
+distributed slack, reactive limits, transformer / shunt / phase-shifter voltage
+control, area-interchange and secondary-voltage control, automation systems, etc.
+The key mechanism is the empty ``outerLoopNames`` allow-list, which registers
+*zero* outer loops regardless of which loops a future pypowsybl release adds.
+
+If you need a *raw* (un-baked) network whose outer loops would actually trigger
+to also match lightsim2grid, freeze the converged outer-loop state first with
+``lightsim2grid.network.bake_outer_loops`` before solving loop-free.
 
 .. important::
     As you notice from these parameters, a lot of the
@@ -128,6 +120,40 @@ The parameters used to compute the powerflow in these examples are:
 .. note::
     If you are interested in an "abalation study" on the impact of certain parameters
     above, let us know, for example with a github issue or by reaching out on discord.
+
+
+Comparing the two engines
+**************************
+
+To check that lightsim2grid reproduces an OLF operating point you can use the
+``compare_baked`` helper. It solves the network *with* outer loops in OLF, bakes
+the converged outer-loop state into the inputs (so the problem becomes a plain
+power flow), optionally applies the same outages to both engines, then solves
+loop-free in OLF and in lightsim2grid and compares the bus voltages:
+
+.. code-block:: python
+
+    from lightsim2grid.network import compare_baked
+    import pypowsybl as pp
+
+    res = compare_baked(
+        pp.network.create_ieee14,   # a callable returning a fresh network
+        slack_gen_id="B1-G",
+        line_outages=["L1-2-1"],    # optional, applied to both engines
+    )
+    print(res)                      # ComparisonResult(max |dV| = ..., ...)
+    print(res.max_dvm_pu)           # largest |Vmag| mismatch (pu)
+    print(res.table)                # per-bus detail
+
+The call returns a :class:`lightsim2grid.network.ComparisonResult` summarising the
+largest voltage-magnitude and voltage-angle mismatches (plus a per-bus table):
+
+.. autoclass:: lightsim2grid.network.ComparisonResult
+    :members:
+    :no-index:
+
+.. autofunction:: lightsim2grid.network.compare_baked
+    :no-index:
 
 Results
 -----------------------------------
