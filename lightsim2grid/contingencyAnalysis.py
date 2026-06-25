@@ -78,10 +78,11 @@ class __ContingencyAnalysis(object):
 
     By default, a contingency that splits the grid in multiple connected components is not
     simulated (its voltages are left at 0.). If you set the `handle_disconnected_grid` attribute
-    to ``True`` (it requires a Newton-Raphson algorithm), such contingencies are instead simulated
-    on their largest connected component: the buses of the other component(s) are "masked" and
-    their voltage is reported as 0. This is done without triggering any extra matrix
-    re-factorization (the symbolic factorization of the solver is reused).
+    to ``True``, such contingencies are instead simulated on their largest connected component:
+    the buses of the other component(s) are "masked" and their voltage is reported as 0. This is
+    done without triggering any extra matrix re-factorization (the symbolic factorization of the
+    solver is reused). It is supported by the Newton-Raphson family (AC) and by the DC solver; a
+    non Newton-Raphson AC algorithm (*eg* Gauss-Seidel or Fast-Decoupled) is rejected.
 
     """
     STR_TYPES = (str, np.str_)  # np.str deprecated in numpy 1.20 and earlier versions not supported anyway
