@@ -420,7 +420,12 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<std::exception_ptr> th_err(nb_thread);
 
-    for(int t = 0; t < nb_thread; ++t){
+    // each worker builds its own solver / control / Ybus copy IN-THREAD so this
+    // (non-trivial) setup -- in particular the full sparse Ybus_ copy -- runs in
+    // parallel instead of serially on the main thread. Only reads shared state
+    // (_grid_model, _algo config, get_algo_type()); each thread writes solely its
+    // own slot of the pre-sized vectors, so no locking is needed.
+    auto init_thread = [&](int t){
         algos[t] = std::make_unique<AlgorithmSelector>();
         AlgorithmSelector & algo = *algos[t];
         algo.set_lsgrid(&_grid_model);
@@ -428,7 +433,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
         algo.set_config(_algo.get_config());  // match the member solver's configuration
         controls[t] = _algo_controler;
         ybus_copies[t] = Ybus_;  // thread-local working copy of the admittance
-    }
+    };
 
     // contiguous split of [0, nb_cont) across the threads
     auto algo_for = [&](int t) -> AlgorithmSelector & {
@@ -451,8 +456,9 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     for(int t = 1; t < nb_thread; ++t){
         size_t b, e;
         range_of(t, b, e);
-        threads.emplace_back([=, &algo_for, &ybus_for, &controls, &th_timer_modif,
+        threads.emplace_back([=, &init_thread, &algo_for, &ybus_for, &controls, &th_timer_modif,
                               &th_nb_solved, &th_timer_solver, &th_err, &Vinit_solver](){
+            init_thread(t);  // build this worker's solver / control / Ybus copy in parallel
             run_contingency_range(
                 b, e,
                 algo_for(t), controls[t], ybus_for(t), Vinit_solver,
@@ -465,6 +471,7 @@ void ContingencyAnalysis::compute(const CplxVect & Vinit, int max_iter, real_typ
     {
         size_t b, e;
         range_of(0, b, e);
+        init_thread(0);  // thread 0 runs inline: build its solver / control / Ybus copy here
         run_contingency_range(
             b, e,
             algo_for(0), controls[0], ybus_for(0), Vinit_solver,
