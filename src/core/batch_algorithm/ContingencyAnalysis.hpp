@@ -26,7 +26,8 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                             BaseBatchSolverSynch(init_grid_model),
                             _li_defaults(),
                             _li_coeffs(),
-                            _timer_modif_Ybus(0.)
+                            _timer_modif_Ybus(0.),
+                            _timer_thread_init(0.)
                             { }
 
         ~ContingencyAnalysis() noexcept = default;
@@ -73,6 +74,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             _skip_mask.clear();
             _timer_total = 0.;
             _timer_modif_Ybus = 0.;
+            _timer_thread_init = 0.;
             _timer_pre_proc = 0.;
         }
         void clear_results_only(){
@@ -81,6 +83,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
             _skip_mask.clear();
             _timer_total = 0.;
             _timer_modif_Ybus = 0.;
+            _timer_thread_init = 0.;
             _timer_pre_proc = 0.;
         }
         
@@ -159,6 +162,8 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
         double total_time() const {return _timer_total;}
         double preprocessing_time() const {return _timer_pre_proc;}
         double modif_Ybus_time() const {return _timer_modif_Ybus;}
+        double thread_init_time() const {return _timer_thread_init;}
+        double solve_time() const {return _timer_solver;}
 
     protected:
         // prevent the insertion of "out of range" elements
@@ -227,7 +232,8 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
                                    double & timer_modif_Ybus,
                                    int & nb_solved,
                                    double & timer_solver,
-                                   std::exception_ptr & err);
+                                   std::exception_ptr & err,
+                                   bool needs_solver_init);
 
     private:
         // li_default
@@ -244,6 +250,7 @@ class LS2G_API ContingencyAnalysis final: public BaseBatchSolverSynch
 
         //timers
         double _timer_modif_Ybus;  // time to update the Ybus between the defaults simulation
+        double _timer_thread_init;
 };
 
 } // namespace ls2g

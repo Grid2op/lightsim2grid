@@ -123,6 +123,24 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   `test_hvdc_converter_stations`, `test_hvdc_pickle`, `test_hvdc_no_hvdc_bit_identical`).
 - [ADDED] reading HVDC lines (and their converter stations) from a pypowsybl grid
   (`init_from_pypowsybl`), tested for parity (see `test_hvdc_pypowsybl`).
+- [FIXED] reading a transformer from pypowsybl (`init_from_pypowsybl`) ignored the
+  **tap-changer step r / x / g / b corrections** (the per-step percentage deltas):
+  only `rho` / `alpha` were folded in, while r/x/g/b were left at their neutral-tap
+  value. For phase-shifting transformers whose series impedance varies with the tap
+  (common on RTE grids) the through-flow was wrong by tens of MW vs PowSyBl Open Load
+  Flow. The step deltas are now applied. See `test_pst_tap_impedance` and
+  `HVDC_OLF_FINDINGS.md`. NB: an *in-place* tap change via `change_ratio_trafo` /
+  `change_shift_trafo` still does not refresh r/x (re-import the grid to follow such a
+  change).
+- [FIXED] `consider_only_main_component` (and `init_from_pypowsybl(..., only_main_component=True)`,
+  the default) used to deactivate an **entire HVDC line** as soon as one of its two
+  converters fell outside the main component. For a cross-border / asynchronous HVDC
+  link (the two converters are in different *synchronous* components) this silently
+  dropped the in-main converter's scheduled injection -- hundreds of MW on real RTE
+  grids -- making lightsim2grid disagree with PowSyBl Open Load Flow. The in-main
+  converter is now kept injecting (like OLF's boundary injection) and only the
+  out-of-main converter is opened; a line with both converters outside is still fully
+  dropped. See `test_hvdc_main_component` and `HVDC_OLF_FINDINGS.md`.
 - [ADDED] **Static Var Compensators (SVC)**: a dedicated `SvcContainer` / `SvcInfo`
   (exposed through `lightsim2grid.elements`) supporting OFF / VOLTAGE / REACTIVE_POWER
   regulation modes (with an optional voltage / reactive slope), together with the LSGrid

@@ -125,5 +125,7 @@ void bind_batch(py::module_& m) {
         .def("preprocessing_time", &ContingencyAnalysis::preprocessing_time, DocSecurityAnalysis::preprocessing_time.c_str())
         .def("amps_computation_time", &ContingencyAnalysis::amps_computation_time, DocComputers::amps_computation_time.c_str())
         .def("modif_Ybus_time", &ContingencyAnalysis::modif_Ybus_time, DocSecurityAnalysis::modif_Ybus_time.c_str())
+        .def("thread_init_time", &ContingencyAnalysis::thread_init_time, "TODO")
+        .def("solve_time", &ContingencyAnalysis::solve_time, "TODO")
         .def("nb_solved", &ContingencyAnalysis::nb_solved, DocComputers::nb_solved.c_str());
 }
