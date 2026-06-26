@@ -703,8 +703,13 @@ void LSGrid::check_solution_q_values(CplxVect & res, bool check_q_limits) const{
         }
         const auto & station_1 = hvdc.station_side_1;
         const auto & station_2 = hvdc.station_side_2;
-        check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
-        check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
+        // a side may be open while the line is still connected_global (a line whose
+        // remote converter is in another synchronous component, see
+        // HvdcLineContainer::disconnect_if_not_in_main_component): skip the open side
+        if(station_1.connected)
+            check_solution_q_values_onegen(res, station_1.bus_id, station_1.min_q_mvar, station_1.max_q_mvar, check_q_limits);
+        if(station_2.connected)
+            check_solution_q_values_onegen(res, station_2.bus_id, station_2.min_q_mvar, station_2.max_q_mvar, check_q_limits);
     }
 
     // ... and the VOLTAGE-mode static var compensators: their reactive injection is

@@ -152,6 +152,10 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
         .def("deactivate_powerline", &LSGrid::deactivate_powerline, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_powerline", &LSGrid::reactivate_powerline, DocLSGrid::_internal_do_not_use.c_str())
+        .def("deactivate_powerline_side1", &LSGrid::deactivate_powerline_side1, "Disconnect only side 1 of a powerline (half-open). Needs set_synch_status_both_side(False) to keep side 2 connected.")
+        .def("deactivate_powerline_side2", &LSGrid::deactivate_powerline_side2, "Disconnect only side 2 of a powerline (half-open). Needs set_synch_status_both_side(False) to keep side 1 connected.")
+        .def("reactivate_powerline_side1", &LSGrid::reactivate_powerline_side1, "Reconnect only side 1 of a powerline.")
+        .def("reactivate_powerline_side2", &LSGrid::reactivate_powerline_side2, "Reconnect only side 2 of a powerline.")
         .def("change_bus1_powerline", &LSGrid::change_bus1_powerline_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_bus2_powerline", &LSGrid::change_bus2_powerline_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus1_powerline", &LSGrid::get_bus1_powerline, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)
@@ -159,6 +163,10 @@ between 0 and `n_sub_ * max_nb_bus_per_sub_`
 
         .def("deactivate_trafo", &LSGrid::deactivate_trafo, DocLSGrid::_internal_do_not_use.c_str())
         .def("reactivate_trafo", &LSGrid::reactivate_trafo, DocLSGrid::_internal_do_not_use.c_str())
+        .def("deactivate_trafo_side1", &LSGrid::deactivate_trafo_side1, "Disconnect only side 1 of a transformer (half-open). Needs set_synch_status_both_side(False) to keep side 2 connected.")
+        .def("deactivate_trafo_side2", &LSGrid::deactivate_trafo_side2, "Disconnect only side 2 of a transformer (half-open). Needs set_synch_status_both_side(False) to keep side 1 connected.")
+        .def("reactivate_trafo_side1", &LSGrid::reactivate_trafo_side1, "Reconnect only side 1 of a transformer.")
+        .def("reactivate_trafo_side2", &LSGrid::reactivate_trafo_side2, "Reconnect only side 2 of a transformer.")
         .def("change_bus1_trafo", &LSGrid::change_bus1_trafo_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("change_bus2_trafo", &LSGrid::change_bus2_trafo_python, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_bus1_trafo", &LSGrid::get_bus1_trafo, DocLSGrid::_internal_do_not_use.c_str(), py::return_value_policy::reference)

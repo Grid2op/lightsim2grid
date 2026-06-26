@@ -205,6 +205,51 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             // they are not in the same "connected component"
         }
 
+        // An HVDC line bridges two AC grids that are NOT synchronous (no edge is
+        // added in `get_graph`), so the connectivity BFS of
+        // `LSGrid::consider_only_main_component` is really splitting the grid into
+        // *synchronous* components. When the two converters land in different
+        // components, only one of them can be in the main (solved) synchronous
+        // component. OpenLoadFlow keeps that in-main converter as a fixed boundary
+        // injection (it still imports / exports its scheduled HVDC power); dropping
+        // it would silently lose hundreds of MW. So, unlike a normal branch, we do
+        // NOT deactivate the whole line when a single side is outside the main
+        // component: we keep the in-main converter injecting and open only the
+        // out-of-main one. A line with BOTH sides outside is still fully dropped.
+        virtual void disconnect_if_not_in_main_component(std::vector<bool> & busbar_in_main_component) override {
+            const int nb_el = nb();
+            DualAlgoControl unused_solver_control;
+            const GlobalBusIdVect & bus_side_1_id_ = get_buses_side_1();
+            const GlobalBusIdVect & bus_side_2_id_ = get_buses_side_2();
+            for(int i = 0; i < nb_el; ++i){
+                if(!status_global_[i]){
+                    side_1_.deactivate(i, unused_solver_control);
+                    side_2_.deactivate(i, unused_solver_control);
+                    continue;
+                }
+                const int b1 = bus_side_1_id_(i).cast_int();
+                const int b2 = bus_side_2_id_(i).cast_int();
+                const bool s1_outside = (b1 != _deactivated_bus_id) && !busbar_in_main_component[b1];
+                const bool s2_outside = (b2 != _deactivated_bus_id) && !busbar_in_main_component[b2];
+                if(s1_outside && s2_outside){
+                    // both converters in (an)other synchronous component: drop it all
+                    side_1_.deactivate(i, unused_solver_control);
+                    side_2_.deactivate(i, unused_solver_control);
+                    if(!ignore_status_global_) status_global_[i] = false;
+                } else if(s1_outside || s2_outside){
+                    // exactly one converter in the main synchronous component: keep
+                    // the HVDC line active and that converter injecting its scheduled
+                    // power, open only the converter that is out of the main component.
+                    // Angle-droop ("AC emulation") cannot run across the cut (the
+                    // remote angle is gone) -> fall back to the fixed power setpoint.
+                    droop_enabled_[i] = false;
+                    if(s1_outside) side_1_.deactivate(i, unused_solver_control);
+                    else           side_2_.deactivate(i, unused_solver_control);
+                    // status_global_[i] stays true: the line still injects in-main
+                }
+            }
+        }
+
         real_type get_qmin_or(int hvdc_id) {return side_1_.get_qmin(hvdc_id);}
         real_type get_qmax_or(int hvdc_id) {return side_1_.get_qmax(hvdc_id);}
         real_type get_qmin_ex(int hvdc_id) {return side_2_.get_qmin(hvdc_id);}

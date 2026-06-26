@@ -606,6 +606,103 @@ class TestPFOk(unittest.TestCase):
     
     def test_gridmodel_trafo_side1_alpha_dc(self):
         self.test_gridmodel_trafo_side1_alpha_ac(is_dc=True)
-        
+
+
+class TestImportHalfOpen(unittest.TestCase):
+    """`init_from_pypowsybl(keep_half_open_lines=True)` models a branch connected on a
+    single terminal as half-open (energized side kept, open end Kron-reduced), instead
+    of fully deactivating it. Covers the static import path (the `TestPFOk` class above
+    only exercises the grid2op `update_topo` path)."""
+
+    LID = "L6-7-1"   # a line: side 1 opened
+    TID = "T8-5-1"   # a transformer: side 2 opened
+    GEN_SLACK_ID = 29
+
+    def _open_sides(self, n):
+        n.update_lines(id=self.LID, connected1=False)
+        n.update_2_windings_transformers(id=self.TID, connected2=False)
+
+    def _line(self, model):
+        li = list(pp_network.create_ieee118().get_lines().index).index(self.LID)
+        return model.get_lines()[li]
+
+    def _trafo(self, model):
+        ti = list(pp_network.create_ieee118().get_2_windings_transformers().index).index(self.TID)
+        return model.get_trafos()[ti]
+
+    def test_import_creates_half_open(self):
+        n = pp_network.create_ieee118()
+        self._open_sides(n)
+        model = init_from_pypowsybl(n, gen_slack_id=self.GEN_SLACK_ID,
+                                    sort_index=False, keep_half_open_lines=True)
+        # line: side 1 open, side 2 energized, branch still globally connected
+        line = self._line(model)
+        assert not line.connected1
+        assert line.connected2
+        assert line.connected_global
+        # open end Kron-reduced out; only the side-2 self admittance survives
+        assert np.isclose(line.yac_eff_11, 0.)
+        assert np.isclose(line.yac_eff_12, 0.)
+        assert np.isclose(line.yac_eff_21, 0.)
+        assert np.isclose(line.yac_eff_22,
+                          line.yac_22 - line.yac_21 * line.yac_12 / line.yac_11)
+        # transformer: side 2 open, side 1 energized
+        tr = self._trafo(model)
+        assert tr.connected1
+        assert not tr.connected2
+        assert tr.connected_global
+        assert np.isclose(tr.yac_eff_22, 0.)
+        assert np.isclose(tr.yac_eff_11,
+                          tr.yac_11 - tr.yac_21 * tr.yac_12 / tr.yac_22)
+
+    def test_import_keep_false_deactivates(self):
+        """Default (keep_half_open_lines=False): a one-side-open branch is fully off."""
+        n = pp_network.create_ieee118()
+        self._open_sides(n)
+        model = init_from_pypowsybl(n, gen_slack_id=self.GEN_SLACK_ID, sort_index=False)
+        line = self._line(model)
+        assert not line.connected1
+        assert not line.connected2
+        assert not line.connected_global
+        tr = self._trafo(model)
+        assert not tr.connected_global
+
+    def _check_vs_olf(self, is_dc):
+        slack_vl, _ = get_same_slack("ieee118")
+        # reference: pypowsybl with the same one-sided outages, slack pinned by name
+        nref = pp_network.create_ieee118()
+        self._open_sides(nref)
+        params = get_pypowsybl_parameters(slack_vl)
+        res = pp_lf.run_dc(nref, params) if is_dc else pp_lf.run_ac(nref, params)
+        slack_abs = res[0].slack_bus_results[0].active_power_mismatch
+        gname = nref.get_generators().index[self.GEN_SLACK_ID]
+        nref.update_generators(
+            id=gname, p=nref.get_generators().iloc[self.GEN_SLACK_ID]["p"] - slack_abs)
+
+        n = pp_network.create_ieee118()
+        self._open_sides(n)
+        model = init_from_pypowsybl(n, gen_slack_id=self.GEN_SLACK_ID,
+                                    sort_index=False, keep_half_open_lines=True)
+        nb = model.total_bus()
+        V0 = np.full(nb, 1.0, dtype=complex)
+        V = model.dc_pf(V0, 1, 1e-8) if is_dc else model.ac_pf(V0, 10, 1e-8)
+        assert V.shape[0] > 0, "powerflow diverged"
+
+        buses = nref.get_buses()
+        vls = nref.get_voltage_levels()
+        vm_ref = (buses["v_mag"] /
+                  vls.loc[buses["voltage_level_id"], "nominal_v"].values).to_numpy()
+        va_ref = np.deg2rad(buses["v_angle"].values)
+        # tolerances follow TestPFOk (the trafo half-open is the looser one)
+        assert np.abs(np.angle(V[:len(va_ref)]) - va_ref).max() <= 3e-5
+        if not is_dc:
+            assert np.abs(np.abs(V[:len(vm_ref)]) - vm_ref).max() <= 3e-5
+
+    def test_import_half_open_ac_matches_olf(self):
+        self._check_vs_olf(is_dc=False)
+
+    def test_import_half_open_dc_matches_olf(self):
+        self._check_vs_olf(is_dc=True)
+
 # TODO trafo with alpha (phase shift)
 # TODO FDPF powerflow too

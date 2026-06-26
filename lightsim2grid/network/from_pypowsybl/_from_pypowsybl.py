@@ -57,6 +57,38 @@ def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connect
     return bus_id, mask_disco.values, sub_id
 
 
+def _aux_tap_step_rxgb_correction(trafo_index, tap_changers, steps):
+    """Per-transformer (r%, x%, g%, b%) impedance/admittance correction carried by
+    a tap-changer step at its current position, aligned to ``trafo_index`` (0 where
+    there is no such tap changer).
+
+    pypowsybl exposes the transformer r / x / g / b at the *neutral* tap. The
+    per-unit ``rho`` / ``alpha`` already include the current tap, but the per-step
+    r / x / g / b deltas (given **in percent**, to be applied as
+    ``value * (1 + delta / 100)``) do NOT. They matter for e.g. RTE phase-shifting
+    transformers whose series impedance varies strongly with the tap position
+    (without this, the through-flow can be off by tens of MW)."""
+    n = len(trafo_index)
+    dr = np.zeros(n); dx = np.zeros(n); dg = np.zeros(n); db = np.zeros(n)
+    if (tap_changers is None or tap_changers.shape[0] == 0 or
+            steps is None or steps.shape[0] == 0 or "tap" not in tap_changers.columns):
+        return dr, dx, dg, db
+    cur_tap = {tid: t for tid, t in zip(tap_changers.index, tap_changers["tap"].values)}
+    for i, tid in enumerate(trafo_index):
+        t = cur_tap.get(tid)
+        if t is None or not np.isfinite(t):
+            continue
+        key = (tid, int(t))
+        if key not in steps.index:
+            continue
+        s = steps.loc[key]
+        dr[i] = s.get("r", 0.0) if np.isfinite(s.get("r", 0.0)) else 0.0
+        dx[i] = s.get("x", 0.0) if np.isfinite(s.get("x", 0.0)) else 0.0
+        dg[i] = s.get("g", 0.0) if np.isfinite(s.get("g", 0.0)) else 0.0
+        db[i] = s.get("b", 0.0) if np.isfinite(s.get("b", 0.0)) else 0.0
+    return dr, dx, dg, db
+
+
 def _aux_regulated_bus_view_ids(net, regulated_ids):
     """Resolve voltage-controller regulated elements to their terminal bus.
 
@@ -241,6 +273,7 @@ def init(net : pypo.network.Network,
          n_busbar_per_sub: Optional[int]=None,  # new in 0.9.1
          buses_for_sub:Optional[bool]=None,  # new in 0.9.1
          init_vm_pu:float=1.06,
+         keep_half_open_lines: bool=False,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -320,7 +353,18 @@ def init(net : pypo.network.Network,
     :param init_vm_pu: The voltage magnitude with which the init vector of AC powerflow
                        will be set.
     :type init_vm_pu: float
-    
+
+    :param keep_half_open_lines: If True, a powerline or transformer connected on only
+                       one terminal (``connected1 != connected2``, *eg* a dangling
+                       boundary stub in a real grid) is modeled as "half-open": the
+                       energized side is kept in the admittance matrix and the open end
+                       is Kron-reduced out, instead of deactivating the whole branch.
+                       This sets ``synch_status_both_side=False`` on the returned model,
+                       so a later one-sided topology change is no longer mirrored to the
+                       other side. Branches disconnected on *both* sides are still fully
+                       deactivated. Default False (whole-branch deactivation, as before).
+    :type keep_half_open_lines: bool
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
@@ -331,7 +375,12 @@ def init(net : pypo.network.Network,
         sn_mva_used = float(sn_mva)
     model.set_sn_mva(sn_mva_used)
     model.set_init_vm_pu(float(init_vm_pu))
-    
+    if keep_half_open_lines:
+        # allow branches connected on a single terminal (the open end is Kron-reduced
+        # in the C++ model); a one-sided disconnection is no longer mirrored to the
+        # other side.
+        model.set_synch_status_both_side(False)
+
     if gen_slack_id is not None and slack_bus_id is not None:
         raise RuntimeError("Impossible to intialize a grid with both gen_slack_id and slack_bus_id")
     
@@ -560,9 +609,13 @@ def init(net : pypo.network.Network,
                                lex_bus
                               )
     for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
-        if is_or_disc or is_ex_disc:
+        if is_or_disc and is_ex_disc:
             model.deactivate_powerline(line_id)
-    model.set_line_names(df_line.index) 
+        elif is_or_disc:
+            model.deactivate_powerline_side1(line_id) if keep_half_open_lines else model.deactivate_powerline(line_id)
+        elif is_ex_disc:
+            model.deactivate_powerline_side2(line_id) if keep_half_open_lines else model.deactivate_powerline(line_id)
+    model.set_line_names(df_line.index)
     
     # for trafo
     # I extract trafo with `all_attributes=True` so that I have access to the `rho`
@@ -595,11 +648,27 @@ def init(net : pypo.network.Network,
         shift_ = np.zeros(df_trafo.shape[0])
     # tap is side 2 in IIDM
     is_tap_side1 = np.zeros(df_trafo.shape[0], dtype=bool)   
-    trafo_r = df_trafo_pu["r"].values
-    trafo_x = df_trafo_pu["x"].values
-    trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values)
-    
-    # now get the ratio    
+    trafo_r = df_trafo_pu["r"].values.astype(float)
+    trafo_x = df_trafo_pu["x"].values.astype(float)
+    trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values).astype(complex)
+
+    # apply the tap-changer step r / x / g / b corrections (in percent): pypowsybl
+    # gives r/x/g/b at the neutral tap and only folds the tap into rho / alpha, so
+    # the per-step impedance deltas (e.g. RTE phase-shifters whose impedance varies
+    # with the tap) must be applied here, or the through-flow is wrong.
+    def _safe_steps(getter):
+        try:
+            return getattr(net, getter)()
+        except Exception:  # noqa: BLE001 - not available on legacy pypowsybl
+            return None
+    for _tc, _steps in ((net.get_phase_tap_changers(), _safe_steps("get_phase_tap_changer_steps")),
+                        (ratio_tap_changer, _safe_steps("get_ratio_tap_changer_steps"))):
+        dr, dx, dg, db = _aux_tap_step_rxgb_correction(df_trafo.index, _tc, _steps)
+        trafo_r = trafo_r * (1. + dr / 100.)
+        trafo_x = trafo_x * (1. + dx / 100.)
+        trafo_h = trafo_h.real * (1. + dg / 100.) + 1j * (trafo_h.imag * (1. + db / 100.))
+
+    # now get the ratio
     # in lightsim2grid (cpp)
     if "rho" in df_trafo_pu:
         ratio = 1. * df_trafo_pu["rho"].values
@@ -627,10 +696,14 @@ def init(net : pypo.network.Network,
                      tor_bus,
                      tex_bus,
                      False,  # ignore_tap_side_for_phase_shift is False for pypowsybl
-                     )    
+                     )
     for t_id, (is_or_disc, is_ex_disc) in enumerate(zip(tor_disco, tex_disco)):
-        if is_or_disc or is_ex_disc:
+        if is_or_disc and is_ex_disc:
             model.deactivate_trafo(t_id)
+        elif is_or_disc:
+            model.deactivate_trafo_side1(t_id) if keep_half_open_lines else model.deactivate_trafo(t_id)
+        elif is_ex_disc:
+            model.deactivate_trafo_side2(t_id) if keep_half_open_lines else model.deactivate_trafo(t_id)
     model.set_trafo_names(df_trafo.index)
     
     # for shunt
