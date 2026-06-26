@@ -69,6 +69,13 @@ void TrafoContainer::init(
     shift_ = trafo_shift_degree / my_180_pi_;  // do not forget conversion degree / rad here !
     is_tap_side1_ = trafo_tap_side1;
     ignore_tap_side_for_shift_ = ignore_tap_side_for_shift;
+    // no alpha-dependent r/x correction by default (neutral = the given r/x); the
+    // pypowsybl converter enables it afterwards via set_shift_dependent_rx
+    base_r_ = trafo_r;
+    base_x_ = trafo_x;
+    shift_dependent_rx_ = false;
+    rx_corr_alpha_ = std::vector<std::vector<real_type> >(size, std::vector<real_type>());
+    rx_corr_pct_ = std::vector<std::vector<real_type> >(size, std::vector<real_type>());
     init_tsc(trafo_hv_id, trafo_lv_id, "trafo");
     _update_model_coeffs();
     reset_results();
@@ -79,12 +86,19 @@ TrafoContainer::StateRes TrafoContainer::get_state() const
      std::vector<real_type> ratio(ratio_.begin(), ratio_.end());
      std::vector<real_type> shift(shift_.begin(), shift_.end());
      std::vector<bool> is_tap_hv_side = is_tap_side1_;
+     std::vector<real_type> base_r(base_r_.begin(), base_r_.end());
+     std::vector<real_type> base_x(base_x_.begin(), base_x_.end());
      TrafoContainer::StateRes res(
         get_tsc_rxha_state(),
         ratio,
         is_tap_hv_side,
         shift,
-        ignore_tap_side_for_shift_);
+        ignore_tap_side_for_shift_,
+        shift_dependent_rx_,
+        base_r,
+        base_x,
+        rx_corr_alpha_,
+        rx_corr_pct_);
      return res;
 }
 
@@ -105,12 +119,70 @@ void TrafoContainer::set_state(TrafoContainer::StateRes & my_state)
     shift_  = RealVect::Map(&shift[0], size);
     is_tap_side1_ = is_tap_side1;
     ignore_tap_side_for_shift_ = std::get<4>(my_state);
+
+    shift_dependent_rx_ = std::get<5>(my_state);
+    std::vector<real_type> & base_r = std::get<6>(my_state);
+    std::vector<real_type> & base_x = std::get<7>(my_state);
+    GenericContainer::check_size(base_r, size, "base_r");
+    GenericContainer::check_size(base_x, size, "base_x");
+    base_r_ = RealVect::Map(&base_r[0], size);
+    base_x_ = RealVect::Map(&base_x[0], size);
+    rx_corr_alpha_ = std::get<8>(my_state);
+    rx_corr_pct_ = std::get<9>(my_state);
+
     _update_model_coeffs();
     reset_results();
 }
 
+void TrafoContainer::set_shift_dependent_rx(
+    bool enable,
+    const std::vector<std::vector<real_type> > & alpha_rad,
+    const std::vector<std::vector<real_type> > & rx_corr_pct,
+    DualAlgoControl & solver_control)
+{
+    const auto size = nb();
+    if(alpha_rad.size() != static_cast<std::size_t>(size))
+        throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: alpha_rad has a wrong size");
+    if(rx_corr_pct.size() != static_cast<std::size_t>(size))
+        throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: rx_corr_pct has a wrong size");
+    shift_dependent_rx_ = enable;
+    rx_corr_alpha_ = alpha_rad;
+    rx_corr_pct_ = rx_corr_pct;
+    // the stored r_ / x_ at this point are the neutral impedance: keep them as the base
+    base_r_ = r_;
+    base_x_ = x_;
+    // sort each (alpha -> correction) table by ascending alpha so the interpolation
+    // in _shift_rx_corr_pct is well defined
+    for(int el_id = 0; el_id < size; ++el_id){
+        auto & xs = rx_corr_alpha_[el_id];
+        auto & ys = rx_corr_pct_[el_id];
+        if(xs.size() != ys.size())
+            throw std::runtime_error("TrafoContainer::set_shift_dependent_rx: alpha and correction tables differ in size");
+        std::vector<std::size_t> order(xs.size());
+        for(std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::sort(order.begin(), order.end(), [&xs](std::size_t a, std::size_t b){return xs[a] < xs[b];});
+        std::vector<real_type> sx(xs.size()), sy(ys.size());
+        for(std::size_t i = 0; i < order.size(); ++i){ sx[i] = xs[order[i]]; sy[i] = ys[order[i]]; }
+        xs.swap(sx); ys.swap(sy);
+    }
+    // re-apply the (possibly corrected) impedance at the current shift
+    _update_model_coeffs();
+    solver_control.ac_algo_controler().tell_recompute_ybus();
+    solver_control.dc_algo_controler().tell_recompute_ybus();
+}
+
 void TrafoContainer::_update_model_coeffs_one_el(int el_id)
 {
+    // phase-shifting transformers whose series impedance depends on the phase-shift
+    // angle: refresh the effective r / x from the neutral value and the correction
+    // interpolated at the current `shift_`. This makes `change_shift` / `change_ratio`
+    // (which call `_update_internal_coeffs`) keep r / x in sync with no "tap" concept.
+    if(shift_dependent_rx_ && !rx_corr_alpha_[el_id].empty()){
+        const real_type corr = my_one_ + _shift_rx_corr_pct(el_id) / 100.;
+        r_(el_id) = base_r_(el_id) * corr;
+        x_(el_id) = base_x_(el_id) * corr;
+    }
+
     // for AC
     // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
     const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));

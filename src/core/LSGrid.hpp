@@ -742,6 +742,19 @@ class LS2G_API LSGrid final
             real_type new_shift_rad = new_shift_deg / BaseConstants::my_180_pi_;
             change_shift_trafo(trafo_id, new_shift_rad);
         }
+        /**
+         * Declare the alpha (phase-shift) dependence of the transformers' series
+         * impedance: per transformer, sample points `alpha (rad) -> r/x correction (%)`.
+         * The effective r / x is then refreshed from these samples (interpolated on the
+         * current shift) whenever the coefficients are rebuilt, so changing the shift /
+         * ratio of a phase-shifting transformer keeps its impedance correct -- without
+         * any "tap" concept. `enable` is kept false for pandapower (no such data).
+         */
+        void set_trafo_shift_dependent_rx(bool enable,
+                                          const std::vector<std::vector<real_type> > & alpha_rad,
+                                          const std::vector<std::vector<real_type> > & rx_corr_pct){
+            trafos_.set_shift_dependent_rx(enable, alpha_rad, rx_corr_pct, algo_controler_);
+        }
 
         //load
         void deactivate_load(int load_id) {loads_.deactivate(load_id, algo_controler_); }

@@ -57,36 +57,44 @@ def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connect
     return bus_id, mask_disco.values, sub_id
 
 
-def _aux_tap_step_rxgb_correction(trafo_index, tap_changers, steps):
-    """Per-transformer (r%, x%, g%, b%) impedance/admittance correction carried by
-    a tap-changer step at its current position, aligned to ``trafo_index`` (0 where
-    there is no such tap changer).
+def _aux_phase_shift_rx_tables(trafo_index, net):
+    """Per-transformer phase-shift -> series-impedance dependency for
+    :meth:`LSGrid.set_trafo_shift_dependent_rx`.
 
-    pypowsybl exposes the transformer r / x / g / b at the *neutral* tap. The
-    per-unit ``rho`` / ``alpha`` already include the current tap, but the per-step
-    r / x / g / b deltas (given **in percent**, to be applied as
-    ``value * (1 + delta / 100)``) do NOT. They matter for e.g. RTE phase-shifting
-    transformers whose series impedance varies strongly with the tap position
-    (without this, the through-flow can be off by tens of MW)."""
+    Returns two lists-of-lists aligned to ``trafo_index``: the phase-shift sample
+    points ``alpha`` (in **radian**, matching lightsim2grid's ``shift_``) and the
+    matching r/x correction (**in percent**), read from the pypowsybl
+    phase-tap-changer steps. Inner lists are empty for transformers without a
+    phase-tap-changer.
+
+    pypowsybl exposes the transformer r / x at the *neutral* tap and only folds the
+    tap into ``rho`` / ``alpha``; the per-step r/x deltas (percent) are dropped. They
+    matter for phase-shifting transformers whose series impedance varies with the
+    shift (RTE PSTs: tens of MW of through-flow). On those grids ``r% == x%`` for
+    every step, so a single correction table is applied to both r and x."""
     n = len(trafo_index)
-    dr = np.zeros(n); dx = np.zeros(n); dg = np.zeros(n); db = np.zeros(n)
-    if (tap_changers is None or tap_changers.shape[0] == 0 or
-            steps is None or steps.shape[0] == 0 or "tap" not in tap_changers.columns):
-        return dr, dx, dg, db
-    cur_tap = {tid: t for tid, t in zip(tap_changers.index, tap_changers["tap"].values)}
+    alpha = [[] for _ in range(n)]
+    corr = [[] for _ in range(n)]
+    try:
+        ptc = net.get_phase_tap_changers()
+        steps = net.get_phase_tap_changer_steps()
+    except Exception:  # noqa: BLE001 - not available on legacy pypowsybl
+        return alpha, corr
+    if ptc.shape[0] == 0 or steps.shape[0] == 0:
+        return alpha, corr
+    have = set(ptc.index)
     for i, tid in enumerate(trafo_index):
-        t = cur_tap.get(tid)
-        if t is None or not np.isfinite(t):
+        if tid not in have:
             continue
-        key = (tid, int(t))
-        if key not in steps.index:
+        try:
+            st = steps.loc[tid]
+        except KeyError:
             continue
-        s = steps.loc[key]
-        dr[i] = s.get("r", 0.0) if np.isfinite(s.get("r", 0.0)) else 0.0
-        dx[i] = s.get("x", 0.0) if np.isfinite(s.get("x", 0.0)) else 0.0
-        dg[i] = s.get("g", 0.0) if np.isfinite(s.get("g", 0.0)) else 0.0
-        db[i] = s.get("b", 0.0) if np.isfinite(s.get("b", 0.0)) else 0.0
-    return dr, dx, dg, db
+        a = np.deg2rad(np.atleast_1d(st["alpha"].to_numpy(dtype=float)))
+        x = np.atleast_1d(st["x"].to_numpy(dtype=float))  # r% == x% on these PSTs
+        alpha[i] = [float(v) for v in a]
+        corr[i] = [float(v) for v in x]
+    return alpha, corr
 
 
 def _aux_regulated_bus_view_ids(net, regulated_ids):
@@ -648,25 +656,12 @@ def init(net : pypo.network.Network,
         shift_ = np.zeros(df_trafo.shape[0])
     # tap is side 2 in IIDM
     is_tap_side1 = np.zeros(df_trafo.shape[0], dtype=bool)   
-    trafo_r = df_trafo_pu["r"].values.astype(float)
-    trafo_x = df_trafo_pu["x"].values.astype(float)
-    trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values).astype(complex)
-
-    # apply the tap-changer step r / x / g / b corrections (in percent): pypowsybl
-    # gives r/x/g/b at the neutral tap and only folds the tap into rho / alpha, so
-    # the per-step impedance deltas (e.g. RTE phase-shifters whose impedance varies
-    # with the tap) must be applied here, or the through-flow is wrong.
-    def _safe_steps(getter):
-        try:
-            return getattr(net, getter)()
-        except Exception:  # noqa: BLE001 - not available on legacy pypowsybl
-            return None
-    for _tc, _steps in ((net.get_phase_tap_changers(), _safe_steps("get_phase_tap_changer_steps")),
-                        (ratio_tap_changer, _safe_steps("get_ratio_tap_changer_steps"))):
-        dr, dx, dg, db = _aux_tap_step_rxgb_correction(df_trafo.index, _tc, _steps)
-        trafo_r = trafo_r * (1. + dr / 100.)
-        trafo_x = trafo_x * (1. + dx / 100.)
-        trafo_h = trafo_h.real * (1. + dg / 100.) + 1j * (trafo_h.imag * (1. + db / 100.))
+    # neutral-tap impedance (the phase-shift -> r/x dependence of phase-shifting
+    # transformers is handled by lightsim2grid as a function of the shift alpha, see
+    # the model.set_trafo_shift_dependent_rx(...) call below).
+    trafo_r = df_trafo_pu["r"].values
+    trafo_x = df_trafo_pu["x"].values
+    trafo_h = (df_trafo_pu["g"].values + 1j * df_trafo_pu["b"].values)
 
     # now get the ratio
     # in lightsim2grid (cpp)
@@ -705,7 +700,13 @@ def init(net : pypo.network.Network,
         elif is_ex_disc:
             model.deactivate_trafo_side2(t_id) if keep_half_open_lines else model.deactivate_trafo(t_id)
     model.set_trafo_names(df_trafo.index)
-    
+    # phase-shifting transformers: declare the (alpha -> r/x correction) dependency so
+    # lightsim2grid keeps the series impedance right when the shift changes, without any
+    # "tap" concept (the per-step r/x deltas pypowsybl carries only in its tap steps).
+    ps_alpha, ps_rx_corr = _aux_phase_shift_rx_tables(df_trafo.index, net)
+    if any(len(a) for a in ps_alpha):
+        model.set_trafo_shift_dependent_rx(True, ps_alpha, ps_rx_corr)
+
     # for shunt
     if sort_index:
         df_shunt = net.get_shunt_compensators().sort_index()

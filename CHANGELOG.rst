@@ -128,10 +128,13 @@ TODO: integration test with pandapower (see `pandapower/contingency/contingency.
   only `rho` / `alpha` were folded in, while r/x/g/b were left at their neutral-tap
   value. For phase-shifting transformers whose series impedance varies with the tap
   (common on RTE grids) the through-flow was wrong by tens of MW vs PowSyBl Open Load
-  Flow. The step deltas are now applied. See `test_pst_tap_impedance` and
-  `HVDC_OLF_FINDINGS.md`. NB: an *in-place* tap change via `change_ratio_trafo` /
-  `change_shift_trafo` still does not refresh r/x (re-import the grid to follow such a
-  change).
+  Flow. lightsim2grid has no "tap" concept, so this ``alpha -> r/x correction``
+  dependency is stored per transformer and the series impedance is refreshed from the
+  **current phase shift** (interpolated) whenever the coefficients are rebuilt -- so an
+  *in-place* ``change_shift_trafo`` / ``change_ratio_trafo`` keeps r/x correct too
+  (verified to match OLF after a tap change). Enabled only when reading from pypowsybl
+  (a flag, off for pandapower). See `LSGrid.set_trafo_shift_dependent_rx`,
+  `test_pst_tap_impedance` and `HVDC_OLF_FINDINGS.md`.
 - [FIXED] `consider_only_main_component` (and `init_from_pypowsybl(..., only_main_component=True)`,
   the default) used to deactivate an **entire HVDC line** as soon as one of its two
   converters fell outside the main component. For a cross-border / asynchronous HVDC
